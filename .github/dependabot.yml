@@ -1,0 +1,13 @@
+# Advisory monitoring and pin updates for every dependency ecosystem in the
+# repository (STD-05 R23, R24): crates through Cargo.lock, and the CI actions
+# pinned by SHA in .github/workflows/. Updates target the integration branch.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    target-branch: agent-main
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: agent-main
+    schedule: { interval: weekly }

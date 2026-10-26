@@ -14,7 +14,18 @@ spec:
     orbit: ">=0.34.0 <1.0.0"
     host_api: 1
     platforms: [linux, macos]
-    programs: [uv, git, ffmpeg]
+    programs: [git, ffmpeg]
+
+  # Built from source at install time (git+ pinned sources only); a local
+  # directory install uses the prebuilt output from `make export` instead.
+  build:
+    programs: [cargo]
+    fetch: [cargo, fetch, --locked, --manifest-path, Cargo.toml]
+    command: [cargo, build, --release, --offline, --locked, --manifest-path, Cargo.toml, -p, office, --target-dir, "{{build_dir}}/target"]
+    outputs:
+      - from: target/release/office
+        to: bin/office-bin
+    timeout_ms: 1200000
 
   backend:
     type: exec

@@ -23,7 +23,6 @@ build; the web entry lists the screens. Nothing here talks to Orbit yet.
 ## Develop
 
 ```bash
-npm install
-npm run typecheck
+npm run check   # node --check on every source file (no dependencies to install)
 npm run dev
 ```

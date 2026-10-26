@@ -1,0 +1,26 @@
+# cargo-nextest configuration (STD-03 R21, R22; STD-04 R9, R10).
+#
+# `make test` uses nextest when it is installed and falls back to `cargo test`
+# otherwise; CI always installs it. Under plain `cargo test` there is no
+# per-test timeout, and the CI job's `timeout-minutes` is the only bound.
+
+[profile.default]
+# A test running past 60s is reported slow; at 2 periods (120s) it is killed,
+# so one hung test cannot hold a CI runner for the whole job timeout.
+slow-timeout = { period = "60s", terminate-after = 2 }
+# A test whose spawned children keep its stdout/stderr open 500ms after it
+# returns has leaked a process: fail it instead of letting the leak compound.
+leak-timeout = { period = "500ms", result = "fail" }
+# No `retries`: a flaky test is fixed at its root cause, never retried into
+# passing (STD-04 R9). `make test` passes --no-tests=fail (STD-04 R10).
+
+# No test mutates process-global state (environment, current directory): the
+# integration tests set the environment on each child command instead. If one
+# ever must, serialize it here rather than with a mutex:
+#
+# [test-groups]
+# process-env = { max-threads = 1 }
+#
+# [[profile.default.overrides]]
+# filter = "test(/env_/)"
+# test-group = "process-env"

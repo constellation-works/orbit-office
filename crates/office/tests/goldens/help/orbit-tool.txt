@@ -1,0 +1,6 @@
+Serve one Orbit exec call (JSON envelope on stdin, one on stdout)
+
+Usage: office orbit-tool
+
+Options:
+  -h, --help  Print help

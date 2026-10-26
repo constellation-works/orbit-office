@@ -1,0 +1,30 @@
+# cargo-deny policy (STD-02 R23, STD-05 R23/R24). Policy sections follow STD-02's copy of
+# Orbit's deny.toml. Every exception carries a reason and a re-review date.
+
+[advisories]
+# A yanked crate can change under the locked graph without anyone editing code.
+yanked = "deny"
+ignore = [
+    # { id = "RUSTSEC-YYYY-NNNN", reason = "<why it does not apply>. Re-review YYYY-MM-DD." },
+]
+
+[licenses]
+# Only what the tree needs today; add a license with a comment naming the
+# crate that brought it.
+allow = [
+    # MIT / Apache-2.0: clap, serde, serde_json, thiserror, time, tracing,
+    # tempfile, rustix and their transitive dependencies.
+    "MIT",
+    "Apache-2.0",
+    # Unicode-3.0: unicode-ident.
+    "Unicode-3.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

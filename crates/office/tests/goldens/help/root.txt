@@ -1,0 +1,17 @@
+Orbit exec backend for the office plugin: serve one call per invocation
+
+Usage: office <COMMAND>
+
+Commands:
+  orbit-tool  Serve one Orbit exec call (JSON envelope on stdin, one on stdout)
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+Examples:
+  office orbit-tool < request.json
+  office orbit-tool < request.json > response.json
+
+Exit status: 0 on success, 1 when a command fails, 2 on a usage error.

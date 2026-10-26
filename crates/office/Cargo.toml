@@ -1,0 +1,24 @@
+[package]
+name = "office"
+description = "Orbit exec backend for the office plugin: serve one exec call per invocation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "office"
+path = "src/main.rs"
+
+[dependencies]
+office-core = { workspace = true }
+clap = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

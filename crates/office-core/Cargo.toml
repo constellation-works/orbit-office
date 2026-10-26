@@ -1,0 +1,22 @@
+[package]
+name = "office-core"
+description = "The office plugin's domain as a library: Orbit exec protocol dispatch and tool handlers. No terminal, no argument parsing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "office_core"
+path = "src/lib.rs"
+
+# Domain dependencies only. scripts/check-dependency-direction.sh rejects
+# clap, tracing-subscriber and any other surface crate here.
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

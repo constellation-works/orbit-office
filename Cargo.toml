@@ -1,0 +1,55 @@
+[workspace]
+resolver = "3"
+# Two crates, and why two: docs/design/office/4_decisions.md
+# ("A domain library crate and a CLI crate"). A new member needs a policy entry
+# in scripts/check-dependency-direction.sh and a row in ARCHITECTURE.md.
+members = [
+    "crates/office-core",
+    "crates/office",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/constellation-works/orbit-office"
+
+[workspace.dependencies]
+office-core = { path = "crates/office-core" }
+# No `color` or `wrap_help`: both make clap query the terminal itself, and the
+# output sink is the only place allowed to do that (STD-01 R17). Help is plain
+# text everywhere, which also keeps the help goldens byte-stable.
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tempfile = "3"
+tracing = "0.1"
+
+[profile.release]
+strip = true
+
+# STD-02 lint baseline, verbatim from the standard. Do not trim it; add to it.
+# Workspace-wide lint config. Each crate opts in via `[lints] workspace = true`.
+# Keep this list short — only rules that are mechanically true everywhere.
+[workspace.lints.clippy]
+await_holding_lock = "deny"
+dbg_macro = "deny"
+expect_used = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+unwrap_used = "warn"
+
+# Adoptable additions beyond the baseline (STD-02 "Adoptable additions").
+# STD-02 R27: no wildcard arm on an enum match; a foreign enum that needs one
+# gets a scoped #[allow] with its reason.
+wildcard_enum_match_arm = "warn"
+match_wildcard_for_single_variants = "warn"
+# STD-02 R28: narrowing `as` casts must be checked conversions.
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_possible_wrap = "warn"
+
+[workspace.lints.rust]
+missing_docs = "warn"

@@ -15,9 +15,10 @@ observe -> propose -> approve -> automate -> measure
   vendored. The office workspace never runs an auto drain: agent to-dos are
   dispatched explicitly by id from the app server.
 - **`office` plugin (`plugin/`).** Namespace `office`, `exec` backend
-  (Python, `uv`). Owns the Library (sources, knowledge, artifacts) and its
-  rebuildable SQLite index. Mutations commit the Library git repo.
-- **Web app (`app/`).** A local server plus single-page UI. The server is the
+  (Rust workspace at the repo root: `crates/office-core`, `crates/office`).
+  Owns the Library (sources, knowledge, artifacts) and its rebuildable
+  SQLite index. Mutations commit the Library git repo.
+- **Web app (`app/`).** A local server plus single-page UI (JavaScript). The server is the
   only process the browser talks to; it reaches Orbit and the plugin through
   one long-lived `orbit mcp` stdio client.
 - **Orchestrator agent (in the app server).** A tool-calling loop on Muse

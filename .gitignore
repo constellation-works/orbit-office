@@ -1,14 +1,15 @@
+# Build output.
+/target
+node_modules/
+dist/
 __pycache__/
 *.pyc
 .venv/
-.pytest_cache/
-.ruff_cache/
-node_modules/
-dist/
-# Orbit per-user state and a real user Library — never repository artifacts.
+# Orbit per-user state and a real user Library — not repository artifacts.
 .orbit/
 /library/
 # Local secrets / environment.
 .env
 .env.*
 !.env.example
+.DS_Store
