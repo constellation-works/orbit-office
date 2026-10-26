@@ -5,11 +5,12 @@ dist/
 __pycache__/
 *.pyc
 .venv/
-# Orbit per-user state and a real user Library — not repository artifacts.
-.orbit/
+# A real user Library — not a repository artifact.
 /library/
 # Local secrets / environment.
 .env
 .env.*
 !.env.example
 .DS_Store
+# Orbit per-user state — not a repository artifact.
+.orbit/
