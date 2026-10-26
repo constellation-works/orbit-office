@@ -1,6 +1,7 @@
 # orbit-office app
 
-The local web app (TypeScript): a local server plus a single-page UI in
+The local web app (TypeScript), installable as a PWA so it opens in its
+own window: a local server plus a single-page UI in
 plain words — Today, To-dos, Routines, Library, Insights, Review. No ids,
 crews, runs or raw statuses are ever shown. There is no Chat screen:
 conversation happens in the user's agent CLI.

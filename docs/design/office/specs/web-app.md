@@ -1,6 +1,6 @@
 ---
 type: design
-summary: "Spec: web app — screens, rules, and its authority as the user's console"
+summary: "Spec: web app — screens, rules, its authority as the user's console, and delivery as an installable PWA"
 last_validated: 2026-10-26
 ---
 
@@ -10,7 +10,7 @@ The web app is the user's console: everything except conversation happens
 here. Plain words only — To-dos, Routines, Library, Needs you, Insights —
 never ids, crews, runs, workflows or raw statuses.
 
-Source: spec §13.1–§13.2.
+Source: spec §13.1–§13.2 and §13.4.
 
 ## Authority
 
@@ -48,3 +48,22 @@ app's source or page view.
 - Each item has one primary action (approve, edit or dismiss) and a provenance link on every agent output.
 - The **selection tray** shows what the user has shared with the agent ("Shared with agent" pill, one-click clear) — [selection-sharing.md](./selection-sharing.md).
 - Setup is one script: install Orbit, add and enable the plugin, create the workspace, register Orbit MCP with Muse Code, and install the app as a login service. No terminal is needed during use.
+
+## Delivery
+
+For the event the app ships as a local web app, not a desktop app
+([decision](../4_decisions.md#a-local-web-app-installable-as-a-pwa-the-desktop-shell-waits)).
+
+- **Installable PWA.** A web app manifest and a service worker make it
+  installable: Chrome's or Edge's "Install app" (Safari: Add to Dock)
+  opens it in its own window with a Dock or taskbar icon and no address
+  bar, so the demo shows neither a terminal nor a browser. The service
+  worker caches the app shell only; data always comes live from the local
+  server, and there is no offline mode.
+- **Webview-safe UI.** Relative URLs, and no browser-only API without a
+  fallback, so a desktop shell can host the same UI later.
+- **After the event: a Tauri shell** — one installer bundling the runtime
+  (today the user needs Node 20+), a tray icon, native notifications for
+  Needs you, and native drag-and-drop for recordings. Tauri does not
+  bundle Node, so the server either ships as a sidecar or moves into the
+  `office` binary.

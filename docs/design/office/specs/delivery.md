@@ -40,7 +40,7 @@ Source: spec §14–§16.
 | Thu 10-29 | `knowledge.*`, `attach`, the agent to-do activity, `artifact.promote` | Source view, Library screen | Seed 6 weeks of history |
 | Fri 10-30 | `signals.scan`, proposals create and accept | Needs you, Routines screens | |
 | Sat 10-31 | `metrics`, `review`, `selection.*` | Insights, Review screens; selection tray and hook | First full run-through |
-| Sun 11-01 | Open-weight routing; receipts pack if on track | Polish; the paste capture moment | |
+| Sun 11-01 | Open-weight routing; receipts pack if on track | Polish; installable PWA; the paste capture moment | |
 | Mon 11-02 | Hardening; setup script | Polish | Record the video |
 | Tue 11-03 | Buffer | Buffer | Edit the video; README |
 | Wed 11-04 | — | — | Submit before 21:00 ET; post on X for the viral bonus |

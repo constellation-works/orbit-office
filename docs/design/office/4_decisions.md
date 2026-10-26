@@ -7,7 +7,7 @@ status: Draft
 feature: office
 doc_role: decisions
 type: design
-summary: Why two crates, why clap has no color, how usage errors render, how the gate checks behave, and the office decisions: a CLI orchestrator, approval by tool visibility, the app as user, the shipped stacks, and typed selections.
+summary: Why two crates, why clap has no color, how usage errors render, how the gate checks behave, and the office decisions: a CLI orchestrator, approval by tool visibility, the app as user, the shipped stacks, a PWA rather than a desktop app, and typed selections.
 tags: [office, decisions]
 paths: ["Cargo.toml", "crates/**", "Makefile", "plugin/**", "app/**"]
 related_features: [office]
@@ -264,6 +264,38 @@ calls go over plain HTTPS from Rust; no Python SDK is required.
 - Cost: no Python SDK convenience for the Meta APIs; request shapes are
   hand-built and must be verified on day 1 (spec §18.5). The app regains
   one build step.
+
+## A local web app installable as a PWA; the desktop shell waits
+
+**Recorded:** 2026-10-26
+**Code anchors:** `app/`; [specs/web-app.md](./specs/web-app.md#delivery)
+
+### Context
+
+The audience is office workers, and the README's onboarding risk is a
+demo that shows a terminal. A desktop shell (Tauri, which suits the Rust
+core) would give one installer, a tray icon, native notifications and
+native drag-and-drop. It also brings packaging, macOS signing and
+notarization and auto-update into a nine-day solo build, none of which
+is judged, and the demo video looks the same either way.
+
+### Decision
+
+For the event the app is a local web app made installable as a PWA (a
+web app manifest plus a service worker that caches the app shell only;
+no offline mode). Installed from Chrome or Edge, or added to the Dock
+in Safari, it opens in its own window without browser chrome. A Tauri
+shell is post-event work. Until then the UI stays webview-safe: relative
+URLs, and no browser-only API without a fallback.
+
+### Consequences
+
+- Citations stay plain `http://localhost` links that the browser opens;
+  no deep-link scheme is needed yet. The dispatch pass is a login service
+  (launchd or a systemd user unit) independent of the UI.
+- Cost: users install Node 20+ themselves, there is no tray or native
+  notification for Needs you, and the later Tauri shell must either ship
+  the Node server as a sidecar or move it into the `office` binary.
 
 ## Selections are typed references, and private selections carry no quote
 
