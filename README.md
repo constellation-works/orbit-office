@@ -46,8 +46,10 @@ not the exit code), 1 when a command fails and 2 on a usage error.
 
 ## Dependency: Orbit
 
-Tested against Orbit `0.34.0`. Orbit is not vendored: install it separately,
-then add this plugin from a fresh export of a commit (see `plugin/README.md`).
+Tested against Orbit `0.34.0`. Orbit is not vendored. The install script
+(`install.sh`, specified in `docs/design/office/specs/install.md`) installs
+it from npm when it is missing; by hand, install it separately, then add this
+plugin from a fresh export of a commit (see `plugin/README.md`).
 
 ## Development
 

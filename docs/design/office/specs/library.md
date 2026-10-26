@@ -48,13 +48,9 @@ library/
 
 ## Scaffolding: `office.init`
 
-The setup script creates the Library with one explicit call, after the
-workspace exists and the plugin is enabled:
-
-1. `mkdir ~/office && git init`, add `/library/` to the workspace
-   `.gitignore`, then `orbit workspace init`.
-2. `orbit plugin add` and `orbit plugin enable office`.
-3. `orbit tool run office.init`.
+The [install script](./install.md) creates the Library with one explicit
+call, `orbit tool run office.init`, after it has set up git and the
+workspace and enabled the plugin. The user never runs it by hand.
 
 `office.init` (mutating, `mcp_scope: none`) does, in order:
 

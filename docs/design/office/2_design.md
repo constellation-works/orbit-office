@@ -61,7 +61,7 @@ Source: spec §5, §6.6, §8, §13 and §18. Mechanism contracts live in
 - **Orchestrator:** the user's agent CLI, not code in this repo. Setup
   registers Orbit's MCP server with it at agent authority. For Muse Code
   this means an `mcpServers` entry in its `settings.json`, written by the
-  setup script because `orbit mcp init` has no Muse target (spec §18.6).
+  install script because `orbit mcp init` has no Muse target (spec §18.6).
   The plugin's `office-orchestrator` skill tells it how to run the
   operation. What this project builds for the orchestrator is the skill,
   the tool surface and its guardrails:
@@ -71,7 +71,7 @@ Source: spec §5, §6.6, §8, §13 and §18. Mechanism contracts live in
   crews). The new work is what they are given: attached knowledge and
   runbooks.
 - **Orbit workspace:** one dedicated workspace for the office user, for
-  example `~/office`, with the Library at `~/office/library/`. The
+  example `~/orbit`, with the Library at `~/orbit/library/`. The
   workspace is a git repository, which gives Orbit the checkout its runs
   expect. The Library is a separate git repository that the workspace
   repository ignores ([specs/library.md](./specs/library.md#git)),
@@ -139,7 +139,7 @@ Three actors, three authorities:
 | Implementing agents (Orbit crews) | Ordinary task runs | No — output is a task artifact until approved |
 
 - **Hidden from MCP** (`mcp_scope: none`; only the app calls them, and
-  the setup script calls `office.init`): `office.init`,
+  the install script calls `office.init`): `office.init`,
   `office.knowledge.write`, `office.proposal.accept`,
   `office.artifact.promote`, `office.selection.put`, `office.config.set`,
   `office.reindex`.
@@ -180,6 +180,7 @@ listing them, and the knowledge compounds locally.
 | Tool list, kinds, `mcp_scope`, definitions, config, permissions | [specs/plugin-surface.md](./specs/plugin-surface.md) |
 | One exec call, end to end | [specs/output-contract.md](./specs/output-contract.md) |
 | Orchestrator behaviours and guardrails | [specs/orchestrator.md](./specs/orchestrator.md) |
+| Install script: Orbit, git, workspace, plugin, scaffold, app | [specs/install.md](./specs/install.md) |
 | Proposal kinds, signals, lifecycle | [specs/proposals.md](./specs/proposals.md) |
 | Metrics definitions and review production | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) |
 | Screens, app rules, citation links | [specs/web-app.md](./specs/web-app.md) |

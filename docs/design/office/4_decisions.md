@@ -196,7 +196,7 @@ while `orbit tool run` can still call it.
 The approval and write tools (`init`, `knowledge.write`,
 `proposal.accept`, `artifact.promote`, `selection.put`, `config.set`,
 `reindex`) are `mcp_scope: none`. Only the app — acting as the user
-through `orbit tool run` — can call them, and the setup script calls
+through `orbit tool run` — can call them, and the install script calls
 `init`. The orchestrator can propose; it cannot approve or write.
 
 ### Consequences

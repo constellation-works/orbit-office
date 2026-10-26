@@ -1,7 +1,7 @@
 # Example Library layout
 
 A real Library is created by `office.init` in the user's Orbit workspace
-(`~/office/library/` by default). It is a git repository of its own, which
+(`~/orbit/library/` by default). It is a git repository of its own, which
 the workspace repository ignores. This example only shows the shape:
 
 ```
