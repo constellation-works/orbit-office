@@ -24,14 +24,17 @@ listed in [docs/architecture.md](docs/architecture.md).
 | Path | What |
 |---|---|
 | `crates/office-common/` | Shared foundation, after Orbit's `orbit-common`: common error type, fs mechanisms, SQLite connection defaults, small shared types. |
-| `crates/office-core/` | Domain library (no clap, no terminal): the Orbit exec protocol dispatch and the tool handlers. |
+| `crates/office-core/` | Pure domain (no I/O, no clap, no terminal): the exec envelope, tool contract types, domain model and port traits. |
 | `crates/office-store/` | Library persistence, structured after Orbit's `orbit-store`: file driver for sources/knowledge/artifacts, rebuildable SQLite FTS index, atomic writes, schema migrations. |
+| `crates/office-models/`, `crates/office-orbit/` | Adapters behind `office-core` ports: the Meta and Baseten model APIs (the only crate that speaks HTTP), and the Orbit callbacks. |
+| `crates/office-tools/` | The application: the tool registry, dispatch, and one module per tool, grouped by spec area. |
+| `crates/office-testkit/` | Test support (dev-dependency only): fake ports, Library fixtures, envelope helpers. |
 | `crates/office/` | The binary: `office orbit-tool` serves one Orbit exec call (JSON envelope on stdin, one on stdout). The plugin launcher execs this binary. |
 | `plugin/` | The installable Orbit plugin tree in `.orbit-plugin/` (`plugin.yaml`, `bin/office` launcher, schemas, skills, definitions, conformance goldens). |
-| `app/` | The local web app (TypeScript): a local server that calls Orbit as the user through `orbit tool run --json`, owns the dispatch pass, and serves the single-page UI. Conversation happens in the user's agent CLI, not here. |
+| `app/` | The local web app (TypeScript, npm workspaces `contracts`, `server`, `web`): a local server that calls Orbit as the user through `orbit tool run --json`, owns the dispatch pass, and serves the single-page UI. Conversation happens in the user's agent CLI, not here. |
 | `examples/library/` | An example Library layout. A real Library lives in the user's Orbit workspace, not in this repo. |
 | `demo/synthetic/` | Synthetic demo data only. No private or real user data is ever committed here. |
-| `docs/` | Architecture, design docs and the vendored constellation standards. |
+| `docs/` | Design docs and the vendored constellation standards. The layout and its boundaries are in [ARCHITECTURE.md](ARCHITECTURE.md). |
 
 ## The backend binary
 

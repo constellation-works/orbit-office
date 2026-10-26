@@ -1,0 +1,19 @@
+[package]
+name = "office-testkit"
+description = "Test support for the office workspace: fake ports, a Library fixture builder and envelope helpers. A dev-dependency only."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "office_testkit"
+path = "src/lib.rs"
+
+# Dependencies arrive with the first task that needs them, within the policy
+# in scripts/check-dependency-direction.sh.
+[dependencies]
+
+[lints]
+workspace = true

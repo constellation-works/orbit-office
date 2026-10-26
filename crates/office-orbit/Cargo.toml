@@ -1,0 +1,19 @@
+[package]
+name = "office-orbit"
+description = "Orbit adapter for the office plugin: the manifest's orbit_tools callbacks (task.add, task.artifact.put, ...), behind an office-core port."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "office_orbit"
+path = "src/lib.rs"
+
+# Dependencies arrive with the first task that needs them, within the policy
+# in scripts/check-dependency-direction.sh.
+[dependencies]
+
+[lints]
+workspace = true

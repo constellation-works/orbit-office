@@ -5,13 +5,12 @@ The plugin tree lives in `.orbit-plugin/`; `orbit plugin validate` /
 `orbit plugin test` run against a fresh export of this directory (see
 `make export`).
 
-**Status: scaffold.** Only the `office.status` tool exists. Planned tools
-(each lands with its schemas, handler, goldens and tests):
-
-`capture`, `transcribe`, `extract`, `source.show`, `search`,
-`knowledge.show`, `knowledge.write`, `artifact.show`, `artifact.promote`,
-`attach`, `signals.scan`, `proposal.create`, `proposal.accept`, `metrics`,
-`review.inputs`, `reindex`.
+**Status: scaffold.** Only the `office.status` tool is built. Every other
+tool is planned: it has a registry row in
+`../crates/office-tools/src/registry.rs` and a commented block in its slot in
+`plugin.yaml`, and is not advertised until built. Building one means
+uncommenting its block and adding its schemas and golden
+(`../ARCHITECTURE.md`, "Tools").
 
 ## Layout
 
@@ -23,14 +22,14 @@ The plugin tree lives in `.orbit-plugin/`; `orbit plugin validate` /
 - `.orbit-plugin/skills/` — `orchestrator`, `library-conventions`, `meetings`.
 - `.orbit-plugin/definitions/` — routines, auto-tasks and activities seeded
   disabled. Empty in the scaffold; definitions land with the tools they call.
-- `.orbit-plugin/tests/conformance/` — goldens for `orbit plugin test`
-  (no network, no credentials).
-- `../crates/office-core/`, `../crates/office/` — the Rust backend at the
-  repo root: `office-core` dispatches the Orbit exec envelope and holds the
-  handlers; the `office` binary is the thin surface (argv, stdio). Identity
-  and secrets come from the call context, never input. The manifest,
-  schemas and goldens are held in agreement by
-  `../crates/office/tests/plugin_tree.rs`.
+- `.orbit-plugin/tests/conformance/<tool>.yaml` — one golden file per
+  built tool for `orbit plugin test` (no network, no credentials).
+- `../crates/` — the Rust backend at the repo root (`../ARCHITECTURE.md`):
+  `office-tools` holds the registry, dispatch and one module per tool;
+  `office-core` the envelope and contract types; the `office` binary is the
+  thin surface (argv, stdio). Identity and secrets come from the call
+  context, never input. The manifest, schemas and goldens are held in
+  agreement with the registry by `../crates/office/tests/plugin_tree.rs`.
 
 ## Build
 

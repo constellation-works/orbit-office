@@ -1,0 +1,22 @@
+[package]
+name = "office-tools"
+description = "The office plugin's application layer: one module per tool, the tool registry and dispatch. Reaches files, models and Orbit only through office-core ports."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "office_tools"
+path = "src/lib.rs"
+
+# Application dependencies only: office-core and serde. Adapters (office-store,
+# office-models, office-orbit) are reached through office-core ports, never
+# depended on; scripts/check-dependency-direction.sh enforces it.
+[dependencies]
+office-core = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

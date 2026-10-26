@@ -1,6 +1,6 @@
 [package]
 name = "office-core"
-description = "The office plugin's domain as a library: Orbit exec protocol dispatch and tool handlers. No terminal, no argument parsing."
+description = "The office plugin's pure domain as a library: the exec envelope, tool contract types, domain model and port traits. No I/O, no terminal, no argument parsing."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

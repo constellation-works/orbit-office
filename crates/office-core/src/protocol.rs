@@ -4,93 +4,47 @@
 //! "context": {...}}`; the response is `{"ok": true, "output": {...}}` or
 //! `{"ok": false, "error": {"code", "message", "retryable", "detail"?}}`.
 //! Identity and secrets come from `context`, never from `input`. Unknown
-//! input keys are refused, never silently dropped (STD-01 R29).
+//! input keys are refused, never silently dropped (STD-01 R29); that check
+//! runs in `office-tools`, which knows each tool's accepted keys.
 
 use serde_json::{Map, Value, json};
 
-use crate::NAMESPACE;
 use crate::error::{Error, Result};
-use crate::tools;
 
 /// The exec protocol version this backend speaks.
 pub const SCHEMA_VERSION: u64 = 1;
 
-type Handler = fn(&Map<String, Value>, &Map<String, Value>) -> Value;
-
-/// Every verb this backend serves: name, accepted input keys, handler.
-/// The manifest, schemas and goldens are held equal to this list by tests.
-pub fn tool_table() -> Vec<(&'static str, Vec<&'static str>, Handler)> {
-    vec![("status", Vec::new(), tools::status as Handler)]
+/// One parsed request envelope.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Request {
+    /// The full tool name, `office.<verb>` for this backend.
+    pub tool: String,
+    /// Tool input (an empty object when absent).
+    pub input: Map<String, Value>,
+    /// Call context from Orbit: identity, secrets, roots (an empty object when absent).
+    pub context: Map<String, Value>,
 }
 
-/// Answer one raw request with one serialized response envelope.
-pub fn serve(raw: &str) -> String {
-    match parse(raw).and_then(dispatch) {
-        Ok(output) => json!({ "ok": true, "output": output }).to_string(),
-        Err(error) => {
-            let body = json!({
-                "code": error.code(),
-                "message": error.to_string(),
-                "retryable": error.retryable(),
-            });
-            json!({ "ok": false, "error": body }).to_string()
-        }
-    }
-}
-
-fn dispatch(request: Map<String, Value>) -> Result<Value> {
-    let tool = request.get("tool").and_then(Value::as_str).unwrap_or("");
-    let prefix = format!("{NAMESPACE}.");
-    let Some(verb) = tool.strip_prefix(&prefix) else {
-        return Err(Error::UnknownTool(format!(
-            "{tool:?} (this backend serves only {NAMESPACE}.* tools)"
-        )));
-    };
-    let Some((_, accepted, handler)) = tool_table().into_iter().find(|(name, _, _)| *name == verb)
-    else {
-        return Err(Error::UnknownTool(format!(
-            "{tool} is not a {NAMESPACE} tool"
-        )));
-    };
-
-    let input_value = request
-        .get("input")
-        .cloned()
-        .unwrap_or_else(|| Value::Object(Map::new()));
-    let Some(input) = input_value.as_object() else {
-        return Err(Error::InvalidArgument(
-            "input must be a JSON object".to_string(),
-        ));
-    };
-    let mut unknown: Vec<&str> = input
-        .keys()
-        .map(String::as_str)
-        .filter(|key| !accepted.contains(key))
-        .collect();
-    unknown.sort_unstable();
-    if !unknown.is_empty() {
-        return Err(Error::InvalidArgument(format!(
-            "{tool} does not accept: {}",
-            unknown.join(", ")
-        )));
-    }
-
-    let context_value = request
-        .get("context")
-        .cloned()
-        .unwrap_or_else(|| Value::Object(Map::new()));
-    let Some(context) = context_value.as_object() else {
-        return Err(Error::InvalidRequest(
-            "context must be a JSON object".to_string(),
-        ));
-    };
-    Ok(handler(input, context))
-}
-
-fn parse(raw: &str) -> Result<Map<String, Value>> {
+/// Parse a raw request envelope.
+///
+/// ```
+/// let request =
+///     office_core::protocol::parse(r#"{"schema_version": 1, "tool": "office.status"}"#)?;
+/// assert_eq!(request.tool, "office.status");
+/// assert!(request.input.is_empty());
+/// # Ok::<(), office_core::Error>(())
+/// ```
+///
+/// # Errors
+///
+/// [`Error::InvalidRequest`] when the envelope is not a JSON object or its
+/// `context` is not an object, [`Error::UnsupportedVersion`] for any other
+/// `schema_version`, and [`Error::InvalidArgument`] when `input` is not an
+/// object.
+pub fn parse(raw: &str) -> Result<Request> {
     let parsed: Value = serde_json::from_str(raw)
         .map_err(|error| Error::InvalidRequest(format!("request is not JSON: {error}")))?;
-    let Some(request) = parsed.as_object() else {
+    let Value::Object(mut request) = parsed else {
         return Err(Error::InvalidRequest(
             "request must be a JSON object".to_string(),
         ));
@@ -102,5 +56,48 @@ fn parse(raw: &str) -> Result<Map<String, Value>> {
             request.get("schema_version")
         )));
     }
-    Ok(request.clone())
+    let tool = request
+        .get("tool")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let input = match request.remove("input") {
+        None => Map::new(),
+        Some(Value::Object(input)) => input,
+        Some(_) => {
+            return Err(Error::InvalidArgument(
+                "input must be a JSON object".to_string(),
+            ));
+        }
+    };
+    let context = match request.remove("context") {
+        None => Map::new(),
+        Some(Value::Object(context)) => context,
+        Some(_) => {
+            return Err(Error::InvalidRequest(
+                "context must be a JSON object".to_string(),
+            ));
+        }
+    };
+    Ok(Request {
+        tool,
+        input,
+        context,
+    })
+}
+
+/// Render the one response envelope for a tool's outcome.
+#[must_use]
+pub fn respond(outcome: Result<Value>) -> String {
+    match outcome {
+        Ok(output) => json!({ "ok": true, "output": output }).to_string(),
+        Err(error) => {
+            let body = json!({
+                "code": error.code(),
+                "message": error.to_string(),
+                "retryable": error.retryable(),
+            });
+            json!({ "ok": false, "error": body }).to_string()
+        }
+    }
 }

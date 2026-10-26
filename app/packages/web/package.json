@@ -1,0 +1,10 @@
+{
+  "name": "@orbit-office/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The orbit-office browser UI: one folder per screen, no framework, no bundler.",
+  "devDependencies": {
+    "@orbit-office/contracts": "0.1.0"
+  }
+}

@@ -20,29 +20,43 @@ fail=0
 err() { echo "dependency-direction: $*" >&2; fail=1; }
 
 # --- 1. crate policies -------------------------------------------------------
-# policy <crate>  -> sets ALLOWED (internal deps) and BANNED (external deps)
+# Surface crates: argument parsing, terminals, log subscribers.
+SURFACE="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
+# HTTP clients: only office-models (and the composing binary) may speak HTTP.
+HTTP="ureq reqwest hyper hyper-util isahc attohttpc curl"
+
+# policy <crate>  -> sets ALLOWED (internal deps) and BANNED (external deps).
+# No crate lists office-testkit: it is a dev-dependency only, and
+# dev-dependencies are exempt from this check.
 policy() {
   case "$1" in
     office-common)
       ALLOWED=""
-      # The foundation never parses arguments, draws on a terminal or
-      # installs a log subscriber: those belong to surfaces.
-      BANNED="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
+      BANNED="$SURFACE $HTTP"
       ;;
     office-core)
       ALLOWED="office-common"
-      # The domain never parses arguments, draws on a terminal or installs a
-      # log subscriber: those belong to surfaces.
-      BANNED="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
+      BANNED="$SURFACE $HTTP"
       ;;
-    office-store)
-      ALLOWED="office-common"
-      # Persistence never parses arguments, draws on a terminal or installs
-      # a log subscriber: those belong to surfaces.
-      BANNED="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
+    office-store|office-orbit)
+      ALLOWED="office-common office-core"
+      BANNED="$SURFACE $HTTP"
+      ;;
+    office-models)
+      ALLOWED="office-common office-core"
+      BANNED="$SURFACE"
+      ;;
+    office-tools)
+      # The application reaches adapters only through office-core ports.
+      ALLOWED="office-common office-core"
+      BANNED="$SURFACE $HTTP"
+      ;;
+    office-testkit)
+      ALLOWED="office-common office-core office-store"
+      BANNED="$SURFACE $HTTP"
       ;;
     office)
-      ALLOWED="office-common office-core office-store"
+      ALLOWED="office-common office-core office-store office-models office-orbit office-tools"
       BANNED=""
       ;;
     *) return 1 ;;
@@ -81,7 +95,7 @@ for manifest in crates/*/Cargo.toml; do
     if [[ "$dep" == "$PREFIX" || "$dep" == "$PREFIX"-* ]]; then
       contains "$dep" "$ALLOWED" || err "$crate must not depend on internal crate $dep"
     elif contains "$dep" "$BANNED"; then
-      err "$crate must not depend on $dep (surface crate in the domain)"
+      err "$crate must not depend on $dep (banned for this crate; see ARCHITECTURE.md)"
     fi
   done < <(declared_deps "$manifest")
 done
@@ -102,22 +116,27 @@ ban() {
 
 CORE=crates/office-core/src
 STORE=crates/office-store/src
+TOOLS=crates/office-tools/src
+MODELS=crates/office-models/src
 CLI=crates/office/src
 
 # office-store contracts are I/O-free record shapes (R5); the drivers own
 # all filesystem and SQLite access.
 ban "$STORE/contracts.rs" 'std::(fs|net|process)' "office-store contracts are record shapes: I/O belongs in driver/"
 
-# Core is the protocol domain (R5): every core module is I/O-free today.
-# When a Library persistence module lands, it becomes the one exempt module
-# here, with its own bans, in the same commit.
+# Core is the pure domain (R5): every core module is I/O-free.
 for path in "$CORE"/*; do
   name=$(basename "$path")
   case "$name" in tests) continue ;; esac
-  ban "$path" 'std::(fs|net|process)|tempfile::|rustix::' "core/$name is protocol logic: file and process access belong in a future persistence module"
+  ban "$path" 'std::(fs|net|process)|tempfile::|rustix::' "core/$name is pure domain: file, network and process access belong in an adapter crate"
 done
 # The domain receives resolved inputs in the call context (R3).
 ban "$CORE"          'std::env::|home_dir|current_dir'           "the core crate must not read the environment or discover paths"
+# The application reaches files, models and Orbit only through ports.
+ban "$TOOLS"         'std::(fs|net|process)|tempfile::|rustix::' "office-tools is the application: use an office-core port, not direct I/O"
+ban "$TOOLS"         'std::env::|home_dir|current_dir'           "office-tools must not read the environment or discover paths"
+# Model calls are HTTP only; process spawning belongs elsewhere.
+ban "$MODELS"        'std::process'                              "office-models speaks HTTP only: no subprocesses"
 # Composition does not know about parsing or rendering (R2).
 ban "$CLI/app.rs"    'crate::(cli|output)'                       "app.rs (composition) must not import surface modules"
 # Rendering is derived from payloads only; it never reaches back up (R1).
@@ -133,6 +152,8 @@ for retired in \
   crates/office/src/output/render.rs \
   crates/office/src/output/table.rs \
   crates/office-core/src/note.rs \
+  crates/office-core/src/tools.rs \
+  app/src \
   crates/office-core/src/query.rs \
   crates/office-core/src/store; do
   [[ -e "$retired" ]] && err "retired path exists again: $retired"

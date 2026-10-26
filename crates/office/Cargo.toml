@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 office-core = { workspace = true }
+office-tools = { workspace = true }
 clap = { workspace = true }
 thiserror = { workspace = true }
 

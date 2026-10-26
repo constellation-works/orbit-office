@@ -7,7 +7,7 @@ status: Draft
 feature: office
 doc_role: decisions
 type: design
-summary: Why two crates, why clap has no color, how usage errors render, how the gate checks behave, and the office decisions: a CLI orchestrator, approval by tool visibility, the app as user, the shipped stacks, a PWA rather than a desktop app, typed selections, the Library as its own repository, and where settings live.
+summary: Why two crates, why clap has no color, how usage errors render, how the gate checks behave, and the office decisions: a CLI orchestrator, approval by tool visibility, the app as user, the shipped stacks, a PWA rather than a desktop app, typed selections, the Library as its own repository, where settings live, and the layout built for parallel work.
 tags: [office, decisions]
 paths: ["Cargo.toml", "crates/**", "Makefile", "plugin/**", "app/**"]
 related_features: [office]
@@ -47,6 +47,8 @@ collapse to one crate with STD-02's single-crate check.
 
 - The domain/surface boundary is enforced by the compiler plus
   `check-dependency-direction.sh`, not by review.
+- Update (2026-10-26): the workspace grew to seven crates for parallel work; see
+  [A crate per enforceable edge, a folder per tool, and every shared list written once](#a-crate-per-enforceable-edge-a-folder-per-tool-and-every-shared-list-written-once).
 - Cost: two manifests, a `[workspace.dependencies]` table, and a crate
   boundary that forces `pub` on the core's API where one crate would use
   `pub(crate)`.
@@ -210,7 +212,7 @@ through `orbit tool run` — can call them, and the install script calls
 ## The app acts as the user through `orbit tool run`
 
 **Recorded:** 2026-10-26
-**Code anchors:** `app/src/server/`; `specs/web-app.md`
+**Code anchors:** `app/packages/server/src/`; `specs/web-app.md`
 
 ### Context
 
@@ -451,6 +453,63 @@ foundation depends on nothing internal.
   direction script.
 - Cost: a fourth crate, and each consuming crate carries a small error
   translation at its boundary.
+
+## A crate per enforceable edge, a folder per tool, and every shared list written once
+
+**Recorded:** 2026-10-26
+**Code anchors:** [ARCHITECTURE.md](../../../ARCHITECTURE.md); `crates/office-tools/src/registry.rs`; `scripts/check-dependency-direction.sh`; `scripts/check-app-boundaries.py`; `crates/office/tests/plugin_tree.rs`
+
+### Context
+
+The entry is built by many agents at once, dispatched by Orbit with file-footprint locks.
+In the template layout every new tool edited the same files: the core's tool table, one
+`tools.rs`, the manifest's `tools:` list and the app's single server and web entry files. Two
+parallel tasks would conflict on all of them, and Orbit would serialize them. The other
+choices were to keep that layout and accept serialized tasks, or to generate the shared
+lists at build time (more machinery, and generated files still conflict).
+
+### Decision
+
+- **Crates follow enforceable edges (STD-02@3 §R7).** Four crates are added. `office-tools`
+  (the application) depends only on `office-core`, so no tool can reach files, the network
+  or Orbit except through a port, and every tool runs against fakes. `office-models` is the
+  only crate allowed an HTTP client. `office-orbit` holds the Orbit callbacks. All three are
+  edges the dependency check enforces. `office-testkit` is consumed only as a
+  dev-dependency, by any crate's tests. `office-core` becomes the pure domain: envelope,
+  tool contract types, domain model and port traits. Dispatch and handlers move to
+  `office-tools`.
+- **One folder per feature, one file per tool,** in each layer: `office-tools/src/tools/
+  <family>/`, `app/packages/server/src/features/<f>/`, `app/packages/web/src/screens/<s>/`.
+  Each maps to one spec under `specs/`, so a task's footprint is a few disjoint folders.
+- **Every shared list is written once, up front.** The scaffold commit adds every planned
+  tool to the registry, every family `mod.rs`, a commented block per planned tool in
+  `plugin.yaml`, and every server feature and web screen to their routers. Later tasks edit
+  only their own files, and a reserved manifest block is uncommented in place, so two
+  tasks never touch the same hunk. These files are integrator-owned (ARCHITECTURE.md).
+- **Planned is not advertised (STD-01@2 §R36).** A planned tool has no handler: dispatch
+  refuses it as `unknown_tool` and the manifest lists only built tools. `plugin_tree.rs`
+  checks both. A planned feature mounts no routes and a planned screen is not in the
+  navigation.
+- **The app is npm workspaces** (`contracts`, `server`, `web`) joined by TypeScript project
+  references. Web and server cannot import each other, and feature and screen folders are
+  checked by `scripts/check-app-boundaries.py`.
+
+**Deviation from STD-02@3 §R17 (fewest moving parts), scoped to the scaffold.** Planned
+tool modules, reserved domain, port and adapter modules, and planned features and screens
+exist before the code that uses them. Each holds only its contract (a `ToolSpec`, a feature
+or screen record) and its documentation, no logic. Scope: the hackathon build window. Any
+module still planned at submission (2026-11-04) is deleted with its registry row, reserved
+manifest block and router entry, and its path is added to the retired-paths list.
+
+### Consequences
+
+- Feature tasks run in parallel with disjoint footprints. Only integrator tasks touch the
+  shared files.
+- Ports are declared by the first task that needs them, together with the adapter and the
+  fake, so there are no speculative trait signatures to undo.
+- Cost: seven crates instead of four, and more manifests to keep in step. There are
+  reserved modules that do nothing yet (the §R17 deviation). Commented manifest blocks have
+  to be kept in their slots. The app gains a build step for project references.
 
 ## Template decisions not carried over
 

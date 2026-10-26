@@ -1,66 +1,64 @@
-//! Protocol dispatch: envelopes, unknown tools and unknown input keys.
+//! Envelope parsing and rendering.
 
-use crate::serve;
+use crate::protocol::{parse, respond};
+use crate::{Error, SCHEMA_VERSION};
 use serde_json::{Value, json};
 
-fn call(tool: &str, input: Value) -> Value {
+#[test]
+fn a_full_envelope_parses() {
     let raw = json!({
-        "schema_version": 1,
-        "tool": tool,
-        "input": input,
-        "context": {},
+        "schema_version": SCHEMA_VERSION,
+        "tool": "office.status",
+        "input": { "a": 1 },
+        "context": { "secrets": {} },
     })
     .to_string();
-    serde_json::from_str(&serve(&raw)).expect("response is JSON")
+    let request = parse(&raw).expect("parses");
+    assert_eq!(request.tool, "office.status");
+    assert_eq!(request.input["a"], json!(1));
+    assert!(request.context.contains_key("secrets"));
 }
 
 #[test]
-fn status_ok() {
-    let response = call("office.status", json!({}));
-    assert_eq!(response["ok"], json!(true));
-    assert_eq!(response["output"]["version"], json!(crate::VERSION));
-    assert_eq!(
-        response["output"]["secrets"]["meta_api_key"],
-        json!("unset")
-    );
+fn absent_input_and_context_are_empty_objects() {
+    let raw = json!({ "schema_version": SCHEMA_VERSION, "tool": "office.status" }).to_string();
+    let request = parse(&raw).expect("parses");
+    assert!(request.input.is_empty());
+    assert!(request.context.is_empty());
 }
 
 #[test]
-fn unknown_tool_is_refused() {
-    let response = call("office.nope", json!({}));
-    assert_eq!(response["ok"], json!(false));
-    assert_eq!(response["error"]["code"], json!("unknown_tool"));
+fn bad_envelopes_are_refused_with_their_codes() {
+    let cases = [
+        ("not json".to_string(), "invalid_request"),
+        (json!([1]).to_string(), "invalid_request"),
+        (
+            json!({ "schema_version": 2, "tool": "office.status" }).to_string(),
+            "unsupported_schema_version",
+        ),
+        (
+            json!({ "schema_version": 1, "tool": "office.status", "input": [] }).to_string(),
+            "invalid_argument",
+        ),
+        (
+            json!({ "schema_version": 1, "tool": "office.status", "context": 1 }).to_string(),
+            "invalid_request",
+        ),
+    ];
+    for (raw, code) in cases {
+        let error = parse(&raw).expect_err("refused");
+        assert_eq!(error.code(), code, "{raw}");
+    }
 }
 
 #[test]
-fn wrong_namespace_is_refused() {
-    let response = call("other.status", json!({}));
-    assert_eq!(response["ok"], json!(false));
-    assert_eq!(response["error"]["code"], json!("unknown_tool"));
-}
-
-#[test]
-fn unknown_input_key_is_refused() {
-    let response = call("office.status", json!({ "verbose": true }));
-    assert_eq!(response["ok"], json!(false));
-    assert_eq!(response["error"]["code"], json!("invalid_argument"));
-}
-
-#[test]
-fn bad_json_is_refused() {
-    let response: Value = serde_json::from_str(&serve("not json")).expect("response is JSON");
-    assert_eq!(response["ok"], json!(false));
-    assert_eq!(response["error"]["code"], json!("invalid_request"));
-}
-
-#[test]
-fn wrong_schema_version_is_refused() {
-    let raw = json!({ "schema_version": 2, "tool": "office.status", "input": {}, "context": {} })
-        .to_string();
-    let response: Value = serde_json::from_str(&serve(&raw)).expect("response is JSON");
-    assert_eq!(response["ok"], json!(false));
-    assert_eq!(
-        response["error"]["code"],
-        json!("unsupported_schema_version")
-    );
+fn respond_renders_both_envelopes() {
+    let ok: Value = serde_json::from_str(&respond(Ok(json!({ "x": 1 })))).expect("JSON");
+    assert_eq!(ok, json!({ "ok": true, "output": { "x": 1 } }));
+    let err: Value =
+        serde_json::from_str(&respond(Err(Error::UnknownTool("office.nope".to_string()))))
+            .expect("JSON");
+    assert_eq!(err["ok"], json!(false));
+    assert_eq!(err["error"]["code"], json!("unknown_tool"));
+    assert_eq!(err["error"]["retryable"], json!(false));
 }

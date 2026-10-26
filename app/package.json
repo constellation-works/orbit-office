@@ -4,12 +4,18 @@
   "private": true,
   "type": "module",
   "description": "Local web app for orbit-office: Today, To-dos, Routines, Library, Insights, Review.",
+  "workspaces": [
+    "packages/contracts",
+    "packages/server",
+    "packages/web"
+  ],
   "scripts": {
-    "dev": "tsx watch src/server/index.ts",
-    "start": "node dist/server/index.js",
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "tsc -b",
+    "check": "tsc -b",
+    "typecheck": "tsc -b",
+    "clean": "tsc -b --clean",
+    "dev": "tsc -b && tsx watch packages/server/src/main.ts",
+    "start": "node packages/server/dist/main.js"
   },
   "engines": {
     "node": ">=20"

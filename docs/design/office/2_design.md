@@ -79,13 +79,15 @@ Source: spec §5, §6.6, §8, §13 and §18. Mechanism contracts live in
 
 ### Rust layering inside the backend
 
-See [ARCHITECTURE.md](../../../ARCHITECTURE.md): protocol domain
-(`office-core`: envelope dispatch, tool table, handlers — no I/O),
-composition (`office::app`: stdin → core → envelope), surface
-(`office::cli`, `office::output`: argv, stdout). Persistence is its own
-crate, `office-store`, structured after `orbit-store`
-([specs/store.md](./specs/store.md)); the composition layer will open it
-from the call context when the first Library tool lands.
+See [ARCHITECTURE.md](../../../ARCHITECTURE.md). In short: a pure domain
+(`office-core`: envelope, tool contract types, domain model, port traits),
+adapters behind those ports (`office-store` for the Library, structured
+after `orbit-store` — [specs/store.md](./specs/store.md); `office-models`
+for the Meta and Baseten APIs; `office-orbit` for Orbit callbacks), the
+application (`office-tools`: one module per tool, the registry and
+dispatch), and composition plus surface (`office`: stdin → tools →
+envelope). Each tool, server feature and web screen has its own folder, so
+parallel tasks have disjoint footprints.
 
 ## 2. Tasks, ownership and dispatch (spec §6.6)
 

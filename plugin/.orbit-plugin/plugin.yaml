@@ -60,6 +60,197 @@ spec:
       input_schema: { $ref: schemas/status.request.json }
       output_schema: { $ref: schemas/status.response.json }
 
+    # Planned tools, one reserved block each, in registry order. A planned
+    # tool is not advertised (STD-01 R36). The task that builds one
+    # uncomments its block in place and edits nothing else here
+    # (ARCHITECTURE.md, "Tools"); keep the blank line between blocks.
+
+    # ---- sources ----
+
+    # - name: capture
+    #   description: >-
+    #     Create a source from an upload path or pasted text; dedupe;
+    #     return the id.
+    #   execution_kind: mutating
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/capture.request.json }
+    #   output_schema: { $ref: schemas/capture.response.json }
+
+    # - name: transcribe
+    #   description: >-
+    #     Transcribe a meeting source's original into its body (Muse Voice
+    #     Transcribe).
+    #   execution_kind: mutating
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/transcribe.request.json }
+    #   output_schema: { $ref: schemas/transcribe.response.json }
+
+    # - name: extract
+    #   description: >-
+    #     From a source, produce a summary, decisions and to-dos as
+    #     structured JSON plus a task artifact.
+    #   execution_kind: mutating
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/extract.request.json }
+    #   output_schema: { $ref: schemas/extract.response.json }
+
+    # - name: source.show
+    #   description: >-
+    #     Return a source, optionally at an anchor.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/source.show.request.json }
+    #   output_schema: { $ref: schemas/source.show.response.json }
+
+    # ---- knowledge ----
+
+    # - name: knowledge.show
+    #   description: >-
+    #     Read a page and its back-links.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/knowledge.show.request.json }
+    #   output_schema: { $ref: schemas/knowledge.show.response.json }
+
+    # - name: knowledge.write
+    #   description: >-
+    #     Create or update a page; validate frontmatter and cites; commit.
+    #   execution_kind: mutating
+    #   mcp_scope: none
+    #   input_schema: { $ref: schemas/knowledge.write.request.json }
+    #   output_schema: { $ref: schemas/knowledge.write.response.json }
+
+    # ---- artifacts ----
+
+    # - name: artifact.show
+    #   description: >-
+    #     Read an artifact, its files, its series history and what cites
+    #     it.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/artifact.show.request.json }
+    #   output_schema: { $ref: schemas/artifact.show.response.json }
+
+    # - name: artifact.promote
+    #   description: >-
+    #     Copy an approved task's output into the Library as an artifact;
+    #     write provenance; commit.
+    #   execution_kind: mutating
+    #   mcp_scope: none
+    #   input_schema: { $ref: schemas/artifact.promote.request.json }
+    #   output_schema: { $ref: schemas/artifact.promote.response.json }
+
+    # ---- library ----
+
+    # - name: init
+    #   description: >-
+    #     Scaffold the Library: layout, git repository, config,
+    #     .gitignore, index; idempotent.
+    #   execution_kind: mutating
+    #   mcp_scope: none
+    #   input_schema: { $ref: schemas/init.request.json }
+    #   output_schema: { $ref: schemas/init.response.json }
+
+    # - name: reindex
+    #   description: >-
+    #     Rebuild the SQLite index from the Library.
+    #   execution_kind: mutating
+    #   mcp_scope: none
+    #   input_schema: { $ref: schemas/reindex.request.json }
+    #   output_schema: { $ref: schemas/reindex.response.json }
+
+    # - name: config.set
+    #   description: >-
+    #     Validate and write one Library setting in .office/config.yaml;
+    #     commit.
+    #   execution_kind: mutating
+    #   mcp_scope: none
+    #   input_schema: { $ref: schemas/config.set.request.json }
+    #   output_schema: { $ref: schemas/config.set.response.json }
+
+    # - name: search
+    #   description: >-
+    #     FTS over sources, knowledge and artifacts, with filters by kind,
+    #     tag, series and date.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/search.request.json }
+    #   output_schema: { $ref: schemas/search.response.json }
+
+    # - name: attach
+    #   description: >-
+    #     Pick the knowledge, source and example artifact files for a task
+    #     and copy them into it as task artifacts under context/.
+    #   execution_kind: mutating
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/attach.request.json }
+    #   output_schema: { $ref: schemas/attach.response.json }
+
+    # ---- proposals ----
+
+    # - name: signals.scan
+    #   description: >-
+    #     Run the proposal signals and return candidate proposals with
+    #     evidence.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/signals.scan.request.json }
+    #   output_schema: { $ref: schemas/signals.scan.response.json }
+
+    # - name: proposal.create
+    #   description: >-
+    #     File a proposal task, its artifact and its evidence page.
+    #   execution_kind: mutating
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/proposal.create.request.json }
+    #   output_schema: { $ref: schemas/proposal.create.response.json }
+
+    # - name: proposal.accept
+    #   description: >-
+    #     Apply a proposal's payload; close the task.
+    #   execution_kind: mutating
+    #   mcp_scope: none
+    #   input_schema: { $ref: schemas/proposal.accept.request.json }
+    #   output_schema: { $ref: schemas/proposal.accept.response.json }
+
+    # ---- selection ----
+
+    # - name: selection.get
+    #   description: >-
+    #     Return the user's fresh, unused selections from the app and mark
+    #     them consumed.
+    #   execution_kind: mutating
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/selection.get.request.json }
+    #   output_schema: { $ref: schemas/selection.get.response.json }
+
+    # - name: selection.put
+    #   description: >-
+    #     Record a selection from the app; clear: true empties the tray.
+    #   execution_kind: mutating
+    #   mcp_scope: none
+    #   input_schema: { $ref: schemas/selection.put.request.json }
+    #   output_schema: { $ref: schemas/selection.put.response.json }
+
+    # ---- insights ----
+
+    # - name: metrics
+    #   description: >-
+    #     Compute the analytics metrics for a window.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/metrics.request.json }
+    #   output_schema: { $ref: schemas/metrics.response.json }
+
+    # - name: review.inputs
+    #   description: >-
+    #     Gather a period's completed work, conversions, metrics,
+    #     decisions and knowledge changes for a review.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/review.inputs.request.json }
+    #   output_schema: { $ref: schemas/review.inputs.response.json }
+
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings]
 
   config:

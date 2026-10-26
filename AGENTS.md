@@ -1,6 +1,6 @@
 # office — agent guide
 
-Loaded as both `AGENTS.md` and `CLAUDE.md` (a symlink). `office` is the Orbit exec backend for the orbit-office plugin; it is a Rust workspace built from the constellation Rust CLI template, beside the plugin tree (`plugin/`) and the JavaScript web app (`app/`).
+Loaded as both `AGENTS.md` and `CLAUDE.md` (a symlink). `office` is the Orbit exec backend for the orbit-office plugin; it is a Rust workspace built from the constellation Rust CLI template, beside the plugin tree (`plugin/`) and the TypeScript web app (`app/`, npm workspaces).
 
 <!-- constellation-standards:begin -->
 <!-- Managed by the constellation's operations/scripts/sync-standards.sh; edits inside this block are overwritten. -->
@@ -39,7 +39,8 @@ Reviewers check every change against the adopted standards and report violations
 ## Code
 
 - Layers: [`ARCHITECTURE.md`](ARCHITECTURE.md). Design and decisions: [`docs/design/office/`](docs/design/office/); new features copy [`docs/design/_templates/`](docs/design/_templates/).
-- `office-core` is the domain: no clap, no terminal, no environment reads, no I/O today. Protocol dispatch (`protocol.rs`) and tool handlers (`tools.rs`) are pure over the envelope they are given; identity and secrets arrive in the call context, never in tool input. The CLI crate parses (`cli.rs`), composes (`app.rs`) and renders (`output/`).
+- Layout for parallel work: one folder per feature in each layer, one file per tool (`crates/office-tools/src/tools/<family>/<tool>.rs`), one folder per app feature and screen. Edit only your feature's folders; the integrator-owned files listed in ARCHITECTURE.md (registry, routers, manifests, `Cargo.toml`, `scripts/`) change only in their own task. Building a planned tool or screen: ARCHITECTURE.md ("Tools", "Web app").
+- `office-core` is the pure domain: no clap, no terminal, no environment reads, no I/O. `office-tools` holds dispatch and the handlers and reaches files, models and Orbit only through `office-core` ports; identity and secrets arrive in the call context, never in tool input. The CLI crate parses (`cli.rs`), composes (`app.rs`) and renders (`output/`).
 - Lints come from `[workspace.lints]`: no `unwrap`/`expect` in production code, no `print!` (use `tracing`), no lock guard across `.await`, no wildcard arm on an enum, no narrowing `as`. CI runs clippy with `-D warnings`.
 - Only `crates/office/src/output/` touches stdout, stderr, TTY state or color/format env vars. stdout is the one response envelope only.
 - Errors: typed `thiserror` enums; the core's `Error` crosses into the surface `Error` through its one `#[from]`. Exit codes: 0 ok (tool failures are error envelopes), 1 failure, 2 usage.

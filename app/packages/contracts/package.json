@@ -1,0 +1,13 @@
+{
+  "name": "@orbit-office/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Types shared by the orbit-office server and web UI: the app's HTTP API, feature and screen names.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+[package]
+name = "office-models"
+description = "Model adapters for the office plugin: Meta Model API (Muse Spark, Muse Voice Transcribe) and Baseten (Muse Spark Open), behind office-core ports, with privacy routing. The only crate that speaks HTTP."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "office_models"
+path = "src/lib.rs"
+
+# Dependencies arrive with the first task that needs them, within the policy
+# in scripts/check-dependency-direction.sh.
+[dependencies]
+
+[lints]
+workspace = true

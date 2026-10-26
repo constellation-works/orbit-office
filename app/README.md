@@ -1,13 +1,28 @@
 # orbit-office app
 
 The local web app (TypeScript), installable as a PWA so it opens in its
-own window: a local server plus a single-page UI in
-plain words — Today, To-dos, Routines, Library, Insights, Review. No ids,
-crews, runs or raw statuses are ever shown. There is no Chat screen:
-conversation happens in the user's agent CLI.
+own window: a local server plus a single-page UI in plain words — Today,
+To-dos, Routines, Library, Insights, Review. No ids, crews, runs or raw
+statuses are ever shown. There is no Chat screen: conversation happens in
+the user's agent CLI.
 
-**Status: scaffold.** The server is a placeholder that names the wiring to
-build; the web entry lists the screens. Nothing here talks to Orbit yet.
+**Status: scaffold.** Every server feature and web screen exists as a
+planned stub: planned features mount no routes, and planned screens are
+left out of the navigation. `/healthz` lists the built features.
+
+## Layout
+
+npm workspaces, one TypeScript project per package, joined by project
+references (`tsc -b`). No framework, no bundler. The import boundaries are
+checked by `scripts/check-app-boundaries.py` (`make structure`); the full
+layout is in `../ARCHITECTURE.md` ("Web app").
+
+- `packages/contracts/` — types shared by server and web.
+- `packages/server/` — `main.ts` (composition), `http/` (router, feature
+  contract), `orbit/` (the `orbit tool run --json` client), `dispatch/`
+  (the 30-second pass), `features/<f>/`.
+- `packages/web/` — `static/index.html`, `src/router.ts`, `src/screen.ts`,
+  `src/api/`, `src/ui/`, `src/screens/<s>/`.
 
 ## Wiring to build
 
@@ -26,7 +41,7 @@ build; the web entry lists the screens. Nothing here talks to Orbit yet.
 
 ```bash
 npm install
-npm run check   # tsc --noEmit (strict)
-npm run dev     # tsx watch on the server entry
-npm run build   # emit dist/ for `npm start`
+npm run check   # tsc -b: every package, strict
+npm run dev     # build, then tsx watch on the server entry
+npm start       # run the built server
 ```

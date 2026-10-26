@@ -1,14 +1,19 @@
 [workspace]
 resolver = "3"
-# Four crates, and why: docs/design/office/4_decisions.md
-# ("A domain library crate and a CLI crate", "office-store is its own
-# crate", "office-common is the foundation crate").
+# Seven crates, and why: ARCHITECTURE.md and docs/design/office/4_decisions.md
+# ("A crate per enforceable edge, a folder per tool, and every shared list
+# written once", "office-store is its own crate", "office-common is the
+# foundation crate").
 # A new member needs a policy entry in scripts/check-dependency-direction.sh
 # and a row in ARCHITECTURE.md.
 members = [
     "crates/office-common",
     "crates/office-core",
     "crates/office-store",
+    "crates/office-models",
+    "crates/office-orbit",
+    "crates/office-tools",
+    "crates/office-testkit",
     "crates/office",
 ]
 
@@ -23,6 +28,10 @@ repository = "https://github.com/constellation-works/orbit-office"
 office-common = { path = "crates/office-common" }
 office-core = { path = "crates/office-core" }
 office-store = { path = "crates/office-store" }
+office-models = { path = "crates/office-models" }
+office-orbit = { path = "crates/office-orbit" }
+office-tools = { path = "crates/office-tools" }
+office-testkit = { path = "crates/office-testkit" }
 # No `color` or `wrap_help`: both make clap query the terminal itself, and the
 # output sink is the only place allowed to do that (STD-01 R17). Help is plain
 # text everywhere, which also keeps the help goldens byte-stable.

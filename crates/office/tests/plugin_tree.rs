@@ -37,14 +37,92 @@ fn declared_secrets_match_the_code() {
     }
 }
 
+/// Tool names the manifest declares: uncommented `- name:` entries under
+/// `tools:`, up to the next top-level `spec` key.
+fn declared_tools(manifest: &str) -> Vec<String> {
+    let mut in_tools = false;
+    let mut names = Vec::new();
+    for line in manifest.lines() {
+        let trimmed = line.trim_start();
+        if line.starts_with("  ") && !line.starts_with("   ") && !trimmed.starts_with('#') {
+            in_tools = trimmed == "tools:";
+            continue;
+        }
+        if in_tools && let Some(name) = trimmed.strip_prefix("- name: ") {
+            names.push(name.trim().to_string());
+        }
+    }
+    names
+}
+
 #[test]
-fn each_tool_is_declared_and_its_schema_is_closed() {
+fn the_manifest_declares_exactly_the_built_tools() {
     let manifest = manifest();
-    for (verb, accepted, _) in office_core::tool_table() {
+    let declared = declared_tools(&manifest);
+    for tool in office_tools::tools() {
+        let name = tool.spec().name;
+        if tool.is_built() {
+            assert!(
+                declared.iter().any(|d| d == name),
+                "built tool {name} is declared"
+            );
+        } else {
+            // STD-01 R36: a planned tool is never advertised, but keeps its
+            // reserved, commented slot so building it edits one hunk.
+            assert!(
+                !declared.iter().any(|d| d == name),
+                "planned tool {name} is not declared"
+            );
+            let slot = format!("# - name: {name}");
+            assert!(
+                manifest.lines().any(|line| line.trim() == slot),
+                "planned tool {name} keeps its commented slot in plugin.yaml"
+            );
+        }
+    }
+    let known: Vec<&str> = office_tools::tools()
+        .iter()
+        .map(|t| t.spec().name)
+        .collect();
+    for name in &declared {
         assert!(
-            manifest.contains(&format!("- name: {verb}")),
-            "tool {verb} is declared"
+            known.contains(&name.as_str()),
+            "declared tool {name} is in the registry"
         );
+    }
+}
+
+#[test]
+fn each_manifest_block_matches_its_tool_spec() {
+    // Built or reserved, a tool's block carries the kind and scope its
+    // ToolSpec declares, so uncommenting a reserved block is all it takes.
+    let manifest = manifest();
+    let lines: Vec<&str> = manifest.lines().collect();
+    let uncomment = |line: &str| line.trim().trim_start_matches('#').trim().to_string();
+    for tool in office_tools::tools() {
+        let spec = tool.spec();
+        let header = format!("- name: {}", spec.name);
+        let start = lines
+            .iter()
+            .position(|line| uncomment(line) == header)
+            .unwrap_or_else(|| panic!("no manifest block for {}", spec.name));
+        let block: Vec<String> = lines[start + 1..]
+            .iter()
+            .take_while(|line| !line.trim().is_empty() && !uncomment(line).starts_with("- name:"))
+            .map(|line| uncomment(line))
+            .collect();
+        let kind = format!("execution_kind: {}", spec.execution_kind.as_str());
+        let scope = format!("mcp_scope: {}", spec.mcp_scope.as_str());
+        assert!(block.contains(&kind), "{}: {kind}", spec.name);
+        assert!(block.contains(&scope), "{}: {scope}", spec.name);
+    }
+}
+
+#[test]
+fn each_built_tool_has_a_closed_schema_matching_its_keys() {
+    for tool in office_tools::tools().iter().filter(|tool| tool.is_built()) {
+        let verb = tool.spec().name;
+        let accepted = tool.accepts();
         let request = schema(&format!("schemas/{verb}.request.json"));
         assert_eq!(request["additionalProperties"], serde_json::json!(false));
         let properties: Vec<&str> = request["properties"]
@@ -53,13 +131,14 @@ fn each_tool_is_declared_and_its_schema_is_closed() {
             .unwrap_or_default();
         assert_eq!(properties.len(), accepted.len(), "tool {verb} input keys");
         for key in accepted {
-            assert!(properties.contains(&key), "tool {verb} accepts {key}");
+            assert!(properties.contains(key), "tool {verb} accepts {key}");
         }
+        schema(&format!("schemas/{verb}.response.json"));
     }
 }
 
 #[test]
-fn goldens_cover_every_tool() {
+fn goldens_cover_every_built_tool() {
     let dir = plugin_root().join("tests/conformance");
     let mut text = String::new();
     for entry in fs::read_dir(dir).expect("conformance dir") {
@@ -69,7 +148,8 @@ fn goldens_cover_every_tool() {
         }
     }
     assert!(!text.is_empty());
-    for (verb, _, _) in office_core::tool_table() {
+    for tool in office_tools::tools().iter().filter(|tool| tool.is_built()) {
+        let verb = tool.spec().name;
         assert!(text.contains(&format!("tool: {verb}")), "golden for {verb}");
     }
 }

@@ -1,0 +1,10 @@
+{
+  "name": "@orbit-office/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The orbit-office app server: serves the UI and calls Orbit as the user.",
+  "dependencies": {
+    "@orbit-office/contracts": "0.1.0"
+  }
+}

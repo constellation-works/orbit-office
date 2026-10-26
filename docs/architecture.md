@@ -14,17 +14,21 @@ observe -> propose -> approve -> automate -> measure
   auto-tasks, frictions and agent runs. Pinned to a tested commit; never
   vendored. The office workspace never runs an auto drain: agent to-dos are
   dispatched explicitly by id from the app server.
-- **`office` plugin (`plugin/`).** Namespace `office`, `exec` backend
-  (Rust workspace at the repo root: `crates/office-core`, `crates/office`).
-  Owns the Library (sources, knowledge, artifacts) and its rebuildable
-  SQLite index. Mutations commit the Library git repo.
-- **Web app (`app/`).** A local server plus single-page UI (TypeScript). The server is the
-  only process the browser talks to; it reaches Orbit and the plugin through
-  one long-lived `orbit mcp` stdio client.
-- **Orchestrator agent (in the app server).** A tool-calling loop on Muse
-  Spark over `office.*` tools plus a curated subset of `orbit.*` tools. It
-  plans, routes, proposes and reports; it does not do long-running work and
-  never takes an outward-facing action without approval.
+- **`office` plugin (`plugin/`).** Namespace `office`, `exec` backend: the
+  Rust workspace at the repo root, laid out in [ARCHITECTURE.md](../ARCHITECTURE.md)
+  (one module per tool in `crates/office-tools`). Owns the Library (sources,
+  knowledge, artifacts), its rebuildable SQLite index, and the Library's own
+  git repository, which each mutation commits.
+- **Web app (`app/`).** A local server plus single-page UI (TypeScript, npm
+  workspaces). The server is the only process the browser talks to; it calls
+  Orbit as the user through `orbit tool run --json` and owns the dispatch
+  pass.
+- **Orchestrator agent (the user's agent CLI).** Muse Code by default, running
+  the plugin's `orchestrator` skill over Orbit MCP at agent authority, with
+  the `office.*` tools plus a curated subset of `orbit.*` tools. It plans,
+  routes, proposes and reports; approval tools are hidden from it
+  (`mcp_scope: none`), and it never takes an outward-facing action without
+  approval.
 - **Implementing agents.** Ordinary Orbit task runs using Orbit's existing
   crews. Their output is a task artifact until the user approves it, when it
   is promoted into the Library as an artifact.
@@ -33,7 +37,8 @@ observe -> propose -> approve -> automate -> measure
 
 | Use | Model |
 |---|---|
-| Orchestrator chat + tool calling, summaries, extraction | Muse Spark (Meta Model API) |
+| Orchestrator (the user's agent CLI) | Muse Code |
+| Summaries, extraction, receipts (vision) | Muse Spark (Meta Model API) |
 | Meeting transcription | Muse Voice Transcribe |
 | Sources marked `private` | Muse Spark Open (open weights) |
 

@@ -238,6 +238,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "office-core",
+ "office-tools",
  "serde_json",
  "tempfile",
  "thiserror",
@@ -264,6 +265,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "office-models"
+version = "0.1.0"
+
+[[package]]
+name = "office-orbit"
+version = "0.1.0"
+
+[[package]]
 name = "office-store"
 version = "0.1.0"
 dependencies = [
@@ -273,6 +282,18 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "office-testkit"
+version = "0.1.0"
+
+[[package]]
+name = "office-tools"
+version = "0.1.0"
+dependencies = [
+ "office-core",
+ "serde_json",
 ]
 
 [[package]]
