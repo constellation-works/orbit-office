@@ -4,11 +4,6 @@
   "type": "object",
   "properties": {
     "version": { "type": "string", "description": "The plugin version answering the call." },
-    "library": {
-      "type": "string",
-      "enum": ["present", "absent"],
-      "description": "Whether a Library directory exists under the workspace."
-    },
     "secrets": {
       "type": "object",
       "description": "Each declared secret name mapped to whether Orbit delivered a value. Never a value.",
@@ -20,7 +15,7 @@
       "additionalProperties": false
     }
   },
-  "required": ["version", "library", "secrets"],
+  "required": ["version", "secrets"],
   "additionalProperties": false,
   "$defs": {
     "presence": { "type": "string", "enum": ["set", "unset"] }

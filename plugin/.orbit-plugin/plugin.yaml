@@ -41,9 +41,9 @@ spec:
   tools:
     - name: status
       description: >-
-        Report the plugin version, Library and index health, and which declared
-        secrets are set (names only; never a value). Reads the Library layout
-        under the workspace when present and writes nothing.
+        Report the plugin version and which declared secrets are set (names
+        only; never a value). Library and index health join this output with
+        the `reindex` slice. Writes nothing.
       execution_kind: read_only
       mcp_scope: workspace
       input_schema: { $ref: schemas/status.request.json }
