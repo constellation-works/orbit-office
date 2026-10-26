@@ -1,10 +1,10 @@
 /**
  * App server (scaffold).
  *
- * To build: serve the single-page UI, hold one long-lived `orbit mcp` stdio
- * client (see orbit-client.js), run the orchestrator loop
- * (see orchestrator.js), and run the 30-second dispatch pass for
- * `owner:agent` to-dos. Nothing here talks to Orbit yet.
+ * To build: serve the single-page UI, call Orbit as the user through
+ * `orbit tool run --json` (see orbit-client.ts), and run the 30-second
+ * dispatch pass for `owner:agent` to-dos. Conversation is not here: it
+ * happens in the user's agent CLI. Nothing here talks to Orbit yet.
  */
 import { createServer } from "node:http";
 

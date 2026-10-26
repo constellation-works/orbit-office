@@ -18,7 +18,7 @@ observe -> propose -> approve -> automate -> measure
   (Rust workspace at the repo root: `crates/office-core`, `crates/office`).
   Owns the Library (sources, knowledge, artifacts) and its rebuildable
   SQLite index. Mutations commit the Library git repo.
-- **Web app (`app/`).** A local server plus single-page UI (JavaScript). The server is the
+- **Web app (`app/`).** A local server plus single-page UI (TypeScript). The server is the
   only process the browser talks to; it reaches Orbit and the plugin through
   one long-lived `orbit mcp` stdio client.
 - **Orchestrator agent (in the app server).** A tool-calling loop on Muse

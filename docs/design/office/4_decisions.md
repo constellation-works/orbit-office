@@ -232,32 +232,38 @@ by automation.
 - Cost: a subprocess per tool call, and the app must run as a login
   service for dispatch to continue with the browser closed.
 
-## Rust backend and JavaScript app, not the spec's proposed stacks
+## Rust backend (not Python) and a TypeScript app
 
 **Recorded:** 2026-10-26
-**Code anchors:** `Cargo.toml`, `crates/`; `app/package.json`
+**Code anchors:** `Cargo.toml`, `crates/`; `app/package.json`, `app/tsconfig.json`
 
 ### Context
 
 Spec §5 proposed a Python (`uv`) plugin for the quickest path to audio,
-vision and HTTP SDKs, and a TypeScript web app. Daniel directed the
-shipped stacks on 2026-10-26: Rust, from the constellation Rust CLI
-template, and JavaScript for the web.
+vision and HTTP SDKs. Daniel directed the shipped stacks on 2026-10-26:
+Rust, from the constellation Rust CLI template. The web app briefly went
+to plain JavaScript and was switched back the same day: most app code
+will be agent-written under time pressure, and `tsc --strict` is a
+cheaper reviewer than runtime failures, while the switch was still four
+stub files.
 
 ### Decision
 
-Deviation from the spec's proposed stacks: the backend is the two-crate
-Rust workspace generated from `constellation-works/rust-cli-template`
-(`office-core` + `office`), and the web app is plain JavaScript with no
-build step. Model and transcription calls go over plain HTTPS from Rust;
-no Python SDK is required.
+Deviation from the spec's proposed plugin stack only: the backend is the
+two-crate Rust workspace generated from
+`constellation-works/rust-cli-template` (`office-core` + `office`). The
+web app is TypeScript as the spec proposed — strict `tsc`, no bundler or
+framework; `tsx` only watches sources in dev. Model and transcription
+calls go over plain HTTPS from Rust; no Python SDK is required.
 
 ### Consequences
 
 - The template's standards, gates and goldens govern the backend from the
-  first commit.
+  first commit; the app's gate is `tsc --noEmit` (plus runtime validation
+  at the subprocess boundary — types do not validate arriving JSON).
 - Cost: no Python SDK convenience for the Meta APIs; request shapes are
-  hand-built and must be verified on day 1 (spec §18.5).
+  hand-built and must be verified on day 1 (spec §18.5). The app regains
+  one build step.
 
 ## Selections are typed references, and private selections carry no quote
 

@@ -10,8 +10,7 @@ The web app is the user's console: everything except conversation happens
 here. Plain words only — To-dos, Routines, Library, Needs you, Insights —
 never ids, crews, runs, workflows or raw statuses.
 
-Source: spec §13.1–§13.2. The app is JavaScript (repo decision; the spec
-proposed TypeScript).
+Source: spec §13.1–§13.2.
 
 ## Authority
 

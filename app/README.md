@@ -1,8 +1,9 @@
 # orbit-office app
 
-The local web app: a local server plus a single-page UI in plain words —
-Today, Chat, To-dos, Routines, Library, Insights, Review. No ids, crews,
-runs or raw statuses are ever shown.
+The local web app (TypeScript): a local server plus a single-page UI in
+plain words — Today, To-dos, Routines, Library, Insights, Review. No ids,
+crews, runs or raw statuses are ever shown. There is no Chat screen:
+conversation happens in the user's agent CLI.
 
 **Status: scaffold.** The server is a placeholder that names the wiring to
 build; the web entry lists the screens. Nothing here talks to Orbit yet.
@@ -10,19 +11,21 @@ build; the web entry lists the screens. Nothing here talks to Orbit yet.
 ## Wiring to build
 
 - The server is the only process the browser talks to.
-- It reads and writes Orbit through one long-lived `orbit mcp` stdio client,
-  for both `orbit.*` and `office.*` tools — never by reading `.orbit/`
-  directly, and never through Orbit's dashboard HTTP API.
-- The orchestrator agent runs in the server: a Muse Spark tool-calling loop
-  over `office.*` tools plus a curated subset of `orbit.*` tools.
-- A dispatch pass every 30 seconds submits `backlog` tasks tagged
-  `owner:agent` by id with `orbit.workflow.ship`. The office workspace never
-  runs an auto drain, so `owner:you` to-dos are never submitted.
+- It acts as the user: it calls Orbit with `orbit tool run --json` for
+  both `orbit.*` and `office.*` tools, including the tools hidden from
+  MCP that only the app may call. It never reads `.orbit/` directly, and
+  never through Orbit's dashboard HTTP API.
+- It owns the dispatch pass: every 30 seconds it lists `backlog` tasks
+  tagged `owner:agent` and submits them by id with `orbit run ship <ids>`
+  (review-only). The office workspace never runs an auto drain, so
+  `owner:you` to-dos are never submitted.
 - Live status comes from polling Orbit every few seconds; there is no event bus.
 
 ## Develop
 
 ```bash
-npm run check   # node --check on every source file (no dependencies to install)
-npm run dev
+npm install
+npm run check   # tsc --noEmit (strict)
+npm run dev     # tsx watch on the server entry
+npm run build   # emit dist/ for `npm start`
 ```

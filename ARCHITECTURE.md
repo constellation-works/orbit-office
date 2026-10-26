@@ -6,7 +6,7 @@ an edge changes this file and that script in the same commit.
 
 The Rust workspace is the office plugin's backend. Two other pieces live in
 this repo and are not Rust layers: `plugin/` (the installable Orbit plugin
-tree) and `app/` (the JavaScript web app, which reaches this backend only
+tree) and `app/` (the TypeScript web app, which reaches this backend only
 through Orbit's tools).
 
 ## Layers

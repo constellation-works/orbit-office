@@ -3,7 +3,7 @@ codebase: orbit-office
 owner: daniel
 summary: Local-first office work on Orbit — an office plugin and web app that turn meetings and sources into your to-dos and agents' to-dos, a cited Library, proposals and reviews.
 status: active
-stack: Rust + JavaScript
+stack: Rust + TypeScript
 gate: direct
 standards: STD-01,STD-02,STD-03,STD-04,STD-05
 agents: "—"

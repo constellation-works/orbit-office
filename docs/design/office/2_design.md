@@ -51,8 +51,8 @@ Source: spec §5, §6.6, §8, §13 and §18. Mechanism contracts live in
   recorded in [4_decisions.md](./4_decisions.md). It owns the Library and
   the index. Surface: [specs/plugin-surface.md](./specs/plugin-surface.md);
   envelope: [specs/output-contract.md](./specs/output-contract.md).
-- **Web app:** a local server and a single-page UI (JavaScript; the spec
-  proposed TypeScript — see [4_decisions.md](./4_decisions.md)). The server
+- **Web app:** a local server and a single-page UI (TypeScript, as the
+  spec proposed). The server
   is the only process the browser talks to. It is the user's console, so
   it acts **as the user**: it calls Orbit with `orbit tool run --json` for
   both `orbit.*` and `office.*` tools, including the approval tools the

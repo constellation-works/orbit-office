@@ -1,7 +1,7 @@
 # orbit-office
 
 Local-first office work on [Orbit](https://github.com/constellation-works/orbit): an
-Orbit plugin (`office`, Rust) plus a standalone web app (JavaScript) that together turn
+Orbit plugin (`office`, Rust) plus a standalone web app (TypeScript) that together turn
 meetings, pasted chats and other sources into to-dos for you and for agents, a compounding
 Library of sources / knowledge / artifacts, evidence-backed proposals, and generated
 reviews.
@@ -27,7 +27,7 @@ listed in [docs/architecture.md](docs/architecture.md).
 | `crates/office-store/` | Library persistence, structured after Orbit's `orbit-store`: file driver for sources/knowledge/artifacts, rebuildable SQLite FTS index, atomic writes, schema migrations. |
 | `crates/office/` | The binary: `office orbit-tool` serves one Orbit exec call (JSON envelope on stdin, one on stdout). The plugin launcher execs this binary. |
 | `plugin/` | The installable Orbit plugin tree in `.orbit-plugin/` (`plugin.yaml`, `bin/office` launcher, schemas, skills, definitions, conformance goldens). |
-| `app/` | The local web app (JavaScript): a local server that talks to Orbit through one long-lived `orbit mcp` stdio client, the orchestrator agent loop, and the single-page UI. |
+| `app/` | The local web app (TypeScript): a local server that calls Orbit as the user through `orbit tool run --json`, owns the dispatch pass, and serves the single-page UI. Conversation happens in the user's agent CLI, not here. |
 | `examples/library/` | An example Library layout. A real Library lives in the user's Orbit workspace, not in this repo. |
 | `demo/synthetic/` | Synthetic demo data only. No private or real user data is ever committed here. |
 | `docs/` | Architecture, design docs and the vendored constellation standards. |
