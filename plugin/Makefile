@@ -5,8 +5,8 @@ sync:
 
 lint:
 	uv lock --check
-	uv run ruff check src tests
-	uv run ruff format --check src tests
+	uv run ruff check .orbit-plugin/src tests
+	uv run ruff format --check .orbit-plugin/src tests
 	uv run basedpyright
 
 test:
@@ -14,8 +14,10 @@ test:
 
 check: lint test
 
-# Export the committed plugin tree (Orbit reads plugin.yaml at its root).
+# Export the committed plugin tree for `orbit plugin validate/test/add`.
 # Always from HEAD, never the working tree; the path names the commit.
+# The export root holds .orbit-plugin/, as Orbit expects.
 export:
-	@sha=$$(git rev-parse --short HEAD); out=/tmp/office-plugin-$$sha; \
-	rm -rf "$$out" && mkdir "$$out" && git archive HEAD plugin | tar -x -C "$$out" --strip-components=1 && echo "$$out"
+	@top=$$(git rev-parse --show-toplevel); sha=$$(git rev-parse --short HEAD); \
+	out=/tmp/office-plugin-$$sha; rm -rf "$$out" && mkdir "$$out" && \
+	git -C "$$top" archive HEAD plugin | tar -x -C "$$out" --strip-components=1 && echo "$$out"

@@ -20,7 +20,7 @@ the slices listed in [docs/architecture.md](docs/architecture.md).
 
 | Path | What |
 |---|---|
-| `plugin/` | The installable Orbit plugin (namespace `office`): `plugin.yaml`, the `bin/office` exec launcher, JSON schemas, Python source in `src/office/`, skills, seeded routine/auto-task definitions, and conformance goldens. |
+| `plugin/` | The installable Orbit plugin (namespace `office`): the tree in `.orbit-plugin/` (`plugin.yaml`, `bin/office` launcher, schemas, `src/office/`, skills, definitions, conformance goldens) plus dev tooling (`pyproject.toml`, `tests/`). |
 | `app/` | The local web app (TypeScript): a local server that talks to Orbit through one long-lived `orbit mcp` stdio client, the orchestrator agent loop (Muse Spark tool calling), and the single-page UI (Today, Chat, To-dos, Routines, Library, Insights, Review). |
 | `examples/library/` | An example Library layout (`sources/`, `knowledge/`, `artifacts/`, `proposals/`, `.office/config.yaml`). A real Library lives in the user's Orbit workspace, not in this repo. |
 | `demo/synthetic/` | Synthetic demo data only. No private or real user data is ever committed here. |

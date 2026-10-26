@@ -14,15 +14,16 @@ from office.protocol import TOOLS, serve
 from office.tools import SECRET_NAMES
 
 ROOT = Path(__file__).resolve().parents[1]
+PLUGIN = ROOT / ".orbit-plugin"
 
 
 def manifest() -> dict[str, Any]:
-    data: dict[str, Any] = yaml.safe_load((ROOT / "plugin.yaml").read_text())
+    data: dict[str, Any] = yaml.safe_load((PLUGIN / "plugin.yaml").read_text())
     return data
 
 
 def schema(ref: str) -> dict[str, Any]:
-    data: dict[str, Any] = json.loads((ROOT / ref).read_text())
+    data: dict[str, Any] = json.loads((PLUGIN / ref).read_text())
     return data
 
 
@@ -50,7 +51,7 @@ def test_goldens_satisfy_the_output_schemas() -> None:
     tools = {tool["name"]: tool for tool in manifest()["spec"]["tools"]}
     cases = [
         case
-        for path in sorted((ROOT / "tests" / "conformance").glob("*.yaml"))
+        for path in sorted((PLUGIN / "tests" / "conformance").glob("*.yaml"))
         for case in yaml.safe_load(path.read_text())["tests"]
     ]
     assert cases
@@ -75,13 +76,7 @@ def test_goldens_satisfy_the_output_schemas() -> None:
 
 
 def test_plugin_tree_has_no_symlinks_and_an_executable_launcher() -> None:
-    # Dev-only trees (the uv venv, caches) are never exported; skip them.
-    skipped = {".venv", ".pytest_cache", ".ruff_cache", "__pycache__"}
-    offenders = [
-        path
-        for path in ROOT.rglob("*")
-        if path.is_symlink() and not skipped.intersection(path.relative_to(ROOT).parts)
-    ]
+    offenders = [path for path in PLUGIN.rglob("*") if path.is_symlink()]
     assert not offenders
-    launcher = ROOT / manifest()["spec"]["backend"]["command"]
+    launcher = PLUGIN / manifest()["spec"]["backend"]["command"]
     assert launcher.stat().st_mode & 0o111

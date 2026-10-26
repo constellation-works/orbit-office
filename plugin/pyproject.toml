@@ -27,20 +27,20 @@ package = false
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests"]
+src = [".orbit-plugin/src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = [".orbit-plugin/src"]
 timeout = 60
 empty_parameter_set_mark = "fail_at_collect"
 addopts = "-rs"
 
 [tool.basedpyright]
-include = ["src"]
-extraPaths = ["src"]
+include = [".orbit-plugin/src"]
+extraPaths = [".orbit-plugin/src"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"

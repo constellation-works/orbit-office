@@ -1,8 +1,8 @@
 # office plugin
 
-The installable Orbit plugin (namespace `office`). This directory is the
-plugin root: `orbit plugin validate` / `orbit plugin test` run against a
-fresh export of it.
+The installable Orbit plugin (namespace `office`). The plugin tree lives
+in `.orbit-plugin/`; `orbit plugin validate` / `orbit plugin test` run
+against a fresh export of this directory (see `make export`).
 
 **Status: scaffold.** Only the `office.status` tool exists. Planned tools
 (each lands with its schemas, handler, goldens and tests):
@@ -14,20 +14,21 @@ fresh export of it.
 
 ## Layout
 
-- `plugin.yaml` — manifest (tools, permissions, secrets, skills, panels).
-- `bin/office` — exec backend launcher. The runtime is the Python standard
-  library for the scaffold; the launcher uses `uv` to find (or install into
-  plugin state) Python >= 3.12 and runs `src/office/` from the plugin root.
-- `schemas/` — request/response JSON Schemas per tool, plus `config.json`.
-- `src/office/` — protocol dispatch (`protocol.py`) and tool handlers
-  (`tools.py`). Identity and secrets come from the call context, never input.
-- `skills/` — `orchestrator`, `library-conventions`, `meetings`.
-- `definitions/` — routines, auto-tasks and activities seeded disabled.
-  Empty in the scaffold; definitions land with the tools they call.
-- `tests/conformance/` — goldens for `orbit plugin test` (no network, no
-  credentials).
-- `tests/` (repo-level, under this directory) — pytest suite holding the
-  manifest, schemas, goldens and code in agreement.
+- `.orbit-plugin/plugin.yaml` — manifest (tools, permissions, secrets, skills, panels).
+- `.orbit-plugin/bin/office` — exec backend launcher. The runtime is the
+  Python standard library for the scaffold; the launcher uses `uv` to find
+  (or install into plugin state) Python >= 3.12 and runs `src/office/` from
+  the plugin root.
+- `.orbit-plugin/schemas/` — request/response JSON Schemas per tool, plus `config.json`.
+- `.orbit-plugin/src/office/` — protocol dispatch (`protocol.py`) and tool
+  handlers (`tools.py`). Identity and secrets come from the call context, never input.
+- `.orbit-plugin/skills/` — `orchestrator`, `library-conventions`, `meetings`.
+- `.orbit-plugin/definitions/` — routines, auto-tasks and activities seeded
+  disabled. Empty in the scaffold; definitions land with the tools they call.
+- `.orbit-plugin/tests/conformance/` — goldens for `orbit plugin test`
+  (no network, no credentials).
+- `tests/` — pytest suite holding the manifest, schemas, goldens and code
+  in agreement. `pyproject.toml` / `uv.lock` carry dev tools only.
 
 ## Develop
 
