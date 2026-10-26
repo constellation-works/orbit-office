@@ -100,6 +100,7 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 | System shape, dispatch, authority boundaries | [2_design.md](./2_design.md) | [ORB-16585] |
 | Library data model (sources, knowledge, artifacts, frictions) | [specs/library.md](./specs/library.md) | [ORB-16585] |
 | Plugin tool surface, definitions, config, permissions | [specs/plugin-surface.md](./specs/plugin-surface.md) | [ORB-16585] |
+| Library persistence (`office-store`, after `orbit-store`) | [specs/store.md](./specs/store.md) | [ORB-16585] |
 | Exec envelope contract | [specs/output-contract.md](./specs/output-contract.md) | [ORB-16585] |
 | Orchestrator skill, tools and guardrails | [specs/orchestrator.md](./specs/orchestrator.md) | [ORB-16585] |
 | Proposals and their signals | [specs/proposals.md](./specs/proposals.md) | [ORB-16585] |

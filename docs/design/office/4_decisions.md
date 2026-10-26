@@ -286,6 +286,39 @@ use, and the tray holds at most five.
 - Cost: the agent spends a tool call to read private content the user is
   already looking at.
 
+## office-store is its own crate, structured after orbit-store
+
+**Recorded:** 2026-10-26
+**Code anchors:** `crates/office-store/`; `scripts/check-dependency-direction.sh` (`office-store` policy); [specs/store.md](./specs/store.md)
+
+### Context
+
+The Library needs a file driver, a rebuildable SQLite FTS index, atomic
+writes, path safety and schema migrations. Orbit's persistence crate
+(`orbit-store`, with `orbit-common`'s SQLite helpers) already embodies
+that machinery, but Orbit is a labelled dependency whose code must not be
+vendored into this repo. The alternative shapes were a persistence module
+inside `office-core` (the template's original pattern) or this separate
+crate.
+
+### Decision
+
+Create `crates/office-store`, mirroring orbit-store's structure —
+contracts, `fs` mechanisms, private file/SQLite drivers behind a
+repository facade, one writer connection, ordered migration registry —
+re-implemented at office scale. It depends on no internal crate; the
+`office` composition layer is allowed to depend on it and will open it
+from the call context when the first Library tool lands.
+
+### Consequences
+
+- The persistence boundary is compiler-enforced, and `office-core` stays
+  I/O-free.
+- Cost: a third crate and a second typed error boundary to translate at
+  the surface when the wiring lands. orbit-store machinery this crate
+  omits (read pool, forward-compatible open, contention classes) must be
+  re-added deliberately if scale ever needs it.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.

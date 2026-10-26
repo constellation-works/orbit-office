@@ -1,0 +1,27 @@
+[package]
+name = "office-store"
+description = "Library persistence for the office plugin: file driver for sources/knowledge/artifacts and a rebuildable SQLite FTS index, structured after orbit-store. No terminal, no argument parsing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "office_store"
+path = "src/lib.rs"
+
+# Persistence dependencies only. scripts/check-dependency-direction.sh
+# rejects clap, tracing-subscriber and any other surface crate here.
+[dependencies]
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

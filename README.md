@@ -24,6 +24,7 @@ listed in [docs/architecture.md](docs/architecture.md).
 | Path | What |
 |---|---|
 | `crates/office-core/` | Domain library (no clap, no terminal): the Orbit exec protocol dispatch and the tool handlers. |
+| `crates/office-store/` | Library persistence, structured after Orbit's `orbit-store`: file driver for sources/knowledge/artifacts, rebuildable SQLite FTS index, atomic writes, schema migrations. |
 | `crates/office/` | The binary: `office orbit-tool` serves one Orbit exec call (JSON envelope on stdin, one on stdout). The plugin launcher execs this binary. |
 | `plugin/` | The installable Orbit plugin tree in `.orbit-plugin/` (`plugin.yaml`, `bin/office` launcher, schemas, skills, definitions, conformance goldens). |
 | `app/` | The local web app (JavaScript): a local server that talks to Orbit through one long-lived `orbit mcp` stdio client, the orchestrator agent loop, and the single-page UI. |

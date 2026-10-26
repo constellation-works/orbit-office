@@ -80,9 +80,10 @@ Source: spec §5, §6.6, §8, §13 and §18. Mechanism contracts live in
 See [ARCHITECTURE.md](../../../ARCHITECTURE.md): protocol domain
 (`office-core`: envelope dispatch, tool table, handlers — no I/O),
 composition (`office::app`: stdin → core → envelope), surface
-(`office::cli`, `office::output`: argv, stdout). A Library persistence
-module, when it lands, becomes the one `office-core` module allowed
-filesystem access.
+(`office::cli`, `office::output`: argv, stdout). Persistence is its own
+crate, `office-store`, structured after `orbit-store`
+([specs/store.md](./specs/store.md)); the composition layer will open it
+from the call context when the first Library tool lands.
 
 ## 2. Tasks, ownership and dispatch (spec §6.6)
 

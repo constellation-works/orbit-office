@@ -29,8 +29,14 @@ policy() {
       # log subscriber: those belong to surfaces.
       BANNED="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
       ;;
+    office-store)
+      ALLOWED=""
+      # Persistence never parses arguments, draws on a terminal or installs
+      # a log subscriber: those belong to surfaces.
+      BANNED="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
+      ;;
     office)
-      ALLOWED="office-core"
+      ALLOWED="office-core office-store"
       BANNED=""
       ;;
     *) return 1 ;;
@@ -89,7 +95,12 @@ ban() {
 }
 
 CORE=crates/office-core/src
+STORE=crates/office-store/src
 CLI=crates/office/src
+
+# office-store contracts are I/O-free record shapes (R5); the drivers own
+# all filesystem and SQLite access.
+ban "$STORE/contracts.rs" 'std::(fs|net|process)' "office-store contracts are record shapes: I/O belongs in driver/"
 
 # Core is the protocol domain (R5): every core module is I/O-free today.
 # When a Library persistence module lands, it becomes the one exempt module
