@@ -18,6 +18,9 @@ allow = [
     "Apache-2.0",
     # Unicode-3.0: unicode-ident.
     "Unicode-3.0",
+    # Zlib: foldhash, pulled in by hashbrown and hashlink under rusqlite
+    # (office-store, office-common). Permissive and OSI approved.
+    "Zlib",
 ]
 confidence-threshold = 0.9
 
