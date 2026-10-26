@@ -1,0 +1,66 @@
+schemaVersion: 2
+kind: Plugin
+metadata:
+  name: office
+  version: 0.1.0
+  description: >-
+    Local-first office work on Orbit: capture sources (meetings, pasted chats,
+    documents), maintain a cited Library of knowledge and approved artifacts,
+    propose routines from evidence, and measure how much work agents carry.
+    Scaffold: only `status` exists until the capture slice lands.
+  homepage: https://github.com/constellation-works/orbit-office
+spec:
+  requires:
+    orbit: ">=0.34.0 <1.0.0"
+    host_api: 1
+    platforms: [linux, macos]
+    programs: [uv, git, ffmpeg]
+
+  backend:
+    type: exec
+    command: bin/office
+    args: [orbit-tool]
+    timeout_ms: 60000
+    sandbox: default
+
+  permissions:
+    fs:
+      read: ["{{workspace}}", "{{plugin_state}}"]
+      write: ["{{workspace}}/library", "{{plugin_state}}"]
+    # Meta Model API and the open-weights endpoint only (enforced in code).
+    network: any
+
+  secrets:
+    - name: meta_api_key
+      description: Meta Model API key for Muse Spark and Muse Voice Transcribe.
+      rotatable: true
+    - name: baseten_token
+      description: Token for the Muse Spark Open (open-weights) endpoint used for `private` sources.
+      rotatable: true
+
+  tools:
+    - name: status
+      description: >-
+        Report the plugin version, Library and index health, and which declared
+        secrets are set (names only; never a value). Reads the Library layout
+        under the workspace when present and writes nothing.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/status.request.json }
+      output_schema: { $ref: schemas/status.response.json }
+
+  skills: [skills/orchestrator, skills/library-conventions, skills/meetings]
+
+  config:
+    schema: schemas/config.json
+
+  web:
+    panels:
+      - id: status
+        title: Office Library
+        source: tool:status
+        render: kv
+        group: operations
+        refresh_ms: 60000
+
+  tests: [tests/conformance/*.yaml]

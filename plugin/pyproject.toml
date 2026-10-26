@@ -1,0 +1,46 @@
+[project]
+name = "orbit-office-plugin"
+version = "0.1.0"
+description = "Office plugin for Orbit: sources, Library, proposals, metrics"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+# The scaffold runtime is the standard library only; the launcher runs
+# src/ directly. Keep it that way until a slice needs a locked dependency.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.16.8",
+    "basedpyright>=1.40.1",
+    "jsonschema>=4.26.0",
+    "pyyaml>=6.0.3",
+    "types-pyyaml>=6.0.12.20260906",
+]
+
+# Not a package: the plugin tree is the only copy of the code.
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+timeout = 60
+empty_parameter_set_mark = "fail_at_collect"
+addopts = "-rs"
+
+[tool.basedpyright]
+include = ["src"]
+extraPaths = ["src"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"

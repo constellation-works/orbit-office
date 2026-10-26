@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+# Orbit per-user state and a real user Library — never repository artifacts.
+.orbit/
+/library/
+# Local secrets / environment.
+.env
+.env.*
+!.env.example

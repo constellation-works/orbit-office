@@ -1,0 +1,21 @@
+{
+  "name": "orbit-office-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local web app for orbit-office: Today, Chat, To-dos, Routines, Library, Insights, Review.",
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "start": "node dist/server/index.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

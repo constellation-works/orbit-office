@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.status response",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string", "description": "The plugin version answering the call." },
+    "library": {
+      "type": "string",
+      "enum": ["present", "absent"],
+      "description": "Whether a Library directory exists under the workspace."
+    },
+    "secrets": {
+      "type": "object",
+      "description": "Each declared secret name mapped to whether Orbit delivered a value. Never a value.",
+      "properties": {
+        "meta_api_key": { "$ref": "#/$defs/presence" },
+        "baseten_token": { "$ref": "#/$defs/presence" }
+      },
+      "required": ["meta_api_key", "baseten_token"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["version", "library", "secrets"],
+  "additionalProperties": false,
+  "$defs": {
+    "presence": { "type": "string", "enum": ["set", "unset"] }
+  }
+}

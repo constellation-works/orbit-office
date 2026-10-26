@@ -1,0 +1,15 @@
+# Example Library config. A real Library lives in the user's Orbit
+# workspace at library/.office/config.yaml; this file is only a template.
+retention:
+  meeting_original_days: 90
+sensitivity_defaults:
+  email: private
+  meeting: normal
+  chat: normal
+  receipt: private
+enabled_packs:
+  - meetings
+signal_thresholds:
+  repetition_min_tasks: 3
+  repetition_window_days: 30
+open_weights_endpoint: ""
