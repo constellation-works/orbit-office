@@ -100,5 +100,34 @@ impl Error {
     }
 }
 
+/// The one translator from the common crate's error (STD-02 R12):
+/// shared mechanisms fail with `office_common::Error`, and this crate
+/// surfaces them as its own variants, applied with `?`.
+// `office_common::Error` is `#[non_exhaustive]` in its own crate, so the
+// wildcard arm is required; it maps any future common failure to a
+// generic I/O failure rather than dropping it (STD-02 R27 scoped allow).
+#[allow(clippy::wildcard_enum_match_arm)]
+impl From<office_common::Error> for Error {
+    fn from(error: office_common::Error) -> Self {
+        match error {
+            office_common::Error::UnsafePath { kind, value } => Self::UnsafePath { kind, value },
+            office_common::Error::Io {
+                action,
+                path,
+                source,
+            } => Self::Io {
+                action,
+                path,
+                source,
+            },
+            other => Self::Io {
+                action: "shared mechanism",
+                path: PathBuf::new(),
+                source: std::io::Error::other(other.to_string()),
+            },
+        }
+    }
+}
+
 /// `Result` with this crate's [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;

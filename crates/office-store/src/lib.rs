@@ -7,6 +7,9 @@
 //! live in [`fs`], and the SQLite schema grows through an ordered
 //! migration registry. The shape is reused; the code is this project's.
 //!
+//! Shared mechanisms (fs, SQLite defaults, common types) live in
+//! `office-common`, this workspace's `orbit-common` counterpart.
+//!
 //! - [`contracts`] holds the record shapes every driver agrees on.
 //! - [`repository::LibraryStore`] is the one surface callers use: it owns
 //!   a Library root (plain Markdown files, the source of truth) and an
@@ -22,7 +25,6 @@
 pub mod contracts;
 mod driver;
 mod error;
-mod fs;
 mod repository;
 
 pub use contracts::{DocumentKind, DocumentRecord, SearchFilter, SearchHit};

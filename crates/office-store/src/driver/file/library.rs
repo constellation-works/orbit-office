@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 
 use crate::contracts::{DocumentKind, DocumentRecord};
 use crate::error::{Error, Result};
-use crate::fs::atomic::write_atomic;
-use crate::fs::path_safety::validate_path_stem;
+use office_common::fs::atomic::write_atomic;
+use office_common::fs::path_safety::validate_path_stem;
 
 /// Directory layout created under a Library root.
 const LAYOUT_DIRS: &[&str] = &[
@@ -72,7 +72,7 @@ impl LibraryFs {
                 })?;
             validate_path_stem(name, "path")?;
         }
-        write_atomic(&self.root.join(relative), text.as_bytes())
+        Ok(write_atomic(&self.root.join(relative), text.as_bytes())?)
     }
 
     /// Scan every indexable document in the Library, in path order.

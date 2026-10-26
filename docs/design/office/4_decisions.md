@@ -357,6 +357,37 @@ from the call context when the first Library tool lands.
   omits (read pool, forward-compatible open, contention classes) must be
   re-added deliberately if scale ever needs it.
 
+## office-common is the foundation crate, after orbit-common
+
+**Recorded:** 2026-10-26
+**Code anchors:** `crates/office-common/`; `crates/office-store/src/error.rs` (the `From<office_common::Error>` translator)
+
+### Context
+
+Once `office-store` existed, its fs mechanisms (path safety, atomic
+writes, hashing) and the SQLite pragma set were exactly the kind of code
+every future crate would copy. Orbit solves this with `orbit-common`: a
+shared mechanism crate under everything, with domain contracts kept in
+the owning crates.
+
+### Decision
+
+Create `crates/office-common` at tier 0: the common `Error`, `fs`
+mechanisms, `storage::sqlite::apply_default_pragmas` behind an optional
+`sqlite` feature (so non-SQLite consumers do not pull rusqlite), and
+small shared types (`Sensitivity`, one definition for the store, the
+model router and selection sharing). `office-store`'s fs machinery moved
+into it and the store now depends on it, translating its error through
+one `From` impl. Nothing internal may depend on a surface crate, and the
+foundation depends on nothing internal.
+
+### Consequences
+
+- One definition per shared mechanism, enforced by the dependency-
+  direction script.
+- Cost: a fourth crate, and each consuming crate carries a small error
+  translation at its boundary.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.

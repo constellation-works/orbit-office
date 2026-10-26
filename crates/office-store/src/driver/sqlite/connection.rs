@@ -15,10 +15,6 @@ use crate::contracts::{DocumentKind, DocumentRecord, SearchFilter, SearchHit};
 use crate::driver::sqlite::migration;
 use crate::error::{Error, Result};
 
-/// Default `busy_timeout`: writers under WAL still serialize; this bounds
-/// how long a contending connection spins before surfacing a lock error.
-const BUSY_TIMEOUT_MS: u32 = 5_000;
-
 /// SQLite index handle: one writer connection behind a mutex.
 #[derive(Clone)]
 pub(crate) struct IndexStore {
@@ -216,17 +212,11 @@ fn query_column(conn: &Connection, sql: &str, id: &str, path: &Path) -> Result<V
     Ok(values)
 }
 
-/// The pragma set every index connection gets, in one place so copies
-/// cannot drift.
+/// The pragma set every index connection gets comes from
+/// `office-common`, the one source of truth for SQLite defaults.
 fn apply_default_pragmas(conn: &Connection, path: &Path) -> Result<()> {
-    conn.busy_timeout(std::time::Duration::from_millis(u64::from(BUSY_TIMEOUT_MS)))
-        .map_err(|e| Error::sqlite(path, "set busy_timeout", e))?;
-    conn.execute_batch(
-        "PRAGMA journal_mode = WAL;
-         PRAGMA foreign_keys = ON;
-         PRAGMA synchronous = NORMAL;",
-    )
-    .map_err(|e| Error::sqlite(path, "apply default pragmas", e))
+    office_common::storage::sqlite::apply_default_pragmas(conn)
+        .map_err(|e| Error::sqlite(path, "apply default pragmas", e))
 }
 
 /// Owner-only permissions (`0700` directories, `0600` files), best effort

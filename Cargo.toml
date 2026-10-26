@@ -1,10 +1,12 @@
 [workspace]
 resolver = "3"
-# Three crates, and why: docs/design/office/4_decisions.md
-# ("A domain library crate and a CLI crate", "office-store is its own crate").
+# Four crates, and why: docs/design/office/4_decisions.md
+# ("A domain library crate and a CLI crate", "office-store is its own
+# crate", "office-common is the foundation crate").
 # A new member needs a policy entry in scripts/check-dependency-direction.sh
 # and a row in ARCHITECTURE.md.
 members = [
+    "crates/office-common",
     "crates/office-core",
     "crates/office-store",
     "crates/office",
@@ -18,6 +20,7 @@ license = "MIT"
 repository = "https://github.com/constellation-works/orbit-office"
 
 [workspace.dependencies]
+office-common = { path = "crates/office-common" }
 office-core = { path = "crates/office-core" }
 office-store = { path = "crates/office-store" }
 # No `color` or `wrap_help`: both make clap query the terminal itself, and the

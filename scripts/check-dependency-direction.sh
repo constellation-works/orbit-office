@@ -23,20 +23,26 @@ err() { echo "dependency-direction: $*" >&2; fail=1; }
 # policy <crate>  -> sets ALLOWED (internal deps) and BANNED (external deps)
 policy() {
   case "$1" in
-    office-core)
+    office-common)
       ALLOWED=""
+      # The foundation never parses arguments, draws on a terminal or
+      # installs a log subscriber: those belong to surfaces.
+      BANNED="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
+      ;;
+    office-core)
+      ALLOWED="office-common"
       # The domain never parses arguments, draws on a terminal or installs a
       # log subscriber: those belong to surfaces.
       BANNED="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
       ;;
     office-store)
-      ALLOWED=""
+      ALLOWED="office-common"
       # Persistence never parses arguments, draws on a terminal or installs
       # a log subscriber: those belong to surfaces.
       BANNED="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
       ;;
     office)
-      ALLOWED="office-core office-store"
+      ALLOWED="office-common office-core office-store"
       BANNED=""
       ;;
     *) return 1 ;;

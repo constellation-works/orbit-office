@@ -6,10 +6,10 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use crate::error::{Error, Result};
+use crate::{Error, Result};
 
 /// Validate that `stem` is a single safe path component for a `kind` id.
-pub(crate) fn validate_path_stem(stem: &str, kind: &'static str) -> Result<()> {
+pub fn validate_path_stem(stem: &str, kind: &'static str) -> Result<()> {
     let mut components = Path::new(stem).components();
     let safe = matches!(
         (components.next(), components.next()),
@@ -29,7 +29,7 @@ pub(crate) fn validate_path_stem(stem: &str, kind: &'static str) -> Result<()> {
 /// path-safety machinery for the write paths that resolve caller-supplied
 /// roots (capture, artifact promotion).
 #[allow(dead_code)]
-pub(crate) fn normalize_path(path: &Path) -> PathBuf {
+pub fn normalize_path(path: &Path) -> PathBuf {
     if let Ok(canonical) = path.canonicalize() {
         return canonical;
     }

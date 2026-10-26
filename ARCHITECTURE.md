@@ -13,7 +13,8 @@ through Orbit's tools).
 
 | Tier | Unit | Owns | May depend on |
 |------|------|------|---------------|
-| 1. Persistence | `office-store` (`contracts`, `fs`, `driver::{file,sqlite}`, `repository`) | The Library on disk (plain Markdown, the source of truth) and the rebuildable SQLite FTS index; atomic owner-only writes, path safety, ordered schema migrations. Structured after `orbit-store`. | nothing internal |
+| 0. Foundation | `office-common` (`error`, `fs`, `storage::sqlite`, `Sensitivity`) | The common error type, fs mechanisms (path safety, atomic writes, SHA-256), SQLite connection defaults behind the `sqlite` feature, and small shared types. Structured after `orbit-common`. Contract types here do no I/O. | nothing internal |
+| 1. Persistence | `office-store` (`contracts`, `driver::{file,sqlite}`, `repository`) | The Library on disk (plain Markdown, the source of truth) and the rebuildable SQLite FTS index; ordered schema migrations. Structured after `orbit-store`, on `office-common` machinery. | `office-common` |
 | 1. Protocol domain | `office-core::protocol`, `::tools`, `::error` | The Orbit exec envelope dispatch, the tool table and handlers, secret-presence reporting; the crate's typed `Error`. No I/O. | nothing internal |
 | 2. Composition | `office::app` | Reads one request envelope from stdin, hands it to the core, returns the one response envelope. Will open `office-store` from the call context and pass it to handlers whose tools need the Library. | `office-core`, `office-store` |
 | 3. Surface | `office::cli`, `::output`, `::error` | The one subcommand (`orbit-tool`); writing the envelope to stdout; parse errors as usage errors (exit 2). The only stdout/stderr access. | tiers 1–2 |
@@ -22,8 +23,9 @@ through Orbit's tools).
 
 | Crate | Kind | Internal dependencies | Banned |
 |-------|------|-----------------------|--------|
-| `office-core` | library | — | `clap`, `tracing-subscriber` and any terminal crate |
-| `office-store` | library | — | `clap`, `tracing-subscriber` and any terminal crate |
+| `office-common` | library | — | `clap`, `tracing-subscriber` and any terminal crate |
+| `office-core` | library | — (`office-common` allowed for shared types) | `clap`, `tracing-subscriber` and any terminal crate |
+| `office-store` | library | `office-common` | `clap`, `tracing-subscriber` and any terminal crate |
 | `office` | binary `office` | `office-core`, `office-store` (allowed; wired when the first Library tool lands) | — |
 
 Why two crates rather than one: [docs/design/office/4_decisions.md](docs/design/office/4_decisions.md#a-domain-library-crate-and-a-cli-crate).

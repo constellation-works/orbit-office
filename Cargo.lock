@@ -244,6 +244,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "office-common"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "office-core"
 version = "0.1.0"
 dependencies = [
@@ -256,10 +267,10 @@ dependencies = [
 name = "office-store"
 version = "0.1.0"
 dependencies = [
+ "office-common",
  "rusqlite",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "thiserror",
 ]

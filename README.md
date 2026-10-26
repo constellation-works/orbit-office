@@ -23,6 +23,7 @@ listed in [docs/architecture.md](docs/architecture.md).
 
 | Path | What |
 |---|---|
+| `crates/office-common/` | Shared foundation, after Orbit's `orbit-common`: common error type, fs mechanisms, SQLite connection defaults, small shared types. |
 | `crates/office-core/` | Domain library (no clap, no terminal): the Orbit exec protocol dispatch and the tool handlers. |
 | `crates/office-store/` | Library persistence, structured after Orbit's `orbit-store`: file driver for sources/knowledge/artifacts, rebuildable SQLite FTS index, atomic writes, schema migrations. |
 | `crates/office/` | The binary: `office orbit-tool` serves one Orbit exec call (JSON envelope on stdin, one on stdout). The plugin launcher execs this binary. |

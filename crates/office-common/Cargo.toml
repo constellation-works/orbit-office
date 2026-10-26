@@ -1,0 +1,29 @@
+[package]
+name = "office-common"
+description = "Shared foundation for the office workspace: common error type, filesystem mechanisms, SQLite connection defaults, and small shared types. No terminal, no argument parsing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "office_common"
+path = "src/lib.rs"
+
+[features]
+# Shared SQLite connection defaults. Optional so non-SQLite consumers do
+# not pull rusqlite (after orbit-common's `sqlite` feature).
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+rusqlite = { workspace = true, optional = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

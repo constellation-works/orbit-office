@@ -6,10 +6,10 @@
 use std::io::Write;
 use std::path::Path;
 
-use crate::error::{Error, Result};
+use crate::{Error, Result};
 
 /// Write `bytes` to `path` atomically, with owner-only permissions.
-pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let dir = path.parent().ok_or_else(|| Error::Io {
         action: "resolve parent directory of",
         path: path.to_path_buf(),

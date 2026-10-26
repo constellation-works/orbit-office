@@ -7,7 +7,7 @@ use crate::contracts::{DocumentRecord, SearchFilter, SearchHit};
 use crate::driver::file::library::LibraryFs;
 use crate::driver::sqlite::connection::IndexStore;
 use crate::error::Result;
-use crate::fs::hash::sha256_file;
+use office_common::fs::hash::sha256_file;
 
 /// A Library and its index, opened together.
 pub struct LibraryStore {
@@ -87,6 +87,6 @@ impl LibraryStore {
     /// Hex SHA-256 of a Library file (capture dedupe and `original.*`
     /// pinning both key on this).
     pub fn file_sha256(&self, relative: &Path) -> Result<String> {
-        sha256_file(&self.library_root().join(relative))
+        Ok(sha256_file(&self.library_root().join(relative))?)
     }
 }
