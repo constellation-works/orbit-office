@@ -1,0 +1,157 @@
+---
+type: design
+summary: "Spec: Library — layout, sources, knowledge pages, artifacts and frictions"
+last_validated: 2026-10-26
+---
+
+# Spec: Library
+
+The Library is the user's durable memory: what came in (sources), what is
+understood (knowledge), and what went out (artifacts). Markdown is the
+source of truth; every claim is citable to an anchor in a source.
+
+Source: spec §6.1–§6.5.
+
+## Layout
+
+```
+library/
+  sources/YYYY/MM/<source-id>/
+    source.md            # frontmatter + normalized, anchorable text
+    original.<ext>       # raw upload: m4a, wav, png, jpg, pdf, txt
+    v2.md …              # corrections, as new versions (never overwrite)
+  knowledge/
+    domain/<slug>.md
+    runbooks/<slug>.md
+  artifacts/YYYY/MM/<artifact-id>/
+    artifact.md          # frontmatter + summary (the body itself for text kinds)
+    <files>              # report.md, draft.eml.md, script.py, data.csv, deck.pdf …
+  proposals/<proposal-id>.md   # rendered evidence for each proposal (the record is the Orbit task)
+  .office/config.yaml          # retention, sensitivity defaults, enabled packs
+```
+
+- The index in `plugin_state/index.sqlite` (FTS5 plus link tables) is
+  rebuildable at any time with `office.reindex`.
+- The Library is a git repository. The plugin commits after each mutating
+  tool call, so the history of every page is recoverable. Binaries
+  (`original.*`) are git-ignored, and each is pinned by the `sha256` in
+  its source's frontmatter.
+
+## Sources
+
+**Id:** `src-YYYYMMDD-<slug>`, made unique with a numeric suffix.
+
+**`source.md` frontmatter:**
+
+```yaml
+id: src-20261028-acme-qbr
+kind: meeting            # meeting | chat | email | doc | receipt | bill | conversation | note
+title: Acme QBR
+occurred_at: 2026-10-28T14:00:00-04:00
+captured_at: 2026-10-28T15:02:11-04:00
+captured_by: upload      # upload | paste | routine | orchestrator
+origin: "Zoom recording, uploaded"     # free text: "Slack #pricing, pasted"
+participants: [Jane Park (Acme), Daniel]
+sensitivity: normal      # normal | private
+original: { file: original.m4a, sha256: …, bytes: 48211234, media_type: audio/mp4 }
+derived_by: { transcription: muse-voice-transcribe, at: … }   # how the body was produced
+version: 1
+supersedes: null
+retention: { original_until: 2027-01-26 }  # from config; null = keep
+```
+
+**Body: anchorable text.**
+
+- **Meeting:** one paragraph per speaker turn, prefixed with `[hh:mm:ss] Speaker:`. The anchor is `#t=00:12:31`.
+- **Chat:** one line per message, `[timestamp] Author: text`. The anchor is `#L14-20`.
+- **Email, doc:** paragraphs. The anchor is `#L…`.
+- **Receipt, bill:** extracted fields as a YAML block plus the raw OCR text.
+- **Conversation:** a decision log from an orchestrator session. It quotes the user's directions verbatim and adds one line for each action the agent took. The agent CLI's own transcript belongs to that CLI, so the skill has the agent write this log itself.
+
+**Rules:**
+
+- **Immutable.** A correction writes `v2.md` with `supersedes` set. Citations name a version when it matters, otherwise the latest.
+- **Dedupe.** If the `sha256` of the original, or of the normalized pasted text, matches an existing source, capture returns that source instead of creating a new one.
+- **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. Short directives typed by the user are not captured separately: they go in the `conversation` source.
+- **Conversation sources.** The skill has the agent capture a `conversation` source whenever the user makes a decision or gives a standing direction, and at the end of a session. The user's directions are decisions, and the review needs them.
+- **Retention** is per kind and shown on the Routines screen: for example, keep meeting transcripts forever and drop the audio after 90 days. Expiry deletes only the `original.*` file and records that in the frontmatter.
+
+## Knowledge pages
+
+```yaml
+id: dom-acme-renewal           # dom- | rb-
+type: domain                   # domain | runbook
+title: Acme renewal
+summary: Acme's contract renews in March; Jane Park decides; price sensitivity high.
+tags: [client:acme]
+cites:
+  - src-20261028-acme-qbr#t=00:12:31
+  - src-20261024-slack-pricing#L14-20
+refs:                          # pointers, domain pages only
+  - { label: Master services agreement, path: ~/Documents/Acme/MSA-2025.pdf }
+  - { label: Jane Park, contact: "jane.park@acme.example" }
+  - { label: QBR deck template, artifact: art-20261021-qbr-template }
+related: [rb-client-qbr-prep, dom-acme]
+updated_at: 2026-10-28T15:10:00-04:00
+last_verified: 2026-10-28
+status: current                # current | stale | retired
+```
+
+- Claims in the body carry inline citations, for example `[src-…#t=00:12:31]`. The app renders them as links that open the source at the anchor.
+- **Runbooks** add `inputs`, `steps` and `done_when` sections. These are what an implementing agent follows.
+- **Pointers** (files, links, contacts, templates, account names) live in a domain page's `refs`, on the page about their subject, for example Acme's contacts on `dom-acme`. Each ref has one `path`, `url`, `contact` or `artifact` target. Never secrets.
+- Knowledge may cite artifacts as well as sources, for example a research report's findings folded into a domain page. The artifact's own `cites` keep the chain back to evidence.
+- **Writes** go through `office.knowledge.*` tools, which validate frontmatter, refuse a claim without `cites` (except user-authored pages), and commit. The write tool is hidden from MCP; see [plugin-surface.md](./plugin-surface.md).
+
+## Artifacts
+
+Artifacts are what the agents produce for the user: reports, docs, drafts,
+scripts, data and reviews. A task's output is the record of one run. An
+artifact is the durable, findable result, which later tasks build on.
+
+**Id:** `art-YYYYMMDD-<slug>`. **`artifact.md` frontmatter:**
+
+```yaml
+id: art-20261029-acme-renewal-research
+kind: report             # report | doc | draft | script | data | review | other
+title: Acme renewal — competitor pricing research
+summary: Three competitors undercut by 8–15%; recommends a two-year lock at current rate.
+files: [report.md]       # one or more, beside artifact.md
+task: <orbit-task-id>    # the task that produced it
+produced_by: { crew: muse-wonder, runbook: rb-pricing-research, at: 2026-10-29T10:41:00-04:00 }
+approved: { at: 2026-10-29T11:05:00-04:00, edited: false }   # edited = user changed it before approving
+cites: [src-20261028-acme-qbr#t=00:12:31, dom-acme-renewal]
+series: acme-renewal-research   # groups versions of the same deliverable
+version: 1
+supersedes: null
+sensitivity: normal      # the strictest of what it cites
+tags: [client:acme]
+```
+
+**Lifecycle:**
+
+1. **Produce.** The implementing agent writes its output as Orbit task artifacts (`orbit.task.artifact.put`, up to 1 MiB each), together with a manifest naming the kind, title and what it drew on. The agent never writes into the Library.
+2. **Review.** The task lands in `review`, and the user sees the output under "Needs you".
+3. **Promote.** Approval calls `office.artifact.promote`. It copies the task's output into `library/artifacts/…`, writes the frontmatter (task, producer, cites, whether the user edited it), indexes it and commits. Output that is rejected or never approved stays only on the Orbit task.
+4. **Revise.** A re-run of the same deliverable (next week's report, a corrected draft) promotes a new artifact in the same `series` with `supersedes` set. Approved artifacts are never edited in place.
+
+**Rules by kind:**
+
+- **`draft`** (an email or message for someone else) records `sent_at` once the user sends it. In the hackathon build, sending copies the draft to the clipboard.
+- **`script`** is never run because it was promoted. A script runs only as a step of a routine or auto-task whose accepted proposal named it. That step pins the artifact version by `sha256` and runs inside Orbit's sandbox. Changing the script means a new version and a new proposal.
+- **`review`** holds the generated reviews ([analytics-and-reviews.md](./analytics-and-reviews.md)).
+- **`data`** (csv, json) records its schema in the summary, so later tasks can use it without opening it.
+
+**Compounding.** `office.attach` can attach earlier artifacts in the same
+series, or approved artifacts of the same kind, as examples. Last quarter's
+approved review, or the QBR deck the user accepted unedited, becomes the
+template for the next one. This is the artifacts' part in "gets better
+with time".
+
+## Frictions
+
+Frictions stay Orbit records (`orbit.friction.add` /
+`orbit.friction.update`). The plugin adds a `cites` convention in the
+friction body (source ids, task ids) and a `runbook` field when a runbook
+fixes it. Re-implementing frictions in the plugin would duplicate a core
+record.

@@ -1,17 +1,17 @@
 ---
 title: office — Decisions
-owner: claude
-last_updated: 2026-09-26
-last_validated: 2026-09-26
+owner: daniel
+last_updated: 2026-10-26
+last_validated: 2026-10-26
 status: Draft
 feature: office
 doc_role: decisions
 type: design
-summary: Why two crates, why clap has no color, how usage errors render, and how the standards and gate-tool checks behave locally versus CI.
+summary: Why two crates, why clap has no color, how usage errors render, how the gate checks behave, and the office decisions: a CLI orchestrator, approval by tool visibility, the app as user, the shipped stacks, and typed selections.
 tags: [office, decisions]
-paths: ["Cargo.toml", "crates/**", "Makefile"]
+paths: ["Cargo.toml", "crates/**", "Makefile", "plugin/**", "app/**"]
 related_features: [office]
-related_artifacts: [ORB-13117, ORB-13134]
+related_artifacts: [ORB-13117, ORB-13134, ORB-16585]
 ---
 
 # office — Decisions
@@ -151,6 +151,149 @@ Cargo.lock freshness (`--locked` on every cargo build).
   pass with a gate missing.
 - Cost: a local green `make ci` without those tools is weaker than CI's.
 
+## The orchestrator is the user's agent CLI, not a built agent
+
+**Recorded:** 2026-10-26
+**Code anchors:** `plugin/.orbit-plugin/skills/orchestrator/SKILL.md`; `specs/orchestrator.md`
+
+### Context
+
+The first draft of the spec built an orchestrator agent into the app
+server, with a Chat screen. The user's real workflow already has an agent
+CLI open (Muse Code by default; Claude Code and Codex also speak MCP), and
+Daniel's own constellation setup is exactly an agent session supervising
+Orbit.
+
+### Decision
+
+Ship no agent loop. The orchestrator is the user's agent CLI running the
+`office-orchestrator` skill over Orbit MCP at agent authority. What this
+project builds is the skill, the tool surface and its guardrails. The web
+app has no Chat screen.
+
+### Consequences
+
+- One conversation surface, on the user's chosen provider; the demo keeps
+  it on Meta models through Muse Code.
+- Cost: behaviour depends on the host CLI's skill and hook support, so
+  skill discovery and prompt hooks are day-1 checks, and the selection
+  pull rule must work without any hook.
+
+## Approval is enforced by tool visibility, not by instructions
+
+**Recorded:** 2026-10-26
+**Code anchors:** `plugin/.orbit-plugin/plugin.yaml` (`mcp_scope` per tool); `specs/plugin-surface.md`
+
+### Context
+
+"Propose, don't impose" could be a skill instruction. Instructions are
+advisory: the same agent can be told, or can decide, to write directly.
+Orbit plugin tools declare `mcp_scope`, and `none` keeps a tool off MCP
+while `orbit tool run` can still call it.
+
+### Decision
+
+The approval and write tools (`knowledge.write`, `proposal.accept`,
+`artifact.promote`, `selection.put`, `reindex`) are `mcp_scope: none`.
+Only the app — acting as the user through `orbit tool run` — can call
+them. The orchestrator can propose; it cannot approve or write.
+
+### Consequences
+
+- The guardrail holds regardless of prompt wording.
+- Cost: an interactive agent CLI with shell access could call
+  `orbit tool run` itself. The backstops are its shell approval prompt and
+  the audit trail; both are stated, not hidden, in
+  [2_design.md](./2_design.md#7-concerns--honest-limitations).
+
+## The app acts as the user through `orbit tool run`
+
+**Recorded:** 2026-10-26
+**Code anchors:** `app/src/server/`; `specs/web-app.md`
+
+### Context
+
+The app needs every tool, including the MCP-hidden ones. Orbit's HTTP API
+serves its own dashboard and exposes plugin tools only as read-only panel
+sources; MCP at agent authority deliberately excludes approval and
+dispatch.
+
+### Decision
+
+The app server shells to `orbit tool run --json` as the user, and owns
+the dispatch pass (`orbit run ship <ids>` every 30 seconds for
+`owner:agent` backlog tasks). The office workspace never runs an auto
+drain, so `owner:you` to-dos and `proposed` proposals are never picked up
+by automation.
+
+### Consequences
+
+- One authority model: the app is the user, the CLI agent is an agent.
+- Cost: a subprocess per tool call, and the app must run as a login
+  service for dispatch to continue with the browser closed.
+
+## Rust backend and JavaScript app, not the spec's proposed stacks
+
+**Recorded:** 2026-10-26
+**Code anchors:** `Cargo.toml`, `crates/`; `app/package.json`
+
+### Context
+
+Spec §5 proposed a Python (`uv`) plugin for the quickest path to audio,
+vision and HTTP SDKs, and a TypeScript web app. Daniel directed the
+shipped stacks on 2026-10-26: Rust, from the constellation Rust CLI
+template, and JavaScript for the web.
+
+### Decision
+
+Deviation from the spec's proposed stacks: the backend is the two-crate
+Rust workspace generated from `constellation-works/rust-cli-template`
+(`office-core` + `office`), and the web app is plain JavaScript with no
+build step. Model and transcription calls go over plain HTTPS from Rust;
+no Python SDK is required.
+
+### Consequences
+
+- The template's standards, gates and goldens govern the backend from the
+  first commit.
+- Cost: no Python SDK convenience for the Meta APIs; request shapes are
+  hand-built and must be verified on day 1 (spec §18.5).
+
+## Selections are typed references, and private selections carry no quote
+
+**Recorded:** 2026-10-26
+**Code anchors:** `specs/selection-sharing.md`
+
+### Context
+
+The user points at app content and refers to it in the agent CLI. A DOM
+path would break with each UI change and mean nothing to the agent; a
+copied quote from a `private` source would send private text to a hosted
+model, bypassing the privacy routing.
+
+### Decision
+
+A selection is a typed reference (`object`, `anchor`, `view`) plus a
+quote and its `sha256` — except for private objects, where the quote is
+omitted and the agent must re-read through the office tools. Selections
+live in `plugin_state/selections.sqlite`, expire after 15 minutes or one
+use, and the tray holds at most five.
+
+### Consequences
+
+- The reference survives UI changes, and private material stays behind
+  the routing rule.
+- Cost: the agent spends a tool call to read private content the user is
+  already looking at.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.
+
+## Task References
+
+- [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
+- [ORB-13117] — created the Rust CLI template this workspace was generated from.
+- [ORB-13134] — hardened the template's gates and goldens.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
