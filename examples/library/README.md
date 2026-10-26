@@ -1,8 +1,8 @@
 # Example Library layout
 
-A real Library is created by the `office` plugin in the user's Orbit
-workspace (`~/office/library/` by default) and is a git repository. This
-example only shows the shape:
+A real Library is created by `office.init` in the user's Orbit workspace
+(`~/office/library/` by default). It is a git repository of its own, which
+the workspace repository ignores. This example only shows the shape:
 
 ```
 library/
@@ -12,7 +12,7 @@ library/
     runbooks/<slug>.md             # How-to: repeatable work
   artifacts/YYYY/MM/<artifact-id>/ # approved agent outputs, versioned
   proposals/<proposal-id>.md       # rendered evidence per proposal
-  .office/config.yaml              # retention, sensitivity, enabled packs
+  .office/config.yaml              # Library settings: retention, sensitivity, packs, thresholds
 ```
 
 Markdown is the source of truth; the plugin's SQLite index is rebuildable

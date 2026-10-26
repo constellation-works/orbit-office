@@ -36,8 +36,10 @@ from that surface, not from instructions.
   attach, signals scan, proposal create, metrics, review inputs,
   selection get, status.
 - **Hidden from MCP** (`mcp_scope: none`; only the app calls them, through
-  `orbit tool run`): `office.knowledge.write`, `office.proposal.accept`,
-  `office.artifact.promote`, `office.selection.put`, `office.reindex`.
+  `orbit tool run`; the setup script calls `office.init`): `office.init`,
+  `office.knowledge.write`, `office.proposal.accept`,
+  `office.artifact.promote`, `office.selection.put`, `office.config.set`,
+  `office.reindex`.
   The orchestrator cannot approve its own proposals or write to the
   Library; it can only propose.
 - **`orbit.*` over agent-authority MCP:** Orbit decides what agent

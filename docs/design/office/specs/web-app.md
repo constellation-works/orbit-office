@@ -18,7 +18,9 @@ Source: spec §13.1–§13.2 and §13.4.
 - It acts **as the user**: it calls Orbit with `orbit tool run --json` for
   both `orbit.*` and `office.*` tools, including the tools hidden from MCP
   (`office.knowledge.write`, `office.proposal.accept`,
-  `office.artifact.promote`, `office.selection.put`, `office.reindex`).
+  `office.artifact.promote`, `office.selection.put`, `office.config.set`,
+  `office.reindex`). Settings changed in the app, such as retention on the
+  Routines screen, are written with `office.config.set`.
 - It never reads `.orbit/` directly. Orbit's HTTP API is not used; it
   belongs to Orbit's own dashboard (spec §18.3).
 - It owns the **dispatch pass**: every 30 seconds it lists `backlog` tasks
@@ -47,7 +49,7 @@ app's source or page view.
 
 - Each item has one primary action (approve, edit or dismiss) and a provenance link on every agent output.
 - The **selection tray** shows what the user has shared with the agent ("Shared with agent" pill, one-click clear) — [selection-sharing.md](./selection-sharing.md).
-- Setup is one script: install Orbit, add and enable the plugin, create the workspace, register Orbit MCP with Muse Code, and install the app as a login service. No terminal is needed during use.
+- Setup is one script: install Orbit, create the workspace, add and enable the plugin, run `office.init` ([library.md](./library.md#scaffolding-officeinit)), register Orbit MCP with Muse Code, and install the app as a login service. No terminal is needed during use.
 
 ## Delivery
 

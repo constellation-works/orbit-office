@@ -3,8 +3,7 @@
   "title": "office plugin config",
   "type": "object",
   "properties": {
-    "library_dir": { "type": "string", "description": "Library directory relative to the workspace. Default: library." },
-    "open_weights_endpoint": { "type": "string", "description": "Base URL for the Muse Spark Open endpoint used for `private` sources." }
+    "library_dir": { "type": "string", "description": "Library directory relative to the workspace. Default: library." }
   },
   "additionalProperties": false
 }

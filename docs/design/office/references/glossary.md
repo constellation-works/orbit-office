@@ -15,7 +15,7 @@ stdout, exit code) is excluded.
 | **Knowledge page** | A derived, citable Library page: `domain` (About) or `runbook` (How-to). Rewritten freely; every claim cites a source anchor. |
 | **Artifact** | Agent output the user approved, promoted from a task into the Library, versioned by `series`, never edited in place. |
 | **Friction** | An Orbit record of something that went wrong or slowed work; the plugin adds `cites` and `runbook` conventions, never a second store. |
-| **Library** | The three layers together — sources, knowledge, artifacts — as a git repo in the user's workspace, with a rebuildable SQLite index in plugin state. |
+| **Library** | The three layers together — sources, knowledge, artifacts — as its own git repo inside the user's workspace (ignored by the workspace repo), with a rebuildable SQLite index in plugin state. |
 | **Proposal** | An Orbit task in `proposed`, tagged `proposal:<kind>`, whose acceptance applies a change and whose dismissal is remembered for 30 days. See [specs/proposals.md](../specs/proposals.md). |
 | **Signal** | A mechanical condition computed by `office.signals.scan` (repetition, friction recurrence, staleness, gap, unused automation) that produces a proposal candidate. |
 | **Orchestrator** | The user's own agent CLI (Muse Code by default) running the `office-orchestrator` skill over Orbit MCP. Not code in this repo. See [specs/orchestrator.md](../specs/orchestrator.md). |

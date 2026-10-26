@@ -1,5 +1,6 @@
-# Example Library config. A real Library lives in the user's Orbit
-# workspace at library/.office/config.yaml; this file is only a template.
+# Example Library settings. office.init writes the real file at
+# library/.office/config.yaml; the app changes it through office.config.set.
+# Orbit's [plugins.office] config holds only library_dir.
 retention:
   meeting_original_days: 90
 sensitivity_defaults:

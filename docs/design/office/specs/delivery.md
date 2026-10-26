@@ -35,7 +35,7 @@ Source: spec §14–§16.
 
 | Day | Plugin | App / orchestrator | Demo |
 |---|---|---|---|
-| Tue 10-27 | Repo, manifest, `capture`, Library layout, index, `reindex` | Muse Code wired to Orbit MCP with the office skill (day-1 checks: the skill is listed, and whether a prompt hook exists); app skeleton | Synthetic data plan |
+| Tue 10-27 | Repo, manifest, `init`, `capture`, Library layout, index, `reindex` | Muse Code wired to Orbit MCP with the office skill (day-1 checks: the skill is listed, and whether a prompt hook exists); app skeleton | Synthetic data plan |
 | Wed 10-28 | `transcribe`, `extract`, the meeting routine | Today and To-dos screens | Record or synthesize 3 meetings |
 | Thu 10-29 | `knowledge.*`, `attach`, the agent to-do activity, `artifact.promote` | Source view, Library screen | Seed 6 weeks of history |
 | Fri 10-30 | `signals.scan`, proposals create and accept | Needs you, Routines screens | |

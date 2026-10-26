@@ -7,7 +7,7 @@ status: Draft
 feature: office
 doc_role: decisions
 type: design
-summary: Why two crates, why clap has no color, how usage errors render, how the gate checks behave, and the office decisions: a CLI orchestrator, approval by tool visibility, the app as user, the shipped stacks, a PWA rather than a desktop app, and typed selections.
+summary: Why two crates, why clap has no color, how usage errors render, how the gate checks behave, and the office decisions: a CLI orchestrator, approval by tool visibility, the app as user, the shipped stacks, a PWA rather than a desktop app, typed selections, the Library as its own repository, and where settings live.
 tags: [office, decisions]
 paths: ["Cargo.toml", "crates/**", "Makefile", "plugin/**", "app/**"]
 related_features: [office]
@@ -193,10 +193,11 @@ while `orbit tool run` can still call it.
 
 ### Decision
 
-The approval and write tools (`knowledge.write`, `proposal.accept`,
-`artifact.promote`, `selection.put`, `reindex`) are `mcp_scope: none`.
-Only the app — acting as the user through `orbit tool run` — can call
-them. The orchestrator can propose; it cannot approve or write.
+The approval and write tools (`init`, `knowledge.write`,
+`proposal.accept`, `artifact.promote`, `selection.put`, `config.set`,
+`reindex`) are `mcp_scope: none`. Only the app — acting as the user
+through `orbit tool run` — can call them, and the setup script calls
+`init`. The orchestrator can propose; it cannot approve or write.
 
 ### Consequences
 
@@ -264,6 +265,69 @@ calls go over plain HTTPS from Rust; no Python SDK is required.
 - Cost: no Python SDK convenience for the Meta APIs; request shapes are
   hand-built and must be verified on day 1 (spec §18.5). The app regains
   one build step.
+
+## The Library is its own git repository, and knowledge reaches agents as task artifacts
+
+**Recorded:** 2026-10-26
+**Code anchors:** `plugin/.orbit-plugin/plugin.yaml` `permissions.fs.write`; [specs/library.md](./specs/library.md#git)
+
+### Context
+
+The spec first made the workspace repository the Library repository, with
+the plugin committing after each write and tasks attaching pages through
+`context_files`. Three Orbit facts break that (spec §18.7). Orbit refuses
+a plugin write grant on the workspace's `.git`, so the plugin cannot
+commit there. Plugin writes to tracked files in the primary checkout
+would fail running agent tasks with `primary_checkout_drift`. And runs
+work in a worktree pinned at a commit, so they see only what is
+committed.
+
+### Decision
+
+The Library is a separate git repository at `library/`, created by
+`office.init` inside the plugin's `{{workspace}}/library` write grant;
+the workspace repository ignores `/library/`. `office.attach` copies the
+chosen pages into the task as task artifacts under `context/`, with the
+Library commit they were read at, and agents read them with
+`orbit.task.artifact.get`. `context_files` are not used for Library
+content.
+
+### Consequences
+
+- The plugin owns its repository end to end, and Library writes never
+  disturb Orbit runs.
+- Cost: two repositories in one folder; the Library's history is not in
+  the workspace's, and a backup must cover both. Attachments are copies,
+  so an agent sees the page as of the attach, and `office.attach` becomes
+  a mutating tool.
+
+## Plugin config holds only `library_dir`; Library settings live in the Library
+
+**Recorded:** 2026-10-26
+**Code anchors:** `plugin/.orbit-plugin/schemas/config.json`; [specs/plugin-surface.md](./specs/plugin-surface.md#config-and-permissions)
+
+### Context
+
+The spec listed retention, sensitivity defaults, packs, signal thresholds
+and the open-weights endpoint both in `[plugins.office]` and in
+`.office/config.yaml`, which leaves two sources of truth for the same
+values.
+
+### Decision
+
+`[plugins.office]` holds only `library_dir`, the one value needed to find
+the Library. Every other setting lives in `library/.office/config.yaml`,
+written with defaults by `office.init` and changed by the app through
+`office.config.set` (validated, then committed). Secrets stay in Orbit's
+secret store.
+
+### Consequences
+
+- Settings are versioned with the Library, travel with it, and are read
+  from one place.
+- Cost: Orbit's config schema can no longer validate these values, so
+  the plugin validates `config.yaml` itself on every read, and a hand
+  edit that breaks it fails every tool until it is fixed.
 
 ## A local web app installable as a PWA; the desktop shell waits
 

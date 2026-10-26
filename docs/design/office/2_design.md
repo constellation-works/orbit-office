@@ -72,8 +72,10 @@ Source: spec §5, §6.6, §8, §13 and §18. Mechanism contracts live in
   runbooks.
 - **Orbit workspace:** one dedicated workspace for the office user, for
   example `~/office`, with the Library at `~/office/library/`. The
-  workspace is a git repository — it is the Library repo — which gives
-  Orbit the checkout its runs expect.
+  workspace is a git repository, which gives Orbit the checkout its runs
+  expect. The Library is a separate git repository that the workspace
+  repository ignores ([specs/library.md](./specs/library.md#git)),
+  scaffolded by `office.init` ([specs/library.md](./specs/library.md#scaffolding-officeinit)).
 
 ### Rust layering inside the backend
 
@@ -87,12 +89,16 @@ from the call context when the first Library tool lands.
 
 ## 2. Tasks, ownership and dispatch (spec §6.6)
 
-- **Attaching knowledge.** A task gets its knowledge through
-  `context_files`: the runbook and domain pages, the `source.md` files and
-  any earlier artifacts it needs as examples. The orchestrator calls
-  `office.attach` to pick them (index search over the task's text and
-  tags, plus the `related` graph and artifact series, capped at 8 files),
-  then `orbit.task.update` to set them.
+- **Attaching knowledge.** A task gets its knowledge as task artifacts:
+  the runbook and domain pages, the `source.md` files and any earlier
+  artifacts it needs as examples. The orchestrator calls `office.attach`
+  with the task id. It picks the files (index search over the task's text
+  and tags, plus the `related` graph and artifact series, capped at 8)
+  and copies each into the task with `orbit.task.artifact.put` under
+  `context/<library path>`, recording the Library commit it read. The
+  agent reads them with `orbit.task.artifact.get`. `context_files` cannot
+  be used: runs work in a worktree of the workspace repository pinned at a
+  commit, and that repository does not contain the Library (spec §18.7).
 - **Ownership.** Tags `owner:you` or `owner:agent`. Orbit has no
   human-owned task, and any `backlog` task is admissible to a drain
   (spec §18.1), so **the office workspace never runs an auto drain**
@@ -132,9 +138,11 @@ Three actors, three authorities:
 | Orchestrator (user's agent CLI + skill) | Orbit MCP at agent authority | No — approval tools are `mcp_scope: none` |
 | Implementing agents (Orbit crews) | Ordinary task runs | No — output is a task artifact until approved |
 
-- **Hidden from MCP** (`mcp_scope: none`; only the app calls them):
+- **Hidden from MCP** (`mcp_scope: none`; only the app calls them, and
+  the setup script calls `office.init`): `office.init`,
   `office.knowledge.write`, `office.proposal.accept`,
-  `office.artifact.promote`, `office.selection.put`, `office.reindex`.
+  `office.artifact.promote`, `office.selection.put`, `office.config.set`,
+  `office.reindex`.
   The orchestrator cannot approve its own proposals or write to the
   Library; it can only propose. This is enforced by the tool surface, not
   by instructions.

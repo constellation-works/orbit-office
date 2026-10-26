@@ -27,7 +27,7 @@ Source: spec §12. The one-call envelope is
 | `office.knowledge.write` | mutating | **none** | Create or update a page; validate frontmatter and cites; commit |
 | `office.artifact.show` | read_only | workspace | Read an artifact, its files, its series history and what cites it |
 | `office.artifact.promote` | mutating | **none** | Copy an approved task's output into the Library as an artifact; write provenance; commit |
-| `office.attach` | read_only | workspace | Pick the knowledge, source and example artifact files for a task |
+| `office.attach` | mutating | workspace | Pick the knowledge, source and example artifact files for a task and copy them into it as task artifacts under `context/` |
 | `office.signals.scan` | read_only | workspace | Run the proposal signals and return candidate proposals with evidence |
 | `office.proposal.create` | mutating | workspace | File a proposal task, its artifact and its evidence page |
 | `office.proposal.accept` | mutating | **none** | Apply a proposal's payload; close the task |
@@ -35,14 +35,18 @@ Source: spec §12. The one-call envelope is
 | `office.selection.get` | mutating | workspace | Return the user's fresh, unused selections from the app and mark them consumed. Mutating because it consumes |
 | `office.selection.put` | mutating | **none** | Record a selection from the app; `clear: true` empties the tray |
 | `office.review.inputs` | read_only | workspace | Gather a period's completed work, conversions, metrics, decisions and knowledge changes for a review |
+| `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
+| `office.config.set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
 | `office.reindex` | mutating | **none** | Rebuild the SQLite index from the Library |
 | `office.status` | read_only | workspace | Library and index health (also a panel) |
 
 Rules:
 
 - `mcp_scope: none` tools are callable only by the app, through
-  `orbit tool run`. The orchestrator cannot approve its own proposals,
-  write knowledge, promote artifacts, record selections or reindex
+  `orbit tool run`, and by the setup script for `office.init`. The
+  orchestrator cannot scaffold the Library, approve its own proposals,
+  write knowledge, promote artifacts, record selections, change settings
+  or reindex
   ([orchestrator.md](./orchestrator.md)).
 - `execution_kind` is about consequence: anything that changes state or
   costs money is `mutating`, including `selection.get` (it consumes).
@@ -75,9 +79,14 @@ requires an outward-facing action.
 
 ## Config and permissions
 
-- `[plugins.office]` holds: `library_dir`; `retention` per kind; default
-  `sensitivity` per kind; enabled packs; signal thresholds;
-  `open_weights_endpoint`.
+- **Plugin config** (`[plugins.office]`, schema `schemas/config.json`)
+  holds only `library_dir`, the Library directory relative to the
+  workspace (default `library`; it must stay inside the write grant).
+- **Library settings** live in `library/.office/config.yaml`: `retention`
+  per kind, default `sensitivity` per kind, enabled packs, signal
+  thresholds and `open_weights_endpoint`. `office.init` writes the
+  defaults, the app changes them through `office.config.set`, and the
+  plugin validates the file on every read. Secrets are never in it.
 - **Permissions** (`spec.permissions`, granted at `orbit plugin enable`):
   - fs read and write on `{{workspace}}/library` and `{{plugin_state}}`.
   - network `any`, the only setting that reaches remote hosts. The plugin calls only the Meta and Baseten endpoints.

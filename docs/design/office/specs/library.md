@@ -27,15 +27,60 @@ library/
     artifact.md          # frontmatter + summary (the body itself for text kinds)
     <files>              # report.md, draft.eml.md, script.py, data.csv, deck.pdf …
   proposals/<proposal-id>.md   # rendered evidence for each proposal (the record is the Orbit task)
-  .office/config.yaml          # retention, sensitivity defaults, enabled packs
+  .office/config.yaml          # Library settings: retention, sensitivity, packs, thresholds
+  .gitignore                   # original.* (binaries are pinned by sha256, not tracked)
 ```
 
 - The index in `plugin_state/index.sqlite` (FTS5 plus link tables) is
   rebuildable at any time with `office.reindex`.
-- The Library is a git repository. The plugin commits after each mutating
-  tool call, so the history of every page is recoverable. Binaries
-  (`original.*`) are git-ignored, and each is pinned by the `sha256` in
-  its source's frontmatter.
+## Git
+
+- The Library is its own git repository at `library/`, created by
+  `office.init`. The plugin commits there after each mutating tool call,
+  so the history of every page is recoverable. Binaries (`original.*`)
+  are ignored by the Library's own `.gitignore`, and each is pinned by the
+  `sha256` in its source's frontmatter.
+- The workspace repository ignores `/library/`. Orbit refuses a plugin
+  write grant on the workspace's `.git`, and plugin writes to tracked
+  files in the primary checkout would fail running agent tasks with
+  `primary_checkout_drift`, so the workspace repo cannot be the Library
+  repo ([decision](../4_decisions.md#the-library-is-its-own-git-repository-and-knowledge-reaches-agents-as-task-artifacts)).
+
+## Scaffolding: `office.init`
+
+The setup script creates the Library with one explicit call, after the
+workspace exists and the plugin is enabled:
+
+1. `mkdir ~/office && git init`, add `/library/` to the workspace
+   `.gitignore`, then `orbit workspace init`.
+2. `orbit plugin add` and `orbit plugin enable office`.
+3. `orbit tool run office.init`.
+
+`office.init` (mutating, `mcp_scope: none`) does, in order:
+
+1. Refuses if `library_dir` is not inside the granted write root
+   (`{{workspace}}/library`), or if `git` is missing.
+2. Creates the layout directories, with a `.gitkeep` in each empty one.
+3. Runs `git init` in `library/` if it is not already a repository.
+4. Writes `.office/config.yaml` from the plugin's bundled default, and the
+   `.gitignore`.
+5. Creates or migrates `plugin_state/index.sqlite`, then reindexes.
+6. Commits whatever it created ("Initialize the Library").
+
+It is idempotent: it creates only what is missing and never overwrites an
+existing config, `.gitignore` or page. A second run on a complete Library
+changes nothing and reports `already_initialized`. The result lists what
+was created.
+
+Other tools open the store, which still creates the layout directories
+(`LibraryStore::open`, a safety net), but they never write the config,
+run `git init` or commit outside their own change. A tool that finds the
+Library uninitialized (no repository or no config) refuses with
+`library_not_initialized` and names `office.init`.
+
+Demo history goes in after `office.init`, through `office.capture` and
+the other tools rather than by copying files, so the seeded Library has
+real commits, a real index and real provenance.
 
 ## Sources
 
