@@ -113,6 +113,16 @@ function homeOf(env: NodeJS.ProcessEnv): string {
 }
 
 /**
+ * `${NAME:-fallback}`: an unset or empty override uses `fallback`.
+ * A non-empty value is the directory itself.
+ */
+function overrideOr(env: NodeJS.ProcessEnv, name: string, fallback: string): string {
+  const value = env[name];
+  if (value === undefined || value === "") return fallback;
+  return value;
+}
+
+/**
  * Report the agent CLI connection: the first CLI (Muse Code, Claude Code,
  * Codex) whose user settings register Orbit MCP, or Muse Code disconnected
  * when none does. `env` defaults to the server's environment and is
@@ -121,17 +131,17 @@ function homeOf(env: NodeJS.ProcessEnv): string {
 export function agentCliStatus(env: NodeJS.ProcessEnv = process.env): AgentCliStatus {
   const home = homeOf(env);
   if (home !== "") {
-    const museConfig = env["XDG_CONFIG_HOME"] ?? join(home, ".config");
+    const museConfig = overrideOr(env, "XDG_CONFIG_HOME", join(home, ".config"));
     const museSettings = readText(join(museConfig, "muse", "settings.json"));
     if (museSettings !== undefined && mcpServersHasOrbit(museSettings)) {
       return { cli: "Muse Code", connected: true };
     }
-    const claudeConfig = env["CLAUDE_CONFIG_DIR"] ?? home;
+    const claudeConfig = overrideOr(env, "CLAUDE_CONFIG_DIR", home);
     const claudeSettings = readText(join(claudeConfig, ".claude.json"));
     if (claudeSettings !== undefined && mcpServersHasOrbit(claudeSettings)) {
       return { cli: "Claude Code", connected: true };
     }
-    const codexHome = env["CODEX_HOME"] ?? join(home, ".codex");
+    const codexHome = overrideOr(env, "CODEX_HOME", join(home, ".codex"));
     const codexConfig = readText(join(codexHome, "config.toml"));
     if (codexConfig !== undefined && tomlHasOrbitMcp(codexConfig)) {
       return { cli: "Codex", connected: true };
