@@ -3,10 +3,12 @@
  * the app shell only (docs/design/office/specs/web-app.md#delivery).
  *
  * The cache is written once, at install time, from `SHELL_ASSETS` below;
- * no fetch handler ever stores a response, so `/api/*` and `/healthz`
- * always come live from the local server and are never cached. Same-origin
- * navigations fall back to the cached shell when the network fails; there
- * is no offline data mode.
+ * no fetch handler ever stores a response, so live-data `/api/*` endpoints
+ * and `/healthz` always come live from the local server and are never
+ * cached. Same-origin navigations fall back to the cached shell when the
+ * network fails; there is no offline data mode. The one static file under
+ * the `/api/` prefix, the compiled `/api/client.js` module, is part of the
+ * shell (see `isApiRequest`), not live data.
  *
  * Self-contained on purpose: the shell list and the live-data check live
  * here (no imports to resolve at install time) and are covered by driving
@@ -17,7 +19,15 @@
  * worker-scope shapes below are declared locally instead of imported.
  */
 
-/** The app shell: the only URLs the worker ever stores. */
+/**
+ * The app shell: the only URLs the worker ever stores. Beyond the shell
+ * documents, this lists every JS module statically reachable from
+ * `/main.js`, so an offline navigation fallback can actually boot:
+ * `main.js` imports `pwa/register.js` and `router.js`, the router imports
+ * every screen, and screens import `api/client.js` and `ui/*.js`.
+ * `pwa.test.mjs` derives that graph from the compiled `main.js` and
+ * fails when a reachable module is missing here.
+ */
 const SHELL_ASSETS: readonly string[] = [
   "/",
   "/style.css",
@@ -26,14 +36,37 @@ const SHELL_ASSETS: readonly string[] = [
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon-maskable-512.png",
+  "/pwa/register.js",
+  "/router.js",
+  "/api/client.js",
+  "/ui/index.js",
+  "/ui/card.js",
+  "/ui/pill.js",
+  "/ui/provenance.js",
+  "/ui/action.js",
+  "/ui/state.js",
+  "/screens/insights/index.js",
+  "/screens/library/index.js",
+  "/screens/review/index.js",
+  "/screens/routines/index.js",
+  "/screens/source/index.js",
+  "/screens/today/index.js",
+  "/screens/todos/index.js",
+  "/screens/todos/view.js",
 ];
 
 /** Cache name for the shell. Bump when the shell's bytes change. */
-const SHELL_CACHE = "office-shell-v1";
+const SHELL_CACHE = "office-shell-v2";
 
-/** True for live-data paths, which the worker must never cache. */
+/**
+ * True for live-data paths, which the worker must never cache. A `.js`
+ * path under `/api/` is the compiled client module (`dist/api/client.js`,
+ * served as a static file), not a live endpoint, so it stays cacheable.
+ */
 function isApiRequest(pathname: string): boolean {
-  return pathname === "/api" || pathname.startsWith("/api/") || pathname === "/healthz";
+  if (pathname === "/healthz") return true;
+  if (pathname === "/api" || pathname.startsWith("/api/")) return !pathname.endsWith(".js");
+  return false;
 }
 
 /** `ExtendableEvent` subset the worker uses. */
