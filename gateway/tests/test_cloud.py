@@ -167,7 +167,12 @@ class Policy(CloudCase):
         self.assertEqual(self.cli.runs(), [])
 
     def test_a_missing_program_is_reported(self) -> None:
-        self.path = "/usr/bin:/bin"
+        # An empty PATH directory, not /usr/bin:/bin: CI runners preinstall
+        # gcloud there, so the "missing" program must be missing by
+        # construction, not by host inventory.
+        empty = self.state / "empty-path"
+        empty.mkdir(parents=True, exist_ok=True)
+        self.path = str(empty)
         self.refused("program_unavailable", "run", {"program": "gcloud", "args": ["projects", "list"]})
 
 
