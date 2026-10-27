@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const FAKE_SOURCE = `#!/usr/bin/env node
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const state = process.env.FAKE_ORBIT_STATE ?? ".";
@@ -27,6 +27,28 @@ function sleep(ms) {
 }
 
 async function main() {
+  if (args[0] === "plugin" && args[1] === "secret") {
+    if (args[2] === "set") {
+      const chunks = [];
+      for await (const chunk of process.stdin) chunks.push(chunk);
+      const value = Buffer.concat(chunks).toString("utf8");
+      appendFileSync(join(state, "secret-stdin.log"), JSON.stringify({ slot: args[4], value }) + "\\n");
+      // Deliberately hostile output: the server must discard both streams.
+      process.stdout.write(value);
+      process.stderr.write(value);
+      if (process.env.FAKE_SECRET_FAIL === "1") process.exitCode = 3;
+      else {
+        try {
+          const fixtures = JSON.parse(readFileSync(join(state, "gateway.json"), "utf8"));
+          for (const item of fixtures["gateway.connection-list"].connections) {
+            if (item.slot === args[4]) item.slot_state = "set";
+          }
+          writeFileSync(join(state, "gateway.json"), JSON.stringify(fixtures));
+        } catch {}
+      }
+    }
+    return;
+  }
   if (args[0] === "tool" && args[1] === "run") {
     const tool = args[2] ?? "";
     const inputIndex = args.indexOf("--input");
@@ -55,6 +77,23 @@ async function main() {
           tasks = [];
         }
         process.stdout.write(JSON.stringify({ tasks, total: tasks.length, truncated: false }) + "\\n");
+        return;
+      }
+      if (tool.startsWith("gateway.")) {
+        let fixtures = {};
+        try { fixtures = JSON.parse(readFileSync(join(state, "gateway.json"), "utf8")); } catch {}
+        if (tool === "gateway.connection-put") {
+          const listed = fixtures["gateway.connection-list"] ?? { connections: [], free_slots: 16 };
+          const previous = listed.connections.find((item) => item.name === input.name);
+          const saved = { ...input, slot: input.auth.scheme === "none" ? null : "conn_03", slot_state: previous?.slot_state ?? "unset" };
+          fixtures["gateway.connection-list"] = { ...listed, connections: [...listed.connections.filter((item) => item.name !== input.name), saved] };
+          writeFileSync(join(state, "gateway.json"), JSON.stringify(fixtures));
+          process.stdout.write(JSON.stringify({
+            connection: saved, created: previous === undefined, released_slot: fixtures.released_slot ?? null,
+          }));
+        } else {
+          process.stdout.write(JSON.stringify(fixtures[tool] ?? {}));
+        }
         return;
       }
       process.stdout.write(JSON.stringify({ ok: true, tool, input }) + "\\n");

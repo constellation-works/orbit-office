@@ -22,7 +22,8 @@ export type ScreenId =
   | "routines"
   | "library"
   | "insights"
-  | "review";
+  | "review"
+  | "settings";
 
 /** `GET /healthz`: the app is up, and which features it serves. */
 export interface Health {
@@ -43,6 +44,39 @@ export interface AgentCliStatus {
 export interface SettingsStatus {
   agentCli: AgentCliStatus;
 }
+
+/** Gateway connection fields; credential values never belong to a tool input. */
+export interface ConnectionInput {
+  name: string;
+  base_url: string;
+  auth: { scheme: "bearer" | "basic" | "header" | "none"; header?: string; username?: string };
+  methods: string[];
+  drafts: string[];
+  timeout_seconds: number;
+  max_response_bytes: number;
+  disabled: boolean;
+}
+
+/** Only the app's HTTP write accepts a secret, forwarded exclusively on stdin. */
+export interface ConnectionWrite extends ConnectionInput { secret?: string }
+export interface SettingsConnection extends ConnectionInput { slot_state: "set" | "unset" | "none" }
+export interface SettingsConnections { connections: SettingsConnection[]; free_slots: number }
+export interface ConnectionSaved { connection: SettingsConnection; created: boolean }
+
+/** Redacted gateway audit metadata, never response bodies. */
+export interface ApiCall {
+  time: string;
+  caller: { agent?: string; model?: string };
+  tool: string;
+  connection: string | null;
+  method: string | null;
+  path: string | null;
+  status: number | null;
+  bytes: number;
+  duration_ms: number;
+  outcome: string;
+}
+export interface SettingsApiCalls { records: ApiCall[]; skipped: number }
 
 /** Work shown on Today. Keys identify items for the UI, never display labels. */
 export interface TodayItem {

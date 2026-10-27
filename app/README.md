@@ -16,6 +16,28 @@ planned features mount no routes, and planned screens stay out of navigation.
 serving with loopback Host/Origin guards, and the dispatch pass — is
 built (below).
 
+Settings has a built screen with Connections and API calls sections. Its navigation
+registration in `web/src/router.ts` remains a separate integrator change; it is
+not reachable from the main navigation yet. The screen's browser suite mounts
+the production renderer directly for validation.
+
+Connections lists API access and secret presence, with add, edit, disable and
+enable controls. The server calls `gateway.connection-list` and
+`gateway.connection-put`; the secret goes only to
+`orbit plugin secret set gateway <slot>` on stdin. Its child output is discarded,
+and HTTP errors contain fixed codes rather than child diagnostics. Password
+inputs start empty and clear before a save awaits its response. A failed secret
+write reports that the connection itself was saved. An origin change removes
+the old slot value with `orbit plugin secret rm gateway <slot>`.
+
+API calls reads `gateway.audit-list`, showing up to 100 recent requests newest
+first, with time, connection, method, path, HTTP status, size, duration and caller
+labels. It omits response bodies and internal caller identifiers. Both sections
+show failures and empty states separately, and support the shared light theme
+at desktop and phone widths. The Settings endpoints are
+`GET /api/settings/connections`, `POST /api/settings/connections/put` and
+`GET /api/settings/api-calls`; `GET /api/settings` still reports the agent CLI.
+
 ## Layout
 
 npm workspaces, one TypeScript project per package, joined by project
@@ -76,6 +98,18 @@ node --test app/packages/web/test/today.browser.mjs  # from the repository root,
 Set `TODAY_SCREENSHOTS_DIR` to a directory under `.orbit/tmp/` to also capture
 the populated and empty Today views at desktop and 375px widths. This suite
 uses an in-memory Orbit client and starts and closes its own loopback server.
+
+The Settings browser suite uses a fake Orbit executable and starts and closes
+its own fixture server and browser, including add/edit/disable behavior:
+
+```bash
+. "$ORBIT_BROWSER_KIT_ENV"
+SETTINGS_SCREENSHOTS_DIR="$PWD/.orbit/tmp/screenshots" node --test app/packages/web/test/settings.browser.mjs
+```
+
+Run this from the repository root after the app build. It captures Connections,
+the connection editor and API calls at 1440px and 375px. A before screenshot is
+not applicable because the base has no Settings screen.
 
 ## Develop
 

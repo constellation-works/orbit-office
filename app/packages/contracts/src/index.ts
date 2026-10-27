@@ -7,10 +7,17 @@
  */
 export type {
   AgentCliStatus,
+  ApiCall,
+  ConnectionInput,
+  ConnectionSaved,
+  ConnectionWrite,
   FeatureName,
   Health,
   ScreenId,
   SettingsStatus,
+  SettingsConnection,
+  SettingsConnections,
+  SettingsApiCalls,
   Status,
   Today,
   TodayItem,
