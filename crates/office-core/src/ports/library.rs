@@ -265,6 +265,22 @@ pub trait Library {
     fn read_source(&self, _id: &str) -> Result<SourceView> {
         Err(Error::LibraryUnavailable)
     }
+    /// Read an original or named frame up to source::access::MEDIA_LIMIT bytes.
+    /// Validate the latest source's private-route rules before payload access;
+    /// hold a shared writer lock so a sensitivity upgrade cannot race the read.
+    fn source_media(
+        &self,
+        _id: &str,
+        _selection: &crate::domain::source::access::MediaSelection,
+    ) -> Result<crate::domain::source::access::SourceMedia> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Rewrite sensitivity under the writer lock; private cannot become normal.
+    /// Preserve unrelated source metadata, reindex and commit once; no-op updates
+    /// do not commit. A refusal leaves the source, index and history unchanged.
+    fn set_source_sensitivity(&self, _id: &str, _sensitivity: &str) -> Result<SourceView> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Scaffold the Library (layout, git, config, `.gitignore`, index, one
     /// commit). `library_dir`, when given, is the requested Library location
     /// (workspace-relative or absolute); an adapter refuses one outside its

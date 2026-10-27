@@ -3,6 +3,8 @@
 //! The meeting body is the first rule this module owns. Capture, ids and
 //! retention stay with the task that builds `office.transcribe`.
 
+/// Source display metadata, bounded media and monotonic privacy updates.
+pub mod access;
 /// KT video planning and processing state.
 pub mod video;
 
@@ -856,7 +858,7 @@ pub fn parse_source_meta(text: &str) -> SourceMeta {
             "kind" => meta.kind = unq(value),
             "title" => meta.title = unq(value),
             "sensitivity" => meta.sensitivity = unq(value),
-            "version" => meta.version = value.parse().unwrap_or(1),
+            "version" => meta.version = unq(value).parse().unwrap_or(1),
             "original" => {
                 for part in value.trim_matches(|c| c == '{' || c == '}').split(',') {
                     let Some((k, v)) = part.split_once(':') else {
@@ -873,6 +875,19 @@ pub fn parse_source_meta(text: &str) -> SourceMeta {
             }
             _ => {}
         }
+    }
+    // Processing renders parsed scalars as quoted flow YAML. Resolve original
+    // structurally too, so quoted numbers and mapping keys retain their fields.
+    if let Ok((header, _)) = crate::domain::knowledge::frontmatter::split(text)
+        && let Ok(fields) = crate::domain::knowledge::frontmatter::parse(header)
+        && let Some((_, original)) = fields.iter().find(|(key, _)| key == "original")
+    {
+        meta.original_file = original["file"].as_str().map(str::to_string);
+        meta.sha256 = original["sha256"].as_str().map(str::to_string);
+        meta.bytes = original["bytes"]
+            .as_u64()
+            .or_else(|| original["bytes"].as_str()?.parse().ok());
+        meta.media_type = original["media_type"].as_str().map(str::to_string);
     }
     meta
 }

@@ -5,6 +5,7 @@
 pub(crate) mod capture;
 pub(crate) mod extract;
 pub(crate) mod frames;
+pub(crate) mod set_sensitivity;
 pub(crate) mod show;
 pub(crate) mod transcribe;
 pub(crate) mod video_plan;

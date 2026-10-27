@@ -312,6 +312,20 @@ impl RealLibrary {
 }
 
 impl Library for RealLibrary {
+    fn source_media(
+        &self,
+        id: &str,
+        selection: &office_core::domain::source::access::MediaSelection,
+    ) -> office_core::Result<office_core::domain::source::access::SourceMedia> {
+        <LibraryStore as Library>::source_media(&self.store()?, id, selection)
+    }
+    fn set_source_sensitivity(
+        &self,
+        id: &str,
+        sensitivity: &str,
+    ) -> office_core::Result<office_core::ports::SourceView> {
+        <LibraryStore as Library>::set_source_sensitivity(&self.store()?, id, sensitivity)
+    }
     fn write_reviewed_page(
         &self,
         relative: &Path,

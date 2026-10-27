@@ -116,6 +116,19 @@ source's `derived_by`.
   private at its preview. That sets every source in it.
   ([library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation),
   [kt-videos.md](./kt-videos.md#2-plan-and-confirm-officevideo-plan)).
+- **Source media reads.** The source view marks an existing source private
+  through `office.source-set-sensitivity`, hidden from MCP; private-to-normal
+  is refused. `office.source-show`'s optional original/frame payload checks the
+  latest sensitivity and settings under a shared writer lock before reading
+  bytes. A private source needs a configured endpoint
+  (`private_endpoint_unconfigured`) with a recorded verification timestamp and
+  text capability (`private_endpoint_unverified`). A frame/image also needs
+  `image`, audio needs `audio`, and a video original conservatively needs both;
+  a missing modality returns `private_media_unsupported` naming it. Private
+  text originals need text only; other original MIME types are refused as
+  unsupported. These reads make no model or network call and never fall back
+  to the hosted route. Source text display without a media request retains
+  its existing behavior.
 - **Every tier and modality** goes to the one private model: digest,
   careful consolidation, frame reading and transcription. A private KT video
   is refused at planning only when the endpoint lacks a capability it needs

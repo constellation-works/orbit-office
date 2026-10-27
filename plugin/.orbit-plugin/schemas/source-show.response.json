@@ -3,19 +3,60 @@
   "title": "office.source-show response",
   "type": "object",
   "properties": {
-    "id": { "type": "string" },
-    "kind": { "type": "string" },
-    "title": { "type": "string" },
-    "path": { "type": "string" },
-    "body": { "type": "string" },
-    "text": { "type": "string" },
-    "span": { "type": ["string", "null"] },
-    "anchor": { "type": ["string", "null"] },
-    "sensitivity": { "type": "string" },
-    "sha256": { "type": ["string", "null"] },
-    "bytes": { "type": ["integer", "null"] },
-    "media_type": { "type": ["string", "null"] },
-    "version": { "type": "integer" },
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "span": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "anchor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sensitivity": {
+      "type": "string"
+    },
+    "sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "bytes": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "media_type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "type": "integer"
+    },
     "history": {
       "type": "object",
       "description": "Present only for history: true. Up to 50 newest-first document commits; author identity is withheld.",
@@ -26,21 +67,255 @@
           "items": {
             "type": "object",
             "properties": {
-              "commit": { "type": "string" },
-              "time": { "type": "string", "format": "date-time" },
-              "summary": { "type": "string" }
+              "commit": {
+                "type": "string"
+              },
+              "time": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "summary": {
+                "type": "string"
+              }
             },
-            "required": ["commit", "time", "summary"],
+            "required": [
+              "commit",
+              "time",
+              "summary"
+            ],
             "additionalProperties": false
           }
         },
-        "total": { "type": "integer", "minimum": 0 },
-        "truncated": { "type": "boolean" }
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
       },
-      "required": ["revisions", "total", "truncated"],
+      "required": [
+        "revisions",
+        "total",
+        "truncated"
+      ],
+      "additionalProperties": false
+    },
+    "derived_by": {
+      "type": "object",
+      "properties": {
+        "transcription": {
+          "oneOf": [
+            {
+              "const": "vtt-import"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "string",
+                  "enum": [
+                    "hosted",
+                    "private:company",
+                    "private:provider",
+                    "private:own_hardware"
+                  ]
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "route",
+                "model"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "extraction": {
+          "type": "object",
+          "properties": {
+            "route": {
+              "type": "string",
+              "enum": [
+                "hosted",
+                "private:company",
+                "private:provider",
+                "private:own_hardware"
+              ]
+            },
+            "model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "route",
+            "model"
+          ],
+          "additionalProperties": false
+        },
+        "frames": {
+          "type": "object",
+          "properties": {
+            "route": {
+              "type": "string",
+              "enum": [
+                "hosted",
+                "private:company",
+                "private:provider",
+                "private:own_hardware"
+              ]
+            },
+            "model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "route",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "cited_by": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "task",
+              "source",
+              "domain",
+              "runbook",
+              "artifact"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "task_citers_available": {
+      "type": "boolean",
+      "description": "False when no Orbit callback adapter is available; task citations are then unknown."
+    },
+    "cited_by_truncated": {
+      "type": "boolean",
+      "description": "True when the bounded lookup omitted citing tasks (at most 100 returned)."
+    },
+    "chapters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "label": {
+            "enum": [
+              "core",
+              "tangent"
+            ]
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Start in whole seconds."
+          },
+          "anchor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "title",
+          "label",
+          "start",
+          "anchor"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "media": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_base64": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 699052
+        },
+        "limit_bytes": {
+          "const": 524288
+        },
+        "too_large": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "media_type",
+        "bytes",
+        "content_base64",
+        "limit_bytes",
+        "too_large",
+        "truncated"
+      ],
       "additionalProperties": false
     }
   },
-  "required": ["id", "kind", "title", "path", "body", "text", "span", "anchor", "sensitivity", "sha256", "bytes", "media_type", "version"],
+  "required": [
+    "id",
+    "kind",
+    "title",
+    "path",
+    "body",
+    "text",
+    "span",
+    "anchor",
+    "sensitivity",
+    "sha256",
+    "bytes",
+    "media_type",
+    "version",
+    "derived_by",
+    "cited_by",
+    "task_citers_available",
+    "cited_by_truncated",
+    "chapters"
+  ],
   "additionalProperties": false
 }

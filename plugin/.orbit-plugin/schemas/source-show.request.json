@@ -3,10 +3,36 @@
   "title": "office.source-show request",
   "type": "object",
   "properties": {
-    "id": { "type": "string", "description": "Source id, for example src-20261027-title." },
-    "source_id": { "type": "string", "description": "Alias for id." },
-    "anchor": { "type": "string", "description": "Optional anchor: #t=hh:mm:ss, #L<start>[-<end>], #slide=<n> or #page=<n>." },
-    "history": { "type": "boolean", "default": false, "description": "Include up to 50 newest-first document revisions with total and truncation status. Omitted or false leaves the response unchanged." }
+    "id": {
+      "type": "string",
+      "description": "Source id, for example src-20261027-title."
+    },
+    "source_id": {
+      "type": "string",
+      "description": "Alias for id."
+    },
+    "anchor": {
+      "type": "string",
+      "description": "Optional anchor: #t=hh:mm:ss, #L<start>[-<end>], #slide=<n> or #page=<n>."
+    },
+    "history": {
+      "type": "boolean",
+      "default": false,
+      "description": "Include up to 50 newest-first document revisions with total and truncation status. Omitted or false leaves the response unchanged."
+    },
+    "media": {
+      "type": "string",
+      "enum": [
+        "original",
+        "frame"
+      ],
+      "description": "Opt in to complete base64 media up to 524288 raw bytes. Larger files return null content with too_large and truncated true."
+    },
+    "frame": {
+      "type": "string",
+      "pattern": "^[0-9]{4,10}\\.png$",
+      "description": "Generated frame basename, required only for media: frame (for example 0000.png)."
+    }
   },
   "additionalProperties": false
 }

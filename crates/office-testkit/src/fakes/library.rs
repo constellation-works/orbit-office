@@ -120,6 +120,20 @@ impl FakeLibrary {
         Ok(())
     }
 
+    /// Seed a generated frame beside an existing source, without host I/O.
+    pub fn insert_source_frame(&self, id: &str, name: &str, bytes: &[u8]) -> Result<()> {
+        let source = self.read_source(id)?;
+        let relative = office_core::domain::source::access::frame_file(name)?;
+        self.artifact_files.borrow_mut().insert(
+            Path::new(&source.path)
+                .with_file_name(relative)
+                .to_string_lossy()
+                .into(),
+            bytes.to_vec(),
+        );
+        Ok(())
+    }
+
     /// An initialized, empty fixture with policy defaults.
     #[must_use]
     pub fn initialized() -> Self {
@@ -303,6 +317,66 @@ impl Library for FakeLibrary {
             ));
         }
         Ok(source)
+    }
+    fn source_media(
+        &self,
+        id: &str,
+        selection: &office_core::domain::source::access::MediaSelection,
+    ) -> Result<office_core::domain::source::access::SourceMedia> {
+        use office_core::domain::source::{access, video::refusal};
+        let source = self.read_source(id)?;
+        let markdown = self.read_text(Path::new(&source.path))?;
+        let (name, media_type) = access::media_file(&markdown, selection, &self.settings()?)?;
+        let originals = self.originals.borrow();
+        let frames = self.artifact_files.borrow();
+        let path = Path::new(&source.path)
+            .with_file_name(&name)
+            .to_string_lossy()
+            .to_string();
+        let bytes = match selection {
+            access::MediaSelection::Original => originals.get(id),
+            access::MediaSelection::Frame(_) => frames.get(&path),
+        }
+        .ok_or_else(|| {
+            refusal(
+                "source_media_unavailable",
+                "source media file is unavailable",
+            )
+        })?;
+        let content = if bytes.len() > access::MEDIA_LIMIT {
+            None
+        } else {
+            if matches!(selection, access::MediaSelection::Original)
+                && office_core::domain::source::parse_source_meta(&markdown)
+                    .sha256
+                    .as_deref()
+                    != Some(sha256_hex(bytes).as_str())
+            {
+                return Err(refusal(
+                    "plan_changed",
+                    "original no longer matches its recorded digest",
+                ));
+            }
+            Some(bytes.clone())
+        };
+        Ok(access::SourceMedia {
+            name,
+            media_type,
+            bytes: u64::try_from(bytes.len())
+                .map_err(|_| refusal("invalid_source", "media size overflow"))?,
+            content,
+        })
+    }
+    fn set_source_sensitivity(&self, id: &str, sensitivity: &str) -> Result<SourceView> {
+        let source = self.read_source(id)?;
+        let markdown = self.read_text(Path::new(&source.path))?;
+        let next = office_core::domain::source::access::with_sensitivity(&markdown, sensitivity)?;
+        if next != markdown {
+            self.write_document(Path::new(&source.path), &next)?;
+            let updated = self.read_source(id)?;
+            self.sources.borrow_mut().insert(id.into(), updated);
+        }
+        self.read_source(id)
     }
     fn read_media(&self, id: &str) -> Result<office_core::domain::source::video::VideoSource> {
         use office_core::domain::source::video::{VideoSource, refusal};

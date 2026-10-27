@@ -1,25 +1,34 @@
 schemaVersion: 1
 kind: PluginTest
 tests:
-  # Success is covered by crates/office/tests/library.rs
-  # (capture_and_source_show_through_the_binary), which passes the id that
-  # capture returns. Capture mints src-<UTC date>-<slug> from the runtime
-  # clock, and orbit plugin test has no seed step or output binding, so this
-  # golden pins only the refusals.
-  - name: source_show_refuses_an_unknown_source
+  # Fixture successes replay through public dispatch in office-tools show tests.
+  - name: source_show_fixture_metadata
     tool: source-show
-    input: {"id": "src-00000000-missing"}
+    input: {"id":"src-19700101-source-view"}
     expect:
-      error:
-        code: source_not_found
+      output: {"id":"src-19700101-source-view","kind":"video","title":"Fixture","path":"sources/1970/01/src-19700101-source-view/source.md","body":"Transcript.","text":"Transcript.","span":null,"anchor":null,"sensitivity":"normal","sha256":"0cab1c9617404faf2b24e221e189ca5945813e14d3f766345b09ca13bbe28ffc","bytes":5,"media_type":"video/mp4","version":1,"derived_by":{"transcription":"vtt-import","extraction":{"route":"hosted","model":"fixture"}},"cited_by":[{"id":"art-output","title":"Output","kind":"artifact"},{"id":"dom-page","title":"Page","kind":"domain"}],"task_citers_available":false,"cited_by_truncated":false,"chapters":[{"number":1,"title":"Start","label":"core","start":0,"anchor":"#t=00:00:00"},{"number":2,"title":"Aside","label":"tangent","start":65,"anchor":"#t=00:01:05"}]}
+  - name: source_show_fixture_original
+    tool: source-show
+    input: {"id":"src-19700101-source-view","media":"original"}
+    expect:
+      output: {"id":"src-19700101-source-view","kind":"video","title":"Fixture","path":"sources/1970/01/src-19700101-source-view/source.md","body":"Transcript.","text":"Transcript.","span":null,"anchor":null,"sensitivity":"normal","sha256":"0cab1c9617404faf2b24e221e189ca5945813e14d3f766345b09ca13bbe28ffc","bytes":5,"media_type":"video/mp4","version":1,"derived_by":{"transcription":"vtt-import","extraction":{"route":"hosted","model":"fixture"}},"cited_by":[{"id":"art-output","title":"Output","kind":"artifact"},{"id":"dom-page","title":"Page","kind":"domain"}],"task_citers_available":false,"cited_by_truncated":false,"chapters":[{"number":1,"title":"Start","label":"core","start":0,"anchor":"#t=00:00:00"},{"number":2,"title":"Aside","label":"tangent","start":65,"anchor":"#t=00:01:05"}],"media":{"name":"original.mp4","media_type":"video/mp4","bytes":5,"content_base64":"dmlkZW8=","limit_bytes":524288,"too_large":false,"truncated":false}}
+  - name: source_show_refuses_unknown_source
+    tool: source-show
+    input: {"id":"src-00000000-missing"}
+    expect:
+      error: {"code":"source_not_found"}
   - name: source_show_refuses_unknown_input
     tool: source-show
-    input: {"id": "src-00000000-missing", "verbose": true}
+    input: {"id":"src-19700101-source-view","verbose":true}
     expect:
-      error:
-        code: invalid_argument
+      error: {"code":"invalid_argument"}
   - name: source_show_refuses_non_boolean_history
     tool: source-show
-    input: {"id":"src-00000000-missing","history":"true"}
+    input: {"id":"src-19700101-source-view","history":"true"}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: source_show_refuses_unsafe_frame
+    tool: source-show
+    input: {"id":"src-19700101-source-view","media":"frame","frame":"../original.mp4"}
     expect:
       error: {"code":"invalid_argument"}

@@ -1,0 +1,29 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  # Fixture successes replay through public dispatch in office-tools show tests.
+  - name: source_set_sensitivity_fixture_private
+    tool: source-set-sensitivity
+    input: {"id":"src-19700101-source-view","sensitivity":"private"}
+    expect:
+      output: {"id":"src-19700101-source-view","path":"sources/1970/01/src-19700101-source-view/source.md","sensitivity":"private"}
+  - name: source_set_sensitivity_refuses_private_downgrade
+    tool: source-set-sensitivity
+    input: {"id":"src-19700101-source-view","sensitivity":"normal"}
+    expect:
+      error: {"code":"sensitivity_downgrade_refused"}
+  - name: source_set_sensitivity_refuses_unknown_source
+    tool: source-set-sensitivity
+    input: {"id":"src-00000000-missing","sensitivity":"private"}
+    expect:
+      error: {"code":"source_not_found"}
+  - name: source_set_sensitivity_refuses_invalid_sensitivity
+    tool: source-set-sensitivity
+    input: {"id":"src-19700101-source-view","sensitivity":"secret"}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: source_set_sensitivity_refuses_unknown_field
+    tool: source-set-sensitivity
+    input: {"id":"src-19700101-source-view","sensitivity":"private","override":true}
+    expect:
+      error: {"code":"invalid_argument"}
