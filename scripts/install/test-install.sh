@@ -29,6 +29,10 @@
 #  14. the documented curl-to-sh form (install.sh itself on a piped stdin,
 #      under sh and under bash --posix) stores no secret from script text
 #      and still runs the scaffold and agent steps
+#  15. a pre-existing same-named user skill survives install and
+#      uninstall byte-for-byte for claude and codex; uninstall removes
+#      only installer-copied skills still unmodified, keeps a skill the
+#      user edited after copying, and is safe to repeat
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -1308,5 +1312,53 @@ finally:
 PY
 then fail "interactive consent and private token remain hidden"; fi
 ok "one interactive consent enables office and gateway; open_weights_token is hidden and stored"
+
+# ---------------------------------------------------------------------------
+# 15. Pre-existing same-named skills survive install and uninstall for
+#     both agents; only recorded, unmodified copies are removed.
+# ---------------------------------------------------------------------------
+
+for _agent in claude codex; do
+    SK_HOME="$ROOT/home-skill-$_agent"
+    SK_DIR="$SK_HOME/.$_agent/skills"
+    mkdir -p "$SK_DIR/library-conventions"
+    printf 'user-authored %s library-conventions\nunique bytes\n' "$_agent" \
+        > "$SK_DIR/library-conventions/SKILL.md"
+    printf 'user extra file %s\n' "$_agent" > "$SK_DIR/library-conventions/extra.txt"
+    cp -R "$SK_DIR/library-conventions" "$ROOT/user-skill-$_agent"
+    run_install "$SK_HOME" -- --agent "$_agent" > "$ROOT/out-skill-$_agent.txt" 2>&1 \
+        || { cat "$ROOT/out-skill-$_agent.txt" >&2; fail "skill $_agent install exits 0"; }
+    ok "skill $_agent install exits 0"
+    check "$_agent pre-existing skill bytes unchanged by install" \
+        sh -c 'cmp -s "$1/SKILL.md" "$2/SKILL.md" && cmp -s "$1/extra.txt" "$2/extra.txt"' \
+        sh "$ROOT/user-skill-$_agent" "$SK_DIR/library-conventions"
+    check "$_agent plugin skill installed beside the user skill" \
+        test -f "$SK_DIR/orchestrator/SKILL.md"
+    printf 'user edit after install\n' >> "$SK_DIR/meetings/SKILL.md"
+    printf 'user added file\n' > "$SK_DIR/meetings/user-added.txt"
+    cp "$SK_DIR/meetings/SKILL.md" "$ROOT/modified-skill-$_agent.md"
+    run_install "$SK_HOME" -- --agent "$_agent" --uninstall > "$ROOT/out-skill-$_agent-un.txt" 2>&1 \
+        || { cat "$ROOT/out-skill-$_agent-un.txt" >&2; fail "skill $_agent uninstall exits 0"; }
+    ok "skill $_agent uninstall exits 0"
+    check "$_agent pre-existing skill bytes survive uninstall" \
+        sh -c 'cmp -s "$1/SKILL.md" "$2/SKILL.md" && cmp -s "$1/extra.txt" "$2/extra.txt"' \
+        sh "$ROOT/user-skill-$_agent" "$SK_DIR/library-conventions"
+    check "$_agent unmodified installed skill removed by uninstall" \
+        test ! -e "$SK_DIR/orchestrator"
+    check "$_agent user-modified installed skill preserved by uninstall" \
+        cmp -s "$SK_DIR/meetings/SKILL.md" "$ROOT/modified-skill-$_agent.md"
+    check "$_agent file added to an installed skill preserved by uninstall" \
+        grep -qx "user added file" "$SK_DIR/meetings/user-added.txt"
+    check "$_agent uninstall says the modified skill was kept" \
+        grep -F "kept modified skill meetings" "$ROOT/out-skill-$_agent-un.txt"
+    run_install "$SK_HOME" -- --agent "$_agent" --uninstall > "$ROOT/out-skill-$_agent-un2.txt" 2>&1 \
+        || { cat "$ROOT/out-skill-$_agent-un2.txt" >&2; fail "skill $_agent repeated uninstall exits 0"; }
+    ok "skill $_agent repeated uninstall exits 0"
+    check "$_agent repeated uninstall still preserves the user skill" \
+        sh -c 'cmp -s "$1/SKILL.md" "$2/SKILL.md" && cmp -s "$1/extra.txt" "$2/extra.txt"' \
+        sh "$ROOT/user-skill-$_agent" "$SK_DIR/library-conventions"
+    check "$_agent repeated uninstall still preserves the modified skill" \
+        cmp -s "$SK_DIR/meetings/SKILL.md" "$ROOT/modified-skill-$_agent.md"
+done
 
 printf 'PASS: %s checks\n' "$PASS"

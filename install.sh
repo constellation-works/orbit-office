@@ -206,6 +206,7 @@ case "$AGENT" in
     claude) AGENT_SETTINGS="$HOME/.claude/settings.json"; SKILLS_DIR="$HOME/.claude/skills" ;;
     codex) AGENT_SETTINGS="$HOME/.codex/config.toml"; SKILLS_DIR="$HOME/.codex/skills" ;;
 esac
+SKILLS_RECEIPT="$DATA_DIR/agent-skills-$AGENT.txt"
 
 # ---------------------------------------------------------------------------
 # Small helpers
@@ -1228,6 +1229,156 @@ remove_mcp_codex() {
     say "agent: removed the Orbit MCP entry from $_file"
 }
 
+# Skill ownership (STD-03@2 §R29): a matching name is not ownership.
+# The receipt at $SKILLS_RECEIPT holds one "<name> <sha256>" line per
+# skill this installer itself copied, where the digest covers every
+# file's relative path and bytes (and every symlink's target) in the
+# copied tree. Install records a skill only when it copies it; a
+# pre-existing same-named skill is left alone and never recorded.
+# Uninstall removes only a recorded skill whose tree still matches its
+# recorded digest; anything else is kept and named in the output.
+
+skill_name_valid() {
+    case "$1" in
+        ''|.|..|*[!A-Za-z0-9._-]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+skill_digest_valid() {
+    [ "${#1}" -eq 64 ] || return 1
+    case "$1" in
+        *[!0-9a-f]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# Print the digest of the tree at $1, or fail.
+skill_tree_digest() {
+    _tree="$1"
+    [ -d "$_tree" ] && [ ! -L "$_tree" ] || return 1
+    _list=$(mktemp "${TMPDIR:-/tmp}/orbit-office-skills.XXXXXX") || return 1
+    _hashes=$(mktemp "${TMPDIR:-/tmp}/orbit-office-skills.XXXXXX") || { rm -f "$_list"; return 1; }
+    if ! (CDPATH='' cd -- "$_tree" && find . \( -type f -o -type l \) -print | LC_ALL=C sort) > "$_list"; then
+        rm -f "$_list" "$_hashes"
+        return 1
+    fi
+    _rc=0
+    : > "$_hashes"
+    while IFS= read -r _rel || [ -n "$_rel" ]; do
+        _path="$_tree/$_rel"
+        if [ -L "$_path" ]; then
+            _target=$(readlink "$_path") || _rc=1
+            printf 'link %s %s\n' "$_rel" "${_target:-}" >> "$_hashes"
+        elif [ -f "$_path" ]; then
+            _h=$(sha256_file "$_path") || _rc=1
+            printf 'file %s %s\n' "${_h:-}" "$_rel" >> "$_hashes"
+        else
+            _rc=1
+        fi
+    done < "$_list"
+    _digest=""
+    if [ "$_rc" -eq 0 ]; then
+        _digest=$(sha256_file "$_hashes") || _rc=1
+    fi
+    rm -f "$_list" "$_hashes"
+    [ "$_rc" -eq 0 ] && [ -n "$_digest" ] || return 1
+    printf '%s\n' "$_digest"
+}
+
+# Record (or replace) the ownership line for a skill this run copied.
+skill_receipt_record() {
+    _name="$1"; _digest="$2"
+    mkdir -p "$DATA_DIR"
+    if [ -L "$SKILLS_RECEIPT" ]; then
+        warn "skills: ownership receipt $SKILLS_RECEIPT is a symlink; not recording $_name"
+        return 1
+    fi
+    _tmp="$SKILLS_RECEIPT.tmp.$$"
+    if [ -f "$SKILLS_RECEIPT" ]; then
+        grep -v "^$_name " "$SKILLS_RECEIPT" > "$_tmp" || true
+    else
+        : > "$_tmp"
+    fi
+    printf '%s %s\n' "$_name" "$_digest" >> "$_tmp"
+    mv "$_tmp" "$SKILLS_RECEIPT"
+}
+
+# Remove recorded skills that are still exactly as installed. Keep and
+# name every other skill: unrecorded, malformed, missing-digest tooling,
+# a symlink or non-directory, or content changed since the copy.
+remove_recorded_skills() {
+    if [ -L "$SKILLS_RECEIPT" ]; then
+        warn "uninstall: skills ownership receipt $SKILLS_RECEIPT is a symlink; keeping all skills"
+        return 0
+    fi
+    if [ ! -f "$SKILLS_RECEIPT" ]; then
+        say "uninstall: no skills recorded as installed by this installer; keeping any skills present"
+        return 0
+    fi
+    _snapshot=$(mktemp "${TMPDIR:-/tmp}/orbit-office-skills.XXXXXX") || {
+        warn "uninstall: could not read the skills ownership receipt; keeping all skills"
+        return 0
+    }
+    _kept=$(mktemp "${TMPDIR:-/tmp}/orbit-office-skills.XXXXXX") || {
+        rm -f "$_snapshot"
+        warn "uninstall: could not read the skills ownership receipt; keeping all skills"
+        return 0
+    }
+    cp "$SKILLS_RECEIPT" "$_snapshot"
+    : > "$_kept"
+    while IFS=' ' read -r _name _digest _extra || [ -n "${_name:-}" ]; do
+        if ! skill_name_valid "${_name:-}" || ! skill_digest_valid "${_digest:-}" \
+            || [ -n "${_extra:-}" ]; then
+            warn "uninstall: ignoring a malformed skills ownership entry; keeping its skill"
+            printf '%s %s%s\n' "${_name:-}" "${_digest:-}" "${_extra:+ $_extra}" >> "$_kept"
+            continue
+        fi
+        _dest="$SKILLS_DIR/$_name"
+        if [ ! -e "$_dest" ] && [ ! -L "$_dest" ]; then
+            say "uninstall: skill $_name already removed"
+            continue
+        fi
+        if [ -L "$_dest" ] || [ ! -d "$_dest" ]; then
+            say "uninstall: kept skill $_name at $_dest (not a directory this installer copied)"
+            printf '%s %s\n' "$_name" "$_digest" >> "$_kept"
+            continue
+        fi
+        _current=$(skill_tree_digest "$_dest") || _current=""
+        if [ -z "$_current" ]; then
+            warn "uninstall: could not verify skill $_name; keeping it at $_dest"
+            printf '%s %s\n' "$_name" "$_digest" >> "$_kept"
+            continue
+        fi
+        if [ "$_current" = "$_digest" ]; then
+            rm -rf "${_dest:?}"
+            say "uninstall: removed skill $_name"
+        else
+            say "uninstall: kept modified skill $_name at $_dest (it differs from the copy this installer installed; remove it manually if you no longer want it)"
+            printf '%s %s\n' "$_name" "$_digest" >> "$_kept"
+        fi
+    done < "$_snapshot"
+    # Name same-named skills that were never recorded as ours.
+    if [ -n "$PLUGIN_SRC" ] && [ -d "$PLUGIN_SRC/.orbit-plugin/skills" ] \
+        && [ -d "$SKILLS_DIR" ]; then
+        for _skill in "$PLUGIN_SRC/.orbit-plugin/skills"/*; do
+            [ -d "$_skill" ] || continue
+            _name=$(basename -- "$_skill")
+            skill_name_valid "$_name" || continue
+            if [ -e "$SKILLS_DIR/$_name" ] \
+                && ! grep -q "^$_name " "$_snapshot" 2>/dev/null; then
+                say "uninstall: kept skill $_name at $SKILLS_DIR/$_name (not recorded as installed by this installer)"
+            fi
+        done
+    fi
+    rm -f "$_snapshot"
+    if [ -s "$_kept" ]; then
+        mv "$_kept" "$SKILLS_RECEIPT"
+    else
+        rm -f "$_kept" "$SKILLS_RECEIPT"
+    fi
+}
+
 step_agent() {
     step "8 agent"
     case "$AGENT" in
@@ -1240,11 +1391,22 @@ step_agent() {
         for _skill in "$PLUGIN_SRC/.orbit-plugin/skills"/*; do
             [ -d "$_skill" ] || continue
             _name=$(basename -- "$_skill")
-            if [ -e "$SKILLS_DIR/$_name" ]; then
+            if ! skill_name_valid "$_name"; then
+                warn "agent: skipping skill with an unsafe name: $_name"
+                continue
+            fi
+            if [ -e "$SKILLS_DIR/$_name" ] || [ -L "$SKILLS_DIR/$_name" ]; then
+                # Pre-existing, previously installed or user-modified:
+                # never overwrite and never claim ownership here.
                 say "agent: skill $_name already done"
             else
                 cp -R "$_skill" "$SKILLS_DIR/$_name"
-                say "agent: installed skill $_name"
+                if _digest=$(skill_tree_digest "$SKILLS_DIR/$_name") \
+                    && skill_receipt_record "$_name" "$_digest"; then
+                    say "agent: installed skill $_name"
+                else
+                    warn "agent: installed skill $_name without an ownership record; uninstall will keep it"
+                fi
             fi
         done
     else
@@ -1403,18 +1565,9 @@ do_uninstall() {
         claude) remove_mcp_claude ;;
         codex) remove_mcp_codex ;;
     esac
-    # Skills this installer copied in.
-    if [ -n "$PLUGIN_SRC" ] && [ -d "$PLUGIN_SRC/.orbit-plugin/skills" ] \
-        && [ -d "$SKILLS_DIR" ]; then
-        for _skill in "$PLUGIN_SRC/.orbit-plugin/skills"/*; do
-            [ -d "$_skill" ] || continue
-            _name=$(basename -- "$_skill")
-            if [ -n "$_name" ] && [ -e "$SKILLS_DIR/$_name" ]; then
-                rm -rf "${SKILLS_DIR:?}/$_name"
-                say "uninstall: removed skill $_name"
-            fi
-        done
-    fi
+    # Skills this installer copied in, proven by the receipt, never by
+    # a same-named directory in the current plugin tree.
+    remove_recorded_skills
     # Uninstall also finds optional plugins from an earlier install without
     # requiring --with-cloudcli again.
     for _plugin in office gateway cloudcli; do
