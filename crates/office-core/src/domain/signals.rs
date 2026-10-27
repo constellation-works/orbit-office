@@ -79,7 +79,7 @@ pub struct SourceFact {
     pub body: String,
 }
 
-/// One routine or auto-task, reduced to what the signals read.
+/// One auto-task, reduced to what the signals read.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AutomationFact {
     /// Automation id.
@@ -101,42 +101,11 @@ pub struct SignalFacts {
     pub pages: Vec<PageFact>,
     /// Library sources.
     pub sources: Vec<SourceFact>,
-    /// Routines and auto-tasks.
+    /// Auto-tasks.
     pub automation: Vec<AutomationFact>,
 }
 
-/// A proposal kind a candidate asks to create (specs/proposals.md, Kinds).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProposalKind {
-    /// Creates an Orbit auto-task.
-    AutoTask,
-    /// Creates an Orbit routine.
-    Routine,
-    /// Creates a knowledge page.
-    KnowledgeAdd,
-    /// Updates a knowledge page.
-    KnowledgeUpdate,
-    /// Writes a runbook from recurring friction.
-    RunbookFromFriction,
-    /// Retires a page or automation.
-    Retire,
-}
-
-impl ProposalKind {
-    /// Canonical token.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::AutoTask => "auto_task",
-            Self::Routine => "routine",
-            Self::KnowledgeAdd => "knowledge_add",
-            Self::KnowledgeUpdate => "knowledge_update",
-            Self::RunbookFromFriction => "runbook_from_friction",
-            Self::Retire => "retire",
-        }
-    }
-}
+pub use super::proposal::ProposalKind;
 
 /// One fired signal: the proposal it suggests and its evidence ids.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -247,7 +216,7 @@ fn repetition(facts: &SignalFacts, thresholds: &SignalThresholds) -> Vec<Candida
         evidence.sort();
         Candidate {
             signal: "repetition",
-            kind: ProposalKind::Routine,
+            kind: ProposalKind::AutoTask,
             summary: format!(
                 "{} similar completed tasks: {}",
                 group.len(),

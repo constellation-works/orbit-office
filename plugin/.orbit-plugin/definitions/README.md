@@ -24,8 +24,7 @@ No definition may require an outward-facing action.
 Plugin definitions are loaded only when listed in `spec.definitions` in
 `plugin.yaml`. The activity is registered in `spec.definitions.activities`
 as `definitions/activities/office-agent-todo.yaml`. Merely placing a file
-in this directory does not register it. The other listed routines and
-`office-knowledge-maintenance` remain planned.
+in this directory does not register it. `office-kt-inbox` remains planned.
 
 `office-daily-digest` is registered under `spec.definitions.routines` and
 its single-step job under `spec.definitions.jobs`. The job contains an inline
@@ -41,3 +40,13 @@ copies through `orbit plugin validate`, including malformed activity and
 missing subprocess policy cases. They neither enable a plugin nor dispatch
 an agent. Run this check alongside export validation before shipping changes
 to the activity or its registration.
+
+
+`office-signals` is registered under routines and jobs. The disabled daily
+routine (`15 0 * * *`) targets `job:office-signals`; its one deterministic
+`plugin.tool_call` invokes `office.signals-scan` with empty input and returns
+candidates without filing or approving proposals. The weekly
+`office-knowledge-maintenance` auto-task (`30 0 * * 1`, `enabled: false`,
+`dedupe: skip_if_open`) is registered under auto_tasks. It asks an agent to
+review evidence and file knowledge proposals, leaving approval to the user.
+These are shipped definitions, not proposals for new automation.

@@ -100,7 +100,7 @@ commit change during a read refuses the snapshot for retry.
   `context/knowledge/runbooks/*.md` file produced by `office.attach`.
   A runbook named in a tag alone does not claim coverage.
 - A conversion needs a shared explicit `cluster:<id>` tag on prior completed
-  `owner:you` work and an accepted `proposal:routine` or `proposal:auto_task`.
+  `owner:you` work and an accepted `proposal:auto_task` (or a legacy `proposal:routine` approval).
   Only the first accepted automation of each cluster counts. The conversion
   returns its proposal and manual task ids, even when the manual examples
   predate this period. Without that link the tools report no conversion;

@@ -2579,3 +2579,86 @@ fn daily_digest_duplicate_candidates_cannot_publish_twice() {
         .unwrap();
     assert_eq!(next.version, 2);
 }
+
+#[test]
+fn proposal_records_commit_without_entering_the_document_index() {
+    use office_core::ports::Library;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("library");
+    let state = temp.path().join("state");
+    let store = LibraryStore::open(&root, &state).unwrap();
+    Library::initialize(&store, None).unwrap();
+    let before = store.document_count().unwrap();
+    let path = Path::new("proposals/proposal-fixture.md");
+    Library::write_proposal(&store, path, "# Proposal evidence\n").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join(path)).unwrap(),
+        "# Proposal evidence\n"
+    );
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
+    assert_eq!(store.reindex().unwrap(), before);
+    assert_eq!(store.document_count().unwrap(), before);
+    for path in [
+        "knowledge/domain/page.md",
+        "proposals/../../escape.md",
+        "proposals/nested/page.md",
+    ] {
+        assert!(Library::write_proposal(&store, Path::new(path), "refused").is_err());
+    }
+}
+
+#[test]
+fn reviewed_pages_compare_the_revision_under_the_writer_lock() {
+    use office_core::ports::Library;
+    let temp = tempfile::tempdir().unwrap();
+    let store =
+        LibraryStore::open(&temp.path().join("library"), &temp.path().join("state")).unwrap();
+    Library::initialize(&store, None).unwrap();
+    let path = Path::new("knowledge/domain/dom-review.md");
+    let first = "---\nid: dom-review\ntitle: Review\n---\nOriginal\n";
+    Library::write_reviewed_page(&store, path, first, None).unwrap();
+    let hash = office_core::domain::source::sha256_hex(first.as_bytes());
+    let changed = first.replace("Original", "Changed");
+    Library::write_reviewed_page(&store, path, &changed, Some(&hash)).unwrap();
+    let head = store.head_commit().unwrap();
+    assert!(Library::write_reviewed_page(&store, path, first, Some(&hash)).is_err());
+    assert!(Library::write_reviewed_page(&store, path, first, None).is_err());
+    assert_eq!(store.read_text(path).unwrap(), changed);
+    assert_eq!(store.head_commit().unwrap(), head);
+}
+
+#[test]
+fn proposal_journal_replays_on_open_and_refuses_symlink_targets() {
+    use office_core::ports::Library;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("library");
+    let state = temp.path().join("state");
+    let store = LibraryStore::open(&root, &state).unwrap();
+    Library::initialize(&store, None).unwrap();
+    drop(store);
+    let pending = serde_json::json!({"version":8,"kind":"proposal","root":root.canonicalize().unwrap(),"relative":"proposals/recovered.md","text":"Recovered evidence","token":"123-456"});
+    std::fs::write(
+        state.join("library.pending-write.json"),
+        pending.to_string(),
+    )
+    .unwrap();
+    let store = LibraryStore::open(&root, &state).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("proposals/recovered.md")).unwrap(),
+        "Recovered evidence"
+    );
+    assert!(!state.join("library.pending-write.json").exists());
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(
+            temp.path().join("outside.md"),
+            root.join("proposals/unsafe.md"),
+        )
+        .unwrap();
+        assert!(
+            Library::write_proposal(&store, Path::new("proposals/unsafe.md"), "refused").is_err()
+        );
+        assert!(!temp.path().join("outside.md").exists());
+    }
+}

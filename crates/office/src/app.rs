@@ -311,6 +311,20 @@ impl RealLibrary {
 }
 
 impl Library for RealLibrary {
+    fn write_reviewed_page(
+        &self,
+        relative: &Path,
+        text: &str,
+        expected: Option<&str>,
+    ) -> office_core::Result<DocumentRecord> {
+        Ok(self
+            .store()?
+            .write_reviewed_page(relative, text, expected)?)
+    }
+    fn write_proposal(&self, relative: &Path, text: &str) -> office_core::Result<()> {
+        Ok(self.store()?.write_proposal(relative, text)?)
+    }
+
     fn read_media(
         &self,
         id: &str,

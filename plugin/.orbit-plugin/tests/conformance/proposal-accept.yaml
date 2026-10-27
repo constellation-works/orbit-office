@@ -1,0 +1,14 @@
+# Replayed with a proposed auto-task then a closed task, entirely offline.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: proposal_accept_creates_and_enables_auto_task
+    tool: proposal-accept
+    input: {"id":"proposal-fixture","sha256":"57081ae1f03914c3b6cf8663f0f6b2d80088a76b90f6a177512e581a4a1ccffe"}
+    expect:
+      output: {"id":"proposal-fixture","accepted":true,"change":{"auto_task":"weekly-report","enabled":true}}
+  - name: proposal_accept_refuses_closed_proposal
+    tool: proposal-accept
+    input: {"id":"proposal-fixture","sha256":"57081ae1f03914c3b6cf8663f0f6b2d80088a76b90f6a177512e581a4a1ccffe"}
+    expect:
+      error: {"code":"proposal_closed"}

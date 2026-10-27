@@ -1,0 +1,7 @@
+schemaVersion: 1
+name: office-signals
+description: Scan mechanical proposal signals daily; never approve a proposal.
+enabled: false
+trigger:
+  cron: "15 0 * * *"
+target: job:office-signals

@@ -446,6 +446,20 @@ impl LibraryFs {
         Ok(write_atomic(&path, text.as_bytes())?)
     }
 
+    pub(crate) fn validate_proposal_path(&self, relative: &Path) -> Result<()> {
+        office_core::domain::proposal::validate_record_path(relative)?;
+        self.validate_relative_path(relative)
+    }
+
+    pub(crate) fn write_proposal(&self, relative: &Path, text: &str) -> Result<()> {
+        self.validate_proposal_path(relative)?;
+        let path = self.root.join(relative);
+        if let Some(parent) = path.parent() {
+            Self::create_private_dirs(parent)?;
+        }
+        Ok(write_atomic(&path, text.as_bytes())?)
+    }
+
     /// Validate every physical path component, including existing ancestors.
     /// A symlink anywhere below the granted root is refused, including a dangling
     /// one. The plugin's filesystem grant is the concurrent replacement boundary.

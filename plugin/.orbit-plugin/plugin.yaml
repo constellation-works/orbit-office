@@ -259,21 +259,21 @@ spec:
       input_schema: { $ref: schemas/signals-scan.request.json }
       output_schema: { $ref: schemas/signals-scan.response.json }
 
-    # - name: proposal-create
-    #   description: >-
-    #     File a proposal task, its artifact and its evidence page.
-    #   execution_kind: mutating
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/proposal-create.request.json }
-    #   output_schema: { $ref: schemas/proposal-create.response.json }
+    - name: proposal-create
+      description: >-
+        File a proposal task, its artifact and its evidence page.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/proposal-create.request.json }
+      output_schema: { $ref: schemas/proposal-create.response.json }
 
-    # - name: proposal-accept
-    #   description: >-
-    #     Apply a proposal's payload; close the task.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/proposal-accept.request.json }
-    #   output_schema: { $ref: schemas/proposal-accept.response.json }
+    - name: proposal-accept
+      description: >-
+        Apply a proposal's payload; close the task.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/proposal-accept.request.json }
+      output_schema: { $ref: schemas/proposal-accept.response.json }
 
     # ---- selection ----
 
@@ -377,10 +377,10 @@ spec:
       output_schema: { $ref: schemas/review-inputs.response.json }
 
   definitions:
-    auto_tasks: [definitions/auto_tasks/office-review.yaml]
+    auto_tasks: [definitions/auto_tasks/office-review.yaml, definitions/auto_tasks/office-knowledge-maintenance.yaml]
     activities: [definitions/activities/office-agent-todo.yaml]
-    jobs: [definitions/jobs/office-daily-digest.yaml]
-    routines: [definitions/routines/office-daily-digest.yaml]
+    jobs: [definitions/jobs/office-daily-digest.yaml, definitions/jobs/office-signals.yaml]
+    routines: [definitions/routines/office-daily-digest.yaml, definitions/routines/office-signals.yaml]
 
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings]
 

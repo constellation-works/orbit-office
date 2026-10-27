@@ -1,0 +1,14 @@
+# Replayed through public dispatch with the recording Orbit fake in proposal.rs.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: proposal_create_files_a_reviewable_auto_task
+    tool: proposal-create
+    input: {"title":"Weekly report","description":"Repeated work","evidence":["task-a","task-b"],"payload":{"kind":"auto_task","definition":{"name":"weekly-report","schedule":{"cron":"0 9 * * 1"},"template":{"title":"Write the report","status":"backlog"}}},"tags":["onboarding"]}
+    expect:
+      output: {"created":true,"id":"proposal-fixture","suppressed":false,"evidence_page":"proposals/proposal-fixture.md","payload_sha256":"30c031da383576776d8cb2b9fca7abaf89907c17be1891d627d795d1eff47bfd"}
+  - name: proposal_create_refuses_routine_kind
+    tool: proposal-create
+    input: {"title":"Legacy routine","description":"Not supported","evidence":["task-a"],"payload":{"kind":"routine","definition":{}}}
+    expect:
+      error: {"code":"invalid_argument"}

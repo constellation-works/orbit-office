@@ -73,6 +73,7 @@ fn scan_returns_repetition_and_friction_candidates_with_evidence() {
         json!(["t1", "t2", "t3"])
     );
     assert_eq!(output["candidates"][0]["evidence"], json!(["f1", "f2"]));
+    assert_eq!(output["candidates"][1]["kind"], "auto_task");
     // Both reads went through the Orbit port.
     let tools: Vec<&str> = orbit.calls().iter().map(|c| c.tool).collect();
     assert_eq!(tools, vec!["orbit.task.list", "orbit.search"]);

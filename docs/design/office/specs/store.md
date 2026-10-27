@@ -269,3 +269,20 @@ model request. The ledger records `audio_completed` separately from consumed
 calls and binds generated transcripts by content hash. An interrupted model
 request cannot be silently repeated or mistaken for completed audio. A stale
 result revision refuses publication instead of overwriting a newer source.
+
+
+### Proposal records and reviewed knowledge writes
+
+`Library::write_proposal` commits only flat `proposals/<id>.md` records,
+without adding source or knowledge rows to the rebuildable index. Generic
+`write_document` retains its indexed-path restriction. Proposal paths pass the
+same physical containment and symlink checks. Journal version 8 adds the
+`proposal` write kind; versions 1–7 retain their original shapes. Recovery
+validates the path and replays publication plus the Library commit under the
+writer lock. Older binaries refuse the new journal version.
+
+`Library::write_reviewed_page` compares the current Markdown SHA-256 (or
+requires an absent destination for an addition) while holding the writer lock
+through the existing document write journal. A mismatch leaves the page,
+index and commit unchanged. Proposal handlers use this path so a second
+reviewed proposal cannot overwrite an intervening change.

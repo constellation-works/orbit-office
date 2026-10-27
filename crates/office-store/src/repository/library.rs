@@ -27,7 +27,7 @@ use crate::driver::git::Git;
 use crate::driver::sqlite::connection::IndexStore;
 use crate::{Error, Result};
 
-const LATEST_PENDING_WRITE_VERSION: u32 = 7;
+const LATEST_PENDING_WRITE_VERSION: u32 = 8;
 
 /// A Library and its index. Construction may create layout/index directories;
 /// read methods never create state or wait for the writer lock.
@@ -84,6 +84,7 @@ fn normalize_upload_extension(extension: &str) -> String {
 /// Version 5 binds a video source update and its mutable derived files.
 /// Version 6 binds bootstrap phase ledgers and source privacy updates.
 /// Version 7 binds model provenance, immutable transcript versions and extraction sidecars.
+/// Version 8 commits non-indexed proposal records; older readers refuse it.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPendingWrite {
@@ -111,9 +112,8 @@ impl RawPendingWrite {
             (4, Some(WriteKind::Artifact), None, Some(_)) => WriteKind::Artifact,
             (5, Some(WriteKind::Video), None, Some(_)) => WriteKind::Video,
             (6, Some(WriteKind::Bootstrap), None, Some(_)) => WriteKind::Bootstrap,
-            (LATEST_PENDING_WRITE_VERSION, Some(WriteKind::SourceProcessing), None, Some(_)) => {
-                WriteKind::SourceProcessing
-            }
+            (7, Some(WriteKind::SourceProcessing), None, Some(_)) => WriteKind::SourceProcessing,
+            (8, Some(WriteKind::Proposal), None, None) => WriteKind::Proposal,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -143,6 +143,7 @@ enum WriteKind {
     Video,
     Bootstrap,
     SourceProcessing,
+    Proposal,
 }
 
 impl LibraryStore {
@@ -634,6 +635,10 @@ impl LibraryStore {
     pub fn write_document(&self, relative: &Path, text: &str) -> Result<DocumentRecord> {
         let _lock = WriterLock::acquire(&self.state)?;
         self.recover()?;
+        self.write_document_locked(relative, text)
+    }
+
+    fn write_document_locked(&self, relative: &Path, text: &str) -> Result<DocumentRecord> {
         self.require_initialized()?;
         self.files.validate_document_path(relative)?;
         self.validate_identity(&DocumentRecord::from_markdown(relative, text))?;
@@ -644,6 +649,51 @@ impl LibraryStore {
         let pending = self.decide(WriteKind::Document, relative, text, None, None)?;
         self.finish(&pending)?;
         self.files.read_document(Path::new(relative))
+    }
+
+    /// Compare the reviewed bytes while holding the same lock as publication.
+    pub fn write_reviewed_page(
+        &self,
+        relative: &Path,
+        text: &str,
+        expected: Option<&str>,
+    ) -> Result<DocumentRecord> {
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        self.require_initialized()?;
+        self.files.validate_document_path(relative)?;
+        let current = match self.files.read_text(relative) {
+            Ok(text) => Some(text),
+            Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        let matches = match (current.as_deref(), expected) {
+            (None, None) => true,
+            (Some(current), Some(hash)) => sha256_hex(current.as_bytes()) == hash,
+            (None, Some(_)) | (Some(_), None) => false,
+        };
+        if !matches {
+            return Err(office_core::domain::proposal::refused(
+                "proposal_revision_changed",
+                "reviewed page destination changed before publication",
+            )
+            .into());
+        }
+        self.write_document_locked(relative, text)
+    }
+
+    /// Commit a flat proposal record without indexing it as Library knowledge.
+    pub fn write_proposal(&self, relative: &Path, text: &str) -> Result<()> {
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        self.require_initialized()?;
+        self.files.validate_proposal_path(relative)?;
+        let relative = relative.to_str().ok_or_else(|| Error::UnsafePath {
+            kind: "proposal",
+            value: relative.display().to_string(),
+        })?;
+        let pending = self.decide(WriteKind::Proposal, relative, text, None, None)?;
+        self.finish(&pending)
     }
 
     /// Promote an entire artifact while holding the writer lock across version
@@ -758,7 +808,7 @@ impl LibraryStore {
                 != if matches!(pending.kind, WriteKind::Video) {
                     5
                 } else {
-                    LATEST_PENDING_WRITE_VERSION
+                    7
                 }
                 || pending.original.is_some()
                 || !pending.relative.starts_with("sources/")
@@ -862,8 +912,10 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: if matches!(kind, WriteKind::SourceProcessing) {
-                LATEST_PENDING_WRITE_VERSION
+            version: if matches!(kind, WriteKind::Proposal) {
+                8
+            } else if matches!(kind, WriteKind::SourceProcessing) {
+                7
             } else if matches!(kind, WriteKind::Bootstrap) {
                 6
             } else if matches!(kind, WriteKind::Video) {
@@ -970,6 +1022,11 @@ impl LibraryStore {
             return Err(Error::Journal { path });
         }
         match pending.kind {
+            WriteKind::Proposal => {
+                self.require_initialized()?;
+                self.files
+                    .validate_proposal_path(Path::new(&pending.relative))?;
+            }
             WriteKind::Document => {
                 self.require_initialized()?;
                 self.files
@@ -1012,6 +1069,10 @@ impl LibraryStore {
 
     fn finish(&self, pending: &PendingWrite) -> Result<()> {
         match pending.kind {
+            WriteKind::Proposal => {
+                self.files
+                    .write_proposal(Path::new(&pending.relative), &pending.text)?;
+            }
             WriteKind::Document => {
                 let relative = Path::new(&pending.relative);
                 if let Some(original) = &pending.original {
@@ -1860,6 +1921,18 @@ fn dir_is_empty(path: &Path) -> bool {
 }
 
 impl office_core::ports::Library for LibraryStore {
+    fn write_reviewed_page(
+        &self,
+        relative: &Path,
+        text: &str,
+        expected: Option<&str>,
+    ) -> office_core::Result<DocumentRecord> {
+        Ok(Self::write_reviewed_page(self, relative, text, expected)?)
+    }
+    fn write_proposal(&self, relative: &Path, text: &str) -> office_core::Result<()> {
+        Ok(Self::write_proposal(self, relative, text)?)
+    }
+
     fn bootstrap_snapshot(&self) -> office_core::Result<office_core::domain::bootstrap::Snapshot> {
         use office_core::domain::bootstrap::{Snapshot, Source, digest, validate_batches};
         self.read_ready()?;

@@ -1,0 +1,31 @@
+schemaVersion: 1
+name: office-knowledge-maintenance
+description: Review Library signals and file evidenced knowledge proposals weekly.
+enabled: false
+schedule:
+  cron: "30 0 * * 1"
+dedupe: skip_if_open
+template:
+  title: Review Library knowledge maintenance proposals
+  description: |-
+    Run office.signals-scan and review its candidates against the cited evidence.
+    For supported knowledge additions, updates and runbooks, file concrete changes
+    with office.proposal-create. Start templated drafts from their skeleton and
+    cite source anchors. Check the current page before proposing an update and
+    pin its SHA-256 revision. Respect dismissal memory. Preserve onboarding tags
+    when applicable. Report unreadable evidence and refusals explicitly.
+    Leave every proposal proposed for the user's review; never accept, enable,
+    publish or submit anything. Attach a brief account of proposals and refusals.
+  acceptance_criteria:
+    - Every filed proposal cites evidence and carries a concrete reviewed payload.
+    - Proposals await user approval; no automation is enabled and no knowledge page is changed.
+  task_type: chore
+  tags: [office, owner:agent, office-knowledge-maintenance, no-diff-expected]
+  required_tools: [office.signals-scan, office.proposal-create, office.knowledge-show, orbit.task.show, orbit.task.artifact.put]
+  status: backlog
+  priority: low
+  complexity: medium
+created_by: office
+created_at: 2026-10-27T00:00:00Z
+updated_by: office
+updated_at: 2026-10-27T00:00:00Z
