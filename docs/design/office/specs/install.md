@@ -8,13 +8,7 @@ last_validated: 2026-10-26
 
 Source: spec §13.5.
 
-One command installs everything, with no manual git, Orbit or scaffold step:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/constellation-works/orbit-office/main/install.sh | sh
-```
-
-(or `./install.sh` from a clone). The script is idempotent: every step checks first and
+Run `./install.sh` from a clone to install everything without a manual Orbit or scaffold step. A piped install also requires a prepared plugin bundle, as described below. The script is idempotent: every step checks first and
 does only what is missing, so re-running it repairs a partial install and changes nothing on
 a complete one. It prints each step as it goes and a summary at the end.
 
@@ -80,6 +74,11 @@ spaces, so script shebangs that name the interpreter keep working.
    added and enabled the same way, in the same consent prompt, and `cloudcli` only with
    `--with-cloudcli` ([gateway.md](./gateway.md)). Both come from the same release export, and
    neither has a build step.
+   `ORBIT_OFFICE_PLUGIN_BUNDLE` selects an unpacked bundle with `office/`, `gateway/`
+   and, when requested, `cloudcli/` exports, each containing `.orbit-plugin/`.
+   In a clone without a bundle, the installer assembles the gateway exports in
+   `<data>/plugins/`, including their shared Python package, and records each plugin
+   separately. It retains the original office install markers on upgrades.
 6. **Secrets.** Prompts for the Meta API key, and optionally the private route's token (`open_weights_token`), with hidden
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set.
@@ -99,6 +98,18 @@ spaces, so script shebangs that name the interpreter keep working.
    and lists them in the summary. Rules the user already has are kept, and uninstall
    removes only the ones it added. With `--agent claude|codex` it registers the other CLI
    instead. A CLI with no per-command deny rules is reported as such.
+   Claude gets `Bash(curl *)`, `Bash(wget *)`, `Bash(http *)`, `Bash(aws *)` and
+   `Bash(gcloud *)` in `~/.claude/settings.json`'s `permissions.deny`, using the
+   [documented Bash permission syntax](https://code.claude.com/docs/en/permissions).
+   The installer splices JSON entries without reformatting other settings, keeps the
+   original bytes in `settings.json.bak`, and records only newly added rules and
+   containers in `<data>/claude-settings.json`. Uninstall removes those rules while
+   keeping pre-existing rules and later user additions. Invalid JSON, duplicate keys,
+   incompatible field types and unsafe settings/receipt files stop the edit.
+   Codex has no equivalent deny settings for sandboxed shell calls: its
+   [execpolicy rules](https://developers.openai.com/codex/rules) govern commands outside
+   the sandbox. The summary reports this limitation instead of claiming those calls
+   are blocked.
 9. **App.** Builds the app and installs it as a login service (a launchd agent on macOS, a
    systemd user unit on Linux), then opens `http://localhost:<port>`, where the browser
    offers to install it as a PWA.
@@ -115,4 +126,10 @@ Plugin-authored commits in the Library use a fixed author (`orbit-office
 apart from the user's own edits.
 
 Publishing the orbit-office release that carries the prebuilt export is the maintainer's
-call; until one exists, the script uses `--from-source`.
+call. Until one exists, run from a clone (`--from-source` builds office from that
+clone's commit) or supply a prepared `ORBIT_OFFICE_PLUGIN_BUNDLE`. A piped install
+needs that bundle; it cannot assemble gateway exports without the source tree.
+
+Run `sh scripts/install/test-install.sh` for the installer acceptance harness. It uses
+temporary homes, stub Orbit and service managers, local archive fixtures and a PTY
+for the hidden-input and single-consent checks; it never contacts a provider.
