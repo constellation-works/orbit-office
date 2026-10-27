@@ -157,6 +157,13 @@ class Refusals(GatewayCase):
     def test_head_is_refused_when_the_connection_lists_only_get(self) -> None:
         self.assert_refused("method_not_allowed", connection="getonly", method="HEAD")
 
+    def test_empty_methods_refuse_get_and_head(self) -> None:
+        self.put("empty", self.server.origin + "/v2/", scheme="none", methods=[])
+        for method in ("GET", "HEAD"):
+            with self.subTest(method=method):
+                self.refused("method_not_allowed", "http-get", {"connection": "empty", "path": "users", "method": method})
+        self.assertEqual(self.server.seen, [])
+
     def test_path_outside_connection(self) -> None:
         other = self.other.origin
         for path in (

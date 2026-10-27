@@ -235,6 +235,9 @@ def _path(root: Path) -> Path:
 
 def _from_json(raw: Any) -> Connection:
     auth = raw.get("auth") or {}
+    methods = raw.get("methods")
+    if methods is None:
+        methods = ["GET"]
     return Connection(
         name=raw["name"],
         base_url=raw["base_url"],
@@ -242,7 +245,7 @@ def _from_json(raw: Any) -> Connection:
         slot=auth.get("secret"),
         header=auth.get("header"),
         username=auth.get("username"),
-        methods=list(raw.get("methods") or ["GET"]),
+        methods=list(methods),
         drafts=list(raw.get("drafts") or []),
         timeout_seconds=int(raw.get("timeout_seconds") or DEFAULT_TIMEOUT),
         max_response_bytes=int(raw.get("max_response_bytes") or DEFAULT_MAX_RESPONSE),

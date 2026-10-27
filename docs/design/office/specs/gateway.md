@@ -85,7 +85,9 @@ never by an agent:
 - A refused connection (`base_url`, scheme, method lists, bounds) is
   `invalid_connection`.
 - **`methods`** run directly, and only `GET` and `HEAD` may be listed there.
-  **`drafts`** are the write methods an agent may draft for approval.
+  If omitted, the list defaults to `GET`; an explicit empty list allows no
+  direct methods. **`drafts`** are the write methods an agent may draft for
+  approval.
 - **`idempotency_header`** (optional) names the header the API reads an
   idempotency key from. It cannot be a credential, transport or agent header,
   or the connection's own auth header.
