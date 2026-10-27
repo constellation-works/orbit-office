@@ -210,8 +210,12 @@ def _idempotency_header(raw: Any, auth_header: str | None) -> str | None:
     if not isinstance(raw, str) or not HEADER_NAME.match(raw):
         raise _invalid("`idempotency_header` must be a header name")
     lower = raw.lower()
-    if lower in DRAFT_HEADERS or lower in TRANSPORT_HEADERS or lower in CREDENTIAL_HEADERS or (
-        auth_header is not None and lower == auth_header.lower()
+    if (
+        lower in DRAFT_HEADERS
+        or lower in TRANSPORT_HEADERS
+        or lower in CREDENTIAL_HEADERS
+        or lower == "user-agent"
+        or (auth_header is not None and lower == auth_header.lower())
     ):
         raise _invalid(f"`idempotency_header` cannot be {raw!r}")
     return raw
