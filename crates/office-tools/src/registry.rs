@@ -21,6 +21,9 @@ pub(crate) struct Call<'a> {
         reason = "status, the only built tool, takes no input; the first tool with input reads it"
     )]
     pub(crate) input: &'a Map<String, Value>,
+    /// Services available to this call.
+    #[expect(dead_code, reason = "status does not need ports")]
+    pub(crate) ports: &'a office_core::ports::Ports<'a>,
     /// Call context: identity, secrets and roots, from Orbit.
     pub(crate) context: &'a Map<String, Value>,
 }

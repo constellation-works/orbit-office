@@ -13,6 +13,7 @@ fn status_reports_set_and_unset_secrets_without_values() {
         json!({ "meta_api_key": "do-not-echo-this" }),
     );
     let output = run(&Call {
+        ports: &office_testkit::fakes::PortsBuilder::default().build(),
         input: &input,
         context: &context,
     })

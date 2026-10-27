@@ -52,6 +52,7 @@ policy() {
       BANNED="$SURFACE $HTTP"
       ;;
     office-testkit)
+      # Fake port implementations depend on office-core; consumers use them only in tests.
       ALLOWED="office-common office-core office-store"
       BANNED="$SURFACE $HTTP"
       ;;

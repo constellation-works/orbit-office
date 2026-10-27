@@ -1,3 +1,4 @@
-//! The Library port: read, write, search and commit the Library
-//! (adapter: `office-store`).
-//! Reserved: declared by the first task that needs it.
+//! Library access port.
+
+/// Library access; operations will be added with the adapter.
+pub trait Library {}

@@ -4,14 +4,13 @@ use crate::serve;
 use serde_json::{Value, json};
 
 fn call(tool: &str, input: Value) -> Value {
-    let raw = json!({
-        "schema_version": 1,
-        "tool": tool,
-        "input": input,
-        "context": {},
-    })
-    .to_string();
-    serde_json::from_str(&serve(&raw)).expect("response is JSON")
+    let raw = office_testkit::envelope::request(tool, input, json!({}));
+    let request = office_core::protocol::parse(&raw).expect("request is valid");
+    office_testkit::envelope::response(&serve(
+        &request,
+        &office_testkit::fakes::PortsBuilder::default().build(),
+    ))
+    .expect("response is JSON")
 }
 
 #[test]
@@ -52,6 +51,9 @@ fn unknown_input_key_is_refused() {
 
 #[test]
 fn bad_envelope_is_refused() {
-    let response: Value = serde_json::from_str(&serve("not json")).expect("response is JSON");
+    let response: Value = serde_json::from_str(&office_core::protocol::respond(
+        office_core::protocol::parse("not json").map(|_| json!({})),
+    ))
+    .expect("response is JSON");
     assert_eq!(response["error"]["code"], json!("invalid_request"));
 }

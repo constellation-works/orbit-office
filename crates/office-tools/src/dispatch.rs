@@ -7,19 +7,13 @@ use serde_json::Value;
 
 use crate::registry::{Call, tools};
 
-/// Answer one raw request with one serialized response envelope.
-///
-/// ```
-/// let response = office_tools::serve(r#"{"schema_version": 1, "tool": "office.nope"}"#);
-/// let response: serde_json::Value = serde_json::from_str(&response).unwrap();
-/// assert_eq!(response["error"]["code"], "unknown_tool");
-/// ```
+/// Dispatch a parsed request using the supplied services and render its response.
 #[must_use]
-pub fn serve(raw: &str) -> String {
-    protocol::respond(protocol::parse(raw).and_then(|request| dispatch(&request)))
+pub fn serve(request: &Request, ports: &office_core::ports::Ports<'_>) -> String {
+    protocol::respond(dispatch(request, ports))
 }
 
-fn dispatch(request: &Request) -> Result<Value> {
+fn dispatch(request: &Request, ports: &office_core::ports::Ports<'_>) -> Result<Value> {
     let tool = request.tool.as_str();
     let prefix = format!("{NAMESPACE}.");
     let Some(verb) = tool.strip_prefix(&prefix) else {
@@ -54,6 +48,7 @@ fn dispatch(request: &Request) -> Result<Value> {
     }
 
     handler(&Call {
+        ports,
         input: &request.input,
         context: &request.context,
     })
