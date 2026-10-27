@@ -33,7 +33,7 @@ test("GET /healthz reports the app and its built features", async () => {
     assert.deepEqual(await response.json(), {
       ok: true,
       app: "orbit-office",
-      features: ["settings"],
+      features: ["today", "settings"],
     });
   });
 });
