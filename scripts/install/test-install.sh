@@ -43,6 +43,13 @@
 #      way; a valid bundle provisions a runnable entrypoint under the
 #      data folder, a rerun is idempotent, and deleting the entrypoint
 #      is repaired by the bundle (and named when no bundle is given)
+
+#  18. Failed service activation is never marked complete: a failing or
+#      missing systemctl/launchctl stops the step with a service error and
+#      leaves no service_installed marker, and the next run with the
+#      manager restored retries activation; an installed but inactive
+#      service is re-enabled on the next run. Stubs only; no host service
+#      is touched.
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -312,9 +319,12 @@ cat > "$BIN/systemctl" <<'STUB'
 state=${STUB_STATE:?}
 mkdir -p "$state"
 printf '%s\n' "$*" >> "$state/systemctl.log"
+if [ "${STUB_SYSTEMCTL_FAIL:-0}" = 1 ]; then
+    exit 1
+fi
 case " $* " in
-    *" is-enabled "*) [ -f "$state/svc-enabled" ] ;;
-    *" is-active "*) [ -f "$state/svc-active" ] ;;
+    *" is-enabled "*) [ -f "$state/svc-enabled" ]; exit ;;
+    *" is-active "*) [ -f "$state/svc-active" ]; exit ;;
     *" enable "*) : > "$state/svc-enabled" ;;
     *" disable "*) rm -f "$state/svc-enabled" "$state/svc-active" ;;
     *" start "*|*" restart "*) : > "$state/svc-active" ;;
@@ -329,6 +339,18 @@ cat > "$BIN/launchctl" <<'STUB'
 state=${STUB_STATE:?}
 mkdir -p "$state"
 printf '%s\n' "$*" >> "$state/launchctl.log"
+if [ "${STUB_LAUNCHCTL_FAIL:-0}" = 1 ]; then
+    exit 1
+fi
+case " $* " in
+    *" list "*)
+        [ -f "$state/launchd-loaded" ]; exit ;;
+    *" load "*)
+        : > "$state/launchd-loaded" ;;
+    *" unload "*)
+        rm -f "$state/launchd-loaded" ;;
+    *) ;;
+esac
 exit 0
 STUB
 
@@ -1659,5 +1681,155 @@ run_install_standalone "$SA_HOME" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" "ORBIT_OF
 ok "standalone partial install is repaired by the bundle"
 check "repaired entrypoint exists and runs" \
     sh -c '"$1" "$2" | grep -q "orbit-office standalone stub app"' sh "$(command -v node)" "$SA_ENTRY"
+
+# 18. Failed service activation is never marked complete; the next run
+#     retries, and an inactive installed service is re-enabled.
+#     Stub managers only; no host service manager is contacted.
+# ---------------------------------------------------------------------------
+
+# --- systemd: failing manager stops, leaves no marker, retry completes ---
+HOME_SVC_FAIL="$ROOT/home-svc-fail"; mkdir -p "$HOME_SVC_FAIL"
+rm -f "$STUB_STATE/svc-enabled" "$STUB_STATE/svc-active" "$STUB_STATE/launchd-loaded"
+: > "$STUB_STATE/systemctl.log"; : > "$STUB_STATE/launchctl.log"
+OUT_SVC_FAIL="$ROOT/out-svc-fail.txt"
+if run_install "$HOME_SVC_FAIL" STUB_SYSTEMCTL_FAIL=1 -- > "$OUT_SVC_FAIL" 2>&1; then
+    cat "$OUT_SVC_FAIL" >&2; fail "failing systemctl stops the install"
+else
+    ok "failing systemctl stops the install"
+fi
+check "failing systemctl reports the service" grep -F "service:" "$OUT_SVC_FAIL"
+check "failing systemctl leaves no service_installed marker" \
+    sh -c '! grep -qx service_installed "$1"' sh "$HOME_SVC_FAIL/.local/share/orbit-office/install-state"
+check "failing systemctl does not report service success" \
+    sh -c '! grep -F "service installed" "$1" && ! grep -F "service already enabled" "$1"' sh "$OUT_SVC_FAIL"
+check "failing systemctl attempted activation" test -s "$STUB_STATE/systemctl.log"
+SVC_CALLS_FAIL=$(wc -l < "$STUB_STATE/systemctl.log")
+OUT_SVC_RETRY="$ROOT/out-svc-retry.txt"
+run_install "$HOME_SVC_FAIL" -- > "$OUT_SVC_RETRY" 2>&1 \
+    || { cat "$OUT_SVC_RETRY" >&2; fail "systemd retry after failure exits 0"; }
+ok "systemd retry after failure exits 0"
+check "systemd retry records the marker" \
+    grep -qx service_installed "$HOME_SVC_FAIL/.local/share/orbit-office/install-state"
+check "systemd retry reports service installed" grep -F "service installed" "$OUT_SVC_RETRY"
+check "systemd retry made new manager calls" \
+    sh -c '[ "$(wc -l < "$1")" -gt "$2" ]' sh "$STUB_STATE/systemctl.log" "$SVC_CALLS_FAIL"
+check "systemd retry leaves the service active" test -f "$STUB_STATE/svc-active"
+
+# --- systemd: already installed but inactive is re-enabled ---
+rm -f "$STUB_STATE/svc-active"
+OUT_SVC_REPAIR="$ROOT/out-svc-repair.txt"
+run_install "$HOME_SVC_FAIL" -- > "$OUT_SVC_REPAIR" 2>&1 \
+    || { cat "$OUT_SVC_REPAIR" >&2; fail "inactive systemd service is repaired"; }
+ok "inactive systemd service is repaired"
+check "systemd repair re-enables the service" grep -F "service re-enabled" "$OUT_SVC_REPAIR"
+check "systemd repair restores the active state" test -f "$STUB_STATE/svc-active"
+check "systemd repair keeps the marker" \
+    grep -qx service_installed "$HOME_SVC_FAIL/.local/share/orbit-office/install-state"
+
+# --- systemd: missing manager stops, leaves no marker, retry completes ---
+# The host may provide a real systemctl, so hide every host manager behind
+# a tool dir of symlinks; the stub dir then decides what is visible.
+HIDE_BASE="$ROOT/hide-base"; mkdir -p "$HIDE_BASE"
+if [ ! -e "$HIDE_BASE/.done" ]; then
+    for _d in /usr/bin /bin; do
+        for _f in "$_d"/*; do
+            [ -e "$_f" ] || continue
+            _b=$(basename -- "$_f")
+            case "$_b" in systemctl|launchctl) continue ;; esac
+            [ -e "$HIDE_BASE/$_b" ] || ln -s "$_f" "$HIDE_BASE/$_b"
+        done
+    done
+    : > "$HIDE_BASE/.done"
+fi
+BIN_NOSYS="$ROOT/bin-no-sys"; mkdir -p "$BIN_NOSYS"
+for _stub in orbit npm launchctl ffmpeg curl tar uv; do cp "$BIN/$_stub" "$BIN_NOSYS/$_stub"; done
+chmod +x "$BIN_NOSYS"/*
+HOME_SVC_MISSING="$ROOT/home-svc-missing"; mkdir -p "$HOME_SVC_MISSING"
+rm -f "$STUB_STATE/svc-enabled" "$STUB_STATE/svc-active"
+: > "$STUB_STATE/systemctl.log"
+OUT_SVC_MISSING="$ROOT/out-svc-missing.txt"
+if (TEST_PATH="$BIN_NOSYS:$NODE_DIR:$HIDE_BASE" \
+    run_install "$HOME_SVC_MISSING" -- > "$OUT_SVC_MISSING" 2>&1); then
+    cat "$OUT_SVC_MISSING" >&2; fail "missing systemctl stops the install"
+else
+    ok "missing systemctl stops the install"
+fi
+check "missing systemctl names the manager" grep -F "systemctl is not available" "$OUT_SVC_MISSING"
+check "missing systemctl leaves no marker" \
+    sh -c '! grep -qx service_installed "$1"' sh "$HOME_SVC_MISSING/.local/share/orbit-office/install-state"
+check "missing systemctl does not report service success" \
+    sh -c '! grep -F "service installed" "$1" && ! grep -F "service already enabled" "$1"' sh "$OUT_SVC_MISSING"
+OUT_SVC_MISSING_RETRY="$ROOT/out-svc-missing-retry.txt"
+run_install "$HOME_SVC_MISSING" -- > "$OUT_SVC_MISSING_RETRY" 2>&1 \
+    || { cat "$OUT_SVC_MISSING_RETRY" >&2; fail "systemd retry after missing manager exits 0"; }
+ok "systemd retry after missing manager exits 0"
+check "systemd retry after missing manager records the marker" \
+    grep -qx service_installed "$HOME_SVC_MISSING/.local/share/orbit-office/install-state"
+
+# --- launchd: failing manager stops, leaves no marker, retry completes ---
+# macOS keeps its data folder under Library/Application Support, so pin a
+# space-free override for the state assertions below.
+HOME_L_FAIL="$ROOT/home-launchd-fail"; mkdir -p "$HOME_L_FAIL"
+L_FAIL_DATA="$HOME_L_FAIL/custom-data"
+rm -f "$STUB_STATE/launchd-loaded" "$STUB_STATE/svc-enabled" "$STUB_STATE/svc-active"
+: > "$STUB_STATE/launchctl.log"
+OUT_L_FAIL="$ROOT/out-launchd-fail.txt"
+if run_install "$HOME_L_FAIL" ORBIT_OFFICE_OS=macos "ORBIT_OFFICE_DATA_DIR=$L_FAIL_DATA" STUB_LAUNCHCTL_FAIL=1 -- \
+    > "$OUT_L_FAIL" 2>&1; then
+    cat "$OUT_L_FAIL" >&2; fail "failing launchctl stops the install"
+else
+    ok "failing launchctl stops the install"
+fi
+check "failing launchctl reports the service" grep -F "service:" "$OUT_L_FAIL"
+check "failing launchctl leaves no marker" \
+    sh -c '! grep -qx service_installed "$1"' sh "$L_FAIL_DATA/install-state"
+check "failing launchctl does not report service success" \
+    sh -c '! grep -F "service installed" "$1" && ! grep -F "service already done" "$1"' sh "$OUT_L_FAIL"
+check "failing launchctl attempted activation" test -s "$STUB_STATE/launchctl.log"
+L_CALLS_FAIL=$(wc -l < "$STUB_STATE/launchctl.log")
+OUT_L_RETRY="$ROOT/out-launchd-retry.txt"
+run_install "$HOME_L_FAIL" ORBIT_OFFICE_OS=macos "ORBIT_OFFICE_DATA_DIR=$L_FAIL_DATA" -- > "$OUT_L_RETRY" 2>&1 \
+    || { cat "$OUT_L_RETRY" >&2; fail "launchd retry after failure exits 0"; }
+ok "launchd retry after failure exits 0"
+check "launchd retry records the marker" \
+    grep -qx service_installed "$L_FAIL_DATA/install-state"
+check "launchd retry reports service installed" grep -F "service installed" "$OUT_L_RETRY"
+check "launchd retry made new manager calls" \
+    sh -c '[ "$(wc -l < "$1")" -gt "$2" ]' sh "$STUB_STATE/launchctl.log" "$L_CALLS_FAIL"
+check "launchd retry leaves the agent loaded" test -f "$STUB_STATE/launchd-loaded"
+
+# --- launchd: already installed but unloaded is re-enabled ---
+rm -f "$STUB_STATE/launchd-loaded"
+OUT_L_REPAIR="$ROOT/out-launchd-repair.txt"
+run_install "$HOME_L_FAIL" ORBIT_OFFICE_OS=macos "ORBIT_OFFICE_DATA_DIR=$L_FAIL_DATA" -- > "$OUT_L_REPAIR" 2>&1 \
+    || { cat "$OUT_L_REPAIR" >&2; fail "unloaded launchd agent is repaired"; }
+ok "unloaded launchd agent is repaired"
+check "launchd repair re-enables the agent" grep -F "service re-enabled" "$OUT_L_REPAIR"
+check "launchd repair restores the loaded state" test -f "$STUB_STATE/launchd-loaded"
+
+# --- launchd: missing manager stops, leaves no marker, retry completes ---
+BIN_NOLAUNCH="$ROOT/bin-no-launch"; mkdir -p "$BIN_NOLAUNCH"
+for _stub in orbit npm systemctl ffmpeg curl tar uv; do cp "$BIN/$_stub" "$BIN_NOLAUNCH/$_stub"; done
+chmod +x "$BIN_NOLAUNCH"/*
+HOME_L_MISSING="$ROOT/home-launchd-missing"; mkdir -p "$HOME_L_MISSING"
+L_MISSING_DATA="$HOME_L_MISSING/custom-data"
+rm -f "$STUB_STATE/launchd-loaded"
+: > "$STUB_STATE/launchctl.log"
+OUT_L_MISSING="$ROOT/out-launchd-missing.txt"
+if (TEST_PATH="$BIN_NOLAUNCH:$NODE_DIR:$HIDE_BASE" \
+    run_install "$HOME_L_MISSING" ORBIT_OFFICE_OS=macos "ORBIT_OFFICE_DATA_DIR=$L_MISSING_DATA" -- > "$OUT_L_MISSING" 2>&1); then
+    cat "$OUT_L_MISSING" >&2; fail "missing launchctl stops the install"
+else
+    ok "missing launchctl stops the install"
+fi
+check "missing launchctl names the manager" grep -F "launchctl is not available" "$OUT_L_MISSING"
+check "missing launchctl leaves no marker" \
+    sh -c '! grep -qx service_installed "$1"' sh "$L_MISSING_DATA/install-state"
+OUT_L_MISSING_RETRY="$ROOT/out-launchd-missing-retry.txt"
+run_install "$HOME_L_MISSING" ORBIT_OFFICE_OS=macos "ORBIT_OFFICE_DATA_DIR=$L_MISSING_DATA" -- > "$OUT_L_MISSING_RETRY" 2>&1 \
+    || { cat "$OUT_L_MISSING_RETRY" >&2; fail "launchd retry after missing manager exits 0"; }
+ok "launchd retry after missing manager exits 0"
+check "launchd retry after missing manager records the marker" \
+    grep -qx service_installed "$L_MISSING_DATA/install-state"
 
 printf 'PASS: %s checks\n' "$PASS"
