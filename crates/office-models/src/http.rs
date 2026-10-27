@@ -15,19 +15,19 @@ use serde_json::Value;
 /// Hosts reachable without further configuration.
 const ALLOWED_HOSTS: &[&str] = &["api.meta.ai", "inference.baseten.co"];
 
-/// The host part of an `http(s)://` URL, without port or userinfo.
+/// The host part of an `http(s)://` URL, without port, userinfo or the
+/// brackets of an IPv6 literal (`[::1]:8080` is `::1`).
 pub(crate) fn host_of(url: &str) -> Option<String> {
     let rest = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))?;
     let authority = rest.split('/').next().unwrap_or_default();
-    let host = authority
-        .rsplit('@')
-        .next()
-        .unwrap_or_default()
-        .split(':')
-        .next()
-        .unwrap_or_default();
+    let host_and_port = authority.rsplit('@').next().unwrap_or_default();
+    let host = match host_and_port.strip_prefix('[') {
+        // An unclosed bracket is malformed: no host, so the URL is refused.
+        Some(literal) => literal.split_once(']')?.0,
+        None => host_and_port.split(':').next().unwrap_or_default(),
+    };
     if host.is_empty() {
         None
     } else {

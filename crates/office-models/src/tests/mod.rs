@@ -1,7 +1,9 @@
 //! Loopback fake-server harness shared by the adapter tests. No test
-//! touches the live network: every endpoint points at `127.0.0.1`.
+//! touches the live network: every endpoint points at loopback, `127.0.0.1`
+//! or `[::1]` for the IPv6 case.
 
 mod baseten;
+mod http;
 mod media;
 mod meta;
 mod routing;
@@ -28,7 +30,8 @@ pub struct Recorded {
 
 /// A loopback HTTP server answering with a canned status and body.
 pub struct FakeServer {
-    /// Base URL (`http://127.0.0.1:<port>/v1`) to configure as an endpoint.
+    /// Base URL (`http://127.0.0.1:<port>/v1`, or `http://[::1]:<port>/v1`)
+    /// to configure as an endpoint.
     pub base_url: String,
     requests: Arc<Mutex<Vec<Recorded>>>,
     stop: Arc<AtomicBool>,
@@ -38,7 +41,18 @@ pub struct FakeServer {
 impl FakeServer {
     /// Serve `body` with HTTP `status` for every request.
     pub fn start(status: u16, body: String) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        Self::serve("127.0.0.1", status, body)
+    }
+
+    /// Serve `body` on the IPv6 loopback address `[::1]`. Panics when the
+    /// host has no IPv6 loopback, so the test fails rather than passing
+    /// without exercising the endpoint.
+    pub fn start_ipv6(status: u16, body: String) -> Self {
+        Self::serve("[::1]", status, body)
+    }
+
+    fn serve(host: &str, status: u16, body: String) -> Self {
+        let listener = TcpListener::bind(format!("{host}:0")).expect("bind loopback");
         let port = listener.local_addr().expect("local addr").port();
         let requests: Arc<Mutex<Vec<Recorded>>> = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
@@ -68,7 +82,7 @@ impl FakeServer {
             })
         };
         Self {
-            base_url: format!("http://127.0.0.1:{port}/v1"),
+            base_url: format!("http://{host}:{port}/v1"),
             requests,
             stop,
             thread: Some(thread),

@@ -53,6 +53,22 @@ fn sends_normal_material_to_the_hosted_endpoint() {
 }
 
 #[test]
+fn reaches_an_ipv6_loopback_open_weights_endpoint() {
+    let open = FakeServer::start_ipv6(200, chat_reply(r#"{"ok":true}"#));
+    let hosted = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
+    let mut config = hosted_config(&hosted.base_url);
+    config.open_weights_endpoint = Some(open.base_url.clone());
+    let models = client(config);
+
+    let value = models
+        .extract(&extract(Sensitivity::Private))
+        .expect("extract");
+    assert_eq!(value, json!({"ok": true}));
+    assert_eq!(open.requests().len(), 1);
+    assert!(hosted.requests().is_empty());
+}
+
+#[test]
 fn refuses_private_material_when_no_open_weights_endpoint_is_configured() {
     let hosted = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
     let models = client(hosted_config(&hosted.base_url));
