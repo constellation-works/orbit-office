@@ -3,9 +3,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createDispatchPass, createDispatcher, selectDispatchIds } from "../dist/dispatch/pass.js";
+import { createDispatchPass, createDispatcher, selectDispatchIds, shipTasks } from "../dist/dispatch/pass.js";
 import { createOrbitClient } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
+import { installSupervisionDoubles, timerAt } from "./supervision-doubles.mjs";
 
 const TASKS = [
   { id: "ORB-1", status: "backlog", tags: ["owner:agent"] },
@@ -119,4 +120,76 @@ test("nothing eligible means no ship invocation", async (t) => {
   assert.deepEqual(await dispatcher.runOnce(), { skipped: false, submitted: [] });
   const shipLog = await readFile(join(fake.state, "ship.log"), "utf8").catch(() => "");
   assert.equal(shipLog, "");
+});
+
+const SHIP_SUPERVISION = {
+  timeoutMs: 100,
+  command: "orbit-supervision-double",
+  env: { PATH: "" },
+};
+
+test("ship execution does not signal a process group after its leader exits", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const pending = shipTasks(["ORB-1"], SHIP_SUPERVISION).then(
+      () => {
+        throw new Error("expected the timed-out ship to reject");
+      },
+      (error) => error,
+    );
+    assert.equal(doubles.children.length, 1);
+    assert.equal(doubles.children[0].options.detached, process.platform !== "win32");
+    assert.deepEqual(doubles.children[0].args, ["run", "ship", "ORB-1"]);
+    timerAt(doubles.timers, 100).fn();
+    const groupPid = process.platform === "win32" ? doubles.children[0].pid : -doubles.children[0].pid;
+    assert.deepEqual(
+      doubles.signals.map((entry) => entry.signal),
+      ["SIGTERM"],
+    );
+    assert.equal(doubles.signals[0].pid, groupPid);
+    assert.equal(doubles.signals[0].closed, false);
+    doubles.children[0].finish(0, null);
+    const error = await pending;
+    assert.match(error.message, /orbit run ship timed out after 100 ms/);
+
+    const escalation = timerAt(doubles.timers, 250);
+    const before = doubles.signals.length;
+    escalation.fn();
+    assert.deepEqual(
+      doubles.signals.slice(before),
+      [],
+      "escalation must not signal a reaped process group",
+    );
+    assert.equal(escalation.cleared, true);
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("a live ship child that ignores SIGTERM is killed and the call times out", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const pending = shipTasks(["ORB-1"], SHIP_SUPERVISION).then(
+      () => {
+        throw new Error("expected the timed-out ship to reject");
+      },
+      (error) => error,
+    );
+    timerAt(doubles.timers, 100).fn();
+    const escalation = timerAt(doubles.timers, 250);
+    assert.equal(escalation.cleared, false);
+    escalation.fn();
+    assert.equal(doubles.signals.length, 2);
+    assert.equal(doubles.signals[1].signal, "SIGKILL");
+    assert.equal(doubles.signals[1].closed, false);
+    assert.equal(doubles.signals[1].exitCode, null);
+    const groupPid = process.platform === "win32" ? doubles.children[0].pid : -doubles.children[0].pid;
+    assert.equal(doubles.signals[0].pid, groupPid);
+    assert.equal(doubles.signals[1].pid, groupPid);
+    doubles.children[0].finish(null, "SIGKILL");
+    const error = await pending;
+    assert.match(error.message, /orbit run ship timed out after 100 ms/);
+  } finally {
+    doubles.restore();
+  }
 });
