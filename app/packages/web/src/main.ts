@@ -12,6 +12,9 @@ function drawNav(nav: HTMLElement): void {
       const link = document.createElement("a");
       link.href = `#${screen.id}`;
       link.textContent = screen.title;
+      if (screen.id === (window.location.hash.slice(1) || "today")) {
+        link.setAttribute("aria-current", "page");
+      }
       return link;
     }),
   );
@@ -33,5 +36,8 @@ const root = document.getElementById("app");
 if (nav !== null && root !== null) {
   drawNav(nav);
   void drawScreen(root);
-  window.addEventListener("hashchange", () => void drawScreen(root));
+  window.addEventListener("hashchange", () => {
+    drawNav(nav);
+    void drawScreen(root);
+  });
 }
