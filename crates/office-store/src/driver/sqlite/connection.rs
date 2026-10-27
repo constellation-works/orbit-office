@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use rusqlite::{Connection, OpenFlags, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use crate::contracts::{DocumentKind, DocumentRecord, SearchFilter, SearchHit};
 use crate::driver::sqlite::migration;
@@ -93,6 +93,17 @@ impl IndexStore {
         let tx = conn
             .transaction()
             .map_err(|e| Error::sqlite(&self.path, "begin upsert", e))?;
+        let previous: Option<String> = tx
+            .query_row(
+                "SELECT id FROM documents WHERE path = ?1",
+                params![document.path],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::sqlite(&self.path, "find previous document at path", e))?;
+        if let Some(id) = previous {
+            delete_document(&tx, &id, &self.path)?;
+        }
         delete_document(&tx, &document.id, &self.path)?;
         insert_document(&tx, document, &self.path)?;
         tx.commit()

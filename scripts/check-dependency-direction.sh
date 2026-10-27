@@ -38,7 +38,12 @@ policy() {
       ALLOWED="office-common"
       BANNED="$SURFACE $HTTP"
       ;;
-    office-store|office-orbit)
+    office-store)
+      # LibraryStore implements the core Library port; records/settings use this edge.
+      ALLOWED="office-common office-core"
+      BANNED="$SURFACE $HTTP"
+      ;;
+    office-orbit)
       ALLOWED="office-common office-core"
       BANNED="$SURFACE $HTTP"
       ;;

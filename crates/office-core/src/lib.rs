@@ -5,7 +5,7 @@
 //!   renders the response envelope;
 //! - [`tool`] holds the tool contract types every tool module declares;
 //! - [`error`] is the crate's typed [`Error`];
-//! - `domain/` will hold the domain model and its rules, and `ports/` the
+//! - [`domain`] holds Library records, settings and domain rules; [`ports`] the
 //!   traits the application calls to reach files, models and Orbit.
 //!
 //! It does no I/O, never parses command-line arguments, never touches the
@@ -18,7 +18,7 @@
 // Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
-mod domain;
+pub mod domain;
 mod error;
 pub mod ports;
 pub mod protocol;

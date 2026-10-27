@@ -4,13 +4,32 @@
 //! (STD-02 R10). Each failure mode gets its own variant and message, and a
 //! message asserts only causes the code actually checked (STD-02 R26).
 
-/// Everything a protocol operation can fail with.
+/// Everything a protocol or domain operation can fail with.
 ///
 /// `#[non_exhaustive]`: this is the library's public boundary (STD-02 R11),
 /// so adding a variant is not a breaking change.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// No adapter was supplied for Library operations.
+    #[error("Library access is unavailable in this call context")]
+    LibraryUnavailable,
+    /// The adapter failed; the code is preserved for tool envelopes.
+    #[error("Library operation ({code}) failed: {message}")]
+    Library {
+        /// Stable adapter error code.
+        code: &'static str,
+        /// Safe diagnostic, without document contents or secrets.
+        message: String,
+    },
+    /// A Library setting was refused at load time.
+    #[error("invalid Library setting {key}: {reason}")]
+    InvalidSetting {
+        /// Dotted configuration key.
+        key: String,
+        /// Expected type, range or supported syntax; never the raw value.
+        reason: &'static str,
+    },
     /// The request envelope is not JSON, or is not a JSON object.
     #[error("request is not valid: {0}")]
     InvalidRequest(String),
@@ -31,6 +50,9 @@ impl Error {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
+            Self::LibraryUnavailable => "library_unavailable",
+            Self::Library { code, .. } => code,
+            Self::InvalidSetting { .. } => "invalid_library_setting",
             Self::InvalidRequest(_) => "invalid_request",
             Self::UnsupportedVersion(_) => "unsupported_schema_version",
             Self::UnknownTool(_) => "unknown_tool",

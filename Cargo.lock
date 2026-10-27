@@ -259,6 +259,7 @@ dependencies = [
 name = "office-core"
 version = "0.1.0"
 dependencies = [
+ "office-common",
  "serde",
  "serde_json",
  "thiserror",
@@ -277,6 +278,7 @@ name = "office-store"
 version = "0.1.0"
 dependencies = [
  "office-common",
+ "office-core",
  "rusqlite",
  "serde",
  "serde_json",

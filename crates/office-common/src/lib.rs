@@ -4,7 +4,7 @@
 //! labelled dependency, none of its code vendored here): domain contracts
 //! stay in the owning crates (`office-core`, `office-store`), while this
 //! crate owns the one common [`Error`], responsibility-based filesystem
-//! mechanisms, SQLite connection defaults, and small shared types.
+//! mechanisms, SQLite connection defaults, bounded subprocess supervision, and small shared types.
 //!
 //! Layers above may depend on this crate; it depends on nothing internal,
 //! and its contract types perform no I/O (STD-02 R5).
@@ -16,6 +16,7 @@
 
 mod error;
 pub mod fs;
+pub mod process;
 mod sensitivity;
 pub mod storage;
 
