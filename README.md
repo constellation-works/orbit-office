@@ -18,9 +18,12 @@ Built with Muse Spark Open.
 > else in this repository — the `office` plugin surface, the orchestrator, the
 > Library and the web app — is new work.
 
-**Status: scaffold.** The only working plugin tool is `office.status`. The KT video
-loop, capture, knowledge, proposals, metrics and review tools land in the slices
-listed in [docs/architecture.md](docs/architecture.md).
+**Status: scaffold.** The plugin manifest enables `status`, `init`, `reindex`,
+`config-set` and `signals-scan`
+([plugin/.orbit-plugin/plugin.yaml](plugin/.orbit-plugin/plugin.yaml)); the other
+tools are commented blocks there until they are built. The remaining tools (KT video
+loop, capture, knowledge, proposals, metrics and review) land in the slices listed in
+[docs/architecture.md](docs/architecture.md).
 
 ## Layout
 
