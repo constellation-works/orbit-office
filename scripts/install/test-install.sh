@@ -9,7 +9,8 @@
 #      including the pinned uv/Python step
 #   2. older Orbit stops with the upgrade command; newer warns on
 #   3. --uninstall removes tools/ and keeps ~/orbit; --purge removes an
-#      owned workspace and refuses any other folder
+#      owned workspace, refuses any other folder and refuses a data
+#      folder that is HOME (ORBIT_OFFICE_DATA_DIR=HOME)
 #   4. a non-empty unrelated workspace folder is refused, including by
 #      --purge --home
 #   5. missing Orbit is installed from npm
@@ -757,6 +758,45 @@ ok "purge of a recorded workspace exits 0"
 check "purge removes a recorded workspace" test ! -e "$OWNED"
 check "purge removes the data folder of a recorded workspace" \
     test ! -e "$HOME4S/.local/share/orbit-office"
+
+# --purge with ORBIT_OFFICE_DATA_DIR set to the home folder is refused before
+# any teardown. The workspace is recorded as owned, so the data-folder guard
+# is the only thing between this purge and the deletes. "/" is not run here:
+# if the guard regressed, an unguarded purge with DATA_DIR=/ would rm -rf the
+# host root.
+HOME4X="$ROOT/home4-protected-data"
+OWNED_X="$HOME4X/orbit"
+mkdir -p "$OWNED_X"
+printf 'workspace_path=%s\n' "$OWNED_X" > "$HOME4X/install-state"
+printf 'gone\n' > "$OWNED_X/sentinel.txt"
+printf 'keep\n' > "$HOME4X/keep.txt"
+SNAP_BEFORE_X="$ROOT/snap-protected-before.txt"
+SNAP_AFTER_X="$ROOT/snap-protected-after.txt"
+snapshot "$HOME4X" > "$SNAP_BEFORE_X"
+OUT_PROTECTED="$ROOT/out-purge-protected-data.txt"
+if run_install "$HOME4X" "ORBIT_OFFICE_DATA_DIR=$HOME4X" -- --purge > "$OUT_PROTECTED" 2>&1; then
+    fail "purge refuses a data folder that is the home folder"
+else
+    ok "purge refuses a data folder that is the home folder"
+fi
+check "protected data refusal names the path" \
+    grep -F "refusing to purge the data folder $HOME4X" "$OUT_PROTECTED"
+snapshot "$HOME4X" > "$SNAP_AFTER_X"
+check "protected data refusal removes nothing" cmp -s "$SNAP_BEFORE_X" "$SNAP_AFTER_X"
+check "protected data refusal leaves the workspace sentinel" \
+    grep -qx gone "$OWNED_X/sentinel.txt"
+
+# An ordinary data folder override is still purged.
+CUSTOM_X="$HOME4X/custom-data"
+mkdir -p "$CUSTOM_X"
+printf 'workspace_path=%s\n' "$OWNED_X" > "$CUSTOM_X/install-state"
+OUT_CUSTOM="$ROOT/out-purge-custom-data.txt"
+run_install "$HOME4X" "ORBIT_OFFICE_DATA_DIR=$CUSTOM_X" -- --purge > "$OUT_CUSTOM" 2>&1 \
+    || { cat "$OUT_CUSTOM" >&2; fail "purge of an ordinary data folder override exits 0"; }
+ok "purge of an ordinary data folder override exits 0"
+check "purge removes the ordinary data folder override" test ! -e "$CUSTOM_X"
+check "purge removes the workspace recorded under the override" test ! -e "$OWNED_X"
+check "purge keeps the home folder" grep -qx keep "$HOME4X/keep.txt"
 
 # The partial tree step 4 writes before the state line is the same proof
 # adoption uses, so purge removes it and a later install still adopts it.

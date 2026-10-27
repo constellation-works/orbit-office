@@ -1361,6 +1361,10 @@ do_uninstall() {
             "$HOME"|"/"|"") die "refusing to purge $WORKSPACE" ;;
             *) ;;
         esac
+        case "$DATA_DIR" in
+            "$HOME"|"/"|"") die "refusing to purge the data folder $DATA_DIR: it is a protected path" ;;
+            *) ;;
+        esac
         if ! is_office_workspace; then
             die "refusing to purge $WORKSPACE: it is not an office workspace this installer owns"
         fi
@@ -1453,11 +1457,15 @@ do_uninstall() {
     state_clear "app_built"
     state_clear "agent_registered"
     if [ "$_purge" -eq 1 ]; then
-        # The check above already ran. Repeat the protected-path guard
-        # immediately before the delete so HOME, / and an empty path
+        # The check above already ran. Repeat the protected-path guards
+        # immediately before the deletes so HOME, / and an empty path
         # cannot be removed even if that earlier check is bypassed.
         case "$WORKSPACE" in
             "$HOME"|"/"|"") die "refusing to purge $WORKSPACE" ;;
+            *) ;;
+        esac
+        case "$DATA_DIR" in
+            "$HOME"|"/"|"") die "refusing to purge the data folder $DATA_DIR: it is a protected path" ;;
             *) ;;
         esac
         if [ -e "$WORKSPACE" ]; then
