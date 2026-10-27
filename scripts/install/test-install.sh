@@ -221,6 +221,10 @@ case "${1:-} ${2:-}" in
     "plugin remove")
         _suffix=".${3:?}"
         [ "$3" != office ] || _suffix=""
+        if [ ! -f "$state/plugin-added$_suffix" ]; then
+            printf 'stub: plugin record is already gone\n' >&2
+            exit 1
+        fi
         rm -f "$state/plugin-added$_suffix" "$state/plugin-enabled$_suffix" "$state/plugin-active$_suffix"
         printf 'removed\n' ;;
     "plugin disable")
@@ -817,9 +821,16 @@ check "newer Orbit warns" grep -qi "newer" "$OUT_NEW"
 # ---------------------------------------------------------------------------
 
 OUT_UN="$ROOT/out-un.txt"
+# Simulate someone removing the Orbit plugin record while the install-state
+# ownership marker remains. The stub's plugin remove now fails in this case.
+check "office ownership marker exists before missing-record uninstall" \
+    grep -qx plugin_added "$HOME1/.local/share/orbit-office/install-state"
+rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled" "$STUB_STATE/plugin-active"
 run_install "$HOME1" -- --uninstall > "$OUT_UN" 2>&1 \
     || { cat "$OUT_UN" >&2; fail "uninstall exits 0"; }
 ok "uninstall exits 0"
+check "missing Orbit plugin record still clears office ownership markers" \
+    sh -c '! grep -Eq "^plugin_(added|enabled)$" "$1"' sh "$HOME1/.local/share/orbit-office/install-state"
 check "uninstall removes the service unit" \
     test ! -e "$HOME1/.config/systemd/user/orbit-office.service"
 if grep -q '"orbit"' "$HOME1/.claude.json" 2>/dev/null; then
