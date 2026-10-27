@@ -95,12 +95,9 @@ fn fake_capture_append_updates_search_and_read_document() {
 
 #[test]
 fn fake_capture_upload_then_paste_dedupes_to_the_same_id() {
-    let dir = std::env::temp_dir().join(format!(
-        "office-fake-library-test-{}-crlf-upload",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).expect("create temp dir");
-    let upload = dir.join("notes-crlf.txt");
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let fixture_dir = dir.path().to_owned();
+    let upload = dir.path().join("notes-crlf.txt");
     std::fs::File::create(&upload)
         .expect("create upload")
         .write_all(b"Hello world.  \r\nSecond line.\r\n")
@@ -131,6 +128,11 @@ fn fake_capture_upload_then_paste_dedupes_to_the_same_id() {
         "same normalized text pasted after a CRLF upload should deduplicate: {pasted:?}"
     );
     assert_eq!(pasted.id, uploaded.id);
+    drop(dir);
+    assert!(
+        !fixture_dir.exists(),
+        "upload fixture directory should be removed after use"
+    );
 }
 
 #[test]
