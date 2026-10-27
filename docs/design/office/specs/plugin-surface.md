@@ -36,6 +36,7 @@ Source: spec §12. The one-call envelope is
 | `office.selection.put` | mutating | **none** | Record a selection from the app; `clear: true` empties the tray |
 | `office.session.brief` | read_only | workspace | Assemble the session-start brief from Orbit and the Library, with no model call ([sessions.md](./sessions.md#session-brief)) |
 | `office.digest` | mutating | **none** | Write the day's digest artifact with one Muse Spark call; run only by the `office-daily-digest` routine ([sessions.md](./sessions.md#daily-digest)) |
+| `office.script.run` | mutating | **none** | Run an approved `script` artifact as a routine step: pinned version, run directory under plugin state, offline dependencies, bounds; outputs filed as a `script-output` task for review ([scripts.md](./scripts.md)) |
 | `office.review.inputs` | read_only | workspace | Gather a period's completed work, conversions, metrics, decisions and knowledge changes for a review |
 | `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, page templates (no pages), index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
 | `office.config.set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
@@ -48,7 +49,7 @@ Rules:
   `orbit tool run`, and by the install script for `office.init`. The
   orchestrator cannot scaffold the Library, approve its own proposals,
   write knowledge, promote artifacts, record selections, change settings,
-  write digests or reindex
+  write digests, run scripts or reindex
   ([orchestrator.md](./orchestrator.md)).
 - `execution_kind` is about consequence: anything that changes state or
   costs money is `mutating`, including `selection.get` (it consumes).
@@ -95,11 +96,12 @@ requires an outward-facing action.
   - network `any`, the only setting that reaches remote hosts. The plugin calls only the Meta and Baseten endpoints.
   - `orbit_tools`: the callbacks listed above.
   - Secrets: `meta_api_key` and `baseten_token` (`spec.secrets`).
-- **Required programs:** `spec.requires.programs: [git, ffmpeg]`, plus
+- **Required programs:** `spec.requires.programs: [git, ffmpeg, uv]`, plus
   `cargo` under `spec.build` for source-built installs. Programs are
   resolved against the operator's `PATH` when the plugin is enabled, and
   that path is the one granted. `ffmpeg` splits long audio for
-  transcription.
+  transcription; `uv` runs approved scripts ([scripts.md](./scripts.md)) and is the
+  install's own copy, on the `PATH` the install enables the plugin with.
 - Transcription runs as a deterministic `plugin.tool_call` job step from
   the meeting routine. That step is bounded by the operator's grant, so it
   can spawn `ffmpeg`. An agent calling `office.transcribe` would also need

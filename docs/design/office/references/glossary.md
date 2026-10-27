@@ -16,6 +16,8 @@ stdout, exit code) is excluded.
 | **Template** | A page template in `library/.office/templates/`: id pattern, required sections, attach policy and skeleton. `office.init` installs the bundled ones; pages name theirs with `template:`. See [specs/knowledge-templates.md](../specs/knowledge-templates.md). |
 | **Onboarding interview** | The first session's short set of questions whose answers become `fact` entries and one `knowledge_add` proposal per About page. |
 | **Model view** | A page as sent to a model or attached to a task: every `contact` ref keeps its label and loses its value. |
+| **Scratch** | Throwaway files: `$ORBIT_SCRATCH_DIR` for agent runs, `.orbit/tmp/session-<date>/` for the orchestrator, a run directory for plugin tools. Never a result and never in the Library. See [specs/scripts.md](../specs/scripts.md). |
+| **Script run** | One `office.script.run` call from a routine step: an approved script run offline in its own directory, its outputs filed as a `script-output` task for review. |
 | **Artifact** | Agent output the user approved, promoted from a task into the Library, versioned by `series`, never edited in place. The daily digest is the one artifact promoted by a routine without review. |
 | **Friction** | An Orbit record of something that went wrong or slowed work; the plugin adds `cites` and `runbook` conventions, never a second store. |
 | **Decision log** | The append-only `conversation` source of one orchestrator session: decisions, verbatim directions and facts, actions, open questions. See [specs/sessions.md](../specs/sessions.md). |

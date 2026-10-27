@@ -689,6 +689,54 @@ the MCP entry set. Nothing touches the system Python or the shell profile.
   `UV_VERSION` or `PYTHON_VERSION` is a deliberate change to the script,
   made together with the checksum.
 
+## Routines run approved scripts through `office.script.run`, and their outputs wait for review
+
+**Recorded:** 2026-10-26
+**Code anchors:** `crates/office-tools/src/tools/scripts/run.rs`; [specs/scripts.md](./specs/scripts.md)
+
+### Context
+
+A `script` artifact may run only as a step of a routine whose accepted
+proposal named it. Orbit routines run deterministic `plugin.tool_call`
+steps and have no generic command step, so something in the plugin must
+run the script. Agents also need scratch space that never pollutes the
+Library or the workspace repository. The alternatives considered:
+
+- **An agent loop that runs the script.** That pays for a model call to run
+  fixed code, and the agent could change what runs.
+- **Running from the workspace or the Library.** Scratch files would show up
+  as Library changes, or as untracked dirt in the primary checkout.
+- **Fetching dependencies on every run.** What runs would change between
+  runs without a new approval, and every run would need the network.
+- **Promoting outputs without review**, as the digest is. That would be a
+  second exception to "artifacts are approved outputs", and script output is
+  user data such as a catalog or a cleaned spreadsheet, not an internal
+  diary. The user chose review.
+
+### Decision
+
+- **Scratch:** `$ORBIT_SCRATCH_DIR` for agent runs,
+  `.orbit/tmp/session-<date>/` for the orchestrator, and run directories
+  under `plugin_state/runs/` for plugin tools. All are pruned after 7 days or
+  die with their worktree. None is ever in the Library.
+- **`office.script.run`** (mutating, `mcp_scope: none`) runs the pinned,
+  approved version. It uses the install's pinned Python through `uv run
+  --offline`, in its own run directory, with an allowlisted environment, a
+  timeout and output caps.
+- Dependencies are fetched **once, when the proposal is accepted**. Every
+  run after that is offline.
+- Outputs are filed as a **`script-output` task** and promoted only when the
+  user approves.
+
+### Consequences
+
+- What runs is exactly what was approved, and a run cannot fetch new code.
+  Every output still passes the user's approval.
+- Cost: the script inherits the plugin's grants, including network `any`,
+  until Orbit offers a sandbox for plugin children. The spec says so rather
+  than claiming isolation. Accepting a scripted routine needs the network
+  once.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.

@@ -7,6 +7,7 @@ mod artifact;
 pub mod knowledge;
 mod metrics;
 mod proposal;
+mod script;
 mod selection;
 mod session;
 pub mod settings;

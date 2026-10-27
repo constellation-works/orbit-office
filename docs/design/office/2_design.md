@@ -184,6 +184,7 @@ listing them, and the knowledge compounds locally.
 | One exec call, end to end | [specs/output-contract.md](./specs/output-contract.md) |
 | Orchestrator behaviours and guardrails | [specs/orchestrator.md](./specs/orchestrator.md) |
 | Session continuity: decision log, session brief, daily digest | [specs/sessions.md](./specs/sessions.md) |
+| Scratch space; running approved scripts from routines | [specs/scripts.md](./specs/scripts.md) |
 | Install script: Orbit, git, workspace, plugin, scaffold, app | [specs/install.md](./specs/install.md) |
 | Proposal kinds, signals, lifecycle | [specs/proposals.md](./specs/proposals.md) |
 | Metrics definitions and review production | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) |
