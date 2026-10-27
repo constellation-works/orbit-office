@@ -6,8 +6,7 @@ To-dos, Routines, Library, Insights, Review. No ids, crews, runs or raw
 statuses are ever shown. There is no Chat screen: conversation happens in
 the user's agent CLI.
 
-**Status: The Today, To-dos and Settings server features are built, as is the app
-server.** Today is the landing screen, backed by `GET /api/today`. To-dos shows your open to-dos and the agents' in two
+**Status: Today, To-dos, Library, Insights, Review and Settings are built, as is the app server.** Today is the landing screen, backed by `GET /api/today`. To-dos shows your open to-dos and the agents' in two
 columns. Each one names its source and its attached knowledge, in plain words.
 Closing one of yours marks it done through Orbit; an agent's to-do has no close
 action. Other features and screens remain planned:
@@ -137,3 +136,5 @@ npm test        # node:test suites for every package (fake `orbit` on PATH)
 npm run dev     # build, then tsx watch on the server entry
 npm start       # run the built server
 ```
+
+Library searches and browses pages, outputs and setup progress through Office read tools. Outputs show the latest 100 matches, with kind and exact series filters and a notice when more exist. Person pages show Library document back-links; task links await a supported citation read. Page and artifact history comes from the show tools.

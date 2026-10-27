@@ -138,9 +138,10 @@ The onboarding and knowledge-write consumers replace it with supported claims
 and citations before proposing a page.
 
 - **One page per person.** A meeting links its participants to their own
-  pages, so a person's back-links show every meeting and task they appear
-  in, and capturing one meeting edits only the pages of the people in it.
-  The Library screen builds the contacts list from those pages.
+  pages, so a person's back-links show indexed meeting sources and other
+  Library documents that link to them. The Library screen builds the contacts
+  list from those pages. Task links are deferred until a supported page-citation
+  read exists.
 - **Locations live with their subject.** Paths to a project's files are in
   that project page's `refs`, so attaching the page brings the paths with
   it. The `systems` page holds only what no single subject owns.
