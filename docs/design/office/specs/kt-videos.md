@@ -79,7 +79,7 @@ it (`transcript_path`), the VTT becomes the transcript and transcription is
 skipped: speaker names and cue times come straight from the file, with no
 model call.
 
-### 2. Plan and confirm: `office.video.plan`
+### 2. Plan and confirm: `office.video-plan`
 
 Mutating, `mcp_scope: none`; called by the app after an upload.
 
@@ -95,7 +95,7 @@ Mutating, `mcp_scope: none`; called by the app after an upload.
   counts and says that rates are unset. It never invents a price.
 - The plan is stored with its digest. The app shows it as "48 minutes, 96
   frames, about 110 model calls, ≈ $X" and a **Process** button.
-  **Process** calls `office.video.plan` with `confirm: true` and the digest
+  **Process** calls `office.video-plan` with `confirm: true` and the digest
   the user saw. A plan whose inputs changed since then is refused
   (`plan_changed`; STD-05@1 §R21).
 - A `private` video whose media the open-weights route cannot take (audio or
@@ -127,7 +127,7 @@ confirmed plans. Each is a `plugin.tool_call` step:
    - Content inside a `tangent` chapter becomes knowledge only as a gotcha.
    - It writes `chapters.md` and the extract task artifact.
 4. **Propose and file.** One `knowledge_add`/`knowledge_update` proposal per
-   page, through `office.proposal.create`, tagged `kt` and grouped in the app
+   page, through `office.proposal-create`, tagged `kt` and grouped in the app
    under the video. One `owner:you` to-do per question, tagged
    `kt-question`.
 5. **Hard cap.** No step makes more model calls than the confirmed plan

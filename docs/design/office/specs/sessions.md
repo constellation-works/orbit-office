@@ -16,7 +16,7 @@ is the cheapest mechanism that can do its job
 |---|---|---|---|
 | **Decision log** | the agent, through `office.capture` | as decisions happen | none |
 | **Handoff** | the agent, as `handoff` entries in that log | refreshed whenever the plan changes | none |
-| **Session brief** | `office.session.brief`, computed on demand | at session start | none |
+| **Session brief** | `office.session-brief`, computed on demand | at session start | none |
 | **Daily digest** | `office.digest`, from the `office-daily-digest` routine | once a day | one Muse Spark call |
 
 The handoff is never left to the end of a session, which often ends with
@@ -75,7 +75,7 @@ anchor and id.
 
 ## Session brief
 
-`office.session.brief` (read_only, `mcp_scope: workspace`). The
+`office.session-brief` (read_only, `mcp_scope: workspace`). The
 orchestrator skill calls it first in every session. Its output is
 assembled from Orbit and the Library, with no model call, so it is free,
 always current and cannot invent anything:

@@ -1,6 +1,6 @@
 ---
 type: design
-summary: "Spec: scratch space and scripts — where one-off files go, and how a routine runs an approved script with office.script.run"
+summary: "Spec: scratch space and scripts — where one-off files go, and how a routine runs an approved script with office.script-run"
 last_validated: 2026-10-26
 ---
 
@@ -30,14 +30,14 @@ This spec says where scratch goes, and how a routine runs an approved script
 - **Pruning.** The orchestrator skill's first step after the session brief
   deletes only its own `session-*` folders older than 7 days, and nothing
   else under `.orbit/tmp/`. Plugin run directories are pruned by
-  `office.script.run` (below).
+  `office.script-run` (below).
 
 ## Running a script from a routine
 
 A `script` artifact ([library.md](./library.md#artifacts)) runs only as a
 step of a routine or auto-task whose accepted proposal named it. Orbit
 routines run deterministic `plugin.tool_call` steps and have no generic
-command step, so that step calls **`office.script.run`** (mutating,
+command step, so that step calls **`office.script-run`** (mutating,
 `mcp_scope: none`).
 
 ### Step input
@@ -47,7 +47,7 @@ from the caller:
 
 ```yaml
 - kind: plugin.tool_call
-  tool: office.script.run
+  tool: office.script-run
   input:
     artifact: art-20261102-receipt-catalog-script
     sha256: 3f1c…              # the approved version, pinned
@@ -88,7 +88,7 @@ from the caller:
    version, the inputs, the routine run). It follows the proposal record
    and close path ([proposals.md](./proposals.md#record-and-lifecycle)):
    the app shows it under Needs you, **Approve** promotes the files with
-   `office.artifact.promote` into the `output` series, and **Dismiss**
+   `office.artifact-promote` into the `output` series, and **Dismiss**
    rejects it. An empty `out/` files nothing.
 6. **Result.** The step result reports the exit code, the duration, the
    output task (if any) and the last 50 lines of `run.log`. A non-zero exit
@@ -101,7 +101,7 @@ from the caller:
 ### Dependencies are fetched once, at approval
 
 A script declares its dependencies inline (PEP 723). When
-`office.proposal.accept` applies a routine or auto-task that runs a script,
+`office.proposal-accept` applies a routine or auto-task that runs a script,
 it first resolves and downloads those dependencies into the plugin's cache
 (`plugin_state/uv-cache`) with the pinned Python. A dependency that cannot
 be resolved refuses the acceptance, and nothing is enabled. Every later run

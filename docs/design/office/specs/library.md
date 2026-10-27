@@ -123,7 +123,7 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 - **Immutable.** A correction writes `v2.md` with `supersedes` set. Citations name a version when it matters, otherwise the latest.
 - **Dedupe.** If the `sha256` of the original, or of the normalized pasted text, matches an existing source, capture returns that source instead of creating a new one.
 - **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. Short directives typed by the user are not captured separately: they go in the `conversation` source.
-- **Conversation sources.** The skill has the agent open one `conversation` source per session and append to it whenever the user makes a decision or gives a standing direction, and for each action it takes. Instead of an end-of-session summary, the agent keeps a rolling `handoff` entry current, and the next session starts from `office.session.brief`, which leads with that handoff ([sessions.md](./sessions.md)). The user's directions are decisions, and the review needs them.
+- **Conversation sources.** The skill has the agent open one `conversation` source per session and append to it whenever the user makes a decision or gives a standing direction, and for each action it takes. Instead of an end-of-session summary, the agent keeps a rolling `handoff` entry current, and the next session starts from `office.session-brief`, which leads with that handoff ([sessions.md](./sessions.md)). The user's directions are decisions, and the review needs them.
 - **Retention** is per kind and shown on the Routines screen: for example, keep meeting transcripts forever and drop the audio after 90 days. Expiry deletes only the `original.*` file and records that in the frontmatter.
 
 ## Knowledge pages
@@ -185,13 +185,13 @@ tags: [client:acme]
 
 1. **Produce.** The implementing agent writes its output as Orbit task artifacts (`orbit.task.artifact.put`, up to 1 MiB each), together with a manifest naming the kind, title and what it drew on. The agent never writes into the Library.
 2. **Review.** The task lands in `review`, and the user sees the output under "Needs you".
-3. **Promote.** Approval calls `office.artifact.promote`. It copies the task's output into `library/artifacts/…`, writes the frontmatter (task, producer, cites, whether the user edited it), indexes it and commits. Output that is rejected or never approved stays only on the Orbit task.
+3. **Promote.** Approval calls `office.artifact-promote`. It copies the task's output into `library/artifacts/…`, writes the frontmatter (task, producer, cites, whether the user edited it), indexes it and commits. Output that is rejected or never approved stays only on the Orbit task.
 4. **Revise.** A re-run of the same deliverable (next week's report, a corrected draft) promotes a new artifact in the same `series` with `supersedes` set. Approved artifacts are never edited in place.
 
 **Rules by kind:**
 
 - **`draft`** (an email or message for someone else) records `sent_at` once the user sends it. In the hackathon build, sending copies the draft to the clipboard.
-- **`script`** is never run because it was promoted. A script runs only as a step of a routine or auto-task whose accepted proposal named it. That step pins the artifact version by `sha256` and runs inside Orbit's sandbox. That step calls `office.script.run`, which runs it with the install's pinned Python in its own run directory, offline, with dependencies fetched once at approval, and files its outputs for review ([scripts.md](./scripts.md)). Changing the script means a new version and a new proposal.
+- **`script`** is never run because it was promoted. A script runs only as a step of a routine or auto-task whose accepted proposal named it. That step pins the artifact version by `sha256` and runs inside Orbit's sandbox. That step calls `office.script-run`, which runs it with the install's pinned Python in its own run directory, offline, with dependencies fetched once at approval, and files its outputs for review ([scripts.md](./scripts.md)). Changing the script means a new version and a new proposal.
 - **`review`** holds the generated reviews ([analytics-and-reviews.md](./analytics-and-reviews.md)).
 - **`report`** in the series `digest-daily` is the daily digest, the one artifact promoted without review (`approved.by: routine`; [sessions.md](./sessions.md#daily-digest)).
 - **`data`** (csv, json) records its schema in the summary, so later tasks can use it without opening it.

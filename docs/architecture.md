@@ -49,8 +49,8 @@ config or Library content.
 
 1. Plugin manifest, `office.status`, Library layout, index + `reindex`.
 2. `capture`, `transcribe`, `extract`, meeting routine; Today + To-dos screens.
-3. `knowledge.*`, `attach`, agent to-do activity, `artifact.promote`.
-4. `signals.scan`, proposals; Needs-you + Routines screens.
+3. `knowledge.*`, `attach`, agent to-do activity, `artifact-promote`.
+4. `signals-scan`, proposals; Needs-you + Routines screens.
 5. `metrics`, `review`; Insights + Review screens.
 6. Open-weight routing for `private` sources; receipts pack if time allows.
 

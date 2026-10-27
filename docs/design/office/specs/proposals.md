@@ -25,7 +25,7 @@ Source: spec §7.
 
 ## Signals
 
-These are mechanical and computed by `office.signals.scan`. They are not
+These are mechanical and computed by `office.signals-scan`. They are not
 left to the model's discretion.
 
 | Signal | Condition | Proposes |
@@ -49,7 +49,7 @@ cadence are should-have.
 
 - Each proposal is an Orbit task tagged `proposal` and `proposal:<kind>`, in `proposed` state. The description says what changes. Its evidence (task ids, source anchors, friction ids) goes in the body and in `library/proposals/<id>.md`. The concrete payload (an auto-task definition, a page diff) is a task artifact.
 - **Onboarding set.** The proposals filed from the onboarding interview also carry the tag `onboarding`. The app shows them as one "Set up your Library" card with *Accept all* and per-page review; *Accept all* accepts each one in turn, and a refusal on one leaves the others accepted and names it.
-- **Accept:** the app calls `office.proposal.accept`, which applies the payload (creates the auto-task or routine, writes the page; for a routine or auto-task that runs a script, it first fetches the script's dependencies and refuses the acceptance if they do not resolve, [scripts.md](./scripts.md#dependencies-are-fetched-once-at-approval)), closes the task as done with the change recorded, and commits the Library. `proposal.accept` is `mcp_scope: none`: only the app can call it.
+- **Accept:** the app calls `office.proposal-accept`, which applies the payload (creates the auto-task or routine, writes the page; for a routine or auto-task that runs a script, it first fetches the script's dependencies and refuses the acceptance if they do not resolve, [scripts.md](./scripts.md#dependencies-are-fetched-once-at-approval)), closes the task as done with the change recorded, and commits the Library. `proposal-accept` is `mcp_scope: none`: only the app can call it.
 - **Dismiss:** closes it as rejected with an optional reason.
 - **Never auto-approved.** Orbit only approves a `proposed` task automatically when a drain is started with `--approve-proposed`. The office workspace runs no drain, and the dispatch pass submits `backlog` tasks only, so a proposal changes state only when the user accepts or dismisses it.
 

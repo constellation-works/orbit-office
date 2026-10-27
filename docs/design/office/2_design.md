@@ -120,7 +120,7 @@ parallel tasks have disjoint footprints.
 - **Review is the approval step.** A finished agent to-do lands in
   `review`. That is the "Needs you" item. Approving it in the app records
   a structured verdict, promotes the output into the Library
-  (`office.artifact.promote`) and moves the task to `done`. Asking for
+  (`office.artifact-promote`) and moves the task to `done`. Asking for
   changes sends it back to `backlog` with a comment.
 - **Provenance.** Every task created from a source carries `source:<id>`
   in its tags and the anchor in its description. Agent outputs stay task
@@ -142,8 +142,8 @@ Three actors, three authorities:
 
 - **Hidden from MCP** (`mcp_scope: none`; only the app calls them, and
   the install script calls `office.init`): `office.init`,
-  `office.knowledge.write`, `office.proposal.accept`,
-  `office.artifact.promote`, `office.selection.put`, `office.config.set`,
+  `office.knowledge-write`, `office.proposal-accept`,
+  `office.artifact-promote`, `office.selection-put`, `office.config-set`,
   `office.reindex`.
   The orchestrator cannot approve its own proposals or write to the
   Library; it can only propose. This is enforced by the tool surface, not

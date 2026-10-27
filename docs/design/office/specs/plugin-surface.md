@@ -20,28 +20,28 @@ Source: spec §12. The one-call envelope is
 |---|---|---|---|
 | `office.capture` | mutating | workspace | Create a source from an upload path or pasted text; dedupe; return the id |
 | `office.transcribe` | mutating | workspace | Transcribe a video or meeting source's audio into its body in chunks (Muse Voice Transcribe); a no-op when a `.vtt` was imported |
-| `office.video.plan` | mutating | **none** | Plan a video: duration, deduplicated keyframes, model-call counts, cost estimate; `confirm` with the digest the user saw ([kt-videos.md](./kt-videos.md)) |
+| `office.video-plan` | mutating | **none** | Plan a video: duration, deduplicated keyframes, model-call counts, cost estimate; `confirm` with the digest the user saw ([kt-videos.md](./kt-videos.md)) |
 | `office.frames` | mutating | **none** | Extract a confirmed video's keyframes and read them with Muse Spark image input into `frames.md` |
 | `office.extract` | mutating | workspace | From a source, produce structured JSON plus a task artifact: `profile: kt` gives chapters, gotchas, knowledge candidates, runbook steps and questions; `profile: meeting` gives a summary, decisions and to-dos |
-| `office.source.show` | read_only | workspace | Return a source, optionally at an anchor |
+| `office.source-show` | read_only | workspace | Return a source, optionally at an anchor |
 | `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, template, tag, series and date |
-| `office.knowledge.show` | read_only | workspace | Read a page and its back-links |
-| `office.knowledge.write` | mutating | **none** | Create or update a page; validate frontmatter, cites and its template ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)); commit |
-| `office.artifact.show` | read_only | workspace | Read an artifact, its files, its series history and what cites it |
-| `office.artifact.promote` | mutating | **none** | Copy an approved task's output into the Library as an artifact; write provenance; commit |
+| `office.knowledge-show` | read_only | workspace | Read a page and its back-links |
+| `office.knowledge-write` | mutating | **none** | Create or update a page; validate frontmatter, cites and its template ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)); commit |
+| `office.artifact-show` | read_only | workspace | Read an artifact, its files, its series history and what cites it |
+| `office.artifact-promote` | mutating | **none** | Copy an approved task's output into the Library as an artifact; write provenance; commit |
 | `office.attach` | mutating | workspace | Pick the knowledge, source and example artifact files for a task, by template attach policy first ([knowledge-templates.md](./knowledge-templates.md#attach-policies)), and copy their model views into it as task artifacts under `context/` |
-| `office.signals.scan` | read_only | workspace | Run the proposal signals and return candidate proposals with evidence |
-| `office.proposal.create` | mutating | workspace | File a proposal task, its artifact and its evidence page |
-| `office.proposal.accept` | mutating | **none** | Apply a proposal's payload; close the task |
+| `office.signals-scan` | read_only | workspace | Run the proposal signals and return candidate proposals with evidence |
+| `office.proposal-create` | mutating | workspace | File a proposal task, its artifact and its evidence page |
+| `office.proposal-accept` | mutating | **none** | Apply a proposal's payload; close the task |
 | `office.metrics` | read_only | workspace | Compute the analytics metrics for a window |
-| `office.selection.get` | mutating | workspace | Return the user's fresh, unused selections from the app and mark them consumed. Mutating because it consumes |
-| `office.selection.put` | mutating | **none** | Record a selection from the app; `clear: true` empties the tray |
-| `office.session.brief` | read_only | workspace | Assemble the session-start brief from Orbit and the Library, with no model call ([sessions.md](./sessions.md#session-brief)) |
+| `office.selection-get` | mutating | workspace | Return the user's fresh, unused selections from the app and mark them consumed. Mutating because it consumes |
+| `office.selection-put` | mutating | **none** | Record a selection from the app; `clear: true` empties the tray |
+| `office.session-brief` | read_only | workspace | Assemble the session-start brief from Orbit and the Library, with no model call ([sessions.md](./sessions.md#session-brief)) |
 | `office.digest` | mutating | **none** | Write the day's digest artifact with one Muse Spark call; run only by the `office-daily-digest` routine ([sessions.md](./sessions.md#daily-digest)) |
-| `office.script.run` | mutating | **none** | Run an approved `script` artifact as a routine step: pinned version, run directory under plugin state, offline dependencies, bounds; outputs filed as a `script-output` task for review ([scripts.md](./scripts.md)) |
-| `office.review.inputs` | read_only | workspace | Gather a period's completed work, conversions, metrics, decisions and knowledge changes for a review |
+| `office.script-run` | mutating | **none** | Run an approved `script` artifact as a routine step: pinned version, run directory under plugin state, offline dependencies, bounds; outputs filed as a `script-output` task for review ([scripts.md](./scripts.md)) |
+| `office.review-inputs` | read_only | workspace | Gather a period's completed work, conversions, metrics, decisions and knowledge changes for a review |
 | `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, page templates (no pages), index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
-| `office.config.set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
+| `office.config-set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
 | `office.reindex` | mutating | **none** | Rebuild the SQLite index from the Library |
 | `office.status` | read_only | workspace | Library and index health (also a panel) |
 
@@ -54,7 +54,7 @@ Rules:
   write digests, run scripts or reindex
   ([orchestrator.md](./orchestrator.md)).
 - `execution_kind` is about consequence: anything that changes state or
-  costs money is `mutating`, including `selection.get` (it consumes).
+  costs money is `mutating`, including `selection-get` (it consumes).
 - Unknown input keys are refused, never ignored; identity and secrets come
   from the call context, never from input.
 - Secrets are declared in the manifest (`meta_api_key`, `baseten_token`)
@@ -126,7 +126,7 @@ requires an outward-facing action.
 - **Library settings** live in `library/.office/config.yaml`: `retention`
   per kind, default `sensitivity` per kind, enabled packs, signal
   thresholds and `open_weights_endpoint`. `office.init` writes the
-  defaults, the app changes them through `office.config.set`, and the
+  defaults, the app changes them through `office.config-set`, and the
   plugin validates the file on every read. Secrets are never in it.
 - **Permissions** (`spec.permissions`, granted at `orbit plugin enable`):
   - fs read and write on `{{workspace}}/library` and `{{plugin_state}}`.

@@ -37,7 +37,7 @@ mechanism.
 
 - **`office-review` auto-task**, condition `period_end`: quarterly and yearly reviews (must, shown over seeded history in the demo). The day-to-day summary is the daily digest, which is a routine, not an auto-task ([sessions.md](./sessions.md#daily-digest)).
 - **Inputs:** completed tasks and their outputs, accepted proposals, metrics for the period, conversation sources (decisions), the period's daily digests, and knowledge pages created or updated.
-- **Production:** the auto-task mints an agent to-do. The agent calls `office.review.inputs` for the period's material and writes the review. Approving it promotes a `review` artifact in the series `review-<cadence>`, for example `review-quarterly`, so each review can start from the previous one (the compounding rule in [library.md](./library.md)).
+- **Production:** the auto-task mints an agent to-do. The agent calls `office.review-inputs` for the period's material and writes the review. Approving it promotes a `review` artifact in the series `review-<cadence>`, for example `review-quarterly`, so each review can start from the previous one (the compounding rule in [library.md](./library.md)).
 - **Sections:**
   - **Highlights:** the top outcomes, each cited.
   - **Work by area:** grouped by project and client tags.

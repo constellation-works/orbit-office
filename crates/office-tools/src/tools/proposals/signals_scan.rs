@@ -1,4 +1,4 @@
-//! `office.signals.scan`: Run the proposal signals and return candidate
+//! `office.signals-scan`: Run the proposal signals and return candidate
 //! proposals with evidence.
 //!
 //! Reads tasks and frictions through the Orbit port and thresholds plus
@@ -17,7 +17,7 @@ use crate::registry::{Call, Tool};
 
 pub(crate) const TOOL: Tool = Tool::built(
     ToolSpec {
-        name: "signals.scan",
+        name: "signals-scan",
         execution_kind: ExecutionKind::ReadOnly,
         mcp_scope: McpScope::Workspace,
     },

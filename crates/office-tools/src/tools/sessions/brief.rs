@@ -1,4 +1,4 @@
-//! `office.session.brief`: assemble the session-start brief from Orbit and
+//! `office.session-brief`: assemble the session-start brief from Orbit and
 //! the Library — waiting on you, agents working on, open questions, the
 //! last session's decisions — with no model call.
 //!
@@ -12,7 +12,7 @@ use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use crate::registry::Tool;
 
 pub(crate) const TOOL: Tool = Tool::planned(ToolSpec {
-    name: "session.brief",
+    name: "session-brief",
     execution_kind: ExecutionKind::ReadOnly,
     mcp_scope: McpScope::Workspace,
 });

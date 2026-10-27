@@ -195,8 +195,8 @@ while `orbit tool run` can still call it.
 
 ### Decision
 
-The approval and write tools (`init`, `knowledge.write`,
-`proposal.accept`, `artifact.promote`, `selection.put`, `config.set`,
+The approval and write tools (`init`, `knowledge-write`,
+`proposal-accept`, `artifact-promote`, `selection-put`, `config-set`,
 `reindex`) are `mcp_scope: none`. Only the app — acting as the user
 through `orbit tool run` — can call them, and the install script calls
 `init`. The orchestrator can propose; it cannot approve or write.
@@ -320,7 +320,7 @@ values.
 `[plugins.office]` holds only `library_dir`, the one value needed to find
 the Library. Every other setting lives in `library/.office/config.yaml`,
 written with defaults by `office.init` and changed by the app through
-`office.config.set` (validated, then committed). Secrets stay in Orbit's
+`office.config-set` (validated, then committed). Secrets stay in Orbit's
 secret store.
 
 ### Consequences
@@ -582,7 +582,7 @@ where the last one stopped. The alternatives considered:
   happen.
 - The agent keeps a **rolling handoff**: a `handoff` entry in the log,
   appended anew whenever the plan changes, so the latest is always current.
-- **`office.session.brief`**, computed at session start from Orbit and the
+- **`office.session-brief`**, computed at session start from Orbit and the
   Library with no model call, leads with that handoff and does not depend
   on it.
 - The day's summary is the **`office-daily-digest` routine**: one
@@ -630,7 +630,7 @@ glossary). The alternatives considered:
 
 - `office.init` installs **templates** in `.office/templates/`, compiled into
   the binary. It writes no pages. A page names its template in frontmatter,
-  and `office.knowledge.write` checks it against that template.
+  and `office.knowledge-write` checks it against that template.
 - The bundled set: `user`, `standing-directions`, `systems`, `person` (one
   page each), `client`, `project`, `topic` (renamed from `domain_<name>`),
   `glossary`, `goals`, `rhythm` and `runbook`. Locations go in the subject's
@@ -694,7 +694,7 @@ the MCP entry set. Nothing touches the system Python or the shell profile.
   `UV_VERSION` or `PYTHON_VERSION` is a deliberate change to the script,
   made together with the checksum.
 
-## Routines run approved scripts through `office.script.run`, and their outputs wait for review
+## Routines run approved scripts through `office.script-run`, and their outputs wait for review
 
 **Recorded:** 2026-10-26
 **Code anchors:** `crates/office-tools/src/tools/scripts/run.rs`; [specs/scripts.md](./specs/scripts.md)
@@ -724,7 +724,7 @@ Library or the workspace repository. The alternatives considered:
   `.orbit/tmp/session-<date>/` for the orchestrator, and run directories
   under `plugin_state/runs/` for plugin tools. All are pruned after 7 days or
   die with their worktree. None is ever in the Library.
-- **`office.script.run`** (mutating, `mcp_scope: none`) runs the pinned,
+- **`office.script-run`** (mutating, `mcp_scope: none`) runs the pinned,
   approved version. It uses the install's pinned Python through `uv run
   --offline`, in its own run directory, with an allowlisted environment, a
   timeout and output caps.
@@ -819,8 +819,10 @@ The verbs are `http-get`, `http-draft`, `http-send`, `connection-list`,
 ### Consequences
 
 - The spec, the skill and the app use the hyphenated names.
-- The same rule refuses the `office` plugin's `signals.scan`; that is its own
-  fix.
+- The same rule applies to the `office` plugin, whose built `signals.scan` made
+  `orbit plugin validate` fail. Every dotted `office` verb was renamed the same
+  way (`office.signals-scan`, `office.knowledge-show`, …) before the rest were
+  built, with schema and golden files following the verb.
 - Cost: the tool names differ from the dotted `office.*` style until Orbit
   accepts dotted verbs.
 

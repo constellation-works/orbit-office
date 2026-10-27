@@ -45,7 +45,7 @@ impl McpScope {
 /// What a tool is, independent of whether it is built yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ToolSpec {
-    /// The verb after `office.`, for example `capture` or `knowledge.write`.
+    /// The verb after `office.`, for example `capture` or `knowledge-write`.
     pub name: &'static str,
     /// Whether it changes state.
     pub execution_kind: ExecutionKind,

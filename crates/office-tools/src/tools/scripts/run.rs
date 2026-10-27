@@ -1,4 +1,4 @@
-//! `office.script.run`: run an approved, pinned `script` artifact in its
+//! `office.script-run`: run an approved, pinned `script` artifact in its
 //! own run directory under plugin state, offline, within its bounds, and
 //! file its outputs as a `script-output` task for review; run only by
 //! routine and auto-task steps.
@@ -13,7 +13,7 @@ use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use crate::registry::Tool;
 
 pub(crate) const TOOL: Tool = Tool::planned(ToolSpec {
-    name: "script.run",
+    name: "script-run",
     execution_kind: ExecutionKind::Mutating,
     mcp_scope: McpScope::None,
 });

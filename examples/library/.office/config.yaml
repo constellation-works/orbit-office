@@ -1,5 +1,5 @@
 # Example Library settings. office.init writes the real file at
-# library/.office/config.yaml; the app changes it through office.config.set.
+# library/.office/config.yaml; the app changes it through office.config-set.
 # Orbit's [plugins.office] config holds only library_dir.
 retention:
   meeting_original_days: 90

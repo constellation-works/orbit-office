@@ -17,10 +17,10 @@ Source: spec §13.1–§13.2 and §13.4.
 - The local app server is the only process the browser talks to.
 - It acts **as the user**: it calls Orbit with `orbit tool run --json` for
   both `orbit.*` and `office.*` tools, including the tools hidden from MCP
-  (`office.knowledge.write`, `office.proposal.accept`,
-  `office.artifact.promote`, `office.selection.put`, `office.config.set`,
+  (`office.knowledge-write`, `office.proposal-accept`,
+  `office.artifact-promote`, `office.selection-put`, `office.config-set`,
   `office.reindex`). Settings changed in the app, such as retention on the
-  Routines screen, are written with `office.config.set`.
+  Routines screen, are written with `office.config-set`.
 - It never reads `.orbit/` directly. Orbit's HTTP API is not used; it
   belongs to Orbit's own dashboard (spec §18.3).
 - It owns the **dispatch pass**: every 30 seconds it lists `backlog` tasks

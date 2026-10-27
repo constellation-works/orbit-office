@@ -1,4 +1,4 @@
-//! `office.video.plan`: Plan a video source's processing: duration,
+//! `office.video-plan`: Plan a video source's processing: duration,
 //! deduplicated keyframes, model-call counts and a cost estimate; with
 //! `confirm` and the digest the user saw, approve it for the KT routine.
 //!
@@ -12,7 +12,7 @@ use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use crate::registry::Tool;
 
 pub(crate) const TOOL: Tool = Tool::planned(ToolSpec {
-    name: "video.plan",
+    name: "video-plan",
     execution_kind: ExecutionKind::Mutating,
     mcp_scope: McpScope::None,
 });

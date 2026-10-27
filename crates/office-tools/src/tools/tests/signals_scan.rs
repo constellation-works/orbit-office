@@ -1,4 +1,4 @@
-//! `office.signals.scan` through dispatch against the Orbit and Library
+//! `office.signals-scan` through dispatch against the Orbit and Library
 //! fakes (STD-04): fixture histories produce the expected candidates.
 
 use serde_json::{Map, Value, json};

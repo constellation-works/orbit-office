@@ -1,4 +1,4 @@
-//! `office.knowledge.write`: Create or update a page; validate frontmatter
+//! `office.knowledge-write`: Create or update a page; validate frontmatter
 //! and cites; commit.
 //!
 //! Planned: see `docs/design/office/specs/library.md`. To build it, switch
@@ -11,7 +11,7 @@ use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use crate::registry::Tool;
 
 pub(crate) const TOOL: Tool = Tool::planned(ToolSpec {
-    name: "knowledge.write",
+    name: "knowledge-write",
     execution_kind: ExecutionKind::Mutating,
     mcp_scope: McpScope::None,
 });

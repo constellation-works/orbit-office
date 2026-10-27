@@ -33,7 +33,7 @@ consumed_at: null
 
 ## Storage and lifetime
 
-- Selections live in their own table, `plugin_state/selections.sqlite`, written through `office.selection.put`.
+- Selections live in their own table, `plugin_state/selections.sqlite`, written through `office.selection-put`.
 - They are short-lived UI state, so they are kept apart from the rebuildable Library index and never committed to the Library.
 - A selection expires after 15 minutes or once the agent has used it.
 - The **tray** holds up to five fresh selections, so "compare these two" and "merge these into the Acme page" work.
@@ -44,12 +44,12 @@ consumed_at: null
 Pulling works with every agent CLI. Pushing through a hook is an
 enhancement.
 
-- **Pull:** `office.selection.get` over MCP, plus the skill rule: on "this", "that", "here" or "these", the agent calls it first. This works in Muse Code, Claude Code and Codex. `selection.get` is mutating because it marks selections consumed.
+- **Pull:** `office.selection-get` over MCP, plus the skill rule: on "this", "that", "here" or "these", the agent calls it first. This works in Muse Code, Claude Code and Codex. `selection-get` is mutating because it marks selections consumed.
 - **Push:** a prompt-submit hook adds the fresh, unused selections to the user's next prompt and marks them consumed.
   - Claude Code supports this through its `UserPromptSubmit` hook, which is the reference implementation shipped in the plugin.
   - Whether Muse Code has a prompt hook is checked on day 1. Without one, the pull rule covers it.
 
-Only the app writes selections: `office.selection.put` is
+Only the app writes selections: `office.selection-put` is
 `mcp_scope: none`.
 
 ## Safety

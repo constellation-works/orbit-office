@@ -1,4 +1,4 @@
-//! `office.artifact.promote`: Copy an approved task's output into the
+//! `office.artifact-promote`: Copy an approved task's output into the
 //! Library as an artifact; write provenance; commit.
 //!
 //! Planned: see `docs/design/office/specs/library.md`. To build it, switch
@@ -11,7 +11,7 @@ use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use crate::registry::Tool;
 
 pub(crate) const TOOL: Tool = Tool::planned(ToolSpec {
-    name: "artifact.promote",
+    name: "artifact-promote",
     execution_kind: ExecutionKind::Mutating,
     mcp_scope: McpScope::None,
 });

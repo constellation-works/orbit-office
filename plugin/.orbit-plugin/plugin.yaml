@@ -94,15 +94,15 @@ spec:
     #   input_schema: { $ref: schemas/transcribe.request.json }
     #   output_schema: { $ref: schemas/transcribe.response.json }
 
-    # - name: video.plan
+    # - name: video-plan
     #   description: >-
     #     Plan a video source's processing: duration, deduplicated
     #     keyframes, model-call counts and a cost estimate; confirm it with
     #     the digest the user saw.
     #   execution_kind: mutating
     #   mcp_scope: none
-    #   input_schema: { $ref: schemas/video.plan.request.json }
-    #   output_schema: { $ref: schemas/video.plan.response.json }
+    #   input_schema: { $ref: schemas/video-plan.request.json }
+    #   output_schema: { $ref: schemas/video-plan.response.json }
 
     # - name: frames
     #   description: >-
@@ -123,51 +123,51 @@ spec:
     #   input_schema: { $ref: schemas/extract.request.json }
     #   output_schema: { $ref: schemas/extract.response.json }
 
-    # - name: source.show
+    # - name: source-show
     #   description: >-
     #     Return a source, optionally at an anchor.
     #   execution_kind: read_only
     #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/source.show.request.json }
-    #   output_schema: { $ref: schemas/source.show.response.json }
+    #   input_schema: { $ref: schemas/source-show.request.json }
+    #   output_schema: { $ref: schemas/source-show.response.json }
 
     # ---- knowledge ----
 
-    # - name: knowledge.show
+    # - name: knowledge-show
     #   description: >-
     #     Read a page and its back-links.
     #   execution_kind: read_only
     #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/knowledge.show.request.json }
-    #   output_schema: { $ref: schemas/knowledge.show.response.json }
+    #   input_schema: { $ref: schemas/knowledge-show.request.json }
+    #   output_schema: { $ref: schemas/knowledge-show.response.json }
 
-    # - name: knowledge.write
+    # - name: knowledge-write
     #   description: >-
     #     Create or update a page; validate frontmatter and cites; commit.
     #   execution_kind: mutating
     #   mcp_scope: none
-    #   input_schema: { $ref: schemas/knowledge.write.request.json }
-    #   output_schema: { $ref: schemas/knowledge.write.response.json }
+    #   input_schema: { $ref: schemas/knowledge-write.request.json }
+    #   output_schema: { $ref: schemas/knowledge-write.response.json }
 
     # ---- artifacts ----
 
-    # - name: artifact.show
+    # - name: artifact-show
     #   description: >-
     #     Read an artifact, its files, its series history and what cites
     #     it.
     #   execution_kind: read_only
     #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/artifact.show.request.json }
-    #   output_schema: { $ref: schemas/artifact.show.response.json }
+    #   input_schema: { $ref: schemas/artifact-show.request.json }
+    #   output_schema: { $ref: schemas/artifact-show.response.json }
 
-    # - name: artifact.promote
+    # - name: artifact-promote
     #   description: >-
     #     Copy an approved task's output into the Library as an artifact;
     #     write provenance; commit.
     #   execution_kind: mutating
     #   mcp_scope: none
-    #   input_schema: { $ref: schemas/artifact.promote.request.json }
-    #   output_schema: { $ref: schemas/artifact.promote.response.json }
+    #   input_schema: { $ref: schemas/artifact-promote.request.json }
+    #   output_schema: { $ref: schemas/artifact-promote.response.json }
 
     # ---- library ----
 
@@ -188,14 +188,14 @@ spec:
       input_schema: { $ref: schemas/reindex.request.json }
       output_schema: { $ref: schemas/reindex.response.json }
 
-    # - name: config.set
+    # - name: config-set
     #   description: >-
     #     Validate and write one Library setting in .office/config.yaml;
     #     commit.
     #   execution_kind: mutating
     #   mcp_scope: none
-    #   input_schema: { $ref: schemas/config.set.request.json }
-    #   output_schema: { $ref: schemas/config.set.response.json }
+    #   input_schema: { $ref: schemas/config-set.request.json }
+    #   output_schema: { $ref: schemas/config-set.response.json }
 
     # - name: search
     #   description: >-
@@ -217,61 +217,61 @@ spec:
 
     # ---- proposals ----
 
-    - name: signals.scan
+    - name: signals-scan
       description: >-
         Run the proposal signals and return candidate proposals with
         evidence.
       execution_kind: read_only
       mcp_scope: workspace
-      input_schema: { $ref: schemas/signals.scan.request.json }
-      output_schema: { $ref: schemas/signals.scan.response.json }
+      input_schema: { $ref: schemas/signals-scan.request.json }
+      output_schema: { $ref: schemas/signals-scan.response.json }
 
-    # - name: proposal.create
+    # - name: proposal-create
     #   description: >-
     #     File a proposal task, its artifact and its evidence page.
     #   execution_kind: mutating
     #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/proposal.create.request.json }
-    #   output_schema: { $ref: schemas/proposal.create.response.json }
+    #   input_schema: { $ref: schemas/proposal-create.request.json }
+    #   output_schema: { $ref: schemas/proposal-create.response.json }
 
-    # - name: proposal.accept
+    # - name: proposal-accept
     #   description: >-
     #     Apply a proposal's payload; close the task.
     #   execution_kind: mutating
     #   mcp_scope: none
-    #   input_schema: { $ref: schemas/proposal.accept.request.json }
-    #   output_schema: { $ref: schemas/proposal.accept.response.json }
+    #   input_schema: { $ref: schemas/proposal-accept.request.json }
+    #   output_schema: { $ref: schemas/proposal-accept.response.json }
 
     # ---- selection ----
 
-    # - name: selection.get
+    # - name: selection-get
     #   description: >-
     #     Return the user's fresh, unused selections from the app and mark
     #     them consumed.
     #   execution_kind: mutating
     #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/selection.get.request.json }
-    #   output_schema: { $ref: schemas/selection.get.response.json }
+    #   input_schema: { $ref: schemas/selection-get.request.json }
+    #   output_schema: { $ref: schemas/selection-get.response.json }
 
-    # - name: selection.put
+    # - name: selection-put
     #   description: >-
     #     Record a selection from the app; clear: true empties the tray.
     #   execution_kind: mutating
     #   mcp_scope: none
-    #   input_schema: { $ref: schemas/selection.put.request.json }
-    #   output_schema: { $ref: schemas/selection.put.response.json }
+    #   input_schema: { $ref: schemas/selection-put.request.json }
+    #   output_schema: { $ref: schemas/selection-put.response.json }
 
     # ---- sessions ----
 
-    # - name: session.brief
+    # - name: session-brief
     #   description: >-
     #     Assemble the session-start brief from Orbit and the Library:
     #     waiting on you, agents working on, open questions, the last
     #     session's decisions. Makes no model call. Writes nothing.
     #   execution_kind: read_only
     #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/session.brief.request.json }
-    #   output_schema: { $ref: schemas/session.brief.response.json }
+    #   input_schema: { $ref: schemas/session-brief.request.json }
+    #   output_schema: { $ref: schemas/session-brief.response.json }
 
     # - name: digest
     #   description: >-
@@ -284,15 +284,15 @@ spec:
 
     # ---- scripts ----
 
-    # - name: script.run
+    # - name: script-run
     #   description: >-
     #     Run an approved, pinned script artifact offline in its own run
     #     directory, within its bounds, and file its outputs for review;
     #     run only by routine and auto-task steps.
     #   execution_kind: mutating
     #   mcp_scope: none
-    #   input_schema: { $ref: schemas/script.run.request.json }
-    #   output_schema: { $ref: schemas/script.run.response.json }
+    #   input_schema: { $ref: schemas/script-run.request.json }
+    #   output_schema: { $ref: schemas/script-run.response.json }
 
     # ---- insights ----
 
@@ -304,14 +304,14 @@ spec:
     #   input_schema: { $ref: schemas/metrics.request.json }
     #   output_schema: { $ref: schemas/metrics.response.json }
 
-    # - name: review.inputs
+    # - name: review-inputs
     #   description: >-
     #     Gather a period's completed work, conversions, metrics,
     #     decisions and knowledge changes for a review.
     #   execution_kind: read_only
     #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/review.inputs.request.json }
-    #   output_schema: { $ref: schemas/review.inputs.response.json }
+    #   input_schema: { $ref: schemas/review-inputs.request.json }
+    #   output_schema: { $ref: schemas/review-inputs.response.json }
 
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings]
 

@@ -36,9 +36,9 @@ Source: spec §14–§16.
 | Day | Plugin | App / orchestrator | Demo |
 |---|---|---|---|
 | Tue 10-27 | Repo, manifest, `init`, `capture`, Library layout, index, `reindex` | Muse Code wired to Orbit MCP with the office skill (day-1 checks: the skill is listed, and whether a prompt hook exists); app skeleton | Synthetic data plan |
-| Wed 10-28 | `transcribe`, `video.plan`, `frames`, `extract` (KT profile), the KT routine | Today and To-dos screens; upload with cost preview | Generate the synthetic KT video |
-| Thu 10-29 | `knowledge.*`, `attach`, the agent to-do activity, `artifact.promote` | Source view, Library screen | Seed 6 weeks of history |
-| Fri 10-30 | `signals.scan`, proposals create and accept | Needs you, Routines screens | |
+| Wed 10-28 | `transcribe`, `video-plan`, `frames`, `extract` (KT profile), the KT routine | Today and To-dos screens; upload with cost preview | Generate the synthetic KT video |
+| Thu 10-29 | `knowledge.*`, `attach`, the agent to-do activity, `artifact-promote` | Source view, Library screen | Seed 6 weeks of history |
+| Fri 10-30 | `signals-scan`, proposals create and accept | Needs you, Routines screens | |
 | Sat 10-31 | `metrics`, `review`, `selection.*` | Insights, Review screens; selection tray and hook | First full run-through |
 | Sun 11-01 | Open-weight routing; receipts pack if on track | Polish; installable PWA; the paste capture moment | |
 | Mon 11-02 | Hardening; [install script](./install.md) | Polish | Record the video |

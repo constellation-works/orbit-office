@@ -79,7 +79,7 @@ template: person
 aliases: [Jane, J. Park]   # names the subject goes by in sources
 ```
 
-`office.knowledge.write` checks a page with a `template` against the
+`office.knowledge-write` checks a page with a `template` against the
 current version of that template:
 
 | Check | Refusal |
@@ -172,7 +172,7 @@ Person and client pages stay `sensitivity: normal`, so they reach the
 models that do the work. The contact details on them never do:
 
 - Email addresses and phone numbers live only in `contact` refs, never in
-  the page body. `office.knowledge.write` refuses a body that contains an
+  the page body. `office.knowledge-write` refuses a body that contains an
   email address or phone number, with `contact_in_body`.
 - Every model input and every task attachment carries the page's
   **model view**: each `contact` ref keeps its label and loses its value.
@@ -193,7 +193,7 @@ pointer, never a credential. The full set of targets is now `path`, `url`,
 
 ## Onboarding interview
 
-**When.** `office.session.brief` returns an `onboarding` section listing
+**When.** `office.session-brief` returns an `onboarding` section listing
 each one-per-Library template that has no page yet. While `dom-user` is
 missing, the orchestrator offers the interview once per session, in one
 line. If the user declines, it carries on and offers again next session.

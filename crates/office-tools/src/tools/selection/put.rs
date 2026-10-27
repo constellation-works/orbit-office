@@ -1,4 +1,4 @@
-//! `office.selection.put`: Record a selection from the app; clear: true
+//! `office.selection-put`: Record a selection from the app; clear: true
 //! empties the tray.
 //!
 //! Planned: see `docs/design/office/specs/selection-sharing.md`. To build it, switch
@@ -11,7 +11,7 @@ use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use crate::registry::Tool;
 
 pub(crate) const TOOL: Tool = Tool::planned(ToolSpec {
-    name: "selection.put",
+    name: "selection-put",
     execution_kind: ExecutionKind::Mutating,
     mcp_scope: McpScope::None,
 });

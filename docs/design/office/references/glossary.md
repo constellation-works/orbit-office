@@ -17,7 +17,7 @@ stdout, exit code) is excluded.
 | **Onboarding interview** | The first session's short set of questions whose answers become `fact` entries and one `knowledge_add` proposal per About page. |
 | **Model view** | A page as sent to a model or attached to a task: every `contact` ref keeps its label and loses its value. |
 | **Scratch** | Throwaway files: `$ORBIT_SCRATCH_DIR` for agent runs, `.orbit/tmp/session-<date>/` for the orchestrator, a run directory for plugin tools. Never a result and never in the Library. See [specs/scripts.md](../specs/scripts.md). |
-| **Script run** | One `office.script.run` call from a routine step: an approved script run offline in its own directory, its outputs filed as a `script-output` task for review. |
+| **Script run** | One `office.script-run` call from a routine step: an approved script run offline in its own directory, its outputs filed as a `script-output` task for review. |
 | **Connection** | A user-granted API endpoint in the `gateway` plugin: base URL, auth scheme, secret slot, allowed methods. Agents use it by name and never see its secret. See [specs/gateway.md](../specs/gateway.md). |
 | **Gateway draft** | An API write an agent prepared, waiting under Needs you; approving sends it once, bound to the digest the user saw. |
 | **KT video** | A knowledge-transfer recording, captured as a `video` source; the hero pack turns it into chapters, cited knowledge proposals and questions. See [specs/kt-videos.md](../specs/kt-videos.md). |
@@ -28,11 +28,11 @@ stdout, exit code) is excluded.
 | **Friction** | An Orbit record of something that went wrong or slowed work; the plugin adds `cites` and `runbook` conventions, never a second store. |
 | **Decision log** | The append-only `conversation` source of one orchestrator session: decisions, verbatim directions and facts, actions, open questions. See [specs/sessions.md](../specs/sessions.md). |
 | **Handoff** | The agent's note to its next session: the newest `handoff` entry in the decision log, refreshed whenever the plan changes, and the first thing the session brief shows. |
-| **Session brief** | What `office.session.brief` returns at session start: waiting on you, agents working on, open questions, the last session's decisions. Computed, never stored. |
+| **Session brief** | What `office.session-brief` returns at session start: waiting on you, agents working on, open questions, the last session's decisions. Computed, never stored. |
 | **Daily digest** | The day's cited summary, a `report` artifact in the series `digest-daily`, written by a routine with one Muse Spark call. |
 | **Library** | The three layers together — sources, knowledge, artifacts — as its own git repo inside the user's workspace (ignored by the workspace repo), with a rebuildable SQLite index in plugin state. |
 | **Proposal** | An Orbit task in `proposed`, tagged `proposal:<kind>`, whose acceptance applies a change and whose dismissal is remembered for 30 days. See [specs/proposals.md](../specs/proposals.md). |
-| **Signal** | A mechanical condition computed by `office.signals.scan` (repetition, friction recurrence, staleness, gap, unused automation) that produces a proposal candidate. |
+| **Signal** | A mechanical condition computed by `office.signals-scan` (repetition, friction recurrence, staleness, gap, unused automation) that produces a proposal candidate. |
 | **Orchestrator** | The user's own agent CLI (Muse Code by default) running the `office-orchestrator` skill over Orbit MCP. Not code in this repo. See [specs/orchestrator.md](../specs/orchestrator.md). |
 | **Implementing agent** | An Orbit crew run carrying out an `owner:agent` to-do; its output is a task artifact until approved. |
 | **Dispatch pass** | The app server's 30-second loop submitting `owner:agent` backlog tasks by id. The workspace never runs an auto drain. |
