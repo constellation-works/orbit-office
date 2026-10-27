@@ -132,3 +132,37 @@ fn fake_capture_upload_then_paste_dedupes_to_the_same_id() {
     );
     assert_eq!(pasted.id, uploaded.id);
 }
+
+#[test]
+fn fake_initialize_refuses_a_library_dir_outside_the_granted_root() {
+    for outside in [
+        "/etc/library/evil",
+        "a/library/b",
+        "/library",
+        "library/../outside",
+    ] {
+        let fake = FakeLibrary::default();
+        let port: &dyn Library = &fake;
+        let err = port
+            .initialize(Some(outside))
+            .expect_err("a library_dir outside the granted root is refused");
+        assert_eq!(err.code(), "library_dir_outside_workspace", "{outside}");
+        assert!(
+            !port.is_initialized().expect("uninitialized"),
+            "a refused {outside} must not scaffold the Library"
+        );
+    }
+}
+
+#[test]
+fn fake_initialize_accepts_the_library_and_workspace_relative_library_dirs() {
+    for inside in ["library", "library/sub", "./library"] {
+        let fake = FakeLibrary::default();
+        let port: &dyn Library = &fake;
+        let outcome = port
+            .initialize(Some(inside))
+            .expect("a workspace-relative library dir initializes");
+        assert!(!outcome.already_initialized, "{inside}");
+        assert!(port.is_initialized().expect("initialized"));
+    }
+}
