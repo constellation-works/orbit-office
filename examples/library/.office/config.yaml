@@ -2,17 +2,17 @@
 # library/.office/config.yaml; the app changes it through office.config-set.
 # Orbit's [plugins.office] config holds only library_dir.
 retention:
-  meeting_original_days: 90
-sensitivity_defaults:
+  meeting: 90
+sensitivity:
   email: private
   meeting: normal
   chat: normal
   receipt: private
-enabled_packs:
+packs:
   - meetings
-signal_thresholds:
-  repetition_min_tasks: 3
-  repetition_window_days: 30
+thresholds:
+  repetition_count: 3
+  window_days: 30
 # The private route: Muse Spark Open on the one endpoint you chose. Null
 # refuses private material rather than sending it to the hosted API.
 # capabilities and verified_at are written by office.private-route-check.
