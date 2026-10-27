@@ -61,7 +61,8 @@ fn refused(message: String) -> Error {
 /// POST `body` as JSON to `url` with an optional Bearer credential and
 /// return the parsed JSON response. The URL is allowlist-checked first.
 /// `open_weights` applies the Baseten-or-loopback role on top of the
-/// transport allowlist.
+/// transport allowlist. The routed client's agent disables redirects so a
+/// response cannot cause a request to an unchecked host.
 pub(crate) fn post_json(
     agent: &ureq::Agent,
     url: &str,

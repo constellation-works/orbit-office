@@ -1,6 +1,32 @@
-//! Host parsing and the allowlist check for IPv6 endpoints.
+//! HTTP host policy, redirects and IPv6 endpoint handling.
 
+use super::{FakeServer, chat_reply, client, hosted_config, receipt_schema};
 use crate::http::{check_url, host_of};
+use office_common::Sensitivity;
+use office_core::ports::{ExtractRequest, Models};
+
+#[test]
+fn does_not_follow_redirect_to_an_unlisted_host() {
+    let unlisted = FakeServer::start_unlisted_loopback(200, chat_reply(r#"{"total":"9.99"}"#));
+    let redirect = FakeServer::start_redirect(unlisted.base_url.clone());
+    let adapter = client(hosted_config(&redirect.base_url));
+    let models: &dyn Models = &adapter;
+    let result = models.extract(&ExtractRequest {
+        text: "receipt".into(),
+        schema: receipt_schema(),
+        sensitivity: Sensitivity::Normal,
+    });
+
+    assert_eq!(redirect.requests().len(), 1);
+    assert!(
+        unlisted.requests().is_empty(),
+        "the redirect target must receive no request"
+    );
+    assert!(
+        result.is_err(),
+        "a redirect response is not a model response"
+    );
+}
 
 #[test]
 fn host_of_strips_brackets_and_port_from_an_ipv6_literal() {

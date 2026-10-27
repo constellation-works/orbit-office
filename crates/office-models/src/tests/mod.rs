@@ -42,22 +42,38 @@ pub struct FakeServer {
 impl FakeServer {
     /// Serve `body` with HTTP `status` for every request.
     pub fn start(status: u16, body: String) -> Self {
-        Self::serve("127.0.0.1", vec![(status, body)])
+        Self::serve("127.0.0.1", vec![(status, body, None)])
     }
 
     /// Return successive replies, repeating the last for any extra requests.
     pub fn start_replies(replies: Vec<(u16, String)>) -> Self {
-        Self::serve("127.0.0.1", replies)
+        Self::serve(
+            "127.0.0.1",
+            replies
+                .into_iter()
+                .map(|(status, body)| (status, body, None))
+                .collect(),
+        )
+    }
+
+    /// Return a redirect to `location` from the allowlisted loopback host.
+    pub fn start_redirect(location: String) -> Self {
+        Self::serve("127.0.0.1", vec![(302, String::new(), Some(location))])
+    }
+
+    /// Serve on a loopback host outside the model endpoint allowlist.
+    pub fn start_unlisted_loopback(status: u16, body: String) -> Self {
+        Self::serve("127.0.0.2", vec![(status, body, None)])
     }
 
     /// Serve `body` on the IPv6 loopback address `[::1]`. Panics when the
     /// host has no IPv6 loopback, so the test fails rather than passing
     /// without exercising the endpoint.
     pub fn start_ipv6(status: u16, body: String) -> Self {
-        Self::serve("[::1]", vec![(status, body)])
+        Self::serve("[::1]", vec![(status, body, None)])
     }
 
-    fn serve(host: &str, replies: Vec<(u16, String)>) -> Self {
+    fn serve(host: &str, replies: Vec<(u16, String, Option<String>)>) -> Self {
         assert!(!replies.is_empty(), "fake server needs at least one reply");
         let listener = TcpListener::bind(format!("{host}:0")).expect("bind loopback");
         let port = listener.local_addr().expect("local addr").port();
@@ -79,11 +95,15 @@ impl FakeServer {
                                 requests.push(recorded);
                                 index
                             };
-                            let (status, body) = replies
+                            let (status, body, location) = replies
                                 .get(index)
                                 .unwrap_or_else(|| replies.last().expect("nonempty replies"));
+                            let location_header =
+                                location.as_ref().map_or_else(String::new, |location| {
+                                    format!("Location: {location}\r\n")
+                                });
                             let response = format!(
-                                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n{location_header}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
                                 body.len()
                             );
                             let _ = stream.write_all(response.as_bytes());

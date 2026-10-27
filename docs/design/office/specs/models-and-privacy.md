@@ -29,6 +29,7 @@ Source: spec §9.
 
 - **Sensitivity.** Set per source (default by kind, for example `email` → `private`) or by the user. Any model call whose input includes a `private` source goes to the open-weight model. The routing decision is logged in the source's `derived_by` and in the task.
 - **Open-weights hosts.** A configured open-weights endpoint is a Baseten HTTPS URL (`inference.baseten.co`, or a host ending in `.api.baseten.co`) or a loopback HTTP(S) URL (`localhost`, `127.0.0.1`, `::1`). That is the open-weights subset of the model host allowlist. Hosted calls may also use `api.meta.ai`; that host is not an open-weights endpoint. Any other host is refused when Library settings load, and again before a socket opens. Non-loopback endpoints must use HTTPS.
+- **Redirects.** The model HTTP client does not follow redirects. Each request therefore stays on the host checked by the model endpoint allowlist before the socket opens.
 - **Artifacts inherit sensitivity:** an artifact's `sensitivity` is the strictest of what it cites ([library.md](./library.md)).
 - **Selections from private objects carry no quote** ([selection-sharing.md](./selection-sharing.md)); the agent re-reads through the tools so the routing applies.
 - **Secrets.** The Meta API key and Baseten token are stored with `orbit plugin secret set office <name>`, never in config or the Library. Knowledge pages never hold secrets; `refs` name files, links, contacts, accounts and artifacts only.
