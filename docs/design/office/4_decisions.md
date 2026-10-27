@@ -1007,6 +1007,43 @@ grant is `{{workspace}}/library`.
   `.office/attach/` that `git status` lists as untracked. It is never indexed
   or committed, and deleting the directory is always safe.
 
+## A leader exit with open pipes settles as a timeout, never by signalling after reap
+
+**Recorded:** 2026-10-27
+**Code anchors:** `app/packages/server/src/orbit/client.ts` (`createOrbitClient`), `app/packages/server/src/dispatch/pass.ts` (`shipTasks`)
+
+### Context
+
+Node emits `exit` when the child leader is reaped and `close` only after
+its stdio streams close. A descendant that inherits stdout or stderr can
+hold a pipe open after the leader exits, so a supervisor that clears its
+deadline on `exit` and settles only on `close` hangs indefinitely.
+STD-03@2 §R13 requires the child's group to be swept (SIGKILL to surviving
+members) before the supervisor returns, while §R14 forbids signalling a
+PID or process group after the owning child is reaped. Since `exit` fires
+only after reaping, no compliant post-exit sweep exists.
+
+### Decision
+
+Deviation from STD-03@2 §R13 for the post-exit interval only: neither
+wrapper signals after `exit`. The original deadline stays armed across
+`exit`; when it fires (or, if it already fired, after the existing 250 ms
+escalation grace) the call settles without signalling. A leader that
+exited 0 with a pipe still open therefore rejects as a timeout rather
+than resolving with output collected so far, because stdout is not at
+EOF and may be truncated. A `close` that arrives before the bound still
+settles normally with the real exit code and output.
+
+### Consequences
+
+- Both `callTool` and `shipTasks` settle within a bounded time when a
+  descendant holds a pipe, and no PID or group is signalled after reap.
+- Cost: surviving descendants are not swept after the leader is reaped
+  (the §R13/§R14 tension above); they are left to their own lifetime and
+  the host runtime's containment (STD-03@2 §R21). A leader that exited 0
+  just before its deadline can be reported as a timeout if a descendant
+  holds its pipes past the bound.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.

@@ -300,6 +300,63 @@ test("ship execution does not signal a process group after its leader exits", as
   }
 });
 
+test("ship settles on its deadline when exit precedes close", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    let settled = false;
+    const pending = shipTasks(["ORB-1"], SHIP_SUPERVISION).then(
+      () => {
+        settled = true;
+        throw new Error("expected the pipe-held ship to reject");
+      },
+      (error) => {
+        settled = true;
+        return error;
+      },
+    );
+    doubles.children[0].exitOnly(0, null);
+    assert.equal(timerAt(doubles.timers, 100).cleared, false, "exit must not clear the deadline");
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    assert.equal(settled, false, "ship must wait for close or the deadline, not settle on exit");
+    timerAt(doubles.timers, 100).fn();
+    const error = await pending;
+    assert.equal(settled, true);
+    assert.match(error.message, /orbit run ship timed out after 100 ms/);
+    assert.deepEqual(doubles.signals, [], "no signal may be sent after the leader is reaped");
+    doubles.children[0].closeOnly(0, null);
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    assert.deepEqual(doubles.signals, [], "a late close must not settle twice");
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("ship settles after exit when its deadline already fired", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const pending = shipTasks(["ORB-1"], SHIP_SUPERVISION).then(
+      () => {
+        throw new Error("expected the pipe-held ship to reject");
+      },
+      (error) => error,
+    );
+    timerAt(doubles.timers, 100).fn();
+    assert.deepEqual(doubles.signals.map((e) => e.signal), ["SIGTERM"]);
+    doubles.children[0].exitOnly(null, "SIGTERM");
+    const escalation = timerAt(doubles.timers, 250);
+    assert.equal(escalation.cleared, false, "exit must not clear the escalation bound");
+    escalation.fn();
+    const error = await pending;
+    assert.match(error.message, /orbit run ship timed out after 100 ms/);
+    assert.deepEqual(doubles.signals.map((e) => e.signal), ["SIGTERM"], "no signal after reap");
+    doubles.children[0].closeOnly(null, "SIGTERM");
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    assert.deepEqual(doubles.signals.map((e) => e.signal), ["SIGTERM"], "a late close must not settle twice");
+  } finally {
+    doubles.restore();
+  }
+});
+
 test("a live ship child that ignores SIGTERM is killed and the call times out", async () => {
   const doubles = installSupervisionDoubles();
   try {

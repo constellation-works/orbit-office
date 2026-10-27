@@ -207,6 +207,74 @@ test("tool execution does not signal a process group after its leader exits", as
   }
 });
 
+test("tool execution settles on its deadline when exit precedes close", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = createOrbitClient(SUPERVISION_CLIENT);
+    let settled = false;
+    const pending = client.callTool("orbit.task.show", { id: "pipe-held" }).then(
+      () => {
+        settled = true;
+        throw new Error("expected the pipe-held call to reject");
+      },
+      (error) => {
+        settled = true;
+        return error;
+      },
+    );
+    // Leader exits 0 but a descendant holds stdout/stderr: no close yet.
+    doubles.children[0].exitOnly(0, null);
+    assert.equal(timerAt(doubles.timers, 100).cleared, false, "exit must not clear the deadline");
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    assert.equal(settled, false, "call must wait for close or the deadline, not settle on exit");
+    timerAt(doubles.timers, 100).fn();
+    const error = await pending;
+    assert.equal(settled, true);
+    assert.ok(error instanceof OrbitTimeoutError, `expected OrbitTimeoutError, got ${error}`);
+    assert.deepEqual(doubles.signals, [], "no signal may be sent after the leader is reaped");
+    assert.equal(client.activeCount, 0);
+    doubles.children[0].closeOnly(0, null);
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    assert.deepEqual(doubles.signals, []);
+    assert.equal(client.activeCount, 0, "a late close must not settle twice");
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("tool execution settles after exit when its deadline already fired", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = createOrbitClient(SUPERVISION_CLIENT);
+    let settled = false;
+    const pending = client.callTool("orbit.task.show", { id: "pipe-held-late" }).then(
+      () => {
+        settled = true;
+        throw new Error("expected the pipe-held call to reject");
+      },
+      (error) => {
+        settled = true;
+        return error;
+      },
+    );
+    timerAt(doubles.timers, 100).fn();
+    assert.deepEqual(doubles.signals.map((e) => e.signal), ["SIGTERM"]);
+    doubles.children[0].exitOnly(null, "SIGTERM");
+    const escalation = timerAt(doubles.timers, 250);
+    assert.equal(escalation.cleared, false, "exit must not clear the escalation bound");
+    escalation.fn();
+    const error = await pending;
+    assert.equal(settled, true);
+    assert.ok(error instanceof OrbitTimeoutError, `expected OrbitTimeoutError, got ${error}`);
+    assert.deepEqual(doubles.signals.map((e) => e.signal), ["SIGTERM"], "no signal after reap");
+    doubles.children[0].closeOnly(null, "SIGTERM");
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    assert.equal(client.activeCount, 0, "a late close must not settle twice");
+  } finally {
+    doubles.restore();
+  }
+});
+
 test("oversized output holds its slot until the child closes", async () => {
   const doubles = installSupervisionDoubles();
   try {
