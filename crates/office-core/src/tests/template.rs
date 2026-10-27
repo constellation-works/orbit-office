@@ -394,6 +394,43 @@ fn html_comments_cannot_supply_required_headings_or_content() {
 }
 
 #[test]
+fn every_template_refusal_is_deterministic() {
+    // Protocol refusals repeat the same answer on retry, so none is retryable.
+    let refusals = [
+        (
+            person()
+                .validate_page("dom-client-jane", DocumentKind::Domain, "## Role\nOwner")
+                .expect_err("wrong id"),
+            "page_id_mismatch",
+        ),
+        (
+            person()
+                .validate_page("dom-person-jane", DocumentKind::Runbook, "## Role\nOwner")
+                .expect_err("wrong type"),
+            "template_type_mismatch",
+        ),
+        (
+            person()
+                .validate_page("dom-person-jane", DocumentKind::Domain, "")
+                .expect_err("missing section"),
+            "missing_section",
+        ),
+        (
+            Template::from_markdown(
+                "custom/person.md",
+                &PERSON.replace("attach: participants", "attach: sometimes"),
+            )
+            .expect_err("invalid rule"),
+            "template_invalid",
+        ),
+    ];
+    for (error, code) in refusals {
+        assert_eq!(error.code(), code);
+        assert!(!error.retryable(), "{code} must not be retryable");
+    }
+}
+
+#[test]
 fn runbooks_require_all_three_sections() {
     let bundled = BUNDLED
         .iter()
