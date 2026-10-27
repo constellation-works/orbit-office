@@ -52,7 +52,7 @@ fn status_reports_an_uninitialized_library_without_refusing() {
     let ports = office_core::ports::Ports {
         library: Box::new(office_testkit::fakes::FakeLibrary::default()),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
-        orbit: Box::new(office_testkit::fakes::FakeOrbit),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),

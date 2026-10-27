@@ -63,6 +63,41 @@ Rules:
 `orbit.task.list`, `orbit.task.show`, `orbit.task.artifact.get`,
 `orbit.task.artifact.put`, `orbit.friction.add`, `orbit.search`.
 
+The synchronous `office-core::ports::Orbit` port has one method per callback.
+It forwards JSON objects intact to Orbit's schemas (unknown keys are not dropped)
+and returns the full JSON result, including list totals, truncation metadata and
+task field projections. `office-orbit::OrbitCallbacks` implements the port using
+`orbit tool run <name> --json --full --input <json>`; every method crosses the same
+exact-name allowlist before starting a process. This local allowlist prevents
+accidental calls; Orbit's host-owned session remains the authority boundary.
+
+Composition supplies the workspace root, `ORBIT_BIN` (or `orbit` on `PATH`),
+and the adapter's explicit `CALLBACK_ENV_NAMES` environment allowlist. Each child
+starts with a cleared environment. The list carries non-secret CLI roots, caller
+provenance, managed-run context and the plugin callback markers; operator overrides,
+claim tokens and ambient provider keys are excluded. The already-open descriptor
+named by `ORBIT_PLUGIN_CALLBACK_FD` is inherited unchanged, never read by Office or
+copied to argv/input. The adapter always sets the non-secret
+`ORBIT_PLUGIN_CALLBACK=descriptor-required` marker, so a missing descriptor is
+refused by Orbit rather than treated as an ordinary user invocation.
+This is Orbit's plugin callback mechanism (plugin scope §4.2);
+Orbit authenticates the descriptor and enforces manifest ∩ grants ∩ caller ceiling
+on each call. Office never reads an Orbit store directly.
+
+The shared subprocess supervisor enforces a 30-second deadline, a 512 KiB limit per
+stream, concurrent draining, and process-group cleanup/reaping. Success is the
+CLI's JSON on stdout; nonzero exits with structured `{error, code}` JSON on stderr
+become typed refusals carrying only a bounded machine code. Raw diagnostics and
+details are discarded. Missing executables, malformed responses, unstructured
+nonzero exits and supervisor failures are distinct typed adapter errors. Calls
+are never automatically retried. A mutating callback that started but lost its
+reply reports `orbit_outcome_unknown`; a failed spawn is a transport failure,
+since no write could have been sent. Confirm the task or artifact state in Orbit
+before retrying an unknown outcome.
+An absent callback context refuses with `orbit_unavailable`. The recording testkit
+fake queues explicit results and exposes full calls through a shared clone; an
+unconfigured reply also refuses rather than inventing a successful write.
+
 ## Definitions shipped
 
 Seeded disabled, enabled during onboarding:

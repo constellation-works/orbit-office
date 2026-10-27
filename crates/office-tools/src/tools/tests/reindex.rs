@@ -13,7 +13,7 @@ fn ports(library: office_testkit::fakes::FakeLibrary) -> office_core::ports::Por
     office_core::ports::Ports {
         library: Box::new(library),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
-        orbit: Box::new(office_testkit::fakes::FakeOrbit),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),

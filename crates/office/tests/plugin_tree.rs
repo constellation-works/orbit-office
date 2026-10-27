@@ -93,6 +93,32 @@ fn the_manifest_declares_exactly_the_built_tools() {
 }
 
 #[test]
+fn callback_permissions_match_exactly_the_adapter_allowlist() {
+    // Parse the block list as manifest data rather than matching source text.
+    // This contract prevents drift between requested grants and callable names.
+    let manifest = manifest();
+    let mut in_callbacks = false;
+    let mut callbacks = Vec::new();
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if in_callbacks {
+            if let Some(name) = line.strip_prefix("      - ") {
+                callbacks.push(name.to_string());
+            } else {
+                in_callbacks = false;
+            }
+        }
+        if line == "    orbit_tools:" {
+            in_callbacks = true;
+        }
+    }
+    assert_eq!(callbacks, office_orbit::ORBIT_TOOLS);
+}
+
+#[test]
 fn each_manifest_block_matches_its_tool_spec() {
     // Built or reserved, a tool's block carries the kind and scope its
     // ToolSpec declares, so uncommenting a reserved block is all it takes.

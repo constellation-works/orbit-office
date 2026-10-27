@@ -8,13 +8,13 @@ use office_core::domain::knowledge::{DocumentRecord, Revision, SearchFilter, Sea
 use office_core::domain::settings::Settings;
 use office_core::ports::{Clock, InitOutcome, Library, LibraryHealth, Models, Orbit, Ports};
 use office_core::protocol::{self, Context};
+use office_orbit::{CALLBACK_ENV_NAMES, OrbitCallbacks};
 use office_store::LibraryStore;
 use serde_json::Value;
 
 use crate::error::Result;
 
-// The Orbit adapter arrives with its first port operations.
-// In particular, constructing these handles does no I/O.
+// Adapters are constructed per request; constructing their handles does no I/O.
 struct ContextHandle<'a> {
     #[expect(dead_code, reason = "adapter operations will use the call context")]
     context: &'a Context,
@@ -188,13 +188,24 @@ impl Library for RealLibrary {
 }
 
 fn ports(context: &Context) -> Ports<'_> {
+    let orbit: Box<dyn Orbit> = if let Some(workspace) =
+        context_path(context, &["workspace_root", "workspace", "workspace_dir"])
+    {
+        let program = std::env::var_os("ORBIT_BIN").unwrap_or_else(|| "orbit".into());
+        let environment = CALLBACK_ENV_NAMES.iter().filter_map(|name| {
+            std::env::var_os(name).map(|value| (std::ffi::OsString::from(name), value))
+        });
+        Box::new(OrbitCallbacks::new(program, workspace, environment))
+    } else {
+        Box::new(ContextHandle { context })
+    };
     Ports {
         library: Box::new(RealLibrary::from_context(context)),
         models: Box::new(ContextModels {
             context,
             library: RealLibrary::from_context(context),
         }),
-        orbit: Box::new(ContextHandle { context }),
+        orbit,
         clock: Box::new(SystemClock),
     }
 }

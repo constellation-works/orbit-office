@@ -7,3 +7,7 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
 
 mod callbacks;
+mod error;
+
+pub use callbacks::{CALLBACK_ENV_NAMES, ORBIT_TOOLS, OrbitCallbacks};
+pub use error::{Error, Result};

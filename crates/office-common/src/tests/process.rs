@@ -1,5 +1,8 @@
 //! Deterministic child deadlines and finite output, without synthetic load.
-use crate::{Error, process::run_bounded};
+use crate::{
+    Error,
+    process::{run_bounded, run_captured},
+};
 use std::{
     path::Path,
     process::Command,
@@ -54,4 +57,18 @@ fn clean_and_failed_child_exits_keep_their_actual_status() {
             .code(),
         Some(7)
     );
+}
+
+#[test]
+fn captured_protocol_errors_remain_separate_from_stdout() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut child = command("/bin/sh", dir.path());
+    child.args([
+        "-c",
+        "printf 'result'; printf '{\"code\":\"policy_denied\"}' >&2; exit 1",
+    ]);
+    let output = run_captured(&mut child, dir.path()).expect("run");
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, b"result");
+    assert_eq!(output.stderr, br#"{"code":"policy_denied"}"#);
 }

@@ -40,6 +40,15 @@ spec:
       write: ["{{workspace}}/library", "{{plugin_state}}"]
     # Meta Model API and the open-weights endpoint only (enforced in code).
     network: any
+    orbit_tools:
+      - orbit.task.add
+      - orbit.task.update
+      - orbit.task.list
+      - orbit.task.show
+      - orbit.task.artifact.get
+      - orbit.task.artifact.put
+      - orbit.friction.add
+      - orbit.search
 
   secrets:
     - name: meta_api_key

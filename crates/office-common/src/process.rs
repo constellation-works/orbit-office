@@ -17,6 +17,28 @@ use crate::{Error, Result};
 const OUTPUT_LIMIT: u64 = 512 * 1024; // two streams, 1 MiB total
 const TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Bounded process captures. Do not embed raw child output in diagnostics.
+pub struct CapturedOutput {
+    /// Actual exit status, after the process group has been swept and reaped.
+    pub status: ExitStatus,
+    /// Captured standard output, at most 512 KiB.
+    pub stdout: Vec<u8>,
+    /// Captured standard error, at most 512 KiB.
+    pub stderr: Vec<u8>,
+}
+
+/// Run with the same bounds and lifecycle as [`run`], retaining both streams
+/// for protocols whose machine-readable errors arrive on stderr.
+#[cfg(unix)]
+pub fn run_captured(command: &mut Command, root: &Path) -> Result<CapturedOutput> {
+    run_captured_bounded(command, root, TIMEOUT, OUTPUT_LIMIT)
+}
+
+#[cfg(not(unix))]
+pub fn run_captured(_command: &mut Command, _root: &Path) -> Result<CapturedOutput> {
+    Err(Error::ProcessUnsupported)
+}
+
 /// Run a command with a 30-second deadline, empty stdin, a fresh process group
 /// and concurrent drains limited to 512 KiB per stream (1 MiB total).
 ///
@@ -36,15 +58,42 @@ pub(crate) fn run_bounded(
     timeout: Duration,
     output_limit: u64,
 ) -> Result<(ExitStatus, String)> {
+    // Preserve run's established I/O error shape for existing adapters. The
+    // captured protocol API exposes ProcessSpawn so callers can distinguish a
+    // request never sent from one whose reply was lost.
+    let output =
+        run_captured_bounded(command, root, timeout, output_limit).map_err(
+            |error| match error {
+                Error::ProcessSpawn { source, .. } => Error::io("start subprocess", root, source),
+                other @ (Error::ProcessTimeout
+                | Error::ProcessOutputLimit
+                | Error::ProcessUnsupported
+                | Error::UnsafePath { .. }
+                | Error::Io { .. }) => other,
+            },
+        )?;
+    let text = String::from_utf8(output.stdout)
+        .map_err(|e| Error::io("decode subprocess output", root, std::io::Error::other(e)))?;
+    Ok((output.status, text))
+}
+
+#[cfg(unix)]
+fn run_captured_bounded(
+    command: &mut Command,
+    root: &Path,
+    timeout: Duration,
+    output_limit: u64,
+) -> Result<CapturedOutput> {
     use std::os::unix::process::CommandExt;
     command
         .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let child = command
-        .spawn()
-        .map_err(|e| Error::io("start subprocess", root, e))?;
+    let child = command.spawn().map_err(|source| Error::ProcessSpawn {
+        program: command.get_program().into(),
+        source,
+    })?;
     let mut guard = ChildGuard {
         child,
         reaped: false,
@@ -95,13 +144,15 @@ pub(crate) fn run_bounded(
     let stderr = err.finish(root);
     let status = outcome?;
     let stdout = stdout?;
-    let _ = stderr?;
+    let stderr = stderr?;
     if limited.load(Ordering::Relaxed) {
         return Err(Error::ProcessOutputLimit);
     }
-    let text = String::from_utf8(stdout)
-        .map_err(|e| Error::io("decode subprocess output", root, std::io::Error::other(e)))?;
-    Ok((status, text))
+    Ok(CapturedOutput {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 #[cfg(not(unix))]

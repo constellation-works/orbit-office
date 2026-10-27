@@ -44,6 +44,7 @@ policy() {
       BANNED="$SURFACE $HTTP"
       ;;
     office-orbit)
+      # Core owns the Orbit port; common supervises the descriptor-authenticated CLI.
       ALLOWED="office-common office-core"
       BANNED="$SURFACE $HTTP"
       ;;
@@ -62,6 +63,7 @@ policy() {
       BANNED="$SURFACE $HTTP"
       ;;
     office)
+      # Composition wires office-orbit to the host callback context.
       ALLOWED="office-common office-core office-store office-models office-orbit office-tools"
       BANNED=""
       ;;
