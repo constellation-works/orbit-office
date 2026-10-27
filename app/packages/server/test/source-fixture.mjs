@@ -1,9 +1,17 @@
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSourcesFeature } from '../dist/features/sources/index.js';
 import { createHandler } from '../dist/http/router.js';
 import { videoBytes, frameBytes, audioBytes } from './source-media.mjs';
+
+/** The repo's gitignored scratch dir; a fresh CI checkout has no .orbit/tmp yet. */
+async function scratchDir() {
+  const dir = fileURLToPath(new URL('../../../../.orbit/tmp/', import.meta.url));
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
 
 export const sourceId = 'src-20261027-ingest';
 export const digest = 'c'.repeat(64);
@@ -19,7 +27,7 @@ export function sourceData(id = sourceId) {
   };
 }
 export async function sourceServer(t) {
-  const root = await mkdtemp(fileURLToPath(new URL('../../../../.orbit/tmp/source-browser-', import.meta.url)));
+  const root = await mkdtemp(join(await scratchDir(), 'source-browser-'));
   t.after(() => rm(root, { recursive: true }));
   const calls = []; const captures = []; const sources = new Map([[sourceId, sourceData()]]);
   const client = { async callTool(name, input) {
