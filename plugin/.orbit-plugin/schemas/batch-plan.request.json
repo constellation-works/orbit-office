@@ -27,8 +27,5 @@
       "type": "boolean"
     }
   },
-  "required": [
-    "phase"
-  ],
   "additionalProperties": false
 }

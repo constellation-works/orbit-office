@@ -507,6 +507,14 @@ fn digest(plan: &VideoPlan) -> Result<String> {
         refusal("invalid_video_plan", "cannot encode preview")
     })?))
 }
+/// Whether a confirmed plan still needs the KT routine: its extraction
+/// step has not consumed a call. Frame readings may be partly or fully
+/// done; extraction is the final step, so until it runs the plan remains
+/// pending however far transcription and frames have progressed.
+#[must_use]
+pub fn is_pending(state: &VideoState) -> bool {
+    state.confirmed_at.is_some() && state.calls.extract == 0
+}
 /// Verify content and policy before consuming any approved budget.
 pub fn verify(source: &VideoSource, settings: &Settings, state: &VideoState) -> Result<()> {
     let plan = &state.plan;

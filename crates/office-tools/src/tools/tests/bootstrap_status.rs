@@ -183,6 +183,82 @@ fn exact_gap_fixture_counts_progress_and_proposal_decisions_without_extra_gaps()
 }
 
 #[test]
+fn status_pending_batches_list_only_confirmed_unconsolidated_batches() {
+    use office_core::{
+        domain::bootstrap::{self, Mutation},
+        ports::Library,
+    };
+    use office_testkit::fakes::FakeLibrary;
+    let empty = call(&fixture(), "office.bootstrap-status", json!({}));
+    assert_eq!(empty["output"]["pending_batches"], json!([]));
+    let library = FakeLibrary::initialized();
+    super::batch_plan::source(&library, "one", "docs", "# Ingest");
+    super::batch_plan::source(&library, "two", "kt", "# Ingest");
+    super::batch_plan::source(&library, "three", "team", "# Ingest");
+    let settings = library.settings().unwrap();
+    let at = "1970-01-01T00:00:00Z".to_string();
+    // docs: confirmed and pending. kt: confirmed but consolidation recorded.
+    // team: preview only, never confirmed.
+    for (phase, confirm_batch) in [("docs", true), ("kt", true), ("team", false)] {
+        let snapshot = library.bootstrap_snapshot().unwrap();
+        let plan = bootstrap::plan(&snapshot, &settings, phase, false, vec![]).unwrap();
+        let digest = plan.digest.clone();
+        library
+            .mutate_batch(
+                &snapshot.revision(&settings).unwrap(),
+                Mutation::Plan {
+                    plan: Box::new(plan),
+                    confirm: None,
+                    at: at.clone(),
+                },
+            )
+            .unwrap();
+        if confirm_batch {
+            let revision = library
+                .bootstrap_snapshot()
+                .unwrap()
+                .revision(&settings)
+                .unwrap();
+            // Recompute the stored preview's plan for the confirmation call.
+            let snapshot = library.bootstrap_snapshot().unwrap();
+            let plan = bootstrap::plan(&snapshot, &settings, phase, false, vec![]).unwrap();
+            library
+                .mutate_batch(
+                    &revision,
+                    Mutation::Plan {
+                        plan: Box::new(plan),
+                        confirm: Some(digest),
+                        at: at.clone(),
+                    },
+                )
+                .unwrap();
+        }
+    }
+    let revision = library
+        .bootstrap_snapshot()
+        .unwrap()
+        .revision(&settings)
+        .unwrap();
+    library
+        .mutate_batch(
+            &revision,
+            Mutation::Progress {
+                phase: "kt".into(),
+                consolidating: vec!["ingest".into()],
+                overflow: vec![],
+            },
+        )
+        .unwrap();
+    let ports = status_ports(library, json!([]));
+    let response = call(&ports, "office.bootstrap-status", json!({}));
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        response["output"]["pending_batches"],
+        json!([{"batch_id":"docs","phase":"docs"}])
+    );
+}
+
+#[test]
 fn status_refuses_incomplete_task_reads_unknown_input_and_invalid_digests() {
     let ports = fixture();
     assert_eq!(
