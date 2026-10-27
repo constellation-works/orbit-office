@@ -69,6 +69,33 @@ fn reaches_an_ipv6_loopback_open_weights_endpoint() {
 }
 
 #[test]
+fn refuses_private_material_for_a_non_allowlisted_open_weights_host() {
+    let mut config = hosted_config("https://api.meta.ai/v1");
+    config.open_weights_endpoint = Some("https://lan-inference.example:8080/v1".into());
+    let models = client(config);
+
+    let error = models
+        .extract(&extract(Sensitivity::Private))
+        .expect_err("non-allowlisted open-weights host");
+    assert_eq!(error.code(), "model_host_not_allowed");
+    assert!(!error.retryable());
+}
+
+#[test]
+fn refuses_private_material_aimed_at_the_hosted_meta_host() {
+    let mut config = hosted_config("http://127.0.0.1:9/v1");
+    config.open_weights_endpoint = Some("https://api.meta.ai/v1".into());
+    let models = client(config);
+
+    let error = models
+        .extract(&extract(Sensitivity::Private))
+        .expect_err("meta is not an open-weights host");
+    assert_eq!(error.code(), "model_host_not_allowed");
+    assert!(!error.retryable());
+    assert!(!error.to_string().contains("test-meta-key"));
+}
+
+#[test]
 fn refuses_private_material_when_no_open_weights_endpoint_is_configured() {
     let hosted = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
     let models = client(hosted_config(&hosted.base_url));
