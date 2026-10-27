@@ -3,7 +3,9 @@
 A record holds who called (from the call context), what was asked (tool,
 connection, method, path, redacted query) and what happened (status, bytes,
 duration, the SHA-256 of the redacted body, outcome). A drafted write's
-records also name the draft. Bodies are never written here.
+records also name the draft. A send whose reply body was not fully
+received also sets `truncated`; absent, the recorded body is complete.
+Bodies are never written here.
 """
 
 from __future__ import annotations
@@ -26,8 +28,10 @@ RECORD_KEYS = {
     "time", "caller", "tool", "connection", "method", "path", "query",
     "status", "bytes", "duration_ms", "body_sha256", "redirects", "outcome",
 }
-# Present only on the records of a drafted write (http-draft, http-send).
-OPTIONAL_KEYS = {"draft"}
+# `draft` is present on a drafted write (http-draft, http-send).
+# `truncated` is present when a send did not receive the whole reply
+# body. Absent means the recorded body is complete.
+OPTIONAL_KEYS = {"draft", "truncated"}
 
 
 @dataclass
@@ -47,6 +51,8 @@ class Record:
     redirects: int = 0
     outcome: str = "ok"
     draft: str | None = None
+    # True only when this send's reply body was not fully received.
+    truncated: bool = False
 
     def to_json(self, now: datetime) -> dict[str, Any]:
         out = {
@@ -66,6 +72,8 @@ class Record:
         }
         if self.draft is not None:
             out["draft"] = self.draft
+        if self.truncated:
+            out["truncated"] = True
         return out
 
 

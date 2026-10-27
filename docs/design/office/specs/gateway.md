@@ -127,7 +127,8 @@ default `GET`).
 4. **Response.** Returns the status, the content type, a fixed set of
    headers and the body: JSON parsed, text as text, anything else as its
    size and SHA-256 only. The body is cut at `max_response_bytes`, with
-   `truncated: true`. Everything returned is redacted first (below).
+   `truncated: true`, which means the bytes returned are not the whole
+   reply. Everything returned is redacted first (below).
 5. **Audit.** Appends one record (below).
 
 ## Writes: draft, approve, send
@@ -159,10 +160,15 @@ runs on an agent's call ([orchestrator.md](./orchestrator.md#guardrails)):
    timeout or a lost reply after sending is recorded as `outcome_unknown`,
    never as a failure, and is never retried automatically (STD-03@2 §R31):
    the result and the audit say so, and the task gets a comment and stays
-   open for the user to check. When the connection names an idempotency
-   header, the draft id is sent in it. Redirects are returned, never
-   followed. Then the response is redacted, the outcome audited and the task
-   closed as done.
+   open for the user to check. When the status did arrive and the body
+   was cut off — fewer bytes than `Content-Length`, or the read failed
+   after the status — the outcome is still `sent` (the write went out
+   once) and `truncated` is true, even when no body bytes arrived
+   (`body.kind` `none` with `truncated: true` is not a complete empty
+   reply). The audit record for that send sets `truncated: true`.
+   When the connection names an idempotency header, the draft id is sent
+   in it. Redirects are returned, never followed. Then the response is
+   redacted, the outcome audited and the task closed as done.
 4. **Dismiss** rejects the task, and the draft is never sent.
 
 ## Redaction
@@ -185,7 +191,9 @@ and every error message, and a test checks that list of writers.
 `{{plugin_state}}/audit/<yyyy-mm>.jsonl`, append-only, one line per call:
 time, caller (agent kind, model, task and session from the call context),
 tool, connection, method, path, redacted query, status, bytes, duration,
-SHA-256 of the redacted body, and outcome. Bodies themselves are never
+SHA-256 of the redacted body, and outcome. A send whose reply body was
+not fully received also has `truncated: true`; the field is absent when
+the recorded body is complete. Bodies themselves are never
 logged. `gateway.audit-list` (read_only, `workspace`) feeds an "API calls"
 view in the app's Settings. Orbit's own tool-call audit records the same
 calls one level up.
