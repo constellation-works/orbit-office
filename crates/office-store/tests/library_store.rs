@@ -1358,6 +1358,59 @@ fn init_rejects_symlinked_destinations_outside_the_grant_before_writing() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn a_symlinked_grant_root_is_refused_wherever_it_points() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    let library = workspace.join("library");
+    let state = dir.path().join("state");
+    // Outside the workspace, inside it, and dangling.
+    let targets = [
+        dir.path().join("outside"),
+        workspace.join("library-real"),
+        dir.path().join("missing"),
+    ];
+    for target in &targets {
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        if target.file_name() != Some(std::ffi::OsStr::new("missing")) {
+            std::fs::create_dir_all(target).expect("target");
+        }
+        symlink(target, &library).expect("symlink grant root");
+
+        let nested = library.join("subdir");
+        let err = LibraryStore::confine_to_grant(&nested, &workspace).expect_err("nested");
+        assert_eq!(
+            err.code(),
+            "library_dir_outside_workspace",
+            "{}",
+            target.display()
+        );
+        let err = LibraryStore::initialize_at(&library, &state, Some("library/subdir"), &workspace)
+            .expect_err("init nested");
+        assert_eq!(
+            err.code(),
+            "library_dir_outside_workspace",
+            "{}",
+            target.display()
+        );
+        assert!(LibraryStore::confine_to_grant(&library, &workspace).is_err());
+        assert!(!target.join("subdir").exists(), "{}", target.display());
+        assert!(!state.exists(), "{}", target.display());
+        std::fs::remove_file(&library).expect("unlink grant root");
+    }
+
+    // A real library directory under a linked workspace is still granted.
+    let real = dir.path().join("real-workspace");
+    std::fs::create_dir_all(real.join("library")).expect("real library");
+    let linked = dir.path().join("linked-workspace");
+    symlink(&real, &linked).expect("symlink workspace");
+    LibraryStore::confine_to_grant(&linked.join("library/subdir"), &linked)
+        .expect("physical library under a linked workspace");
+}
+
 #[test]
 fn init_copies_missing_templates_and_health_reports_template_drift() {
     let dir = tempfile::tempdir().expect("tempdir");
