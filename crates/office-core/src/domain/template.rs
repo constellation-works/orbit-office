@@ -692,7 +692,7 @@ pub fn assess_templates(
 }
 
 /// First scalar `field` in leading frontmatter, without list items.
-fn frontmatter_scalar(text: &str, field: &str) -> Option<String> {
+pub(crate) fn frontmatter_scalar(text: &str, field: &str) -> Option<String> {
     let rest = text
         .strip_prefix("---\n")
         .or_else(|| text.strip_prefix("---\r\n"))?;

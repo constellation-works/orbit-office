@@ -73,6 +73,72 @@ pub enum Error {
         /// Required heading text.
         section: String,
     },
+    /// A page names a template that no template file declares.
+    #[error("page {id} names template {template}, which no file in .office/templates declares")]
+    UnknownTemplate {
+        /// Page id being checked.
+        id: String,
+        /// The template name the page asked for.
+        template: String,
+    },
+    /// Another page already uses a one-per-Library template.
+    #[error("template {template} allows one page per Library and {existing} already uses it")]
+    TemplatePageExists {
+        /// Page id being written.
+        id: String,
+        /// Template name.
+        template: String,
+        /// The page that already uses it.
+        existing: String,
+    },
+    /// Knowledge page frontmatter is malformed, unknown or out of range.
+    #[error("invalid page frontmatter, field {field}: {reason}")]
+    InvalidFrontmatter {
+        /// The refused or missing field.
+        field: String,
+        /// Safe diagnostic, never the raw value.
+        reason: &'static str,
+    },
+    /// A page body carries an email address or phone number.
+    #[error("page {id} has a {kind} in its body; contact details belong in a contact ref")]
+    ContactInBody {
+        /// Page id being written.
+        id: String,
+        /// `email` or `phone`; the value itself is never echoed.
+        kind: &'static str,
+    },
+    /// A page body is over the word cap.
+    #[error("page {id} has {words} words; split it by subtopic to stay within {limit}")]
+    PageTooLong {
+        /// Page id being written.
+        id: String,
+        /// Words counted in the body.
+        words: usize,
+        /// The cap.
+        limit: usize,
+    },
+    /// A policy page or section has no authoritative, dated ref.
+    #[error("page {id} summarizes a policy without an authoritative ref and an as_of date")]
+    PolicyWithoutSource {
+        /// Page id being written.
+        id: String,
+    },
+    /// A citation does not resolve to an existing document and anchor.
+    #[error("page {id} cites {cite}: {reason}")]
+    UnresolvedCite {
+        /// Page id being written.
+        id: String,
+        /// The citation as written.
+        cite: String,
+        /// Which part failed to resolve.
+        reason: &'static str,
+    },
+    /// No knowledge page has this id.
+    #[error("no knowledge page has id {id}")]
+    PageNotFound {
+        /// The requested id.
+        id: String,
+    },
     /// No adapter was supplied for Library operations.
     #[error("Library access is unavailable in this call context")]
     LibraryUnavailable,
@@ -141,6 +207,14 @@ impl Error {
             Self::PageIdMismatch { .. } => "page_id_mismatch",
             Self::TemplateTypeMismatch { .. } => "template_type_mismatch",
             Self::MissingSection { .. } => "missing_section",
+            Self::UnknownTemplate { .. } => "unknown_template",
+            Self::TemplatePageExists { .. } => "template_page_exists",
+            Self::InvalidFrontmatter { .. } => "invalid_frontmatter",
+            Self::ContactInBody { .. } => "contact_in_body",
+            Self::PageTooLong { .. } => "page_too_long",
+            Self::PolicyWithoutSource { .. } => "policy_without_source",
+            Self::UnresolvedCite { .. } => "unresolved_cite",
+            Self::PageNotFound { .. } => "page_not_found",
             Self::LibraryUnavailable => "library_unavailable",
             Self::Library { code, .. } => code,
             Self::Model { code, .. } => code,
@@ -168,6 +242,14 @@ impl Error {
             Self::PageIdMismatch { .. } => false,
             Self::TemplateTypeMismatch { .. } => false,
             Self::MissingSection { .. } => false,
+            Self::UnknownTemplate { .. } => false,
+            Self::TemplatePageExists { .. } => false,
+            Self::InvalidFrontmatter { .. } => false,
+            Self::ContactInBody { .. } => false,
+            Self::PageTooLong { .. } => false,
+            Self::PolicyWithoutSource { .. } => false,
+            Self::UnresolvedCite { .. } => false,
+            Self::PageNotFound { .. } => false,
             Self::LibraryUnavailable => false,
             Self::Library { .. } => false,
             Self::InvalidSetting { .. } => false,

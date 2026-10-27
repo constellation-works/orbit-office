@@ -16,11 +16,11 @@ and machinery are reused, the code is this project's.
 
 | orbit-store | office-store | Owns |
 |---|---|---|
-| `contracts/` | `src/contracts.rs` | Compatible re-exports of core record shapes: `DocumentRecord`, `DocumentKind`, `SearchFilter`, `SearchHit`, `Revision` |
+| `contracts/` | `src/contracts.rs` | Compatible re-exports of core record shapes: `DocumentRecord`, `DocumentKind`, `SearchFilter`, `SearchHit`, `Revision`, `Backlink`, `LinkKind` |
 | `fs/` (path_safety, lock, yaml) | `office-common::fs` (`path_safety`, `atomic`, `hash`) | Single-safe-component id validation, atomic owner-only writes (temp + fsync + rename + dir fsync), SHA-256 pinning/dedupe. Shared machinery lives in the foundation crate, as orbit's does in `orbit-common`. |
 | `driver/file/` | `src/driver/file/library.rs` | The Library as plain Markdown: layout, frontmatter parsing, full scan for reindex |
 | `driver/sqlite/` (connection, migration registry) | `src/driver/sqlite/` (`connection.rs`, `migration.rs`) | One writer connection behind a mutex; owner-only database file; the same pragmas on every connection (WAL, `busy_timeout` 5000, `foreign_keys=ON`, `synchronous=NORMAL`); ordered migrations with `user_version`, refusing a newer schema |
-| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `get`, `search`, `file_sha256` |
+| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `get`, `backlinks`, `knowledge_pages`, `templates`, `search`, `file_sha256` |
 
 What is deliberately not carried over: orbit-store's read pool, forward-
 compatible read-only open, failure-class SQL functions, task reservations
@@ -56,8 +56,10 @@ tool needs them, as new migration steps — never as edits to step 1.
 ## Library port and writes
 
 `office_core::ports::Library` exposes current document reads, document writes,
-filtered search, newest-first path history, readiness, settings and single-key
-`set_setting` updates. `LibraryStore`
+lookup by id, back-links (documents whose `cites` or `related` name an id, from
+the `cites` and `links` tables), the knowledge page and template files as
+Markdown, filtered search, newest-first path history, readiness, settings and
+single-key `set_setting` updates. `LibraryStore`
 implements it; `office-testkit::fakes::FakeLibrary` implements the same operations
 in memory. The store's existing record exports are re-exports of
 `office_core::domain::knowledge`, so callers keep the same types. The shared

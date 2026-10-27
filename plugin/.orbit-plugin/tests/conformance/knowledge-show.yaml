@@ -1,0 +1,57 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  # Runs after config-set.yaml and init.yaml in the shared conformance
+  # workspace, so the Library and its bundled templates exist. These writes
+  # add two domain pages; reindex.yaml and status.yaml count them.
+  - name: knowledge_show_setup_writes_the_user_page
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-user\ntemplate: user\ntitle: Dee\naliases: [D]\nrefs:\n  - { label: Work email, contact: dee@example.com }\n  - { label: Tracker, account: \"jira:OFF\" }\n---\n## Name\nDee\n\n## Role\nOperations lead.\n"
+    expect:
+      output: {id: dom-user, type: domain, path: knowledge/domain/dom-user.md, created: true}
+  - name: knowledge_show_setup_writes_a_page_linking_to_it
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-client-acme\ntitle: Acme\ncites: [dom-user]\nrelated: [dom-user]\n---\nAcme is Dee's account [dom-user].\n"
+    expect:
+      output: {id: dom-client-acme, type: domain, path: knowledge/domain/dom-client-acme.md, created: true}
+  - name: knowledge_show_returns_the_model_view_and_backlinks
+    tool: knowledge-show
+    input: {id: dom-user}
+    expect:
+      output:
+        page:
+          id: dom-user
+          type: domain
+          path: knowledge/domain/dom-user.md
+          template: user
+          title: Dee
+          aliases: [D]
+          summary: ""
+          tags: []
+          cites: []
+          refs:
+            - {label: Work email, target: contact, value: null, authoritative: false, as_of: null}
+            - {label: Tracker, target: account, value: "jira:OFF", authoritative: false, as_of: null}
+          related: []
+          updated_at: null
+          last_verified: null
+          status: current
+          sensitivity: normal
+          as_of: null
+          performable: null
+          submission: null
+          body: "## Name\nDee\n\n## Role\nOperations lead.\n"
+        backlinks:
+          - {id: dom-client-acme, kind: domain, title: Acme, path: knowledge/domain/dom-client-acme.md, via: [cites, related]}
+  - name: knowledge_show_refuses_an_unknown_page
+    tool: knowledge-show
+    input: {id: dom-absent}
+    expect:
+      error: {code: page_not_found}
+  - name: knowledge_show_refuses_unknown_input
+    tool: knowledge-show
+    input: {id: dom-user, raw: true}
+    expect:
+      error: {code: invalid_argument}

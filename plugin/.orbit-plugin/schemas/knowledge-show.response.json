@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.knowledge-show response",
+  "description": "The page's model view and the documents that link to it. An unknown id is refused with page_not_found.",
+  "type": "object",
+  "properties": {
+    "page": {
+      "type": "object",
+      "description": "The page as a model may see it: every contact ref keeps its label and has a null value, and any email address or phone number in the body reads [contact withheld].",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["domain", "runbook"] },
+        "path": { "type": "string", "description": "Relative to the Library." },
+        "template": { "type": ["string", "null"] },
+        "title": { "type": "string" },
+        "aliases": { "$ref": "#/$defs/strings" },
+        "summary": { "type": "string" },
+        "tags": { "$ref": "#/$defs/strings" },
+        "cites": { "$ref": "#/$defs/strings" },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "target": { "type": "string", "enum": ["path", "url", "contact", "account", "artifact"] },
+              "value": { "type": ["string", "null"], "description": "Null for every contact." },
+              "authoritative": { "type": "boolean" },
+              "as_of": { "type": ["string", "null"] }
+            },
+            "required": ["label", "target", "value", "authoritative", "as_of"],
+            "additionalProperties": false
+          }
+        },
+        "related": { "$ref": "#/$defs/strings" },
+        "updated_at": { "type": ["string", "null"] },
+        "last_verified": { "type": ["string", "null"] },
+        "status": { "type": "string", "enum": ["current", "stale", "retired"] },
+        "sensitivity": { "type": "string", "enum": ["normal", "private"] },
+        "as_of": { "type": ["string", "null"] },
+        "performable": { "type": ["string", "null"], "enum": ["agent", "you", null] },
+        "submission": {
+          "type": ["object", "null"],
+          "properties": {
+            "system": { "type": "string" },
+            "via": { "type": "string", "enum": ["draft", "gateway"] },
+            "connection": { "type": ["string", "null"] }
+          },
+          "required": ["system", "via", "connection"],
+          "additionalProperties": false
+        },
+        "body": { "type": "string" }
+      },
+      "required": ["id", "type", "path", "template", "title", "aliases", "summary", "tags", "cites", "refs", "related", "updated_at", "last_verified", "status", "sensitivity", "as_of", "performable", "submission", "body"],
+      "additionalProperties": false
+    },
+    "backlinks": {
+      "type": "array",
+      "description": "Indexed sources, pages and artifacts whose frontmatter cites or related name this page, sorted by id.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["source", "domain", "runbook", "artifact"] },
+          "title": { "type": "string" },
+          "path": { "type": "string" },
+          "via": { "type": "array", "items": { "type": "string", "enum": ["cites", "related"] }, "minItems": 1 }
+        },
+        "required": ["id", "kind", "title", "path", "via"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["page", "backlinks"],
+  "additionalProperties": false,
+  "$defs": {
+    "strings": { "type": "array", "items": { "type": "string" } }
+  }
+}

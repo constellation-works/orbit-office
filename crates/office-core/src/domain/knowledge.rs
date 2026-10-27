@@ -1,7 +1,18 @@
-//! Shared Library document and search records, independent of storage.
+//! Shared Library document and search records, independent of storage,
+//! and the knowledge page model (`page`): frontmatter, base rules,
+//! citations, template checks and the model view.
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+mod frontmatter;
+mod page;
+
+pub use page::{
+    Citation, MAX_PAGE_WORDS, POLICY_TAG, Page, PageFile, PageRef, PageStatus, PageView,
+    Performable, RefTarget, RefView, Submission, SubmissionVia, page_kind_for_id, parse_citation,
+    resolve_anchor,
+};
 
 /// Which Library layer a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,6 +107,31 @@ pub struct SearchHit {
     pub path: String,
     /// A short excerpt around the first match.
     pub snippet: String,
+}
+
+/// How one document links to another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKind {
+    /// Through frontmatter `cites` (`<id>` or `<id>#<anchor>`).
+    Cites,
+    /// Through frontmatter `related`.
+    Related,
+}
+
+/// A document that links to a given one, and how.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Backlink {
+    /// The linking document's id.
+    pub id: String,
+    /// Its Library layer.
+    pub kind: DocumentKind,
+    /// Its title.
+    pub title: String,
+    /// Its path relative to the Library root.
+    pub path: String,
+    /// Every way it links, sorted.
+    pub via: Vec<LinkKind>,
 }
 
 /// One commit in a document's Library history.
