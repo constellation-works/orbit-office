@@ -846,8 +846,8 @@ step_workspace() {
 }
 
 plugin_is_listed() {
-    command -v orbit >/dev/null 2>&1 || return 1
-    _list=$(orbit plugin list 2>/dev/null) || return 1
+    command -v orbit >/dev/null 2>&1 || return 2
+    _list=$(orbit plugin list 2>/dev/null) || return 2
     printf '%s\n' "$_list" | awk -v name="$1" '$1 == name { found=1 } END { exit !found }'
 }
 
@@ -1930,9 +1930,16 @@ do_uninstall() {
         fi
         if [ "$_owned" -eq 1 ]; then
             command -v orbit >/dev/null 2>&1 || die "uninstall: Orbit is required to remove $_plugin"
-            orbit plugin remove "$_plugin" --yes >/dev/null 2>&1 \
-                || die "uninstall: could not remove $_plugin; retry when Orbit is available"
-            say "uninstall: removed the $_plugin plugin"
+            if plugin_is_listed "$_plugin"; then
+                orbit plugin remove "$_plugin" --yes >/dev/null 2>&1 \
+                    || die "uninstall: could not remove $_plugin; retry when Orbit is available"
+                say "uninstall: removed the $_plugin plugin"
+            else
+                _list_status=$?
+                [ "$_list_status" -eq 1 ] \
+                    || die "uninstall: could not list Orbit plugins; retry when Orbit is available"
+                say "uninstall: $_plugin plugin already removed"
+            fi
         fi
         state_clear "$_added"
         state_clear "$(plugin_marker "$_plugin" enabled)"
