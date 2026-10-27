@@ -40,7 +40,9 @@ in `{{plugin_state}}/drafts/<id>.json` with its SHA-256 and files one
 `orbit.task.artifact.put` callbacks; the artifact is staged in
 `{{workspace}}/.orbit-gateway/` and removed after the put). The app's Approve
 calls `http-send` with the draft id and that digest; Dismiss rejects the task
-and the draft is never sent. A draft moves `filing` → `pending` → `sending` →
+and the draft is never sent. A successful send closes that task as `done`
+by the legal lifecycle steps, because a direct move to `done` is refused
+from every status except `review`. A draft moves `filing` → `pending` → `sending` →
 `sent` or `outcome_unknown` (or `unfiled`, `dismissed`), and only `pending` is
 ever sent.
 

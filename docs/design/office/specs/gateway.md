@@ -170,7 +170,12 @@ runs on an agent's call ([orchestrator.md](./orchestrator.md#guardrails)):
    reply). The audit record for that send sets `truncated: true`.
    When the connection names an idempotency header, the draft id is sent
    in it. Redirects are returned, never followed. Then the response is
-   redacted, the outcome audited and the task closed as done.
+   redacted, the outcome audited and the task closed as done. `done` is
+   accepted only from `review` and that step needs an execution summary,
+   so the close walks there from the task's current status (`proposed`,
+   `someday` and `blocked` go through `backlog`, which is what lets the
+   next step be `in-progress` without a plan). A refused step is
+   `task_closed: false` with `task_error`; the draft stays sent.
 4. **Dismiss** rejects the task, and the draft is never sent.
 
 ## Redaction

@@ -202,7 +202,7 @@ def schema_errors(instance: Any, schema: dict[str, Any], path: str = "$") -> lis
 
 FAKE_ORBIT = """#!{python} -I
 import json, os, sys, time
-LOG, REPLIES = {log!r}, {replies!r}
+LOG, REPLIES, STATE = {log!r}, {replies!r}, {state!r}
 argv = sys.argv[1:]
 tool = argv[2]
 payload = json.loads(argv[argv.index("--input") + 1])
@@ -235,6 +235,71 @@ if reply.get("sleep"):
 if "stderr" in reply:
     sys.stderr.write(json.dumps(reply["stderr"]))
     sys.exit(reply.get("exit", 1))
+
+def transition_allowed(src, dst):
+    # The Orbit task table: done is only from review; done and archived
+    # do not reopen; rejected returns only to backlog or in-progress.
+    if src == dst:
+        return True
+    if src in ("done", "archived"):
+        return False
+    if src == "rejected":
+        return dst in ("backlog", "in-progress")
+    if dst in ("blocked", "archived"):
+        return True
+    table = {{
+        "blocked": ("backlog", "in-progress"),
+        "proposed": ("backlog", "someday", "in-progress", "rejected"),
+        "backlog": ("proposed", "someday", "in-progress", "rejected"),
+        "someday": ("backlog", "in-progress", "rejected"),
+        "in-progress": ("backlog", "someday", "review", "rejected"),
+        "review": ("backlog", "in-progress", "done", "rejected"),
+    }}
+    return dst in table.get(src, ())
+
+def refuse(message):
+    sys.stderr.write(json.dumps({{"error": message, "code": "invalid_input"}}))
+    sys.exit(1)
+
+if tool in ("orbit.task.show", "orbit.task.update") and os.path.exists(STATE):
+    with open(STATE, encoding="utf-8") as handle:
+        state = json.load(handle)
+    if tool == "orbit.task.show":
+        status = state["status"]
+        sys.stdout.write(json.dumps({{
+            "id": state["id"],
+            "status": status,
+            "terminal": status in ("done", "archived", "rejected"),
+            "execution_summary": state.get("execution_summary", ""),
+        }}))
+        sys.exit(0)
+    status = state["status"]
+    target = payload.get("status", status)
+    if not isinstance(target, str):
+        target = status
+    if not transition_allowed(status, target):
+        reason = "'done' is reachable only from 'review'" if target == "done" else "that transition is not in the lifecycle table"
+        refuse("task %r cannot move from %r to %r: %s" % (state["id"], status, target, reason))
+    if target == "in-progress" and status not in ("backlog", "in-progress"):
+        plan = payload.get("plan", state.get("plan", ""))
+        placeholder = "To be authored by executing agent at start time."
+        if not isinstance(plan, str) or not plan.strip() or plan.strip() == placeholder:
+            refuse("task %r requires a non-empty execution plan before transitioning to in-progress" % (state["id"],))
+        state["plan"] = plan
+    elif isinstance(payload.get("plan"), str):
+        state["plan"] = payload["plan"]
+    if target == "done":
+        summary = payload.get("execution_summary", state.get("execution_summary", ""))
+        if not isinstance(summary, str) or not summary.strip():
+            refuse("task %r cannot move from %r to 'done': completion requires a non-empty execution summary" % (state["id"], status))
+        state["execution_summary"] = summary
+    elif isinstance(payload.get("execution_summary"), str):
+        state["execution_summary"] = payload["execution_summary"]
+    state["status"] = target
+    with open(STATE, "w", encoding="utf-8") as handle:
+        json.dump(state, handle)
+    sys.stdout.write(json.dumps({{"id": state["id"], "status": state["status"]}}))
+    sys.exit(0)
 sys.stdout.write(json.dumps(reply.get("stdout", {{}})))
 """
 
@@ -244,14 +309,27 @@ class FakeOrbit:
     from `replies`: per tool, `stdout` (a JSON result), or `stderr` and `exit`
     (a structured refusal), optionally after `sleep` seconds; `flood` writes
     that many bytes, `orphan` leaves a `sleep` behind, its pid in a file, and
-    `mark` rewrites a draft file's state as a concurrent sender would."""
+    `mark` rewrites a draft file's state as a concurrent sender would.
+
+    `enforce_lifecycle` writes a task-state file the executable consults for
+    `orbit.task.show` and `orbit.task.update`. Updates then follow Orbit's
+    transition table, including the plan and execution-summary preconditions,
+    instead of accepting whatever status the caller asks for."""
 
     def __init__(self, directory: Path):
         directory.mkdir()
         self.log = directory / "calls.jsonl"
         self.replies_file = directory / "replies.json"
+        self.lifecycle_file = directory / "lifecycle.json"
         self.program = directory / "orbit"
-        self.program.write_text(FAKE_ORBIT.format(python=sys.executable, log=str(self.log), replies=str(self.replies_file)))
+        self.program.write_text(
+            FAKE_ORBIT.format(
+                python=sys.executable,
+                log=str(self.log),
+                replies=str(self.replies_file),
+                state=str(self.lifecycle_file),
+            )
+        )
         self.program.chmod(self.program.stat().st_mode | stat.S_IXUSR)
         self.replies: dict[str, dict[str, Any]] = {
             "orbit.task.add": {"stdout": {"id": "T-100", "status": "proposed"}},
@@ -263,6 +341,17 @@ class FakeOrbit:
 
     def save(self) -> None:
         self.replies_file.write_text(json.dumps(self.replies))
+
+    def enforce_lifecycle(self, status: str = "proposed", task_id: str = "T-100") -> None:
+        """Answer show/update from Orbit's lifecycle, starting at `status`."""
+        self.lifecycle_file.write_text(
+            json.dumps({"id": task_id, "status": status, "execution_summary": "", "plan": ""})
+        )
+
+    def task_status(self) -> str | None:
+        if not self.lifecycle_file.exists():
+            return None
+        return json.loads(self.lifecycle_file.read_text())["status"]
 
     def reply(self, tool: str, **reply: Any) -> None:
         self.replies[tool] = reply

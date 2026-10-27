@@ -234,10 +234,14 @@ class Send(DraftCase):
         self.assertEqual(seen.headers["content-type"], "application/json")
         self.assertEqual(self.stored(out["draft"])["state"], "sent")
 
-        # It checked the task was open, then closed it.
+        # It checked the task was open (a proposed approval), then walked
+        # proposed → backlog → in-progress → review → done. A direct done
+        # is refused from proposed.
         self.assertEqual(self.orbit.calls("orbit.task.show")[0]["input"]["id"], "T-100")
-        [close] = self.orbit.calls("orbit.task.update")
-        self.assertEqual((close["input"]["id"], close["input"]["status"]), ("T-100", "done"))
+        closes = self.orbit.calls("orbit.task.update")
+        self.assertEqual([call["input"]["status"] for call in closes], ["backlog", "in-progress", "review", "done"])
+        self.assertTrue(all(call["input"]["id"] == "T-100" for call in closes))
+        self.assertTrue(closes[-1]["input"]["execution_summary"].startswith("Sent once:"))
 
         # A second send of the same draft is refused and sends nothing.
         error = self.refused("draft_not_pending", "http-send", {"draft": out["draft"], "sha256": out["sha256"]}, secrets=self.secrets)
@@ -247,6 +251,47 @@ class Send(DraftCase):
         send_lines = [line for line in self.audit_lines() if line["tool"] == "gateway.http-send"]
         self.assertEqual([(line["outcome"], line["status"], line["draft"]) for line in send_lines], [("sent", 200, out["draft"]), ("draft_not_pending", None, out["draft"])])
         self.assertEqual(send_lines[0]["body_sha256"] is not None, True)
+
+    def test_a_successful_send_reaches_done_when_orbit_refuses_an_illegal_close(self) -> None:
+        """Orbit accepts `done` only from `review`, and that step needs an
+        execution summary. Fails while the send asks for `done` from the
+        open status: the callback refuses, `task_closed` is false and the
+        approval task stays open."""
+        starts = {
+            "proposed": ["backlog", "in-progress", "review", "done"],
+            "someday": ["backlog", "in-progress", "review", "done"],
+            "blocked": ["backlog", "in-progress", "review", "done"],
+            "backlog": ["in-progress", "review", "done"],
+            "in-progress": ["review", "done"],
+            "review": ["done"],
+        }
+        for status, expected in starts.items():
+            with self.subTest(status=status):
+                self.orbit.enforce_lifecycle(status=status)
+                out = self.draft()
+                seen = len(self.server.seen)
+                logged = len(self.orbit.calls("orbit.task.update"))
+                answer = self.send(out)
+                self.assertTrue(answer["ok"], answer)
+                sent = answer["output"]
+                self.assertNotIn("task_error", sent)
+                self.assertEqual(sent["task_closed"], True, sent)
+                updates = self.orbit.calls("orbit.task.update")[logged:]
+                self.assertEqual([call["input"].get("status") for call in updates], expected)
+                done = updates[-1]["input"]
+                self.assertEqual(done["id"], "T-100")
+                self.assertTrue(done["execution_summary"].startswith("Sent once:"))
+                self.assertEqual(done["execution_summary"], done["note"])
+                self.assertIn("Sent once:", updates[0]["input"]["comment"])
+                self.assertEqual(self.orbit.task_status(), "done")
+                self.assertEqual(len(self.server.seen), seen + 1)
+                self.refused(
+                    "draft_not_pending",
+                    "http-send",
+                    {"draft": out["draft"], "sha256": out["sha256"]},
+                    secrets=self.secrets,
+                )
+                self.assertEqual(len(self.server.seen), seen + 1, "a closed send is not sent again")
 
     def test_a_send_that_loses_the_race_to_another_sends_nothing(self) -> None:
         out = self.draft()
