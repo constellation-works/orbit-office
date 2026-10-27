@@ -65,7 +65,12 @@ uses the same lock. The standard-library advisory file lock is acquired with
 `File::try_lock` (the bounded form of `File::lock`), with a five-second deadline;
 `library.writer.owner.json` records the PID, acquisition time and label for timeout
 diagnostics. Closing the file releases the lock. SQLite's mutex/transaction is
-short-lived and is never held across git. Reads never acquire the writer lock.
+short-lived and is never held across git. Reads never wait for the writer lock
+or acquire it exclusively. When a journal exists, they open the existing lock
+file read-only and try a shared lock once, without creating lock/holder state.
+An exclusive holder means a live write/recovery is in flight, so reads proceed.
+An idle shared probe rechecks the journal while held: if it has disappeared,
+the write completed; if it remains (or no lock file exists), recovery is required.
 Production calls to one Library must use the same plugin state directory.
 `open_in_memory` uses `.office/state` for writer state and a process-local index;
 it is for tests/scans, not concurrent production indexing.
@@ -73,12 +78,14 @@ it is for tests/scans, not concurrent production indexing.
 A versioned, atomically written `library.pending-write.json` is the durable
 commit decision for the operation. Its document text and write token are replayed
 idempotently under the writer lock before an interrupted store opens. A failure
-after that decision leaves the journal intact and read operations refuse with
-`library_write_pending` until recovery completes. Invalid/newer journals are
-preserved and refused. A token in the commit message prevents a replay after
-commit from duplicating the commit. The journal is private (0600), and completion
-fsyncs its removal. A live reader may observe the old or new file; these calls do
-not promise a cross-file snapshot during an active write.
+after that decision leaves the journal intact. With no active writer, read
+operations refuse with `library_write_pending` until recovery completes;
+they never replay or clear a journal themselves. Invalid/newer journals are
+preserved and refused by recovery. A token in the commit message prevents a replay
+after commit from duplicating the commit. The journal is private (0600), and completion
+fsyncs its removal. During a live write, reads return the available file, indexed
+record/search hits or committed history, which may reflect the old or new
+document. These calls do not promise a snapshot across files, index and git.
 
 Each write stages only its Markdown path and commits with `--only --allow-empty`,
 using the per-commit author and committer `orbit-office <office@orbit.local>`.
