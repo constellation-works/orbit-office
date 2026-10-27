@@ -1,5 +1,10 @@
 # Architecture (scaffold)
 
+Orbit Office is a distribution of Orbit: an app built on Orbit as its engine.
+It packages the web app and the `office`, `gateway` and optional `cloudcli`
+component plugins for office work. Its planned workspace preset awaits Orbit's
+preset support ([installation spec](design/office/specs/install.md#office-workspace-preset-pending-orbit-support)).
+
 One loop drives the product:
 
 ```

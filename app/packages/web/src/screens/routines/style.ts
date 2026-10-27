@@ -1,6 +1,7 @@
 export const styles = `
 .routines-header { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom:20px; }
 .routines-header .intro { margin:0; }
+.routines-hidden { margin:-8px 0 16px; font-size:12px; color:var(--fg-mute); }
 .routines-total { font-size:13px; color:var(--fg-mute); font-variant-numeric:tabular-nums; }
 .routine-hour, .routine-group { background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:14px; min-width:0; }
 .routine-hour { padding:12px 16px 4px; }
@@ -49,7 +50,6 @@ export const styles = `
 .routine-switch:checked { background:var(--done); }
 .routine-switch:checked::after { transform:translateX(16px); }
 .routine-switch:disabled { opacity:.6; cursor:default; }
-.routines-footnote { font-size:12px; color:var(--fg-mute); margin:4px 0 0; }
 @media (max-width: 760px) {
   .routine-columns { display:none; }
   .routine-row { grid-template-columns:48px minmax(0,1fr); align-items:start; gap:10px 12px; }

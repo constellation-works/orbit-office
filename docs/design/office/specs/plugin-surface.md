@@ -6,7 +6,7 @@ last_validated: 2026-10-26
 
 # Spec: Plugin surface
 
-The `office` plugin is the deterministic half of the product: one tool
+The `office` plugin is a component of the Orbit Office distribution: one tool
 table, each tool with a kind, an MCP visibility, JSON Schemas, and a
 handler. The manifest, schemas, goldens and code are held in agreement by
 tests.

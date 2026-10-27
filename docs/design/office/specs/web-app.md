@@ -39,7 +39,7 @@ Source: spec §13.1–§13.2 and §13.4.
 | **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
 | **Calendar** | Week view (day view on a phone) of the user's meetings, read only from Outlook or an ICS feed, with each meeting's prep and capture state in words and the routines' runs as margin marks; a meeting opens its attendees, agenda, cited prep brief and **Add notes or transcript** ([calendar.md](./calendar.md#app)) |
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge |
-| **Routines** | The next hour as one track (a mark per scheduled run, hollow where a paused routine skips its slot), then On and Paused tables: a switch, the routine and what it does, when it runs (plain words, with the cron line beneath), when it runs next (worked out from the schedule in the computer's time zone) and how its last time went (from `last_fire` in `orbit.auto_task.list`: when, and its task's state in words; task ids stay on the server). Retention settings below. Full run history and produced outputs await an Orbit listing change; scheduled background jobs are managed in Orbit. |
+| **Routines** | The next hour as one track (a mark per scheduled run, hollow where a paused routine skips its slot), then On and Paused tables: a switch, the routine and what it does, when it runs (plain words, with the cron line beneath), when it runs next (worked out from the schedule in the computer's time zone) and how its last time went (from `last_fire` in `orbit.auto_task.list`: when, and its task's state in words; task ids stay on the server). Retention settings below. Scheduled routines use the same tables, with their last run outcome when available. Only shipped component definitions are listed, with a count of hidden Orbit developer routines (see below). Full run history and produced outputs are managed in Orbit. |
 | **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meeting sources and other Library documents; task links are deferred until a page-citation read exists); history for every page and artifact |
 | **Settings** | Library settings; **Private route** (choose the endpoint kind, URL, model and label; the token goes straight to `orbit plugin secret set`; the check's capabilities in plain words; "Built with Muse Spark Open"; [models-and-privacy.md](./models-and-privacy.md#the-private-route)); **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
 | **Insights** | Automation ratio line, metric tiles, "what got automated" |
@@ -57,6 +57,44 @@ Review searches the quarterly and yearly review series, reads each returned arti
 ### Library setup
 
 `GET /api/setup` reads `office.status` Library health. When the Library is missing, Today replaces Needs you with a Set up your Library card describing the scaffold. Set up shows progress and calls `POST /api/setup` once; the server calls `office.init` as the user with full output. Created and already initialized both lead to normal Today and refreshed rail counts. Failures show a reason and fix without automatic retries. If the plugin is disabled or the workspace unregistered, the card directs the user to `office init` instead of offering the action. Other screens link back to Today while setup is needed.
+
+### Distribution routines
+
+The Routines screen includes only names shipped by the `office` and `gateway`
+component plugins. At server feature startup, the server reads
+`spec.definitions.routines` and `spec.definitions.auto_tasks` from their manifests,
+then each referenced file's `name`. It caches those two sets until restart. A new
+file declared in either manifest appears after restart when Orbit lists it; no
+application name list needs updating. Files not declared by a manifest, prefixes,
+tags and skip messages do not establish membership. The gateway currently ships
+no automation definitions; its manifest is still read so additions work the same way.
+
+The reader accepts the repository's literal YAML paths (flow or block lists) and
+plain or quoted identifier names. A missing referenced file, invalid name or
+unsupported list syntax refuses the snapshot rather than producing an empty filter.
+Source installs read `plugin/.orbit-plugin` and
+`gateway/plugins/gateway/.orbit-plugin` relative to the app. Standalone app bundles
+must carry the same manifest and definition files under
+`app/plugins/{office,gateway}/.orbit-plugin` (the bundle root is `app/`). These are
+shipped resources, not reads of the user's `.orbit` state.
+
+`GET /api/routines` filters `orbit.auto_task.list` and every page of
+`orbit.routine.control` (`action: list`) separately by definition kind. It returns
+`routines`, `hidden_count` and `routines_unavailable`; each visible row includes a
+`kind` so equal names in the two namespaces stay distinct. The screen reports
+"N Orbit developer routines hidden". This is a display filter: it never removes,
+pauses or changes hidden automation. The count includes all excluded listing rows,
+including custom workspace definitions outside the shipped component sets.
+
+Routine controls still require Orbit operator authority; the app grants none.
+If that listing is refused for lack of permission, filtered auto-tasks remain
+available and the screen explicitly says scheduled routines are unavailable and
+that the count covers auto-tasks only. Other listing failures refuse the snapshot.
+Toggling a scheduled routine first observes its current enabled state and target,
+then passes those to Orbit's guarded control. Auto-task switches continue to use
+`orbit.auto_task.update`. No hidden name can be toggled through this screen's API.
+The workspace preset that suppresses developer defaults at initialization remains
+follow-up work; see [install.md](./install.md#office-workspace-preset-pending-orbit-support).
 
 ### Today implementation
 
