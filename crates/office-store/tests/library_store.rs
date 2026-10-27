@@ -150,6 +150,186 @@ fn initialize(root: &Path) {
 }
 
 #[test]
+fn settings_decision_recovers_without_indexing_and_replay_does_not_duplicate_commit() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    let store = LibraryStore::open(&library, &state).expect("store");
+    let journal_path = state.join("library.pending-write.json");
+    let journal = serde_json::json!({
+        "version": 2, "kind": "settings", "root": library.canonicalize().unwrap(),
+        "relative": ".office/config.yaml", "text": "retention:\n  meeting: 30\n", "token": "123-456"
+    });
+    std::fs::write(&journal_path, journal.to_string()).unwrap();
+    assert_eq!(
+        store.settings().unwrap_err().code(),
+        "library_write_pending"
+    );
+    // The decided write, not a valid old config, is the recovery precondition.
+    std::fs::remove_file(library.join(".office/config.yaml")).unwrap();
+    let recovered = LibraryStore::open(&library, &state).expect("recover settings");
+    assert_eq!(recovered.settings().unwrap().retention["meeting"], Some(30));
+    assert_eq!(recovered.document_count().unwrap(), 0);
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    assert_eq!(
+        git(&library, &["show", "HEAD:.office/config.yaml"]),
+        "retention:\n  meeting: 30\n"
+    );
+    assert!(!journal_path.exists());
+    std::fs::write(&journal_path, journal.to_string()).unwrap();
+    let replayed = LibraryStore::open(&library, &state).expect("post-commit replay");
+    assert_eq!(replayed.settings().unwrap().retention["meeting"], Some(30));
+    assert_eq!(replayed.document_count().unwrap(), 0);
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    assert!(!journal_path.exists());
+}
+
+#[test]
+fn invalid_settings_decisions_are_preserved_and_never_applied() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    LibraryStore::open(&library, &state).expect("store");
+    for (version, kind, relative, text, code) in [
+        (
+            2,
+            "settings",
+            "knowledge/domain/escape.md",
+            "{}",
+            "library_journal_invalid",
+        ),
+        (
+            2,
+            "settings",
+            ".office/config.yaml",
+            "retention:\n  meeting: 0",
+            "invalid_library_setting",
+        ),
+        (
+            2,
+            "unknown",
+            ".office/config.yaml",
+            "{}",
+            "library_journal_invalid",
+        ),
+        (
+            3,
+            "settings",
+            ".office/config.yaml",
+            "{}",
+            "library_journal_invalid",
+        ),
+        (
+            1,
+            "settings",
+            ".office/config.yaml",
+            "{}",
+            "library_journal_invalid",
+        ),
+    ] {
+        let journal = serde_json::json!({"version": version, "kind": kind,
+            "root": library.canonicalize().unwrap(), "relative": relative,
+            "text": text, "token": "123-456"})
+        .to_string();
+        let path = state.join("library.pending-write.json");
+        std::fs::write(&path, &journal).unwrap();
+        let error = LibraryStore::open(&library, &state)
+            .err()
+            .expect("refuse journal");
+        assert_eq!(error.code(), code);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), journal);
+        assert_eq!(
+            std::fs::read_to_string(library.join(".office/config.yaml")).unwrap(),
+            ""
+        );
+        assert!(!library.join("knowledge/domain/escape.md").exists());
+    }
+}
+
+#[test]
+fn settings_updates_read_the_latest_config_and_do_not_lose_other_keys() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    let a = LibraryStore::open(&library, &state).expect("store a");
+    let b = LibraryStore::open(&library, &state).expect("store b");
+    a.set_setting("retention.meeting", serde_json::json!(10))
+        .unwrap();
+    b.set_setting("sensitivity.note", serde_json::json!("private"))
+        .unwrap();
+    a.set_setting("packs", serde_json::json!(["receipts"]))
+        .unwrap();
+    let settings = b.settings().unwrap();
+    assert_eq!(settings.retention["meeting"], Some(10));
+    assert_eq!(settings.sensitivity["note"].as_str(), "private");
+    assert_eq!(settings.packs, ["receipts"]);
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "3");
+    assert_eq!(a.document_count().unwrap(), 0);
+}
+
+#[test]
+fn settings_commit_failure_leaves_a_recoverable_decision() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    let store = LibraryStore::open(&library, &state).expect("store");
+    let index_lock = library.join(".git/index.lock");
+    std::fs::write(&index_lock, "fixture lock").unwrap();
+    assert_eq!(
+        store
+            .set_setting("retention.meeting", serde_json::json!(20))
+            .unwrap_err()
+            .code(),
+        "library_git_error"
+    );
+    assert!(state.join("library.pending-write.json").exists());
+    // Opening recovers under the bounded writer lock. Read refusal for an
+    // abandoned settings journal is covered by the explicit journal fixture;
+    // a read while a kernel writer lock is still live may observe new config.
+    std::fs::remove_file(index_lock).unwrap();
+    let recovered = LibraryStore::open(&library, &state).expect("finish config commit");
+    assert_eq!(recovered.settings().unwrap().retention["meeting"], Some(20));
+    assert_eq!(recovered.document_count().unwrap(), 0);
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    assert_eq!(
+        git(&library, &["show", "HEAD:.office/config.yaml"]),
+        std::fs::read_to_string(library.join(".office/config.yaml")).unwrap()
+    );
+    assert!(!state.join("library.pending-write.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn settings_updates_refuse_a_symlink_without_changing_its_target() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    let store = LibraryStore::open(&library, &state).expect("store");
+    let outside = dir.path().join("outside.yaml");
+    std::fs::write(&outside, "packs: [receipts]\n").unwrap();
+    std::fs::remove_file(library.join(".office/config.yaml")).unwrap();
+    symlink(&outside, library.join(".office/config.yaml")).unwrap();
+    assert_eq!(
+        store
+            .set_setting("retention.meeting", serde_json::json!(10))
+            .unwrap_err()
+            .code(),
+        "unsafe_path"
+    );
+    assert_eq!(
+        std::fs::read_to_string(outside).unwrap(),
+        "packs: [receipts]\n"
+    );
+    assert!(!state.join("library.pending-write.json").exists());
+}
+
+#[test]
 fn concurrent_writes_have_separate_commits_and_consistent_index() {
     let dir = tempfile::tempdir().expect("tempdir");
     let library = dir.path().join("library");

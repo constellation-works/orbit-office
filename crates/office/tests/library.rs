@@ -85,6 +85,9 @@ fn git(root: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .args(args)
         .current_dir(root)
+        .env_clear()
+        .env("HOME", root)
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .output()
@@ -99,6 +102,142 @@ fn git(root: &Path, args: &[&str]) -> String {
 
 const SOURCE: &str = "---\nid: src-20261028-acme-qbr\nkind: meeting\ntitle: Acme QBR\nsummary: Renewal pricing.\n---\n\n[00:12:31] Jane: searchable quixotic term here.\n";
 const DOMAIN: &str = "---\nid: dom-acme\ntitle: Acme\n---\n\nAcme quixotic page.\n";
+
+#[test]
+fn config_set_updates_one_setting_and_commits_only_config() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", serde_json::json!({}))["ok"], true);
+    let library = env.library();
+    std::fs::write(library.join("unrelated.md"), "keep staged").unwrap();
+    git(&library, &["add", "--", "unrelated.md"]);
+    for (key, value) in [
+        ("retention.meeting", serde_json::json!(30)),
+        ("sensitivity.note", serde_json::json!("private")),
+        ("retention.meeting", serde_json::Value::Null),
+    ] {
+        let before = git(&library, &["rev-list", "--count", "HEAD"])
+            .trim()
+            .parse::<u32>()
+            .unwrap();
+        let response = env.tool(
+            "office.config-set",
+            serde_json::json!({"key": key, "value": value}),
+        );
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["output"],
+            serde_json::json!({"path": ".office/config.yaml", "key": key})
+        );
+        let text = std::fs::read_to_string(library.join(".office/config.yaml")).unwrap();
+        let settings = office_core::domain::settings::Settings::from_yaml(&text).unwrap();
+        let encoded = serde_json::to_value(settings).unwrap();
+        let (section, name) = key.split_once('.').unwrap();
+        assert_eq!(encoded[section][name], value);
+        assert_eq!(encoded["thresholds"]["window_days"], 30);
+        assert_eq!(
+            git(&library, &["rev-list", "--count", "HEAD"])
+                .trim()
+                .parse::<u32>()
+                .unwrap(),
+            before + 1
+        );
+        assert_eq!(
+            git(
+                &library,
+                &["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]
+            )
+            .trim(),
+            ".office/config.yaml"
+        );
+        assert_eq!(git(&library, &["show", "HEAD:.office/config.yaml"]), text);
+        assert_eq!(
+            git(&library, &["diff", "--cached", "--name-only"]).trim(),
+            "unrelated.md"
+        );
+    }
+}
+
+#[test]
+fn config_set_refusals_leave_config_and_head_unchanged() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", serde_json::json!({}))["ok"], true);
+    let library = env.library();
+    let config = std::fs::read(library.join(".office/config.yaml")).unwrap();
+    let head = git(&library, &["rev-parse", "HEAD"]);
+    for (input, code) in [
+        (
+            serde_json::json!({"key": "retention.typo", "value": 10}),
+            "unknown_library_setting",
+        ),
+        (
+            serde_json::json!({"key": "meta_api_key", "value": "secret-fixture-value"}),
+            "unknown_library_setting",
+        ),
+        (
+            serde_json::json!({"key": "baseten_token", "value": "secret-fixture-value"}),
+            "unknown_library_setting",
+        ),
+        (
+            serde_json::json!({"key": "retention.meeting", "value": -1}),
+            "invalid_library_setting",
+        ),
+        (
+            serde_json::json!({"key": "sensitivity.note", "value": "secret-fixture-value"}),
+            "invalid_library_setting",
+        ),
+        (
+            serde_json::json!({"key": "retention.meeting"}),
+            "invalid_argument",
+        ),
+        (
+            serde_json::json!({"key": 2, "value": 10}),
+            "invalid_argument",
+        ),
+        (
+            serde_json::json!({"key": "retention.meeting", "value": 10, "secret": "secret-fixture-value"}),
+            "invalid_argument",
+        ),
+    ] {
+        let response = env.tool("office.config-set", input);
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["code"], code, "{response}");
+        assert!(!response.to_string().contains("secret-fixture-value"));
+        assert_eq!(
+            std::fs::read(library.join(".office/config.yaml")).unwrap(),
+            config
+        );
+        assert_eq!(git(&library, &["rev-parse", "HEAD"]), head);
+        assert!(!env.state.join("library.pending-write.json").exists());
+        assert!(git(&library, &["status", "--porcelain"]).is_empty());
+    }
+}
+
+#[test]
+fn config_set_waits_for_the_writer_lock_before_changing_settings() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", serde_json::json!({}))["ok"], true);
+    let library = env.library();
+    let head = git(&library, &["rev-parse", "HEAD"]);
+    let config = std::fs::read(library.join(".office/config.yaml")).unwrap();
+    let lock = std::fs::File::create(env.state.join("library.writer.lock")).unwrap();
+    lock.lock().unwrap();
+    let input = serde_json::json!({"key": "retention.meeting", "value": 45});
+    let refused = env.tool("office.config-set", input.clone());
+    assert_eq!(
+        refused["error"]["code"], "library_lock_timeout",
+        "{refused}"
+    );
+    assert_eq!(
+        std::fs::read(library.join(".office/config.yaml")).unwrap(),
+        config
+    );
+    assert_eq!(git(&library, &["rev-parse", "HEAD"]), head);
+    assert!(!env.state.join("library.pending-write.json").exists());
+    drop(lock);
+    let updated = env.tool("office.config-set", input);
+    assert_eq!(updated["ok"], true, "{updated}");
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "2");
+}
 
 #[test]
 fn init_second_run_is_an_already_initialized_no_op() {

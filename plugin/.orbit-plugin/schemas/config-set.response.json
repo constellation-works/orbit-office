@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.config-set response",
+  "type": "object",
+  "properties": {
+    "path": { "type": "string", "const": ".office/config.yaml", "description": "Updated path relative to the Library." },
+    "key": { "type": "string", "description": "The policy key that was updated and committed." }
+  },
+  "required": ["path", "key"],
+  "additionalProperties": false
+}

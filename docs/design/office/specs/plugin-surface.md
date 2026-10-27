@@ -207,6 +207,30 @@ host is refused at load with `invalid_library_setting` on
 `open_weights_endpoint`; the raw URL is not echoed. No timestamp is
 synthesized by defaults.
 These are Library policy settings, independent of plugin installation config.
+
+### Updating one Library setting
+
+`office.config-set` takes exactly `{"key":"retention.meeting","value":30}`.
+The value is typed JSON, not a YAML string. Supported keys are
+`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `packs` and
+`open_weights_endpoint`, using the kinds, threshold names and bounds above.
+The additional thresholds `friction_count` and `new_subject_count` default to
+2 (range 1–10,000); `unused_days` defaults to 30 (range 1–36,500).
+Whole retention/sensitivity/threshold mappings cannot be replaced in one call.
+Unknown keys, including secret names, return `unknown_library_setting`;
+invalid values return `invalid_library_setting`. Missing arguments or unknown
+input fields return `invalid_argument`. Refusals do not change config or HEAD.
+Raw values are never echoed in errors or responses.
+
+The Library port reads the latest settings, applies the typed update, writes
+`.office/config.yaml` atomically and adds exactly one Library commit while
+holding the same writer lock as document writes. Other settings and unrelated
+staged files are preserved. The response is
+`{"path":".office/config.yaml","key":"retention.meeting"}`, relative to
+the Library. The file is normalized to a formatted JSON mapping (valid YAML),
+including defaults; hand-edited comments and formatting are not retained.
+Repeated identical updates still add one write-event commit. No network or
+secrets are needed. Secrets remain managed by Orbit's plugin secret surface.
 The KT pack adds the `video` kind, the `kt` pack, and the `video` and `costs` keys
 ([kt-videos.md](./kt-videos.md#settings)). They land with the KT task, and the
 default pack list then becomes `[kt, meetings]`.

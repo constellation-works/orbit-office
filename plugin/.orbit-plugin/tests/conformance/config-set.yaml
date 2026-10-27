@@ -1,0 +1,37 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  # The harness shares one temporary workspace across files in path order.
+  # Keep the initial scaffold golden here, before the first settings call.
+  - name: init_scaffolds_the_library
+    tool: init
+    input: {}
+    expect:
+      output:
+        already_initialized: false
+        created: [".git", ".gitignore", ".office", ".office/config.yaml", ".office/templates", ".office/templates/client.md", ".office/templates/glossary.md", ".office/templates/goals.md", ".office/templates/person.md", ".office/templates/project.md", ".office/templates/rhythm.md", ".office/templates/runbook.md", ".office/templates/standing-directions.md", ".office/templates/systems.md", ".office/templates/topic.md", ".office/templates/user.md", "artifacts", "artifacts/.gitkeep", "index.sqlite", "knowledge/domain", "knowledge/domain/.gitkeep", "knowledge/runbooks", "knowledge/runbooks/.gitkeep", "proposals", "proposals/.gitkeep", "sources", "sources/.gitkeep"]
+  - name: config_set_updates_retention
+    tool: config-set
+    input: {key: retention.meeting, value: 30}
+    expect:
+      output: {path: .office/config.yaml, key: retention.meeting}
+  - name: config_set_refuses_unknown_key
+    tool: config-set
+    input: {key: retention.typo, value: 30}
+    expect:
+      error: {code: unknown_library_setting}
+  - name: config_set_refuses_invalid_value
+    tool: config-set
+    input: {key: retention.meeting, value: 0}
+    expect:
+      error: {code: invalid_library_setting}
+  - name: config_set_refuses_secret_setting
+    tool: config-set
+    input: {key: meta_api_key, value: fixture-only}
+    expect:
+      error: {code: unknown_library_setting}
+  - name: config_set_refuses_unknown_input
+    tool: config-set
+    input: {key: retention.meeting, value: 30, verbose: true}
+    expect:
+      error: {code: invalid_argument}

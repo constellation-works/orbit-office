@@ -32,10 +32,21 @@ pub struct LibraryStore {
 #[serde(deny_unknown_fields)]
 struct PendingWrite {
     version: u32,
+    /// Old version-1 journals are documents; unknown kinds fail closed.
+    #[serde(default)]
+    kind: WriteKind,
     root: PathBuf,
     relative: String,
     text: String,
     token: String,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum WriteKind {
+    #[default]
+    Document,
+    Settings,
 }
 
 impl LibraryStore {
@@ -323,6 +334,18 @@ impl LibraryStore {
         Ok(Settings::from_yaml(&text)?)
     }
 
+    /// Apply exactly one typed setting to the latest config while holding
+    /// the document writer lock. A settings decision skips the document index.
+    pub fn set_setting(&self, key: &str, value: serde_json::Value) -> Result<()> {
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        let settings = self.settings()?.with_setting(key, value)?;
+        let text = settings.to_yaml()?;
+        self.files.validate_settings_path()?;
+        let pending = self.decide(WriteKind::Settings, ".office/config.yaml", &text)?;
+        self.finish(&pending)
+    }
+
     fn require_initialized(&self) -> Result<()> {
         if self.is_initialized()? {
             Ok(())
@@ -382,6 +405,12 @@ impl LibraryStore {
             kind: "document",
             value: relative.display().to_string(),
         })?;
+        let pending = self.decide(WriteKind::Document, relative, text)?;
+        self.finish(&pending)?;
+        self.files.read_document(Path::new(relative))
+    }
+
+    fn decide(&self, kind: WriteKind, relative: &str, text: &str) -> Result<PendingWrite> {
         let time = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| {
             Error::io(
                 "read write decision time",
@@ -390,7 +419,8 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: 1,
+            version: 2,
+            kind,
             root: self.library_root().into(),
             relative: relative.into(),
             text: text.into(),
@@ -401,7 +431,7 @@ impl LibraryStore {
         })?;
         // One durable decision covers files, SQLite and git (STD-03 R8).
         write_atomic(&self.journal_path(), &bytes)?;
-        self.finish(&pending)
+        Ok(pending)
     }
 
     fn validate_identity(&self, record: &DocumentRecord) -> Result<()> {
@@ -430,7 +460,7 @@ impl LibraryStore {
         };
         let pending: PendingWrite =
             serde_json::from_slice(&bytes).map_err(|_| Error::Journal { path: path.clone() })?;
-        if pending.version != 1
+        if !(1..=2).contains(&pending.version)
             || pending.root != self.library_root()
             || pending.token.is_empty()
             || !pending
@@ -440,21 +470,44 @@ impl LibraryStore {
         {
             return Err(Error::Journal { path });
         }
-        self.require_initialized()?;
-        self.files
-            .validate_document_path(Path::new(&pending.relative))?;
-        self.validate_identity(&DocumentRecord::from_markdown(
-            Path::new(&pending.relative),
-            &pending.text,
-        ))?;
-        self.finish(&pending).map(|_| ())
+        match pending.kind {
+            WriteKind::Document => {
+                self.require_initialized()?;
+                self.files
+                    .validate_document_path(Path::new(&pending.relative))?;
+                self.validate_identity(&DocumentRecord::from_markdown(
+                    Path::new(&pending.relative),
+                    &pending.text,
+                ))?;
+            }
+            WriteKind::Settings => {
+                if pending.version != 2 || pending.relative != ".office/config.yaml" {
+                    return Err(Error::Journal { path });
+                }
+                // A decided config replacement is recoverable even if its
+                // old file is missing or invalid; validate the decided text.
+                if !self.git.is_repository()? {
+                    return Err(Error::NotInitialized {
+                        root: self.library_root().into(),
+                    });
+                }
+                self.files.validate_settings_path()?;
+                Settings::from_yaml(&pending.text)?;
+            }
+        }
+        self.finish(&pending)
     }
 
-    fn finish(&self, pending: &PendingWrite) -> Result<DocumentRecord> {
-        let relative = Path::new(&pending.relative);
-        self.files.write_document(relative, &pending.text)?;
-        let record = self.files.read_document(relative)?;
-        self.index.upsert(&record)?;
+    fn finish(&self, pending: &PendingWrite) -> Result<()> {
+        match pending.kind {
+            WriteKind::Document => {
+                let relative = Path::new(&pending.relative);
+                self.files.write_document(relative, &pending.text)?;
+                let record = self.files.read_document(relative)?;
+                self.index.upsert(&record)?;
+            }
+            WriteKind::Settings => self.files.write_settings(&pending.text)?,
+        }
         self.git.commit(&pending.relative, &pending.token)?;
         let path = self.journal_path();
         std::fs::remove_file(&path)
@@ -463,7 +516,7 @@ impl LibraryStore {
         std::fs::File::open(&self.state)
             .and_then(|dir| dir.sync_all())
             .map_err(|e| Error::io("sync writer state", &self.state, e))?;
-        Ok(record)
+        Ok(())
     }
 
     /// Read a current document from disk, without waiting for the writer lock.
@@ -551,6 +604,9 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn settings(&self) -> office_core::Result<Settings> {
         Ok(Self::settings(self)?)
+    }
+    fn set_setting(&self, key: &str, value: serde_json::Value) -> office_core::Result<()> {
+        Ok(Self::set_setting(self, key, value)?)
     }
     fn initialize(&self, library_dir: Option<&str>) -> office_core::Result<InitOutcome> {
         let workspace = self

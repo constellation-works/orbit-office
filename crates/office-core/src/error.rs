@@ -92,6 +92,14 @@ pub enum Error {
         /// Expected type, range or supported syntax; never the raw value.
         reason: &'static str,
     },
+    /// A single-setting update named no supported policy leaf (including secrets).
+    #[error(
+        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, packs or open_weights_endpoint"
+    )]
+    UnknownSetting {
+        /// Refused key, never the supplied value.
+        key: String,
+    },
     /// A model call failed; `retryable` follows the HTTP failure class.
     ///
     /// The message names only the endpoint host, status and operation:
@@ -137,6 +145,7 @@ impl Error {
             Self::Library { code, .. } => code,
             Self::Model { code, .. } => code,
             Self::InvalidSetting { .. } => "invalid_library_setting",
+            Self::UnknownSetting { .. } => "unknown_library_setting",
             Self::InvalidRequest(_) => "invalid_request",
             Self::UnsupportedVersion(_) => "unsupported_schema_version",
             Self::UnknownTool(_) => "unknown_tool",
@@ -162,6 +171,7 @@ impl Error {
             Self::LibraryUnavailable => false,
             Self::Library { .. } => false,
             Self::InvalidSetting { .. } => false,
+            Self::UnknownSetting { .. } => false,
             Self::InvalidRequest(_) => false,
             Self::UnsupportedVersion(_) => false,
             Self::UnknownTool(_) => false,

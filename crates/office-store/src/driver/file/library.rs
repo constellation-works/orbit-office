@@ -91,15 +91,30 @@ impl LibraryFs {
 
     /// Read internal settings without following a symlink out of the Library.
     pub(crate) fn settings_text(&self) -> Result<Option<String>> {
-        let parent = self.root.join(".office");
-        refuse_symlink(&parent)?;
-        let path = parent.join("config.yaml");
-        refuse_symlink(&path)?;
+        self.validate_settings_path()?;
+        let path = self.root.join(".office/config.yaml");
         match std::fs::read_to_string(&path) {
             Ok(text) => Ok(Some(text)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(Error::io("read settings", path, e)),
         }
+    }
+
+    /// The fixed internal path permits `.office`, unlike caller-supplied
+    /// document components, and never follows a symlink in either component.
+    pub(crate) fn validate_settings_path(&self) -> Result<()> {
+        refuse_symlink(&self.root.join(".office"))?;
+        refuse_symlink(&self.root.join(".office/config.yaml"))
+    }
+
+    /// Replace only the internal config, with the same path containment and
+    /// atomic private-file writer used for documents.
+    pub(crate) fn write_settings(&self, text: &str) -> Result<()> {
+        self.validate_settings_path()?;
+        Ok(write_atomic(
+            &self.root.join(".office/config.yaml"),
+            text.as_bytes(),
+        )?)
     }
 
     /// Read and parse one document by its Library-relative path.
