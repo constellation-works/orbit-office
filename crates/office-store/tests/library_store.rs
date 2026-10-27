@@ -1411,6 +1411,139 @@ fn a_symlinked_grant_root_is_refused_wherever_it_points() {
         .expect("physical library under a linked workspace");
 }
 
+// The open lock descriptor is a handshake that the retry has passed its
+// pre-lock work. The fixture then leaves the same partial layout an earlier
+// failed initializer could have left while owning that lock.
+#[cfg(target_os = "linux")]
+#[test]
+fn init_retry_does_not_claim_layout_created_by_the_previous_writer() {
+    use std::fs::OpenOptions;
+    use std::time::{Duration, Instant};
+
+    for internal_state in [false, true] {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path().join("workspace");
+        let library = workspace.join("library");
+        let state = if internal_state {
+            library.join(".office/state")
+        } else {
+            dir.path().join("state")
+        };
+        // An obstructed git init leaves a real partial scaffold. Move it
+        // aside until the retry is waiting, to control the interleaving.
+        let partial = dir.path().join("partial");
+        if !internal_state {
+            std::fs::create_dir_all(&library).expect("library");
+            std::fs::write(library.join(".git"), "obstruction").expect("obstruct git init");
+            assert!(LibraryStore::initialize_at(&library, &state, None, &workspace).is_err());
+            assert!(library.join("sources").is_dir());
+            std::fs::remove_file(library.join(".git")).expect("remove fixture obstruction");
+            std::fs::rename(&library, &partial).expect("stage partial scaffold");
+        }
+        std::fs::create_dir_all(&state).expect("state");
+        let lock_path = state.join("library.writer.lock");
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .expect("lock file");
+        lock.lock().expect("hold lock");
+        std::thread::scope(|scope| {
+            let retry =
+                scope.spawn(|| LibraryStore::initialize_at(&library, &state, None, &workspace));
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let observed = loop {
+                let count = std::fs::read_dir("/proc/self/fd")
+                    .expect("descriptors")
+                    .filter_map(Result::ok)
+                    .filter(|entry| {
+                        std::fs::read_link(entry.path()).is_ok_and(|target| target == lock_path)
+                    })
+                    .count();
+                if count >= 2 {
+                    break true;
+                }
+                if retry.is_finished() || Instant::now() >= deadline {
+                    break false;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            if observed {
+                if internal_state {
+                    std::fs::create_dir_all(library.join("sources")).expect("partial sources");
+                    std::fs::create_dir_all(library.join("knowledge/domain"))
+                        .expect("partial knowledge");
+                    std::fs::create_dir_all(library.join(".office")).expect("partial office");
+                } else {
+                    std::fs::rename(&partial, &library).expect("publish partial scaffold");
+                }
+            }
+            drop(lock);
+            let outcome = retry.join().expect("retry thread").expect("retry init");
+            assert!(observed, "retry did not open the writer lock");
+            for path in ["sources", "knowledge/domain", ".office"] {
+                assert!(
+                    !outcome.created.iter().any(|created| created == path),
+                    "{path}: {:?}",
+                    outcome.created
+                );
+            }
+            if internal_state {
+                assert!(
+                    outcome
+                        .created
+                        .iter()
+                        .any(|path| path == "knowledge/runbooks")
+                );
+                assert!(
+                    outcome
+                        .created
+                        .iter()
+                        .any(|path| path == "sources/.gitkeep")
+                );
+            } else {
+                assert!(
+                    !outcome
+                        .created
+                        .iter()
+                        .any(|path| path == "knowledge/runbooks")
+                );
+                assert!(
+                    !outcome
+                        .created
+                        .iter()
+                        .any(|path| path == "sources/.gitkeep")
+                );
+            }
+        });
+    }
+}
+
+#[test]
+fn init_reports_office_created_by_internal_state_bootstrap_only_once() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let library = workspace.join("library");
+    let state = library.join(".office/state");
+    let first =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("first init");
+    assert_eq!(
+        first
+            .created
+            .iter()
+            .filter(|path| *path == ".office")
+            .count(),
+        1
+    );
+    let second =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("repeat init");
+    assert!(second.already_initialized);
+    assert!(second.created.is_empty());
+}
+
 #[test]
 fn init_copies_missing_templates_and_health_reports_template_drift() {
     let dir = tempfile::tempdir().expect("tempdir");
