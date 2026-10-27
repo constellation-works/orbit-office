@@ -49,6 +49,7 @@ fn fake_capture_append_updates_search_and_read_document() {
     };
     create.kind = Some("conversation".to_string());
     create.title = Some("Session log".to_string());
+    create.tags = vec!["bootstrap:first".to_string()];
     create.entries = vec![ConversationEntry {
         kind: "fact".to_string(),
         text: "Jane runs procurement.".to_string(),
@@ -60,6 +61,7 @@ fn fake_capture_append_updates_search_and_read_document() {
         ..CaptureSourceRequest::default()
     };
     append.append_to = Some(opened.id.clone());
+    append.tags = vec!["bootstrap:second".to_string()];
     append.entries = vec![ConversationEntry {
         kind: "decision".to_string(),
         text: "Record appendeduniqueterm for later.".to_string(),
@@ -83,6 +85,7 @@ fn fake_capture_append_updates_search_and_read_document() {
     let document = port
         .read_document(Path::new(&opened.path))
         .expect("read document");
+    assert_eq!(document.tags, ["bootstrap:first", "bootstrap:second"]);
     assert!(
         document.body.contains("appendeduniqueterm"),
         "read_document body should contain appended term: {}",

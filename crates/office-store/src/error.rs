@@ -14,6 +14,42 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// A document failed structural validation before any Library write.
+    #[error("invalid {format} document: {reason}")]
+    DocumentInvalid {
+        /// Format being decoded.
+        format: &'static str,
+        /// Safe structural diagnosis, never document contents.
+        reason: &'static str,
+    },
+    /// The optional document converter is absent from the effective PATH.
+    #[error("{program} is unavailable on PATH; install poppler to capture PDF documents")]
+    ConverterUnavailable {
+        /// Missing executable.
+        program: &'static str,
+    },
+    /// A converter ran and refused its input; raw output is suppressed.
+    #[error("{program} refused the document (exit code {exit_code:?}); no source was written")]
+    ConversionFailed {
+        /// Converter executable.
+        program: &'static str,
+        /// Exit code, absent when terminated by a signal.
+        exit_code: Option<i32>,
+    },
+    /// A bounded converter could not run or finish.
+    #[error("{program} supervision failed: {source}")]
+    ConversionProcess {
+        /// Converter executable.
+        program: &'static str,
+        /// Structured supervisor failure, without converter output.
+        source: office_common::Error,
+    },
+    /// A document or expanded package exceeds the documented resource bound.
+    #[error("document conversion exceeds the {limit} limit")]
+    ConversionLimit {
+        /// Which resource was bounded.
+        limit: &'static str,
+    },
     /// A document id already belongs to a different Library path.
     #[error("document id {id} is already indexed at {existing_path}; refused write to {path}")]
     DocumentConflict {
@@ -138,6 +174,19 @@ impl Error {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
+            Self::DocumentInvalid { .. } => "document_invalid",
+            Self::ConverterUnavailable { .. } => "converter_unavailable",
+            Self::ConversionFailed { .. } => "conversion_failed",
+            Self::ConversionProcess { source, .. } => match source {
+                office_common::Error::ProcessTimeout => "conversion_timeout",
+                office_common::Error::ProcessOutputLimit => "conversion_output_limit",
+                office_common::Error::ProcessSpawn { .. }
+                | office_common::Error::ProcessUnsupported
+                | office_common::Error::UnsafePath { .. }
+                | office_common::Error::Io { .. } => "conversion_failed",
+                _ => "conversion_failed",
+            },
+            Self::ConversionLimit { .. } => "conversion_limit",
             Self::DocumentConflict { .. } => "library_document_conflict",
             Self::LibraryDirOutside { .. } => "library_dir_outside_workspace",
             Self::GitMissing => "git_missing",
@@ -220,6 +269,11 @@ impl From<Error> for office_core::Error {
         match error {
             Error::Settings(error) => error,
             other @ (Error::DocumentConflict { .. }
+            | Error::DocumentInvalid { .. }
+            | Error::ConverterUnavailable { .. }
+            | Error::ConversionFailed { .. }
+            | Error::ConversionProcess { .. }
+            | Error::ConversionLimit { .. }
             | Error::LibraryDirOutside { .. }
             | Error::GitMissing
             | Error::NotInitialized { .. }

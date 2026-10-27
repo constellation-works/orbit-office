@@ -40,6 +40,7 @@ policy() {
       ;;
     office-store)
       # LibraryStore implements the core Library port; records/settings use this edge.
+      # ZIP/XML/HTML document parsers add no internal edge; PDF uses common supervision.
       ALLOWED="office-common office-core"
       BANNED="$SURFACE $HTTP"
       ;;

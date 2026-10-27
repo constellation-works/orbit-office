@@ -770,27 +770,12 @@ pub fn resolve_anchor(body: &str, anchor: &str) -> std::result::Result<(), &'sta
             Err("the line range is outside the source")
         };
     }
-    for (key, heading) in [("slide=", "slide"), ("page=", "page")] {
-        if let Some(number) = anchor.strip_prefix(key) {
-            let number: u32 = number.parse().map_err(|_| "expected a number")?;
-            let found = headings(body).any(|(_, title)| {
-                let lower = title.to_ascii_lowercase();
-                lower
-                    .strip_prefix(heading)
-                    .and_then(|rest| rest.strip_prefix(' '))
-                    .map(|rest| rest.trim_start())
-                    .is_some_and(|rest| {
-                        let digits: String =
-                            rest.chars().take_while(char::is_ascii_digit).collect();
-                        digits.parse::<u32>().ok() == Some(number)
-                    })
-            });
-            return if found {
-                Ok(())
-            } else {
-                Err("no such slide or page heading in the source")
-            };
-        }
+    if anchor.starts_with("slide=") || anchor.starts_with("page=") {
+        let parsed = crate::domain::source::parse_anchor(anchor)
+            .map_err(|_| "expected a positive slide or page number")?;
+        return crate::domain::source::anchor_span(body, parsed, anchor)
+            .map(|_| ())
+            .map_err(|_| "no such slide or page heading in the source");
     }
     if anchor.starts_with("frame=") || anchor.starts_with("chapter=") {
         return Err("frame and chapter anchors are not resolvable yet");

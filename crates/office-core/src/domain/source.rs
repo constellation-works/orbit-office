@@ -279,9 +279,19 @@ pub fn retention_until(captured_at: &str, days: u32) -> String {
     format!("{yy:04}-{mm:02}-{dd:02}")
 }
 
-/// A parsed source anchor: `#t=hh:mm:ss` or `#L<start>[-<end>]`.
+/// A parsed source anchor: time, lines, slide or page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Anchor {
+    /// One presentation slide and its notes.
+    Slide {
+        /// Slide number, 1-based in presentation order.
+        number: usize,
+    },
+    /// One converted PDF page.
+    Page {
+        /// Page number, 1-based.
+        number: usize,
+    },
     /// Documented item: Time { seconds.
     /// A `#t=` anchor.
     Time {
@@ -302,7 +312,9 @@ pub enum Anchor {
 pub fn anchor_invalid(raw: &str) -> Error {
     Error::Library {
         code: "anchor_invalid",
-        message: format!("anchor {raw:?} is malformed; use #t=hh:mm:ss or #L<start>[-<end>]"),
+        message: format!(
+            "anchor {raw:?} is malformed; use #t=hh:mm:ss, #L<start>[-<end>], #slide=<n> or #page=<n>"
+        ),
     }
 }
 
@@ -317,6 +329,20 @@ pub fn anchor_out_of_range(raw: &str) -> Error {
 /// Parse an anchor, with or without the leading `#`.
 pub fn parse_anchor(raw: &str) -> Result<Anchor> {
     let text = raw.trim().strip_prefix('#').unwrap_or(raw.trim());
+    for (key, slide) in [("slide=", true), ("page=", false)] {
+        if let Some(rest) = text.strip_prefix(key) {
+            let number = rest
+                .parse::<usize>()
+                .ok()
+                .filter(|n| *n > 0 && rest.bytes().all(|c| c.is_ascii_digit()))
+                .ok_or_else(|| anchor_invalid(raw))?;
+            return Ok(if slide {
+                Anchor::Slide { number }
+            } else {
+                Anchor::Page { number }
+            });
+        }
+    }
     if let Some(rest) = text.strip_prefix("t=") {
         let mut parts = rest.split(':');
         let (Some(h), Some(m), Some(s), None) =
@@ -361,6 +387,8 @@ pub fn parse_anchor(raw: &str) -> Result<Anchor> {
 /// out of range.
 pub fn anchor_span(body: &str, anchor: Anchor, raw: &str) -> Result<String> {
     match anchor {
+        Anchor::Slide { number } => section_span(body, "slide", number, raw),
+        Anchor::Page { number } => section_span(body, "page", number, raw),
         Anchor::Lines { start, end } => {
             let lines: Vec<&str> = body.lines().collect();
             if start > lines.len() || end > lines.len() {
@@ -407,6 +435,103 @@ pub fn anchor_span(body: &str, anchor: Anchor, raw: &str) -> Result<String> {
             }
         }
     }
+}
+
+fn section_span(body: &str, kind: &str, number: usize, raw: &str) -> Result<String> {
+    let lines: Vec<&str> = body.lines().collect();
+    fn heading(line: &str) -> Option<(usize, &str)> {
+        let level = line.bytes().take_while(|ch| *ch == b'#').count();
+        (level > 0 && level <= 6 && line.as_bytes().get(level) == Some(&b' '))
+            .then(|| (level, line[level + 1..].trim()))
+    }
+    let Some((start, level)) = lines.iter().enumerate().find_map(|(index, line)| {
+        let (level, title) = heading(line)?;
+        let title = title.to_ascii_lowercase();
+        let rest = title.strip_prefix(kind)?.strip_prefix(' ')?;
+        let digits: String = rest
+            .trim_start()
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        (digits.parse::<usize>().ok() == Some(number)).then_some((index, level))
+    }) else {
+        return Err(anchor_out_of_range(raw));
+    };
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find(|(_, line)| heading(line).is_some_and(|(next, _)| next <= level))
+        .map_or(lines.len(), |(index, _)| index);
+    Ok(lines[start..end].join("\n").trim_end().to_string())
+}
+
+/// Validate capture tags once for both the persistent and fake Library ports.
+pub fn validate_capture_tags(tags: &[String]) -> Result<()> {
+    if tags.len() > 64
+        || tags.iter().any(|tag| {
+            tag.trim().is_empty() || tag.len() > 128 || tag.chars().any(char::is_control)
+        })
+    {
+        return Err(Error::InvalidArgument("capture tags must contain at most 64 nonempty strings, each at most 128 bytes without control characters".into()));
+    }
+    Ok(())
+}
+
+/// Merge capture tags into an existing source without changing its body or
+/// other metadata. `None` means every requested tag is already present.
+pub fn merge_source_tags(markdown: &str, tags: &[String]) -> Result<Option<String>> {
+    validate_capture_tags(tags)?;
+    if tags.is_empty() {
+        return Ok(None);
+    }
+    let record = crate::domain::knowledge::DocumentRecord::from_markdown(
+        std::path::Path::new("sources/source.md"),
+        markdown,
+    );
+    let mut merged = record.tags.clone();
+    for tag in tags {
+        if !merged.contains(tag) {
+            merged.push(tag.clone());
+        }
+    }
+    if merged == record.tags {
+        return Ok(None);
+    }
+    validate_capture_tags(&merged)?;
+    let Some(rest) = markdown.strip_prefix("---\n") else {
+        return Err(Error::Library {
+            code: "document_invalid",
+            message: "source has no frontmatter for tags".into(),
+        });
+    };
+    let Some((frontmatter, body)) = rest.split_once("\n---") else {
+        return Err(Error::Library {
+            code: "document_invalid",
+            message: "source has no closing frontmatter fence".into(),
+        });
+    };
+    let mut out = String::from("---\n");
+    let mut in_tags = false;
+    for line in frontmatter.lines() {
+        if line.starts_with("tags:") {
+            in_tags = true;
+            continue;
+        }
+        if in_tags && (line.starts_with([' ', '\t']) || line.starts_with("- ")) {
+            continue;
+        }
+        in_tags = false;
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push_str("tags:\n");
+    for tag in merged {
+        out.push_str(&format!("  - {}\n", serde_json::json!(tag)));
+    }
+    out.push_str("---");
+    out.push_str(body);
+    Ok(Some(out))
 }
 
 /// One formatted decision-log line: `[<rfc3339>] <kind>: <text>`.
@@ -628,6 +753,8 @@ pub struct RenderSource<'a> {
     pub occurred_at: Option<&'a str>,
     /// Documented item: participants.
     pub participants: &'a [String],
+    /// Source tags, serialized as quoted block-list items.
+    pub tags: &'a [String],
     /// Documented item: sensitivity.
     pub sensitivity: Sensitivity,
     /// Documented item: original.
@@ -670,6 +797,12 @@ pub fn render_source(input: &RenderSource<'_>) -> String {
         ));
     }
     out.push_str(&format!("sensitivity: {}\n", input.sensitivity.as_str()));
+    if !input.tags.is_empty() {
+        out.push_str("tags:\n");
+        for tag in input.tags {
+            out.push_str(&format!("  - {}\n", serde_json::json!(tag)));
+        }
+    }
     match input.original {
         Some((file, sha, bytes, media)) => out.push_str(&format!(
             "original: {{ file: {file}, sha256: {sha}, bytes: {bytes}, media_type: {media} }}\n"
@@ -708,6 +841,9 @@ pub fn media_type_for_extension(ext: &str) -> Option<&'static str> {
         "png" => Some("image/png"),
         "jpg" | "jpeg" => Some("image/jpeg"),
         "pdf" => Some("application/pdf"),
+        "html" | "htm" => Some("text/html"),
+        "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "pptx" => Some("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
         "txt" => Some("text/plain"),
         "md" => Some("text/markdown"),
         "vtt" => Some("text/vtt"),

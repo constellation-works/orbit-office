@@ -12,6 +12,12 @@ tests:
     expect:
       error:
         code: invalid_argument
+  - name: capture_refuses_non_string_tags
+    tool: capture
+    input: {"text": "No source should be created.", "tags": [42]}
+    expect:
+      error:
+        code: invalid_argument
   - name: capture_refuses_an_invalid_conversation_entry_kind
     tool: capture
     input: {"append_to": "src-00000000-missing", "entries": [{"kind": "bogus", "text": "Nope."}]}

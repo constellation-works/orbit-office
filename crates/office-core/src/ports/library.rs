@@ -229,6 +229,8 @@ pub struct CaptureSourceRequest {
     pub occurred_at: Option<String>,
     /// The participants.
     pub participants: Vec<String>,
+    /// Source tags, such as `bootstrap:orientation`.
+    pub tags: Vec<String>,
     /// The sensitivity.
     pub sensitivity: Option<String>,
 }

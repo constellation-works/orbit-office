@@ -2,6 +2,7 @@
 //! technology and never coordinates another driver; coordination lives in
 //! `crate::repository`. (After orbit-store's driver boundary.)
 
+pub(crate) mod convert;
 pub(crate) mod file;
 pub(crate) mod sqlite;
 

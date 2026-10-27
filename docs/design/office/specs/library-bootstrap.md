@@ -59,6 +59,31 @@ connection ([gateway.md](./gateway.md)) comes after the event.
 no text, such as a scanned PDF, is captured with a `needs_ocr` note and left
 out of the batch.
 
+The built converter accepts UTF-8 HTML and document XML. Office packages are
+read in memory, never extracted. Unsafe or duplicate member paths, malformed
+XML (including DTDs), missing required parts and missing referenced slides or
+notes are refused as `document_invalid` before a source is written. Bounds are
+32 MiB per document and expanded package, 4,096 ZIP entries, 8 MiB per XML part
+and converted body, and 128 XML levels / 100,000 elements. An exceeded bound is
+`conversion_limit`.
+
+PDF conversion runs `pdftotext -layout -enc UTF-8 <pinned-copy> -` with a cleared
+environment containing only PATH, a temporary HOME/TMPDIR and `LC_ALL=C`.
+The shared supervisor gives it 30 seconds and 512 KiB per output stream,
+terminates and reaps its process group, and suppresses raw diagnostics in errors.
+Nonzero exits are `conversion_failed`; timeout and output overflow are
+`conversion_timeout` and `conversion_output_limit`. Poppler's form feeds delimit
+pages, rendered as `# Page <n>`. Slides follow the presentation relationship order,
+with `# Slide <n>` followed by the title, body and related speaker notes.
+`office.source-show` returns that section, including its nested headings, for a
+page or slide anchor. Markdown and text uploads retain their text.
+
+Capture accepts up to 64 `tags`, each a nonempty string of at most 128 UTF-8 bytes
+with no control characters. Tags are stored in source frontmatter; use
+`office.search` with `tag: "bootstrap:<phase>"` and a nonempty query to filter
+them. Capturing duplicate content merges new tags into the existing source;
+conversation appends merge tags while preserving the earlier body.
+
 ## Stage 1: a digest per source (cheap)
 
 `office.extract` with `profile: digest`: one fixed call per source, with the
