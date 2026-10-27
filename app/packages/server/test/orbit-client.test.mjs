@@ -7,9 +7,11 @@ import {
   createOrbitClient,
   OrbitError,
   OrbitExitError,
+  OrbitNotPermittedError,
   OrbitQueueFullError,
   OrbitQueueTimeoutError,
   OrbitTimeoutError,
+  OrbitUnknownAutoTaskError,
 } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
 import { installSupervisionDoubles, timerAt } from "./supervision-doubles.mjs";
@@ -240,6 +242,72 @@ test("a caller-supplied workspace is not overwritten, including via pollTool", a
   const invocations = await invocationInputs(fake.state);
   assert.equal(invocations[0].input.workspace, "/caller/workspace");
   assert.equal(invocations[1].input.workspace, "/installed/workspace");
+});
+
+test("mintAutoTask runs orbit.auto_task.mint with the workspace binding", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const client = createOrbitClient({
+    timeoutMs: 5_000,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+  });
+  const result = await client.mintAutoTask("office-review");
+  assert.equal(result.minted, true);
+  assert.equal(result.name, "office-review");
+  assert.equal(result.task.id, "ORB-FAKE-MINT-1");
+  const invocations = await invocationInputs(fake.state);
+  assert.equal(invocations.length, 1);
+  assert.equal(invocations[0].tool, "orbit.auto_task.mint");
+  assert.deepEqual(invocations[0].input, {
+    name: "office-review",
+    acknowledge_unconditional: true,
+    workspace: "/installed/workspace",
+  });
+});
+
+test("mintAutoTask maps an unknown auto-task to a typed error", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const client = createOrbitClient({
+    timeoutMs: 5_000,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+  });
+  await assert.rejects(client.mintAutoTask("no-such-auto-task"), (error) => {
+    assert.ok(error instanceof OrbitUnknownAutoTaskError, `expected OrbitUnknownAutoTaskError, got ${error}`);
+    assert.equal(error.code, "unknown_auto_task");
+    assert.equal(error.autoTaskName, "no-such-auto-task");
+    assert.match(error.message, /no auto-task named "no-such-auto-task"/);
+    return true;
+  });
+});
+
+test("mintAutoTask maps capability_denied to not_permitted", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const client = createOrbitClient({
+    timeoutMs: 5_000,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+  });
+  await assert.rejects(client.mintAutoTask("denied-auto-task"), (error) => {
+    assert.ok(error instanceof OrbitNotPermittedError, `expected OrbitNotPermittedError, got ${error}`);
+    assert.ok(error instanceof OrbitError);
+    assert.equal(error.code, "not_permitted");
+    assert.equal(error.autoTaskName, "denied-auto-task");
+    assert.match(error.message, /not permitted to mint auto-task "denied-auto-task"/);
+    return true;
+  });
+  const invocations = await invocationInputs(fake.state);
+  assert.equal(invocations[0].tool, "orbit.auto_task.mint");
+  assert.equal(invocations[0].input.workspace, "/installed/workspace");
 });
 
 const SUPERVISION_CLIENT = {

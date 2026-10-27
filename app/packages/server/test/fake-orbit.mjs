@@ -75,6 +75,26 @@ async function main() {
         process.exitCode = 3;
         return;
       }
+      if (tool === "orbit.auto_task.mint") {
+        if (input.name === "no-such-auto-task") {
+          process.stderr.write(JSON.stringify({ error: "auto-task not found: no-such-auto-task", code: "auto_task_not_found" }) + "\\n");
+          process.exitCode = 1;
+          return;
+        }
+        if (input.name === "denied-auto-task") {
+          process.stderr.write(JSON.stringify({ error: "capability denied: operation requires the operator capability", code: "capability_denied" }) + "\\n");
+          process.exitCode = 1;
+          return;
+        }
+        process.stdout.write(JSON.stringify({
+          minted: true,
+          name: input.name,
+          workspace: input.workspace ?? null,
+          acknowledge_unconditional: input.acknowledge_unconditional ?? null,
+          task: { id: "ORB-FAKE-MINT-1", title: "Minted " + String(input.name) },
+        }) + "\\n");
+        return;
+      }
       if (tool === "orbit.task.list") {
         let tasks = [];
         try {
