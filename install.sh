@@ -73,6 +73,8 @@ Environment:
   ORBIT_OFFICE_META_API_KEY  Meta API key (used instead of prompting)
   ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN  Private-route endpoint token (used
                              instead of prompting; optional)
+  CLAUDE_CONFIG_DIR          Claude Code config directory (default: HOME);
+                             its .claude.json holds the MCP entry
   ORBIT_OFFICE_OS            Platform override (macos or linux)
   ORBIT_OFFICE_ARCH          Architecture override (x86_64 or arm64)
   ORBIT_OFFICE_UV_URL        Fetch this uv archive instead of the
@@ -248,8 +250,26 @@ fi
 
 AGENT_SETTINGS=""
 SKILLS_DIR=""
+# Claude Code reads its MCP servers from ${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json
+# (the app's agentCliStatus reader checks exactly that file), while its
+# permissions.deny rules live in settings.json under its config directory.
+# The two files are therefore edited separately; the legacy settings path
+# is where installers before this fix misplaced the MCP entry.
+CLAUDE_CONFIG_FILE=""
+CLAUDE_LEGACY_SETTINGS="$HOME/.claude/settings.json"
 case "$AGENT" in
-    claude) AGENT_SETTINGS="$HOME/.claude/settings.json"; SKILLS_DIR="$HOME/.claude/skills" ;;
+    claude)
+        if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+            _claude_config_dir="$CLAUDE_CONFIG_DIR"
+            AGENT_SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
+            SKILLS_DIR="$CLAUDE_CONFIG_DIR/skills"
+        else
+            _claude_config_dir="$HOME"
+            AGENT_SETTINGS="$HOME/.claude/settings.json"
+            SKILLS_DIR="$HOME/.claude/skills"
+        fi
+        CLAUDE_CONFIG_FILE="$_claude_config_dir/.claude.json"
+        ;;
     codex) AGENT_SETTINGS="$HOME/.codex/config.toml"; SKILLS_DIR="$HOME/.codex/skills" ;;
 esac
 SKILLS_RECEIPT="$DATA_DIR/agent-skills-$AGENT.txt"
@@ -1069,15 +1089,22 @@ step_scaffold() {
 # install is not enough: that install had no tools/bin on PATH.
 # JSON.parse validates the document; the range parser below locates entries
 # so edits splice only their bytes. Never round-trip unrelated user settings.
-# The receipt contains only owned rule names and newly created containers.
+# Receipts contain only owned items: claude-settings.json holds added deny
+# rule names and newly created containers; claude-mcp.json holds whether
+# the MCP entry in .claude.json is installer-owned and its new containers.
 edit_claude_settings() {
     SETTINGS_FILE="$AGENT_SETTINGS" SETTINGS_RECEIPT="$DATA_DIR/claude-settings.json" \
+    MCP_FILE="$CLAUDE_CONFIG_FILE" MCP_RECEIPT="$DATA_DIR/claude-mcp.json" \
+    LEGACY_FILE="$CLAUDE_LEGACY_SETTINGS" \
     SETTINGS_MODE="$1" ORBIT_OFFICE_AGENT_PATH="$AGENT_PATH" node <<'NODE'
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const file = process.env.SETTINGS_FILE;
-const receiptFile = process.env.SETTINGS_RECEIPT;
+const settingsFile = process.env.SETTINGS_FILE;
+const settingsReceiptFile = process.env.SETTINGS_RECEIPT;
+const mcpFile = process.env.MCP_FILE;
+const mcpReceiptFile = process.env.MCP_RECEIPT;
+const legacyFile = process.env.LEGACY_FILE;
 const installing = process.env.SETTINGS_MODE === "install";
 const rules = ["curl", "wget", "http", "aws", "gcloud"].map((p) => `Bash(${p} *)`);
 const object = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -1106,26 +1133,13 @@ function write(p, text) {
     if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
   }
 }
-try {
-  let receipt = { added: [], containers: [] };
-  if (regular(receiptFile)) receipt = JSON.parse(fs.readFileSync(receiptFile, "utf8"));
-  if (!object(receipt) || !Array.isArray(receipt.added) || !Array.isArray(receipt.containers) ||
-      receipt.added.some((r) => !rules.includes(r)) ||
-      receipt.containers.some((p) => !["permissions", "permissions.deny", "mcpServers"].includes(p))) {
-    throw new Error("invalid receipt");
-  }
-  const existed = regular(file);
-  if (!existed && !installing) {
-    if (regular(receiptFile)) fs.unlinkSync(receiptFile);
-    process.exit(0);
-  }
-  const original = existed ? fs.readFileSync(file, "utf8") : "{}\n";
-  let text = original;
-  // A validated JSON tree with source ranges, including property names.
-  // Duplicate keys are refused: two values for one setting are ambiguous.
-  function tree() {
-    if (!object(JSON.parse(text))) throw new Error("settings must be an object");
+// A validated JSON tree with source ranges. Duplicate keys are refused.
+function makeDoc(original) {
+  const doc = { text: original };
+  doc.tree = function () {
+    if (!object(JSON.parse(doc.text))) throw new Error("settings must be an object");
     let pos = 0;
+    const text = doc.text;
     const ws = () => { while (/\s/.test(text[pos] || "x")) pos++; };
     function string() {
       const start = pos++;
@@ -1146,7 +1160,7 @@ try {
           const entryStart = pos;
           let key;
           if (kind === "{") {
-            key = string(); ws(); pos++; // colon, already JSON-validated
+            key = string(); ws(); pos++;
             if (keys.has(key)) throw new Error("duplicate key");
             keys.add(key);
           }
@@ -1154,7 +1168,7 @@ try {
           entries.push({ key, start: entryStart, end: node.end, node });
           ws();
           if (text[pos] === close) break;
-          pos++; ws(); // comma
+          pos++; ws();
         }
         pos++;
       } else if (kind === '"') {
@@ -1165,9 +1179,9 @@ try {
       return { start, end: pos, kind, entries };
     }
     return value();
-  }
-  function locate(keys) {
-    let node = tree();
+  };
+  doc.locate = function (keys) {
+    let node = doc.tree();
     for (const key of keys) {
       if (node.kind !== "{") throw new Error("expected object");
       const entry = node.entries.find((e) => e.key === key);
@@ -1175,97 +1189,170 @@ try {
       node = entry.node;
     }
     return node;
-  }
-  function splice(start, end, added) { text = text.slice(0, start) + added + text.slice(end); }
-  function append(node, encoded) {
+  };
+  doc.splice = function (start, end, added) { doc.text = doc.text.slice(0, start) + added + doc.text.slice(end); };
+  doc.append = function (node, encoded) {
     const last = node.entries.at(-1);
     const offset = last ? last.end : node.start + 1;
-    splice(offset, offset, (last ? "," : "") + encoded);
-  }
-  function ensureObject(keys) {
-    const node = locate(keys);
+    doc.splice(offset, offset, (last ? "," : "") + encoded);
+  };
+  doc.set = function (keys, value) {
+    const parent = doc.locate(keys.slice(0, -1));
+    const key = keys.at(-1);
+    const entry = parent.entries.find((e) => e.key === key);
+    const encoded = JSON.stringify(value, null, 2);
+    if (entry) doc.splice(entry.node.start, entry.node.end, encoded);
+    else doc.append(parent, JSON.stringify(key) + ": " + encoded);
+  };
+  doc.removeEntry = function (parent, index) {
+    const entry = parent.entries[index];
+    if (index > 0) doc.splice(parent.entries[index - 1].end, entry.end, "");
+    else if (parent.entries.length > 1) doc.splice(entry.start, parent.entries[1].start, "");
+    else doc.splice(entry.start, entry.end, "");
+  };
+  doc.remove = function (keys) {
+    const parent = doc.locate(keys.slice(0, -1));
+    if (!parent) return;
+    const index = parent.entries.findIndex((e) => e.key === keys.at(-1));
+    if (index >= 0) doc.removeEntry(parent, index);
+  };
+  doc.ensureObject = function (keys, containers) {
+    const node = doc.locate(keys);
     if (node) {
       if (node.kind !== "{") throw new Error("expected object");
       return;
     }
-    set(keys, {});
-    receipt.containers.push(keys.join("."));
+    doc.set(keys, {});
+    containers.push(keys.join("."));
+  };
+  // Remove a misplaced mcpServers.orbit from a settings document; drop
+  // the container only when it becomes empty.
+  doc.removeMisplacedOrbit = function () {
+    if (!doc.locate(["mcpServers", "orbit"])) return;
+    doc.remove(["mcpServers", "orbit"]);
+    const servers = doc.locate(["mcpServers"]);
+    if (servers && servers.entries.length === 0) doc.remove(["mcpServers"]);
+  };
+  return doc;
+}
+try {
+  let settingsReceipt = { added: [], containers: [] };
+  const settingsReceiptExisted = regular(settingsReceiptFile);
+  if (settingsReceiptExisted) settingsReceipt = JSON.parse(fs.readFileSync(settingsReceiptFile, "utf8"));
+  if (!object(settingsReceipt) || !Array.isArray(settingsReceipt.added) || !Array.isArray(settingsReceipt.containers) ||
+      settingsReceipt.added.some((r) => !rules.includes(r)) ||
+      settingsReceipt.containers.some((p) => !["permissions", "permissions.deny", "mcpServers"].includes(p))) {
+    throw new Error("invalid receipt");
   }
-  function set(keys, value) {
-    const parent = locate(keys.slice(0, -1));
-    const key = keys.at(-1);
-    const entry = parent.entries.find((e) => e.key === key);
-    const encoded = JSON.stringify(value, null, 2);
-    if (entry) splice(entry.node.start, entry.node.end, encoded);
-    else append(parent, JSON.stringify(key) + ": " + encoded);
+  let mcpReceipt = { owned: false, containers: [] };
+  const mcpReceiptExisted = regular(mcpReceiptFile);
+  if (mcpReceiptExisted) mcpReceipt = JSON.parse(fs.readFileSync(mcpReceiptFile, "utf8"));
+  if (!object(mcpReceipt) || typeof mcpReceipt.owned !== "boolean" || !Array.isArray(mcpReceipt.containers) ||
+      mcpReceipt.containers.some((p) => p !== "mcpServers")) {
+    throw new Error("invalid mcp receipt");
   }
-  function removeEntry(parent, index) {
-    const entry = parent.entries[index];
-    if (index > 0) splice(parent.entries[index - 1].end, entry.end, "");
-    else if (parent.entries.length > 1) splice(entry.start, parent.entries[1].start, "");
-    else splice(entry.start, entry.end, "");
+  const load = (file) => {
+    const existed = regular(file);
+    const original = existed ? fs.readFileSync(file, "utf8") : "{}\n";
+    return { file, existed, original, doc: makeDoc(original) };
+  };
+  const mcp = load(mcpFile);
+  const settings = load(settingsFile);
+  const legacyDistinct = legacyFile && legacyFile !== settingsFile && legacyFile !== mcpFile;
+  const legacy = legacyDistinct ? load(legacyFile) : null;
+  if (!installing && !mcp.existed && !settings.existed && !legacy?.existed) {
+    if (mcpReceiptExisted) fs.unlinkSync(mcpReceiptFile);
+    if (settingsReceiptExisted) fs.unlinkSync(settingsReceiptFile);
+    process.exit(0);
   }
-  function remove(keys) {
-    const parent = locate(keys.slice(0, -1));
-    if (!parent) return;
-    const index = parent.entries.findIndex((e) => e.key === keys.at(-1));
-    if (index >= 0) removeEntry(parent, index);
-  }
-  tree(); // refuse malformed/ambiguous JSON even if no rule needs adding
+  // Validate every document before any edit.
+  mcp.doc.tree(); settings.doc.tree(); if (legacy) legacy.doc.tree();
   if (installing) {
-    ensureObject(["mcpServers"]);
+    // MCP registration in the file the reader checks.
     const desired = { command: "orbit", args: ["mcp", "serve"], env: { PATH: process.env.ORBIT_OFFICE_AGENT_PATH } };
-    const orbit = locate(["mcpServers", "orbit"]);
-    if (!orbit || JSON.stringify(JSON.parse(text.slice(orbit.start, orbit.end))) !== JSON.stringify(desired)) {
-      set(["mcpServers", "orbit"], desired);
+    const priorOrbit = mcp.doc.locate(["mcpServers", "orbit"]);
+    const priorMatches = priorOrbit &&
+      JSON.stringify(JSON.parse(mcp.doc.text.slice(priorOrbit.start, priorOrbit.end))) === JSON.stringify(desired);
+    if (!priorMatches) mcpReceipt.owned = true;
+    mcp.doc.ensureObject(["mcpServers"], mcpReceipt.containers);
+    const orbit = mcp.doc.locate(["mcpServers", "orbit"]);
+    if (!orbit || JSON.stringify(JSON.parse(mcp.doc.text.slice(orbit.start, orbit.end))) !== JSON.stringify(desired)) {
+      mcp.doc.set(["mcpServers", "orbit"], desired);
     }
-    ensureObject(["permissions"]);
-    if (!locate(["permissions", "deny"])) {
-      set(["permissions", "deny"], []);
-      receipt.containers.push("permissions.deny");
+    // Deny rules stay in settings.json.
+    settings.doc.ensureObject(["permissions"], settingsReceipt.containers);
+    if (!settings.doc.locate(["permissions", "deny"])) {
+      settings.doc.set(["permissions", "deny"], []);
+      settingsReceipt.containers.push("permissions.deny");
     }
-    let deny = locate(["permissions", "deny"]);
+    let deny = settings.doc.locate(["permissions", "deny"]);
     if (deny.kind !== "[") throw new Error("deny must be an array");
-    const existing = JSON.parse(text.slice(deny.start, deny.end));
+    const existing = JSON.parse(settings.doc.text.slice(deny.start, deny.end));
     if (existing.some((r) => typeof r !== "string")) throw new Error("deny rules must be strings");
     for (const rule of rules) {
       if (existing.includes(rule)) continue;
-      deny = locate(["permissions", "deny"]);
-      append(deny, JSON.stringify(rule));
-      if (!receipt.added.includes(rule)) receipt.added.push(rule);
+      deny = settings.doc.locate(["permissions", "deny"]);
+      settings.doc.append(deny, JSON.stringify(rule));
+      if (!settingsReceipt.added.includes(rule)) settingsReceipt.added.push(rule);
     }
+    settingsReceipt.containers = settingsReceipt.containers.filter((c) => c !== "mcpServers");
+    // Migrate the earlier misplaced registration out of settings files.
+    settings.doc.removeMisplacedOrbit();
+    if (legacy && legacy.existed) legacy.doc.removeMisplacedOrbit();
   } else {
-    for (const rule of receipt.added) {
-      const deny = locate(["permissions", "deny"]);
+    if (mcpReceipt.owned) {
+      mcp.doc.remove(["mcpServers", "orbit"]);
+      for (const key of [...mcpReceipt.containers].reverse()) {
+        const keys = key.split(".");
+        const node = mcp.doc.locate(keys);
+        if (node && node.entries.length === 0) mcp.doc.remove(keys);
+      }
+    }
+    for (const rule of settingsReceipt.added) {
+      const deny = settings.doc.locate(["permissions", "deny"]);
       if (!deny) continue;
       if (deny.kind !== "[") throw new Error("deny must be an array");
-      const index = deny.entries.findIndex((e) => JSON.parse(text.slice(e.start, e.end)) === rule);
-      if (index >= 0) removeEntry(deny, index);
+      const index = deny.entries.findIndex((e) => JSON.parse(settings.doc.text.slice(e.start, e.end)) === rule);
+      if (index >= 0) settings.doc.removeEntry(deny, index);
     }
-    remove(["mcpServers", "orbit"]);
-    // Only remove containers we created, and only when still empty.
-    for (const key of [...receipt.containers].reverse()) {
+    // Legacy misplaced entry: owned when an installer receipt proves a
+    // prior installer edited that settings family.
+    if (settingsReceiptExisted || mcpReceiptExisted) settings.doc.removeMisplacedOrbit();
+    for (const key of [...settingsReceipt.containers].reverse()) {
+      if (key === "mcpServers") continue;
       const keys = key.split(".");
-      const node = locate(keys);
-      if (node && node.entries.length === 0) remove(keys);
+      const node = settings.doc.locate(keys);
+      if (node && node.entries.length === 0) settings.doc.remove(keys);
+    }
+    if (legacy && legacy.existed && (settingsReceiptExisted || mcpReceiptExisted)) {
+      legacy.doc.removeMisplacedOrbit();
     }
   }
-  // Validate all edits before the first write. Back up the exact original
-  // once. Persist ownership before settings so a retry can undo a partial write.
-  tree();
-  const serializedReceipt = JSON.stringify(receipt) + "\n";
-  if (installing && (!regular(receiptFile) || fs.readFileSync(receiptFile, "utf8") !== serializedReceipt)) {
-    write(receiptFile, serializedReceipt);
+  mcp.doc.tree(); settings.doc.tree(); if (legacy) legacy.doc.tree();
+  const persistReceipt = (file, receipt, existed) => {
+    const serialized = JSON.stringify(receipt) + "\n";
+    if (!existed || fs.readFileSync(file, "utf8") !== serialized) write(file, serialized);
+  };
+  if (installing) {
+    persistReceipt(mcpReceiptFile, mcpReceipt, mcpReceiptExisted);
+    persistReceipt(settingsReceiptFile, settingsReceipt, settingsReceiptExisted);
   }
-  if (text !== original || !existed) {
-    if (existed && !regular(file + ".bak")) {
-      fs.writeFileSync(file + ".bak", original, { flag: "wx", mode: 0o600 });
+  const persistDoc = (entry, createWhenMissing) => {
+    if (entry.doc.text !== entry.original) {
+      if (entry.existed && !regular(entry.file + ".bak")) {
+        fs.writeFileSync(entry.file + ".bak", entry.original, { flag: "wx", mode: 0o600 });
+      }
+      write(entry.file, entry.doc.text);
+    } else if (!entry.existed && installing && createWhenMissing) {
+      write(entry.file, entry.doc.text);
     }
-    write(file, text);
+  };
+  persistDoc(mcp, true); persistDoc(settings, true); if (legacy) persistDoc(legacy, false);
+  if (!installing) {
+    if (regular(mcpReceiptFile)) fs.unlinkSync(mcpReceiptFile);
+    if (regular(settingsReceiptFile)) fs.unlinkSync(settingsReceiptFile);
   }
-  if (!installing && regular(receiptFile)) fs.unlinkSync(receiptFile);
 } catch (_) {
-  // JSON parser errors can include the user's setting values; never echo them.
   process.stderr.write("agent settings update refused; existing JSON and ownership receipt must be valid regular files\n");
   process.exit(1);
 }
@@ -1273,9 +1360,9 @@ NODE
 }
 
 register_mcp_claude() {
-    edit_claude_settings install || die "agent: could not update $AGENT_SETTINGS (check JSON, types and file permissions)"
+    edit_claude_settings install || die "agent: could not update $CLAUDE_CONFIG_FILE and $AGENT_SETTINGS (check JSON, types and file permissions)"
     state_mark "agent_registered"
-    say "agent: already configured (Orbit MCP entry and gateway deny rules in $AGENT_SETTINGS)"
+    say "agent: already configured (Orbit MCP entry in $CLAUDE_CONFIG_FILE and gateway deny rules in $AGENT_SETTINGS)"
 }
 
 # True when the Codex orbit table already carries exactly the current
@@ -1327,8 +1414,8 @@ register_mcp_codex() {
 }
 
 remove_mcp_claude() {
-    edit_claude_settings uninstall || die "agent: could not remove owned entries from $AGENT_SETTINGS"
-    say "agent: removed the Orbit MCP entry and recorded deny rules from $AGENT_SETTINGS"
+    edit_claude_settings uninstall || die "agent: could not remove owned entries from $CLAUDE_CONFIG_FILE and $AGENT_SETTINGS"
+    say "agent: removed the owned Orbit MCP entry from $CLAUDE_CONFIG_FILE and recorded deny rules from $AGENT_SETTINGS"
 }
 
 remove_mcp_codex() {

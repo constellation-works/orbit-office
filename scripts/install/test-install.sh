@@ -46,6 +46,11 @@
 #      data folder, a rerun is idempotent, and deleting the entrypoint
 #      is repaired by the bundle (and named when no bundle is given)
 
+#  19. Claude MCP registration lands in ${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json
+#      and the existing agentCliStatus API reports Claude Code connected,
+#      including with CLAUDE_CONFIG_DIR set; uninstall removes only an
+#      installer-owned entry and preserves unrelated / user-owned entries,
+#      and a misplaced entry from an earlier install is migrated.
 #  18. Failed service activation is never marked complete: a failing or
 #      missing systemctl/launchctl stops the step with a service error and
 #      leaves no service_installed marker, and the next run with the
@@ -433,6 +438,20 @@ snapshot() { # snapshot <home> : sorted relative paths + file hashes
     (cd "$1" && find . -type d | sort)
 }
 
+AGENT_CLI_TS="$SCRIPT_DIR/../../app/packages/server/src/features/settings/agent-cli.ts"
+NODE_BIN=$(command -v node)
+cat > "$ROOT/agent-status.mjs" <<'EOF'
+const m = await import(new URL("file://" + process.argv[2]));
+process.stdout.write(JSON.stringify(m.agentCliStatus()));
+EOF
+agent_cli_status() { # agent_cli_status <home> [claude_config_dir]
+    if [ -n "${2:-}" ]; then
+        env -i HOME="$1" CLAUDE_CONFIG_DIR="$2" "$NODE_BIN" --experimental-strip-types "$ROOT/agent-status.mjs" "$AGENT_CLI_TS" 2>/dev/null
+    else
+        env -i HOME="$1" "$NODE_BIN" --experimental-strip-types "$ROOT/agent-status.mjs" "$AGENT_CLI_TS" 2>/dev/null
+    fi
+}
+
 run_install() { # run_install <home> <extra env...> -- <args...>
     _home="$1"; shift
     if [ ! -f "$STUB_STATE/current-home" ] || [ "$(cat "$STUB_STATE/current-home")" != "$_home" ]; then
@@ -559,6 +578,7 @@ assert_home_scope() { # files stay under the workspace, data/tools, service, MCP
             ./.local/share/orbit-office|./.local/share/orbit-office/*) ;;
             ./.config/systemd|./.config/systemd/*) ;;
             ./.claude|./.claude/*) ;;
+            ./.claude.json|./.claude.json.bak) ;;
             ./.codex|./.codex/*) ;;
             ./Library/LaunchAgents|./Library/LaunchAgents/*) ;;
             ./Library/Application\ Support/orbit-office|./Library/Application\ Support/orbit-office/*) ;;
@@ -602,7 +622,8 @@ check "library scaffolded" test -f "$HOME1/orbit/library/.office/config.yaml"
 check "first run records the scaffolded marker" \
     grep -qx scaffolded "$HOME1/.local/share/orbit-office/install-state"
 check "systemd unit written" test -f "$HOME1/.config/systemd/user/orbit-office.service"
-check "MCP entry written" grep -q '"orbit"' "$HOME1/.claude/settings.json"
+check "MCP entry written" grep -q '"orbit"' "$HOME1/.claude.json"
+check "MCP entry not written to settings.json" sh -c '! grep -q "\"orbit\"" "$1"' sh "$HOME1/.claude/settings.json"
 check "plugin added (stub)" test -f "$STUB_STATE/plugin-added"
 check "plugin enabled (stub)" test -f "$STUB_STATE/plugin-enabled"
 check "gateway is enabled with office" grep -qF "plugin enable gateway " "$STUB_STATE/orbit.log"
@@ -623,7 +644,7 @@ check "python3 --version prints 3.12" \
 check "systemd PATH starts with tools/bin" \
     grep -F "Environment=PATH=$TOOLS1/bin:" "$HOME1/.config/systemd/user/orbit-office.service"
 check "MCP PATH starts with tools/bin" \
-    grep -F "\"PATH\": \"$TOOLS1/bin:" "$HOME1/.claude/settings.json"
+    grep -F "\"PATH\": \"$TOOLS1/bin:" "$HOME1/.claude.json"
 check "uv install passed --no-bin" grep -F "python install --no-bin" "$STUB_STATE/uv-fixture.log"
 check "uv cache stays under tools" \
     grep -F "UV_CACHE_DIR=$TOOLS1/cache" "$STUB_STATE/uv-fixture.log"
@@ -677,7 +698,7 @@ for _piped_kind in sh bash-posix; do
     check "piped ($_piped_kind): scaffold step still runs" \
         test -f "$PIPED_HOME/orbit/library/.office/config.yaml"
     check "piped ($_piped_kind): agent step still runs" \
-        grep -q '"orbit"' "$PIPED_HOME/.claude/settings.json"
+        grep -q '"orbit"' "$PIPED_HOME/.claude.json"
     check "piped ($_piped_kind): app bundle provisions the service entrypoint" \
         test -f "$PIPED_HOME/.local/share/orbit-office/app/packages/server/dist/main.js"
 done
@@ -716,7 +737,7 @@ run_install "$HOME1" -- --uninstall > "$OUT_UN" 2>&1 \
 ok "uninstall exits 0"
 check "uninstall removes the service unit" \
     test ! -e "$HOME1/.config/systemd/user/orbit-office.service"
-if grep -q '"orbit"' "$HOME1/.claude/settings.json" 2>/dev/null; then
+if grep -q '"orbit"' "$HOME1/.claude.json" 2>/dev/null; then
     fail "uninstall removes the MCP entry"
 else
     ok "uninstall removes the MCP entry"
@@ -1138,7 +1159,7 @@ check "macos data dir is not the tools dir" test ! -e "$HOME8/custom-data/tools"
 check "no systemd unit on the macos run" \
     test ! -e "$HOME8/.config/systemd/user/orbit-office.service"
 check "macos MCP PATH starts with tools/bin" \
-    grep -F "\"PATH\": \"$MAC_TOOLS/bin:" "$HOME8/.claude/settings.json"
+    grep -F "\"PATH\": \"$MAC_TOOLS/bin:" "$HOME8/.claude.json"
 assert_profiles_untouched "$HOME8"
 
 # ---------------------------------------------------------------------------
@@ -1197,7 +1218,9 @@ run_install "$HOME10" -- > "$OUT_REPAIR" 2>&1 \
     || { cat "$OUT_REPAIR" >&2; fail "claude repair install exits 0"; }
 ok "claude repair install exits 0"
 check "repaired MCP PATH starts with tools/bin" \
-    grep -F "\"PATH\": \"$HOME10/$TOOLS_REL/bin:" "$HOME10/.claude/settings.json"
+    grep -F "\"PATH\": \"$HOME10/$TOOLS_REL/bin:" "$HOME10/.claude.json"
+check "misplaced MCP entry migrated out of settings.json" \
+    sh -c '! grep -q "\"orbit\"" "$1"' sh "$HOME10/.claude/settings.json"
 SNAP_REPAIR="$ROOT/snap-repair.txt"
 snapshot "$HOME10" > "$SNAP_REPAIR"
 OUT_REPAIR2="$ROOT/out-repair2.txt"
@@ -1414,18 +1437,22 @@ cp "$CFG15" "$ROOT/original15.json"
 run_install "$HOME15" -- > "$ROOT/out-settings15.txt" 2>&1 \
     || { cat "$ROOT/out-settings15.txt" >&2; fail "non-canonical settings install exits 0"; }
 check "backup is the exact original settings" cmp -s "$CFG15.bak" "$ROOT/original15.json"
-if ! node - "$CFG15" "$ROOT/original15.json" "$HOME15/.local/share/orbit-office/claude-settings.json" <<'NODE'
+if ! node - "$CFG15" "$ROOT/original15.json" "$HOME15/.local/share/orbit-office/claude-settings.json" "$HOME15/.claude.json" <<'NODE'
 const fs = require("fs");
-const [file, original, receipt] = process.argv.slice(2);
+const [file, original, receipt, mcpFile] = process.argv.slice(2);
 const text = fs.readFileSync(file, "utf8");
 const data = JSON.parse(text);
 const expected = ["Bash(curl *)", "Read(/keep)", "Bash(wget *)", "Bash(http *)", "Bash(aws *)", "Bash(gcloud *)"];
 if (JSON.stringify(data.permissions.deny) !== JSON.stringify(expected)) process.exit(1);
+if (data.mcpServers.orbit) process.exit(1);
+if (JSON.stringify(data.mcpServers.other) !== JSON.stringify({command:"kept"})) process.exit(1);
+const mcp = JSON.parse(fs.readFileSync(mcpFile, "utf8"));
+if (!mcp.mcpServers.orbit || mcp.mcpServers.orbit.command !== "orbit") process.exit(1);
 const owned = JSON.parse(fs.readFileSync(receipt, "utf8")).added;
 if (owned.length !== 4 || owned.includes("Bash(curl *)")) process.exit(1);
-// Remove precisely the inserted entries from the observed file. All other
-// whitespace, escaped strings, Unicode and numeric spellings must match.
-let stripped = text.replace(',"orbit": ' + JSON.stringify(data.mcpServers.orbit, null, 2), "");
+// Remove precisely the inserted deny entries from the observed file. All
+// other whitespace, escaped strings, Unicode and numeric spellings match.
+let stripped = text;
 for (const rule of expected.slice(2)) stripped = stripped.replace("," + JSON.stringify(rule), "");
 if (stripped !== fs.readFileSync(original, "utf8")) process.exit(1);
 // Simulate a user adding another rule after installation.
@@ -1439,6 +1466,8 @@ check "uninstall keeps pre-existing and subsequently added user rules byte-for-b
     node -e 'const fs=require("fs"); const want=fs.readFileSync(process.argv[2],"utf8").replace("\"Read(/keep)\"", "\"Read(/keep)\",\"Bash(user *)\""); process.exit(fs.readFileSync(process.argv[1],"utf8")===want?0:1)' "$CFG15" "$ROOT/original15.json"
 check "uninstall keeps original backup" cmp -s "$CFG15.bak" "$ROOT/original15.json"
 check "uninstall clears ownership receipt" test ! -e "$HOME15/.local/share/orbit-office/claude-settings.json"
+check "uninstall clears MCP ownership receipt" test ! -e "$HOME15/.local/share/orbit-office/claude-mcp.json"
+check "uninstall removes owned MCP entry from .claude.json" sh -c '! grep -q "\"orbit\"" "$1"' sh "$HOME15/.claude.json"
 
 # Missing, empty and complete rule containers are all reversible. Existing
 # all-five deny rules must never become installer-owned.
@@ -1654,7 +1683,7 @@ OUT_CUSTOM_RT="$ROOT/out-custom-runtime.txt"
 (TEST_PATH="$CUSTOM_BIN:/usr/bin:/bin" run_install "$CUSTOM_HOME" -- > "$OUT_CUSTOM_RT" 2>&1) \
     || { cat "$OUT_CUSTOM_RT" >&2; fail "custom-prefix install exits 0"; }
 ok "custom-prefix install exits 0"
-CLAUDE_RT_PATH=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(d.mcpServers.orbit.env.PATH)' "$CUSTOM_HOME/.claude/settings.json") \
+CLAUDE_RT_PATH=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(d.mcpServers.orbit.env.PATH)' "$CUSTOM_HOME/.claude.json") \
     || fail "custom-prefix: Claude MCP PATH is readable"
 check_runtime_path "Claude MCP (linux, custom prefix)" "$CLAUDE_RT_PATH" "$CUSTOM_HOME"
 SYSTEMD_RT_PATH=$(sed -n 's/^Environment=PATH=//p' "$CUSTOM_HOME/.config/systemd/user/orbit-office.service" | head -n 1)
@@ -1921,5 +1950,67 @@ run_install "$HOME_L_MISSING" ORBIT_OFFICE_OS=macos "ORBIT_OFFICE_DATA_DIR=$L_MI
 ok "launchd retry after missing manager exits 0"
 check "launchd retry after missing manager records the marker" \
     grep -qx service_installed "$L_MISSING_DATA/install-state"
+
+# ---------------------------------------------------------------------------
+# 19. Claude MCP registration is read back through agentCliStatus, honours
+#     CLAUDE_CONFIG_DIR, and uninstall removes only installer-owned entries
+# ---------------------------------------------------------------------------
+
+HOME19="$ROOT/home19"; mkdir -p "$HOME19"
+run_install "$HOME19" -- > "$ROOT/out19.txt" 2>&1 \
+    || { cat "$ROOT/out19.txt" >&2; fail "claude .claude.json install exits 0"; }
+ok "claude .claude.json install exits 0"
+_status19=$(agent_cli_status "$HOME19") || fail "agentCliStatus runs for home19"
+[ "$_status19" = '{"cli":"Claude Code","connected":true}' ] \
+    || { printf '%s\n' "$_status19" >&2; fail "agentCliStatus connected (default)"; }
+ok "agentCliStatus connected (default)"
+
+HOME19B="$ROOT/home19b"; mkdir -p "$HOME19B"
+CLAUDE_DIR19="$HOME19B/custom-claude"
+run_install "$HOME19B" "CLAUDE_CONFIG_DIR=$CLAUDE_DIR19" -- > "$ROOT/out19b.txt" 2>&1 \
+    || { cat "$ROOT/out19b.txt" >&2; fail "claude CLAUDE_CONFIG_DIR install exits 0"; }
+ok "claude CLAUDE_CONFIG_DIR install exits 0"
+check "CLAUDE_CONFIG_DIR registration lands in its .claude.json" \
+    grep -q '"orbit"' "$CLAUDE_DIR19/.claude.json"
+check "CLAUDE_CONFIG_DIR install writes no default .claude.json" \
+    test ! -e "$HOME19B/.claude.json"
+_status19b=$(agent_cli_status "$HOME19B" "$CLAUDE_DIR19") || fail "agentCliStatus runs for override"
+[ "$_status19b" = '{"cli":"Claude Code","connected":true}' ] \
+    || { printf '%s\n' "$_status19b" >&2; fail "agentCliStatus connected (CLAUDE_CONFIG_DIR)"; }
+ok "agentCliStatus connected (CLAUDE_CONFIG_DIR)"
+run_install "$HOME19B" "CLAUDE_CONFIG_DIR=$CLAUDE_DIR19" -- --uninstall > "$ROOT/out19b-un.txt" 2>&1 \
+    || { cat "$ROOT/out19b-un.txt" >&2; fail "claude CLAUDE_CONFIG_DIR uninstall exits 0"; }
+check "CLAUDE_CONFIG_DIR uninstall removes owned entry" \
+    sh -c '! grep -q "\"orbit\"" "$1"' sh "$CLAUDE_DIR19/.claude.json"
+
+# A user-owned exact entry is not claimed: capture the installer entry,
+# restore it as a pre-existing file with an unrelated key, reinstall, and
+# uninstall must keep both.
+HOME19C="$ROOT/home19c"; mkdir -p "$HOME19C"
+run_install "$HOME19C" -- > "$ROOT/out19c.txt" 2>&1 \
+    || { cat "$ROOT/out19c.txt" >&2; fail "user-owned setup install exits 0"; }
+cp "$HOME19C/.claude.json" "$ROOT/user-owned-claude.json"
+run_install "$HOME19C" -- --uninstall > "$ROOT/out19c-un.txt" 2>&1 \
+    || { cat "$ROOT/out19c-un.txt" >&2; fail "user-owned setup uninstall exits 0"; }
+node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); d.unrelated={"keep":true}; fs.writeFileSync(process.argv[1], JSON.stringify(d,null,2)+"\n")' "$ROOT/user-owned-claude.json"
+cp "$ROOT/user-owned-claude.json" "$HOME19C/.claude.json"
+run_install "$HOME19C" -- > "$ROOT/out19c2.txt" 2>&1 \
+    || { cat "$ROOT/out19c2.txt" >&2; fail "user-owned reinstall exits 0"; }
+check "pre-existing exact MCP entry is not claimed as owned" \
+    grep -q '"owned":false' "$HOME19C/.local/share/orbit-office/claude-mcp.json"
+run_install "$HOME19C" -- --uninstall > "$ROOT/out19c2-un.txt" 2>&1 \
+    || { cat "$ROOT/out19c2-un.txt" >&2; fail "user-owned uninstall exits 0"; }
+check "uninstall keeps a user-owned MCP entry" grep -q '"orbit"' "$HOME19C/.claude.json"
+check "uninstall keeps unrelated .claude.json settings" grep -q '"unrelated"' "$HOME19C/.claude.json"
+
+# Invalid .claude.json fails closed and is left byte-identical.
+HOME19D="$ROOT/home19d"; mkdir -p "$HOME19D"
+printf '{invalid' > "$HOME19D/.claude.json"
+cp "$HOME19D/.claude.json" "$ROOT/bad-claude-json"
+if run_install "$HOME19D" -- > "$ROOT/out19d.txt" 2>&1; then fail "invalid .claude.json must refuse"; fi
+ok "invalid .claude.json refuses install"
+check "invalid .claude.json remains byte-identical" cmp -s "$HOME19D/.claude.json" "$ROOT/bad-claude-json"
+check "invalid .claude.json creates no MCP receipt" \
+    test ! -e "$HOME19D/.local/share/orbit-office/claude-mcp.json"
 
 printf 'PASS: %s checks\n' "$PASS"

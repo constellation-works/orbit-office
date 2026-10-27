@@ -107,8 +107,10 @@ spaces, so script shebangs that name the interpreter keep working.
    when a WARN line precedes the JSON, and the failure names that code. An `{ok: false}`
    envelope on stdout, even with exit 0, also stops the install and names its code. Nothing
    is recorded on failure, so the next run asks `office.init` again.
-8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Muse Code's
-   `settings.json`, keeping a backup of the old file, and installs the office skills. A
+8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Claude Code's
+   `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` — the file Claude Code and the
+   app's connection check actually read — keeping a backup of the old file
+   (`.claude.json.bak`), and installs the office skills. A
    skill already present under the same name is left untouched and is not claimed: the
    installer records only the skills it itself copies, as one `<name> <sha256>` line per
    skill in `<data>/agent-skills-<agent>.txt`, where the digest covers every file's
@@ -119,13 +121,24 @@ spaces, so script shebangs that name the interpreter keep working.
    removes only the ones it added. With `--agent claude|codex` it registers the other CLI
    instead. A CLI with no per-command deny rules is reported as such.
    Claude gets `Bash(curl *)`, `Bash(wget *)`, `Bash(http *)`, `Bash(aws *)` and
-   `Bash(gcloud *)` in `~/.claude/settings.json`'s `permissions.deny`, using the
+   `Bash(gcloud *)` in `settings.json`'s `permissions.deny` (under
+   `$CLAUDE_CONFIG_DIR` when set, otherwise `~/.claude/settings.json`), using the
    [documented Bash permission syntax](https://code.claude.com/docs/en/permissions).
-   The installer splices JSON entries without reformatting other settings, keeps the
-   original bytes in `settings.json.bak`, and records only newly added rules and
-   containers in `<data>/claude-settings.json`. Uninstall removes those rules while
-   keeping pre-existing rules and later user additions. Invalid JSON, duplicate keys,
-   incompatible field types and unsafe settings/receipt files stop the edit.
+   The installer splices JSON entries in both files without reformatting other
+   settings, keeps each file's original bytes in a sibling `.bak`, and records
+   ownership separately: only newly added deny rules and containers in
+   `<data>/claude-settings.json`, and whether it created or updated the MCP
+   entry (and any container it created) in `<data>/claude-mcp.json`. Uninstall
+   removes the MCP entry only when that receipt proves the installer owns it,
+   and removes the recorded deny rules while keeping pre-existing rules, a
+   pre-existing identical MCP entry and later user additions. Installers
+   before this fix wrote `mcpServers.orbit` into `~/.claude/settings.json`,
+   where no reader looks for it: install migrates that misplaced entry out of
+   the settings file (keeping any other `mcpServers` entries and settings)
+   while writing the effective `.claude.json` entry, and uninstall cleans the
+   misplaced entry only when an installer receipt proves a prior install.
+   Invalid JSON, duplicate keys, incompatible field types and unsafe
+   settings/receipt files stop the edit.
    Codex has no equivalent deny settings for sandboxed shell calls: its
    [execpolicy rules](https://developers.openai.com/codex/rules) govern commands outside
    the sandbox. The summary reports this limitation instead of claiming those calls
