@@ -1,19 +1,28 @@
 #!/bin/sh
 # test-install.sh - acceptance harness for ../../install.sh
 #
-# Runs install.sh against a temp HOME with stub orbit, npm and
-# service managers on PATH (stub state and logs live outside HOME,
-# so a HOME snapshot only sees installer effects). Checks:
-#   1. two runs: the second changes nothing and reports already done
+# Runs install.sh against a temp HOME with stub orbit, npm, curl, tar
+# and service managers on PATH (stub state and logs live outside HOME,
+# so a HOME snapshot only sees installer effects). A decoy `uv` on PATH
+# records any use and must stay unused. Checks:
+#   1. two runs: the second changes nothing and reports already done,
+#      including the pinned uv/Python step
 #   2. older Orbit stops with the upgrade command; newer warns on
-#   3. --uninstall keeps ~/orbit; --purge removes it
+#   3. --uninstall removes tools/ and keeps ~/orbit; --purge removes it
 #   4. a non-empty unrelated workspace folder is refused
+#   5. missing Orbit is installed from npm
+#   6. a uv archive checksum mismatch stops before unpack
+#   7. python3 --version must print the pinned minor
+#   8. launchd, systemd and the MCP entry put tools/bin first on PATH
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 1
 INSTALL_SH="$SCRIPT_DIR/../../install.sh"
+FIXTURE="$SCRIPT_DIR/fixtures/uv-test-fixture.tar.gz"
 [ -f "$INSTALL_SH" ] || { printf 'missing %s\n' "$INSTALL_SH" >&2; exit 1; }
+[ -f "$FIXTURE" ] || { printf 'missing %s\n' "$FIXTURE" >&2; exit 1; }
+REAL_TAR=$(command -v tar) || { printf 'tar is required\n' >&2; exit 1; }
 
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT INT TERM
@@ -146,7 +155,61 @@ exit 0
 STUB
 
 printf '#!/bin/sh\nexit 0\n' > "$BIN/ffmpeg"
-chmod +x "$BIN/orbit" "$BIN/npm" "$BIN/systemctl" "$BIN/launchctl" "$BIN/ffmpeg"
+
+# Serves the recorded fixture, or different bytes when the checksum
+# mismatch case asks for them. Never touches the network.
+cat > "$BIN/curl" <<'STUB'
+#!/bin/sh
+state=${STUB_STATE:?}
+mkdir -p "$state"
+printf '%s\n' "$*" >> "$state/curl.log"
+out=""
+prev=""
+for a in "$@"; do
+    if [ "$prev" = "-o" ] || [ "$prev" = "--output" ]; then
+        out=$a
+    fi
+    case "$a" in
+        --output=*) out=${a#--output=} ;;
+        -o*)
+            if [ "$a" != "-o" ]; then
+                out=${a#-o}
+            fi
+            ;;
+    esac
+    prev=$a
+done
+[ -n "$out" ] || { printf 'curl stub: no output path\n' >&2; exit 2; }
+mkdir -p "$(dirname -- "$out")"
+if [ "${STUB_CURL_MODE:-ok}" = "mismatch" ]; then
+    printf 'not-the-uv-archive\n' > "$out"
+else
+    cp "${STUB_UV_ARCHIVE:?}" "$out"
+fi
+exit 0
+STUB
+
+# Proves the installer did not unpack. Exec the real tar otherwise.
+cat > "$BIN/tar" <<STUB
+#!/bin/sh
+state=\${STUB_STATE:?}
+mkdir -p "\$state"
+printf '%s\n' "\$*" >> "\$state/tar.log"
+exec $REAL_TAR "\$@"
+STUB
+
+# A uv already on PATH. The installer must not execute this.
+cat > "$BIN/uv" <<'STUB'
+#!/bin/sh
+state=${STUB_STATE:?}
+mkdir -p "$state"
+printf '%s\n' "$*" >> "$state/uv-on-path.log"
+printf 'uv on PATH must not be used\n' >&2
+exit 99
+STUB
+
+chmod +x "$BIN/orbit" "$BIN/npm" "$BIN/systemctl" "$BIN/launchctl" "$BIN/ffmpeg" \
+    "$BIN/curl" "$BIN/tar" "$BIN/uv"
 
 snapshot() { # snapshot <home> : sorted relative paths + file hashes
     (cd "$1" && find . -type f | sort | while IFS= read -r _f; do
@@ -158,12 +221,70 @@ snapshot() { # snapshot <home> : sorted relative paths + file hashes
 run_install() { # run_install <home> <extra env...> -- <args...>
     _home="$1"; shift
     _envs=""
-    while [ $# -gt 0 ] && [ "$1" != "--" ]; do _envs="$_envs $1"; shift; done
+    _uv_url="$FIXTURE"
+    while [ $# -gt 0 ] && [ "$1" != "--" ]; do
+        case "$1" in
+            ORBIT_OFFICE_UV_URL=none) _uv_url="" ;;
+            ORBIT_OFFICE_UV_URL=*) _uv_url=${1#ORBIT_OFFICE_UV_URL=} ;;
+            *) _envs="$_envs $1" ;;
+        esac
+        shift
+    done
     [ $# -gt 0 ] && shift
+    _uv_env=""
+    if [ -n "$_uv_url" ]; then
+        _uv_env="ORBIT_OFFICE_UV_URL=$_uv_url"
+    fi
+    _py_env=""
+    if [ -n "${ORBIT_OFFICE_TEST_PYTHON_VERSION:-}" ]; then
+        _py_env="ORBIT_OFFICE_TEST_PYTHON_VERSION=$ORBIT_OFFICE_TEST_PYTHON_VERSION"
+    fi
     # shellcheck disable=SC2086
     env -i PATH="${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin" HOME="$_home" STUB_STATE="$STUB_STATE" \
-        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" $_envs \
+        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" \
+        STUB_UV_ARCHIVE="$FIXTURE" \
+        STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
+        ORBIT_OFFICE_OS=linux \
+        $_uv_env $_py_env $_envs \
         sh "$INSTALL_SH" --yes "$@" < /dev/null
+}
+
+TOOLS_REL=".local/share/orbit-office/tools"
+
+assert_home_scope() { # files stay under the workspace, data/tools, service, MCP
+    _home="$1"
+    _bad="$ROOT/scope-bad.txt"
+    : > "$_bad"
+    (cd "$_home" && find . \( -type f -o -type l \) | sort) | while IFS= read -r _f; do
+        case "$_f" in
+            ./orbit|./orbit/*) ;;
+            ./.local/share/orbit-office|./.local/share/orbit-office/*) ;;
+            ./.config/systemd|./.config/systemd/*) ;;
+            ./.claude|./.claude/*) ;;
+            ./.codex|./.codex/*) ;;
+            ./Library/LaunchAgents|./Library/LaunchAgents/*) ;;
+            ./Library/Application\ Support/orbit-office|./Library/Application\ Support/orbit-office/*) ;;
+            *) printf '%s\n' "$_f" >> "$_bad" ;;
+        esac
+    done
+    if [ -s "$_bad" ]; then
+        cat "$_bad" >&2
+        fail "files outside the workspace, data folder and tools"
+    fi
+    ok "no files outside the workspace, data folder and tools"
+}
+
+assert_profiles_untouched() {
+    _home="$1"
+    for _p in .bashrc .bash_profile .profile .zshrc .zprofile .zlogin .cshrc .bash_login; do
+        if [ -e "$_home/$_p" ]; then
+            fail "shell profile was created: $_p"
+        fi
+    done
+    if [ -e "$_home/.local/bin" ]; then
+        fail "~/.local/bin was created (system uv/python path)"
+    fi
+    ok "shell profiles and ~/.local/bin untouched"
 }
 
 # ---------------------------------------------------------------------------
@@ -184,13 +305,44 @@ check "systemd unit written" test -f "$HOME1/.config/systemd/user/orbit-office.s
 check "MCP entry written" grep -q '"orbit"' "$HOME1/.claude/settings.json"
 check "plugin added (stub)" test -f "$STUB_STATE/plugin-added"
 check "plugin enabled (stub)" test -f "$STUB_STATE/plugin-enabled"
+check "step 2 is numbered" grep -q '==> 2 python' "$OUT1"
+for _n in 1 3 4 5 6 7 8 9; do
+    check "step $_n is numbered" grep -q "==> $_n " "$OUT1"
+done
+TOOLS1="$HOME1/$TOOLS_REL"
+check "uv installed under tools/bin" test -x "$TOOLS1/bin/uv"
+check "python3 linked under tools/bin" test -L "$TOOLS1/bin/python3"
+check "python linked under tools/bin" test -L "$TOOLS1/bin/python"
+check "python3 link points into tools/python" \
+    sh -c 'case "$(readlink "$1")" in "$2"/python/*) exit 0 ;; *) exit 1 ;; esac' \
+    sh "$TOOLS1/bin/python3" "$TOOLS1"
+check "python3 --version prints 3.12" \
+    sh -c '"$1" --version | grep -q "Python 3\\.12"' sh "$TOOLS1/bin/python3"
+check "systemd PATH starts with tools/bin" \
+    grep -F "Environment=PATH=$TOOLS1/bin:" "$HOME1/.config/systemd/user/orbit-office.service"
+check "MCP PATH starts with tools/bin" \
+    grep -F "\"PATH\": \"$TOOLS1/bin:" "$HOME1/.claude/settings.json"
+check "uv install passed --no-bin" grep -F "python install --no-bin" "$STUB_STATE/uv-fixture.log"
+check "uv cache stays under tools" \
+    grep -F "UV_CACHE_DIR=$TOOLS1/cache" "$STUB_STATE/uv-fixture.log"
+check "uv python dir stays under tools" \
+    grep -F "UV_PYTHON_INSTALL_DIR=$TOOLS1/python" "$STUB_STATE/uv-fixture.log"
+check "PATH uv was not executed" test ! -e "$STUB_STATE/uv-on-path.log"
+assert_home_scope "$HOME1"
+assert_profiles_untouched "$HOME1"
+CURL_AFTER_FIRST=$(wc -l < "$STUB_STATE/curl.log")
+TAR_AFTER_FIRST=$(wc -l < "$STUB_STATE/tar.log")
 
 OUT2="$ROOT/out2.txt"
 run_install "$HOME1" -- > "$OUT2" 2>&1 || { cat "$OUT2" >&2; fail "second install exits 0"; }
 ok "second install exits 0"
 SNAP2="$ROOT/snap2.txt"; snapshot "$HOME1" > "$SNAP2"
 check "second run changes nothing in HOME" cmp -s "$SNAP1" "$SNAP2"
-for _word in orbit workspace plugin scaffold agent service; do
+check "second run does not download uv again" \
+    sh -c '[ "$(wc -l < "$1")" -eq "$2" ]' sh "$STUB_STATE/curl.log" "$CURL_AFTER_FIRST"
+check "second run does not unpack uv again" \
+    sh -c '[ "$(wc -l < "$1")" -eq "$2" ]' sh "$STUB_STATE/tar.log" "$TAR_AFTER_FIRST"
+for _word in python orbit workspace plugin scaffold agent service; do
     if grep -i "already" "$OUT2" | grep -qi "$_word"; then
         ok "second run reports $_word as already done"
     else
@@ -240,6 +392,7 @@ fi
 check "uninstall removes the plugin (stub)" test ! -e "$STUB_STATE/plugin-added"
 check "uninstall keeps the workspace" test -d "$HOME1/orbit"
 check "uninstall keeps the Library" test -d "$HOME1/orbit/library"
+check "uninstall removes tools" test ! -e "$HOME1/$TOOLS_REL"
 
 OUT_PURGE="$ROOT/out-purge.txt"
 run_install "$HOME1" -- --purge > "$OUT_PURGE" 2>&1 \
@@ -268,7 +421,7 @@ check "unrelated folder is untouched" grep -q precious "$HOME4/orbit/notes.txt"
 
 BIN2="$ROOT/bin-no-orbit"
 mkdir -p "$BIN2"
-for _stub in npm systemctl launchctl ffmpeg; do cp "$BIN/$_stub" "$BIN2/$_stub"; done
+for _stub in npm systemctl launchctl ffmpeg curl tar uv; do cp "$BIN/$_stub" "$BIN2/$_stub"; done
 chmod +x "$BIN2"/*
 HOME5="$ROOT/home5"; mkdir -p "$HOME5"
 OUT_MISS="$ROOT/out-missing.txt"
@@ -278,5 +431,182 @@ ok "missing Orbit: npm installs it and the install completes"
 check "missing Orbit: npm got the tested package" \
     grep -q "install -g @orbit-tools/cli@0.34.0" "$STUB_STATE/npm.log"
 check "missing Orbit: stub orbit created by npm" test -x "$BIN2/orbit"
+check "missing Orbit: tools/bin/uv installed from the archive" \
+    test -x "$HOME5/$TOOLS_REL/bin/uv"
+check "missing Orbit: PATH uv was not executed" test ! -e "$STUB_STATE/uv-on-path.log"
+
+# ---------------------------------------------------------------------------
+# 6. Checksum mismatch stops before unpack; a digest override is ignored
+# ---------------------------------------------------------------------------
+
+pin_of() {
+    awk -F'"' -v key="$1" 'index($0, key "=\"") == 1 { print $2; exit }' "$INSTALL_SH"
+}
+
+FIXTURE_SHA=$(pin_of UV_SHA256_FIXTURE)
+LINUX_SHA=$(pin_of UV_SHA256_LINUX_X86_64)
+[ -n "$FIXTURE_SHA" ] || fail "fixture pin missing from install.sh"
+GOT_FIXTURE=$(sha256sum "$FIXTURE" | awk '{print $1}')
+if [ "$GOT_FIXTURE" = "$FIXTURE_SHA" ]; then
+    ok "fixture archive matches the recorded SHA-256"
+else
+    fail "fixture archive SHA-256 drifted from install.sh"
+fi
+for _pair in \
+    "UV_SHA256_MACOS_ARM64 60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472" \
+    "UV_SHA256_MACOS_X86_64 63ba17fdda55ad1a230d4b37fc6017ffa10c23688c83818bd3bfdf914c652a02" \
+    "UV_SHA256_LINUX_X86_64 f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645" \
+    "UV_SHA256_LINUX_AARCH64 229e194255c7958d86d56e8790d969a6f74736592133f0dfd0076f754c642c1d"
+do
+    _name=${_pair%% *}
+    _want=${_pair#* }
+    _got=$(pin_of "$_name")
+    if [ "$_got" = "$_want" ]; then
+        ok "recorded $_name"
+    else
+        fail "recorded $_name ($_got)"
+    fi
+done
+
+HOME6="$ROOT/home6"; mkdir -p "$HOME6"
+rm -f "$STUB_STATE/curl.log" "$STUB_STATE/tar.log" "$STUB_STATE/uv-on-path.log"
+OUT_BAD="$ROOT/out-bad.txt"
+BAD_SHA=$(printf 'not-the-uv-archive\n' | sha256sum | awk '{print $1}')
+if STUB_CURL_MODE=mismatch run_install "$HOME6" "ORBIT_OFFICE_UV_SHA256=$BAD_SHA" -- \
+    > "$OUT_BAD" 2>&1; then
+    fail "checksum mismatch stops the script"
+else
+    ok "checksum mismatch stops the script"
+fi
+check "checksum mismatch names the digest" grep -F "$FIXTURE_SHA" "$OUT_BAD"
+check "checksum mismatch says mismatch" grep -F "SHA-256 mismatch" "$OUT_BAD"
+check "checksum mismatch leaves no tools/bin/uv" test ! -e "$HOME6/$TOOLS_REL/bin/uv"
+check "checksum mismatch does not unpack" test ! -e "$STUB_STATE/tar.log"
+check "checksum mismatch does not use PATH uv" test ! -e "$STUB_STATE/uv-on-path.log"
+
+# Default URL (no seam) is the pinned GitHub asset and still refuses
+# bytes that do not match that asset's recorded digest.
+HOME6B="$ROOT/home6b"; mkdir -p "$HOME6B"
+rm -f "$STUB_STATE/curl.log" "$STUB_STATE/tar.log" "$STUB_STATE/uv-on-path.log"
+OUT_PIN="$ROOT/out-pin.txt"
+if run_install "$HOME6B" ORBIT_OFFICE_UV_URL=none ORBIT_OFFICE_ARCH=x86_64 -- \
+    > "$OUT_PIN" 2>&1; then
+    fail "unpinned bytes against the platform digest stop the script"
+else
+    ok "unpinned bytes against the platform digest stop the script"
+fi
+check "platform digest is named" grep -F "$LINUX_SHA" "$OUT_PIN"
+check "platform digest says mismatch" grep -F "SHA-256 mismatch" "$OUT_PIN"
+check "download URL is the pinned uv asset" \
+    grep -F "github.com/astral-sh/uv/releases/download/0.13.6/uv-x86_64-unknown-linux-gnu.tar.gz" \
+    "$STUB_STATE/curl.log"
+check "platform mismatch leaves no tools/bin/uv" test ! -e "$HOME6B/$TOOLS_REL/bin/uv"
+check "platform mismatch does not unpack" test ! -e "$STUB_STATE/tar.log"
+check "platform mismatch does not use PATH uv" test ! -e "$STUB_STATE/uv-on-path.log"
+
+# ---------------------------------------------------------------------------
+# 7. python3 --version must print the pinned minor
+# ---------------------------------------------------------------------------
+
+HOME7="$ROOT/home7"; mkdir -p "$HOME7"
+rm -f "$STUB_STATE/uv-on-path.log"
+OUT_VER="$ROOT/out-ver.txt"
+if ORBIT_OFFICE_TEST_PYTHON_VERSION=3.11.2 run_install "$HOME7" -- \
+    > "$OUT_VER" 2>&1; then
+    fail "wrong python minor stops the step"
+else
+    ok "wrong python minor stops the step"
+fi
+check "version failure names the pinned minor" grep -F "pinned minor version 3.12" "$OUT_VER"
+check "version failure does not use PATH uv" test ! -e "$STUB_STATE/uv-on-path.log"
+
+# ---------------------------------------------------------------------------
+# 8. launchd plist PATH, and tools stay off DATA_DIR
+# ---------------------------------------------------------------------------
+
+HOME8="$ROOT/home8"; mkdir -p "$HOME8"
+OUT_MAC="$ROOT/out-mac.txt"
+run_install "$HOME8" ORBIT_OFFICE_OS=macos ORBIT_OFFICE_DATA_DIR="$HOME8/custom-data" -- \
+    > "$OUT_MAC" 2>&1 || { cat "$OUT_MAC" >&2; fail "macos install exits 0"; }
+ok "macos install exits 0"
+PLIST="$HOME8/Library/LaunchAgents/com.orbit-office.app.plist"
+MAC_TOOLS="$HOME8/$TOOLS_REL"
+check "launchd plist written" test -f "$PLIST"
+check "launchd PATH starts with tools/bin" grep -F "<key>PATH</key><string>$MAC_TOOLS/bin:" "$PLIST"
+check "macos tools path is the literal share path" test -x "$MAC_TOOLS/bin/uv"
+check "macos data dir override is honoured" test -f "$HOME8/custom-data/install-state"
+check "macos data dir is not the tools dir" test ! -e "$HOME8/custom-data/tools"
+check "no systemd unit on the macos run" \
+    test ! -e "$HOME8/.config/systemd/user/orbit-office.service"
+check "macos MCP PATH starts with tools/bin" \
+    grep -F "\"PATH\": \"$MAC_TOOLS/bin:" "$HOME8/.claude/settings.json"
+assert_profiles_untouched "$HOME8"
+
+# ---------------------------------------------------------------------------
+# 9. Codex MCP entry uses an inline env table; uninstall removes it
+# ---------------------------------------------------------------------------
+
+HOME9="$ROOT/home9"; mkdir -p "$HOME9/.codex"
+cat > "$HOME9/.codex/config.toml" <<'EOF'
+[other]
+keep = 1
+
+[mcp_servers.orbit]
+command = "orbit"
+args = ["mcp", "serve"]
+EOF
+OUT_CODEX="$ROOT/out-codex.txt"
+run_install "$HOME9" -- --agent codex > "$OUT_CODEX" 2>&1 \
+    || { cat "$OUT_CODEX" >&2; fail "codex install exits 0"; }
+ok "codex install exits 0"
+CODEX_CFG="$HOME9/.codex/config.toml"
+check "codex orbit table present" grep -q '^\[mcp_servers\.orbit\]$' "$CODEX_CFG"
+check "codex env is inline and starts with tools/bin" \
+    grep -F "env = { PATH = \"$HOME9/$TOOLS_REL/bin:" "$CODEX_CFG"
+check "codex has no separate env table" \
+    sh -c '! grep -q "^\\[mcp_servers\\.orbit\\.env\\]" "$1"' sh "$CODEX_CFG"
+check "codex kept the other table" grep -q '^keep = 1$' "$CODEX_CFG"
+OUT_CODEX_UN="$ROOT/out-codex-un.txt"
+run_install "$HOME9" -- --agent codex --uninstall > "$OUT_CODEX_UN" 2>&1 \
+    || { cat "$OUT_CODEX_UN" >&2; fail "codex uninstall exits 0"; }
+ok "codex uninstall exits 0"
+check "codex uninstall removes the orbit table" \
+    sh -c '! grep -q "mcp_servers.orbit" "$1"' sh "$CODEX_CFG"
+check "codex uninstall keeps the other table" grep -q '^keep = 1$' "$CODEX_CFG"
+check "codex uninstall removes tools" test ! -e "$HOME9/$TOOLS_REL"
+check "codex uninstall keeps the workspace" test -d "$HOME9/orbit"
+
+# ---------------------------------------------------------------------------
+# 10. An older Claude MCP entry gains tools/bin on PATH
+# ---------------------------------------------------------------------------
+
+HOME10="$ROOT/home10"
+mkdir -p "$HOME10/.claude" "$HOME10/.local/share/orbit-office"
+cat > "$HOME10/.claude/settings.json" <<'EOF'
+{
+  "mcpServers": {
+    "orbit": {
+      "command": "orbit",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+EOF
+printf 'agent_registered\n' > "$HOME10/.local/share/orbit-office/install-state"
+OUT_REPAIR="$ROOT/out-repair.txt"
+run_install "$HOME10" -- > "$OUT_REPAIR" 2>&1 \
+    || { cat "$OUT_REPAIR" >&2; fail "claude repair install exits 0"; }
+ok "claude repair install exits 0"
+check "repaired MCP PATH starts with tools/bin" \
+    grep -F "\"PATH\": \"$HOME10/$TOOLS_REL/bin:" "$HOME10/.claude/settings.json"
+SNAP_REPAIR="$ROOT/snap-repair.txt"
+snapshot "$HOME10" > "$SNAP_REPAIR"
+OUT_REPAIR2="$ROOT/out-repair2.txt"
+run_install "$HOME10" -- > "$OUT_REPAIR2" 2>&1 \
+    || { cat "$OUT_REPAIR2" >&2; fail "claude repair second run exits 0"; }
+ok "claude repair second run exits 0"
+SNAP_REPAIR2="$ROOT/snap-repair2.txt"
+snapshot "$HOME10" > "$SNAP_REPAIR2"
+check "repaired MCP entry stays unchanged" cmp -s "$SNAP_REPAIR" "$SNAP_REPAIR2"
 
 printf 'PASS: %s checks\n' "$PASS"
