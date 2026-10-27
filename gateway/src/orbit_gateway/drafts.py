@@ -18,8 +18,10 @@ approved by the user and sent at most once (docs/design/office/specs/gateway.md,
   nothing and leaves the draft `pending`. Once the request has been written,
   a timeout or a lost reply is `outcome_unknown`: recorded, audited and
   returned as such, never as a failure, and never retried (STD-03@2 §R31).
-  The connection's idempotency header, when it names one, carries the draft
-  id. Redirects are returned, never followed.
+  A reply that does arrive, but whose body is cut off, is `sent` with
+  `truncated` true: the write went out once, and the body is not reported
+  as complete. The connection's idempotency header, when it names one,
+  carries the draft id. Redirects are returned, never followed.
 
 With `http.py`, the only module that opens network connections.
 """
@@ -512,6 +514,7 @@ def _send(call: Call, root: Path, record: audit.Record, redactor: Redactor) -> d
     record.status = status
     record.bytes = len(data)
     record.body_sha256 = body_digest
+    record.truncated = truncated
     with _lock(root, draft_id):
         document["state"] = SENT
         document["send"] = {**document["send"], "finished_at": _now(), "outcome": SENT, "status": status}
@@ -617,13 +620,23 @@ def _transmit(
         except Exception as error:  # noqa: BLE001 - never reported as a failure (STD-03@2 §R31)
             raise _Unknown(f"the connection was lost before a reply ({type(error).__name__})") from None
         status = int(response.status)
+        cut_off = False
         try:
             data = read_limited(response, connection.max_response_bytes + 1, deadline, timeout)
         except GatewayError:
-            # The status is known, so the outcome is too; a body cut off
-            # mid-read is dropped rather than returned partly.
+            # The status is known, so the outcome is too. A read that fails
+            # after the status (a chunked body ending early, a timeout)
+            # drops what arrived; the body was not fully received.
             data = b""
-        truncated = len(data) > connection.max_response_bytes
+            cut_off = True
+        else:
+            # Content-Length framing: HTTPResponse.read(amt) returns a short
+            # read and leaves the unread count in length, instead of raising.
+            # A chunked early close raises and is handled above. length is
+            # None when the body is delimited by the connection closing.
+            remaining = getattr(response, "length", None)
+            cut_off = isinstance(remaining, int) and remaining > 0
+        truncated = cut_off or len(data) > connection.max_response_bytes
         return status, data[: connection.max_response_bytes], response.headers, truncated
     finally:
         conn.close()
