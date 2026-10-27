@@ -31,6 +31,17 @@ struct Input {
     additional_careful: bool,
 }
 fn run(call: &Call<'_>) -> Result<Value> {
+    if !call.input.contains_key("phase") {
+        if !call.input.is_empty() {
+            return Err(Error::InvalidArgument(
+                "batch-plan list mode takes no input; omit phase, confirm, digest, sensitivity and additional_careful"
+                    .into(),
+            ));
+        }
+        let snapshot = call.ports.library.bootstrap_snapshot()?;
+        let batches = bootstrap::pending_batches(&snapshot, 256);
+        return Ok(serde_json::json!({"batches":batches}));
+    }
     let boolean = |key: &str| match call.input.get(key) {
         None => Ok(false),
         Some(Value::Bool(value)) => Ok(*value),

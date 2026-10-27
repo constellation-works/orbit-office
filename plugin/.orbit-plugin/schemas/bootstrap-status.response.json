@@ -89,10 +89,37 @@
         ],
         "additionalProperties": false
       }
+    },
+    "pending_batches": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "phase": {
+            "enum": [
+              "docs",
+              "kt",
+              "team",
+              "process"
+            ]
+          }
+        },
+        "required": [
+          "batch_id",
+          "phase"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
-    "phases"
+    "phases",
+    "pending_batches"
   ],
   "additionalProperties": false
 }

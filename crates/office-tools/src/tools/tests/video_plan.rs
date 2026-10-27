@@ -246,6 +246,61 @@ fn marking_private_at_preview_records_the_route_for_every_call_group() {
 }
 
 #[test]
+fn list_mode_returns_only_confirmed_unprocessed_plans_and_is_empty_when_none() {
+    let (ports, _) = fixture(Settings::default(), true, false);
+    let empty = call(&ports, "office.video-plan", json!({}));
+    assert_eq!(empty["ok"], true, "{empty}");
+    assert_eq!(empty["output"], json!({"plans":[]}));
+    // A preview alone is not confirmed, so it stays unlisted.
+    let previewed = preview(&ports);
+    assert_eq!(
+        call(&ports, "office.video-plan", json!({}))["output"],
+        json!({"plans":[]})
+    );
+    let confirmed = confirm(&ports);
+    let listed = call(&ports, "office.video-plan", json!({}));
+    assert_eq!(listed["ok"], true, "{listed}");
+    assert_eq!(
+        listed["output"],
+        json!({"plans":[{"source_id":ID,"plan_digest":previewed["plan"]["digest"]}]})
+    );
+    assert_eq!(confirmed["plan"]["digest"], previewed["plan"]["digest"]);
+    // List mode is read-only and refuses single-plan keys without an id.
+    let head = ports.library.head_commit().unwrap();
+    assert_eq!(
+        call(&ports, "office.video-plan", json!({"confirm":true}))["error"]["code"],
+        "invalid_argument"
+    );
+    assert_eq!(
+        call(
+            &ports,
+            "office.video-plan",
+            json!({"sensitivity":"private"})
+        )["error"]["code"],
+        "invalid_argument"
+    );
+    assert_eq!(ports.library.head_commit().unwrap(), head);
+    // Consuming the extraction call marks the plan processed.
+    let source = ports.library.read_video(ID).unwrap();
+    ports
+        .library
+        .mutate_video(
+            ID,
+            &sha256_hex(source.markdown.as_bytes()),
+            office_core::domain::source::video::VideoMutation::ReserveProcessing {
+                digest: previewed["plan"]["digest"].as_str().unwrap().into(),
+                group: "extract".into(),
+                index: 0,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        call(&ports, "office.video-plan", json!({}))["output"],
+        json!({"plans":[]})
+    );
+}
+
+#[test]
 fn private_video_without_a_route_is_refused_and_text_only_failure_is_distinct() {
     let (ports, models) = fixture(Settings::default(), false, true);
     let refused = call(&ports, "office.video-plan", json!({"id":ID}));

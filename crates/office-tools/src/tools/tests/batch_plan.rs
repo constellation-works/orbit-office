@@ -65,6 +65,51 @@ pub(super) fn confirm(ports: &Ports<'_>, phase: &str) -> serde_json::Value {
 }
 
 #[test]
+fn list_mode_returns_only_confirmed_unconsolidated_batches_and_is_empty_when_none() {
+    let ports = fixture();
+    assert_eq!(
+        call(&ports, "office.batch-plan", json!({}))["output"],
+        json!({"batches":[]})
+    );
+    // A preview alone is not confirmed, so it stays unlisted.
+    preview(&ports, json!({"phase":"docs"}));
+    assert_eq!(
+        call(&ports, "office.batch-plan", json!({}))["output"],
+        json!({"batches":[]})
+    );
+    confirm(&ports, "docs");
+    let listed = call(&ports, "office.batch-plan", json!({}));
+    assert_eq!(listed["ok"], true, "{listed}");
+    assert_eq!(
+        listed["output"],
+        json!({"batches":[{"batch_id":"docs","phase":"docs"}]})
+    );
+    // Recording consolidation progress marks the batch consolidated.
+    let snapshot = ports.library.bootstrap_snapshot().unwrap();
+    ports
+        .library
+        .mutate_batch(
+            &snapshot
+                .revision(&ports.library.settings().unwrap())
+                .unwrap(),
+            office_core::domain::bootstrap::Mutation::Progress {
+                phase: "docs".into(),
+                consolidating: vec!["ingest".into()],
+                overflow: vec![],
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        call(&ports, "office.batch-plan", json!({}))["output"],
+        json!({"batches":[]})
+    );
+    assert_eq!(
+        call(&ports, "office.batch-plan", json!({"confirm":true}))["error"]["code"],
+        "invalid_argument"
+    );
+}
+
+#[test]
 fn batch_reuses_video_counts_and_existing_digests_need_no_calls() {
     let (ports, models) = super::video_plan::fixture(
         office_core::domain::settings::Settings::default(),
@@ -186,7 +231,7 @@ fn batch_private_preview_marks_every_pending_source_and_prices_only_with_all_rat
 fn invalid_batch_inputs_and_private_route_fail_before_mutation() {
     let ports = fixture();
     for input in [
-        json!({}),
+        json!({"confirm":true}),
         json!({"phase":"bad"}),
         json!({"phase":"docs","confirm":1}),
         json!({"phase":"docs","digest":"x"}),

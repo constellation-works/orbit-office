@@ -14,7 +14,36 @@ pub(crate) const TOOL: Tool = Tool::built(
     &["id", "confirm", "digest", "sensitivity"],
     run,
 );
+/// Maximum plans one list call returns, matching the routine fan-out bound.
+pub(crate) const MAX_PENDING_PLANS: usize = 256;
+
+fn list(call: &Call<'_>) -> Result<Value> {
+    if !call.input.is_empty() {
+        return Err(Error::InvalidArgument(
+            "video-plan list mode takes no input; omit id, confirm, digest and sensitivity".into(),
+        ));
+    }
+    let snapshot = call.ports.library.bootstrap_snapshot()?;
+    let mut plans = Vec::new();
+    for source in &snapshot.sources {
+        let meta = office_core::domain::source::parse_source_meta(&source.markdown);
+        if meta.kind != "video" {
+            continue;
+        }
+        if let Some(state) = video::state(&source.markdown)?
+            && video::is_pending(&state)
+        {
+            plans.push(json!({"source_id":meta.id,"plan_digest":state.plan.digest}));
+        }
+    }
+    plans.sort_by(|a, b| a["source_id"].as_str().cmp(&b["source_id"].as_str()));
+    plans.truncate(MAX_PENDING_PLANS);
+    Ok(json!({"plans":plans}))
+}
 fn run(call: &Call<'_>) -> Result<Value> {
+    if !call.input.contains_key("id") {
+        return list(call);
+    }
     let id = call
         .input
         .get("id")

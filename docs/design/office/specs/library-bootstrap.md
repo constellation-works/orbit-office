@@ -250,7 +250,17 @@ runbook.
 
 ## Built tool contracts
 
-`office.batch-plan` accepts `phase` (`docs`, `kt`, `team`, `process`), optional
+With no input at all, `office.batch-plan` is in list mode for routine
+fan-out: it returns `{batches: [{batch_id, phase}]}`, in phase order and
+capped at 256 entries. `batch_id` is the ledger key (one batch per phase).
+A batch is listed only when it is confirmed and consolidation has not
+started for it: no `consolidating` or `overflow` progress has been recorded
+and no careful call (original or additional) has been consumed. It is
+empty when no batch qualifies, and list mode writes nothing. Any other key
+without `phase` is refused as `invalid_argument`. The same pending list is
+returned as `pending_batches` by `office.bootstrap-status`.
+
+`office.batch-plan` otherwise accepts `phase` (`docs`, `kt`, `team`, `process`), optional
 `sensitivity: private`, and `confirm: true` with the preview's `digest`.
 Preview and confirmation make no inference requests. Video metadata and frame
 candidates are inspected locally through the same planner as `office.video-plan`;
@@ -294,7 +304,8 @@ waiting under the page cap with the port's `Progress` mutation. Building that
 runner remains the responsibility of `office.consolidate`.
 
 `office.bootstrap-status` accepts an empty object and returns all four phases in
-order. It reads complete source files, validated `digest.json` sidecars and
+order, plus `pending_batches`: the confirmed, unconsolidated batches
+described under `office.batch-plan` list mode, as `[{batch_id, phase}]`. It reads complete source files, validated `digest.json` sidecars and
 knowledge pages, plus the complete projected Orbit task list. It refuses a
 truncated task list rather than reporting partial counts. Knowledge proposals
 tagged `bootstrap:<phase>`, `proposal`, and `proposal:knowledge_add` or

@@ -232,6 +232,57 @@ pub struct Batch {
     pub overflow: Vec<String>,
 }
 
+/// One confirmed batch awaiting consolidation, for routine fan-out.
+/// `batch_id` is the ledger key (one batch per phase).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PendingBatch {
+    /// Ledger key of the batch (its phase name).
+    pub batch_id: String,
+    /// Bootstrap phase the batch belongs to.
+    pub phase: String,
+}
+
+impl Batch {
+    /// Whether consolidation has not started for this batch: it is
+    /// confirmed and neither the consolidation runner's progress record
+    /// (`consolidating`/`overflow`) nor any careful call (original or
+    /// additional) has been recorded against it.
+    #[must_use]
+    pub fn is_pending_consolidation(&self) -> bool {
+        if self.confirmed_at.is_none()
+            || !self.consolidating.is_empty()
+            || !self.overflow.is_empty()
+        {
+            return false;
+        }
+        let careful_used = self
+            .plan
+            .groups
+            .iter()
+            .zip(&self.used)
+            .filter(|(group, _)| group.kind == "careful")
+            .map(|(_, used)| *used)
+            .sum::<usize>();
+        careful_used == 0 && self.extra_used == 0
+    }
+}
+
+/// Confirmed, unconsolidated batches in phase order, at most `limit`.
+#[must_use]
+pub fn pending_batches(snapshot: &Snapshot, limit: usize) -> Vec<PendingBatch> {
+    PHASES
+        .iter()
+        .filter_map(|phase| {
+            let batch = snapshot.batches.get(*phase)?;
+            batch.is_pending_consolidation().then(|| PendingBatch {
+                batch_id: (*phase).to_string(),
+                phase: batch.plan.phase.clone(),
+            })
+        })
+        .take(limit)
+        .collect()
+}
+
 /// Mutations share one compare-and-swap and one journaled Library transaction.
 #[derive(Clone, Debug)]
 pub enum Mutation {

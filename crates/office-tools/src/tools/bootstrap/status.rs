@@ -38,5 +38,6 @@ fn run(call: &Call<'_>) -> Result<Value> {
             message: "Library changed during bootstrap status; retry".into(),
         });
     }
-    Ok(json!({"phases":phases}))
+    let pending_batches = office_core::domain::bootstrap::pending_batches(&after, 256);
+    Ok(json!({"phases":phases,"pending_batches":pending_batches}))
 }

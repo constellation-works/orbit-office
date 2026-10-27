@@ -100,7 +100,8 @@ spec:
       description: >-
         Plan a video source's processing: duration, deduplicated
         keyframes, model-call counts and a cost estimate; confirm it with
-        the digest the user saw.
+        the digest the user saw. With no input, list confirmed plans whose
+        extraction has not run, for routine fan-out.
       execution_kind: mutating
       mcp_scope: none
       input_schema: { $ref: schemas/video-plan.request.json }
@@ -331,7 +332,8 @@ spec:
     - name: batch-plan
       description: >-
         Plan a Library bootstrap phase's batch: model calls and cost;
-        confirm it with the digest the user saw.
+        confirm it with the digest the user saw. With no input, list
+        confirmed batches not yet consolidated, for routine fan-out.
       execution_kind: mutating
       mcp_scope: none
       input_schema: { $ref: schemas/batch-plan.request.json }
@@ -349,7 +351,7 @@ spec:
     - name: bootstrap-status
       description: >-
         Report Library setup progress per bootstrap phase, with the
-        computed gaps.
+        computed gaps and the confirmed batches not yet consolidated.
       execution_kind: read_only
       mcp_scope: workspace
       input_schema: { $ref: schemas/bootstrap-status.request.json }

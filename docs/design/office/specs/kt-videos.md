@@ -218,6 +218,17 @@ rate. Private routes show the endpoint and model for audio, frames and extract.
 An imported VTT removes the audio requirement; a source with no audio stream
 also plans zero audio calls. No model is contacted during preview/confirmation.
 
+With no input at all, `office.video-plan` is in list mode for routine
+fan-out: it returns `{plans: [{source_id, plan_digest}]}`, sorted by
+`source_id` and capped at 256 entries. A plan is listed only when it is
+confirmed (`confirmed_at` set) and its extraction step has not consumed a
+call (`calls.extract == 0`); transcription and frame readings may be partly
+or fully done, because extraction is the final step. Unconfirmed previews
+and plans whose extraction has run are excluded, the list is empty when
+none qualify, and list mode writes nothing and contacts no model. Any
+single-plan key (`confirm`, `digest`, `sensitivity`) without `id` is
+refused as `invalid_argument`.
+
 Selection requires at least 10,000 milliseconds between frames and drops a
 candidate whose difference hash is at Hamming distance five or less from the
 previous kept frame. The cap is `floor(duration_hours * max_frames_per_hour)`,

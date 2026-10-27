@@ -8,6 +8,21 @@ tests:
     input: {"id":"src-19700101-video"}
     expect:
       output: {"calls":{"audio":0,"extract":0,"frames":0},"confirmed_at":null,"frames_read":0,"plan":{"counts":{"audio":0,"extract":1,"frames":4},"digest":"a7905b7b7e694fe109bd9480fc1eba93db9e27248b2529146f3122b54f697bed","duration_ms":120000,"estimate":null,"frames":[{"dhash":65535,"score":800000,"time_ms":20000},{"dhash":4294901760,"score":600000,"time_ms":40000},{"dhash":18446744073709551615,"score":900000,"time_ms":70000},{"dhash":0,"score":700000,"time_ms":90000}],"id":"src-19700101-video","original_sha256":"0cab1c9617404faf2b24e221e189ca5945813e14d3f766345b09ca13bbe28ffc","rates_unset":["costs.image","costs.text_1k_tokens","costs.currency"],"routes":{"audio":{"endpoint":"https://api.meta.ai/v1","model":"muse-spark-1.3","route":"hosted"},"extract":{"endpoint":"https://api.meta.ai/v1","model":"muse-spark-1.3","route":"hosted"},"frames":{"endpoint":"https://api.meta.ai/v1","model":"muse-spark-1.3","route":"hosted"}},"sensitivity":"normal","settings_digest":"2ecddeb1a49adc99e61bbaa85e7aa4ce041cc9c2d32a1ff6c7e177569ef4a5dd","transcribe_audio":false,"transcript_sha256":"9ddf6afeddcb652ba2adf5c37dc89a735e4a8082d39cdc29539215cb90cc0697"}}
+  - name: video_plan_list_empty_before_confirmation
+    tool: video-plan
+    input: {}
+    expect:
+      output: {"plans":[]}
+  - name: video_plan_confirm_fixture
+    tool: video-plan
+    input: {"id":"src-19700101-video","confirm":true,"digest":"a7905b7b7e694fe109bd9480fc1eba93db9e27248b2529146f3122b54f697bed"}
+    expect:
+      output: {"calls":{"audio":0,"extract":0,"frames":0},"confirmed_at":"1970-01-01T00:00:00+00:00","frames_read":0,"plan":{"counts":{"audio":0,"extract":1,"frames":4},"digest":"a7905b7b7e694fe109bd9480fc1eba93db9e27248b2529146f3122b54f697bed","duration_ms":120000,"estimate":null,"frames":[{"dhash":65535,"score":800000,"time_ms":20000},{"dhash":4294901760,"score":600000,"time_ms":40000},{"dhash":18446744073709551615,"score":900000,"time_ms":70000},{"dhash":0,"score":700000,"time_ms":90000}],"id":"src-19700101-video","original_sha256":"0cab1c9617404faf2b24e221e189ca5945813e14d3f766345b09ca13bbe28ffc","rates_unset":["costs.image","costs.text_1k_tokens","costs.currency"],"routes":{"audio":{"endpoint":"https://api.meta.ai/v1","model":"muse-spark-1.3","route":"hosted"},"extract":{"endpoint":"https://api.meta.ai/v1","model":"muse-spark-1.3","route":"hosted"},"frames":{"endpoint":"https://api.meta.ai/v1","model":"muse-spark-1.3","route":"hosted"}},"sensitivity":"normal","settings_digest":"2ecddeb1a49adc99e61bbaa85e7aa4ce041cc9c2d32a1ff6c7e177569ef4a5dd","transcribe_audio":false,"transcript_sha256":"9ddf6afeddcb652ba2adf5c37dc89a735e4a8082d39cdc29539215cb90cc0697"}}
+  - name: video_plan_list_nonempty_after_confirmation
+    tool: video-plan
+    input: {}
+    expect:
+      output: {"plans":[{"plan_digest":"a7905b7b7e694fe109bd9480fc1eba93db9e27248b2529146f3122b54f697bed","source_id":"src-19700101-video"}]}
   - name: video_plan_refuses_unknown_input
     tool: video-plan
     input: {"id":"src-19700101-video","extra":true}
