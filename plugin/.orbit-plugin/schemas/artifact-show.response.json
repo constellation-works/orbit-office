@@ -115,6 +115,10 @@
             "private"
           ]
         },
+        "event_key": {
+          "type": "string",
+          "description": "Present on meeting-prep reports; stable calendar event identity."
+        },
         "tags": {
           "type": "array",
           "items": {

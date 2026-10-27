@@ -33,7 +33,7 @@ fn artifact(
 }
 
 #[test]
-fn routine_approval_is_accepted_only_for_the_daily_digest_report() {
+fn unkeyed_routine_approval_is_accepted_only_for_the_daily_digest_report() {
     for kind in [
         "report", "doc", "draft", "script", "data", "review", "other",
     ] {
@@ -53,6 +53,36 @@ fn routine_approval_is_accepted_only_for_the_daily_digest_report() {
                 );
             }
             assert!(artifact(kind, series, Approver::User).is_ok());
+        }
+    }
+}
+
+#[test]
+fn meeting_prep_routine_approval_requires_a_keyed_report_and_roundtrips_the_key() {
+    for kind in [
+        "report", "doc", "draft", "script", "data", "review", "other",
+    ] {
+        let mut candidate = artifact(kind, "meeting-prep", Approver::User).unwrap();
+        candidate.approved.by = Approver::Routine;
+        for key in [
+            None,
+            Some(""),
+            Some(" "),
+            Some("weekly:2026-10-28T14:00:00Z"),
+        ] {
+            candidate.event_key = key.map(str::to_string);
+            if kind == "report" && key.is_some_and(|key| !key.trim().is_empty()) {
+                candidate.validate().unwrap();
+                assert_eq!(
+                    Artifact::from_markdown(&candidate.to_markdown().unwrap()).unwrap(),
+                    candidate
+                );
+            } else {
+                assert_eq!(
+                    candidate.validate().unwrap_err().code(),
+                    "artifact_routine_approval_refused"
+                );
+            }
         }
     }
 }
