@@ -86,7 +86,7 @@ export function createSourcesFeature(options: SourcesOptions): Feature {
       if (privateRoute) {
         const status = await call("office.status", {});
         const configured = status.open_weights === null ? null : object(status.open_weights);
-        label = configured === null ? "Private: endpoint not configured" : `Private: ${string(configured.label)}`;
+        label = configured === null ? "Private: endpoint not configured" : `Private: ${string(configured.label)}${configured.kind === "provider" ? " (third party)" : ""}`;
       }
       if (!Array.isArray(data.cited_by) || !Array.isArray(data.chapters) || !Array.isArray(data.frames) || !Array.isArray(data.gotchas) || typeof data.task_citers_available !== "boolean" || typeof data.cited_by_truncated !== "boolean" || !["normal", "private"].includes(string(data.sensitivity))) throw new Refusal(502, "invalid_output");
       const view: SourceView = {

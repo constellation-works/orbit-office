@@ -126,6 +126,32 @@ fn video_processor_probes_and_hashes_raw_thumbnails_without_an_image_library() {
     assert_eq!(analysis.candidates[1].time_ms, 10500);
     assert_eq!(analysis.candidates[1].score, 900000);
 }
+
+#[cfg(unix)]
+#[test]
+fn video_scene_decode_uses_the_supported_per_stream_frame_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let probe = dir.path().join("ffprobe");
+    executable(
+        &probe,
+        "#!/bin/sh\nprintf '%s' '{\"format\":{\"duration\":\"60\"},\"streams\":[{\"codec_type\":\"video\"}]}'\n",
+    );
+    let ffmpeg = dir.path().join("ffmpeg");
+    // FFmpeg 9 refuses -vsync before decoding. Enforce its public argv
+    // contract while returning an actual thumbnail and matching metadata.
+    executable(
+        &ffmpeg,
+        "#!/bin/sh\nmode=0\nprevious=''\nfor arg; do\n[ \"$arg\" != '-vsync' ] || exit 8\nif [ \"$previous\" = '-fps_mode' ] && [ \"$arg\" = 'vfr' ]; then mode=1; fi\nprevious=\"$arg\"\ndone\n[ \"$mode\" = 1 ] || exit 9\nprintf 'frame:0 pts_time:30\\nlavfi.scene_score=0.5\\n' > scenes.txt\n/bin/dd if=/dev/zero bs=72 count=1 2>/dev/null\n",
+    );
+    let analysis = crate::media::VideoProcessor {
+        ffprobe: probe,
+        ffmpeg,
+    }
+    .analyze(b"synthetic video", &0.into())
+    .unwrap();
+    assert_eq!(analysis.candidates.len(), 1);
+    assert_eq!(analysis.candidates[0].time_ms, 30_000);
+}
 #[cfg(unix)]
 #[test]
 fn video_processor_refuses_bad_metadata_and_failed_or_mismatched_decodes() {

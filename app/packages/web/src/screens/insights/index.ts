@@ -54,7 +54,7 @@ export function drawInsights(data: Insights): HTMLElement {
   line.setAttribute("d", path); line.setAttribute("fill", "none"); line.setAttribute("stroke", "currentColor"); line.setAttribute("stroke-width", "3"); svg.prepend(line); root.append(svg);
   const weeks = document.createElement("ul"); weeks.className = "insights-weeks";
   for (const week of data.weeks) {
-    const simulated = data.simulated_until !== undefined && week.since <= data.simulated_until;
+    const simulated = data.simulated_until !== undefined && week.since <= data.simulated_until && week.metrics.automation.total_count > 0;
     weeks.append(element("li", `${week.since}: ${percent(week.metrics.automation.count_ratio)}${simulated ? " · simulated" : ""}`));
   }
   root.append(weeks, element("h2", "What got automated"));

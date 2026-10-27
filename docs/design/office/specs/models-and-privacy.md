@@ -88,7 +88,8 @@ as deprecated aliases with a warning (see the deviation recorded in
   Settings screen, the README and the pitch all say exactly that.
 - Every model call records its route in `derived_by` (`hosted` or
   `private:<kind>`), and the source view shows the badge with the endpoint's
-  label.
+  label. For `kind: provider`, the source badge appends “(third party)”
+  independently of the user-chosen endpoint label.
 
 ### Checking an endpoint: `office.private-route-check`
 
