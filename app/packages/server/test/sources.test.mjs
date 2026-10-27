@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as sources from '../dist/features/sources/index.js';
 
+/** The repo's gitignored scratch dir; a fresh CI checkout has no .orbit/tmp yet. */
+async function scratchDir() {
+  const dir = fileURLToPath(new URL('../../../../.orbit/tmp/', import.meta.url));
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
 async function fixture(t, callTool, options = {}) {
-  const root = await mkdtemp(fileURLToPath(new URL('../../../../.orbit/tmp/source-http-', import.meta.url)));
+  const root = await mkdtemp(join(await scratchDir(), 'source-http-'));
   t.after(() => rm(root, { recursive: true }));
   const feature = sources.createSourcesFeature({ client: { callTool }, workspaceRoot: root, ...options });
   const server = createServer((req, res) => {
