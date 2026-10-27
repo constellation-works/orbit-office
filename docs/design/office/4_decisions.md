@@ -356,12 +356,45 @@ URLs, and no browser-only API without a fallback.
 
 ### Consequences
 
-- Citations stay plain `http://localhost` links that the browser opens;
-  no deep-link scheme is needed yet. The dispatch pass is a login service
-  (launchd or a systemd user unit) independent of the UI.
+- Citations are plain `http://localhost` links that the browser opens.
+  They carry anchors (`#t=…` for meetings, `#L…` for line-based sources)
+  that open the source scrolled to the cited span; the "no deep-link
+  scheme" line originally recorded here was superseded on 2026-10-26
+  (see "Anchor deep-links for citations" below). The dispatch pass is a
+  login service (launchd or a systemd user unit) independent of the UI.
 - Cost: users install Node 20+ themselves, there is no tray or native
   notification for Needs you, and the later Tauri shell must either ship
   the Node server as a sidecar or move it into the `office` binary.
+
+## Anchor deep-links for citations
+
+**Recorded:** 2026-10-26 (owner decision, superseding the PWA decision's
+"no deep-link scheme" consequence)
+**Code anchors:** `docs/design/office/specs/web-app.md`; `docs/design/office/specs/selection-sharing.md`
+
+### Context
+
+ORB-18729 (Source view, upload and paste capture) requires citation URLs
+that open a source and scroll to the cited span. The PWA decision above
+recorded that no deep-link scheme was needed yet. Citations, provenance
+links and selection sharing all already address sources by anchor, so a
+link that cannot land on the anchor makes the provenance promise weaker
+at exactly the moment the user checks it.
+
+### Decision
+
+Citation links are `http://localhost` URLs carrying the source anchor
+(`#t=hh:mm:ss` for meetings, `#L<start>-<end>` for line-based bodies).
+The app's source view opens at that anchor and scrolls to the span. This
+supersedes the "no deep-link scheme is needed yet" consequence in the
+PWA decision; the rest of that decision stands.
+
+### Consequences
+
+- ORB-18729's anchor-link criterion is the required behaviour, not a
+  conflict.
+- Cost: the URL format is now a contract; changing anchor syntax means
+  migrating links the orchestrator has already printed.
 
 ## Selections are typed references, and private selections carry no quote
 
