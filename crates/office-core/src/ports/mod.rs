@@ -1,10 +1,23 @@
-//! Port traits: how the application (`office-tools`) reaches files, models,
-//! Orbit and the clock. A port is declared here by the first task that needs
-//! it, in its own file, together with its adapter (`office-store`,
-//! `office-models`, `office-orbit`) and its fake (`office-testkit`).
-//! Declaring a trait does no I/O, so this crate stays pure.
+//! Ports through which tools reach external services and the clock.
 
 mod clock;
 mod library;
 mod models;
 mod orbit;
+
+pub use clock::Clock;
+pub use library::Library;
+pub use models::Models;
+pub use orbit::Orbit;
+
+/// The services available to a single tool call.
+pub struct Ports<'a> {
+    /// Library access, opened only when needed.
+    pub library: Box<dyn Library + 'a>,
+    /// Model access.
+    pub models: Box<dyn Models + 'a>,
+    /// Orbit callbacks.
+    pub orbit: Box<dyn Orbit + 'a>,
+    /// Current time.
+    pub clock: Box<dyn Clock + 'a>,
+}

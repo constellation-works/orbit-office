@@ -1,7 +1,7 @@
 //! The office plugin's application layer.
 //!
 //! - `registry` lists every tool, built or planned, one row each;
-//! - [`serve`] answers one exec envelope: parse, find the tool, refuse
+//! - [`serve`] answers one parsed exec envelope: find the tool, refuse
 //!   unknown input keys, run the handler, render the response;
 //! - `tools/` holds one module per tool, grouped by spec area.
 //!

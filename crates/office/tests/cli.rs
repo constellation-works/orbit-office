@@ -48,3 +48,12 @@ fn a_usage_error_exits_two_on_stderr() {
     assert!(out.stdout.is_empty());
     assert!(!out.stderr.is_empty());
 }
+
+#[test]
+fn status_does_not_open_library() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let request = serde_json::json!({"schema_version": 1, "tool": "office.status", "input": {}, "context": {"workspace_root": workspace.path()}}).to_string();
+    let output = Fixture::new().ok(&["orbit-tool"], &request);
+    assert_eq!(json(&output.stdout)["ok"], true);
+    assert!(!workspace.path().join("library").exists());
+}

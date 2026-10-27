@@ -505,8 +505,8 @@ manifest block and router entry, and its path is added to the retired-paths list
 
 - Feature tasks run in parallel with disjoint footprints. Only integrator tasks touch the
   shared files.
-- Ports are declared by the first task that needs them, together with the adapter and the
-  fake, so there are no speculative trait signatures to undo.
+- Port interfaces and fakes are declared for dispatch before adapters; operations arrive
+  with each adapter and its fake, so there are no speculative signatures to undo.
 - Cost: seven crates instead of four, and more manifests to keep in step. There are
   reserved modules that do nothing yet (the §R17 deviation). Commented manifest blocks have
   to be kept in their slots. The app gains a build step for project references.
