@@ -49,6 +49,14 @@ enhancement.
   - Claude Code supports this through its `UserPromptSubmit` hook, which is the reference implementation shipped in the plugin.
   - Whether Muse Code has a prompt hook is checked on day 1. Without one, the pull rule covers it.
 
+The reference script is `plugin/hooks/office-selection-hook.sh` in the exported
+plugin. Register its absolute path in Claude Code settings under `hooks` →
+`UserPromptSubmit` → `hooks`, as a `command` hook. The hook requires `orbit`
+and `python3` on `PATH`, consumes the tray once, and emits nothing when it is
+empty or the tool is unavailable. Selection records are JSON-quoted data;
+private records contain only their reference, never their quote or hash. The
+source view reads the count with `peek: true` and refreshes it while open.
+
 Only the app writes selections: `office.selection-put` is
 `mcp_scope: none`.
 

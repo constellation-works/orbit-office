@@ -2,7 +2,7 @@
 import type {
   AcceptAllResult, AcceptRequest, ApprovalDetail, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
-  SettingsConnections, SettingsStatus, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView,
+  SettingsConnections, SettingsStatus, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount,
 } from "@orbit-office/contracts";
 
 export class ApiError extends Error {
@@ -139,4 +139,14 @@ export function markSourcePrivate(id: string): Promise<{ ok: true }> {
 }
 export function getSourceCitation(id: string, kind: string): Promise<SourceCitation> {
   return getJson<SourceCitation>(`/api/sources/citation?${new URLSearchParams({ id, kind })}`);
+}
+
+export function getSelectionCount(): Promise<SelectionCount> {
+  return getJson("/api/selection");
+}
+export function putSelection(input: SelectionInput): Promise<{ ok: true }> {
+  return postJson("/api/selection", input);
+}
+export function clearSelections(): Promise<{ ok: true }> {
+  return postJson("/api/selection", { clear: true });
 }
