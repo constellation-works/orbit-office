@@ -6,6 +6,11 @@ tests:
     input: {}
     expect:
       output: {"selections":[]}
+  - name: selection_get_peek_returns_an_empty_tray
+    tool: selection-get
+    input: {"peek":true}
+    expect:
+      output: {"selections":[]}
   - name: selection_get_refuses_unknown_input
     tool: selection-get
     input: {"verbose":true}

@@ -61,7 +61,9 @@ fn get_returns_each_selection_once() {
         Sensitivity::Normal,
         now + Duration::from_secs(1),
     );
+    let peek = store.peek(now + Duration::from_secs(2)).expect("peek");
     let first = store.get(now + Duration::from_secs(2)).expect("get");
+    assert_eq!(peek, first);
     assert_eq!(
         first
             .iter()
@@ -72,8 +74,8 @@ fn get_returns_each_selection_once() {
     let reopened = SelectionStore::open(dir.path()).expect("reopen");
     assert!(
         reopened
-            .get(now + Duration::from_secs(2))
-            .expect("second")
+            .peek(now + Duration::from_secs(2))
+            .expect("consumed peek")
             .is_empty()
     );
 }
@@ -84,6 +86,7 @@ fn expired_selections_are_never_returned() {
     let now = at(1_700_000_000);
     put(&store, "src-old", "stale", Sensitivity::Normal, now);
     let later = now + EXPIRY;
+    assert!(store.peek(later).expect("expired peek").is_empty());
     assert!(store.get(later).expect("expired").is_empty());
     put(&store, "src-new", "fresh", Sensitivity::Normal, later);
     let got = store.get(later).expect("fresh get");

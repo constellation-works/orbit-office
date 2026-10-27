@@ -5,7 +5,7 @@
   "properties": {
     "selections": {
       "type": "array",
-      "description": "Fresh selections, oldest first. Each one is now consumed and will not be returned again. Expired selections are omitted.",
+      "description": "Fresh selections, oldest first. Normally consumed on return; peek leaves them unconsumed. Expired selections are omitted.",
       "items": { "$ref": "#/$defs/selection" }
     }
   },

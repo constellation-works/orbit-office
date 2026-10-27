@@ -231,6 +231,10 @@ impl Selections for RealSelections<'_> {
         Ok(self.open()?.put(request, now)?)
     }
 
+    fn peek(&self, now: SystemTime) -> office_core::Result<Vec<SelectionRecord>> {
+        Ok(self.open()?.peek(now)?)
+    }
+
     fn get(&self, now: SystemTime) -> office_core::Result<Vec<SelectionRecord>> {
         Ok(self.open()?.get(now)?)
     }

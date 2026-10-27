@@ -19,6 +19,10 @@ impl Selections for FakeSelections {
         Ok(self.lock()?.put(request, now))
     }
 
+    fn peek(&self, now: SystemTime) -> Result<Vec<Selection>> {
+        Ok(self.lock()?.peek(now))
+    }
+
     fn get(&self, now: SystemTime) -> Result<Vec<Selection>> {
         Ok(self.lock()?.get(now))
     }

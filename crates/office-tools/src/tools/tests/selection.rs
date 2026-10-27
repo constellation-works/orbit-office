@@ -106,6 +106,9 @@ fn get_returns_each_selection_once_with_the_clock_time() {
     assert_eq!(selection["sensitivity"], json!("normal"));
     assert_eq!(selection["selected_at"], json!(format_rfc3339_utc(now)));
     let later = ports_at(selections, now + Duration::from_secs(2), true);
+    let peek = call("office.selection-get", json!({"peek": true}), &later);
+    assert_eq!(peek["ok"], true, "{peek}");
+    assert_eq!(peek["output"]["selections"][0]["object"], "src-a");
     let first = call("office.selection-get", json!({}), &later);
     assert_eq!(first["ok"], true, "{first}");
     assert_eq!(
@@ -113,7 +116,7 @@ fn get_returns_each_selection_once_with_the_clock_time() {
         Some(1)
     );
     assert_eq!(first["output"]["selections"][0]["object"], json!("src-a"));
-    let second = call("office.selection-get", json!({}), &later);
+    let second = call("office.selection-get", json!({"peek": true}), &later);
     assert_eq!(second["output"]["selections"], json!([]));
 }
 
@@ -127,7 +130,7 @@ fn expired_selections_are_not_returned() {
         json!({"object": "src-old", "view": "source", "quote": "stale"}),
     );
     let late = ports_at(selections, now + EXPIRY, true);
-    let expired = call("office.selection-get", json!({}), &late);
+    let expired = call("office.selection-get", json!({"peek": true}), &late);
     assert_eq!(expired["output"]["selections"], json!([]), "{expired}");
     put(
         &late,
@@ -231,6 +234,14 @@ fn selection_tools_refuse_an_uninitialized_library_and_a_bad_put() {
         at(1_700_000_000),
         true,
     );
+    for input in [
+        json!({"peek": "true"}),
+        json!({"peek": null}),
+        json!({"other": true}),
+    ] {
+        let bad = call("office.selection-get", input, &ports);
+        assert_eq!(bad["error"]["code"], json!("invalid_argument"));
+    }
     let missing = call("office.selection-put", json!({}), &ports);
     assert_eq!(missing["error"]["code"], json!("invalid_argument"));
     let bad_view = call(

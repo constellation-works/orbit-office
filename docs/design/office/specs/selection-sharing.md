@@ -35,7 +35,7 @@ consumed_at: null
 
 - Selections live in their own table, `plugin_state/selections.sqlite`, written through `office.selection-put`.
 - They are short-lived UI state, so they are kept apart from the rebuildable Library index and never committed to the Library.
-- A selection expires at 15 minutes or once the agent has used it. `selection-get` atomically consumes fresh selections; `selection-put` can clear the tray before optionally recording a selection.
+- A selection expires at 15 minutes or once the agent has used it. `selection-get` atomically consumes fresh selections by default; `peek: true` reads them without consuming them; `selection-put` can clear the tray before optionally recording a selection.
 - The **tray** holds up to five fresh selections, so "compare these two" and "merge these into the Acme page" work.
 - The app shows the tray as a "Shared with agent" pill, with a one-click clear, so the user always knows what the agent can see.
 
