@@ -62,6 +62,7 @@ impl ScriptRequest {
     #[must_use]
     pub fn manifest(&self, files: Vec<String>) -> ArtifactManifest {
         ArtifactManifest {
+            event_key: None,
             kind: self.output.kind,
             title: self.output.title.clone(),
             summary: String::new(),

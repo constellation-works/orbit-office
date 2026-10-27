@@ -1308,3 +1308,34 @@ they do not affect its sources, inference or approved budget (STD-03@2 §R28).
 This preserves existing preview digests instead of regenerating unrelated
 conformance goldens when the calendar block is introduced. A public dispatch
 regression checks confirmation after changing calendar.connection.
+
+## Meeting prep reuses immutable routine report publication
+
+**Recorded:** 2026-10-27
+
+The meeting-prep task authorizes the narrow integrator-owned registry, calendar
+module, manifest and job/routine registration edits, as for the daily digest.
+No crate or internal dependency edge is added. The artifact model gains an
+optional `event_key`, omitted when absent so existing reports retain their wire
+shape. Existing manifest constructors explicitly leave it absent. Routine
+approval remains limited to reports in `digest-daily` and `meeting-prep`; prep
+requires an event key. The Library's existing writer-lock version allocation
+also rejects duplicate prep keys before publication. Other artifact series
+retain their existing version behavior.
+
+Meeting prep crosses only core ports. It reloads page model views per selected
+event and checks the Library generation before inference and publication.
+The shared pure contact-text redactor is public for this model-view boundary;
+known contact-ref values and attendee addresses are also removed throughout the
+serialized views. The agenda is blockquoted untrusted JSON data, separate from
+the fixed instruction. Output items survive only with supplied, resolving page
+or source-anchor citations; the renderer owns citation markup. No evidence
+means a deterministic brief, with no inference. Privacy conservatively covers
+all gathered input, including evidence the model does not cite.
+
+There is no calendar-account identity field in the snapshot. A user-page
+contact/title/alias can identify self-only invitations; without it, the existing
+invitee list is the available signal. This limitation is documented explicitly,
+with no address inferred from the host environment. Model calls are not
+reserved before inference: simultaneous callers may both spend, while locked
+publication guarantees one durable report per key, as with daily digests.
