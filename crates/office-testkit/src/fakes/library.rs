@@ -729,12 +729,19 @@ impl Library for FakeLibrary {
     }
     fn initialize(&self, library_dir: Option<&str>) -> Result<InitOutcome> {
         if let Some(dir) = library_dir {
+            // The fake has no workspace root, so it cannot recognise an
+            // absolute path under the granted `{workspace}/library` root the
+            // way the adapter does. It accepts only a workspace-relative
+            // `library` path and refuses every absolute one.
             let normalized = dir.replace('\\', "/");
-            let allowed = normalized == "library"
-                || normalized.starts_with("library/")
-                || normalized.ends_with("/library")
-                || normalized.contains("/library/");
-            if !allowed || normalized.split('/').any(|part| part == "..") {
+            let parts: Vec<&str> = normalized
+                .split('/')
+                .filter(|part| !part.is_empty() && *part != ".")
+                .collect();
+            let allowed = !normalized.starts_with('/')
+                && parts.first() == Some(&"library")
+                && !parts.contains(&"..");
+            if !allowed {
                 return Err(Error::Library {
                     code: "library_dir_outside_workspace",
                     message: format!("library_dir {dir} is outside the granted Library root"),
