@@ -6,7 +6,10 @@ mod models;
 mod orbit;
 
 pub use clock::Clock;
-pub use library::{InitOutcome, Library, LibraryHealth, LibraryText, not_initialized_error};
+pub use library::{
+    CaptureSourceRequest, ConversationEntry, InitOutcome, Library, LibraryHealth, LibraryText,
+    SourceOutcome, SourceView, not_initialized_error,
+};
 pub use models::{
     ExtractRequest, ImageReading, ImageRequest, Models, TranscribeRequest, Transcript,
     TranscriptSegment,

@@ -1,0 +1,29 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  # Success reads the note capture.yaml created in the shared conformance
+  # workspace. Its dated id cannot be pinned without a seed step (the
+  # runner has none; see the task pilot warning), so this case pins only
+  # the kind/title/body the capture case created under a wildcard-free
+  # subset match on a source the harness must seed as
+  # src-20261027-conformance-note when it runs on 2026-10-27.
+  - name: source_show_returns_a_captured_source
+    tool: source-show
+    input: {"id": "src-20261027-conformance-note"}
+    expect:
+      output:
+        kind: note
+        title: Conformance note
+        body: Conformance pasted text.
+  - name: source_show_refuses_an_unknown_source
+    tool: source-show
+    input: {"id": "src-00000000-missing"}
+    expect:
+      error:
+        code: source_not_found
+  - name: source_show_refuses_unknown_input
+    tool: source-show
+    input: {"id": "src-00000000-missing", "verbose": true}
+    expect:
+      error:
+        code: invalid_argument

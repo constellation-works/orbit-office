@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.source-show request",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "description": "Source id, for example src-20261027-title." },
+    "source_id": { "type": "string", "description": "Alias for id." },
+    "anchor": { "type": "string", "description": "Optional anchor: #t=hh:mm:ss or #L<start>[-<end>]." }
+  },
+  "additionalProperties": false
+}

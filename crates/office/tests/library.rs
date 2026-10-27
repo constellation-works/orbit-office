@@ -862,6 +862,105 @@ fn status_reports_an_unreplayable_write_journal_as_its_typed_error_and_keeps_it(
     );
 }
 
+#[test]
+fn capture_and_source_show_through_the_binary() {
+    let env = Env::new();
+    let init = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(init["ok"], serde_json::json!(true), "{init}");
+
+    // Pasted text dedupes to one id.
+    let first = env.tool(
+        "office.capture",
+        serde_json::json!({"kind": "note", "title": "Binary note", "text": "Captured through the binary."}),
+    );
+    assert_eq!(first["ok"], serde_json::json!(true), "{first}");
+    let second = env.tool(
+        "office.capture",
+        serde_json::json!({"kind": "note", "title": "Binary note", "text": "Captured through the binary."}),
+    );
+    assert_eq!(second["output"]["id"], first["output"]["id"], "{second}");
+    assert_eq!(second["output"]["deduplicated"], serde_json::json!(true));
+
+    // A video upload with a VTT transcript needs no model call.
+    let video = env.workspace.join("talk.mp4");
+    std::fs::write(&video, b"video-bytes").expect("video");
+    let vtt = env.workspace.join("talk.vtt");
+    std::fs::write(
+        &vtt,
+        "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n<v Jane>Opening line.</v>\n",
+    )
+    .expect("vtt");
+    let captured = env.tool(
+        "office.capture",
+        serde_json::json!({
+            "upload_path": video.to_string_lossy(),
+            "transcript_path": vtt.to_string_lossy(),
+            "title": "Binary KT",
+        }),
+    );
+    assert_eq!(
+        captured["output"]["kind"],
+        serde_json::json!("video"),
+        "{captured}"
+    );
+    let shown = env.tool(
+        "office.source-show",
+        serde_json::json!({"id": captured["output"]["id"], "anchor": "#t=00:00:01"}),
+    );
+    assert!(
+        shown["output"]["body"]
+            .as_str()
+            .expect("body")
+            .contains("Jane"),
+        "{shown}"
+    );
+    let bad_anchor = env.tool(
+        "office.source-show",
+        serde_json::json!({"id": captured["output"]["id"], "anchor": "#L42"}),
+    );
+    assert_eq!(
+        bad_anchor["error"]["code"],
+        serde_json::json!("anchor_out_of_range"),
+        "{bad_anchor}"
+    );
+
+    // A symlink escaping the workspace is refused.
+    let outside = env._dir.path().join("outside.bin");
+    std::fs::write(&outside, b"outside").expect("outside");
+    let link = env.workspace.join("escape.bin");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, &link).expect("symlink");
+    let refused = env.tool(
+        "office.capture",
+        serde_json::json!({"upload_path": link.to_string_lossy(), "title": "Escape"}),
+    );
+    assert_eq!(
+        refused["error"]["code"],
+        serde_json::json!("upload_outside_allowed_roots"),
+        "{refused}"
+    );
+
+    // Conversation appends preserve earlier lines.
+    let opened = env.tool(
+        "office.capture",
+        serde_json::json!({"kind": "conversation", "title": "Binary session", "entries": [{"kind": "fact", "text": "Fact one."}]}),
+    );
+    let id = opened["output"]["id"].as_str().expect("id").to_string();
+    let appended = env.tool(
+        "office.capture",
+        serde_json::json!({"append_to": id, "entries": [{"kind": "handoff", "text": "Next step."}]}),
+    );
+    assert_eq!(
+        appended["output"]["appended"],
+        serde_json::json!(1),
+        "{appended}"
+    );
+    let log = env.tool("office.source-show", serde_json::json!({"id": id}));
+    let body = log["output"]["body"].as_str().expect("body").to_string();
+    assert!(body.contains("fact: Fact one."), "{body}");
+    assert!(body.contains("handoff: Next step."), "{body}");
+}
+
 /// An initialized Library holding one meeting source, indexed.
 fn library_with_source(env: &Env) -> PathBuf {
     let init = env.tool("office.init", serde_json::json!({}));

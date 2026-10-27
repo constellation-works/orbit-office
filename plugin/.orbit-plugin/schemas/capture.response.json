@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.capture response",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "kind": { "type": "string" },
+    "title": { "type": "string" },
+    "path": { "type": "string" },
+    "sha256": { "type": ["string", "null"] },
+    "bytes": { "type": ["integer", "null"] },
+    "media_type": { "type": ["string", "null"] },
+    "sensitivity": { "type": "string" },
+    "deduplicated": { "type": "boolean" },
+    "appended": { "type": "integer" },
+    "version": { "type": "integer" }
+  },
+  "required": ["id", "kind", "title", "path", "sha256", "bytes", "media_type", "sensitivity", "deduplicated", "appended", "version"],
+  "additionalProperties": false
+}

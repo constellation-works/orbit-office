@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.capture request",
+  "type": "object",
+  "properties": {
+    "kind": { "type": "string", "description": "Source kind: video, meeting, chat, email, doc, receipt, bill, conversation or note. Inferred for video uploads when absent." },
+    "title": { "type": "string", "description": "Source title; defaults to the upload file name or first text line." },
+    "text": { "type": "string", "description": "Pasted text, or the single entry text with entry_kind." },
+    "upload_path": { "type": "string", "description": "Path of an uploaded file inside the allowed roots (workspace or Library). The original is copied and pinned by sha256." },
+    "path": { "type": "string", "description": "Alias for upload_path." },
+    "append_to": { "type": "string", "description": "Conversation source id to append entries to. One Library commit per append; earlier lines never change." },
+    "entries": { "type": "array", "items": { "type": ["object", "string"] }, "description": "Conversation entries, each {kind, text} or \"<kind>: <text>\". Kinds: decision, direction, fact, action, open, resolved, handoff." },
+    "entry_kind": { "type": "string", "description": "Kind for a single entry given as text." },
+    "transcript_path": { "type": "string", "description": "Path of a .vtt transcript for a video upload, inside the allowed roots. Imported as #t= turns with no model call." },
+    "origin": { "type": "string", "description": "Free-text origin, for example Slack #pricing, pasted." },
+    "sensitivity": { "type": "string", "description": "normal or private; defaults from Library settings for the kind." },
+    "occurred_at": { "type": "string", "description": "When the source occurred, RFC 3339." },
+    "participants": { "type": "array", "items": { "type": "string" }, "description": "Participants named in the frontmatter." },
+    "captured_by": { "type": "string", "description": "upload, paste, routine or orchestrator; inferred when absent." }
+  },
+  "additionalProperties": false
+}

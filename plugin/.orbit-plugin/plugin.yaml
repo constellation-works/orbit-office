@@ -76,14 +76,14 @@ spec:
 
     # ---- sources ----
 
-    # - name: capture
-    #   description: >-
-    #     Create a source from an upload path or pasted text; dedupe;
-    #     return the id.
-    #   execution_kind: mutating
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/capture.request.json }
-    #   output_schema: { $ref: schemas/capture.response.json }
+    - name: capture
+      description: >-
+        Create a source from an upload path or pasted text; dedupe;
+        return the id.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/capture.request.json }
+      output_schema: { $ref: schemas/capture.response.json }
 
     # - name: transcribe
     #   description: >-
@@ -123,13 +123,13 @@ spec:
     #   input_schema: { $ref: schemas/extract.request.json }
     #   output_schema: { $ref: schemas/extract.response.json }
 
-    # - name: source-show
-    #   description: >-
-    #     Return a source, optionally at an anchor.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/source-show.request.json }
-    #   output_schema: { $ref: schemas/source-show.response.json }
+    - name: source-show
+      description: >-
+        Return a source, optionally at an anchor.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/source-show.request.json }
+      output_schema: { $ref: schemas/source-show.response.json }
 
     # ---- knowledge ----
 

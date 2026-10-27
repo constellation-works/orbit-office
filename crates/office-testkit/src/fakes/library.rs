@@ -4,13 +4,23 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use office_common::Sensitivity;
 use office_core::domain::knowledge::{
     Backlink, DocumentKind, DocumentRecord, LinkKind, Revision, SearchFilter, SearchHit,
 };
 use office_core::domain::settings::Settings;
+use office_core::domain::source::{
+    RenderSource, SourceKind, format_conversation_entry, is_video_extension,
+    media_type_for_extension, normalize_text, render_source, sha256_hex, source_id_base,
+    unique_source_id, vtt_to_body,
+};
 use office_core::domain::template::BUNDLED;
-use office_core::ports::{InitOutcome, Library, LibraryHealth, LibraryText, not_initialized_error};
+use office_core::ports::{
+    CaptureSourceRequest, InitOutcome, Library, LibraryHealth, LibraryText, SourceOutcome,
+    SourceView, not_initialized_error,
+};
 use office_core::{Error, Result};
+use std::path::PathBuf;
 
 /// A Library fake with explicit readiness and settings, and no host I/O.
 #[derive(Default)]
@@ -28,6 +38,11 @@ pub struct FakeLibrary {
     pub pages_off_template: u32,
     /// Template files the fixture reports as unreadable or invalid.
     pub template_invalid: Vec<String>,
+    sources: RefCell<BTreeMap<String, SourceView>>,
+    /// Canonical roots upload/transcript paths must stay inside. Empty
+    /// means any existing file may be read (unit-test convenience); the
+    /// real adapter always sets its workspace root.
+    pub allowed_upload_roots: Vec<PathBuf>,
     /// Files returned by `templates()`, in the order given.
     pub templates: Vec<LibraryText>,
 }
@@ -66,6 +81,29 @@ impl FakeLibrary {
 
     fn is_now_initialized(&self) -> bool {
         self.now_initialized.borrow().unwrap_or(self.initialized)
+    }
+
+    fn read_contained(&self, raw: &str) -> Result<Vec<u8>> {
+        let path = std::path::Path::new(raw);
+        let canonical = std::fs::canonicalize(path).map_err(|_| Error::Library {
+            code: "upload_not_found",
+            message: format!("upload path {raw} could not be read"),
+        })?;
+        if !self.allowed_upload_roots.is_empty() {
+            let inside = self.allowed_upload_roots.iter().any(|root| {
+                std::fs::canonicalize(root).is_ok_and(|root| canonical.starts_with(root))
+            });
+            if !inside {
+                return Err(Error::Library {
+                    code: "upload_outside_allowed_roots",
+                    message: format!("upload path {raw} is outside the allowed roots"),
+                });
+            }
+        }
+        std::fs::read(&canonical).map_err(|_| Error::Library {
+            code: "upload_not_found",
+            message: format!("upload path {raw} could not be read"),
+        })
     }
 
     fn ready(&self) -> Result<()> {
@@ -254,6 +292,310 @@ impl Library for FakeLibrary {
         let settings = self.settings()?.with_setting(key, value)?;
         *self.current_settings.borrow_mut() = Some(settings);
         Ok(())
+    }
+    fn capture_source(&self, request: &CaptureSourceRequest) -> Result<SourceOutcome> {
+        self.ready()?;
+        let settings = self.settings()?;
+        if let Some(target) = &request.append_to {
+            if request.entries.is_empty() {
+                return Err(Error::InvalidArgument(
+                    "capture append_to requires at least one entry".to_string(),
+                ));
+            }
+            let mut lines = Vec::new();
+            for entry in &request.entries {
+                lines.push(format_conversation_entry(
+                    &request.captured_at,
+                    &entry.kind,
+                    &entry.text,
+                )?);
+            }
+            let mut sources = self.sources.borrow_mut();
+            let view = sources.get_mut(target).ok_or_else(|| Error::Library {
+                code: "source_not_found",
+                message: format!("source {target} was not found"),
+            })?;
+            if view.kind != "conversation" {
+                return Err(Error::Library {
+                    code: "not_a_conversation_source",
+                    message: format!("source {target} is not a conversation source"),
+                });
+            }
+            if !view.body.is_empty() && !view.body.ends_with('\n') {
+                view.body.push('\n');
+            }
+            view.body.push_str(&lines.join("\n"));
+            view.body.push('\n');
+            let outcome = SourceOutcome {
+                id: view.id.clone(),
+                kind: view.kind.clone(),
+                title: view.title.clone(),
+                path: view.path.clone(),
+                sha256: view.sha256.clone(),
+                bytes: view.bytes,
+                media_type: view.media_type.clone(),
+                sensitivity: view.sensitivity.clone(),
+                deduplicated: false,
+                appended: lines.len(),
+                version: view.version,
+            };
+            let path = view.path.clone();
+            drop(sources);
+            let mut revisions = self.revisions.borrow_mut();
+            let history = revisions.entry(path.clone()).or_default();
+            history.insert(
+                0,
+                Revision {
+                    commit: format!("fake-{}", history.len() + 1),
+                    author: "orbit-office".into(),
+                    email: "office@orbit.local".into(),
+                    authored_at: request.captured_at.clone(),
+                    message: format!("Update {path}"),
+                },
+            );
+            return Ok(outcome);
+        }
+        // Create path.
+        let mut upload_bytes: Option<Vec<u8>> = None;
+        let mut upload_ext = String::new();
+        let mut upload_stem = String::new();
+        if let Some(raw) = &request.upload_path {
+            let bytes = self.read_contained(raw)?;
+            let path = std::path::Path::new(raw);
+            upload_ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            upload_stem = path
+                .file_stem()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_string();
+            upload_bytes = Some(bytes);
+        }
+        let mut transcript_body: Option<String> = None;
+        if let Some(raw) = &request.transcript_path {
+            if !raw.to_ascii_lowercase().ends_with(".vtt") {
+                return Err(Error::InvalidArgument(
+                    "transcript_path must name a .vtt file".to_string(),
+                ));
+            }
+            let bytes = self.read_contained(raw)?;
+            let text = String::from_utf8(bytes).map_err(|_| {
+                Error::InvalidArgument("transcript_path must be UTF-8 WebVTT".to_string())
+            })?;
+            transcript_body = Some(vtt_to_body(&text));
+        }
+        let explicit_kind = match &request.kind {
+            Some(k) => Some(SourceKind::parse(k).ok_or_else(|| Error::Library {
+                code: "invalid_source_kind",
+                message: format!("unknown source kind {k:?}"),
+            })?),
+            None => None,
+        };
+        let kind = explicit_kind.unwrap_or_else(|| {
+            if is_video_extension(&upload_ext) {
+                SourceKind::Video
+            } else if request.entries.is_empty() && request.text.is_some() {
+                SourceKind::Note
+            } else if !request.entries.is_empty() {
+                SourceKind::Conversation
+            } else {
+                SourceKind::Note
+            }
+        });
+        let (body, sha, bytes_len, media_type, derived) = if let Some(body) = transcript_body {
+            let sha = upload_bytes.as_ref().map(|b| sha256_hex(b));
+            (
+                body,
+                sha,
+                upload_bytes.as_ref().map(|b| b.len() as u64),
+                upload_bytes.as_ref().map(|_| {
+                    media_type_for_extension(&upload_ext)
+                        .unwrap_or("application/octet-stream")
+                        .to_string()
+                }),
+                Some("vtt-import"),
+            )
+        } else if let Some(bytes) = &upload_bytes {
+            let media = media_type_for_extension(&upload_ext)
+                .unwrap_or("application/octet-stream")
+                .to_string();
+            let body = if upload_ext == "txt" || upload_ext == "md" {
+                normalize_text(&String::from_utf8_lossy(bytes))
+            } else {
+                String::new()
+            };
+            (
+                body,
+                Some(sha256_hex(bytes)),
+                Some(bytes.len() as u64),
+                Some(media),
+                None,
+            )
+        } else if kind == SourceKind::Conversation && !request.entries.is_empty() {
+            let mut lines = Vec::new();
+            for entry in &request.entries {
+                lines.push(format_conversation_entry(
+                    &request.captured_at,
+                    &entry.kind,
+                    &entry.text,
+                )?);
+            }
+            let body = lines.join("\n");
+            let sha = sha256_hex(normalize_text(&body).as_bytes());
+            (body, Some(sha), None, None, None)
+        } else {
+            let text = request.text.clone().unwrap_or_default();
+            if text.trim().is_empty() && upload_bytes.is_none() {
+                return Err(Error::InvalidArgument(
+                    "capture requires text, upload_path, entries or append_to".to_string(),
+                ));
+            }
+            let normalized = normalize_text(&text);
+            (
+                normalized.clone(),
+                Some(sha256_hex(normalized.as_bytes())),
+                None,
+                None,
+                None,
+            )
+        };
+        if let Some(sha_value) = &sha
+            && let Some(existing) = self
+                .sources
+                .borrow()
+                .values()
+                .find(|s| s.sha256.as_ref() == Some(sha_value))
+                .cloned()
+        {
+            return Ok(SourceOutcome {
+                id: existing.id,
+                kind: existing.kind,
+                title: existing.title,
+                path: existing.path,
+                sha256: existing.sha256,
+                bytes: existing.bytes,
+                media_type: existing.media_type,
+                sensitivity: existing.sensitivity,
+                deduplicated: true,
+                appended: 0,
+                version: existing.version,
+            });
+        }
+        let title = request
+            .title
+            .clone()
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| {
+                if !upload_stem.is_empty() {
+                    upload_stem.replace(['-', '_'], " ")
+                } else {
+                    body.lines()
+                        .next()
+                        .unwrap_or(kind.as_str())
+                        .chars()
+                        .take(60)
+                        .collect()
+                }
+            });
+        let base = source_id_base(&request.captured_at, &title);
+        let id = {
+            let sources = self.sources.borrow();
+            unique_source_id(&base, |candidate| sources.contains_key(candidate))
+        };
+        let date = &request.captured_at;
+        let (yyyy, mm) = if date.len() >= 7 {
+            (&date[0..4], &date[5..7])
+        } else {
+            ("1970", "01")
+        };
+        let path = format!("sources/{yyyy}/{mm}/{id}/source.md");
+        let sensitivity = match &request.sensitivity {
+            Some(s) => Sensitivity::parse(s).ok_or_else(|| {
+                Error::InvalidArgument("sensitivity must be normal or private".to_string())
+            })?,
+            None => settings
+                .sensitivity
+                .get(kind.as_str())
+                .copied()
+                .unwrap_or_default(),
+        };
+        let view = SourceView {
+            id: id.clone(),
+            kind: kind.as_str().to_string(),
+            title: title.clone(),
+            path: path.clone(),
+            body: body.clone(),
+            sensitivity: sensitivity.as_str().to_string(),
+            sha256: sha.clone(),
+            bytes: bytes_len,
+            media_type: media_type.clone(),
+            version: 1,
+        };
+        self.sources.borrow_mut().insert(id.clone(), view);
+        // Mirror into documents so search/health see the source.
+        let markdown = render_source(&RenderSource {
+            id: &id,
+            kind,
+            title: &title,
+            captured_at: &request.captured_at,
+            captured_by: request
+                .captured_by
+                .as_deref()
+                .unwrap_or(if upload_bytes.is_some() {
+                    "upload"
+                } else {
+                    "paste"
+                }),
+            origin: request.origin.as_deref(),
+            occurred_at: request.occurred_at.as_deref(),
+            participants: &request.participants,
+            sensitivity,
+            original: None,
+            derived_transcription: derived,
+            retention_days: settings.retention.get(kind.as_str()).copied().flatten(),
+            body: &body,
+        });
+        let record = DocumentRecord::from_markdown(std::path::Path::new(&path), &markdown);
+        self.documents.borrow_mut().insert(path.clone(), record);
+        let mut revisions = self.revisions.borrow_mut();
+        let history = revisions.entry(path.clone()).or_default();
+        history.insert(
+            0,
+            Revision {
+                commit: format!("fake-{}", history.len() + 1),
+                author: "orbit-office".into(),
+                email: "office@orbit.local".into(),
+                authored_at: request.captured_at.clone(),
+                message: format!("Update {path}"),
+            },
+        );
+        Ok(SourceOutcome {
+            id,
+            kind: kind.as_str().to_string(),
+            title,
+            path,
+            sha256: sha,
+            bytes: bytes_len,
+            media_type,
+            sensitivity: sensitivity.as_str().to_string(),
+            deduplicated: false,
+            appended: 0,
+            version: 1,
+        })
+    }
+    fn read_source(&self, id: &str) -> Result<SourceView> {
+        self.ready()?;
+        self.sources
+            .borrow()
+            .get(id)
+            .cloned()
+            .ok_or_else(|| Error::Library {
+                code: "source_not_found",
+                message: format!("source {id} was not found"),
+            })
     }
     fn initialize(&self, library_dir: Option<&str>) -> Result<InitOutcome> {
         if let Some(dir) = library_dir {

@@ -125,7 +125,14 @@ impl RealLibrary {
         let (Some(library), Some(state)) = (&self.library, &self.state) else {
             return Err(office_core::Error::LibraryUnavailable);
         };
-        Ok(LibraryStore::open(library, state)?)
+        let store = LibraryStore::open(library, state)?;
+        // Uploads live under the workspace (the plugin's read grant); the
+        // Library root itself is also an allowed upload root.
+        let mut roots = vec![library.clone()];
+        if let Some(workspace) = &self.workspace {
+            roots.push(workspace.clone());
+        }
+        Ok(store.with_upload_roots(roots))
     }
 
     fn looks_initialized(&self) -> bool {
@@ -178,6 +185,15 @@ impl Library for RealLibrary {
     }
     fn set_setting(&self, key: &str, value: Value) -> office_core::Result<()> {
         Ok(LibraryStore::set_setting(&self.store()?, key, value)?)
+    }
+    fn capture_source(
+        &self,
+        request: &office_core::ports::CaptureSourceRequest,
+    ) -> office_core::Result<office_core::ports::SourceOutcome> {
+        LibraryStore::capture_source(&self.store()?, request)
+    }
+    fn read_source(&self, id: &str) -> office_core::Result<office_core::ports::SourceView> {
+        LibraryStore::read_source(&self.store()?, id)
     }
     fn initialize(&self, library_dir: Option<&str>) -> office_core::Result<InitOutcome> {
         let (Some(workspace), Some(library), Some(state)) =
