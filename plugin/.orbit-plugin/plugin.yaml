@@ -338,22 +338,25 @@ spec:
 
     # ---- insights ----
 
-    # - name: metrics
-    #   description: >-
-    #     Compute the analytics metrics for a window.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/metrics.request.json }
-    #   output_schema: { $ref: schemas/metrics.response.json }
+    - name: metrics
+      description: >-
+        Compute the analytics metrics for a window.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/metrics.request.json }
+      output_schema: { $ref: schemas/metrics.response.json }
 
-    # - name: review-inputs
-    #   description: >-
-    #     Gather a period's completed work, conversions, metrics,
-    #     decisions and knowledge changes for a review.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/review-inputs.request.json }
-    #   output_schema: { $ref: schemas/review-inputs.response.json }
+    - name: review-inputs
+      description: >-
+        Gather a period's completed work, conversions, metrics,
+        decisions and knowledge changes for a review.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/review-inputs.request.json }
+      output_schema: { $ref: schemas/review-inputs.response.json }
+
+  definitions:
+    auto_tasks: [definitions/auto_tasks/office-review.yaml]
 
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings]
 

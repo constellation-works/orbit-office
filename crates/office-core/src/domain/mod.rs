@@ -7,7 +7,7 @@ pub mod artifact;
 mod bootstrap;
 pub mod endpoint;
 pub mod knowledge;
-mod metrics;
+pub mod metrics;
 mod proposal;
 pub mod script;
 mod selection;

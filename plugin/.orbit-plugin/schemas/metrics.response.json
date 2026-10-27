@@ -1,0 +1,254 @@
+{
+  "type": "object",
+  "properties": {
+    "since": {
+      "type": "string"
+    },
+    "until": {
+      "type": "string"
+    },
+    "totals": {
+      "$ref": "#/$defs/metrics"
+    },
+    "weeks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string"
+          },
+          "until": {
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/$defs/metrics"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "metrics"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "since",
+    "until",
+    "totals",
+    "weeks"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.metrics response",
+  "$defs": {
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "automation": {
+          "type": "object",
+          "properties": {
+            "automated_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "manual_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "automated_minutes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "manual_minutes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total_minutes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "count_ratio": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            },
+            "minutes_ratio": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "automated_count",
+            "manual_count",
+            "total_count",
+            "automated_minutes",
+            "manual_minutes",
+            "total_minutes",
+            "count_ratio",
+            "minutes_ratio"
+          ],
+          "additionalProperties": false
+        },
+        "conversions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "cluster": {
+                "type": "string"
+              },
+              "proposal": {
+                "type": "string"
+              },
+              "manual_tasks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "cluster",
+              "proposal",
+              "manual_tasks"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hours_returned": {
+          "type": "number",
+          "minimum": 0
+        },
+        "first_pass_acceptance": {
+          "type": "object",
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ratio": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator",
+            "ratio"
+          ],
+          "additionalProperties": false
+        },
+        "knowledge_coverage": {
+          "type": "object",
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ratio": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator",
+            "ratio"
+          ],
+          "additionalProperties": false
+        },
+        "proposal_acceptance": {
+          "type": "object",
+          "properties": {
+            "accepted": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dismissed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ratio": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "accepted",
+            "dismissed",
+            "ratio"
+          ],
+          "additionalProperties": false
+        },
+        "open_load": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "age_days": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "age_days"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "automation",
+        "conversions",
+        "hours_returned",
+        "first_pass_acceptance",
+        "knowledge_coverage",
+        "proposal_acceptance",
+        "open_load"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
