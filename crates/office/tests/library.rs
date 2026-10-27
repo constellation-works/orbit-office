@@ -1565,3 +1565,82 @@ fn context_library_dir_outside_the_grant_is_refused_before_any_create() {
     assert!(library.join(".git").is_dir());
     assert!(env.state.join("index.sqlite").is_file());
 }
+
+/// Every path and file byte under `root`, for proving a tree unchanged.
+fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+    let mut entries = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read snapshot dir") {
+            let path = entry.expect("snapshot entry").path();
+            let relative = path.strip_prefix(root).expect("under root").to_path_buf();
+            if path.is_dir() {
+                entries.push((relative, None));
+                pending.push(path);
+            } else {
+                entries.push((relative, Some(std::fs::read(&path).expect("read file"))));
+            }
+        }
+    }
+    entries.sort();
+    entries
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_grant_root_refuses_a_nested_library_dir_before_any_create() {
+    // {{workspace}}/library is itself a link to a directory outside the
+    // workspace; `library/subdir` names a path below the link, which
+    // resolves outside the physical grant.
+    let openers = store_openers();
+    for seeded in [false, true] {
+        let env = Env::new();
+        let outside = env._dir.path().join("outside");
+        std::fs::create_dir_all(&outside).expect("outside");
+        if seeded {
+            seed_looking_initialized(&outside.join("subdir"));
+        }
+        std::os::unix::fs::symlink(&outside, env.library()).expect("symlink grant root");
+        let before = snapshot_tree(&outside);
+
+        let mut calls: Vec<(String, serde_json::Value)> = Vec::new();
+        for (tool, input) in &openers {
+            calls.push((
+                format!("config {tool}"),
+                env.tool_with_config_library_dir(tool, input.clone(), "library/subdir"),
+            ));
+        }
+        calls.push((
+            "context office.reindex".to_string(),
+            env.tool_with_context_library_dir(
+                "office.reindex",
+                serde_json::json!({}),
+                "library/subdir",
+            ),
+        ));
+        calls.push((
+            "office.init input".to_string(),
+            env.tool(
+                "office.init",
+                serde_json::json!({ "library_dir": "library/subdir" }),
+            ),
+        ));
+        for (label, response) in calls {
+            assert_eq!(response["ok"], false, "seeded={seeded} {label}: {response}");
+            assert_eq!(
+                response["error"]["code"],
+                serde_json::json!("library_dir_outside_workspace"),
+                "seeded={seeded} {label}: {response}"
+            );
+            assert_eq!(
+                snapshot_tree(&outside),
+                before,
+                "seeded={seeded} {label}: changed the outside target"
+            );
+            assert!(
+                !env.state.join("index.sqlite").exists(),
+                "seeded={seeded} {label}: created the index while refusing"
+            );
+        }
+    }
+}

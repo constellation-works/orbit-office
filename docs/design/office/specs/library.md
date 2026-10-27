@@ -59,7 +59,10 @@ workspace and enabled the plugin. The user never runs it by hand.
 
 1. Refuses if `library_dir` is not inside the granted write root
    (`{{workspace}}/library`) after resolving existing path components, if the
-   destination itself is a symlink, or if `git` is missing. Missing destination
+   destination itself is a symlink, if `{{workspace}}/library` is a symlink
+   (the grant is the workspace's own directory, never a link target, so a
+   nested `library_dir` such as `library/subdir` cannot reach through it),
+   or if `git` is missing. Missing destination
    components are checked against their nearest existing ancestor before any
    Library or index is created.
 2. Creates the layout directories, with a `.gitkeep` in each empty one.
