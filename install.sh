@@ -41,19 +41,20 @@ usage() {
 Usage: install.sh [options]
 
 Install orbit-office: a pinned uv and Python 3.12, Orbit (when
-missing), the ~/orbit workspace, the office plugin, secrets, the
+missing), the ~/orbit workspace, office and gateway, secrets, the
 Library scaffold, agent CLI registration and the app as a login
 service. Idempotent.
 
 Options:
   --home DIR       Workspace folder (default: ~/orbit)
   --yes            Skip the plugin-enable consent question
-  --from-source    Install the plugin from the pinned git+ source
-                   (needs cargo) instead of a local/prebuilt export
+  --with-cloudcli  Also install the optional cloudcli plugin
+  --from-source    Install office from the pinned git+ source (needs
+                   cargo) instead of a local/prebuilt export
   --agent NAME     Agent CLI to register: claude (default) or codex
   --port PORT      App port (default: 4317, or $ORBIT_OFFICE_PORT)
-  --uninstall      Remove the service, the MCP entry, the plugin and
-                   the tools folder (uv and its Python); keeps the
+  --uninstall      Remove the service, MCP entry, added deny rules,
+                   plugins and tools (uv and Python); keeps the
                    workspace and the Library
   --purge          Like --uninstall, and also removes the workspace
                    when this installer owns it; otherwise refuses
@@ -62,7 +63,9 @@ Options:
 Environment:
   ORBIT_OFFICE_HOME          Same as --home
   ORBIT_OFFICE_DATA_DIR      Per-user data folder override
-  ORBIT_OFFICE_PLUGIN_SOURCE Plugin source for `orbit plugin add`
+  ORBIT_OFFICE_PLUGIN_SOURCE Office source for `orbit plugin add`
+  ORBIT_OFFICE_PLUGIN_BUNDLE Directory of office, gateway and optional
+                             cloudcli exports from one release
   ORBIT_OFFICE_META_API_KEY  Meta API key (used instead of prompting)
   ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN  Private-route endpoint token (used
                              instead of prompting; optional)
@@ -82,6 +85,7 @@ EOF
 WORKSPACE="${ORBIT_OFFICE_HOME:-}"
 ASSUME_YES=0
 FROM_SOURCE=0
+WITH_CLOUDCLI=0
 AGENT="claude"
 PORT="${ORBIT_OFFICE_PORT:-$DEFAULT_PORT}"
 MODE="install"
@@ -94,6 +98,7 @@ while [ $# -gt 0 ]; do
         --home=*) WORKSPACE=${1#--home=}; shift ;;
         --yes) ASSUME_YES=1; shift ;;
         --from-source) FROM_SOURCE=1; shift ;;
+        --with-cloudcli) WITH_CLOUDCLI=1; shift ;;
         --agent)
             [ $# -ge 2 ] || die "--agent needs claude or codex"
             AGENT="$2"; shift 2 ;;
@@ -312,16 +317,18 @@ check_workspace_adoptable() {
 # Ask once for consent. --yes and non-interactive runs proceed after
 # printing the grants, so a piped install never hangs on a question.
 consent_enable_plugin() {
-    say "The $PLUGIN_NAME plugin requests these grants:"
-    say "  fs      {{workspace}}, {{plugin_state}}"
-    say "  network unscoped (the code calls only the Meta Model API and the open-weights endpoint)"
-    say "  orbit_tools the Orbit task, friction and search tools the plugin calls"
+    say "The plugins $INSTALL_PLUGINS request these grants:"
+    say "  office: fs {{workspace}}, {{plugin_state}}; network unscoped; orbit_tools task, friction and search"
+    say "  gateway: fs {{workspace}}/.orbit-gateway, {{plugin_state}}; network unscoped; orbit_tools task add/artifact/show/update"
+    if [ "$WITH_CLOUDCLI" -eq 1 ]; then
+        say "  cloudcli: fs {{plugin_state}}; network unscoped; programs python3, aws, gcloud"
+    fi
     if [ "$ASSUME_YES" -eq 1 ]; then
-        say "Consent: --yes given, enabling $PLUGIN_NAME."
+        say "Consent: --yes given, enabling $INSTALL_PLUGINS."
         return 0
     fi
     if [ -t 0 ]; then
-        printf 'Enable the %s plugin with these grants? [y/N] ' "$PLUGIN_NAME"
+        printf 'Enable plugins %s with these grants? [y/N] ' "$INSTALL_PLUGINS"
         _answer=""
         read -r _answer || _answer=""
         case "$_answer" in
@@ -329,7 +336,7 @@ consent_enable_plugin() {
             *) die "plugin enable declined; re-run with --yes to consent" ;;
         esac
     fi
-    say "Consent: non-interactive run, enabling $PLUGIN_NAME (pass --yes to confirm explicitly)."
+    say "Consent: non-interactive run, enabling $INSTALL_PLUGINS (pass --yes to confirm explicitly)."
     return 0
 }
 
@@ -707,49 +714,108 @@ step_workspace() {
 plugin_is_listed() {
     command -v orbit >/dev/null 2>&1 || return 1
     _list=$(orbit plugin list 2>/dev/null) || return 1
-    printf '%s\n' "$_list" | awk -v name="$PLUGIN_NAME" '$1 == name { found=1 } END { exit !found }'
+    printf '%s\n' "$_list" | awk -v name="$1" '$1 == name { found=1 } END { exit !found }'
+}
+
+plugin_marker() {
+    # Keep the original office markers for upgrades from older installs.
+    if [ "$1" = "office" ]; then printf 'plugin_%s' "$2";
+    else printf 'plugin.%s.%s' "$1" "$2"; fi
+}
+
+# gateway and cloudcli have no build step. In a clone, assemble the same
+# export as gateway/scripts/export.py, including the shared Python package.
+# A release bundle already has this layout and is used without rebuilding.
+gateway_export() {
+    EXPORT_REPO="$SCRIPT_DIR" EXPORT_OUT="$DATA_DIR/plugins/$1" EXPORT_NAME="$1" node <<'NODE'
+const fs = require("fs");
+const path = require("path");
+const repo = process.env.EXPORT_REPO;
+const out = process.env.EXPORT_OUT;
+const name = process.env.EXPORT_NAME;
+const source = path.join(repo, "gateway", "plugins", name, ".orbit-plugin");
+const shared = path.join(repo, "gateway", "src", "orbit_gateway");
+if (!fs.existsSync(path.join(source, "plugin.yaml")) || !fs.existsSync(shared)) {
+  process.stderr.write("plugin export unavailable; run from a clone or set ORBIT_OFFICE_PLUGIN_BUNDLE\n");
+  process.exit(1);
+}
+if (fs.existsSync(out)) {
+  process.stderr.write("incomplete plugin export; move aside " + out + " and retry\n");
+  process.exit(1);
+}
+const filter = (p) => !["__pycache__", ".DS_Store"].includes(path.basename(p)) && !p.endsWith(".pyc");
+fs.mkdirSync(out, { recursive: true, mode: 0o700 });
+try {
+  fs.cpSync(source, path.join(out, ".orbit-plugin"), { recursive: true, filter });
+  fs.cpSync(shared, path.join(out, ".orbit-plugin", "lib", "orbit_gateway"), { recursive: true, filter });
+} catch (_) {
+  fs.rmSync(out, { recursive: true, force: true });
+  process.stderr.write("could not assemble plugin export\n");
+  process.exit(1);
+}
+NODE
 }
 
 step_plugin() {
     step "5 plugin"
-    if plugin_is_listed || state_has "plugin_added"; then
-        say "plugin: already added ($PLUGIN_NAME)"
-    else
-        _source=""
-        _allow_build=0
-        if [ -n "${ORBIT_OFFICE_PLUGIN_SOURCE:-}" ]; then
-            _source="$ORBIT_OFFICE_PLUGIN_SOURCE"
-        elif [ "$FROM_SOURCE" -eq 1 ] || [ -z "$PLUGIN_SRC" ]; then
-            # No prebuilt export is published yet: use the pinned source.
-            _ref="main"
-            if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/.git" ]; then
-                _ref=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || printf 'main')
-                [ -n "$_ref" ] || _ref="main"
+    if [ -n "${ORBIT_OFFICE_PLUGIN_BUNDLE:-}" ]; then
+        for _plugin in $INSTALL_PLUGINS; do
+            [ -f "$ORBIT_OFFICE_PLUGIN_BUNDLE/$_plugin/.orbit-plugin/plugin.yaml" ] \
+                || die "missing $_plugin export in ORBIT_OFFICE_PLUGIN_BUNDLE"
+        done
+    fi
+    _need_consent=0
+    for _plugin in $INSTALL_PLUGINS; do
+        if ! state_has "$(plugin_marker "$_plugin" enabled)"; then _need_consent=1; fi
+    done
+    if [ "$_need_consent" -eq 1 ]; then consent_enable_plugin; fi
+    for _plugin in $INSTALL_PLUGINS; do
+        _added=$(plugin_marker "$_plugin" added)
+        _enabled=$(plugin_marker "$_plugin" enabled)
+        if plugin_is_listed "$_plugin" || state_has "$_added"; then
+            say "plugin: already added ($_plugin)"
+        else
+            _allow_build=0
+            if [ -n "${ORBIT_OFFICE_PLUGIN_BUNDLE:-}" ]; then
+                _source="$ORBIT_OFFICE_PLUGIN_BUNDLE/$_plugin"
+                [ -f "$_source/.orbit-plugin/plugin.yaml" ] || die "missing $_plugin export in ORBIT_OFFICE_PLUGIN_BUNDLE"
+            elif [ "$_plugin" != "office" ]; then
+                _source="$DATA_DIR/plugins/$_plugin"
+                # Reuse a completed export when add failed on an earlier run.
+                if ! state_has "plugin.$_plugin.exported"; then
+                    gateway_export "$_plugin" || die "could not prepare $_plugin export"
+                    state_mark "plugin.$_plugin.exported"
+                fi
+            elif [ -n "${ORBIT_OFFICE_PLUGIN_SOURCE:-}" ]; then
+                _source="$ORBIT_OFFICE_PLUGIN_SOURCE"
+            elif [ "$FROM_SOURCE" -eq 1 ] || [ -z "$PLUGIN_SRC" ]; then
+                _ref=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null) \
+                    || die "--from-source needs a clone; otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE"
+                _source="git+$REPO_GIT_URL#$_ref"
+                _allow_build=1
+            else
+                _source="$PLUGIN_SRC"
             fi
-            _source="git+$REPO_GIT_URL#$_ref"
-            _allow_build=1
-        else
-            _source="$PLUGIN_SRC"
+            if [ "$_allow_build" -eq 1 ]; then
+                orbit plugin add "$_source" --allow-build
+            else
+                orbit plugin add "$_source"
+            fi
+            state_mark "$_added"
+            say "plugin: added $_plugin from $_source"
         fi
-        if [ "$_allow_build" -eq 1 ]; then
-            command -v cargo >/dev/null 2>&1 \
-                || warn "--from-source builds with cargo, which is not on PATH (https://rustup.rs/); letting orbit plugin add report it"
-            orbit plugin add "$_source" --allow-build
+        if state_has "$_enabled"; then
+            say "plugin: already enabled ($_plugin)"
         else
-            orbit plugin add "$_source"
+            case "$_plugin" in
+                office) PATH="$TOOLS_BIN:$PATH" orbit plugin enable office --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools ;;
+                gateway) PATH="$TOOLS_BIN:$PATH" orbit plugin enable gateway --grant 'fs={{workspace}}/.orbit-gateway,{{plugin_state}}' --grant network --grant orbit_tools ;;
+                cloudcli) PATH="$TOOLS_BIN:$PATH" orbit plugin enable cloudcli --grant 'fs={{plugin_state}}' --grant network ;;
+            esac
+            state_mark "$_enabled"
+            say "plugin: enabled ($_plugin)"
         fi
-        state_mark "plugin_added"
-        say "plugin: added from $_source"
-    fi
-    if state_has "plugin_enabled"; then
-        say "plugin: already enabled ($PLUGIN_NAME)"
-        return 0
-    fi
-    consent_enable_plugin
-    # Every permission plugin.yaml requests: a grant left out leaves the plugin inactive.
-    orbit plugin enable "$PLUGIN_NAME" --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools
-    state_mark "plugin_enabled"
-    say "plugin: enabled ($PLUGIN_NAME)"
+    done
 }
 
 step_secrets() {
@@ -884,55 +950,215 @@ step_scaffold() {
 # once to <settings>.bak. The entry is "already done" only when it
 # matches the desired command, args and PATH. A marker from an older
 # install is not enough: that install had no tools/bin on PATH.
-register_mcp_claude() {
-    _file="$AGENT_SETTINGS"
-    mkdir -p "$(dirname -- "$_file")"
-    _had_bak=0
-    [ -f "$_file.bak" ] && _had_bak=1
-    _rc=0
-    SETTINGS_FILE="$_file" ORBIT_OFFICE_AGENT_PATH="$AGENT_PATH" node <<'NODE' || _rc=$?
+# JSON.parse validates the document; the range parser below locates entries
+# so edits splice only their bytes. Never round-trip unrelated user settings.
+# The receipt contains only owned rule names and newly created containers.
+edit_claude_settings() {
+    SETTINGS_FILE="$AGENT_SETTINGS" SETTINGS_RECEIPT="$DATA_DIR/claude-settings.json" \
+    SETTINGS_MODE="$1" ORBIT_OFFICE_AGENT_PATH="$AGENT_PATH" node <<'NODE'
 const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 const file = process.env.SETTINGS_FILE;
-const agentPath = process.env.ORBIT_OFFICE_AGENT_PATH;
-if (!agentPath) {
-  process.stderr.write("ORBIT_OFFICE_AGENT_PATH is required\n");
+const receiptFile = process.env.SETTINGS_RECEIPT;
+const installing = process.env.SETTINGS_MODE === "install";
+const rules = ["curl", "wget", "http", "aws", "gcloud"].map((p) => `Bash(${p} *)`);
+const object = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+function regular(p) {
+  try {
+    const stat = fs.lstatSync(p);
+    if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o022) !== 0) {
+      throw new Error("expected an owned regular file without group/world write access");
+    }
+    return true;
+  } catch (e) {
+    if (e.code === "ENOENT") return false;
+    throw e;
+  }
+}
+function write(p, text) {
+  regular(p);
+  fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
+  const tmp = p + "." + crypto.randomBytes(12).toString("hex");
+  try {
+    const fd = fs.openSync(tmp, "wx", 0o600);
+    try { fs.writeFileSync(fd, text); fs.fsyncSync(fd); }
+    finally { fs.closeSync(fd); }
+    fs.renameSync(tmp, p);
+  } finally {
+    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+  }
+}
+try {
+  let receipt = { added: [], containers: [] };
+  if (regular(receiptFile)) receipt = JSON.parse(fs.readFileSync(receiptFile, "utf8"));
+  if (!object(receipt) || !Array.isArray(receipt.added) || !Array.isArray(receipt.containers) ||
+      receipt.added.some((r) => !rules.includes(r)) ||
+      receipt.containers.some((p) => !["permissions", "permissions.deny", "mcpServers"].includes(p))) {
+    throw new Error("invalid receipt");
+  }
+  const existed = regular(file);
+  if (!existed && !installing) {
+    if (regular(receiptFile)) fs.unlinkSync(receiptFile);
+    process.exit(0);
+  }
+  const original = existed ? fs.readFileSync(file, "utf8") : "{}\n";
+  let text = original;
+  // A validated JSON tree with source ranges, including property names.
+  // Duplicate keys are refused: two values for one setting are ambiguous.
+  function tree() {
+    if (!object(JSON.parse(text))) throw new Error("settings must be an object");
+    let pos = 0;
+    const ws = () => { while (/\s/.test(text[pos] || "x")) pos++; };
+    function string() {
+      const start = pos++;
+      while (text[pos] !== '"') { if (text[pos] === "\\") pos++; pos++; }
+      pos++;
+      return JSON.parse(text.slice(start, pos));
+    }
+    function value() {
+      ws();
+      const start = pos;
+      const kind = text[pos];
+      const entries = [];
+      if (kind === "{" || kind === "[") {
+        const close = kind === "{" ? "}" : "]";
+        pos++; ws();
+        const keys = new Set();
+        while (text[pos] !== close) {
+          const entryStart = pos;
+          let key;
+          if (kind === "{") {
+            key = string(); ws(); pos++; // colon, already JSON-validated
+            if (keys.has(key)) throw new Error("duplicate key");
+            keys.add(key);
+          }
+          const node = value();
+          entries.push({ key, start: entryStart, end: node.end, node });
+          ws();
+          if (text[pos] === close) break;
+          pos++; ws(); // comma
+        }
+        pos++;
+      } else if (kind === '"') {
+        string();
+      } else {
+        while (pos < text.length && !/[\s,}\]]/.test(text[pos])) pos++;
+      }
+      return { start, end: pos, kind, entries };
+    }
+    return value();
+  }
+  function locate(keys) {
+    let node = tree();
+    for (const key of keys) {
+      if (node.kind !== "{") throw new Error("expected object");
+      const entry = node.entries.find((e) => e.key === key);
+      if (!entry) return undefined;
+      node = entry.node;
+    }
+    return node;
+  }
+  function splice(start, end, added) { text = text.slice(0, start) + added + text.slice(end); }
+  function append(node, encoded) {
+    const last = node.entries.at(-1);
+    const offset = last ? last.end : node.start + 1;
+    splice(offset, offset, (last ? "," : "") + encoded);
+  }
+  function ensureObject(keys) {
+    const node = locate(keys);
+    if (node) {
+      if (node.kind !== "{") throw new Error("expected object");
+      return;
+    }
+    set(keys, {});
+    receipt.containers.push(keys.join("."));
+  }
+  function set(keys, value) {
+    const parent = locate(keys.slice(0, -1));
+    const key = keys.at(-1);
+    const entry = parent.entries.find((e) => e.key === key);
+    const encoded = JSON.stringify(value, null, 2);
+    if (entry) splice(entry.node.start, entry.node.end, encoded);
+    else append(parent, JSON.stringify(key) + ": " + encoded);
+  }
+  function removeEntry(parent, index) {
+    const entry = parent.entries[index];
+    if (index > 0) splice(parent.entries[index - 1].end, entry.end, "");
+    else if (parent.entries.length > 1) splice(entry.start, parent.entries[1].start, "");
+    else splice(entry.start, entry.end, "");
+  }
+  function remove(keys) {
+    const parent = locate(keys.slice(0, -1));
+    if (!parent) return;
+    const index = parent.entries.findIndex((e) => e.key === keys.at(-1));
+    if (index >= 0) removeEntry(parent, index);
+  }
+  tree(); // refuse malformed/ambiguous JSON even if no rule needs adding
+  if (installing) {
+    ensureObject(["mcpServers"]);
+    const desired = { command: "orbit", args: ["mcp", "serve"], env: { PATH: process.env.ORBIT_OFFICE_AGENT_PATH } };
+    const orbit = locate(["mcpServers", "orbit"]);
+    if (!orbit || JSON.stringify(JSON.parse(text.slice(orbit.start, orbit.end))) !== JSON.stringify(desired)) {
+      set(["mcpServers", "orbit"], desired);
+    }
+    ensureObject(["permissions"]);
+    if (!locate(["permissions", "deny"])) {
+      set(["permissions", "deny"], []);
+      receipt.containers.push("permissions.deny");
+    }
+    let deny = locate(["permissions", "deny"]);
+    if (deny.kind !== "[") throw new Error("deny must be an array");
+    const existing = JSON.parse(text.slice(deny.start, deny.end));
+    if (existing.some((r) => typeof r !== "string")) throw new Error("deny rules must be strings");
+    for (const rule of rules) {
+      if (existing.includes(rule)) continue;
+      deny = locate(["permissions", "deny"]);
+      append(deny, JSON.stringify(rule));
+      if (!receipt.added.includes(rule)) receipt.added.push(rule);
+    }
+  } else {
+    for (const rule of receipt.added) {
+      const deny = locate(["permissions", "deny"]);
+      if (!deny) continue;
+      if (deny.kind !== "[") throw new Error("deny must be an array");
+      const index = deny.entries.findIndex((e) => JSON.parse(text.slice(e.start, e.end)) === rule);
+      if (index >= 0) removeEntry(deny, index);
+    }
+    remove(["mcpServers", "orbit"]);
+    // Only remove containers we created, and only when still empty.
+    for (const key of [...receipt.containers].reverse()) {
+      const keys = key.split(".");
+      const node = locate(keys);
+      if (node && node.entries.length === 0) remove(keys);
+    }
+  }
+  // Validate all edits before the first write. Back up the exact original
+  // once. Persist ownership before settings so a retry can undo a partial write.
+  tree();
+  const serializedReceipt = JSON.stringify(receipt) + "\n";
+  if (installing && (!regular(receiptFile) || fs.readFileSync(receiptFile, "utf8") !== serializedReceipt)) {
+    write(receiptFile, serializedReceipt);
+  }
+  if (text !== original || !existed) {
+    if (existed && !regular(file + ".bak")) {
+      fs.writeFileSync(file + ".bak", original, { flag: "wx", mode: 0o600 });
+    }
+    write(file, text);
+  }
+  if (!installing && regular(receiptFile)) fs.unlinkSync(receiptFile);
+} catch (_) {
+  // JSON parser errors can include the user's setting values; never echo them.
+  process.stderr.write("agent settings update refused; existing JSON and ownership receipt must be valid regular files\n");
   process.exit(1);
 }
-const desired = {
-  command: "orbit",
-  args: ["mcp", "serve"],
-  env: { PATH: agentPath }
-};
-let data = {};
-if (fs.existsSync(file)) {
-  const text = fs.readFileSync(file, "utf8").trim();
-  if (text) data = JSON.parse(text);
-}
-if (!data.mcpServers || typeof data.mcpServers !== "object" || Array.isArray(data.mcpServers)) {
-  data.mcpServers = {};
-}
-if (JSON.stringify(data.mcpServers.orbit) === JSON.stringify(desired)) {
-  process.exit(42);
-}
-if (fs.existsSync(file) && !fs.existsSync(file + ".bak")) {
-  fs.copyFileSync(file, file + ".bak");
-}
-data.mcpServers.orbit = desired;
-fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
 NODE
-    if [ "$_rc" -eq 42 ]; then
-        state_mark "agent_registered"
-        say "agent: already done (Orbit MCP entry in $_file)"
-        return 0
-    fi
-    if [ "$_rc" -ne 0 ]; then
-        die "agent: could not write the Orbit MCP entry to $_file"
-    fi
-    if [ "$_had_bak" -eq 0 ] && [ -f "$_file.bak" ]; then
-        say "agent: backed up $_file to $_file.bak"
-    fi
+}
+
+register_mcp_claude() {
+    edit_claude_settings install || die "agent: could not update $AGENT_SETTINGS (check JSON, types and file permissions)"
     state_mark "agent_registered"
-    say "agent: added the Orbit MCP entry to $_file"
+    say "agent: already configured (Orbit MCP entry and gateway deny rules in $AGENT_SETTINGS)"
 }
 
 # True when the Codex orbit table already puts tools/bin on PATH.
@@ -984,20 +1210,8 @@ register_mcp_codex() {
 }
 
 remove_mcp_claude() {
-    _file="$AGENT_SETTINGS"
-    [ -f "$_file" ] || { say "agent: already removed (no $_file)"; return 0; }
-    if ! grep -q '"orbit"' "$_file" 2>/dev/null; then
-        say "agent: already removed (no Orbit MCP entry)"
-        return 0
-    fi
-    SETTINGS_FILE="$_file" node <<'NODE' || true
-const fs = require("fs");
-const file = process.env.SETTINGS_FILE;
-const data = JSON.parse(fs.readFileSync(file, "utf8"));
-if (data.mcpServers) delete data.mcpServers.orbit;
-fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
-NODE
-    say "agent: removed the Orbit MCP entry from $_file"
+    edit_claude_settings uninstall || die "agent: could not remove owned entries from $AGENT_SETTINGS"
+    say "agent: removed the Orbit MCP entry and recorded deny rules from $AGENT_SETTINGS"
 }
 
 remove_mcp_codex() {
@@ -1194,20 +1408,29 @@ do_uninstall() {
             fi
         done
     fi
-    # Plugin.
-    _plugin_done=0
-    if command -v orbit >/dev/null 2>&1; then
-        if plugin_is_listed || state_has "plugin_added"; then
-            orbit plugin remove "$PLUGIN_NAME" --yes >/dev/null 2>&1 \
-                || orbit plugin disable "$PLUGIN_NAME" >/dev/null 2>&1 || true
-            _plugin_done=1
+    # Uninstall also finds optional plugins from an earlier install without
+    # requiring --with-cloudcli again.
+    for _plugin in office gateway cloudcli; do
+        _added=$(plugin_marker "$_plugin" added)
+        _owned=0
+        if state_has "$_added" || state_has "$(plugin_marker "$_plugin" enabled)"; then
+            _owned=1
+        elif [ "$_plugin" = office ] && plugin_is_listed office; then
+            _owned=1
         fi
-    fi
-    if [ "$_plugin_done" -eq 1 ]; then
-        say "uninstall: removed the $PLUGIN_NAME plugin"
-    else
-        say "uninstall: plugin already removed"
-    fi
+        if [ "$_owned" -eq 1 ]; then
+            command -v orbit >/dev/null 2>&1 || die "uninstall: Orbit is required to remove $_plugin"
+            orbit plugin remove "$_plugin" --yes >/dev/null 2>&1 \
+                || die "uninstall: could not remove $_plugin; retry when Orbit is available"
+            say "uninstall: removed the $_plugin plugin"
+        fi
+        state_clear "$_added"
+        state_clear "$(plugin_marker "$_plugin" enabled)"
+        if state_has "plugin.$_plugin.exported"; then
+            rm -rf "${DATA_DIR:?}/plugins/$_plugin"
+            state_clear "plugin.$_plugin.exported"
+        fi
+    done
     # tools/ is not the data folder. On Linux the data folder is its
     # parent; on macOS they are different trees. Remove only tools/.
     case "$TOOLS_DIR" in
@@ -1261,6 +1484,9 @@ if [ "$MODE" = "purge" ]; then
     exit 0
 fi
 
+INSTALL_PLUGINS="office gateway"
+[ "$WITH_CLOUDCLI" -eq 0 ] || INSTALL_PLUGINS="$INSTALL_PLUGINS cloudcli"
+
 check_workspace_adoptable
 step_preflight
 step_python
@@ -1277,6 +1503,12 @@ say "summary: workspace  $WORKSPACE"
 say "summary: library    $WORKSPACE/library"
 say "summary: data       $DATA_DIR"
 say "summary: tools      $TOOLS_DIR"
+say "summary: plugins    $INSTALL_PLUGINS"
+if [ "$AGENT" = "claude" ]; then
+    say "summary: deny rules Bash(curl *), Bash(wget *), Bash(http *), Bash(aws *), Bash(gcloud *)"
+else
+    say "summary: deny rules unavailable for sandboxed Codex shell calls; its execpolicy rules apply outside the sandbox only"
+fi
 say "summary: app        http://localhost:$PORT/"
 say "summary: uninstall  install.sh --uninstall (keeps $WORKSPACE)"
 say "summary: purge      install.sh --purge (also removes $WORKSPACE)"

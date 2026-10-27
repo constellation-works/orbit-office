@@ -118,34 +118,66 @@ case "${1:-} ${2:-}" in
     "--version ")
         printf 'orbit %s\n' "${STUB_ORBIT_VERSION:-0.34.0}" ;;
     "plugin list")
-        if [ -f "$state/plugin-added" ]; then
-            printf 'office\t0.1.0\tenabled\tenabled\t3\tok\n'
-        fi ;;
+        for _plugin in office gateway cloudcli; do
+            _suffix=".$_plugin"
+            [ "$_plugin" != office ] || _suffix=""
+            if [ -f "$state/plugin-added$_suffix" ]; then
+                printf '%s\t0.1.0\tenabled\tenabled\t3\tok\n' "$_plugin"
+            fi
+        done ;;
     "plugin add")
-        : > "$state/plugin-added"; printf 'added\n' ;;
+        _source=${3:?}
+        case "$_source" in
+            git+*)
+                case " $* " in *" --allow-build "*) ;; *) exit 1 ;; esac
+                _plugin=office ;;
+            *)
+                if [ ! -f "$_source/.orbit-plugin/plugin.yaml" ]; then
+                    printf 'stub: local plugin source must be an export\n' >&2; exit 1
+                fi
+                _plugin=$(awk '/^  name:/ {print $2; exit}' "$_source/.orbit-plugin/plugin.yaml") ;;
+        esac
+        _suffix=".$_plugin"
+        [ "$_plugin" != office ] || _suffix=""
+        if [ "$_plugin" != office ] && [ ! -f "$_source/.orbit-plugin/lib/orbit_gateway/envelope.py" ]; then
+            printf 'stub: gateway export lacks shared package\n' >&2; exit 1
+        fi
+        : > "$state/plugin-added$_suffix"; printf 'added\n' ;;
     "plugin enable")
         # Like Orbit: enable records the grants given, and the plugin is
         # active only when every permission the manifest requests is granted.
-        : > "$state/plugin-enabled"
-        rm -f "$state/plugin-active" "$state/plugin-grants"
+        _plugin=${3:?}
+        if [ "$_plugin" != office ] && [ "$(command -v python3)" != "$HOME/.local/share/orbit-office/tools/bin/python3" ]; then
+            printf 'plugin enable must resolve the managed Python\n' >&2; exit 1
+        fi
+        _suffix=".$_plugin"
+        [ "$_plugin" != office ] || _suffix=""
+        _manifest=${STUB_MANIFEST:?}
+        if [ "$_plugin" != office ]; then
+            _manifest="${STUB_GATEWAY_MANIFESTS:?}/$_plugin/.orbit-plugin/plugin.yaml"
+        fi
+        : > "$state/plugin-enabled$_suffix"
+        rm -f "$state/plugin-active$_suffix" "$state/plugin-grants$_suffix"
         _prev=""
         for _a in "$@"; do
             if [ "$_prev" = "--grant" ]; then
-                printf '%s\n' "$_a" | tr ',' '\n' | sed 's/=.*//' >> "$state/plugin-grants"
+                printf '%s\n' "$_a" | tr ',' '\n' | sed 's/=.*//' >> "$state/plugin-grants$_suffix"
             fi
             _prev=$_a
         done
         _missing=""
-        for _p in $(awk '/^  permissions:/ { p = 1; next } /^  [^ #]/ { p = 0 } p && /^    [a-z_]+:/ { sub(/:.*/, ""); sub(/^ +/, ""); print }' "${STUB_MANIFEST:?}"); do
-            grep -qxF "$_p" "$state/plugin-grants" || _missing="$_missing $_p"
+        for _p in $(awk '/^  permissions:/ { p = 1; next } /^  [^ #]/ { p = 0 } p && /^    [a-z_]+:/ { sub(/:.*/, ""); sub(/^ +/, ""); print }' "$_manifest"); do
+            grep -qxF "$_p" "$state/plugin-grants$_suffix" || _missing="$_missing $_p"
         done
         if [ -n "$_missing" ]; then
             printf "Plugin is inactive: plugin 'office' requests%s but this host has not granted it\n" "$_missing"
         else
-            : > "$state/plugin-active"; printf 'enabled\n'
+            : > "$state/plugin-active$_suffix"; printf 'enabled\n'
         fi ;;
     "plugin remove")
-        rm -f "$state/plugin-added" "$state/plugin-enabled" "$state/plugin-active"
+        _suffix=".${3:?}"
+        [ "$3" != office ] || _suffix=""
+        rm -f "$state/plugin-added$_suffix" "$state/plugin-enabled$_suffix" "$state/plugin-active$_suffix"
         printf 'removed\n' ;;
     "plugin disable")
         rm -f "$state/plugin-enabled" "$state/plugin-active"; printf 'disabled\n' ;;
@@ -161,7 +193,9 @@ case "${1:-} ${2:-}" in
                 done ;;
             set)
                 cat > /dev/null
-                : > "$state/secret.$4" ;;
+                [ "${4:-}" = office ] || exit 1
+                case "${5:-}" in meta_api_key|open_weights_token) ;; *) exit 1 ;; esac
+                : > "$state/secret.$5" ;;
             *) exit 1 ;;
         esac ;;
     "workspace init")
@@ -332,13 +366,22 @@ chmod +x "$BIN/orbit" "$BIN/npm" "$BIN/systemctl" "$BIN/launchctl" "$BIN/ffmpeg"
 
 snapshot() { # snapshot <home> : sorted relative paths + file hashes
     (cd "$1" && find . -type f | sort | while IFS= read -r _f; do
-        printf '%s  %s\n' "$(sha256sum "$_f" 2>/dev/null | awk '{print $1}')" "$_f"
+        if command -v sha256sum >/dev/null 2>&1; then
+            _hash=$(sha256sum "$_f")
+        else
+            _hash=$(shasum -a 256 "$_f")
+        fi
+        printf '%s  %s\n' "${_hash%% *}" "$_f"
     done)
     (cd "$1" && find . -type d | sort)
 }
 
 run_install() { # run_install <home> <extra env...> -- <args...>
     _home="$1"; shift
+    if [ ! -f "$STUB_STATE/current-home" ] || [ "$(cat "$STUB_STATE/current-home")" != "$_home" ]; then
+        rm -f "$STUB_STATE"/plugin-* "$STUB_STATE"/secret.*
+        printf '%s' "$_home" > "$STUB_STATE/current-home"
+    fi
     _envs=""
     _uv_url="$FIXTURE"
     while [ $# -gt 0 ] && [ "$1" != "--" ]; do
@@ -364,6 +407,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
     # shellcheck disable=SC2086
     env -i PATH="${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin" HOME="$_home" STUB_STATE="$STUB_STATE" \
         STUB_MANIFEST="$MANIFEST" \
+        STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
         STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" \
         STUB_UV_ARCHIVE="$FIXTURE" \
         STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
@@ -433,6 +477,7 @@ check "systemd unit written" test -f "$HOME1/.config/systemd/user/orbit-office.s
 check "MCP entry written" grep -q '"orbit"' "$HOME1/.claude/settings.json"
 check "plugin added (stub)" test -f "$STUB_STATE/plugin-added"
 check "plugin enabled (stub)" test -f "$STUB_STATE/plugin-enabled"
+check "gateway is enabled with office" grep -qF "plugin enable gateway " "$STUB_STATE/orbit.log"
 check "plugin active (stub): every manifest permission granted" test -f "$STUB_STATE/plugin-active"
 check "step 2 is numbered" grep -q '==> 2 python' "$OUT1"
 for _n in 1 3 4 5 6 7 8 9; do
@@ -485,7 +530,7 @@ done
 
 HOME2="$ROOT/home2"; mkdir -p "$HOME2"
 OUT_OLD="$ROOT/out-old.txt"
-if STUB_ORBIT_VERSION="0.33.0" run_install "$HOME2" -- > "$OUT_OLD" 2>&1; then
+if run_install "$HOME2" STUB_ORBIT_VERSION=0.33.0 -- > "$OUT_OLD" 2>&1; then
     fail "older Orbit stops the script"
 else
     ok "older Orbit stops the script"
@@ -498,7 +543,7 @@ HOME3="$ROOT/home3"; mkdir -p "$HOME3"
 # Reset plugin stub state so this fresh HOME installs cleanly.
 rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled"
 OUT_NEW="$ROOT/out-new.txt"
-STUB_ORBIT_VERSION="0.35.0" run_install "$HOME3" -- > "$OUT_NEW" 2>&1 \
+run_install "$HOME3" STUB_ORBIT_VERSION=0.35.0 -- > "$OUT_NEW" 2>&1 \
     || { cat "$OUT_NEW" >&2; fail "newer Orbit continues"; }
 ok "newer Orbit continues"
 check "newer Orbit warns" grep -qi "newer" "$OUT_NEW"
@@ -690,7 +735,7 @@ for _stub in npm systemctl launchctl ffmpeg curl tar uv; do cp "$BIN/$_stub" "$B
 chmod +x "$BIN2"/*
 HOME5="$ROOT/home5"; mkdir -p "$HOME5"
 OUT_MISS="$ROOT/out-missing.txt"
-TEST_BIN="$BIN2" run_install "$HOME5" -- > "$OUT_MISS" 2>&1 \
+(TEST_BIN="$BIN2" run_install "$HOME5" -- > "$OUT_MISS" 2>&1) \
     || { cat "$OUT_MISS" >&2; fail "missing Orbit install exits 0"; }
 ok "missing Orbit: npm installs it and the install completes"
 check "missing Orbit: npm got the tested package" \
@@ -737,7 +782,7 @@ HOME6="$ROOT/home6"; mkdir -p "$HOME6"
 rm -f "$STUB_STATE/curl.log" "$STUB_STATE/tar.log" "$STUB_STATE/uv-on-path.log"
 OUT_BAD="$ROOT/out-bad.txt"
 BAD_SHA=$(printf 'not-the-uv-archive\n' | sha256sum | awk '{print $1}')
-if STUB_CURL_MODE=mismatch run_install "$HOME6" "ORBIT_OFFICE_UV_SHA256=$BAD_SHA" -- \
+if run_install "$HOME6" STUB_CURL_MODE=mismatch "ORBIT_OFFICE_UV_SHA256=$BAD_SHA" -- \
     > "$OUT_BAD" 2>&1; then
     fail "checksum mismatch stops the script"
 else
@@ -776,13 +821,17 @@ check "platform mismatch does not use PATH uv" test ! -e "$STUB_STATE/uv-on-path
 HOME7="$ROOT/home7"; mkdir -p "$HOME7"
 rm -f "$STUB_STATE/uv-on-path.log"
 OUT_VER="$ROOT/out-ver.txt"
-if ORBIT_OFFICE_TEST_PYTHON_VERSION=3.11.2 run_install "$HOME7" -- \
+if run_install "$HOME7" ORBIT_OFFICE_TEST_PYTHON_VERSION=3.11.2 -- \
     > "$OUT_VER" 2>&1; then
     fail "wrong python minor stops the step"
 else
     ok "wrong python minor stops the step"
 fi
-check "version failure names the pinned minor" grep -F "pinned minor version 3.12" "$OUT_VER"
+if ! grep -F "pinned minor version 3.12" "$OUT_VER" >/dev/null; then
+    cat "$OUT_VER" >&2
+    fail "version failure names the pinned minor"
+fi
+ok "version failure names the pinned minor"
 check "version failure does not use PATH uv" test ! -e "$STUB_STATE/uv-on-path.log"
 
 # ---------------------------------------------------------------------------
@@ -884,7 +933,7 @@ check "repaired MCP entry stays unchanged" cmp -s "$SNAP_REPAIR" "$SNAP_REPAIR2"
 HOME11="$ROOT/home11"; mkdir -p "$HOME11"
 STATE11="$HOME11/.local/share/orbit-office/install-state"
 OUT_INIT="$ROOT/out-init.txt"
-if STUB_INIT_MODE=error run_install "$HOME11" -- > "$OUT_INIT" 2>&1; then
+if run_install "$HOME11" STUB_INIT_MODE=error -- > "$OUT_INIT" 2>&1; then
     fail "office.init error stops the install"
 else
     ok "office.init error stops the install"
@@ -903,7 +952,7 @@ check "next run records the scaffolded marker" grep -qx scaffolded "$STATE11"
 HOME11B="$ROOT/home11b"; mkdir -p "$HOME11B"
 STATE11B="$HOME11B/.local/share/orbit-office/install-state"
 OUT_ENV="$ROOT/out-init-envelope.txt"
-if STUB_INIT_MODE=ok-false run_install "$HOME11B" -- > "$OUT_ENV" 2>&1; then
+if run_install "$HOME11B" STUB_INIT_MODE=ok-false -- > "$OUT_ENV" 2>&1; then
     fail "ok:false envelope stops the install"
 else
     ok "ok:false envelope stops the install"
@@ -915,7 +964,7 @@ check "ok:false envelope leaves no scaffolded marker" \
 
 HOME12="$ROOT/home12"; mkdir -p "$HOME12"
 OUT_ALREADY="$ROOT/out-already.txt"
-STUB_INIT_MODE=already run_install "$HOME12" -- > "$OUT_ALREADY" 2>&1 \
+run_install "$HOME12" STUB_INIT_MODE=already -- > "$OUT_ALREADY" 2>&1 \
     || { cat "$OUT_ALREADY" >&2; fail "already_initialized object exits 0"; }
 ok "already_initialized object exits 0"
 check "already_initialized object records the scaffolded marker" \
@@ -930,7 +979,7 @@ HOME12N="$ROOT/home12n"; mkdir -p "$HOME12N"
 rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled" "$STUB_STATE/plugin-active"
 : > "$STUB_STATE/orbit.log"
 OUT_NOYES="$ROOT/out-noyes.txt"
-NO_YES=1 run_install "$HOME12N" -- > "$OUT_NOYES" 2>&1 \
+(NO_YES=1 run_install "$HOME12N" -- > "$OUT_NOYES" 2>&1) \
     || { cat "$OUT_NOYES" >&2; fail "non-interactive run without --yes exits 0"; }
 ok "non-interactive run without --yes exits 0"
 check "non-interactive run does not ask the question" \
@@ -960,5 +1009,205 @@ ok "install with the manifest grants exits 0"
 check "plugin is active after enable" test -f "$STUB_STATE/plugin-active"
 check "office.init is not refused with policy_denied" \
     sh -c '! grep -q policy_denied "$1"' sh "$OUT_GRANTS"
+
+# Gateway consent, optional cloudcli and real export contents.
+HOME14="$ROOT/home14"; mkdir -p "$HOME14"
+OUT_GATEWAY="$ROOT/out-gateway.txt"
+: > "$STUB_STATE/orbit.log"
+run_install "$HOME14" -- > "$OUT_GATEWAY" 2>&1 \
+    || { cat "$OUT_GATEWAY" >&2; fail "gateway install exits 0"; }
+check "gateway export contains its shared backend package" \
+    test -f "$HOME14/.local/share/orbit-office/plugins/gateway/.orbit-plugin/lib/orbit_gateway/envelope.py"
+check "gateway is active with all manifest grants" test -f "$STUB_STATE/plugin-active.gateway"
+check "default consent names office and gateway together" grep -F "Consent: --yes given, enabling office gateway." "$OUT_GATEWAY"
+check "one consent covers both plugins" sh -c '[ "$(grep -c "Consent:" "$1")" -eq 1 ]' sh "$OUT_GATEWAY"
+check "cloudcli is absent by default" test ! -e "$STUB_STATE/plugin-added.cloudcli"
+check "cloudcli has no export by default" test ! -e "$HOME14/.local/share/orbit-office/plugins/cloudcli"
+run_install "$HOME14" -- --with-cloudcli > "$ROOT/out-cloudcli.txt" 2>&1 \
+    || { cat "$ROOT/out-cloudcli.txt" >&2; fail "cloudcli opt-in exits 0"; }
+check "cloudcli opt-in adds and enables it" test -f "$STUB_STATE/plugin-active.cloudcli"
+check "cloudcli consent lists its programs" grep -F "programs python3, aws, gcloud" "$ROOT/out-cloudcli.txt"
+snapshot "$HOME14" > "$ROOT/cloudcli-snapshot1"
+run_install "$HOME14" -- --with-cloudcli > "$ROOT/out-cloudcli2.txt" 2>&1 \
+    || { cat "$ROOT/out-cloudcli2.txt" >&2; fail "cloudcli repeat exits 0"; }
+snapshot "$HOME14" > "$ROOT/cloudcli-snapshot2"
+check "cloudcli second run changes nothing" cmp -s "$ROOT/cloudcli-snapshot1" "$ROOT/cloudcli-snapshot2"
+check "cloudcli second run needs no new consent" sh -c '! grep -q "Consent:" "$1"' sh "$ROOT/out-cloudcli2.txt"
+run_install "$HOME14" -- --uninstall > "$ROOT/out-cloudcli-un.txt" 2>&1 \
+    || { cat "$ROOT/out-cloudcli-un.txt" >&2; fail "cloudcli uninstall exits 0"; }
+check "uninstall finds optional cloudcli without flag" test ! -e "$STUB_STATE/plugin-added.cloudcli"
+check "uninstall removes gateway" test ! -e "$STUB_STATE/plugin-added.gateway"
+check "uninstall removes owned exports" test ! -e "$HOME14/.local/share/orbit-office/plugins/gateway"
+
+# A supplied release bundle is used directly and survives uninstall.
+BUNDLE="$ROOT/bundle"; mkdir -p "$BUNDLE"
+cp -R "$SCRIPT_DIR/../../plugin" "$BUNDLE/office"
+python3 -I "$SCRIPT_DIR/../../gateway/scripts/export.py" gateway "$BUNDLE/gateway" > /dev/null
+python3 -I "$SCRIPT_DIR/../../gateway/scripts/export.py" cloudcli "$BUNDLE/cloudcli" > /dev/null
+BUNDLE_HOME="$ROOT/bundle-home"; mkdir -p "$BUNDLE_HOME"
+run_install "$BUNDLE_HOME" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" -- --with-cloudcli > "$ROOT/bundle-out" 2>&1 \
+    || { cat "$ROOT/bundle-out" >&2; fail "release bundle install exits 0"; }
+check "release bundle enables all three plugins" test -f "$STUB_STATE/plugin-active.cloudcli"
+check "release bundle creates no local export" test ! -e "$BUNDLE_HOME/.local/share/orbit-office/plugins"
+run_install "$BUNDLE_HOME" -- --uninstall > "$ROOT/bundle-un" 2>&1 \
+    || { cat "$ROOT/bundle-un" >&2; fail "bundle uninstall exits 0"; }
+check "uninstall preserves the supplied bundle" test -f "$BUNDLE/cloudcli/.orbit-plugin/lib/orbit_gateway/envelope.py"
+SOURCE_HOME="$ROOT/source-home"; mkdir -p "$SOURCE_HOME"
+run_install "$SOURCE_HOME" -- --from-source > "$ROOT/source-out" 2>&1 \
+    || { cat "$ROOT/source-out" >&2; fail "from-source install exits 0"; }
+check "source office install binds the actual worktree commit" \
+    grep -F "git+https://github.com/constellation-works/orbit-office.git#$(git -C "$SCRIPT_DIR/../.." rev-parse HEAD) --allow-build" "$STUB_STATE/orbit.log"
+
+# Non-canonical JSON: preserve every byte outside inserted entries. The
+# pre-existing curl deny belongs to the user and must survive uninstall.
+HOME15="$ROOT/home15"; mkdir -p "$HOME15/.claude"
+CFG15="$HOME15/.claude/settings.json"
+cat > "$CFG15" <<'JSON'
+{ "sentinel" : "é } , [ \\\"", "numeric": 1e+02,
+ "mcpServers" : { "other" : {"command":"kept"} },
+ "permissions" : {"allow" : [ "Read(/allowed)" ], "deny" : [ "Bash(curl *)", "Read(/keep)" ]}, "tail":true }
+JSON
+cp "$CFG15" "$ROOT/original15.json"
+run_install "$HOME15" -- > "$ROOT/out-settings15.txt" 2>&1 \
+    || { cat "$ROOT/out-settings15.txt" >&2; fail "non-canonical settings install exits 0"; }
+check "backup is the exact original settings" cmp -s "$CFG15.bak" "$ROOT/original15.json"
+if ! node - "$CFG15" "$ROOT/original15.json" "$HOME15/.local/share/orbit-office/claude-settings.json" <<'NODE'
+const fs = require("fs");
+const [file, original, receipt] = process.argv.slice(2);
+const text = fs.readFileSync(file, "utf8");
+const data = JSON.parse(text);
+const expected = ["Bash(curl *)", "Read(/keep)", "Bash(wget *)", "Bash(http *)", "Bash(aws *)", "Bash(gcloud *)"];
+if (JSON.stringify(data.permissions.deny) !== JSON.stringify(expected)) process.exit(1);
+const owned = JSON.parse(fs.readFileSync(receipt, "utf8")).added;
+if (owned.length !== 4 || owned.includes("Bash(curl *)")) process.exit(1);
+// Remove precisely the inserted entries from the observed file. All other
+// whitespace, escaped strings, Unicode and numeric spellings must match.
+let stripped = text.replace(',"orbit": ' + JSON.stringify(data.mcpServers.orbit, null, 2), "");
+for (const rule of expected.slice(2)) stripped = stripped.replace("," + JSON.stringify(rule), "");
+if (stripped !== fs.readFileSync(original, "utf8")) process.exit(1);
+// Simulate a user adding another rule after installation.
+fs.writeFileSync(file, text.replace('"Bash(gcloud *)"', '"Bash(gcloud *)","Bash(user *)"'));
+NODE
+then fail "settings preserve original bytes and record only added rules"; fi
+ok "settings preserve original bytes and record only added rules"
+run_install "$HOME15" -- --uninstall > "$ROOT/out-settings15-un.txt" 2>&1 \
+    || { cat "$ROOT/out-settings15-un.txt" >&2; fail "settings uninstall exits 0"; }
+check "uninstall keeps pre-existing and subsequently added user rules byte-for-byte" \
+    node -e 'const fs=require("fs"); const want=fs.readFileSync(process.argv[2],"utf8").replace("\"Read(/keep)\"", "\"Read(/keep)\",\"Bash(user *)\""); process.exit(fs.readFileSync(process.argv[1],"utf8")===want?0:1)' "$CFG15" "$ROOT/original15.json"
+check "uninstall keeps original backup" cmp -s "$CFG15.bak" "$ROOT/original15.json"
+check "uninstall clears ownership receipt" test ! -e "$HOME15/.local/share/orbit-office/claude-settings.json"
+
+# Missing, empty and complete rule containers are all reversible. Existing
+# all-five deny rules must never become installer-owned.
+for _variant in absent empty complete; do
+    _case_home="$ROOT/settings-$_variant"; mkdir -p "$_case_home/.claude"
+    _case_file="$_case_home/.claude/settings.json"
+    case "$_variant" in
+        absent) printf '{ "kept" : 1e+02 }\n' > "$_case_file" ;;
+        empty) printf '{"permissions" : {"deny" : [  ]}, "kept" : true}\n' > "$_case_file" ;;
+        complete) printf '{"permissions":{"deny":["Bash(curl *)","Bash(wget *)","Bash(http *)","Bash(aws *)","Bash(gcloud *)"]}}\n' > "$_case_file" ;;
+    esac
+    cp "$_case_file" "$ROOT/$_variant-original"
+    run_install "$_case_home" -- > "$ROOT/$_variant-out" 2>&1 \
+        || { cat "$ROOT/$_variant-out" >&2; fail "settings $_variant install exits 0"; }
+    check "settings $_variant has exactly five deny rules" node -e 'const d=require(process.argv[1]).permissions.deny; process.exit(d.length===5&&new Set(d).size===5?0:1)' "$_case_file"
+    run_install "$_case_home" -- --uninstall > "$ROOT/$_variant-un" 2>&1 \
+        || { cat "$ROOT/$_variant-un" >&2; fail "settings $_variant uninstall exits 0"; }
+    check "settings $_variant round-trip preserves every original byte" cmp -s "$_case_file" "$ROOT/$_variant-original"
+done
+
+# Fail closed on malformed/ambiguous JSON and wrong field types without
+# replacing the file, creating a backup or exposing parser fragments.
+for _bad_json in '{invalid' '{"permissions":{"deny":"wrong"}}' '{"permissions":{},"permissions":{}}'; do
+    _bad_home="$ROOT/bad-settings"; mkdir -p "$_bad_home/.claude"
+    printf '%s' "$_bad_json" > "$_bad_home/.claude/settings.json"
+    cp "$_bad_home/.claude/settings.json" "$ROOT/bad-original"
+    if run_install "$_bad_home" -- > "$ROOT/bad-out" 2>&1; then fail "invalid settings must refuse"; fi
+    check "invalid settings remain byte-identical" cmp -s "$_bad_home/.claude/settings.json" "$ROOT/bad-original"
+    check "invalid settings have no backup or receipt" sh -c '[ ! -e "$1.bak" ] && [ ! -e "$2" ]' sh "$_bad_home/.claude/settings.json" "$_bad_home/.local/share/orbit-office/claude-settings.json"
+done
+check "Codex summary describes its sandbox deny limitation" grep -F "deny rules unavailable for sandboxed Codex shell calls" "$OUT_CODEX"
+
+# Drive the real interactive entry point over a PTY. The stty wrapper emits
+# a synchronization marker only AFTER the actual terminal has disabled echo;
+# input is sent at that marker, so no sleep or timing race is involved.
+REAL_STTY=$(command -v stty)
+cat > "$BIN/stty" <<STTY
+#!/bin/sh
+"$REAL_STTY" "\$@" || exit 1
+if [ "\${1:-}" = -echo ]; then printf '<echo-disabled>\\n'; fi
+STTY
+chmod +x "$BIN/stty"
+PTY_HOME="$ROOT/pty-home"; mkdir -p "$PTY_HOME"
+# Initialize stub registry isolation for this HOME before invoking Python.
+printf '%s' "$PTY_HOME" > "$STUB_STATE/current-home"
+rm -f "$STUB_STATE"/plugin-* "$STUB_STATE"/secret.*
+if ! python3 - "$INSTALL_SH" "$PTY_HOME" "$BIN:$NODE_DIR:/usr/bin:/bin" "$STUB_STATE" "$MANIFEST" "$SCRIPT_DIR/../../gateway/plugins" "$FIXTURE" "$INIT_FIXTURES" <<'PY'
+import errno
+import os
+import pty
+import select
+import subprocess
+import sys
+import termios
+import time
+
+script, home, path, state, manifest, gateway, fixture, init = sys.argv[1:]
+env = dict(HOME=home, PATH=path, STUB_STATE=state, STUB_MANIFEST=manifest,
+           STUB_GATEWAY_MANIFESTS=gateway, STUB_UV_ARCHIVE=fixture,
+           STUB_INIT_FIXTURES=init, ORBIT_OFFICE_OS="linux", ORBIT_OFFICE_UV_URL=fixture)
+master, slave = pty.openpty()
+child = subprocess.Popen(["sh", script], env=env, stdin=slave, stdout=slave, stderr=slave)
+transcript = b""
+consented = False
+sent = 0
+values = [b"synthetic-meta-key", b"synthetic-private-token"]
+deadline = time.monotonic() + 30
+try:
+    while time.monotonic() < deadline:
+        ready, _, _ = select.select([master], [], [], max(0, deadline-time.monotonic()))
+        if not ready:
+            raise AssertionError("interactive installer did not finish")
+        try:
+            block = os.read(master, 65536)
+        except OSError as error:
+            if error.errno == errno.EIO:
+                break
+            raise
+        if not block:
+            break
+        transcript += block
+        if not consented and b"[y/N]" in transcript:
+            assert b"office gateway" in transcript
+            os.write(master, b"yes\n")
+            consented = True
+        markers = transcript.count(b"<echo-disabled>")
+        while sent < markers:
+            assert sent < 2
+            assert not termios.tcgetattr(slave)[3] & termios.ECHO
+            os.write(master, values[sent] + b"\n")
+            sent += 1
+        # The slave stays open in the parent for echo inspection; after exit
+        # the final summary provides the deterministic completion marker.
+        if b"summary: purge" in transcript:
+            break
+    assert child.wait(timeout=5) == 0
+    assert consented and transcript.count(b"[y/N]") == 1 and sent == 2
+    assert b"Enter open_weights_token (hidden" in transcript
+    assert b"baseten_token" not in transcript
+    assert all(value not in transcript for value in values)
+    assert termios.tcgetattr(slave)[3] & termios.ECHO
+    with open(os.path.join(state, "orbit.log")) as log:
+        assert "plugin secret set office open_weights_token\n" in log.read()
+    assert os.path.isfile(os.path.join(state, "secret.open_weights_token"))
+finally:
+    if child.poll() is None:
+        child.kill()
+        child.wait()
+    os.close(master)
+    os.close(slave)
+PY
+then fail "interactive consent and private token remain hidden"; fi
+ok "one interactive consent enables office and gateway; open_weights_token is hidden and stored"
 
 printf 'PASS: %s checks\n' "$PASS"
