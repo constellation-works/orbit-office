@@ -9,9 +9,10 @@
       "description": "Each declared secret name mapped to whether Orbit delivered a value. Never a value.",
       "properties": {
         "meta_api_key": { "$ref": "#/$defs/presence" },
-        "open_weights_token": { "$ref": "#/$defs/presence" }
+        "open_weights_token": { "$ref": "#/$defs/presence" },
+        "baseten_token": { "$ref": "#/$defs/presence", "deprecated": true, "description": "Deprecated alias of open_weights_token, kept for one release (STD-01 R35); mirrors its value." }
       },
-      "required": ["meta_api_key", "open_weights_token"],
+      "required": ["meta_api_key", "open_weights_token", "baseten_token"],
       "additionalProperties": false
     },
     "library": {

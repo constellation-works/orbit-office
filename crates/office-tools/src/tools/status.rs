@@ -28,10 +28,18 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         .and_then(Value::as_object)
         .map(|secrets| secrets.keys().map(String::as_str).collect())
         .unwrap_or_default();
-    let secrets: Map<String, Value> = SECRET_NAMES
+    // STD-01@2 §R35: `baseten_token` was renamed to `open_weights_token`;
+    // the old name stays as a deprecated alias for one release, mirroring
+    // the new field, and a context still carrying only the old name
+    // counts as set. The alias is removed after that release.
+    let open_weights_present =
+        present.contains(&"open_weights_token") || present.contains(&"baseten_token");
+    let mut secrets: Map<String, Value> = SECRET_NAMES
         .iter()
         .map(|name| {
-            let state = if present.contains(name) {
+            let state = if *name == "open_weights_token" {
+                if open_weights_present { "set" } else { "unset" }
+            } else if present.contains(name) {
                 "set"
             } else {
                 "unset"
@@ -39,6 +47,10 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
             ((*name).to_string(), json!(state))
         })
         .collect();
+    secrets.insert(
+        "baseten_token".to_string(),
+        json!(if open_weights_present { "set" } else { "unset" }),
+    );
     // An unavailable Library adapter (no roots in context) reads as
     // uninitialized health; status itself never refuses for that. Any other
     // failure, such as an invalid config or a pending write, is returned as

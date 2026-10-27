@@ -20,7 +20,7 @@ fn status_reports_set_and_unset_secrets_without_values() {
     .expect("status succeeds");
     assert_eq!(output["secrets"]["meta_api_key"], json!("set"));
     assert_eq!(output["secrets"]["open_weights_token"], json!("unset"));
-    assert!(output["secrets"].get("baseten_token").is_none());
+    assert_eq!(output["secrets"]["baseten_token"], json!("unset"));
     assert!(
         !output.to_string().contains("do-not-echo-this"),
         "a secret value must never appear in output"
@@ -187,10 +187,31 @@ fn status_reports_the_private_route_token_and_never_the_retired_name() {
     .expect("status succeeds");
     assert_eq!(
         output["secrets"],
-        json!({"meta_api_key": "unset", "open_weights_token": "set"})
+        json!({"meta_api_key": "unset", "open_weights_token": "set", "baseten_token": "set"})
     );
     assert!(!output.to_string().contains("do-not-echo-this"));
     assert_eq!(output["open_weights"], json!(null));
+}
+
+#[test]
+fn status_accepts_the_retired_secret_name_as_the_open_weights_alias() {
+    let input = Map::new();
+    let mut context = Map::new();
+    context.insert(
+        "secrets".to_string(),
+        json!({ "baseten_token": "do-not-echo-this" }),
+    );
+    let output = run(&Call {
+        ports: &office_testkit::fakes::PortsBuilder::default().build(),
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(
+        output["secrets"],
+        json!({"meta_api_key": "unset", "open_weights_token": "set", "baseten_token": "set"})
+    );
+    assert!(!output.to_string().contains("do-not-echo-this"));
 }
 
 #[test]
