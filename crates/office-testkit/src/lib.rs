@@ -1,7 +1,7 @@
 //! Test support for the office workspace. A dev-dependency only: no crate
 //! lists it under `[dependencies]` (scripts/check-dependency-direction.sh).
 //!
-//! The fakes for the four dispatch ports are established together, so tool
+//! The fakes for the dispatch ports are established together, so tool
 //! tests never touch real host state (STD-04). Each adapter task adds the
 //! operations its port needs (ARCHITECTURE.md).
 

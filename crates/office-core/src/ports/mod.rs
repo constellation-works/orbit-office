@@ -5,6 +5,7 @@ mod library;
 mod models;
 mod orbit;
 mod scripts;
+mod selection;
 
 pub use clock::Clock;
 pub use library::{
@@ -17,6 +18,7 @@ pub use models::{
 };
 pub use orbit::Orbit;
 pub use scripts::ScriptRunner;
+pub use selection::{Selections, UnavailableSelections};
 
 /// The services available to a single tool call.
 pub struct Ports<'a> {
@@ -30,4 +32,6 @@ pub struct Ports<'a> {
     pub orbit: Box<dyn Orbit + 'a>,
     /// Current time.
     pub clock: Box<dyn Clock + 'a>,
+    /// The selection tray in plugin state.
+    pub selections: Box<dyn Selections + 'a>,
 }

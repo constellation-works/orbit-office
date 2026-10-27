@@ -12,6 +12,7 @@ mod private_route_check;
 mod reindex;
 mod script_run;
 mod search;
+mod selection;
 mod show;
 mod signals_scan;
 mod status;

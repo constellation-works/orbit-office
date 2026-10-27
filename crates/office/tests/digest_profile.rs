@@ -72,6 +72,7 @@ fn extracted_digest_subject_is_searchable_under_the_source_before_and_after_rein
         orbit: Box::new(Offline),
         scripts: Box::new(Offline),
         clock: Box::new(Offline),
+        selections: Box::new(office_core::ports::UnavailableSelections),
     };
     let extracted = call(
         &ports,

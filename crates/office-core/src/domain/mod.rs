@@ -10,7 +10,7 @@ pub mod knowledge;
 pub mod metrics;
 mod proposal;
 pub mod script;
-mod selection;
+pub mod selection;
 mod session;
 pub mod settings;
 pub mod signals;

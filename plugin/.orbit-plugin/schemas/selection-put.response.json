@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.selection-put response",
+  "type": "object",
+  "properties": {
+    "cleared": {
+      "type": "boolean",
+      "description": "True when the call emptied the tray before recording."
+    },
+    "evicted": {
+      "type": "array",
+      "description": "Ids dropped so the new selection fit in the five-item tray, oldest first. Empty when nothing was evicted.",
+      "items": { "type": "string" }
+    },
+    "selection": {
+      "description": "The recorded selection, or null when the call only cleared the tray.",
+      "anyOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/selection" }
+      ]
+    }
+  },
+  "required": ["cleared", "evicted", "selection"],
+  "additionalProperties": false,
+  "$defs": {
+    "selection": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Tray id, sel-<n>." },
+        "object": { "type": "string", "description": "Source, page, artifact or task id." },
+        "anchor": { "type": ["string", "null"], "description": "Anchor inside the object, or null for the whole object." },
+        "quote": { "type": ["string", "null"], "description": "Quoted text. Null for a private object." },
+        "quote_sha256": { "type": ["string", "null"], "description": "Staleness hash supplied by the app, or the quote digest when the app omitted one. Null for a private object." },
+        "view": { "type": "string", "enum": ["source", "page", "artifact", "task"] },
+        "sensitivity": { "type": "string", "enum": ["normal", "private"] },
+        "selected_at": { "type": "string", "description": "When the app recorded the selection, RFC 3339 UTC." }
+      },
+      "required": ["id", "object", "anchor", "quote", "quote_sha256", "view", "sensitivity", "selected_at"],
+      "additionalProperties": false
+    }
+  }
+}

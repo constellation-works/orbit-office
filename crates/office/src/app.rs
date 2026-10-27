@@ -5,9 +5,11 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use office_core::domain::knowledge::{Backlink, DocumentRecord, Revision, SearchFilter, SearchHit};
+use office_core::domain::selection::{PutRequest, PutResult, Selection as SelectionRecord};
 use office_core::domain::settings::Settings;
 use office_core::ports::{
     Clock, InitOutcome, Library, LibraryHealth, LibraryText, Models, Orbit, Ports, Routed,
+    Selections,
 };
 use office_core::protocol::{self, Context};
 use office_orbit::{CALLBACK_ENV_NAMES, OrbitCallbacks};
@@ -199,6 +201,40 @@ fn context_path(context: &Context, keys: &[&str]) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+fn context_state_dir(context: &Context) -> Option<PathBuf> {
+    context_path(context, &["plugin_state", "plugin_state_dir", "state_dir"]).or_else(|| {
+        let workspace = context_path(context, &["workspace_root", "workspace", "workspace_dir"])?;
+        let library =
+            workspace.join(context_library_dir(context).unwrap_or_else(|| "library".to_string()));
+        Some(library.join(".office/state"))
+    })
+}
+
+/// Selection tray at `plugin_state/selections.sqlite`, separate from the index.
+struct RealSelections<'a> {
+    context: &'a Context,
+}
+
+impl RealSelections<'_> {
+    fn open(&self) -> office_core::Result<office_store::SelectionStore> {
+        let state = context_state_dir(self.context).ok_or(office_core::Error::Library {
+            code: "selection_unavailable",
+            message: "selection storage is unavailable in this call context".to_string(),
+        })?;
+        Ok(office_store::SelectionStore::open(&state)?)
+    }
+}
+
+impl Selections for RealSelections<'_> {
+    fn put(&self, request: &PutRequest, now: SystemTime) -> office_core::Result<PutResult> {
+        Ok(self.open()?.put(request, now)?)
+    }
+
+    fn get(&self, now: SystemTime) -> office_core::Result<Vec<SelectionRecord>> {
+        Ok(self.open()?.get(now)?)
+    }
+}
+
 fn context_library_dir(context: &Context) -> Option<String> {
     context
         .get("config")
@@ -225,8 +261,7 @@ impl RealLibrary {
         let library = workspace.as_ref().map(|root| {
             root.join(context_library_dir(context).unwrap_or_else(|| "library".to_string()))
         });
-        let state = context_path(context, &["plugin_state", "plugin_state_dir", "state_dir"])
-            .or_else(|| library.as_ref().map(|root| root.join(".office/state")));
+        let state = context_state_dir(context);
         Self {
             bootstrap_read_only: false,
             workspace,
@@ -479,6 +514,7 @@ fn ports(context: &Context, bootstrap_read_only: bool) -> Ports<'_> {
         }),
         orbit,
         clock: Box::new(SystemClock),
+        selections: Box::new(RealSelections { context }),
     }
 }
 

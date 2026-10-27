@@ -5,12 +5,14 @@ mod library;
 mod models;
 mod orbit;
 mod scripts;
+mod selection;
 
 pub use clock::FakeClock;
 pub use library::{FakeLibrary, FakeStaging};
 pub use models::FakeModels;
 pub use orbit::{FakeOrbit, OrbitCall};
 pub use scripts::FakeScripts;
+pub use selection::FakeSelections;
 
 /// Builder for a complete set of fake services.
 pub struct PortsBuilder {
@@ -42,6 +44,7 @@ impl PortsBuilder {
             models: Box::new(FakeModels::new()),
             orbit: Box::new(FakeOrbit::default()),
             clock: Box::new(FakeClock(self.now)),
+            selections: Box::new(FakeSelections::default()),
         }
     }
 }

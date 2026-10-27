@@ -69,6 +69,7 @@ impl Run {
                 clock: Box::new(FakeClock(
                     SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_008_920),
                 )),
+                selections: Box::new(office_testkit::fakes::FakeSelections::default()),
             },
         }
     }
