@@ -352,6 +352,9 @@ spec:
     #   input_schema: { $ref: schemas/review-inputs.request.json }
     #   output_schema: { $ref: schemas/review-inputs.response.json }
 
+  definitions:
+    activities: [definitions/activities/office-agent-todo.yaml]
+
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings]
 
   config:
