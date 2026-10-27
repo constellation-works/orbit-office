@@ -37,6 +37,73 @@ fn write(ports: &Ports<'_>, markdown: &str) -> Value {
     office_testkit::envelope::response(&crate::serve(&request, ports)).expect("response is JSON")
 }
 
+fn call(ports: &Ports<'_>, tool: &str, input: Value) -> Value {
+    let raw = office_testkit::envelope::request(tool, input, json!({}));
+    let request = office_core::protocol::parse(&raw).expect("request is valid");
+    office_testkit::envelope::response(&crate::serve(&request, ports)).expect("response is JSON")
+}
+
+#[test]
+fn a_commented_quoted_page_stays_retrievable_by_canonical_id_and_tag() {
+    let ports = ports(FakeLibrary::initialized());
+    // An unrelated legacy document (duplicate title) must still index.
+    ports
+        .library
+        .write_document(
+            Path::new("sources/2026/10/src-20261028-legacy/source.md"),
+            "---\nid: src-20261028-legacy # source\ntitle: First\ntitle: Legacy\ntags: [\"client:acme,inc\"]\n---\nLegacy body\n",
+        )
+        .expect("seed legacy");
+
+    let markdown = "---\n\
+        id: dom-person-ada # identity\n\
+        type: domain # domain | runbook\n\
+        title: \"Ada \\\"Ada\\\" Lovelace\" # name\n\
+        sensitivity: private # privacy\n\
+        tags: [\"client:acme,inc\"] # tags\n\
+        ---\nAda decides.\n";
+    let written = write(&ports, markdown);
+    assert_eq!(written["ok"], json!(true), "{written}");
+    assert_eq!(written["output"]["id"], json!("dom-person-ada"));
+
+    let shown = call(
+        &ports,
+        "office.knowledge-show",
+        json!({ "id": "dom-person-ada" }),
+    );
+    assert_eq!(shown["ok"], json!(true), "{shown}");
+    assert_eq!(
+        shown["output"]["page"]["title"],
+        json!("Ada \"Ada\" Lovelace")
+    );
+    assert_eq!(shown["output"]["page"]["tags"], json!(["client:acme,inc"]));
+    assert_eq!(shown["output"]["page"]["sensitivity"], json!("private"));
+
+    let reindexed = call(&ports, "office.reindex", json!({}));
+    assert_eq!(reindexed["ok"], json!(true), "{reindexed}");
+    assert!(
+        reindexed["output"]["indexed_documents"]
+            .as_u64()
+            .expect("count")
+            >= 3,
+        "{reindexed}"
+    );
+
+    let found = call(
+        &ports,
+        "office.search",
+        json!({ "query": "Ada", "tag": "client:acme,inc" }),
+    );
+    assert_eq!(found["ok"], json!(true), "{found}");
+    let ids: Vec<&str> = found["output"]["hits"]
+        .as_array()
+        .expect("hits")
+        .iter()
+        .filter_map(|hit| hit["id"].as_str())
+        .collect();
+    assert_eq!(ids, ["dom-person-ada"], "{found}");
+}
+
 fn page_count(ports: &Ports<'_>) -> usize {
     ports.library.knowledge_pages().expect("pages").len()
 }

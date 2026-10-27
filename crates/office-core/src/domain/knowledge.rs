@@ -3,6 +3,7 @@
 //! citations, template checks and the model view.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::Path;
 
 mod frontmatter;
@@ -171,7 +172,111 @@ impl DocumentRecord {
 }
 
 /// Parse one document's frontmatter and body into an index record.
+///
+/// Documents in the supported YAML subset (see `frontmatter`) are parsed
+/// with that parser, so indexing agrees with `Page` on comments, quoted
+/// scalars (including escapes) and quoted list items. Documents outside
+/// the subset — duplicate keys, malformed or unsupported frontmatter, no
+/// frontmatter at all — fall back to a lenient line parser with the same
+/// comment/quote handling, so index rebuild never rejects a legacy
+/// document that used to index.
 fn parse_document(text: &str, relative: &Path) -> DocumentRecord {
+    if let Ok((frontmatter, body)) = frontmatter::split(text)
+        && let Ok(fields) = frontmatter::parse(frontmatter)
+    {
+        return parse_document_fields(&fields, body, relative);
+    }
+    parse_document_lenient(text, relative)
+}
+
+/// Build a record from strictly parsed frontmatter fields.
+fn parse_document_fields(
+    fields: &[(String, Value)],
+    body: &str,
+    relative: &Path,
+) -> DocumentRecord {
+    let mut record = DocumentRecord {
+        id: String::new(),
+        kind: kind_for_path(relative),
+        title: String::new(),
+        summary: String::new(),
+        tags: Vec::new(),
+        series: None,
+        sensitivity: "normal".to_string(),
+        path: relative.to_string_lossy().replace('\\', "/"),
+        body: body.trim().to_string(),
+        cites: Vec::new(),
+        related: Vec::new(),
+        template: None,
+        date: None,
+    };
+    let mut dates: [Option<String>; 4] = [None, None, None, None];
+    for (key, value) in fields {
+        match key.as_str() {
+            "id" => {
+                if let Some(value) = value_string(value) {
+                    record.id = value;
+                }
+            }
+            "title" => {
+                if let Some(value) = value_string(value) {
+                    record.title = value;
+                }
+            }
+            "summary" => {
+                if let Some(value) = value_string(value) {
+                    record.summary = value;
+                }
+            }
+            "tags" => record.tags = value_list(value),
+            "series" => {
+                record.series = value_string(value)
+                    .filter(|v| !v.is_empty() && v != "null")
+                    .or(record.series.take());
+            }
+            "sensitivity" => {
+                if let Some(value) = value_string(value).filter(|v| !v.is_empty()) {
+                    record.sensitivity = value;
+                }
+            }
+            "template" => {
+                record.template = value_string(value).filter(|v| !v.is_empty() && v != "null");
+            }
+            "occurred_at" => dates[0] = value_string(value).as_deref().and_then(date_prefix),
+            "captured_at" => dates[1] = value_string(value).as_deref().and_then(date_prefix),
+            "updated_at" => dates[2] = value_string(value).as_deref().and_then(date_prefix),
+            "last_verified" => dates[3] = value_string(value).as_deref().and_then(date_prefix),
+            "cites" => record.cites = value_list(value),
+            "related" => record.related = value_list(value),
+            _ => {}
+        }
+    }
+    finish_record(record, relative, dates)
+}
+
+/// A parsed frontmatter value as a plain string, if it is a scalar.
+fn value_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Bool(flag) => Some(flag.to_string()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Null | Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
+/// A parsed frontmatter value as a list of plain strings.
+fn value_list(value: &Value) -> Vec<String> {
+    match value {
+        Value::Array(items) => items.iter().filter_map(value_string).collect(),
+        Value::String(text) if !text.is_empty() => vec![text.clone()],
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
+            Vec::new()
+        }
+    }
+}
+
+/// The lenient line parser for documents outside the supported subset.
+fn parse_document_lenient(text: &str, relative: &Path) -> DocumentRecord {
     let (frontmatter, body) = split_frontmatter(text);
     let kind = kind_for_path(relative);
 
@@ -197,11 +302,14 @@ fn parse_document(text: &str, relative: &Path) -> DocumentRecord {
     for line in frontmatter.lines() {
         let trimmed = line.trim();
         if let Some(item) = trimmed.strip_prefix("- ") {
-            match list_key {
-                Some("cites") => record.cites.push(unquote(item.trim())),
-                Some("related") => record.related.push(unquote(item.trim())),
-                Some("tags") => record.tags.push(unquote(item.trim())),
-                _ => {}
+            let item = scalar(item.trim());
+            if !item.is_empty() {
+                match list_key {
+                    Some("cites") => record.cites.push(item),
+                    Some("related") => record.related.push(item),
+                    Some("tags") => record.tags.push(item),
+                    _ => {}
+                }
             }
             continue;
         }
@@ -211,17 +319,25 @@ fn parse_document(text: &str, relative: &Path) -> DocumentRecord {
         let (key, value) = (key.trim(), value.trim());
         list_key = None;
         match key {
-            "id" => record.id = unquote(value),
-            "title" => record.title = unquote(value),
-            "summary" => record.summary = unquote(value),
+            "id" => record.id = scalar(value),
+            "title" => record.title = scalar(value),
+            "summary" => record.summary = scalar(value),
             "tags" => {
                 record.tags = inline_list(value);
                 list_key = Some("tags");
             }
-            "series" if !value.is_empty() && value != "null" => {
-                record.series = Some(unquote(value));
+            "series" => {
+                let value = scalar(value);
+                if !value.is_empty() && value != "null" {
+                    record.series = Some(value);
+                }
             }
-            "sensitivity" if !value.is_empty() => record.sensitivity = unquote(value),
+            "sensitivity" => {
+                let value = scalar(value);
+                if !value.is_empty() {
+                    record.sensitivity = value;
+                }
+            }
             "template" => {
                 record.template = Some(scalar(value)).filter(|v| !v.is_empty() && v != "null");
             }
@@ -241,6 +357,15 @@ fn parse_document(text: &str, relative: &Path) -> DocumentRecord {
         }
     }
 
+    finish_record(record, relative, dates)
+}
+
+/// Fill in the id/title fallbacks and the document date.
+fn finish_record(
+    mut record: DocumentRecord,
+    relative: &Path,
+    dates: [Option<String>; 4],
+) -> DocumentRecord {
     if record.id.is_empty() {
         record.id = relative
             .file_stem()
@@ -322,35 +447,160 @@ fn split_frontmatter(text: &str) -> (&str, &str) {
     }
 }
 
-/// `[a, b]` or a bare scalar, as a list of unquoted items.
+/// `[a, b]` or a bare scalar, as a list of decoded items. Commas inside
+/// quoted items (or nested flow collections) do not split the list.
 fn inline_list(value: &str) -> Vec<String> {
-    let inner = value
+    let uncommented = strip_comment(value);
+    let trimmed = uncommented.trim();
+    let inner = trimmed
         .strip_prefix('[')
         .and_then(|v| v.strip_suffix(']'))
-        .unwrap_or(value);
+        .unwrap_or(trimmed);
     if inner.trim().is_empty() {
         return Vec::new();
     }
-    inner.split(',').map(|item| unquote(item.trim())).collect()
+    split_list_items(inner)
+        .into_iter()
+        .map(scalar)
+        .filter(|item| !item.is_empty())
+        .collect()
 }
 
-/// A scalar value without quotes, or without a trailing ` # comment` when unquoted.
-fn scalar(value: &str) -> String {
-    if value.starts_with('"') || value.starts_with('\'') {
-        return unquote(value);
+/// Split a flow list's contents on top-level commas only.
+fn split_list_items(inner: &str) -> Vec<&str> {
+    let mut items = Vec::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut depth: usize = 0;
+    let mut start = 0;
+    let mut chars = inner.char_indices().peekable();
+    while let Some((index, c)) = chars.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match quote {
+            Some('"') if c == '\\' => escaped = true,
+            Some('\'') if c == '\'' => {
+                if chars.peek().is_some_and(|(_, next)| *next == '\'') {
+                    chars.next();
+                } else {
+                    quote = None;
+                }
+            }
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None => match c {
+                '"' | '\'' if opens_quote(inner, index) => quote = Some(c),
+                '[' | '{' => depth += 1,
+                ']' | '}' => depth = depth.saturating_sub(1),
+                ',' if depth == 0 => {
+                    items.push(&inner[start..index]);
+                    start = index + 1;
+                }
+                _ => {}
+            },
+        }
     }
-    value
-        .split_once(" #")
-        .map_or(value, |(head, _)| head)
-        .trim()
-        .to_string()
+    items.push(&inner[start..]);
+    items
 }
 
-fn unquote(value: &str) -> String {
-    value
-        .strip_prefix('"')
-        .and_then(|v| v.strip_suffix('"'))
-        .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
-        .unwrap_or(value)
-        .to_string()
+/// A scalar value with any trailing comment removed and, when quoted,
+/// its quotes removed and escapes decoded (double-quoted `\"`, `\\`, …;
+/// single-quoted `''` for an apostrophe).
+fn scalar(value: &str) -> String {
+    let trimmed = strip_comment(value).trim();
+    decode_quoted(trimmed).unwrap_or_else(|| trimmed.to_string())
+}
+
+/// Whether a quote character at `index` opens a quoted string: at the
+/// start, or after `:`, `[`, `{`, `,` or `-` (so an apostrophe inside a
+/// plain scalar such as `Acme's` opens nothing).
+fn opens_quote(text: &str, index: usize) -> bool {
+    text[..index]
+        .trim_end()
+        .chars()
+        .next_back()
+        .is_none_or(|p| [':', '[', '{', ',', '-'].contains(&p))
+}
+
+/// Drop a `#` comment (at the start, or after whitespace) outside quotes.
+fn strip_comment(line: &str) -> &str {
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut previous: Option<char> = None;
+    let mut chars = line.char_indices().peekable();
+    while let Some((index, c)) = chars.next() {
+        if escaped {
+            escaped = false;
+            previous = Some(c);
+            continue;
+        }
+        match quote {
+            Some('"') if c == '\\' => escaped = true,
+            Some('\'') if c == '\'' => {
+                if chars.peek().is_some_and(|(_, next)| *next == '\'') {
+                    chars.next();
+                } else {
+                    quote = None;
+                }
+            }
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None => {
+                if c == '#' && previous.is_none_or(char::is_whitespace) {
+                    return &line[..index];
+                }
+                if (c == '"' || c == '\'') && opens_quote(line, index) {
+                    quote = Some(c);
+                }
+            }
+        }
+        previous = Some(c);
+    }
+    line
+}
+
+/// Decode a value that is exactly one quoted string, if it is one.
+/// Malformed quoting falls back to stripping a matching outer pair.
+fn decode_quoted(text: &str) -> Option<String> {
+    let quote = text.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let mut escaped = false;
+    let mut chars = text.char_indices().peekable();
+    chars.next();
+    while let Some((index, c)) = chars.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match quote {
+            '"' if c == '\\' => escaped = true,
+            '\'' if c == '\'' => {
+                if chars.peek().is_some_and(|(_, next)| *next == '\'') {
+                    chars.next();
+                } else {
+                    return Some(decode_quoted_inner(quote, &text[1..index]));
+                }
+            }
+            q if c == q => return Some(decode_quoted_inner(quote, &text[1..index])),
+            _ => {}
+        }
+    }
+    // Unterminated: strip a lone opening quote only when the rest has no
+    // closing pair to preserve; otherwise keep the text as written.
+    text.strip_prefix(quote)
+        .filter(|rest| !rest.contains(quote))
+        .map(str::to_string)
+}
+
+fn decode_quoted_inner(quote: char, inner: &str) -> String {
+    match quote {
+        '"' => serde_json::from_str::<String>(&format!("\"{inner}\""))
+            .unwrap_or_else(|_| inner.to_string()),
+        _ => inner.replace("''", "'"),
+    }
 }
