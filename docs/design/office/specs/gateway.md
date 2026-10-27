@@ -209,7 +209,11 @@ through a shell), `region`/`project`.
   whose operation starts with `describe-`, `list-` or `get-`, plus
   `aws sts get-caller-identity`. `gcloud … list` and `gcloud … describe`.
   Global flags are allowlisted too (`--region`, `--query`, `--max-items`,
-  `--page-size`, `--filter`, `--limit`). Output is forced to JSON.
+  `--page-size` and `--starting-token` for aws; `--filter`, `--limit`,
+  `--page-size` and `--sort-by` for gcloud); the rest, including an
+  abbreviation of one, is refused, as are short flags, flags before the
+  command words, and aws `file://`, `fileb://` or URL parameter values.
+  Output is forced to JSON.
 - **Denylist, checked first,** for commands that read secrets, data or
   tokens even though their verb looks read-only: `secretsmanager
   get-secret-value`, `ssm get-parameter`/`get-parameters` with
@@ -218,7 +222,12 @@ through a shell), `region`/`project`.
   `rds generate-db-auth-token`, `eks get-token`, `gcloud secrets versions
   access`, `gcloud auth print-access-token`/`print-identity-token`,
   `gcloud sql generate-login-token`, `gcloud container clusters
-  get-credentials`. A refusal is `command_not_allowed` and names the rule.
+  get-credentials`, and more of the same kind: temporary credentials and
+  registry, database and identity tokens (`sts get-session-token`,
+  `ecr get-authorization-token`, …), `dynamodb get-item`, `kinesis
+  get-records`, `glacier get-job-output`, and the CLIs' own `aws configure`
+  and `gcloud config` (the full list is `DENY` in `cloud.py`). A refusal is
+  `command_not_allowed` and names the rule.
 - The child gets an allowlisted environment (STD-05@1 §R10), a 60-second
   timeout, and output capped at 1 MiB. Output is redacted with the same
   redactor and the call is audited like an HTTP call.

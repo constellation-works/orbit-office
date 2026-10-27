@@ -1,6 +1,7 @@
 """Test support: an exported plugin, the real backend as a subprocess, a fake
-`orbit` that records the backend's callbacks, and loopback HTTP servers that
-record what they receive.
+`orbit` that records the backend's callbacks, loopback HTTP servers that
+record what they receive, and stub `aws`/`gcloud` executables that record
+their argv, environment and credential files.
 
 Tests never touch host state: each one gets a temp root for HOME and
 `{{plugin_state}}`, set on the child's environment only.
@@ -37,11 +38,13 @@ CALL_TIMEOUT = 60
 class GatewayCase(unittest.TestCase):
     """A fresh export, state root and HOME per test."""
 
+    PLUGIN = "gateway"
+
     def setUp(self) -> None:
         temp = tempfile.TemporaryDirectory(prefix="gateway-test-")
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        self.plugin = export.export("gateway", self.root / "plugin") / ".orbit-plugin"
+        self.plugin = export.export(self.PLUGIN, self.root / "plugin") / ".orbit-plugin"
         self.backend = self.plugin / "bin" / "backend.py"
         self.state = self.root / "state"
         self.home = self.root / "home"
@@ -55,11 +58,18 @@ class GatewayCase(unittest.TestCase):
         secrets: dict[str, str] | None = None,
         context: dict[str, Any] | None = None,
         umask: int | None = None,
+        env: dict[str, str] | None = None,
+        prelude: str | None = None,
     ) -> dict[str, Any]:
-        """Run one tool through the real backend, as Orbit does."""
+        """Run one tool through the real backend, as Orbit does.
+
+        `env` adds to (or replaces names in) the backend's environment;
+        `prelude` is Python run before the backend file, which it then runs
+        as __main__ (sys.argv[1] is the backend's path).
+        """
         request = {
             "schema_version": 1,
-            "tool": f"gateway.{tool}",
+            "tool": f"{self.PLUGIN}.{tool}",
             "input": payload if payload is not None else {},
             "context": {
                 "workspace_root": str(self.root),
@@ -71,18 +81,21 @@ class GatewayCase(unittest.TestCase):
                 **(context or {}),
             },
         }
-        env = {
+        environment = {
             "HOME": str(self.home),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "ORBIT_PLUGIN_STATE": str(self.state),
             "ORBIT_PLUGIN_ROOT": str(self.plugin),
-            "ORBIT_TOOL_NAME": f"gateway.{tool}",
+            "ORBIT_TOOL_NAME": f"{self.PLUGIN}.{tool}",
             "ORBIT_BIN": str(self.orbit.program),
-            "ORBIT_PLUGIN": "gateway",
+            "ORBIT_PLUGIN": self.PLUGIN,
             # Not forwarded to a callback: outside its environment allowlist.
             "GATEWAY_TEST_AMBIENT": "ambient",
+            **(env or {}),
         }
         argv = [sys.executable, str(self.backend)]
+        if prelude is not None:
+            argv = [sys.executable, "-I", "-c", prelude, str(self.backend)]
         if umask is not None:
             argv = ["/bin/sh", "-c", f'umask {umask:03o}; exec "$0" "$@"', *argv]
         done = subprocess.run(
@@ -90,7 +103,7 @@ class GatewayCase(unittest.TestCase):
             input=json.dumps(request),
             capture_output=True,
             text=True,
-            env=env,
+            env=environment,
             cwd=self.root,
             timeout=CALL_TIMEOUT,
             check=False,
@@ -329,3 +342,159 @@ class SilentServer:
         for conn in self.held:
             conn.close()
         self.listener.close()
+
+
+# ---------------------------------------------------------------------------
+# Stub cloud CLIs for the cloudcli plugin
+# ---------------------------------------------------------------------------
+
+AWS_KEY_ID = "AKIAZ7FIXTURE0KEY123"
+AWS_SECRET = "Fx7kQ2vN9pLm4RtY8wZc1bHj6sDg3aEf5uKo0iVn"
+GCP_PRIVATE_KEY = (
+    "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7fixturefixture\n"
+    "-----END PRIVATE KEY-----\n"
+)
+GCP_PRIVATE_KEY_ID = "4f1c0de2b7a94e6f8c3d5a1b9e0f7c2d6a8b4e3f"
+GCP_KEY = json.dumps(
+    {
+        "type": "service_account",
+        "project_id": "fixture-project",
+        "private_key_id": GCP_PRIVATE_KEY_ID,
+        "private_key": GCP_PRIVATE_KEY,
+        "client_email": "orbit-cloudcli-readonly@fixture-project.iam.gserviceaccount.com",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+)
+IDENTITIES = {"aws_access_key_id": AWS_KEY_ID, "aws_secret_access_key": AWS_SECRET, "gcp_service_account_json": GCP_KEY}
+
+STUB_CLI = """#!{python} -I
+import json, os, stat, sys, time
+LOG, REPLIES = {log!r}, {replies!r}
+program = os.path.basename(sys.argv[0])
+env = dict(os.environ)
+entry = {{"program": program, "argv": sys.argv[1:], "env": env, "cwd": os.getcwd(), "pid": os.getpid(), "files": {{}}}}
+
+def grab(path):
+    # Read a credential or config file the way the CLI would: through the variable.
+    if path and os.path.isfile(path):
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        entry["files"][path] = {{
+            "text": text,
+            "mode": stat.S_IMODE(os.stat(path).st_mode),
+            "dir_mode": stat.S_IMODE(os.stat(os.path.dirname(path)).st_mode),
+        }}
+        return text
+    return ""
+
+grab(env.get("AWS_SHARED_CREDENTIALS_FILE"))
+grab(env.get("AWS_CONFIG_FILE"))
+if env.get("CLOUDSDK_CONFIG"):
+    grab(os.path.join(env["CLOUDSDK_CONFIG"], "active_config"))
+    config = grab(os.path.join(env["CLOUDSDK_CONFIG"], "configurations", "config_default"))
+    for line in config.splitlines():
+        if line.startswith("credential_file_override"):
+            grab(line.split("=", 1)[1].strip())
+if env.get("HOME"):
+    entry["home_mode"] = stat.S_IMODE(os.stat(env["HOME"]).st_mode)
+with open(LOG, "a", encoding="utf-8") as handle:
+    handle.write(json.dumps(entry) + "\\n")
+with open(REPLIES, encoding="utf-8") as handle:
+    reply = json.load(handle).get(program, {{}})
+if reply.get("orphan"):
+    import subprocess
+    sleeper = subprocess.Popen(["sleep", "300"])  # same process group, left behind
+    with open(reply["orphan"], "w", encoding="utf-8") as handle:
+        handle.write(str(sleeper.pid))
+if reply.get("sleep"):
+    time.sleep(reply["sleep"])
+if reply.get("flood"):
+    sys.stdout.write("x" * reply["flood"])
+sys.stdout.write(reply.get("stdout", "{{}}"))
+sys.stderr.write(reply.get("stderr", ""))
+sys.exit(reply.get("exit", 0))
+"""
+
+
+class StubCLI:
+    """`aws` and `gcloud` executables in `directory` that log each run (argv,
+    environment, cwd, pid and the credential files their variables point at)
+    and answer from `replies`, per program: `stdout`, `stderr`, `exit`,
+    `sleep` seconds, `flood` bytes of output, and `orphan` (leave a `sleep`
+    behind in the process group, its pid in that file)."""
+
+    def __init__(self, directory: Path):
+        directory.mkdir()
+        self.bin = directory / "bin"
+        self.bin.mkdir()
+        self.log = directory / "runs.jsonl"
+        self.replies_file = directory / "replies.json"
+        self.replies: dict[str, dict[str, Any]] = {}
+        self.save()
+        source = STUB_CLI.format(python=sys.executable, log=str(self.log), replies=str(self.replies_file))
+        for program in ("aws", "gcloud"):
+            path = self.bin / program
+            path.write_text(source)
+            path.chmod(0o755)
+
+    def save(self) -> None:
+        self.replies_file.write_text(json.dumps(self.replies))
+
+    def reply(self, program: str, **reply: Any) -> None:
+        self.replies[program] = reply
+        self.save()
+
+    def runs(self) -> list[dict[str, Any]]:
+        if not self.log.exists():
+            return []
+        return [json.loads(line) for line in self.log.read_text().splitlines() if line.strip()]
+
+
+class Tripwire:
+    """A FIFO at `path`. Opening it to read, as a CLI reading its credentials
+    from there would, pairs with the writer this holds open and trips it."""
+
+    def __init__(self, case: unittest.TestCase, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        os.mkfifo(path, 0o600)
+        self.path = path
+        self.released = False
+        self.opened = threading.Event()
+        self.thread = threading.Thread(target=self._hold, daemon=True)
+        self.thread.start()
+        case.addCleanup(self.release)
+
+    def _hold(self) -> None:
+        fd = os.open(self.path, os.O_WRONLY)  # blocks until a reader opens the FIFO
+        if not self.released:
+            self.opened.set()
+        os.close(fd)
+
+    def tripped(self) -> bool:
+        # A reader during the call has already unblocked the writer; give its
+        # thread a moment to record that.
+        self.thread.join(timeout=0.2)
+        return self.opened.is_set()
+
+    def release(self) -> None:
+        if self.released:
+            return
+        self.released = True
+        fd = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK)
+        self.thread.join(timeout=5)
+        os.close(fd)
+
+
+class CloudCase(GatewayCase):
+    """The cloudcli export with stub CLIs first on PATH and both identities set."""
+
+    PLUGIN = "cloudcli"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.cli = StubCLI(self.root / "stub-cli")
+        self.path = f"{self.cli.bin}:/usr/bin:/bin"
+
+    def call(self, tool: str, payload: dict[str, Any] | None = None, secrets: dict[str, str] | None = None, **kwargs: Any) -> dict[str, Any]:
+        env = {"PATH": self.path, "LANG": "C.UTF-8", **(kwargs.pop("env", None) or {})}
+        return super().call(tool, payload, secrets=IDENTITIES if secrets is None else secrets, env=env, **kwargs)

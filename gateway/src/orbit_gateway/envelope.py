@@ -122,12 +122,19 @@ def serve(
     environ: Mapping[str, str],
     handlers: Mapping[str, Callable[[Call], dict[str, Any]]],
     stream: TextIO,
+    redactor: Callable[[Call], Redactor] | None = None,
 ) -> None:
-    """Parse one request, run its handler and emit the redacted answer."""
-    redactor = Redactor()
+    """Parse one request, run its handler and emit the redacted answer.
+
+    `redactor` builds the call's redactor; the default is `redactor_for`, the
+    gateway's (slot values and basic-auth pairs). The cloudcli backend passes
+    its own, so it never reads connections.
+    """
+    make_redactor = redactor or redactor_for
+    answer_redactor = Redactor()
     try:
         call = parse(raw, environ)
-        redactor = redactor_for(call)
+        answer_redactor = make_redactor(call)
         handler = handlers.get(call.verb)
         if handler is None:
             raise GatewayError("unknown_tool", f"this backend serves {sorted(handlers)}, not '{call.verb}'")
@@ -136,7 +143,7 @@ def serve(
         answer = {"ok": False, "error": error.to_json()}
     except Exception as error:  # noqa: BLE001 - reported as a tool error, never a traceback
         answer = {"ok": False, "error": {"code": "backend_error", "message": f"{type(error).__name__}: {error}", "retryable": False}}
-    emit(stream, answer, redactor)
+    emit(stream, answer, answer_redactor)
 
 
 def redactor_for(call: Call) -> Redactor:

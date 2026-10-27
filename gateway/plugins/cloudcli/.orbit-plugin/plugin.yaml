@@ -1,0 +1,82 @@
+# Orbit plugin manifest (schemaVersion 2) for the `cloudcli` plugin:
+# read-only `aws` and `gcloud` calls with the plugin's own identities
+# (docs/design/office/specs/gateway.md, "cloudcli.run").
+#
+# It is a plugin of its own, apart from `gateway`, because Orbit bounds a
+# plugin's declared programs per caller: an activity may call it only if `aws`
+# and `gcloud` are on its proc.spawn allowlist, so implementing agents (which
+# allowlist `python3` only) are refused it and the orchestrator is not.
+#
+# The backend is Python 3.12 standard library only. The shared package
+# (gateway/src/orbit_gateway) is copied into lib/ by
+# `make -C gateway export PLUGIN=cloudcli`; validate and test the export, not
+# this directory.
+schemaVersion: 2
+kind: Plugin
+metadata:
+  name: cloudcli
+  version: 0.1.0
+  description: >-
+    Read-only aws and gcloud commands with the plugin's own read-only
+    identities: an allowlist of describe, list and get commands, a denylist of
+    commands that read secrets, data or tokens, credentials in private
+    per-call files (never argv or the environment), JSON output, a 60-second
+    timeout, 1 MiB of output, redacted and audited.
+  homepage: https://github.com/constellation-works/orbit-office
+spec:
+  requires:
+    orbit: ">=0.34.0 <1.0.0"
+    host_api: 1
+    platforms: [linux, macos]
+    # Enabling records each program's path; the backend refuses an
+    # interpreter older than 3.12 with `python_too_old`.
+    programs: [python3, aws, gcloud]
+
+  backend:
+    type: exec
+    command: bin/backend.py
+    # The CLI's own deadline is 60 s; this leaves room to stop it and answer.
+    timeout_ms: 90000
+    sandbox: default
+
+  permissions:
+    # Per-call credential directories (`calls/`, removed after each call) and
+    # the audit (`audit/`).
+    fs:
+      read: ["{{plugin_state}}"]
+      write: ["{{plugin_state}}"]
+    # aws and gcloud reach their providers' API endpoints.
+    network: any
+
+  # The plugin's own identities, created by the user with read-only roles
+  # (the cloud-cli skill says how). Set with
+  # `orbit plugin secret set cloudcli <name>` (value on stdin).
+  secrets:
+    - name: aws_access_key_id
+      description: Access key id of the plugin's read-only AWS IAM user (ReadOnlyAccess).
+      rotatable: true
+    - name: aws_secret_access_key
+      description: Secret access key of the plugin's read-only AWS IAM user.
+      rotatable: true
+    - name: gcp_service_account_json
+      description: JSON key of the plugin's read-only Google Cloud service account (roles/viewer).
+      rotatable: true
+
+  tools:
+    - name: run
+      description: >-
+        Run one read-only aws or gcloud command and return its JSON output,
+        redacted. aws takes `<service> <operation>` with a describe-, list- or
+        get- operation (and sts get-caller-identity); gcloud takes a command
+        ending in list or describe. Commands that read secrets, data or tokens
+        are refused, as are flags that change the endpoint, identity or output.
+        `args` is argv, never a shell line. Use this instead of aws or gcloud
+        in a shell.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/run.request.json }
+      output_schema: { $ref: schemas/run.response.json }
+
+  skills: [skills/cloud-cli]
+
+  tests: [tests/conformance/*.yaml]

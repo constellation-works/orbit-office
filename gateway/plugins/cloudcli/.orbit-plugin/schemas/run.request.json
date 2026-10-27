@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cloudcli.run request",
+  "type": "object",
+  "required": [
+    "program",
+    "args"
+  ],
+  "properties": {
+    "program": {
+      "type": "string",
+      "enum": [
+        "aws",
+        "gcloud"
+      ],
+      "description": "The CLI to run."
+    },
+    "args": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "description": "argv after the program, never a shell line: for aws `<service> <operation>` then its flags, for gcloud the command words ending in list or describe, then its arguments and flags."
+    },
+    "region": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "aws: the region (the shared config's `region`); gcloud: the default compute region."
+    },
+    "project": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "gcloud only: the project to run against."
+    }
+  },
+  "additionalProperties": false
+}
