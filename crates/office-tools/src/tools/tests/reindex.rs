@@ -11,6 +11,7 @@ fn call(tool: &str, input: Value, ports: &office_core::ports::Ports<'_>) -> Valu
 
 fn ports(library: office_testkit::fakes::FakeLibrary) -> office_core::ports::Ports<'static> {
     office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(library),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),

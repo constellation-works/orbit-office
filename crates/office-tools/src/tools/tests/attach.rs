@@ -61,6 +61,7 @@ fn fixture(documents: &[(String, String)], tags: &[&str]) -> Fixture {
     }
     Fixture {
         ports: Ports {
+            scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
             library: Box::new(library),
             models: Box::new(FakeModels::new()),
             orbit: Box::new(orbit.clone()),
@@ -469,6 +470,7 @@ fn an_unknown_task_is_refused_before_any_copy() {
     }));
     let fixture = Fixture {
         ports: Ports {
+            scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
             library: Box::new(library),
             models: Box::new(FakeModels::new()),
             orbit: Box::new(orbit.clone()),
@@ -507,6 +509,7 @@ fn a_dry_run_previews_without_reading_a_task_or_copying() {
     let orbit = FakeOrbit::default();
     let fixture = Fixture {
         ports: Ports {
+            scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
             library: Box::new(library),
             models: Box::new(FakeModels::new()),
             orbit: Box::new(orbit.clone()),

@@ -22,6 +22,7 @@ fn ports_with(
     let observer = orbit.clone();
     (
         office_core::ports::Ports {
+            scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
             library: Box::new(office_testkit::fakes::FakeLibrary::initialized()),
             models: Box::new(office_testkit::fakes::FakeModels::new()),
             orbit: Box::new(orbit),
@@ -90,6 +91,7 @@ fn scan_below_threshold_returns_no_candidates() {
 #[test]
 fn scan_refuses_an_uninitialized_library() {
     let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(office_testkit::fakes::FakeLibrary::default()),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
@@ -119,6 +121,7 @@ fn ports_for(
     library: Box<dyn Library>,
 ) -> office_core::ports::Ports<'static> {
     office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library,
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(orbit),

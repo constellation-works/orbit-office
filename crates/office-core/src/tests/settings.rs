@@ -39,3 +39,33 @@ fn invalid_open_weights_values_point_to_their_documented_limits() {
         );
     }
 }
+
+#[test]
+fn script_bounds_default_roundtrip_update_and_refuse_unknown_or_excessive_values() {
+    use crate::domain::settings::Settings;
+    let settings = Settings::from_yaml("scripts:\n  timeout_seconds: 30\n").unwrap();
+    assert_eq!(settings.scripts.timeout_seconds, 30);
+    assert_eq!(settings.scripts.log_bytes, 1_048_576);
+    assert_eq!(
+        settings
+            .with_setting("scripts.timeout_seconds", serde_json::json!(1800))
+            .unwrap()
+            .scripts
+            .timeout_seconds,
+        1800
+    );
+    for (key, value) in [
+        ("timeout_seconds", serde_json::json!(1801)),
+        ("log_bytes", serde_json::json!(1048577)),
+        ("output_files", serde_json::json!(9)),
+        ("output_file_bytes", serde_json::json!(1048577)),
+        ("output_files", serde_json::json!(0)),
+        ("unknown", serde_json::json!(1)),
+    ] {
+        assert!(Settings::from_yaml(&format!("scripts:\n  {key}: {value}\n")).is_err());
+    }
+    assert_eq!(
+        Settings::from_yaml(&Settings::default_yaml()).unwrap(),
+        Settings::default()
+    );
+}

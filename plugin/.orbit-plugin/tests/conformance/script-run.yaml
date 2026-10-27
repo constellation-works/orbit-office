@@ -1,0 +1,15 @@
+# Replayed through dispatch with a fixed ScriptRunner/Orbit fixture in script_run.rs.
+# The store's public API tests exercise stub uv; every case is offline.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: script_run_approved_empty_output
+    tool: script-run
+    input: {"artifact":"art-19700101-script","sha256":"0000000000000000000000000000000000000000000000000000000000000000","inputs":[],"args":[],"output":{"title":"Result","kind":"data","series":"result"}}
+    expect:
+      output: {"exit_code":0,"duration_ms":12,"log_tail":"done","run_dir":"fixture-run","output_task":null,"files":[]}
+  - name: script_run_refuses_unapproved_artifact
+    tool: script-run
+    input: {"artifact":"art-19700101-missing","sha256":"0000000000000000000000000000000000000000000000000000000000000000","inputs":[],"args":[],"output":{"title":"Result","kind":"data","series":"result"}}
+    expect:
+      error: {"code":"script_not_approved"}

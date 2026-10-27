@@ -32,6 +32,7 @@ fn ports() -> Ports<'static> {
             .expect("seed document");
     }
     Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(library),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),

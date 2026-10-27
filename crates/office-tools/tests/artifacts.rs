@@ -15,6 +15,7 @@ fn call(ports: &Ports<'_>, tool: &str, input: Value) -> Value {
 
 fn ports(orbit: FakeOrbit) -> Ports<'static> {
     Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(FakeLibrary::initialized()),
         models: Box::new(FakeModels::new()),
         orbit: Box::new(orbit),
@@ -171,4 +172,18 @@ fn refusals_never_publish_partial_outputs_or_accept_caller_approval_provenance()
     );
     assert_eq!(response["error"]["code"], "orbit_unavailable");
     assert!(ports.library.artifact_documents().unwrap().is_empty());
+}
+
+#[test]
+fn proposed_script_output_can_be_explicitly_promoted_without_executor_pickup() {
+    let orbit = FakeOrbit::default();
+    orbit.push_response(Ok(json!({"id":"output-task","status":"proposed","tags":["script-output"],"artifacts":[{"path":"artifact-manifest.json"},{"path":"report.md"}]})));
+    orbit.push_response(Ok(json!({"content":json!({"kind":"data","title":"Script output","files":["report.md"],"series":"script-output"}).to_string()})));
+    orbit.push_response(Ok(json!({"content":"output"})));
+    let response = call(
+        &ports(orbit),
+        "office.artifact-promote",
+        json!({"task":"output-task"}),
+    );
+    assert_eq!(response["ok"], true, "{response}");
 }

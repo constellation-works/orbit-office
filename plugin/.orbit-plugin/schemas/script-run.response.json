@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.script-run response",
+  "type": "object",
+  "properties": {
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "log_tail": {
+      "type": "string"
+    },
+    "run_dir": {
+      "type": "string"
+    },
+    "output_task": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "exit_code",
+    "duration_ms",
+    "log_tail",
+    "run_dir",
+    "output_task",
+    "files"
+  ],
+  "additionalProperties": false
+}

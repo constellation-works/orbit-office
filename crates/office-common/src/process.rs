@@ -307,3 +307,146 @@ mod unix {
         -> i32;
     }
 }
+
+/// Combined bounded log, retained even when a timeout or output cap stops the child.
+pub struct LoggedOutput {
+    /// Actual exit, absent when supervision terminated execution.
+    pub status: Option<ExitStatus>,
+    /// Combined stdout and stderr, at most the requested cap.
+    pub bytes: Vec<u8>,
+    /// True when the wall-clock deadline was reached.
+    pub timed_out: bool,
+    /// True when at least one byte exceeded the combined cap.
+    pub truncated: bool,
+}
+
+/// Supervise a child with a caller-selected deadline and combined log cap.
+/// Overflow retains exactly the capped prefix and terminates the whole group.
+#[cfg(unix)]
+pub fn run_logged(
+    command: &mut Command,
+    root: &Path,
+    timeout: Duration,
+    limit: usize,
+) -> Result<LoggedOutput> {
+    use std::os::unix::process::CommandExt;
+    use std::sync::Mutex;
+    command
+        .process_group(0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let child = command.spawn().map_err(|source| Error::ProcessSpawn {
+        program: command.get_program().into(),
+        source,
+    })?;
+    let mut guard = ChildGuard {
+        child,
+        reaped: false,
+    };
+    let limited = Arc::new(AtomicBool::new(false));
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let stdout = guard.child.stdout.take().ok_or_else(|| {
+        Error::io(
+            "capture stdout",
+            root,
+            std::io::Error::other("pipe unavailable"),
+        )
+    })?;
+    let stderr = guard.child.stderr.take().ok_or_else(|| {
+        Error::io(
+            "capture stderr",
+            root,
+            std::io::Error::other("pipe unavailable"),
+        )
+    })?;
+    let start = |mut stream: Box<dyn Read + Send>| {
+        let log = Arc::clone(&log);
+        let limited = Arc::clone(&limited);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let thread = std::thread::spawn(move || {
+            let result = (|| {
+                let mut buffer = [0u8; 8192];
+                loop {
+                    let count = match stream.read(&mut buffer) {
+                        Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                        result => result?,
+                    };
+                    if count == 0 {
+                        return Ok(Vec::new());
+                    }
+                    let mut bytes = log
+                        .lock()
+                        .map_err(|_| std::io::Error::other("log lock poisoned"))?;
+                    let available = limit.saturating_sub(bytes.len());
+                    bytes.extend_from_slice(&buffer[..count.min(available)]);
+                    if count > available {
+                        limited.store(true, Ordering::Relaxed);
+                        return Ok(Vec::new());
+                    }
+                }
+            })();
+            let _ = sender.send(result);
+        });
+        Reader {
+            receiver,
+            thread: Some(thread),
+        }
+    };
+    let mut out = start(Box::new(stdout));
+    let mut err = start(Box::new(stderr));
+    let deadline = Instant::now() + timeout;
+    let outcome = (|| {
+        loop {
+            if limited.load(Ordering::Relaxed) {
+                return Ok((None, false));
+            }
+            if guard.exited()? {
+                guard.signal_group(9);
+                let status = guard
+                    .child
+                    .wait()
+                    .map_err(|e| Error::io("reap logged subprocess", root, e))?;
+                guard.reaped = true;
+                return Ok((Some(status), false));
+            }
+            if Instant::now() >= deadline {
+                return Ok((None, true));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    })();
+    drop(guard);
+    let drained_out = out.finish(root);
+    let drained_err = err.finish(root);
+    let (status, timed_out) = outcome?;
+    drained_out?;
+    drained_err?;
+    let bytes = log
+        .lock()
+        .map_err(|_| {
+            Error::io(
+                "capture log",
+                root,
+                std::io::Error::other("log lock poisoned"),
+            )
+        })?
+        .clone();
+    Ok(LoggedOutput {
+        status,
+        bytes,
+        timed_out,
+        truncated: limited.load(Ordering::Relaxed),
+    })
+}
+
+/// Unsupported-platform counterpart of combined bounded logging.
+#[cfg(not(unix))]
+pub fn run_logged(
+    _command: &mut Command,
+    _root: &Path,
+    _timeout: Duration,
+    _limit: usize,
+) -> Result<LoggedOutput> {
+    Err(Error::ProcessUnsupported)
+}

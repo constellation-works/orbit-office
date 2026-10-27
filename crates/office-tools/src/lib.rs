@@ -19,6 +19,7 @@ mod tools;
 
 pub use dispatch::serve;
 pub use registry::{Tool, tools};
+pub use tools::scripts::run::prepare_script;
 
 #[cfg(test)]
 mod tests;

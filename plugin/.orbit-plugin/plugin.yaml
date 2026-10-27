@@ -294,15 +294,15 @@ spec:
 
     # ---- scripts ----
 
-    # - name: script-run
-    #   description: >-
-    #     Run an approved, pinned script artifact offline in its own run
-    #     directory, within its bounds, and file its outputs for review;
-    #     run only by routine and auto-task steps.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/script-run.request.json }
-    #   output_schema: { $ref: schemas/script-run.response.json }
+    - name: script-run
+      description: >-
+        Run an approved, pinned script artifact offline in its own run
+        directory, within its bounds, and file its outputs for review;
+        run only by routine and auto-task steps.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/script-run.request.json }
+      output_schema: { $ref: schemas/script-run.response.json }
 
     # ---- bootstrap ----
 
