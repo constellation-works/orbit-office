@@ -1,4 +1,5 @@
-//! Cited KT and meeting extraction. No knowledge proposals are filed here.
+//! Cited digest, KT and meeting extraction. No knowledge proposals are filed here.
+mod digest_profile;
 use super::transcribe::{approved, required_string, reserve};
 use crate::registry::{Call, Tool};
 use office_core::domain::source::{Anchor, parse_anchor, sha256_hex, source_body, video};
@@ -26,9 +27,12 @@ struct Entry {
 fn run(call: &Call<'_>) -> Result<Value> {
     let id = required_string(call, "id")?;
     let profile = required_string(call, "profile")?;
+    if profile == "digest" {
+        return digest_profile::run(call, id);
+    }
     if profile != "kt" && profile != "meeting" {
         return Err(Error::InvalidArgument(
-            "profile must be kt or meeting".into(),
+            "profile must be digest, kt or meeting".into(),
         ));
     }
     let task = call
@@ -261,18 +265,22 @@ fn run(call: &Call<'_>) -> Result<Value> {
         todos.push(call.ports.orbit.task_add(object(&input)?)?);
     }
     let output = json!({"id":id,"profile":profile,"result":result,"dropped":dropped,"calls":count,"derived_by":reply.derived_by,"to_dos":todos});
+    attach(call, id, task, &output)?;
+    Ok(output)
+}
+fn attach(call: &Call<'_>, id: &str, task: &str, output: &Value) -> Result<()> {
     let path = format!("extract/{id}.json");
     let staged = call
         .ports
         .library
-        .stage_attachment(&path, &encode(&output)?)?;
+        .stage_attachment(&path, &encode(output)?)?;
     let put = call.ports.orbit.task_artifact_put(object(
         &json!({"id":task,"source_path":staged,"path":path}),
     )?);
     let cleanup = call.ports.library.remove_staged(&staged);
     put?;
     cleanup?;
-    Ok(output)
+    Ok(())
 }
 fn clean(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")

@@ -419,6 +419,17 @@ impl LibraryFs {
                     }
                 }
             }
+            if let Some(text) = self.optional_bootstrap_json(&parent.join("digest.json"))? {
+                let digest: serde_json::Value = serde_json::from_str(&text).map_err(|_| {
+                    office_core::domain::source::video::refusal(
+                        "invalid_bootstrap_data",
+                        "digest.json is malformed",
+                    )
+                })?;
+                office_core::domain::bootstrap::digest(&digest)?;
+                record.body.push_str("\n\n");
+                record.body.push_str(&text);
+            }
         }
         Ok(record)
     }

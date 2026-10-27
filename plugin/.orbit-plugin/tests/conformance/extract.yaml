@@ -13,3 +13,8 @@ tests:
     input: {"id": "src-19700101-video", "profile": "kt", "task": "task-fixture", "extra": true}
     expect:
       error: {"code":"invalid_argument"}
+  - name: digest_fixture_success
+    tool: extract
+    input: {"id":"src-doc","profile":"digest"}
+    expect:
+      output: {"calls":1,"derived_by":{"model":"fake-hosted","route":"hosted"},"dropped":{"dangling":2,"tangent":0,"uncited":2},"id":"src-doc","profile":"digest","result":{"as_of":null,"claims":[{"cites":["#L1-2"],"subject":"SidecarSubject","text":"Grounded","volatile":false}],"kind_hint":"design-doc","procedures":[{"done_when":"Healthy","inputs":[],"steps":[{"cites":["#L2"],"text":"Run"}],"title":"Deploy"}],"refs":[{"label":"Dashboard","url":"https://example.test"}],"subjects":[{"aliases":[],"name":"SidecarSubject","role":"owner","template":"topic"}],"summary":"Digest fixture","terms":[{"cites":["#L1"],"definition":"Work","term":"Queue"}]},"to_dos":[]}

@@ -512,7 +512,13 @@ impl Library for FakeLibrary {
 
     fn write_document(&self, relative: &Path, text: &str) -> Result<DocumentRecord> {
         self.ready()?;
-        let record = DocumentRecord::from_markdown(relative, text);
+        let mut record = DocumentRecord::from_markdown(relative, text);
+        if record.kind == DocumentKind::Source
+            && let Some(digest) = self.bootstrap_digests.borrow().get(&record.id)
+        {
+            record.body.push_str("\n\n");
+            record.body.push_str(&digest.to_string());
+        }
         if let Some(existing) = self
             .documents
             .borrow()

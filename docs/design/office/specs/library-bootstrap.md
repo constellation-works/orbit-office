@@ -107,7 +107,27 @@ standard model and no agent. It writes the source's **digest** as
 ```
 
 - **Every claim, step and term cites an anchor in that source.** Uncited
-  items are dropped and counted, as in the KT extraction.
+  items and items with dangling citations are dropped and counted, as in
+  the KT extraction. Line anchors count from the source body, after frontmatter;
+  page, slide and timestamp anchors must resolve in that body. Empty procedures
+  are dropped after filtering their steps.
+- A source window holds at most 48,000 characters of annotated text, including
+  absolute line labels. Oversized lines split without changing their line id or
+  breaking UTF-8. Short sources use one standard-tier extraction; longer sources
+  use one call per window and one merge. The result reports `calls` and
+  `dropped: {uncited, dangling, tangent}`. Filtered window results are retained as
+  `extract-window-NNNN.json`, including when a later call fails.
+- Bootstrap-tagged sources require a confirmed `office.batch-plan` allowance.
+  Every window and merge consumes its slot before inference; a partially spent
+  group requires a new preview and confirmation before another attempt. The
+  preview prices all windows and the merge. Untagged sources can be extracted
+  directly. Videos use the confirmed `kt` profile.
+- A digest extraction needs no Orbit task. Supplying `task` (or
+  `context.task_id`) also attaches the result to that task. It creates no to-dos
+  or knowledge proposals. `digest.json` is folded into the source's search row
+  on writes and reindex, retaining the source id and path. Source Markdown
+  remains the evidence; extraction provenance does not invalidate the remaining
+  approved document allowances.
 - `volatile: true` marks a time-bound fact (a sprint, a status, a date that
   will change). Volatile facts never become page claims. They stay
   searchable in the source.
@@ -162,7 +182,7 @@ consolidation call. Checked mechanically wherever a rule can be checked:
 ([kt-videos.md](./kt-videos.md#2-plan-and-confirm-officevideo-plan)), for a
 whole phase:
 
-- Counts one standard digest call per document, each video's own planned
+- Counts each document's standard digest windows and merge, each video's own planned
   calls, and an estimate of careful calls (one per subject group expected
   from earlier phases and the files' headings, refined after stage 1).
 - Prices them from `costs.*`, or shows the counts with rates unset, and shows the route per call group. A batch marked private at the preview routes every call to the private endpoint ([models-and-privacy.md](./models-and-privacy.md#what-private-changes)).

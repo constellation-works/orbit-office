@@ -22,6 +22,222 @@ use office_testkit::fakes::{FakeLibrary, FakeOrbit};
 use serde_json::Value;
 use std::path::Path;
 
+fn digest_reply() -> Value {
+    json!({"summary":"Digest fixture","kind_hint":"design-doc","as_of":null,
+        "subjects":[{"name":"SidecarSubject","template":"topic","aliases":[],"role":"owner"}],
+        "claims":[{"subject":"SidecarSubject","text":"Grounded","cites":["#L1-2"],"volatile":false},
+                  {"subject":"SidecarSubject","text":"Missing","volatile":false},
+                  {"subject":"SidecarSubject","text":"Outside","cites":["#L99999"],"volatile":true}],
+        "procedures":[{"title":"Deploy","inputs":[],"steps":[{"text":"Run","cites":["#L2"]},{"text":"No evidence","cites":[]}],"done_when":"Healthy"}],
+        "terms":[{"term":"Queue","definition":"Work","cites":["#L1"]},{"term":"Absent","definition":"Bad","cites":["#page=99"]}],
+        "refs":[{"label":"Dashboard","url":"https://example.test"}]})
+}
+fn digest_fixture(
+    body: &str,
+) -> (
+    office_core::ports::Ports<'static>,
+    office_testkit::fakes::FakeModels,
+) {
+    let library = FakeLibrary::initialized();
+    super::batch_plan::source(&library, "src-doc", "docs", body);
+    let mut ports = super::batch_plan::ports(library);
+    let mut models = office_testkit::fakes::FakeModels::new();
+    models.extracted = digest_reply();
+    ports.models = Box::new(models.clone());
+    (ports, models)
+}
+#[test]
+fn digest_profile_filters_every_cited_item_and_persists_the_shared_shape() {
+    let (ports, models) = digest_fixture("# Design\nDeploy safely.");
+    super::batch_plan::confirm(&ports, "docs");
+    let result = call(
+        &ports,
+        "office.extract",
+        json!({"id":"src-doc","profile":"digest"}),
+    );
+    assert_eq!(result["ok"], true, "{result}");
+    assert_eq!(result["output"]["calls"], 1);
+    assert_eq!(
+        result["output"]["dropped"],
+        json!({"uncited":2,"dangling":2,"tangent":0})
+    );
+    let saved: Value = serde_json::from_str(
+        &ports
+            .library
+            .source_sidecar("src-doc", "digest.json")
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved, result["output"]["result"]);
+    assert_eq!(saved["claims"].as_array().unwrap().len(), 1);
+    assert_eq!(saved["procedures"][0]["steps"].as_array().unwrap().len(), 1);
+    assert_eq!(saved["terms"].as_array().unwrap().len(), 1);
+    assert_eq!(saved["subjects"][0]["role"], "owner");
+    assert!(saved["as_of"].is_null());
+    let requests = models.extract_requests.borrow();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].schema["additionalProperties"], false);
+    assert!(requests[0].schema["properties"]["subjects"].is_object());
+    assert!(requests[0].text.contains("#L2 Deploy safely."));
+    assert_eq!(
+        call(&ports, "office.search", json!({"query":"SidecarSubject"}))["output"]["hits"][0]["id"],
+        "src-doc"
+    );
+}
+
+#[test]
+fn digest_windows_and_merge_are_included_in_the_confirmed_batch_allowance() {
+    let body = format!("# Design\n{}\nTail evidence.", "界".repeat(60_000));
+    let (ports, models) = digest_fixture(&body);
+    ports
+        .library
+        .set_setting("costs.currency", json!("USD"))
+        .unwrap();
+    ports
+        .library
+        .set_setting("costs.text_1k_tokens", json!(0.01))
+        .unwrap();
+    let batch = super::batch_plan::confirm(&ports, "docs");
+    assert_eq!(batch["plan"]["counts"]["digest"], 3);
+    let result = call(
+        &ports,
+        "office.extract",
+        json!({"id":"src-doc","profile":"digest"}),
+    );
+    assert_eq!(result["ok"], true, "{result}");
+    assert_eq!(result["output"]["calls"], 3);
+    let requests = models.extract_requests.borrow();
+    assert_eq!(requests.len(), 3);
+    assert!(!requests[0].text.contains("Tail evidence."));
+    assert!(requests[1].text.contains("#L3 Tail evidence."));
+    assert!(requests[2].text.contains("Merge these window results"));
+    assert_eq!(
+        requests[..2]
+            .iter()
+            .map(|r| r.text.chars().filter(|c| *c == '界').count())
+            .sum::<usize>(),
+        60_000
+    );
+    assert!(
+        requests[..2]
+            .iter()
+            .all(|r| r.text.chars().count() < 49_000)
+    );
+    let actual_tokens = requests
+        .iter()
+        .map(|r| u64::try_from(r.text.chars().count()).unwrap().div_ceil(4))
+        .sum::<u64>();
+    assert!(batch["plan"]["estimate"]["text_tokens"].as_u64().unwrap() >= actual_tokens);
+    assert_eq!(
+        ports.library.bootstrap_snapshot().unwrap().batches["docs"].used[0],
+        3
+    );
+}
+
+#[test]
+fn digest_requires_confirmation_and_never_retries_a_partly_spent_group() {
+    let (mut ports, mut models) = digest_fixture(&format!("# Design\n{}", "x".repeat(60_000)));
+    let unconfirmed = call(
+        &ports,
+        "office.extract",
+        json!({"id":"src-doc","profile":"digest"}),
+    );
+    assert_eq!(unconfirmed["error"]["code"], "plan_unconfirmed");
+    assert!(models.extract_requests.borrow().is_empty());
+    super::batch_plan::confirm(&ports, "docs");
+    models.extract_failure = Some(1);
+    ports.models = Box::new(models.clone());
+    let failed = call(
+        &ports,
+        "office.extract",
+        json!({"id":"src-doc","profile":"digest"}),
+    );
+    assert_eq!(failed["error"]["code"], "model_unavailable");
+    assert_eq!(models.extract_requests.borrow().len(), 2);
+    assert!(
+        ports
+            .library
+            .source_sidecar("src-doc", "digest.json")
+            .unwrap()
+            .is_none()
+    );
+    let window = ports
+        .library
+        .read_text(Path::new(
+            "sources/1970/01/src-doc/extract-window-0000.json",
+        ))
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&window).unwrap()["claims"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let retry = call(
+        &ports,
+        "office.extract",
+        json!({"id":"src-doc","profile":"digest"}),
+    );
+    assert_eq!(retry["error"]["code"], "plan_exceeded");
+    assert_eq!(models.extract_requests.borrow().len(), 2);
+}
+
+#[test]
+fn digest_publication_preserves_other_documents_allowances_and_private_routing() {
+    let mut library = FakeLibrary::initialized();
+    library.settings = private_settings(&Capability::ALL);
+    for id in ["one", "two"] {
+        super::batch_plan::source(&library, id, "docs", "# Design\nEvidence.");
+    }
+    let mut ports = super::batch_plan::ports(library);
+    let mut models = office_testkit::fakes::FakeModels::new();
+    models.extracted = digest_reply();
+    ports.models = Box::new(models.clone());
+    let preview =
+        super::batch_plan::preview(&ports, json!({"phase":"docs","sensitivity":"private"}));
+    super::batch_plan::preview(
+        &ports,
+        json!({"phase":"docs","confirm":true,"digest":preview["plan"]["digest"]}),
+    );
+    for id in ["one", "two"] {
+        let result = call(
+            &ports,
+            "office.extract",
+            json!({"id":id,"profile":"digest"}),
+        );
+        assert_eq!(result["ok"], true, "{result}");
+        assert_eq!(result["output"]["derived_by"]["route"], "private:company");
+    }
+    assert_eq!(models.extract_requests.borrow().len(), 2);
+    assert!(
+        models
+            .sensitivities()
+            .iter()
+            .all(|s| s.as_str() == "private")
+    );
+}
+
+#[test]
+fn digest_refuses_changed_approved_sources_before_inference() {
+    let (ports, models) = digest_fixture("# Design\nEvidence.");
+    super::batch_plan::confirm(&ports, "docs");
+    let path = Path::new("sources/1970/01/src-doc/source.md");
+    let old = ports.library.read_text(path).unwrap();
+    ports
+        .library
+        .write_document(path, &format!("{old}Changed.\n"))
+        .unwrap();
+    let result = call(
+        &ports,
+        "office.extract",
+        json!({"id":"src-doc","profile":"digest"}),
+    );
+    assert_eq!(result["error"]["code"], "plan_changed", "{result}");
+    assert!(models.extract_requests.borrow().is_empty());
+}
+
 pub(super) fn reply() -> Value {
     json!({"summary":"Fixture KT",
         "chapters":[{"title":"Deploy","label":"core","start":0,"end":60},{"title":"Aside","label":"tangent","start":60,"end":120}],
@@ -253,7 +469,14 @@ fn transcribe_and_extract_conformance_goldens_replay_offline_success_and_refusal
             for (prefix, success) in [("      output: ", true), ("      error: ", false)] {
                 if let Some(raw) = line.strip_prefix(prefix) {
                     let expected: Value = serde_json::from_str(raw).unwrap();
-                    let response = call(&ports, &format!("office.{verb}"), input.take().unwrap());
+                    let input = input.take().unwrap();
+                    let response = if verb == "extract" && input["profile"] == "digest" {
+                        let (ports, _) = digest_fixture("# Design\nDeploy safely.");
+                        super::batch_plan::confirm(&ports, "docs");
+                        call(&ports, "office.extract", input)
+                    } else {
+                        call(&ports, &format!("office.{verb}"), input)
+                    };
                     assert_eq!(response["ok"], success, "{response}");
                     if success {
                         counts.0 += 1;
