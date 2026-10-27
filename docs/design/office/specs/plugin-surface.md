@@ -22,7 +22,7 @@ Source: spec §12. The one-call envelope is
 | `office.transcribe` | mutating | workspace | Transcribe a video or meeting source's audio into its body in chunks (Muse Voice Transcribe); a no-op when a `.vtt` was imported |
 | `office.video-plan` | mutating | **none** | Plan a video: duration, deduplicated keyframes, model-call counts, cost estimate; `confirm` with the digest the user saw ([kt-videos.md](./kt-videos.md)) |
 | `office.frames` | mutating | **none** | Extract a confirmed video's keyframes and read them with Muse Spark image input into `frames.md` |
-| `office.extract` | mutating | workspace | From a source, produce structured JSON plus a task artifact: `profile: kt` gives chapters, gotchas, knowledge candidates, runbook steps and questions; `profile: meeting` gives a summary, decisions and to-dos |
+| `office.extract` | mutating | workspace | From a source, produce structured JSON plus a task artifact: `profile: kt` gives chapters, gotchas, knowledge candidates, runbook steps and questions; `profile: meeting` gives a summary, decisions and to-dos; `profile: digest` writes a source's `digest.json` |
 | `office.source-show` | read_only | workspace | Return a source, optionally at an anchor |
 | `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, template, tag, series and date |
 | `office.knowledge-show` | read_only | workspace | Read a page and its back-links |
@@ -39,6 +39,9 @@ Source: spec §12. The one-call envelope is
 | `office.session-brief` | read_only | workspace | Assemble the session-start brief from Orbit and the Library, with no model call ([sessions.md](./sessions.md#session-brief)) |
 | `office.digest` | mutating | **none** | Write the day's digest artifact with one Muse Spark call; run only by the `office-daily-digest` routine ([sessions.md](./sessions.md#daily-digest)) |
 | `office.script-run` | mutating | **none** | Run an approved `script` artifact as a routine step: pinned version, run directory under plugin state, offline dependencies, bounds; outputs filed as a `script-output` task for review ([scripts.md](./scripts.md)) |
+| `office.batch-plan` | mutating | **none** | Plan a bootstrap phase's batch: calls and cost; confirm with the digest the user saw ([library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation)) |
+| `office.consolidate` | mutating | **none** | Group a batch's digests by subject, apply the page rules, one careful call per passing group, file one proposal per page ([library-bootstrap.md](./library-bootstrap.md#stage-2-consolidate-per-topic-careful)) |
+| `office.bootstrap-status` | read_only | workspace | Setup progress per phase, with computed gaps |
 | `office.review-inputs` | read_only | workspace | Gather a period's completed work, conversions, metrics, decisions and knowledge changes for a review |
 | `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, page templates (no pages), index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
 | `office.config-set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
@@ -106,6 +109,7 @@ Seeded disabled, enabled during onboarding:
 
 - **Routines:**
   - `office-kt-inbox`: every 15 minutes, process confirmed video plans: transcribe, frames, extract (`kt`), then file knowledge proposals and question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
+  - `office-bootstrap`: every 15 minutes, run a confirmed bootstrap batch: digests (and the KT steps for videos), then `office.consolidate` ([library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation)).
   - `office-signals`: daily.
   - `office-daily-digest`: daily. One deterministic `plugin.tool_call` step running `office.digest`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).
 - **Auto-tasks:**
@@ -133,7 +137,7 @@ requires an outward-facing action.
   - network `any`, the only setting that reaches remote hosts. The plugin calls only the Meta and Baseten endpoints.
   - `orbit_tools`: the callbacks listed above.
   - Secrets: `meta_api_key` and `baseten_token` (`spec.secrets`).
-- **Required programs:** `spec.requires.programs: [git, ffmpeg, ffprobe, uv]`, plus
+- **Required programs:** `spec.requires.programs: [git, ffmpeg, ffprobe, uv, pdftotext]` (`pdftotext` is optional: without it PDFs are refused with `converter_unavailable`), plus
   `cargo` under `spec.build` for source-built installs. Programs are
   resolved against the operator's `PATH` when the plugin is enabled, and
   that path is the one granted. `ffmpeg` splits long audio for

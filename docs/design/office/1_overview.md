@@ -119,7 +119,7 @@ store (domain, runbook; frictions in Orbit); artifacts store; KT pack
 (cost preview → transcribe and read keyframes → chaptered index with
 tangents folded → cited knowledge proposals, a runbook and questions for the
 presenter; [specs/kt-videos.md](./specs/kt-videos.md));
-knowledge attached to agent tasks; proposals from three signals
+Library bootstrap for a new role (document capture, digest per source, consolidation per topic under the page rules, batch preview, setup progress; [specs/library-bootstrap.md](./specs/library-bootstrap.md)); knowledge attached to agent tasks; proposals from three signals
 (repetition, friction, staleness); Needs you; Insights (automation ratio);
 review generation over seeded history.
 

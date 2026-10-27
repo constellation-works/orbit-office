@@ -112,7 +112,7 @@ the rest of its report.
 | `glossary` | `dom-glossary` (one) | Terms and acronyms, one `### Term` each, citing where it was first seen | `matched` |
 | `goals` | `dom-goals` (one) | This period's priorities or objectives | `never`; read by signals and reviews |
 | `rhythm` | `dom-rhythm` (one) | Recurring meetings and deadlines ("status update every Friday") | `never`; read by signals |
-| `runbook` | `rb-<slug>` | Inputs, steps, done when (all required) | named by the task, as today |
+| `runbook` | `rb-<slug>` | Inputs, steps, done when (all required); optional `performable` and `submission` for runbooks the agent carries out as drafts ([library-bootstrap.md](./library-bootstrap.md#runbooks-the-agent-performs-as-drafts)) | named by the task, as today |
 
 The bundled files use these concrete heading names and minimum requirements.
 All default to `sensitivity: normal`; all except `runbook` have `type: domain`.

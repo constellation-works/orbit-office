@@ -871,6 +871,61 @@ is worth paying.
   shown in advance. Day-1 checks on Muse audio limits, context window, image
   input and the private route gate the plan.
 
+## A new role's material is bootstrapped in phases: digest per source, consolidate per topic
+
+**Recorded:** 2026-10-27
+**Code anchors:** `crates/office-tools/src/tools/bootstrap/`; [specs/library-bootstrap.md](./specs/library-bootstrap.md)
+
+### Context
+
+Daniel's own routine when starting a role: gather the onboarding pages,
+design docs and projects, then the KT videos, then the team's artifacts,
+then the company's processes and policies, and turn them into knowledge an
+agent can answer from and act on. The risk is a Library cluttered with a
+page per document. The alternatives considered:
+
+- **A proposal per source**, as the KT pack first did. Twenty documents
+  about one system would make twenty overlapping pages, and the approval
+  queue would flood.
+- **An agent loop per document.** Its cost is unbounded, and nothing stops
+  it writing page after page.
+- **The careful model on every document.** The cost of the careful model is
+  only worth paying where sources meet, at the subject.
+- **Rules only in prompt text.** They drift, and nothing enforces them
+  (STD-02@3 §R25).
+
+### Decision
+
+- **Sources keep everything; pages keep only what is worth maintaining.**
+- **Four phases, in order:** docs, KT, team, process.
+- **Two stages:** one cheap fixed digest call per source, then one careful
+  call per subject group across the batch, producing at most one proposal
+  per page.
+- **KT videos go through the same consolidation.**
+- **Page rules** are written in the skill, and checked mechanically where
+  possible:
+  - the source-count bar;
+  - the runbook shape;
+  - alias and token-overlap merging;
+  - a word cap;
+  - policies need an authoritative ref and an `as_of`;
+  - volatile facts are excluded;
+  - a new-page budget per batch.
+- **Batch preview** bound to a digest, and **setup progress** with computed
+  gaps.
+- **Runbooks may be `performable`.** The agent does everything up to
+  submission, and the user submits a draft or approves a gateway draft.
+  Browser automation is out of scope for the event.
+
+### Consequences
+
+- The Library grows by subject and stays reviewable, the cost of a phase is
+  known before it runs, and gaps are visible.
+- Cost: document conversion (HTML, docx, pptx, and PDF through an optional
+  `pdftotext`), a `careful` model tier, three tools and a routine. Before
+  this, the KT pack proposed pages directly; now it hands its candidates to
+  consolidation.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.

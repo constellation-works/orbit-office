@@ -24,9 +24,9 @@ Source: spec §14–§16.
 
 1. **0:00 Opening line** (compliance), then the problem in one sentence: cloud agents run your work where you can't see or keep it.
 2. **0:15 Today screen:** seeded weeks of work. The automation ratio has climbed from 10% to 55% (labelled simulated).
-3. **0:30 Drop a 50-minute KT video.** The cost preview appears; press Process. The result: a 6-minute chaptered index with tangents folded and one gotcha lifted out, a key-rotation runbook and three system pages proposed, and two questions for the presenter in your to-dos, every line citing `#t=…` or `#frame=…`. Ask "how do I rotate the ingest keys?" and the answer links to 00:31:12.
+3. **0:30 Day one in a new role:** drop the onboarding folder and a 50-minute KT video. Library setup shows the batch preview; press Process. Pages arrive grouped by subject, one per topic rather than one per document. **The KT video:** The cost preview appears; press Process. The result: a 6-minute chaptered index with tangents folded and one gotcha lifted out, a key-rotation runbook and three system pages proposed, and two questions for the presenter in your to-dos, every line citing `#t=…` or `#frame=…`. Ask "how do I rotate the ingest keys?" and the answer links to 00:31:12.
 4. **1:10 Paste a Slack thread into Muse Code.** It is saved as a source, and the orchestrator links it to the client page and answers with citations. Then highlight a line in the KT transcript and say "make this a to-do for me". The task appears, citing that timestamp.
-5. **1:35 An agent drafts the key-rotation change request** using the runbook the video just produced. Needs you: approve it (copied, not sent: the trust gate).
+5. **1:35 "Request access to the ingest AD group for me."** The agent follows the `performable` runbook the onboarding folder produced and drafts the request. Needs you: approve it (copied, not sent: the trust gate).
 6. **1:55 A proposal appears.** "You've prepared a QBR deck by hand three times. Want a routine?" It shows the evidence, you accept, and it appears in Routines.
 7. **2:20 Insights:** the conversion appears under "what got automated", with hours returned.
 8. **2:35 Generate the quarterly review.** Every line is cited. Close on the Library and routines: you can see everything, and it is yours.
@@ -37,7 +37,7 @@ Source: spec §14–§16.
 |---|---|---|---|
 | Tue 10-27 | Repo, manifest, `init`, `capture`, Library layout, index, `reindex` | Muse Code wired to Orbit MCP with the office skill (day-1 checks: the skill is listed, and whether a prompt hook exists); app skeleton | Synthetic data plan |
 | Wed 10-28 | `transcribe`, `video-plan`, `frames`, `extract` (KT profile), the KT routine | Today and To-dos screens; upload with cost preview | Generate the synthetic KT video |
-| Thu 10-29 | `knowledge.*`, `attach`, the agent to-do activity, `artifact-promote` | Source view, Library screen | Seed 6 weeks of history |
+| Thu 10-29 | `knowledge.*`, `attach`, the agent to-do activity, `artifact-promote`; document capture, `extract` digest profile, `batch-plan`, `consolidate`, `bootstrap-status` | Source view, Library screen with Library setup | Synthetic onboarding folder; seed 6 weeks of history |
 | Fri 10-30 | `signals-scan`, proposals create and accept | Needs you, Routines screens | |
 | Sat 10-31 | `metrics`, `review`, `selection.*` | Insights, Review screens; selection tray and hook | First full run-through |
 | Sun 11-01 | Open-weight routing; receipts pack if on track | Polish; installable PWA; the paste capture moment | |

@@ -65,6 +65,7 @@ behaviour is reviewable) requires:
 5. **Answer from the Library.** Questions such as "when did I…" or "what did Jane say about…" are answered by searching sources, knowledge and artifacts, with citations. If nothing in the Library supports an answer, it says so.
 6. **Resolve "this".** When the user says "this", "that", "here" or "these", call `office.selection-get` first, then use the selection as a typed reference ([selection-sharing.md](./selection-sharing.md)). When the hook already injected a selection into the prompt, use that instead.
 7. **Stay short.** Plain words, no internal ids in prose. Citations will render as links that open the app at the source or page once the planned source screen ships.
+8. **Lead the bootstrap.** In a new role, after the onboarding interview, the agent runs the Library bootstrap phase by phase (docs, KT videos, team artifacts, processes and policies): asks for the material, shows the batch preview, and walks the user through proposals by subject. It never writes pages outside it ([library-bootstrap.md](./library-bootstrap.md)). When the user asks it to carry out a `performable` runbook, it files an `owner:agent` to-do whose output is a draft the user submits.
 
 ## Guardrails
 

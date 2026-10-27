@@ -24,6 +24,11 @@ stdout, exit code) is excluded.
 | **Chapter** | A timed topic segment of a video, labelled `core` or `tangent`; tangents are folded in the app, and their gotchas lifted out. |
 | **Gotcha** | A warning said in passing, kept as cited knowledge even when its chapter is a tangent. |
 | **Video plan** | The cost preview for a video: duration, keyframes, model calls and estimate. Processing waits until the user confirms its digest. |
+| **Library bootstrap** | The four-phase setup of a new role's Library (docs, KT, team, process): a digest per source, consolidation per topic, page rules, setup progress. See [specs/library-bootstrap.md](../specs/library-bootstrap.md). |
+| **Digest** | A source's `digest.json`: summary, subjects, cited claims, procedures and terms, from one cheap call. |
+| **Consolidation** | One careful call per subject across a batch's digests, producing at most one proposal per page. |
+| **Page rules** | What deserves a page (one subject, reused, lasting, short, policies with a source), checked mechanically where possible. |
+| **Performable runbook** | A runbook marked `performable: agent`: the agent does every step up to submission and hands the user a draft to submit. |
 | **Artifact** | Agent output the user approved, promoted from a task into the Library, versioned by `series`, never edited in place. The daily digest is the one artifact promoted by a routine without review. |
 | **Friction** | An Orbit record of something that went wrong or slowed work; the plugin adds `cites` and `runbook` conventions, never a second store. |
 | **Decision log** | The append-only `conversation` source of one orchestrator session: decisions, verbatim directions and facts, actions, open questions. See [specs/sessions.md](../specs/sessions.md). |

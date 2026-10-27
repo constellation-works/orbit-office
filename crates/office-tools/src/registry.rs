@@ -10,8 +10,8 @@ use office_core::tool::ToolSpec;
 use serde_json::{Map, Value};
 
 use crate::tools::{
-    artifacts, insights, knowledge, library, proposals, scripts, selection, sessions, sources,
-    status,
+    artifacts, bootstrap, insights, knowledge, library, proposals, scripts, selection, sessions,
+    sources, status,
 };
 
 /// What a handler receives: the tool's validated input and Orbit's call context.
@@ -115,6 +115,10 @@ static TOOLS: &[Tool] = &[
     sessions::digest::TOOL,
     // scripts (specs/scripts.md)
     scripts::run::TOOL,
+    // bootstrap (specs/library-bootstrap.md)
+    bootstrap::batch_plan::TOOL,
+    bootstrap::consolidate::TOOL,
+    bootstrap::status::TOOL,
     // insights (specs/analytics-and-reviews.md)
     insights::metrics::TOOL,
     insights::review_inputs::TOOL,

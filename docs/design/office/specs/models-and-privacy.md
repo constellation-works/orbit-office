@@ -15,6 +15,8 @@ Source: spec §9.
 |---|---|---|
 | Orchestrator | Muse Code (default) running Muse Spark or Muse Wonder | Any MCP-capable agent CLI works. The orchestrator plus agents loop is the candidate for the agentic bonus prize |
 | Video and meeting transcription | Muse Voice Transcribe | In chunks with our own offsets, so anchors hold without model timestamps; skipped when a `.vtt` exists |
+| Bootstrap digest, one per source | Muse Spark | The cheap pass ([library-bootstrap.md](./library-bootstrap.md)) |
+| Bootstrap consolidation, one per subject | Muse Wonder (the `careful` tier, `models.careful`) | Merges claims across sources and flags conflicts; day-1 check that it is on the API |
 | KT keyframe reading | Muse Spark with image input | One call per deduplicated keyframe, capped per hour ([kt-videos.md](./kt-videos.md)) |
 | KT chapters, knowledge candidates, questions | Muse Spark | One call over the merged timeline, or 15-minute windows and a merge |
 | Summaries, decisions, to-do extraction | Muse Spark | Structured output validated against a JSON Schema |

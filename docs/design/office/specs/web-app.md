@@ -33,11 +33,11 @@ Source: spec §13.1–§13.2 and §13.4.
 
 | Screen | Content |
 |---|---|
-| **Today** | Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
+| **Today** | Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
 | **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; every citation opens the player at its second ([kt-videos.md](./kt-videos.md#app)) |
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge |
 | **Routines** | Plain-sentence cards ("Every 15 minutes: process the KT videos you confirmed") with an on/off switch, last run, what it produced, and retention settings |
-| **Library** | Search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meetings and tasks); history for every page and artifact |
+| **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meetings and tasks); history for every page and artifact |
 | **Settings** | Library settings; **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
 | **Insights** | Automation ratio line, metric tiles, "what got automated" |
 | **Review** | Generated reviews with their citations, and a regenerate button |

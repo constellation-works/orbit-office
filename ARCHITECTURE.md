@@ -83,6 +83,7 @@ crates/office-tools/src/
     selection/           get  put                                     (specs/selection-sharing.md)
     sessions/            brief  digest                                (specs/sessions.md)
     scripts/             run                                          (specs/scripts.md)
+    bootstrap/           batch_plan  consolidate  status              (specs/library-bootstrap.md)
     insights/            metrics  review_inputs                       (specs/analytics-and-reviews.md)
 ```
 

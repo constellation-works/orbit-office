@@ -194,6 +194,7 @@ from `.vtt` transcripts and pasted notes.
 | Session continuity: decision log, session brief, daily digest | [specs/sessions.md](./specs/sessions.md) |
 | Scratch space; running approved scripts from routines | [specs/scripts.md](./specs/scripts.md) |
 | Gateway plugins: connections, audited API requests, read-only cloud CLIs | [specs/gateway.md](./specs/gateway.md) |
+| Library bootstrap: phases, digests, consolidation, page rules, setup progress, performable runbooks | [specs/library-bootstrap.md](./specs/library-bootstrap.md) |
 | KT videos: plan and cost preview, frames, chapters, knowledge proposals | [specs/kt-videos.md](./specs/kt-videos.md) |
 | Install script: Orbit, git, workspace, plugin, scaffold, app | [specs/install.md](./specs/install.md) |
 | Proposal kinds, signals, lifecycle | [specs/proposals.md](./specs/proposals.md) |

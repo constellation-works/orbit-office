@@ -127,7 +127,8 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 - **Video:** the transcript as for a meeting, plus `frames.md` (frame readings, `#frame=00:12:31`) and `chapters.md` (`#chapter=3`) beside it ([kt-videos.md](./kt-videos.md#library-shape)).
 - **Meeting:** one paragraph per speaker turn, prefixed with `[hh:mm:ss] Speaker:`. The anchor is `#t=00:12:31`.
 - **Chat:** one line per message, `[timestamp] Author: text`. The anchor is `#L14-20`.
-- **Email, doc:** paragraphs. The anchor is `#L…`.
+- **Email, doc:** paragraphs. The anchor is `#L…`. Converted documents add `#slide=<n>` (PowerPoint) and `#page=<n>` (PDF); conversions are in [library-bootstrap.md](./library-bootstrap.md#document-capture).
+- **Digest:** any source may carry `digest.json` beside `source.md`: the per-source summary, subjects, cited claims, procedures and terms that the bootstrap's consolidation reads ([library-bootstrap.md](./library-bootstrap.md#stage-1-a-digest-per-source-cheap)).
 - **Receipt, bill:** extracted fields as a YAML block plus the raw OCR text.
 - **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), fact the user stated, action, open question, resolution or handoff, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The agent CLI's own transcript belongs to that CLI, so the skill has the agent write this log itself ([sessions.md](./sessions.md#decision-log)).
 

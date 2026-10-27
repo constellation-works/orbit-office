@@ -33,7 +33,10 @@ cover the rest. The `meetings` pack remains, without its own routine.
    - glossary terms.
 
    All of them are built from the About templates
-   ([knowledge-templates.md](./knowledge-templates.md)).
+   ([knowledge-templates.md](./knowledge-templates.md)) and go through the
+   per-topic consolidation of the Library bootstrap, so one video adds to the
+   pages other sources already feed, rather than making its own
+   ([library-bootstrap.md](./library-bootstrap.md#stage-2-consolidate-per-topic-careful)).
 3. **Questions for the presenter.** Gaps and promises ("I'll send you the
    config later") become `owner:you` to-dos tagged `kt-question`, each naming
    the person to ask and citing the moment.
@@ -128,10 +131,13 @@ confirmed plans. Each is a `plugin.tool_call` step:
      Uncited claims are dropped and counted in the step result, never kept.
    - Content inside a `tangent` chapter becomes knowledge only as a gotcha.
    - It writes `chapters.md` and the extract task artifact.
-4. **Propose and file.** One `knowledge_add`/`knowledge_update` proposal per
-   page, through `office.proposal-create`, tagged `kt` and grouped in the app
-   under the video. One `owner:you` to-do per question, tagged
-   `kt-question`.
+4. **Consolidate and file.** The knowledge candidates are written as the
+   source's digest (`digest.json`, the shape in
+   [library-bootstrap.md](./library-bootstrap.md#stage-1-a-digest-per-source-cheap)),
+   and `office.consolidate` turns them into one proposal per page, merged
+   with what other sources say about the same subjects and held to the page
+   rules. A video does not propose pages on its own. One `owner:you` to-do
+   per question, tagged `kt-question`.
 5. **Hard cap.** No step makes more model calls than the confirmed plan
    counted. A step that would is refused with `plan_exceeded`, and the
    source keeps what was done so far.
