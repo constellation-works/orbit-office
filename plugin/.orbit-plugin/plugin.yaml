@@ -376,8 +376,6 @@ spec:
 
   definitions:
     auto_tasks: [definitions/auto_tasks/office-review.yaml]
-
-  definitions:
     activities: [definitions/activities/office-agent-todo.yaml]
 
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings]
