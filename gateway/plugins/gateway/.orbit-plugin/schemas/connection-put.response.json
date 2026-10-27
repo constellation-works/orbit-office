@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.connection-put response",
+  "type": "object",
+  "required": [
+    "connection",
+    "created",
+    "released_slot"
+  ],
+  "properties": {
+    "connection": {
+      "type": "object",
+      "required": [
+        "name",
+        "base_url",
+        "auth",
+        "slot",
+        "slot_state",
+        "methods",
+        "drafts",
+        "timeout_seconds",
+        "max_response_bytes",
+        "disabled"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "base_url": {
+          "type": "string"
+        },
+        "auth": {
+          "type": "object",
+          "required": [
+            "scheme"
+          ],
+          "properties": {
+            "scheme": {
+              "enum": [
+                "bearer",
+                "basic",
+                "header",
+                "none"
+              ]
+            },
+            "header": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "slot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The secret slot (conn_01 \u2026 conn_16) holding this connection's secret."
+        },
+        "slot_state": {
+          "enum": [
+            "set",
+            "unset",
+            "none"
+          ],
+          "description": "Whether the slot holds a value; never the value."
+        },
+        "methods": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "GET",
+              "HEAD"
+            ]
+          }
+        },
+        "drafts": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
+          }
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        },
+        "max_response_bytes": {
+          "type": "integer"
+        },
+        "disabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "released_slot": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "A slot this connection no longer uses (its origin or scheme changed); remove its value."
+    }
+  },
+  "additionalProperties": false
+}

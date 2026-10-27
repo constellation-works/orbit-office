@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.http-get response",
+  "type": "object",
+  "required": [
+    "connection",
+    "method",
+    "url",
+    "status",
+    "content_type",
+    "headers",
+    "body",
+    "bytes",
+    "truncated",
+    "redirects"
+  ],
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "method": {
+      "enum": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    "url": {
+      "type": "string"
+    },
+    "status": {
+      "type": "integer"
+    },
+    "content_type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "headers": {
+      "type": "object",
+      "properties": {
+        "cache-control": {
+          "type": "string"
+        },
+        "content-language": {
+          "type": "string"
+        },
+        "content-length": {
+          "type": "string"
+        },
+        "content-range": {
+          "type": "string"
+        },
+        "content-type": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "expires": {
+          "type": "string"
+        },
+        "last-modified": {
+          "type": "string"
+        },
+        "link": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "retry-after": {
+          "type": "string"
+        },
+        "x-ratelimit-limit": {
+          "type": "string"
+        },
+        "x-ratelimit-remaining": {
+          "type": "string"
+        },
+        "x-ratelimit-reset": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "body": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "none"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "json"
+            },
+            "value": {}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "text"
+          ],
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "size",
+            "sha256"
+          ],
+          "properties": {
+            "kind": {
+              "const": "binary"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "redirects": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "redirect": {
+      "type": "object",
+      "description": "A redirect returned, not followed.",
+      "required": [
+        "location",
+        "reason"
+      ],
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "other_origin",
+            "limit"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

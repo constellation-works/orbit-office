@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.audit-list response",
+  "type": "object",
+  "required": [
+    "records",
+    "skipped"
+  ],
+  "properties": {
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "time",
+          "caller",
+          "tool",
+          "connection",
+          "method",
+          "path",
+          "query",
+          "status",
+          "bytes",
+          "duration_ms",
+          "body_sha256",
+          "redirects",
+          "outcome"
+        ],
+        "properties": {
+          "time": {
+            "type": "string"
+          },
+          "caller": {
+            "type": "object",
+            "required": [
+              "agent",
+              "model",
+              "task_id",
+              "job_run_id",
+              "session_id"
+            ],
+            "properties": {
+              "agent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "task_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "job_run_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "session_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "tool": {
+            "type": "string"
+          },
+          "connection": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query": {
+            "type": "object"
+          },
+          "status": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "body_sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redirects": {
+            "type": "integer"
+          },
+          "outcome": {
+            "type": "string",
+            "description": "ok, redirect_not_followed, or the error code."
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Newest first."
+    },
+    "skipped": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

@@ -17,8 +17,12 @@ Two plugins share one Python package:
 
 | Plugin | Tools | Who may call | Priority |
 |---|---|---|---|
-| `gateway` | `gateway.http.get`, `gateway.http.draft`, `gateway.http.send`, `gateway.connection.list`, `gateway.connection.put`, `gateway.audit.list` | the orchestrator and implementing agents | must-have (GET and drafts) |
+| `gateway` | `gateway.http-get`, `gateway.http-draft`, `gateway.http-send`, `gateway.connection-list`, `gateway.connection-put`, `gateway.audit-list` | the orchestrator and implementing agents | must-have (GET and drafts) |
 | `cloudcli` | `cloudcli.run` | the orchestrator only | should-have |
+
+Tool verbs are hyphenated (`http-get`, not `http.get`): Orbit accepts only
+lowercase letters, digits and `-` in a plugin tool's name
+([decision](../4_decisions.md#gateway-tool-verbs-are-hyphenated)).
 
 They are separate plugins because Orbit bounds a plugin's declared programs
 per caller. An implementing agent may call a plugin only if every program the
@@ -64,23 +68,32 @@ never by an agent:
 
 - **`base_url`** must be `https`, except plain `http` to a loopback address
   (the demo's mock API).
-- **`auth.scheme`** is `bearer`, `basic`, `header` (with a header name) or
-  `none`.
+- **`auth.scheme`** is `bearer`, `basic`, `header` (with a header name in
+  `auth.header`) or `none`. For `basic`, `auth.username` holds the user name
+  and the slot holds the password.
+- **`disabled: true`** keeps a connection but refuses calls through it as
+  `unknown_connection`.
+- A refused connection (`base_url`, scheme, method lists, bounds) is
+  `invalid_connection`.
 - **`methods`** run directly, and only `GET` and `HEAD` may be listed there.
   **`drafts`** are the write methods an agent may draft for approval.
 - **Secrets in slots.** Orbit plugin secrets are names fixed in the
   manifest, so `gateway` declares sixteen slots, `conn_01` … `conn_16`.
-  `gateway.connection.put` (mutating, `mcp_scope: none`, app only) writes the
+  `gateway.connection-put` (mutating, `mcp_scope: none`, app only) writes the
   connection with a free slot and never takes a secret. The app then runs
   `orbit plugin secret set gateway conn_03` with the value on stdin, so it
   never appears in argv, a tool input, a log or the audit. Because each value
   sits in its own declared slot, Orbit's host masks it in every result as
-  well.
-- `gateway.connection.list` (read_only, `workspace`) returns names, base
+  well. A free slot is one no connection uses and that holds no value, so a
+  stale secret is never handed to a new connection; with none left the put is
+  refused (`no_free_slot`). A connection keeps its slot while its origin is
+  unchanged; a new origin gets a new slot, and the put names the old one in
+  `released_slot` so the app can remove its value.
+- `gateway.connection-list` (read_only, `workspace`) returns names, base
   URLs, methods and whether each slot is set, never a value. An agent that
   needs a connection that does not exist asks the user; it cannot create one.
 
-## `gateway.http.get`
+## `gateway.http-get`
 
 Read_only, `mcp_scope: workspace`. Input: `connection`, `path` (relative to
 `base_url`), `query` (object), `headers` (object), `method` (`GET` or `HEAD`,
@@ -110,7 +123,7 @@ default `GET`).
 A write to someone else's system is an outward-facing action, so it never
 runs on an agent's call ([orchestrator.md](./orchestrator.md#guardrails)):
 
-1. **`gateway.http.draft`** (mutating, `workspace`) takes the same input plus
+1. **`gateway.http-draft`** (mutating, `workspace`) takes the same input plus
    `body`, for a method in the connection's `drafts`. It refuses a body that
    contains a slot value (`secret_in_body`). It stores the draft in
    `drafts/<id>.json` with the SHA-256 of its exact request (method, URL,
@@ -118,7 +131,7 @@ runs on an agent's call ([orchestrator.md](./orchestrator.md#guardrails)):
    the request in plain words. That task follows the proposal record and
    close path ([proposals.md](./proposals.md#record-and-lifecycle)), so it
    appears under Needs you.
-2. **Approve** in the app calls **`gateway.http.send`** (mutating,
+2. **Approve** in the app calls **`gateway.http-send`** (mutating,
    `mcp_scope: none`, app only) with the draft id and the digest the user
    saw. The send refuses if the stored request no longer matches that digest
    (`draft_changed`; STD-05@1 §R21).
@@ -151,7 +164,7 @@ and every error message, and a test checks that list of writers.
 time, caller (agent kind, model, task and session from the call context),
 tool, connection, method, path, redacted query, status, bytes, duration,
 SHA-256 of the redacted body, and outcome. Bodies themselves are never
-logged. `gateway.audit.list` (read_only, `workspace`) feeds an "API calls"
+logged. `gateway.audit-list` (read_only, `workspace`) feeds an "API calls"
 view in the app's Settings. Orbit's own tool-call audit records the same
 calls one level up.
 
