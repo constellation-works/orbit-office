@@ -153,6 +153,70 @@ test("agentCliStatus reads the three CLI configs in order", async (t) => {
   });
 });
 
+test("empty config-directory overrides use the documented home defaults", async (t) => {
+  const museSettings = JSON.stringify({ mcpServers: { orbit: { command: "orbit" } } });
+  const codexConfig = '[mcp_servers.orbit]\ncommand = "orbit"\n';
+
+  const muse = await fixtureHome(t, { ".config/muse/settings.json": museSettings });
+  assert.deepEqual(agentCliStatus({ HOME: muse, XDG_CONFIG_HOME: "" }), {
+    cli: "Muse Code",
+    connected: true,
+  });
+
+  const claude = await fixtureHome(t, { ".claude.json": museSettings });
+  assert.deepEqual(
+    agentCliStatus({ HOME: claude, XDG_CONFIG_HOME: "", CLAUDE_CONFIG_DIR: "", CODEX_HOME: "" }),
+    { cli: "Claude Code", connected: true },
+  );
+
+  const codex = await fixtureHome(t, { ".codex/config.toml": codexConfig });
+  assert.deepEqual(
+    agentCliStatus({ HOME: codex, XDG_CONFIG_HOME: "", CLAUDE_CONFIG_DIR: "", CODEX_HOME: "" }),
+    { cli: "Codex", connected: true },
+  );
+});
+
+test("non-empty config-directory overrides select those directories", async (t) => {
+  const museSettings = JSON.stringify({ mcpServers: { orbit: { command: "orbit" } } });
+  const codexConfig = '[mcp_servers.orbit]\ncommand = "orbit"\n';
+
+  const selected = await fixtureHome(t, {
+    "xdg/muse/settings.json": museSettings,
+    "claude/.claude.json": museSettings,
+    "codex/config.toml": codexConfig,
+  });
+  assert.deepEqual(agentCliStatus({ HOME: selected, XDG_CONFIG_HOME: join(selected, "xdg") }), {
+    cli: "Muse Code",
+    connected: true,
+  });
+  assert.deepEqual(agentCliStatus({ HOME: selected, CLAUDE_CONFIG_DIR: join(selected, "claude") }), {
+    cli: "Claude Code",
+    connected: true,
+  });
+  assert.deepEqual(agentCliStatus({ HOME: selected, CODEX_HOME: join(selected, "codex") }), {
+    cli: "Codex",
+    connected: true,
+  });
+
+  const defaultsOnly = await fixtureHome(t, {
+    ".config/muse/settings.json": museSettings,
+    ".claude.json": museSettings,
+    ".codex/config.toml": codexConfig,
+    "xdg/muse/settings.json": "{}",
+    "claude/.claude.json": "{}",
+    "codex/config.toml": "",
+  });
+  assert.deepEqual(
+    agentCliStatus({
+      HOME: defaultsOnly,
+      XDG_CONFIG_HOME: join(defaultsOnly, "xdg"),
+      CLAUDE_CONFIG_DIR: join(defaultsOnly, "claude"),
+      CODEX_HOME: join(defaultsOnly, "codex"),
+    }),
+    { cli: "Muse Code", connected: false },
+  );
+});
+
 test("GET /api/settings reports the agent CLI connection", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "office-settings-http-"));
   t.after(async () => {
