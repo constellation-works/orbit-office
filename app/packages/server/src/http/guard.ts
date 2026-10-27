@@ -9,6 +9,7 @@
 import type { IncomingMessage } from "node:http";
 
 const STATE_CHANGING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const DEFAULT_HTTP_PORT = "80";
 
 /** True for `localhost`, any `127.0.0.0/8` address, or `::1`. */
 export function isLoopbackHostname(hostname: string): boolean {
@@ -72,7 +73,10 @@ export function checkLoopbackRequest(
     const requestedPort = parsed.host.startsWith("[")
       ? (parsed.host.split("]:")[1] ?? "")
       : (parsed.host.split(":")[1] ?? "");
-    if (originHostname !== parsed.hostname || url.port !== requestedPort) return { ok: false };
+    // WHATWG URL omits the default HTTP port, while Host may spell it as :80.
+    const effectiveRequestedPort = requestedPort || DEFAULT_HTTP_PORT;
+    const effectiveOriginPort = url.port || DEFAULT_HTTP_PORT;
+    if (originHostname !== parsed.hostname || effectiveOriginPort !== effectiveRequestedPort) return { ok: false };
     return { ok: true, host: parsed.host };
   }
   if (STATE_CHANGING.has(method)) return { ok: false };
