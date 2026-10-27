@@ -33,8 +33,45 @@ test("GET /healthz reports the app and its built features", async () => {
     assert.deepEqual(await response.json(), {
       ok: true,
       app: "orbit-office",
-      features: [],
+      features: ["settings"],
     });
+  });
+});
+
+test("GET /api/settings reports the agent CLI connection shape", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/settings`);
+
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as { agentCli?: { cli?: unknown; connected?: unknown } };
+    assert.equal(typeof body.agentCli?.cli, "string");
+    assert.equal(typeof body.agentCli?.connected, "boolean");
+  });
+});
+
+test("the PWA shell is served: manifest, icons and worker", async () => {
+  await withServer(async (baseUrl) => {
+    const manifest = await fetch(`${baseUrl}/manifest.webmanifest`);
+    assert.equal(manifest.status, 200);
+    assert.match(manifest.headers.get("content-type") ?? "", /application\/manifest\+json/);
+    const body = (await manifest.json()) as {
+      start_url?: unknown;
+      icons?: { src?: unknown; sizes?: unknown }[];
+    };
+    assert.equal(body.start_url, "/");
+    const sizes = (body.icons ?? []).map((icon) => icon.sizes);
+    assert.ok(sizes.includes("192x192"), "manifest carries a 192px icon");
+    assert.ok(sizes.includes("512x512"), "manifest carries a 512px icon");
+
+    const icon = await fetch(`${baseUrl}/icons/icon-192.png`);
+    assert.equal(icon.status, 200);
+    assert.match(icon.headers.get("content-type") ?? "", /image\/png/);
+    assert.ok((await icon.arrayBuffer()).byteLength > 0);
+
+    const worker = await fetch(`${baseUrl}/pwa/sw.js`);
+    assert.equal(worker.status, 200);
+    assert.match(worker.headers.get("content-type") ?? "", /javascript/);
+    assert.equal(worker.headers.get("service-worker-allowed"), "/");
   });
 });
 

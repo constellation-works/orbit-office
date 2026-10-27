@@ -30,3 +30,16 @@ export interface Health {
   app: "orbit-office";
   features: FeatureName[];
 }
+
+/** The agent CLI connection the settings feature reports. */
+export interface AgentCliStatus {
+  /** Display name of the agent CLI, e.g. "Muse Code". */
+  cli: string;
+  /** Whether the install script has registered Orbit MCP with it. */
+  connected: boolean;
+}
+
+/** `GET /api/settings`: the settings the app reports. */
+export interface SettingsStatus {
+  agentCli: AgentCliStatus;
+}

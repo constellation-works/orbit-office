@@ -1,5 +1,5 @@
 /** Typed access to the app server, with one error path. */
-import type { Health } from "@orbit-office/contracts";
+import type { Health, SettingsStatus } from "@orbit-office/contracts";
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string) {
@@ -32,4 +32,9 @@ export async function getJson<T>(path: string): Promise<T> {
 /** Read the server health contract. */
 export function getHealth(): Promise<Health> {
   return getJson<Health>("/healthz");
+}
+
+/** Read the settings contract: the agent CLI connection. */
+export function getSettings(): Promise<SettingsStatus> {
+  return getJson<SettingsStatus>("/api/settings");
 }
