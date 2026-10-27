@@ -63,7 +63,12 @@ spaces, so script shebangs that name the interpreter keep working.
    the repository has none (Orbit's runs need a commit to create worktrees from). If git
    has no `user.name`/`user.email`, it sets a repo-local identity from the login name. Then
    `orbit workspace init` if the folder is not yet registered. A non-empty folder that is
-   not already an office workspace is refused, never adopted.
+   not already an office workspace is refused, never adopted. This installer owns a folder
+   only when the install state records `workspace_path` for that path, or when the only
+   top-level entries are `.git`, `.gitignore`, and `.orbit`, and `.gitignore` has a line
+   that is exactly `/library/` (`.git` and `.gitignore` are required; `.orbit` may be absent).
+   A `.orbit` directory or a `library` entry on its own, or a path that merely
+   appears in `orbit workspace list`, is not ownership.
 5. **Plugin.** `orbit plugin add` from the prebuilt export attached to the orbit-office
    release (a local directory install, so no Rust toolchain is needed); `--from-source`
    uses the pinned `git+` source and needs `cargo`. Then `orbit plugin enable office` with
@@ -93,7 +98,9 @@ spaces, so script shebangs that name the interpreter keep working.
 The summary lists what was created, where, and the uninstall command
 (`install.sh --uninstall`). Uninstall removes the service, the MCP entry and its deny rules, the plugins and the
 `tools` folder (`uv` and its Python, which nothing else uses). It keeps `~/orbit` and the
-Library unless `--purge` is given.
+Library unless `--purge` is given. `--purge` deletes that workspace only after the same
+ownership check as adoption, and otherwise refuses with a message that names the path and
+removes nothing, including the per-user data folder.
 
 Plugin-authored commits in the Library use a fixed author (`orbit-office
 <office@orbit.local>`) passed per commit, so they need no git identity and are easy to tell

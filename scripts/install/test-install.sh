@@ -8,8 +8,10 @@
 #   1. two runs: the second changes nothing and reports already done,
 #      including the pinned uv/Python step
 #   2. older Orbit stops with the upgrade command; newer warns on
-#   3. --uninstall removes tools/ and keeps ~/orbit; --purge removes it
-#   4. a non-empty unrelated workspace folder is refused
+#   3. --uninstall removes tools/ and keeps ~/orbit; --purge removes an
+#      owned workspace and refuses any other folder
+#   4. a non-empty unrelated workspace folder is refused, including by
+#      --purge --home
 #   5. missing Orbit is installed from npm
 #   6. a uv archive checksum mismatch stops before unpack
 #   7. python3 --version must print the pinned minor
@@ -427,6 +429,99 @@ else
     ok "unrelated non-empty workspace is refused"
 fi
 check "unrelated folder is untouched" grep -q precious "$HOME4/orbit/notes.txt"
+
+# --purge --home at an unrelated non-empty folder must not delete it.
+HOME4P="$ROOT/home4-purge"
+UNRELATED="$HOME4P/Documents"
+mkdir -p "$UNRELATED" "$HOME4P/.local/share/orbit-office"
+printf 'precious\n' > "$UNRELATED/notes.txt"
+printf 'keep-data\n' > "$HOME4P/.local/share/orbit-office/keep.txt"
+OUT_PURGE_REF="$ROOT/out-purge-refuse.txt"
+if run_install "$HOME4P" -- --purge --home "$UNRELATED" > "$OUT_PURGE_REF" 2>&1; then
+    fail "purge of an unrelated folder is refused"
+else
+    ok "purge of an unrelated folder is refused"
+fi
+check "purge refusal names the path" grep -F "$UNRELATED" "$OUT_PURGE_REF"
+check "purge leaves the unrelated folder" test -d "$UNRELATED"
+check "purge leaves the sentinel" grep -qx precious "$UNRELATED/notes.txt"
+check "purge leaves the data folder" grep -qx keep-data "$HOME4P/.local/share/orbit-office/keep.txt"
+
+# A registered workspace whose path merely contains --home is not proof.
+# The old check used `grep -Fq` on `orbit workspace list`.
+HOME4L="$ROOT/home4-list"
+LISTED="$HOME4L/Documents"
+mkdir -p "$LISTED"
+printf 'precious\n' > "$LISTED/notes.txt"
+OUT_LIST="$ROOT/out-purge-list.txt"
+if run_install "$HOME4L" "STUB_WORKSPACE_LIST=$LISTED/notes" -- --purge --home "$LISTED" \
+    > "$OUT_LIST" 2>&1; then
+    fail "purge refuses a path that is only a prefix of a registered workspace"
+else
+    ok "purge refuses a path that is only a prefix of a registered workspace"
+fi
+check "prefix refusal names the path" grep -F "refusing to purge $LISTED" "$OUT_LIST"
+check "prefix refusal leaves the sentinel" grep -qx precious "$LISTED/notes.txt"
+
+# .orbit and library are markers a user's own project can carry. With
+# extra files they are not the partial tree this installer writes, and
+# without the state record they are not ownership.
+HOME4M="$ROOT/home4-markers"
+MARKED="$HOME4M/notes"
+mkdir -p "$MARKED/.orbit" "$MARKED/.git" "$MARKED/library"
+printf '/library/\n' > "$MARKED/.gitignore"
+printf 'precious\n' > "$MARKED/notes.txt"
+printf 'keep\n' > "$MARKED/library/keep.txt"
+OUT_MARKED="$ROOT/out-purge-markers.txt"
+if run_install "$HOME4M" -- --purge --home "$MARKED" > "$OUT_MARKED" 2>&1; then
+    fail "purge refuses a folder that only looks like an office workspace"
+else
+    ok "purge refuses a folder that only looks like an office workspace"
+fi
+check "marker refusal names the path" grep -F "$MARKED" "$OUT_MARKED"
+check "purge leaves the marked folder" test -d "$MARKED"
+check "purge leaves the marked sentinel" grep -qx precious "$MARKED/notes.txt"
+check "purge leaves the library file" grep -qx keep "$MARKED/library/keep.txt"
+
+# The install-state line is enough on its own, even with no .orbit.
+HOME4S="$ROOT/home4-state"
+OWNED="$HOME4S/orbit"
+mkdir -p "$OWNED" "$HOME4S/.local/share/orbit-office"
+printf 'workspace_path=%s\n' "$OWNED" > "$HOME4S/.local/share/orbit-office/install-state"
+printf 'gone\n' > "$OWNED/sentinel.txt"
+OUT_OWNED="$ROOT/out-purge-owned.txt"
+run_install "$HOME4S" -- --purge --home "$OWNED" > "$OUT_OWNED" 2>&1 \
+    || { cat "$OUT_OWNED" >&2; fail "purge of a recorded workspace exits 0"; }
+ok "purge of a recorded workspace exits 0"
+check "purge removes a recorded workspace" test ! -e "$OWNED"
+check "purge removes the data folder of a recorded workspace" \
+    test ! -e "$HOME4S/.local/share/orbit-office"
+
+# The partial tree step 4 writes before the state line is the same proof
+# adoption uses, so purge removes it and a later install still adopts it.
+HOME4D="$ROOT/home4-digest"
+DIGEST="$HOME4D/partial"
+mkdir -p "$DIGEST/.git" "$DIGEST/.orbit"
+printf '/library/\n' > "$DIGEST/.gitignore"
+printf 'partial\n' > "$DIGEST/.git/HEAD"
+OUT_DIG="$ROOT/out-purge-digest.txt"
+run_install "$HOME4D" -- --purge --home "$DIGEST" > "$OUT_DIG" 2>&1 \
+    || { cat "$OUT_DIG" >&2; fail "purge of the partial install tree exits 0"; }
+ok "purge of the partial install tree exits 0"
+check "purge removes the partial install tree" test ! -e "$DIGEST"
+
+HOME4R="$ROOT/home4-repair"
+REPAIR="$HOME4R/wip"
+mkdir -p "$REPAIR/.orbit"
+git -C "$REPAIR" init -b main >/dev/null
+printf '/library/\n' > "$REPAIR/.gitignore"
+OUT_ADOPT="$ROOT/out-adopt-partial.txt"
+run_install "$HOME4R" -- --home "$REPAIR" > "$OUT_ADOPT" 2>&1 \
+    || { cat "$OUT_ADOPT" >&2; fail "partial install tree is adopted"; }
+ok "partial install tree is adopted"
+check "adoption records workspace_path" \
+    grep -qxF "workspace_path=$REPAIR" "$HOME4R/.local/share/orbit-office/install-state"
+check "adoption keeps the partial .orbit" test -d "$REPAIR/.orbit"
 
 # ---------------------------------------------------------------------------
 # 5. Missing Orbit is installed from npm at the tested version
