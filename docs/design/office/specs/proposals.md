@@ -28,6 +28,16 @@ Source: spec §7.
 These are mechanical and computed by `office.signals-scan`. They are not
 left to the model's discretion.
 
+`office.signals-scan` returns `{candidates, count}` only when its task list
+(`orbit.task.list`), friction search (`orbit.search`), and Library search
+(`library.search`) all succeed and the task list is not truncated. A failed
+read is refused: the error code is that failure's own code, and the message
+names the read (`orbit.task.list`, the friction `orbit.search`, or
+`library.search`). A task list with `truncated: true` is refused with
+`task_list_truncated` and is not scanned as the complete set. These reads
+are fail-closed: an empty candidate list means nothing matched, not that a
+source was unread (STD-02 R29, R31).
+
 | Signal | Condition | Proposes |
 |---|---|---|
 | **Repetition** | ≥3 `owner:you` tasks done in 30 days whose titles and descriptions cluster together (index similarity above a threshold, the same tags) | `auto_task` or `routine` to take that work over, plus a draft runbook from how the user did it |
