@@ -1,0 +1,7 @@
+schemaVersion: 1
+name: office-bootstrap
+description: Run a confirmed Library bootstrap batch every 15 minutes; digests and KT steps, then consolidation into proposals.
+enabled: false
+trigger:
+  cron: "*/15 * * * *"
+target: job:office-bootstrap

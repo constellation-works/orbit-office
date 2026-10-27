@@ -8,6 +8,10 @@ attach: never
 sensitivity: normal
 sections: [Inputs, Steps, Done when]
 required: [Inputs, Steps, Done when]
+performable: agent
+submission:
+  system: "<Target system>"
+  via: draft
 ---
 ## Inputs
 List the evidence, context and permissions needed before starting.
