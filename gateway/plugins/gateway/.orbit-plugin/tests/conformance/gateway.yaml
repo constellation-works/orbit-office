@@ -2,9 +2,10 @@
 # secrets; `secrets:` supplies fixture values per case). One `orbit plugin test`
 # run keeps {{plugin_state}} across its cases, in file order, so this file is
 # one scenario: later cases use the connection the earlier ones created.
-# Nothing here reaches a server: every http-get case is refused before a
-# request is sent. Responses from a live server are covered by
-# gateway/tests/test_http_get.py.
+# Nothing here reaches a server or Orbit: every http-get, http-draft and
+# http-send case is refused before a request is sent or a task is filed.
+# Responses from a live server are covered by gateway/tests/test_http_get.py,
+# and drafts that file tasks and sends by gateway/tests/test_drafts.py.
 schemaVersion: 1
 kind: PluginTest
 tests:
@@ -137,6 +138,38 @@ tests:
   - name: http_get_refuses_unknown_input
     tool: http-get
     input: {connection: acme, path: users, body: "{}"}
+    expect:
+      error: {code: invalid_argument}
+
+  - name: http_draft_refuses_a_method_outside_drafts
+    tool: http-draft
+    secrets: {conn_02: fixture-token-0123456789}
+    input: {connection: acme, method: POST, path: deals, body: {stage: won}}
+    expect:
+      error: {code: method_not_allowed}
+
+  - name: http_draft_refuses_a_secret_in_the_body
+    tool: http-draft
+    secrets: {conn_02: fixture-token-0123456789}
+    input: {connection: acme, method: PATCH, path: deals/42, body: {note: fixture-token-0123456789}}
+    expect:
+      error: {code: secret_in_body}
+
+  - name: http_draft_refuses_unknown_input
+    tool: http-draft
+    input: {connection: acme, method: PATCH, path: deals/42, send_now: true}
+    expect:
+      error: {code: invalid_argument}
+
+  - name: http_send_refuses_an_unknown_draft
+    tool: http-send
+    input: {draft: gd-0000000000000000, sha256: "0000000000000000000000000000000000000000000000000000000000000000"}
+    expect:
+      error: {code: unknown_draft}
+
+  - name: http_send_refuses_unknown_input
+    tool: http-send
+    input: {draft: gd-0000000000000000, sha256: "0000000000000000000000000000000000000000000000000000000000000000", retry: true}
     expect:
       error: {code: invalid_argument}
 

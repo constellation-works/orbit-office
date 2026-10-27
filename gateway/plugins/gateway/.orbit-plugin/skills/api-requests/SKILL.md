@@ -28,6 +28,20 @@ other tool in your shell, and never ask the user to paste an API key. Use:
   or a `..` that climbs out is refused. You may set only the `Accept`,
   `Accept-Language`, `If-None-Match`, `If-Modified-Since` and `Range`
   headers; the gateway adds the authentication itself.
+- `gateway.http-draft` — a write (`POST`, `PUT`, `PATCH` or `DELETE`, if the
+  connection lists it in `drafts`) for the user to approve. Nothing is sent
+  when you call it:
+
+  ```bash
+  orbit tool run gateway.http-draft --input '{"connection":"<name>","method":"PATCH","path":"<path>","body":{"stage":"won"}}'
+  ```
+
+  It takes the same `connection`, `path`, `query` and `headers` as
+  `http-get` (plus `Content-Type`, `If-Match` and `If-Unmodified-Since`) and
+  a `body`: a JSON value is sent as JSON, a string as text. It files one task
+  under the user's Needs you; the user approves it (the app sends it, once)
+  or dismisses it (it is never sent). You cannot send a draft yourself. Tell
+  the user what you drafted and the task id the result names.
 - `gateway.audit-list` — the recent calls, newest first.
 
 ## What comes back
@@ -48,6 +62,11 @@ other_origin`). Do not fetch that location yourself; tell the user.
 - `secret_unset` — the connection exists but its secret is not set yet; ask
   the user to set it in Settings.
 - `method_not_allowed` — only `GET` and `HEAD` run directly. A write (`POST`,
-  `PATCH`, …) must be drafted for the user's approval, never sent another way.
+  `PATCH`, …) must be drafted with `gateway.http-draft`, never sent another
+  way. A draft is refused too when the connection does not list that method
+  in `drafts`: ask the user.
+- `secret_in_body`, `secret_in_request` — a draft never holds a secret or a
+  credential. Leave authentication out; the gateway adds it when the user's
+  approval sends the request.
 - `path_outside_connection`, `header_not_allowed` — fix the request; do not
   work around the rule.

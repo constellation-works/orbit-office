@@ -2,8 +2,8 @@
 
 A record holds who called (from the call context), what was asked (tool,
 connection, method, path, redacted query) and what happened (status, bytes,
-duration, the SHA-256 of the redacted body, outcome). Bodies are never
-written here.
+duration, the SHA-256 of the redacted body, outcome). A drafted write's
+records also name the draft. Bodies are never written here.
 """
 
 from __future__ import annotations
@@ -26,6 +26,8 @@ RECORD_KEYS = {
     "time", "caller", "tool", "connection", "method", "path", "query",
     "status", "bytes", "duration_ms", "body_sha256", "redirects", "outcome",
 }
+# Present only on the records of a drafted write (http-draft, http-send).
+OPTIONAL_KEYS = {"draft"}
 
 
 @dataclass
@@ -44,9 +46,10 @@ class Record:
     body_sha256: str | None = None
     redirects: int = 0
     outcome: str = "ok"
+    draft: str | None = None
 
     def to_json(self, now: datetime) -> dict[str, Any]:
-        return {
+        out = {
             "time": now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
             "caller": self.caller,
             "tool": self.tool,
@@ -61,6 +64,9 @@ class Record:
             "redirects": self.redirects,
             "outcome": self.outcome,
         }
+        if self.draft is not None:
+            out["draft"] = self.draft
+        return out
 
 
 def _dir(root: Path) -> Path:
@@ -96,7 +102,7 @@ def tool_list(call: Call) -> dict[str, Any]:
                 except ValueError:
                     skipped += 1
                     continue
-                if not isinstance(record, dict) or set(record) != RECORD_KEYS:
+                if not isinstance(record, dict) or not RECORD_KEYS <= set(record) <= RECORD_KEYS | OPTIONAL_KEYS:
                     skipped += 1
                     continue
                 if connection is not None and record.get("connection") != connection:

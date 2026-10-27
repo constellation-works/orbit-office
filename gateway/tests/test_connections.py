@@ -83,6 +83,22 @@ class Put(GatewayCase):
         self.assertEqual((moved["connection"]["slot"], moved["released_slot"]), ("conn_02", "conn_01"))
         self.assertEqual(moved["connection"]["slot_state"], "unset")
 
+    def test_an_idempotency_header_is_kept_and_listed(self) -> None:
+        out = self.ok("connection-put", put_input(drafts=["POST"], idempotency_header="Idempotency-Key"))
+        self.assertEqual(out["connection"]["idempotency_header"], "Idempotency-Key")
+        [listed] = self.ok("connection-list", {})["connections"]
+        self.assertEqual(listed["idempotency_header"], "Idempotency-Key")
+        # Without one, the field is absent.
+        out = self.ok("connection-put", put_input(name="plain"))
+        self.assertNotIn("idempotency_header", out["connection"])
+
+    def test_an_idempotency_header_cannot_carry_auth_or_an_agent_header(self) -> None:
+        for header in ("Authorization", "Cookie", "Content-Type", "If-Match", "Accept", "Host", "bad header"):
+            with self.subTest(header=header):
+                self.refused("invalid_connection", "connection-put", put_input(idempotency_header=header))
+        keyed = {"name": "keyed", "base_url": "https://api.acme.example/", "auth": {"scheme": "header", "header": "X-Api-Key"}}
+        self.refused("invalid_connection", "connection-put", {**keyed, "idempotency_header": "x-api-key"})
+
     def test_no_free_slot(self) -> None:
         for index in range(16):
             self.ok("connection-put", put_input(f"c{index}", f"https://c{index}.example/"))

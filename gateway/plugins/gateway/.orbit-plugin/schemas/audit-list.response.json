@@ -120,7 +120,11 @@
           },
           "outcome": {
             "type": "string",
-            "description": "ok, redirect_not_followed, or the error code."
+            "description": "ok, redirect_not_followed, drafted, sent, outcome_unknown (sent, no reply: not a failure), or the error code."
+          },
+          "draft": {
+            "type": "string",
+            "description": "The draft, on http-draft and http-send records."
           }
         },
         "additionalProperties": false

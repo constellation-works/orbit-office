@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.http-draft request",
+  "type": "object",
+  "required": [
+    "connection",
+    "method"
+  ],
+  "properties": {
+    "connection": {
+      "type": "string",
+      "maxLength": 48,
+      "description": "A connection name from gateway.connection-list."
+    },
+    "path": {
+      "type": "string",
+      "maxLength": 2048,
+      "description": "Path relative to the connection's base_url; no scheme, host, query or fragment."
+    },
+    "query": {
+      "type": "object",
+      "description": "Query parameters; a value may be a string, number, boolean or an array of them.",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "maxItems": 64
+          }
+        ]
+      }
+    },
+    "headers": {
+      "type": "object",
+      "description": "Only Accept, Accept-Language, If-None-Match, If-Modified-Since, Range, Content-Type, If-Match and If-Unmodified-Since.",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 1024
+      }
+    },
+    "method": {
+      "type": "string",
+      "maxLength": 16,
+      "description": "POST, PUT, PATCH or DELETE, if the connection lists it in drafts."
+    },
+    "body": {
+      "description": "The body: a string is sent as is (default Content-Type text/plain), any other JSON value as compact JSON (default application/json). At most 256 KiB; never a secret."
+    }
+  },
+  "additionalProperties": false
+}

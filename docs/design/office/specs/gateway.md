@@ -48,6 +48,14 @@ workspace can enable them.
   enabling records the install's interpreter.
 - State lives in `{{plugin_state}}` with owner-only modes (STD-05@1 §R8):
   `connections.json`, `drafts/`, `audit/`.
+- Orbit callbacks (`orbit.task.add`, `orbit.task.artifact.put`,
+  `orbit.task.show`, `orbit.task.update`, the manifest's `orbit_tools`) run
+  `orbit tool run` with the host's callback descriptor, a cleared
+  environment, a 30-second deadline and capped output, and are never retried;
+  a write whose reply is lost is `orbit_outcome_unknown`. Because
+  `orbit.task.artifact.put` reads only files inside the workspace, a draft's
+  artifact is staged in `{{workspace}}/.orbit-gateway/` and removed after the
+  put.
 
 ## Connections
 
@@ -61,6 +69,7 @@ never by an agent:
   "auth": { "scheme": "bearer", "secret": "conn_03" },
   "methods": ["GET", "HEAD"],
   "drafts": ["POST", "PATCH"],
+  "idempotency_header": "Idempotency-Key",
   "timeout_seconds": 20,
   "max_response_bytes": 1048576
 }
@@ -77,6 +86,9 @@ never by an agent:
   `invalid_connection`.
 - **`methods`** run directly, and only `GET` and `HEAD` may be listed there.
   **`drafts`** are the write methods an agent may draft for approval.
+- **`idempotency_header`** (optional) names the header the API reads an
+  idempotency key from. It cannot be a credential, transport or agent header,
+  or the connection's own auth header.
 - **Secrets in slots.** Orbit plugin secrets are names fixed in the
   manifest, so `gateway` declares sixteen slots, `conn_01` … `conn_16`.
   `gateway.connection-put` (mutating, `mcp_scope: none`, app only) writes the
@@ -124,23 +136,33 @@ A write to someone else's system is an outward-facing action, so it never
 runs on an agent's call ([orchestrator.md](./orchestrator.md#guardrails)):
 
 1. **`gateway.http-draft`** (mutating, `workspace`) takes the same input plus
-   `body`, for a method in the connection's `drafts`. It refuses a body that
-   contains a slot value (`secret_in_body`). It stores the draft in
-   `drafts/<id>.json` with the SHA-256 of its exact request (method, URL,
-   headers and body), and files one Orbit task tagged `gateway-draft` showing
-   the request in plain words. That task follows the proposal record and
-   close path ([proposals.md](./proposals.md#record-and-lifecycle)), so it
-   appears under Needs you.
+   `body`, for a method in the connection's `drafts`; `Content-Type`,
+   `If-Match` and `If-Unmodified-Since` may also be set. A JSON `body` is sent
+   as compact JSON, a string as text. It refuses a body that contains a slot
+   value or a credential shape (`secret_in_body`; the same in the path, query
+   or headers is `secret_in_request`), so a draft never holds a secret. It
+   stores the draft in `drafts/<id>.json` with the SHA-256 of its exact
+   request (method, URL, headers and body), and files one Orbit task tagged
+   `gateway-draft` (and `proposal`, `proposal:gateway_draft`) showing the
+   request in plain words, with the request as its `gateway-draft.json`
+   artifact. That task follows the proposal record and close path
+   ([proposals.md](./proposals.md#record-and-lifecycle)), so it appears under
+   Needs you.
 2. **Approve** in the app calls **`gateway.http-send`** (mutating,
    `mcp_scope: none`, app only) with the draft id and the digest the user
    saw. The send refuses if the stored request no longer matches that digest
-   (`draft_changed`; STD-05@1 §R21).
+   (`draft_changed`; STD-05@1 §R21), if the task was dismissed
+   (`draft_dismissed`, checked with `orbit.task.show`), and if the draft is
+   not `pending` (`draft_not_pending`): a draft is sent at most once.
 3. **Send once.** The draft is marked `sending` before the request goes out.
-   A timeout or a lost reply after sending is recorded as `outcome_unknown`,
-   never as a failure, and is never retried automatically (STD-03@2 §R31).
-   When the connection names an idempotency header, the draft id is sent in
-   it. Then the response is redacted, the outcome audited and the task
-   closed.
+   A failure to connect sends nothing and leaves the draft `pending`. A
+   timeout or a lost reply after sending is recorded as `outcome_unknown`,
+   never as a failure, and is never retried automatically (STD-03@2 §R31):
+   the result and the audit say so, and the task gets a comment and stays
+   open for the user to check. When the connection names an idempotency
+   header, the draft id is sent in it. Redirects are returned, never
+   followed. Then the response is redacted, the outcome audited and the task
+   closed as done.
 4. **Dismiss** rejects the task, and the draft is never sent.
 
 ## Redaction

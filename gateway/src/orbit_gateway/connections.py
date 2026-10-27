@@ -28,8 +28,12 @@ DRAFT_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # Headers an agent may set on a request (gateway.http-get); an auth header
 # may not be one of them.
 AGENT_HEADERS = ("accept", "accept-language", "if-none-match", "if-modified-since", "range")
+# More headers an agent may set on a drafted write (gateway.http-draft).
+DRAFT_HEADERS = AGENT_HEADERS + ("content-type", "if-match", "if-unmodified-since")
 # Headers the transport owns; never a connection's auth header.
 TRANSPORT_HEADERS = ("host", "content-length", "transfer-encoding", "connection", "upgrade", "te", "trailer")
+# Carry credentials whatever the connection; never an idempotency header.
+CREDENTIAL_HEADERS = ("authorization", "proxy-authorization", "cookie")
 NAME = re.compile(r"^[a-z][a-z0-9-]{0,47}$")
 HEADER_NAME = re.compile(r"^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$")
 DEFAULT_TIMEOUT = 20
@@ -52,6 +56,8 @@ class Connection:
     timeout_seconds: int
     max_response_bytes: int
     disabled: bool
+    # The header a drafted write carries its draft id in, when the API has one.
+    idempotency_header: str | None = None
 
     @property
     def origin(self) -> tuple[str, str]:
@@ -73,7 +79,7 @@ class Connection:
             auth["header"] = self.header
         if self.username is not None:
             auth["username"] = self.username
-        return {
+        out = {
             "name": self.name,
             "base_url": self.base_url,
             "auth": auth,
@@ -83,6 +89,9 @@ class Connection:
             "max_response_bytes": self.max_response_bytes,
             "disabled": self.disabled,
         }
+        if self.idempotency_header is not None:
+            out["idempotency_header"] = self.idempotency_header
+        return out
 
     def listing(self, secrets: dict[str, str]) -> dict[str, Any]:
         """What `connection-list` shows: never a value, only whether the slot is set."""
@@ -91,7 +100,7 @@ class Connection:
             auth["header"] = self.header
         if self.username is not None:
             auth["username"] = self.username
-        return {
+        out = {
             "name": self.name,
             "base_url": self.base_url,
             "auth": auth,
@@ -103,6 +112,9 @@ class Connection:
             "max_response_bytes": self.max_response_bytes,
             "disabled": self.disabled,
         }
+        if self.idempotency_header is not None:
+            out["idempotency_header"] = self.idempotency_header
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +204,19 @@ def _auth(raw: Any) -> tuple[str, str | None, str | None]:
     return scheme, header, username
 
 
+def _idempotency_header(raw: Any, auth_header: str | None) -> str | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not HEADER_NAME.match(raw):
+        raise _invalid("`idempotency_header` must be a header name")
+    lower = raw.lower()
+    if lower in DRAFT_HEADERS or lower in TRANSPORT_HEADERS or lower in CREDENTIAL_HEADERS or (
+        auth_header is not None and lower == auth_header.lower()
+    ):
+        raise _invalid(f"`idempotency_header` cannot be {raw!r}")
+    return raw
+
+
 def _bounded(raw: dict[str, Any], key: str, default: int, upper: int) -> int:
     value = typed(raw, key, int, "input", default)
     if not 1 <= value <= upper:
@@ -222,6 +247,7 @@ def _from_json(raw: Any) -> Connection:
         timeout_seconds=int(raw.get("timeout_seconds") or DEFAULT_TIMEOUT),
         max_response_bytes=int(raw.get("max_response_bytes") or DEFAULT_MAX_RESPONSE),
         disabled=bool(raw.get("disabled", False)),
+        idempotency_header=raw.get("idempotency_header"),
     )
 
 
@@ -282,7 +308,10 @@ def tool_list(call: Call) -> dict[str, Any]:
     }
 
 
-PUT_KEYS = {"name", "base_url", "auth", "methods", "drafts", "timeout_seconds", "max_response_bytes", "disabled"}
+PUT_KEYS = {
+    "name", "base_url", "auth", "methods", "drafts", "timeout_seconds", "max_response_bytes", "disabled",
+    "idempotency_header",
+}
 
 
 def tool_put(call: Call) -> dict[str, Any]:
@@ -297,6 +326,8 @@ def tool_put(call: Call) -> dict[str, Any]:
     timeout = _bounded(raw, "timeout_seconds", DEFAULT_TIMEOUT, MAX_TIMEOUT)
     max_bytes = _bounded(raw, "max_response_bytes", DEFAULT_MAX_RESPONSE, MAX_RESPONSE_CAP)
     disabled = typed(raw, "disabled", bool, "input", False)
+    auth_name = header if scheme == "header" else ("Authorization" if scheme in ("bearer", "basic") else None)
+    idempotency = _idempotency_header(raw.get("idempotency_header"), auth_name)
 
     secrets = call.secrets()
     root = call.state_root()
@@ -317,6 +348,7 @@ def tool_put(call: Call) -> dict[str, Any]:
             timeout_seconds=timeout,
             max_response_bytes=max_bytes,
             disabled=disabled,
+            idempotency_header=idempotency,
         )
         released: str | None = None
         if scheme != "none":
