@@ -729,3 +729,19 @@ test("queue bounds reject a capacity or deadline that is not finite", () => {
   assert.throws(() => createOrbitClient({ queueWaitMs: 0 }), RangeError);
   assert.throws(() => createOrbitClient({ queueWaitMs: Number.POSITIVE_INFINITY }), RangeError);
 });
+
+test("auto-task list and update receive the installed workspace binding", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const client = createOrbitClient({ timeoutMs: 5_000, env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }) });
+  await client.callTool("orbit.auto_task.list", {}).catch(() => {});
+  await client.callTool("orbit.auto_task.update", { name: "meeting-sweep", enabled: false }).catch(() => {});
+  const invocations = await invocationInputs(fake.state);
+  assert.deepEqual(invocations.map(({ tool, input }) => [tool, input]), [
+    ["orbit.auto_task.list", { workspace: "/installed/workspace" }],
+    ["orbit.auto_task.update", { name: "meeting-sweep", enabled: false, workspace: "/installed/workspace" }],
+  ]);
+});

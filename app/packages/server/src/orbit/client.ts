@@ -21,8 +21,8 @@
  * `ORBIT_OFFICE_WORKSPACE` environment variable (install.sh service
  * templates; the absolute path recorded as `workspace_path`). Tools that
  * require an explicit workspace selector (see
- * {@link WORKSPACE_REQUIRING_TOOLS}: `orbit.routine.control` and
- * `orbit.auto_task.mint`) get `workspace: <binding>` injected into their
+ * {@link WORKSPACE_REQUIRING_TOOLS}: `orbit.routine.control`,
+ * `orbit.auto_task.mint`, and auto-task listing and updates) get `workspace: <binding>` injected into their
  * input when the caller did not supply one. All other tools are sent unchanged, so callers
  * that rely on cwd discovery (for example to-dos calling
  * `orbit.task.list`) keep working. No code here reads `.orbit/`.
@@ -33,8 +33,8 @@
  * to a login service. Until an Orbit-side decision delivers the operator
  * capability to the installed app by another mechanism,
  * `orbit.routine.control` returns `capability_denied` to the app; the
- * precise Orbit-side follow-up is filed in ws_orbit (see the ORB-18898
- * handoff) and ORB-18731 stays blocked on it. The same applies to
+ * app instead manages auto-tasks using the permitted list and update tools.
+ * The same applies to
  * `orbit.auto_task.mint`: `orbit tool show orbit.auto_task.mint` states
  * its `acknowledge_unconditional` acknowledgment "requires operator
  * authority", so {@link OrbitToolClient.mintAutoTask} does not succeed
@@ -259,6 +259,8 @@ export const WORKSPACE_ENV = "ORBIT_OFFICE_WORKSPACE";
 export const WORKSPACE_REQUIRING_TOOLS: ReadonlySet<string> = new Set([
   "orbit.routine.control",
   "orbit.auto_task.mint",
+  "orbit.auto_task.list",
+  "orbit.auto_task.update",
 ]);
 
 /** Stable cache key: tool name plus JSON with recursively sorted keys. */
