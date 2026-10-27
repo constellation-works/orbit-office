@@ -63,6 +63,70 @@ impl Git {
         Ok(text)
     }
 
+    /// Whether a usable `git` is on PATH. A missing binary is its own
+    /// typed refusal (`git_missing`), distinct from a git failure.
+    pub(crate) fn ensure_available(cwd: &Path) -> Result<()> {
+        let mut command = Command::new("git");
+        command
+            .current_dir(cwd)
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .args(["--version"]);
+        match process::run(&mut command, cwd) {
+            Ok((status, _)) if status.success() => Ok(()),
+            Ok(_) => Err(Error::GitMissing),
+            Err(office_common::Error::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::NotFound =>
+            {
+                Err(Error::GitMissing)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Create this root's own repository. The root must already exist.
+    pub(crate) fn init(&self) -> Result<()> {
+        self.checked("initialize repository", &["init", "--quiet"])?;
+        Ok(())
+    }
+
+    /// Stage and commit only `paths` under `message`, with the fixed
+    /// Library author. No commit is made when the paths are unchanged.
+    pub(crate) fn commit_created(&self, paths: &[String], message: &str) -> Result<bool> {
+        if paths.is_empty() {
+            return Ok(false);
+        }
+        let mut add: Vec<&str> = vec!["add", "--force", "--"];
+        add.extend(paths.iter().map(String::as_str));
+        self.checked("stage Library scaffold", &add)?;
+        let mut status: Vec<&str> = vec!["status", "--porcelain", "--"];
+        status.extend(paths.iter().map(String::as_str));
+        let changes = self.checked("inspect Library scaffold", &status)?;
+        if changes.trim().is_empty() {
+            return Ok(false);
+        }
+        let mut commit: Vec<&str> = vec![
+            "-c",
+            "user.name=orbit-office",
+            "-c",
+            "user.email=office@orbit.local",
+            "commit",
+            "--quiet",
+            "--no-gpg-sign",
+            "--author=orbit-office <office@orbit.local>",
+            "--only",
+            "-m",
+            message,
+            "--",
+        ];
+        commit.extend(paths.iter().map(String::as_str));
+        self.checked("commit Library scaffold", &commit)?;
+        Ok(true)
+    }
+
     pub(crate) fn is_repository(&self) -> Result<bool> {
         // A .git directory *at this root* prevents discovery of a parent repo.
         let metadata = match std::fs::symlink_metadata(self.root.join(".git")) {

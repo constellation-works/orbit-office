@@ -13,9 +13,30 @@
       },
       "required": ["meta_api_key", "baseten_token"],
       "additionalProperties": false
+    },
+    "library": {
+      "type": "object",
+      "description": "Library and index health. Counts come from the index; an uninitialized Library reports zero counts.",
+      "properties": {
+        "initialized": { "type": "boolean" },
+        "documents": { "type": "integer", "minimum": 0 },
+        "documents_by_kind": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "integer", "minimum": 0 },
+            "domain": { "type": "integer", "minimum": 0 },
+            "runbook": { "type": "integer", "minimum": 0 },
+            "artifact": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["source", "domain", "runbook", "artifact"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["initialized", "documents", "documents_by_kind"],
+      "additionalProperties": false
     }
   },
-  "required": ["version", "secrets"],
+  "required": ["version", "secrets", "library"],
   "additionalProperties": false,
   "$defs": {
     "presence": { "type": "string", "enum": ["set", "unset"] }

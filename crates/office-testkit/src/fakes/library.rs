@@ -4,9 +4,11 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use office_core::domain::knowledge::{DocumentRecord, Revision, SearchFilter, SearchHit};
+use office_core::domain::knowledge::{
+    DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit,
+};
 use office_core::domain::settings::Settings;
-use office_core::ports::Library;
+use office_core::ports::{InitOutcome, Library, LibraryHealth, not_initialized_error};
 use office_core::{Error, Result};
 
 /// A Library fake with explicit readiness and settings, and no host I/O.
@@ -14,6 +16,7 @@ use office_core::{Error, Result};
 pub struct FakeLibrary {
     documents: RefCell<BTreeMap<String, DocumentRecord>>,
     revisions: RefCell<BTreeMap<String, Vec<Revision>>>,
+    now_initialized: RefCell<Option<bool>>,
     /// Whether the fixture represents an initialized Library.
     pub initialized: bool,
     /// Settings returned by the fake (validated on every load).
@@ -30,12 +33,13 @@ impl FakeLibrary {
         }
     }
 
+    fn is_now_initialized(&self) -> bool {
+        self.now_initialized.borrow().unwrap_or(self.initialized)
+    }
+
     fn ready(&self) -> Result<()> {
-        if !self.initialized {
-            return Err(Error::Library {
-                code: "library_not_initialized",
-                message: "initialize the fake Library".into(),
-            });
+        if !self.is_now_initialized() {
+            return Err(not_initialized_error());
         }
         self.settings.validate()
     }
@@ -121,13 +125,81 @@ impl Library for FakeLibrary {
             .unwrap_or_default())
     }
     fn is_initialized(&self) -> Result<bool> {
-        if self.initialized {
+        if self.is_now_initialized() {
             self.settings.validate()?;
         }
-        Ok(self.initialized)
+        Ok(self.is_now_initialized())
     }
     fn settings(&self) -> Result<Settings> {
         self.ready()?;
         Ok(self.settings.clone())
+    }
+    fn initialize(&self, library_dir: Option<&str>) -> Result<InitOutcome> {
+        if let Some(dir) = library_dir {
+            let normalized = dir.replace('\\', "/");
+            let allowed = normalized == "library"
+                || normalized.starts_with("library/")
+                || normalized.ends_with("/library")
+                || normalized.contains("/library/");
+            if !allowed || normalized.split('/').any(|part| part == "..") {
+                return Err(Error::Library {
+                    code: "library_dir_outside_workspace",
+                    message: format!("library_dir {dir} is outside the granted Library root"),
+                });
+            }
+        }
+        if self.is_now_initialized() {
+            return Ok(InitOutcome {
+                already_initialized: true,
+                created: Vec::new(),
+            });
+        }
+        *self.now_initialized.borrow_mut() = Some(true);
+        Ok(InitOutcome {
+            already_initialized: false,
+            created: vec![
+                ".git".into(),
+                ".gitignore".into(),
+                ".office/config.yaml".into(),
+                "artifacts/.gitkeep".into(),
+                "index.sqlite".into(),
+                "knowledge/domain/.gitkeep".into(),
+                "knowledge/runbooks/.gitkeep".into(),
+                "proposals/.gitkeep".into(),
+                "sources/.gitkeep".into(),
+            ],
+        })
+    }
+    fn reindex(&self) -> Result<u32> {
+        self.ready()?;
+        let count = self.documents.borrow().len();
+        u32::try_from(count).map_err(|_| Error::Library {
+            code: "io_error",
+            message: "document count overflow".into(),
+        })
+    }
+    fn health(&self) -> Result<LibraryHealth> {
+        if !self.is_now_initialized() {
+            return Ok(LibraryHealth::uninitialized());
+        }
+        self.settings.validate()?;
+        let mut health = LibraryHealth {
+            initialized: true,
+            ..LibraryHealth::default()
+        };
+        for doc in self.documents.borrow().values() {
+            health.documents_total = health.documents_total.saturating_add(1);
+            match doc.kind {
+                DocumentKind::Source => health.source = health.source.saturating_add(1),
+                DocumentKind::Domain => health.domain = health.domain.saturating_add(1),
+                DocumentKind::Runbook => {
+                    health.runbook = health.runbook.saturating_add(1);
+                }
+                DocumentKind::Artifact => {
+                    health.artifact = health.artifact.saturating_add(1);
+                }
+            }
+        }
+        Ok(health)
     }
 }

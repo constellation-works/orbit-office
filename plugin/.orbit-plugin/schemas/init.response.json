@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.init response",
+  "type": "object",
+  "properties": {
+    "already_initialized": { "type": "boolean", "description": "True when a complete Library already existed and nothing was created or committed." },
+    "created": { "type": "array", "items": { "type": "string" }, "description": "Paths this call created, Library-relative (index.sqlite is state-relative), sorted. Empty when already initialized." }
+  },
+  "required": ["already_initialized", "created"],
+  "additionalProperties": false
+}

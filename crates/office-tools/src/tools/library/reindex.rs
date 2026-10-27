@@ -1,16 +1,26 @@
 //! `office.reindex`: Rebuild the SQLite index from the Library.
 //!
-//! Planned: see `docs/design/office/specs/store.md`. To build it, switch
-//! `TOOL` to `Tool::built` with its accepted keys and handler, add its
-//! schemas and golden, and uncomment its block in `plugin.yaml`
-//! (ARCHITECTURE.md, "Tools").
+//! Files are the truth; the adapter rescans them under the writer lock.
+//! An uninitialized Library is refused by the shared dispatch check
+//! (`library_not_initialized`, STD-02 R24) before this handler runs.
 
+use office_core::Result;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
+use serde_json::{Value, json};
 
-use crate::registry::Tool;
+use crate::registry::{Call, Tool};
 
-pub(crate) const TOOL: Tool = Tool::planned(ToolSpec {
-    name: "reindex",
-    execution_kind: ExecutionKind::Mutating,
-    mcp_scope: McpScope::None,
-});
+pub(crate) const TOOL: Tool = Tool::built(
+    ToolSpec {
+        name: "reindex",
+        execution_kind: ExecutionKind::Mutating,
+        mcp_scope: McpScope::None,
+    },
+    &[],
+    run,
+);
+
+pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
+    let indexed = call.ports.library.reindex()?;
+    Ok(json!({ "indexed_documents": indexed }))
+}

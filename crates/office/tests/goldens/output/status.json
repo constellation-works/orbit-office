@@ -1,1 +1,1 @@
-{"ok":true,"output":{"secrets":{"baseten_token":"unset","meta_api_key":"unset"},"version":"0.1.0"}}
+{"ok":true,"output":{"library":{"documents":0,"documents_by_kind":{"artifact":0,"domain":0,"runbook":0,"source":0},"initialized":false},"secrets":{"baseten_token":"unset","meta_api_key":"unset"},"version":"0.1.0"}}

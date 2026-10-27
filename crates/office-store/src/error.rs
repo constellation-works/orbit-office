@@ -30,6 +30,17 @@ pub enum Error {
         /// Resolved Library root.
         root: PathBuf,
     },
+    /// The requested Library location is outside the granted write root.
+    #[error("library_dir {requested} is outside the granted Library root {allowed}")]
+    LibraryDirOutside {
+        /// Requested Library location, as resolved.
+        requested: PathBuf,
+        /// Granted `{{workspace}}/library` root.
+        allowed: PathBuf,
+    },
+    /// `git` is required to scaffold the Library but was not found.
+    #[error("git is required to initialize the Library but was not found on PATH")]
+    GitMissing,
     /// A validated setting failed at load.
     #[error(transparent)]
     Settings(#[from] office_core::Error),
@@ -128,6 +139,8 @@ impl Error {
     pub fn code(&self) -> &'static str {
         match self {
             Self::DocumentConflict { .. } => "library_document_conflict",
+            Self::LibraryDirOutside { .. } => "library_dir_outside_workspace",
+            Self::GitMissing => "git_missing",
             Self::NotInitialized { .. } => "library_not_initialized",
             Self::Settings(error) => error.code(),
             Self::LockTimeout { .. } => "library_lock_timeout",
@@ -207,6 +220,8 @@ impl From<Error> for office_core::Error {
         match error {
             Error::Settings(error) => error,
             other @ (Error::DocumentConflict { .. }
+            | Error::LibraryDirOutside { .. }
+            | Error::GitMissing
             | Error::NotInitialized { .. }
             | Error::LockTimeout { .. }
             | Error::PendingWrite { .. }

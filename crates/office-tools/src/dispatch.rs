@@ -47,6 +47,18 @@ fn dispatch(request: &Request, ports: &office_core::ports::Ports<'_>) -> Result<
         )));
     }
 
+    // The one Library-readiness check (STD-02 R24): every built tool other
+    // than `init` (which creates the Library) and `status` (which reports
+    // its health) refuses an uninitialized Library here, in the shared
+    // path, rather than once per handler.
+    if verb != "init" && verb != "status" {
+        match ports.library.is_initialized() {
+            Ok(true) => {}
+            Ok(false) => return Err(office_core::ports::not_initialized_error()),
+            Err(error) => return Err(error),
+        }
+    }
+
     handler(&Call {
         ports,
         input: &request.input,

@@ -12,7 +12,7 @@ use office_common::fs::atomic::write_atomic;
 use office_common::fs::path_safety::validate_path_stem;
 
 /// Directory layout created under a Library root.
-const LAYOUT_DIRS: &[&str] = &[
+pub(crate) const LAYOUT_DIRS: &[&str] = &[
     "sources",
     "knowledge/domain",
     "knowledge/runbooks",

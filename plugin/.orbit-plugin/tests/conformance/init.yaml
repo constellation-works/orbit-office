@@ -1,0 +1,22 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: init_scaffolds_the_library
+    tool: init
+    input: {}
+    expect:
+      output:
+        already_initialized: false
+        created: [".git", ".gitignore", ".office", ".office/config.yaml", "artifacts", "artifacts/.gitkeep", "index.sqlite", "knowledge/domain", "knowledge/domain/.gitkeep", "knowledge/runbooks", "knowledge/runbooks/.gitkeep", "proposals", "proposals/.gitkeep", "sources", "sources/.gitkeep"]
+  - name: init_refuses_a_library_dir_outside_the_library
+    tool: init
+    input: {"library_dir": "../outside"}
+    expect:
+      error:
+        code: library_dir_outside_workspace
+  - name: init_refuses_unknown_input
+    tool: init
+    input: {"verbose": true}
+    expect:
+      error:
+        code: invalid_argument

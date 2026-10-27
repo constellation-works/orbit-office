@@ -12,6 +12,14 @@ tests:
         secrets:
           meta_api_key: unset
           baseten_token: unset
+        library:
+          initialized: true
+          documents: 0
+          documents_by_kind:
+            source: 0
+            domain: 0
+            runbook: 0
+            artifact: 0
   - name: status_refuses_unknown_input
     tool: status
     input: {"verbose": true}

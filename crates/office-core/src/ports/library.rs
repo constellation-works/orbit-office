@@ -2,9 +2,64 @@
 
 use std::path::Path;
 
-use crate::domain::knowledge::{DocumentRecord, Revision, SearchFilter, SearchHit};
+use crate::domain::knowledge::{DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit};
 use crate::domain::settings::Settings;
 use crate::{Error, Result};
+
+/// What `office.init` created, or that it found a complete Library.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct InitOutcome {
+    /// True when a complete Library already existed and nothing changed.
+    pub already_initialized: bool,
+    /// Library-relative (or state-relative) paths this call created, sorted.
+    pub created: Vec<String>,
+}
+
+/// Library and index health for `office.status`. Counts come from the index.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LibraryHealth {
+    /// The Library's own repository and a valid settings file are present.
+    pub initialized: bool,
+    /// Indexed documents of every kind.
+    pub documents_total: u32,
+    /// Indexed `source` documents.
+    pub source: u32,
+    /// Indexed `domain` pages.
+    pub domain: u32,
+    /// Indexed `runbook` pages.
+    pub runbook: u32,
+    /// Indexed `artifact` documents.
+    pub artifact: u32,
+}
+
+impl LibraryHealth {
+    /// Health for a Library that is not initialized: no counts are read.
+    #[must_use]
+    pub fn uninitialized() -> Self {
+        Self::default()
+    }
+
+    /// Count for one kind.
+    #[must_use]
+    pub fn count_for(&self, kind: DocumentKind) -> u32 {
+        match kind {
+            DocumentKind::Source => self.source,
+            DocumentKind::Domain => self.domain,
+            DocumentKind::Runbook => self.runbook,
+            DocumentKind::Artifact => self.artifact,
+        }
+    }
+}
+
+/// The shared refusal for an uninitialized Library (STD-02 R24): one
+/// definition, used by the dispatch chokepoint and by adapters.
+#[must_use]
+pub fn not_initialized_error() -> Error {
+    Error::Library {
+        code: "library_not_initialized",
+        message: "Library is not initialized; run office.init".to_string(),
+    }
+}
 
 /// The Library operations used by tools, independent of files, git and SQLite.
 /// An adapter must override all operations; defaults support contexts that have
@@ -33,5 +88,24 @@ pub trait Library {
     /// Load and validate settings on every call.
     fn settings(&self) -> Result<Settings> {
         Err(Error::LibraryUnavailable)
+    }
+    /// Scaffold the Library (layout, git, config, `.gitignore`, index, one
+    /// commit). `library_dir`, when given, is the requested Library location
+    /// (workspace-relative or absolute); an adapter refuses one outside its
+    /// granted `{{workspace}}/library` root with `library_dir_outside_workspace`
+    /// and a missing `git` with `git_missing`. Idempotent.
+    fn initialize(&self, _library_dir: Option<&str>) -> Result<InitOutcome> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Rebuild the index from the files; returns the indexed document count.
+    fn reindex(&self) -> Result<u32> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Library and index health, without creating Library state.
+    fn health(&self) -> Result<LibraryHealth> {
+        Ok(LibraryHealth {
+            initialized: self.is_initialized()?,
+            ..LibraryHealth::default()
+        })
     }
 }

@@ -78,6 +78,37 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// The bundled default config `office.init` writes, in the documented
+    /// YAML subset. Round-trips through [`Settings::from_yaml`] to defaults.
+    #[must_use]
+    pub fn default_yaml() -> String {
+        let defaults = Self::default();
+        let mut out = String::from("retention:\n");
+        for kind in KINDS {
+            match defaults.retention[*kind] {
+                Some(days) => out.push_str(&format!("  {kind}: {days}\n")),
+                None => out.push_str(&format!("  {kind}: null\n")),
+            }
+        }
+        out.push_str("sensitivity:\n");
+        for kind in KINDS {
+            out.push_str(&format!(
+                "  {kind}: {}\n",
+                defaults.sensitivity[*kind].as_str()
+            ));
+        }
+        out.push_str(&format!("packs: [{}]\n", defaults.packs.join(", ")));
+        out.push_str("thresholds:\n");
+        out.push_str(&format!(
+            "  repetition_count: {}\n  window_days: {}\n  stale_days: {}\n",
+            defaults.thresholds.repetition_count,
+            defaults.thresholds.window_days,
+            defaults.thresholds.stale_days
+        ));
+        out.push_str("open_weights_endpoint: null\n");
+        out
+    }
+
     /// Parse the documented YAML subset (JSON mappings are also valid YAML).
     pub fn from_yaml(text: &str) -> Result<Self> {
         Self::try_from(parse_yaml(text)?)
