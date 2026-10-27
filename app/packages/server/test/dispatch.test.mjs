@@ -215,10 +215,16 @@ test("a scheduled pass reports a malformed listing through onError and ships not
     t.after(() => dispatcher.stop());
     dispatcher.start();
   });
-  const error = await reported;
-  assert.ok(error instanceof OrbitError);
-  assert.equal(error.code, "invalid_output");
-  assert.equal(await shipLog(fake), "");
+  // The dispatcher's interval is unref'd; keep the test process alive until it fires.
+  const keepAlive = setInterval(() => {}, 20);
+  try {
+    const error = await reported;
+    assert.ok(error instanceof OrbitError);
+    assert.equal(error.code, "invalid_output");
+    assert.equal(await shipLog(fake), "");
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 test("a manual pass rejects a listing without a tasks field and ships nothing", async (t) => {
