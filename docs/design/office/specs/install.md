@@ -96,7 +96,11 @@ spaces, so script shebangs that name the interpreter keep working.
    envelope on stdout, even with exit 0, also stops the install and names its code. Nothing
    is recorded on failure, so the next run asks `office.init` again.
 8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Muse Code's
-   `settings.json`, keeping a backup of the old file, and installs the office skills. It
+   `settings.json`, keeping a backup of the old file, and installs the office skills. A
+   skill already present under the same name is left untouched and is not claimed: the
+   installer records only the skills it itself copies, as one `<name> <sha256>` line per
+   skill in `<data>/agent-skills-<agent>.txt`, where the digest covers every file's
+   relative path and bytes in the copied tree. It
    also adds deny rules for direct shell use of `curl`, `wget`, `http`, `aws` and `gcloud`,
    so API and cloud calls go through the gateway ([gateway.md](./gateway.md#agent-cli-deny-rules)),
    and lists them in the summary. Rules the user already has are kept, and uninstall
@@ -120,7 +124,11 @@ spaces, so script shebangs that name the interpreter keep working.
 
 The summary lists what was created, where, and the uninstall command
 (`install.sh --uninstall`). Uninstall removes the service, the MCP entry and its deny rules, the plugins and the
-`tools` folder (`uv` and its Python, which nothing else uses). It keeps `~/orbit` and the
+`tools` folder (`uv` and its Python, which nothing else uses). For skills it removes only a
+skill recorded in `agent-skills-<agent>.txt` whose tree still matches its recorded digest;
+a pre-existing same-named skill, a skill the user edited after copying, and any unrecorded
+skill are kept in place and named in the output with their path, and a repeated uninstall
+is a safe no-op for them. It keeps `~/orbit` and the
 Library unless `--purge` is given. `--purge` deletes that workspace only after the same
 ownership check as adoption, and otherwise refuses with a message that names the path and
 removes nothing, including the per-user data folder. A data folder that is the home folder or
