@@ -49,6 +49,13 @@ tool needs them, as new migration steps — never as edits to step 1.
   versions such as `v2.md`, artifact companions and `proposals/` are
   not documents of this call. `original.*` stays refused on every
   path, including under `knowledge/`.
+- **Scans do not follow symlinks.** `reindex` and knowledge-page reads
+  skip a symlink file or directory instead of opening it, including a
+  symlinked layer directory (`sources`, `knowledge`, `artifacts`).
+  Content reached only through a link is neither indexed nor returned,
+  and a directory symlink that points at an ancestor ends the walk at
+  the link. `read_document` still refuses a symlink leaf with
+  `unsafe_path`.
 - **Preconditions before side effects:** path components are validated
   before any write; unknown document kinds and newer index schemas are
   refused, never guessed or rewritten.

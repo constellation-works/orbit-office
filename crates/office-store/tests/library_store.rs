@@ -1143,6 +1143,170 @@ fn init_copies_missing_templates_and_health_reports_template_drift() {
     );
 }
 
+#[cfg(unix)]
+fn library_with_links_outside(link_knowledge_file: bool) -> (tempfile::TempDir, LibraryStore) {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    write(
+        &library,
+        "knowledge/domain/inside.md",
+        "---\nid: dom-inside\ntype: domain\ntitle: Inside page\n---\n\ninside library page\n",
+    );
+    write(
+        &library,
+        "sources/2026/10/src-inside/source.md",
+        "---\nid: src-inside\nkind: note\ntitle: Inside source\n---\n\ninside library source\n",
+    );
+    let outside = dir.path().join("outside");
+    write(
+        &outside,
+        "secret.md",
+        "---\nid: dom-outside-file\ntype: domain\ntitle: Outside file\n---\n\nOUTSIDE library secret\n",
+    );
+    write(
+        &outside,
+        "tree/page.md",
+        "---\nid: dom-outside-dir\ntype: domain\ntitle: Outside dir\n---\n\nOUTSIDE library secret\n",
+    );
+    write(
+        &outside,
+        "source.md",
+        "---\nid: src-outside-file\nkind: note\ntitle: Outside source file\n---\n\nOUTSIDE library secret\n",
+    );
+    write(
+        &outside,
+        "source-tree/source.md",
+        "---\nid: src-outside-dir\nkind: note\ntitle: Outside source dir\n---\n\nOUTSIDE library secret\n",
+    );
+    write(
+        &outside,
+        "artifact-tree/artifact.md",
+        "---\nid: art-outside\nkind: doc\ntitle: Outside artifact\n---\n\nOUTSIDE library secret\n",
+    );
+    let store = LibraryStore::open(&library, &state).expect("open");
+    if link_knowledge_file {
+        symlink(
+            outside.join("secret.md"),
+            library.join("knowledge/domain/linked.md"),
+        )
+        .expect("knowledge file symlink");
+    }
+    symlink(outside.join("tree"), library.join("knowledge/outside"))
+        .expect("knowledge dir symlink");
+    std::fs::create_dir_all(library.join("sources/2026/10/src-linked")).expect("linked source dir");
+    symlink(
+        outside.join("source.md"),
+        library.join("sources/2026/10/src-linked/source.md"),
+    )
+    .expect("source file symlink");
+    symlink(outside.join("source-tree"), library.join("sources/linked"))
+        .expect("sources dir symlink");
+    let artifacts = library.join("artifacts");
+    std::fs::remove_dir_all(&artifacts).expect("remove real artifacts layer");
+    symlink(outside.join("artifact-tree"), &artifacts).expect("artifacts layer symlink");
+    (dir, store)
+}
+
+#[cfg(unix)]
+#[test]
+fn reindex_does_not_index_symlinks_outside_the_library() {
+    let (_dir, store) = library_with_links_outside(true);
+    let indexed = store.reindex().expect("reindex");
+    assert_eq!(indexed, 2, "symlinked files and directories were indexed");
+    assert_eq!(store.document_count().expect("count"), 2);
+    for id in [
+        "dom-outside-file",
+        "dom-outside-dir",
+        "src-outside-file",
+        "src-outside-dir",
+        "art-outside",
+    ] {
+        assert!(store.get(id).expect("get").is_none(), "{id} was indexed");
+    }
+    assert!(store.get("dom-inside").expect("inside page").is_some());
+    assert!(store.get("src-inside").expect("inside source").is_some());
+    assert!(
+        store
+            .search("OUTSIDE", &SearchFilter::default())
+            .expect("search")
+            .is_empty(),
+        "search exposed text from outside the Library"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn knowledge_pages_do_not_read_symlinks_outside_the_library() {
+    let (_dir, store) = library_with_links_outside(false);
+    let pages = store
+        .knowledge_pages()
+        .expect("directory symlink must not abort the scan");
+    assert!(
+        pages.iter().all(|page| {
+            page.markdown
+                .as_deref()
+                .is_none_or(|text| !text.contains("OUTSIDE"))
+        }),
+        "knowledge pages read through a directory symlink: {pages:?}"
+    );
+    assert!(
+        pages
+            .iter()
+            .any(|page| page.path == "knowledge/domain/inside.md"),
+        "in-library page missing: {pages:?}"
+    );
+
+    let (_dir, store) = library_with_links_outside(true);
+    let pages = store
+        .knowledge_pages()
+        .expect("file symlink must not abort the scan");
+    assert_eq!(
+        pages.len(),
+        1,
+        "symlinked knowledge file was returned: {pages:?}"
+    );
+    assert_eq!(pages[0].path, "knowledge/domain/inside.md");
+    assert!(
+        pages[0]
+            .markdown
+            .as_deref()
+            .unwrap()
+            .contains("inside library page")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn reindex_and_knowledge_pages_terminate_on_an_ancestor_symlink_cycle() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    write(
+        &library,
+        "knowledge/domain/inside.md",
+        "---\nid: dom-inside\ntype: domain\ntitle: Inside page\n---\n\ninside library page\n",
+    );
+    let store = LibraryStore::open(&library, &state).expect("open");
+    symlink(library.join("knowledge"), library.join("knowledge/loop")).expect("ancestor cycle");
+    let indexed = store.reindex().expect("reindex terminates");
+    assert_eq!(indexed, 1);
+    let pages = store.knowledge_pages().expect("knowledge pages terminate");
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].path, "knowledge/domain/inside.md");
+    assert!(
+        pages[0]
+            .markdown
+            .as_deref()
+            .unwrap()
+            .contains("inside library page")
+    );
+}
+
 fn markdown_under(root: &Path) -> Vec<String> {
     let mut found = Vec::new();
     let mut stack = vec![root.to_path_buf()];
