@@ -1,10 +1,12 @@
 //! Atomic, owner-only file writes: write a temporary file in the target
-//! directory, fsync it, rename over the target, and fsync the directory.
+//! directory, fsync it, publish it, and fsync the directory. Publication
+//! either replaces the target by rename or creates it without replacement
+//! by hard link (original uploads must never clobber an existing file).
 //! A crash leaves either the old file or the new one, never a half-written
 //! file (the `fsio` discipline of the template's store, kept here).
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{Error, Result};
@@ -25,6 +27,32 @@ const MAX_TMP_ATTEMPTS: u32 = 100;
 
 /// Write `bytes` to `path` atomically, with owner-only permissions.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    write_atomic_with(path, bytes, Publication::Replace)
+}
+
+/// Atomically create an owner-only file, refusing any existing target.
+/// A fully written, synced temp is hard-linked into place, so a crash
+/// cannot leave a partial target and publication never replaces an entry.
+/// Filesystems without hard-link support return an error without a target.
+pub fn write_atomic_new(path: &Path, bytes: &[u8]) -> Result<()> {
+    write_atomic_with(path, bytes, Publication::Create)
+}
+
+enum Publication {
+    Replace,
+    Create,
+}
+
+/// Owns only an exclusively created temp, including on error or unwinding.
+struct TempFile(PathBuf);
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn write_atomic_with(path: &Path, bytes: &[u8], publication: Publication) -> Result<()> {
     let dir = path.parent().ok_or_else(|| Error::Io {
         action: "resolve parent directory of",
         path: path.to_path_buf(),
@@ -50,37 +78,30 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(Error::io("write", path, e)),
         };
+        let _temp = TempFile(tmp.clone());
         // Creation used mode 0600, which the umask can only narrow, so the
         // file was never more permissive than owner-only. Tighten to exactly
         // 0600 in case the umask stripped an owner bit.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if let Err(e) = file.set_permissions(std::fs::Permissions::from_mode(0o600)) {
-                let _ = std::fs::remove_file(&tmp);
-                return Err(Error::io("write", path, e));
-            }
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| Error::io("write", path, e))?;
         }
-        // Each fallible step below maps its failure to `Error::io` and
-        // removes only this attempt's exclusively created temp; a
-        // pre-existing entry at another name is never touched.
-        if let Err(source) = file.write_all(bytes) {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(Error::io("write", path, source));
-        }
-        if let Err(source) = file.sync_all() {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(Error::io("write", path, source));
-        }
+        file.write_all(bytes)
+            .map_err(|e| Error::io("write", path, e))?;
+        file.sync_all().map_err(|e| Error::io("write", path, e))?;
         drop(file);
-        if let Err(source) = std::fs::rename(&tmp, path) {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(Error::io("write", path, source));
+        match publication {
+            Publication::Replace => std::fs::rename(&tmp, path),
+            Publication::Create => std::fs::hard_link(&tmp, path),
         }
-        // Fsync the directory so the rename itself is durable.
-        if let Ok(dir_file) = std::fs::File::open(dir) {
-            let _ = dir_file.sync_all();
-        }
+        .map_err(|e| Error::io("write", path, e))?;
+        drop(_temp);
+        // Fsync publication and temp removal before the decision can be cleared.
+        std::fs::File::open(dir)
+            .and_then(|file| file.sync_all())
+            .map_err(|e| Error::io("sync directory", dir, e))?;
         return Ok(());
     }
     Err(Error::io(

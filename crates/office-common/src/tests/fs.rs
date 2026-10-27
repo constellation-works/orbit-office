@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::Error;
-use crate::fs::atomic::write_atomic;
+use crate::fs::atomic::{write_atomic, write_atomic_new};
 use crate::fs::hash::{sha256_file, sha256_hex};
 use crate::fs::path_safety::{normalize_path, validate_path_stem};
 
@@ -47,6 +47,55 @@ fn atomic_write_replaces_and_leaves_no_temp() {
         .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
         .collect();
     assert!(leftovers.is_empty(), "temp files left: {leftovers:?}");
+}
+
+#[test]
+fn atomic_create_publishes_complete_bytes_and_preserves_existing_entries() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("original.bin");
+    write_atomic_new(&path, &[0, 255, 128]).expect("publish original");
+    for bytes in [&[0, 255, 128][..], b"replacement"] {
+        let error = write_atomic_new(&path, bytes).expect_err("never replace even identical bytes");
+        assert!(matches!(error, Error::Io { source, .. }
+            if source.kind() == std::io::ErrorKind::AlreadyExists));
+        assert_eq!(
+            std::fs::read(&path).expect("original preserved"),
+            [0, 255, 128]
+        );
+    }
+    let directory = dir.path().join("directory");
+    std::fs::create_dir(&directory).expect("occupied directory");
+    assert!(write_atomic_new(&directory, b"replacement").is_err());
+    assert!(directory.is_dir());
+    assert_eq!(
+        std::fs::read_dir(dir.path())
+            .expect("no leaked temps")
+            .count(),
+        2
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_create_preserves_a_dangling_symlink() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let victim = dir.path().join("missing");
+    let link = dir.path().join("original.bin");
+    std::os::unix::fs::symlink(&victim, &link).expect("planted link");
+    let error = write_atomic_new(&link, b"replacement").expect_err("refuse link");
+    assert!(matches!(error, Error::Io { source, .. }
+        if source.kind() == std::io::ErrorKind::AlreadyExists));
+    assert_eq!(std::fs::read_link(&link).unwrap(), victim);
+    assert!(!victim.exists());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
 
 #[test]

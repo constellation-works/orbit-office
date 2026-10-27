@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::contracts::DocumentRecord;
 use crate::error::{Error, Result};
-use office_common::fs::atomic::write_atomic;
+use office_common::fs::atomic::{write_atomic, write_atomic_new};
 use office_common::fs::path_safety::validate_path_stem;
 use office_core::domain::template::BUNDLED;
 
@@ -124,14 +124,78 @@ impl LibraryFs {
         std::fs::read_to_string(&path).map_err(|e| Error::io("read", &path, e))
     }
 
-    /// Write bytes beside a source (its `original.*`), contained and atomic.
-    pub(crate) fn write_bytes(&self, relative: &Path, bytes: &[u8]) -> Result<()> {
+    /// Publish an original without replacement. Only identical existing bytes
+    /// are an idempotent replay; a conflicting entry keeps recovery pending.
+    pub(crate) fn write_original(&self, relative: &Path, bytes: &[u8]) -> Result<()> {
         self.validate_relative_path(relative)?;
         let path = self.root.join(relative);
         if let Some(parent) = path.parent() {
             Self::create_private_dirs(parent)?;
         }
-        Ok(write_atomic(&path, bytes)?)
+        match write_atomic_new(&path, bytes) {
+            Ok(()) => {}
+            Err(office_common::Error::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                self.validate_relative_path(relative)?;
+                let metadata = std::fs::symlink_metadata(&path)
+                    .map_err(|e| Error::io("inspect existing original", &path, e))?;
+                if !metadata.is_file() {
+                    return Err(Error::io(
+                        "publish original over occupied path",
+                        path,
+                        source,
+                    ));
+                }
+                let existing = std::fs::read(&path)
+                    .map_err(|e| Error::io("read existing original", &path, e))?;
+                if existing != bytes {
+                    return Err(Error::io(
+                        "publish original without replacing existing data",
+                        path,
+                        source,
+                    ));
+                }
+                // Also covers a crash immediately after publication but before
+                // its parent directory was synced.
+                std::fs::File::open(&path)
+                    .and_then(|file| file.sync_all())
+                    .map_err(|e| Error::io("sync original", &path, e))?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+        // Persist newly created ancestors too, before the journal is removed.
+        let mut parent = path.parent();
+        while let Some(dir) = parent {
+            std::fs::File::open(dir)
+                .and_then(|file| file.sync_all())
+                .map_err(|e| Error::io("sync original directory", dir, e))?;
+            if dir == self.root {
+                break;
+            }
+            parent = dir.parent();
+        }
+        Ok(())
+    }
+
+    /// Names already occupying a capture month, including empty directories,
+    /// regular files and dangling symlinks. Inspection failures are not vacancy.
+    pub(crate) fn entry_names(&self, relative: &Path) -> Result<Vec<String>> {
+        self.validate_relative_path(relative)?;
+        let path = self.root.join(relative);
+        let entries = match std::fs::read_dir(&path) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(Error::io("list capture directory", path, e)),
+        };
+        let mut names = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|e| Error::io("list capture directory", &path, e))?;
+            if let Some(name) = entry.file_name().to_str() {
+                names.push(name.to_string());
+            }
+        }
+        Ok(names)
     }
 
     /// Read and parse one document by its Library-relative path.

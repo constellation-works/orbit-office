@@ -17,7 +17,7 @@ and machinery are reused, the code is this project's.
 | orbit-store | office-store | Owns |
 |---|---|---|
 | `contracts/` | `src/contracts.rs` | Compatible re-exports of core record shapes: `DocumentRecord`, `DocumentKind`, `SearchFilter`, `SearchHit`, `Revision`, `Backlink`, `LinkKind` |
-| `fs/` (path_safety, lock, yaml) | `office-common::fs` (`path_safety`, `atomic`, `hash`) | Single-safe-component id validation, atomic owner-only writes (temp + fsync + rename + dir fsync), SHA-256 pinning/dedupe. Shared machinery lives in the foundation crate, as orbit's does in `orbit-common`. |
+| `fs/` (path_safety, lock, yaml) | `office-common::fs` (`path_safety`, `atomic`, `hash`) | Single-safe-component id validation, atomic owner-only writes (temp + fsync + publication + dir fsync; rename for replacement, hard link for exclusive creation), SHA-256 pinning/dedupe. Shared machinery lives in the foundation crate, as orbit's does in `orbit-common`. |
 | `driver/file/` | `src/driver/file/library.rs` | The Library as plain Markdown: layout, frontmatter parsing, full scan for reindex |
 | `driver/sqlite/` (connection, migration registry) | `src/driver/sqlite/` (`connection.rs`, `migration.rs`) | One writer connection behind a mutex; owner-only database file; the same pragmas on every connection (WAL, `busy_timeout` 5000, `foreign_keys=ON`, `synchronous=NORMAL`); ordered migrations with `user_version`, refusing a newer schema |
 | `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `read_text`, `get`, `backlinks`, `knowledge_pages`, `templates`, `search`, `head_commit`, `stage_attachment`/`remove_staged`, `file_sha256` |
@@ -113,14 +113,24 @@ Production calls to one Library must use the same plugin state directory.
 it is for tests/scans, not concurrent production indexing.
 
 A versioned, atomically written `library.pending-write.json` is the durable
-commit decision for the operation. New decisions use version 2 with a `kind`
-of `document` or `settings`; version-1 document journals without a kind remain
-readable. Unknown kinds and newer versions are refused. Settings decisions
+commit decision for the operation. Document and settings decisions use version 2
+with a `kind` of `document` or `settings`. Upload captures use version 3 with
+`kind: document` and a required `original` object containing the Library-relative
+`relative` path and the exact `bytes` as a JSON array of byte values. The original
+is decided together with the source Markdown before either file is published;
+failure to record the decision leaves no original or capture directory behind.
+Version-1 document journals (with or without `kind: document`) and version-2
+document/settings journals remain readable. Original payloads in older versions,
+version-3 decisions without an original, unknown kinds and newer versions are
+refused and preserved. Settings decisions
 accept only `.office/config.yaml`, validate the decided settings, replace the
 config and commit it without indexing it as a document. Recovery can finish a
 settings replacement even when the old config is missing or invalid, provided
 the Library's own git repository remains present. Document decisions retain
-the indexed-path and document-identity checks. The text and write token are replayed
+the indexed-path and document-identity checks. Upload decisions additionally bind
+the original to an `original.*` sibling of their `sources/**/source.md`, with
+matching filename, SHA-256 and byte count in the source frontmatter.
+The text, original bytes when present, and write token are replayed
 idempotently under the writer lock before an interrupted store opens. A failure
 after that decision leaves the journal intact. With no active writer, read
 operations refuse with `library_write_pending` until recovery completes;
@@ -130,6 +140,20 @@ after commit from duplicating the commit. The journal is private (0600), and com
 fsyncs its removal. During a live write, reads return the available file, indexed
 record/search hits or committed history, which may reflect the old or new
 document. These calls do not promise a snapshot across files, index and git.
+
+Upload recovery publishes the original before the document, index and commit,
+using the shared atomic writer's exclusive-creation mode: a synced temporary
+file is hard-linked into place without replacing an existing entry. Identical
+existing bytes are an idempotent replay and keep the same file; different bytes,
+non-file entries and symlinks refuse recovery and preserve the journal and the
+existing data. Newly created original directories and their ancestors through the
+Library root are synced before completion. A filesystem without hard-link support
+refuses publication and leaves the decided capture recoverable. Recovery never
+needs the caller's upload path to survive. Capture ID allocation considers both
+existing source document IDs and every on-disk entry in the capture's month,
+including empty directories, files and dangling symlinks. This preserves originals
+left by older captures even when they have no `source.md`; those legacy leftovers
+are reserved rather than guessed into a new source or deleted.
 
 `set_setting` holds the writer lock from before reading the latest config
 through the typed `Settings::with_setting` update, config replacement and commit,
