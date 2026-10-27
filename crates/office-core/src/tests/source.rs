@@ -150,6 +150,44 @@ fn anchors_distinguish_malformed_from_out_of_range() {
 }
 
 #[test]
+fn timestamp_overflow_is_refused_by_anchor_parsing() {
+    for raw in [
+        "#t=1152921504606846976:00:00",
+        "#t=5124095576030431:00:16",
+        "#t=18446744073709551615:59:59",
+    ] {
+        assert_eq!(parse_anchor(raw).expect_err(raw).code(), "anchor_invalid");
+    }
+}
+
+#[test]
+fn timestamp_overflow_in_source_turns_never_resolves_as_zero() {
+    let body = "[1152921504606846976:00:00] Jane: overflow";
+    assert_eq!(
+        anchor_span(body, parse_anchor("t=00:00:00").unwrap(), "t=00:00:00")
+            .expect_err("overflowing turn is not a valid location")
+            .code(),
+        "anchor_out_of_range"
+    );
+}
+
+#[test]
+fn timestamp_boundaries_and_hours_over_99_resolve_without_milliseconds() {
+    for (stamp, seconds) in [
+        ("100:00:00", 360_000),
+        ("5124095576030:25:51", u64::MAX / 1_000),
+        ("5124095576040:25:51", 18_446_744_073_745_551),
+        ("5124095576030431:00:15", u64::MAX),
+    ] {
+        let raw = format!("t={stamp}");
+        let parsed = parse_anchor(&raw).expect("representable seconds");
+        assert_eq!(parsed, crate::domain::source::Anchor::Time { seconds });
+        let body = format!("[{stamp}] Jane: valid");
+        assert_eq!(anchor_span(&body, parsed, &raw).unwrap(), body);
+    }
+}
+
+#[test]
 fn time_anchors_resolve_to_the_turn_in_progress() {
     let body = "[00:10:00] Jane: one\n\n[00:12:31] Dee: two";
     let span = |raw: &str| anchor_span(body, parse_anchor(raw).expect("anchor"), raw);
@@ -231,16 +269,78 @@ fn time_anchors_keep_continuation_lines_with_their_turn() {
 fn vtt_import_keeps_speakers_and_cue_times() {
     let vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Jane>Hi there.</v>\n\n00:01:05.500 --> 00:01:07.000\nDaniel: Next point.\n";
     assert_eq!(
-        vtt_to_body(vtt),
+        vtt_to_body(vtt).expect("valid VTT"),
         "[00:00:01] Jane: Hi there.\n\n[00:01:05] Daniel: Next point."
     );
+}
+
+#[test]
+fn vtt_import_refuses_timestamp_overflow_at_both_endpoints() {
+    for stamp in [
+        "1152921504606846976:00:00.000",
+        "5124095576030431:00:16.000",
+        "5124095576030:25:52.000",
+        "5124095576030:25:51.616",
+        "18446744073709551615:00.000",
+    ] {
+        for (start, end) in [(stamp, "00:00:03.000"), ("00:00:01.000", stamp)] {
+            let vtt = format!("WEBVTT\n\n{start} --> {end}\nJane: overflow\n");
+            assert_eq!(
+                vtt_to_body(&vtt).expect_err(stamp).code(),
+                "invalid_argument"
+            );
+        }
+    }
+}
+
+#[test]
+fn vtt_import_preserves_supported_timestamp_boundaries_and_cue_settings() {
+    for (start, end, stamp) in [
+        ("100:00:01.000", "100:00:02.000", "100:00:01"),
+        ("01:05.500", "01:07.000", "00:01:05"),
+        (
+            "5124095576030:25:51.614",
+            "5124095576030:25:51.615",
+            "5124095576030:25:51",
+        ),
+        (
+            "5124095576030:25:51.615",
+            "5124095576030:25:51.615",
+            "5124095576030:25:51",
+        ),
+    ] {
+        let vtt = format!("WEBVTT\n\n{start} --> {end} align:start\nJane: valid\n");
+        let body = vtt_to_body(&vtt).expect("representable milliseconds");
+        assert_eq!(body, format!("[{stamp}] Jane: valid"));
+        let raw = format!("t={stamp}");
+        assert_eq!(
+            anchor_span(&body, parse_anchor(&raw).unwrap(), &raw).unwrap(),
+            body
+        );
+    }
+}
+
+#[test]
+fn vtt_import_refuses_malformed_cue_timestamps() {
+    for timing in [
+        "not-a-time --> 00:00:03.000",
+        "00:00:01.000 --> missing",
+        "00:60:00.000 --> 00:61:00.000",
+        "00:00:60.000 --> 00:01:02.000",
+    ] {
+        let vtt = format!("WEBVTT\n\n{timing}\nJane: invalid\n");
+        assert_eq!(
+            vtt_to_body(&vtt).expect_err(timing).code(),
+            "invalid_argument"
+        );
+    }
 }
 
 #[test]
 fn vtt_import_keeps_numeric_and_keyword_prefixed_cue_text() {
     let vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n1234\n\n00:00:03.000 --> 00:00:04.000\nNOTE: the answer\n\n00:00:05.000 --> 00:00:06.000\nDaniel: It is\n2026\n\n00:00:07.000 --> 00:00:08.000\nWEBVTT is the format\n";
     assert_eq!(
-        vtt_to_body(vtt),
+        vtt_to_body(vtt).expect("valid VTT"),
         "[00:00:01] Speaker: 1234\n\n[00:00:03] NOTE: the answer\n\n[00:00:05] Daniel: It is 2026\n\n[00:00:07] Speaker: WEBVTT is the format"
     );
 }
@@ -249,7 +349,7 @@ fn vtt_import_keeps_numeric_and_keyword_prefixed_cue_text() {
 fn vtt_import_skips_header_cue_identifiers_and_comment_blocks() {
     let vtt = "WEBVTT\nKind: captions\nLanguage: en\n\nNOTE producer comment\nthat spans lines\n\nSTYLE\n::cue { color: red }\n\n7\n00:00:01.000 --> 00:00:02.000\n<v Jane>Hi there.</v>\n\nNOTE editor aside\n\n8\n00:00:03.000 --> 00:00:04.000\nDaniel: Next point.\n";
     assert_eq!(
-        vtt_to_body(vtt),
+        vtt_to_body(vtt).expect("valid VTT"),
         "[00:00:01] Jane: Hi there.\n\n[00:00:03] Daniel: Next point."
     );
 }

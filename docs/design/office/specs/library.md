@@ -145,6 +145,12 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 
 - **Video:** the transcript as for a meeting, plus `frames.md` (frame readings, `#frame=00:12:31`) and `chapters.md` (`#chapter=3`) beside it ([kt-videos.md](./kt-videos.md#library-shape)).
 - **Meeting:** one paragraph per speaker turn, prefixed with `[hh:mm:ss] Speaker:`, paragraphs separated by a blank line. The anchor is `#t=00:12:31`. When the transcript reports no turns, the body is the transcript text, unchanged. A long recording transcribed in chunks keeps a chunk that reported no turns as that text, unchanged, in the chunk's position among the turn paragraphs. A chunk that reported turns contributes those turns, not a second copy of its text.
+
+  Time anchors and source turns support hours above 99 and use checked `u64` seconds.
+  A timestamp exceeding that range is refused as `anchor_invalid` by source-show
+  and `unresolved_cite` by knowledge-write. An overflowing source turn is never
+  treated as a valid location. Source spans compare seconds directly, without
+  converting them to milliseconds.
 - **Chat:** one line per message, `[timestamp] Author: text`. The anchor is `#L14-20`.
 - **Email, doc:** paragraphs. The anchor is `#L…`. Converted documents add `#slide=<n>` (PowerPoint) and `#page=<n>` (PDF); conversions are in [library-bootstrap.md](./library-bootstrap.md#document-capture).
 - **Digest:** any source may carry `digest.json` beside `source.md`: the per-source summary, subjects, cited claims, procedures and terms that the bootstrap's consolidation reads ([library-bootstrap.md](./library-bootstrap.md#stage-1-a-digest-per-source-cheap)).

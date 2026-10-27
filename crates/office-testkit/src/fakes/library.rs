@@ -581,7 +581,7 @@ impl Library for FakeLibrary {
             let text = String::from_utf8(bytes).map_err(|_| {
                 Error::InvalidArgument("transcript_path must be UTF-8 WebVTT".to_string())
             })?;
-            transcript_body = Some(vtt_to_body(&text));
+            transcript_body = Some(vtt_to_body(&text)?);
         }
         let explicit_kind = match &request.kind {
             Some(k) => Some(SourceKind::parse(k).ok_or_else(|| Error::Library {

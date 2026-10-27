@@ -82,6 +82,11 @@ it (`transcript_path`), the VTT becomes the transcript and transcription is
 skipped: speaker names and cue times come straight from the file, with no
 model call.
 
+Both VTT cue endpoints must fit in `u64` milliseconds, including the fractional
+part. Hours above 99 are supported. Malformed or overflowing cue timestamps
+refuse the entire capture with `invalid_argument` before saving a source or
+committing Library changes; they are never wrapped or silently dropped.
+
 ### 2. Plan and confirm: `office.video-plan`
 
 Mutating, `mcp_scope: none`; called by the app after an upload.
