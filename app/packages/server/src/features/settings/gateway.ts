@@ -16,7 +16,7 @@ function strings(value: unknown): value is string[] {
 
 /** Validate types and unknown keys here; gateway owns connection policy validation. */
 export function connectionInput(value: unknown): ConnectionWrite {
-  const keys = ["name", "base_url", "auth", "methods", "drafts", "timeout_seconds", "max_response_bytes", "disabled", "secret"];
+  const keys = ["name", "base_url", "auth", "methods", "drafts", "timeout_seconds", "max_response_bytes", "disabled", "idempotency_header", "secret"];
   if (!object(value) || Object.keys(value).some((key) => !keys.includes(key)) ||
       typeof value.name !== "string" || typeof value.base_url !== "string" ||
       !object(value.auth) || Object.keys(value.auth).some((key) => !["scheme", "header", "username"].includes(key)) ||
@@ -25,6 +25,7 @@ export function connectionInput(value: unknown): ConnectionWrite {
       (value.auth.username !== undefined && typeof value.auth.username !== "string") ||
       !strings(value.methods) || !strings(value.drafts) || !Number.isSafeInteger(value.timeout_seconds) ||
       !Number.isSafeInteger(value.max_response_bytes) || typeof value.disabled !== "boolean" ||
+      (value.idempotency_header !== undefined && typeof value.idempotency_header !== "string") ||
       (value.secret !== undefined && (typeof value.secret !== "string" || value.secret.length === 0 || value.auth.scheme === "none"))) invalid();
   return value as unknown as ConnectionWrite;
 }
@@ -46,6 +47,7 @@ export function connection(value: unknown): SettingsConnection {
   if (!object(value) || typeof value.slot_state !== "string" || !["set", "unset", "none"].includes(value.slot_state)) throw new SettingsError(502, "invalid_gateway_data");
   const projected: Record<string, unknown> = {};
   for (const key of ["name", "base_url", "auth", "methods", "drafts", "timeout_seconds", "max_response_bytes", "disabled"]) projected[key] = value[key];
+  if (value.idempotency_header !== undefined) projected.idempotency_header = value.idempotency_header;
   // Project auth separately too: no accidental credential field can reach HTTP.
   if (!object(value.auth)) throw new SettingsError(502, "invalid_gateway_data");
   projected.auth = { scheme: value.auth.scheme,

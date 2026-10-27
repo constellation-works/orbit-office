@@ -68,7 +68,9 @@ export function connectionEditor(existing: SettingsConnection | undefined, save:
       name: name.value, base_url: url.value, auth: { scheme,
         ...(scheme === "header" ? { header: header.value } : {}), ...(scheme === "basic" ? { username: username.value } : {}) },
       methods: direct(), drafts: drafts(), timeout_seconds: Number(timeout.value), max_response_bytes: Number(bytes.value),
-      disabled: existing?.disabled ?? false, ...(secret.value ? { secret: secret.value } : {}),
+      disabled: existing?.disabled ?? false,
+      ...(existing?.idempotency_header === undefined ? {} : { idempotency_header: existing.idempotency_header }),
+      ...(secret.value ? { secret: secret.value } : {}),
     };
     secret.value = ""; busy = true;
     const controls = Array.from(form.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>("input, button, select"));
