@@ -33,7 +33,7 @@ struct ContextModels<'a> {
 }
 
 impl ContextModels<'_> {
-    fn client(&self) -> office_models::RoutedClient {
+    fn client(&self) -> office_core::Result<office_models::RoutedClient> {
         let secret = |name: &str| {
             self.context
                 .get("secrets")
@@ -44,14 +44,14 @@ impl ContextModels<'_> {
         };
         let mut config =
             office_models::ModelConfig::new(secret("meta_api_key"), secret("open_weights_token"));
-        // No Library, or settings that fail validation, mean no private
-        // route, which refuses private material rather than sending it hosted.
-        config.open_weights = self
-            .library
-            .settings()
-            .ok()
-            .and_then(|settings| settings.open_weights);
-        office_models::RoutedClient::new(config)
+        // Settings that fail to load are reported as their own error (for
+        // example `invalid_library_setting` naming the offending key), not
+        // swallowed into an unset `open_weights` block: that would misreport
+        // the verified cause as `private_endpoint_unconfigured`. A load that
+        // succeeds with no block still refuses private material rather than
+        // sending it hosted.
+        config.open_weights = self.library.settings()?.open_weights;
+        Ok(office_models::RoutedClient::new(config))
     }
 }
 
@@ -60,22 +60,22 @@ impl Models for ContextModels<'_> {
         &self,
         request: &office_core::ports::TranscribeRequest,
     ) -> office_core::Result<Routed<office_core::ports::Transcript>> {
-        self.client().transcribe(request)
+        self.client()?.transcribe(request)
     }
     fn extract(
         &self,
         request: &office_core::ports::ExtractRequest,
     ) -> office_core::Result<Routed<Value>> {
-        self.client().extract(request)
+        self.client()?.extract(request)
     }
     fn read_image(
         &self,
         request: &office_core::ports::ImageRequest,
     ) -> office_core::Result<Routed<office_core::ports::ImageReading>> {
-        self.client().read_image(request)
+        self.client()?.read_image(request)
     }
     fn check_private_route(&self) -> office_core::Result<office_core::ports::RouteCheck> {
-        self.client().check_private_route()
+        self.client()?.check_private_route()
     }
 }
 struct SystemClock;
