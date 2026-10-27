@@ -393,3 +393,48 @@ above; unknown leaves and other types refuse the update.
 - [ORB-19216] — builds the Schedule… picker, scheduled tasks on the calendar and the dispatch pass's wait; needs an Orbit release with ws_orbit [ORB-19214] and [ORB-19215].
 - [ORB-19214] — builds Orbit's `not_before` field and its admission hold (ws_orbit).
 - [ORB-19215] — builds Orbit's date-range list filter and surfaces (ws_orbit).
+
+### Meeting-prep implementation contract
+
+`office.meeting-prep` accepts `{}` only and returns `written`, `skipped` and
+`events`. Each attempted event reports `key`, `written`, nullable `reason`,
+`artifact` and `path`. Selection orders starts by instant, then key, includes
+starts from now through the configured lead boundary, and applies the run cap
+after excluding all-day, cancelled, past, solo and already-prepped events.
+Self-only attendee lists are excluded when the `user` page identifies the user
+by a contact ref, title or alias. Without that identity, a nonempty invitee
+list counts as another attendee; no account address is inferred.
+
+Person matching uses contact refs (plain address or `mailto:`, ignoring case)
+or exact display titles/aliases. Client/project links come from `related`,
+path refs or wiki links on those people. Meeting sources match `event.series`
+(or legacy top-level `series`) and precede this start by `occurred_at` (falling
+back to `captured_at`). The latest three include their optional `summary.md`;
+source-body line offsets are preserved. Open owner-tagged to-dos match
+`person:<page-id>`, the page id as a tag, or `source:<earlier-source-id>`.
+The rhythm view includes the lines naming the series. Unreadable or incomplete
+Library/task evidence is refused, including a truncated task list.
+
+Each model request uses the standard Muse Spark tier and a closed four-section
+schema, with the agenda in an explicitly untrusted, blockquoted data field.
+Every view is scrubbed of attendee addresses and all page contact-ref values,
+even repetitions outside their contact fields, as well as email/phone text.
+Only supplied page ids and resolvable anchors in supplied source bodies are
+accepted as output citations. An empty, uncited or partly dangling citation
+list drops the entire item. Model text is escaped before citation markup is
+appended. If the model returns no supported items, the saved brief says so.
+With no citable evidence, the short brief uses no model call.
+
+Private events or gathered inputs require the configured private route; an
+unconfigured route returns `private_endpoint_unconfigured` for that event with
+no model call or artifact. Other model failures are reported per event and the
+batch continues. Reports conservatively inherit the strictest sensitivity of
+the event and gathered inputs. Each immutable bundle contains `prep.md`, has
+routine approval and optional additive `event_key` frontmatter. The existing
+Library writer lock enforces uniqueness of `(meeting-prep, event_key)`, even
+for callers that both gathered before publication. Older artifact shapes keep
+their existing serialization. `calendar-list.prep` resolves this field.
+
+The registered `office-meeting-prep` routine is seeded disabled on
+`*/15 * * * *` and targets `job:office-meeting-prep`; the job's only step
+inlines `plugin.tool_call` with `tool: office.meeting-prep` and `input: {}`.

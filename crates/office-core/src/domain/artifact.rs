@@ -22,12 +22,15 @@ pub enum ArtifactError {
         /// The field that failed validation.
         field: &'static str,
     },
-    /// Routine approval has exactly one allowed use.
-    #[error("routine approval is allowed only for a report in series digest-daily")]
+    /// Routine approval is restricted to the two built report routines.
+    #[error("routine approval is allowed only for daily digest and meeting prep reports")]
     RoutineApproval,
     /// Another caller already published this routine's daily report.
     #[error("daily digest already exists; read the existing report")]
     DigestExists,
+    /// Another caller already published prep for this event key.
+    #[error("meeting prep already exists; read the existing report")]
+    MeetingPrepExists,
     /// The task has no output to promote.
     #[error("task has no artifacts to promote")]
     NoArtifacts,
@@ -55,6 +58,7 @@ impl ArtifactError {
             Self::Invalid { .. } => "invalid_artifact",
             Self::RoutineApproval => "artifact_routine_approval_refused",
             Self::DigestExists => "digest_already_exists",
+            Self::MeetingPrepExists => "meeting_prep_already_exists",
             Self::NoArtifacts => "task_has_no_artifacts",
             Self::NotReviewable => "task_not_reviewable",
             Self::TooLarge => "artifact_too_large",
@@ -90,13 +94,13 @@ pub enum ArtifactKind {
     Other,
 }
 
-/// Approval provenance. Only the daily digest may use routine approval.
+/// Approval provenance. Only daily digest and meeting prep reports use routine approval.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Approver {
     /// Explicit user approval.
     User,
-    /// Daily digest routine.
+    /// Daily digest or meeting prep routine.
     Routine,
 }
 
@@ -142,6 +146,9 @@ pub struct ArtifactManifest {
     pub cites: Vec<String>,
     /// Deliverable series across revisions.
     pub series: String,
+    /// Calendar event identity for meeting preparation, absent on older artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_key: Option<String>,
     /// Search tags.
     #[serde(default)]
     pub tags: Vec<String>,
@@ -204,6 +211,9 @@ pub struct Artifact {
     pub supersedes: Option<String>,
     /// Strictest cited sensitivity.
     pub sensitivity: Sensitivity,
+    /// Calendar event identity for meeting preparation, absent on older artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_key: Option<String>,
     /// Search tags.
     pub tags: Vec<String>,
 }
@@ -244,6 +254,7 @@ impl Artifact {
             supersedes: None,
             sensitivity: manifest.sensitivity,
             tags: manifest.tags,
+            event_key: manifest.event_key,
         };
         artifact.validate()?;
         Ok(artifact)
@@ -254,7 +265,14 @@ impl Artifact {
         match self.approved.by {
             Approver::User => {}
             Approver::Routine => {
-                if self.kind != ArtifactKind::Report || self.series != "digest-daily" {
+                if self.kind != ArtifactKind::Report
+                    || !matches!(self.series.as_str(), "digest-daily" | "meeting-prep")
+                    || (self.series == "meeting-prep"
+                        && self
+                            .event_key
+                            .as_deref()
+                            .is_none_or(|key| key.trim().is_empty()))
+                {
                     return Err(ArtifactError::RoutineApproval);
                 }
             }
@@ -323,6 +341,14 @@ impl Artifact {
                 .any(|a| a.series == self.series && a.task == self.task)
         {
             return Err(ArtifactError::DigestExists);
+        }
+        if self.series == "meeting-prep"
+            && self.event_key.is_some()
+            && history
+                .iter()
+                .any(|a| a.series == self.series && a.event_key == self.event_key)
+        {
+            return Err(ArtifactError::MeetingPrepExists);
         }
         let latest = history
             .iter()

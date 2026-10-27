@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::path::Path;
 
 pub(crate) mod frontmatter;
-pub(crate) use page::withhold_contacts;
+pub use page::withhold_contacts;
 mod page;
 
 pub use page::{

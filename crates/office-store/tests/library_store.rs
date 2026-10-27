@@ -2823,3 +2823,63 @@ fn proposal_journal_replays_on_open_and_refuses_symlink_targets() {
         assert!(!temp.path().join("outside.md").exists());
     }
 }
+
+#[test]
+fn meeting_prep_duplicate_candidates_are_keyed_under_the_library_writer_lock() {
+    use office_core::domain::artifact::Approver;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let store = LibraryStore::open(&root, &dir.path().join("state")).unwrap();
+    let mut candidate = artifact_candidate();
+    candidate.series = "meeting-prep".into();
+    candidate.event_key = Some("weekly:2026-10-28T14:00:00Z".into());
+    candidate.task = "routine:office-meeting-prep/weekly:2026-10-28T14:00:00Z".into();
+    candidate.approved.by = Approver::Routine;
+    candidate.approved.edited = false;
+    // Deterministic race harness: two callers gathered this same candidate
+    // before either publishes. The second must lose under the writer lock.
+    let saved = store
+        .promote_artifact(&candidate, &artifact_files())
+        .unwrap();
+    let head = store.head_commit().unwrap();
+    candidate.task = "different-producer-same-event".into();
+    let error = store
+        .promote_artifact(&candidate, &artifact_files())
+        .unwrap_err();
+    assert_eq!(error.code(), "meeting_prep_already_exists");
+    assert_eq!(store.head_commit().unwrap(), head);
+    assert_eq!(store.artifact_documents().unwrap().len(), 1);
+    let text = store.artifact_documents().unwrap()[0]
+        .markdown
+        .clone()
+        .unwrap();
+    assert_eq!(
+        office_core::domain::artifact::Artifact::from_markdown(&text).unwrap(),
+        saved
+    );
+    candidate.event_key = Some("weekly:2026-11-04T14:00:00Z".into());
+    let next = store
+        .promote_artifact(&candidate, &artifact_files())
+        .unwrap();
+    assert_eq!(next.version, 2);
+    assert_eq!(next.supersedes, Some(saved.id));
+    // The exception never widens routine approval for other artifact series.
+    candidate.series = "unapproved-series".into();
+    assert_eq!(
+        store
+            .promote_artifact(&candidate, &artifact_files())
+            .unwrap_err()
+            .code(),
+        "artifact_routine_approval_refused"
+    );
+    candidate.series = "meeting-prep".into();
+    candidate.event_key = None;
+    assert_eq!(
+        store
+            .promote_artifact(&candidate, &artifact_files())
+            .unwrap_err()
+            .code(),
+        "artifact_routine_approval_refused"
+    );
+}

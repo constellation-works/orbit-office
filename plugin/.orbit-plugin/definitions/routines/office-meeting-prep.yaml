@@ -1,0 +1,7 @@
+schemaVersion: 1
+name: office-meeting-prep
+description: Write cited briefs for upcoming meetings, once per event key.
+enabled: false
+trigger:
+  cron: "*/15 * * * *"
+target: job:office-meeting-prep

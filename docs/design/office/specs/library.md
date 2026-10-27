@@ -313,7 +313,7 @@ summary: Three competitors undercut by 8–15%; recommends a two-year lock at cu
 files: [report.md]       # one or more, beside artifact.md
 task: <orbit-task-id>    # the task that produced it
 produced_by: { crew: muse-wonder, runbook: rb-pricing-research, at: 2026-10-29T10:41:00-04:00 }
-approved: { by: user, at: 2026-10-29T11:05:00-04:00, edited: false }   # edited = user changed it before approving; by: routine only for the daily digest
+approved: { by: user, at: 2026-10-29T11:05:00-04:00, edited: false }   # edited = user changed it before approving; by: routine only for daily digest and meeting-prep reports
 cites: [src-20261028-acme-qbr#t=00:12:31, dom-project-acme-renewal]
 series: acme-renewal-research   # groups versions of the same deliverable
 version: 1
@@ -321,6 +321,10 @@ supersedes: null
 sensitivity: normal      # the strictest of what it cites
 tags: [client:acme]
 ```
+
+Meeting-prep reports also carry `event_key`, the stable calendar event identity.
+Routine approval for series `meeting-prep` requires that key, and publication
+refuses a second report for the same key. Other artifacts omit this field.
 
 **Lifecycle:**
 

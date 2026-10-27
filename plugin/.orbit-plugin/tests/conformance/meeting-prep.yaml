@@ -1,0 +1,13 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: no_upcoming_meetings
+    tool: meeting-prep
+    input: {}
+    expect:
+      output: {"written":0,"skipped":0,"events":[]}
+  - name: refuses_unknown_input
+    tool: meeting-prep
+    input: {"event":"<key>"}
+    expect:
+      error: {code: invalid_argument}

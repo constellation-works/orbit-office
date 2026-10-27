@@ -290,6 +290,7 @@ fn proposal_script_dependencies_are_prepared_before_any_automation_mutation() {
         let (mut ports, orbit) = fixture();
         let artifact = Artifact::approved(
             ArtifactManifest {
+                event_key: None,
                 kind: ArtifactKind::Script,
                 title: "Script".into(),
                 summary: String::new(),
