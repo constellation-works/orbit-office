@@ -33,6 +33,10 @@
 #      uninstall byte-for-byte for claude and codex; uninstall removes
 #      only installer-copied skills still unmodified, keeps a skill the
 #      user edited after copying, and is safe to repeat
+#  16. Orbit and Node in a temporary non-system prefix: the PATH values
+#      read back from the generated Claude, Codex, launchd and systemd
+#      files resolve and execute that Orbit (and Node) under env -i,
+#      with tools/bin first, and a second run changes nothing
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -413,7 +417,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
     _yes="--yes"
     [ -z "${NO_YES:-}" ] || _yes=""
     # shellcheck disable=SC2086
-    env -i PATH="${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin" HOME="$_home" STUB_STATE="$STUB_STATE" \
+    env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
         STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
         STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" \
@@ -1360,5 +1364,90 @@ for _agent in claude codex; do
     check "$_agent repeated uninstall still preserves the modified skill" \
         cmp -s "$SK_DIR/meetings/SKILL.md" "$ROOT/modified-skill-$_agent.md"
 done
+
+# ---------------------------------------------------------------------------
+# 16. Orbit and Node in a temporary non-system prefix: the generated
+#     runtime environments must still resolve and execute them.
+#     The custom orbit is a Node script (as an npm-installed Orbit is),
+#     so it needs both its own directory and node's on PATH.
+# ---------------------------------------------------------------------------
+
+CUSTOM_PREFIX="$ROOT/custom-prefix"
+CUSTOM_BIN="$CUSTOM_PREFIX/bin"
+mkdir -p "$CUSTOM_BIN"
+for _stub in npm systemctl launchctl ffmpeg curl tar uv; do
+    cp "$BIN/$_stub" "$CUSTOM_BIN/$_stub"
+done
+chmod +x "$CUSTOM_BIN"/*
+ln -s "$(command -v node)" "$CUSTOM_BIN/node"
+cat > "$CUSTOM_BIN/orbit" <<STUB
+#!/usr/bin/env node
+if (process.argv[2] === "--version") { process.stdout.write("orbit 0.34.0\n"); process.exit(0); }
+const { spawnSync } = require("child_process");
+const r = spawnSync("/bin/sh", ["$BIN/orbit", ...process.argv.slice(2)], { stdio: "inherit" });
+process.exit(r.status === null ? 1 : r.status);
+STUB
+chmod +x "$CUSTOM_BIN/orbit"
+cp "$CUSTOM_BIN/orbit" "$ROOT/custom-orbit-before"
+
+check_runtime_path() { # check_runtime_path <label> <path-value> <home>
+    _label="$1"; _path_value="$2"; _tools_bin="$3/$TOOLS_REL/bin"
+    [ -n "$_path_value" ] || fail "$_label: generated PATH is empty"
+    [ "${_path_value%%:*}" = "$_tools_bin" ] \
+        || fail "$_label: tools/bin is not first in generated PATH: $_path_value"
+    ok "$_label: tools/bin first in generated PATH"
+    _resolved=$(env -i PATH="$_path_value" /bin/sh -c 'command -v orbit' 2>/dev/null) \
+        || fail "$_label: orbit is not resolvable under the generated PATH"
+    [ "$_resolved" = "$CUSTOM_BIN/orbit" ] \
+        || fail "$_label: generated PATH resolves orbit to $_resolved, not $CUSTOM_BIN/orbit"
+    ok "$_label: generated PATH resolves orbit in the non-system prefix"
+    _resolved_node=$(env -i PATH="$_path_value" /bin/sh -c 'command -v node' 2>/dev/null) \
+        || fail "$_label: node is not resolvable under the generated PATH"
+    [ "$_resolved_node" = "$CUSTOM_BIN/node" ] \
+        || fail "$_label: generated PATH resolves node to $_resolved_node, not $CUSTOM_BIN/node"
+    ok "$_label: generated PATH resolves node in the non-system prefix"
+    if env -i PATH="$_path_value" /bin/sh -c 'orbit --version >/dev/null 2>&1 && node --version >/dev/null 2>&1'; then
+        ok "$_label: generated PATH executes orbit and node"
+    else
+        fail "$_label: generated PATH executes orbit and node"
+    fi
+}
+
+CUSTOM_HOME="$ROOT/home-custom-prefix"; mkdir -p "$CUSTOM_HOME"
+OUT_CUSTOM_RT="$ROOT/out-custom-runtime.txt"
+(TEST_PATH="$CUSTOM_BIN:/usr/bin:/bin" run_install "$CUSTOM_HOME" -- > "$OUT_CUSTOM_RT" 2>&1) \
+    || { cat "$OUT_CUSTOM_RT" >&2; fail "custom-prefix install exits 0"; }
+ok "custom-prefix install exits 0"
+CLAUDE_RT_PATH=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(d.mcpServers.orbit.env.PATH)' "$CUSTOM_HOME/.claude/settings.json") \
+    || fail "custom-prefix: Claude MCP PATH is readable"
+check_runtime_path "Claude MCP (linux, custom prefix)" "$CLAUDE_RT_PATH" "$CUSTOM_HOME"
+SYSTEMD_RT_PATH=$(sed -n 's/^Environment=PATH=//p' "$CUSTOM_HOME/.config/systemd/user/orbit-office.service" | head -n 1)
+check_runtime_path "systemd service (custom prefix)" "$SYSTEMD_RT_PATH" "$CUSTOM_HOME"
+snapshot "$CUSTOM_HOME" > "$ROOT/snap-custom1.txt"
+(TEST_PATH="$CUSTOM_BIN:/usr/bin:/bin" run_install "$CUSTOM_HOME" -- > "$ROOT/out-custom-runtime2.txt" 2>&1) \
+    || { cat "$ROOT/out-custom-runtime2.txt" >&2; fail "custom-prefix second install exits 0"; }
+ok "custom-prefix second install exits 0"
+snapshot "$CUSTOM_HOME" > "$ROOT/snap-custom2.txt"
+check "custom-prefix second run changes nothing in HOME" cmp -s "$ROOT/snap-custom1.txt" "$ROOT/snap-custom2.txt"
+
+CUSTOM_MAC_HOME="$ROOT/home-custom-prefix-mac"; mkdir -p "$CUSTOM_MAC_HOME"
+OUT_CUSTOM_MAC="$ROOT/out-custom-runtime-mac.txt"
+(TEST_PATH="$CUSTOM_BIN:/usr/bin:/bin" run_install "$CUSTOM_MAC_HOME" ORBIT_OFFICE_OS=macos -- --agent codex > "$OUT_CUSTOM_MAC" 2>&1) \
+    || { cat "$OUT_CUSTOM_MAC" >&2; fail "custom-prefix macos codex install exits 0"; }
+ok "custom-prefix macos codex install exits 0"
+LAUNCHD_RT_PATH=$(sed -n 's/.*<key>PATH<\/key><string>\([^<]*\)<\/string>.*/\1/p' "$CUSTOM_MAC_HOME/Library/LaunchAgents/com.orbit-office.app.plist" | head -n 1)
+check_runtime_path "launchd service (custom prefix)" "$LAUNCHD_RT_PATH" "$CUSTOM_MAC_HOME"
+CODEX_RT_PATH=$(sed -n 's/^env = { PATH = "\(.*\)" }$/\1/p' "$CUSTOM_MAC_HOME/.codex/config.toml" | head -n 1)
+check_runtime_path "Codex MCP (macos, custom prefix)" "$CODEX_RT_PATH" "$CUSTOM_MAC_HOME"
+snapshot "$CUSTOM_MAC_HOME" > "$ROOT/snap-custom-mac1.txt"
+(TEST_PATH="$CUSTOM_BIN:/usr/bin:/bin" run_install "$CUSTOM_MAC_HOME" ORBIT_OFFICE_OS=macos -- --agent codex > "$ROOT/out-custom-runtime-mac2.txt" 2>&1) \
+    || { cat "$ROOT/out-custom-runtime-mac2.txt" >&2; fail "custom-prefix macos second install exits 0"; }
+ok "custom-prefix macos second install exits 0"
+snapshot "$CUSTOM_MAC_HOME" > "$ROOT/snap-custom-mac2.txt"
+check "custom-prefix macos second run changes nothing in HOME" \
+    cmp -s "$ROOT/snap-custom-mac1.txt" "$ROOT/snap-custom-mac2.txt"
+check "existing Orbit in the non-system prefix is left unchanged" \
+    cmp -s "$CUSTOM_BIN/orbit" "$ROOT/custom-orbit-before"
+check "existing Node in the non-system prefix is left unchanged" test -L "$CUSTOM_BIN/node"
 
 printf 'PASS: %s checks\n' "$PASS"

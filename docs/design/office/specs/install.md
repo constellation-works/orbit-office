@@ -43,7 +43,15 @@ spaces, so script shebangs that name the interpreter keep working.
    - **Reaching agents.** The app's login service (step 9) puts `tools/bin` first on the
      `PATH` it starts with, and the dispatch pass passes that `PATH` to the runs it starts.
      The agent CLI registration (step 8) adds the same `PATH` to the Orbit MCP entry's
-     environment. The `library-conventions` skill tells agents to use `python3`, and
+     environment. That generated `PATH` is `tools/bin` first, then the directories
+     of the `orbit` and `node` executables this installer resolved (captured after
+     step 3 has ensured Orbit is present, so an Orbit installed by step 3 itself is
+     included), then the usual system directories. An existing Orbit or Node under
+     a user prefix (nvm, a user npm prefix, `~/.local/bin`, Homebrew) therefore
+     stays reachable from the MCP entry and the service without being moved or
+     changed; only absolute directories are captured. Re-running the installer
+     recaptures them if they moved, and a re-run where nothing moved changes
+     nothing. The `library-conventions` skill tells agents to use `python3`, and
      `uv run` for a script that declares dependencies inline (PEP 723).
    - **Check.** `tools/bin/python3 --version` must print the pinned minor version, or the
      step fails and names what went wrong. A re-run with both already in place changes
