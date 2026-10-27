@@ -37,6 +37,12 @@
 #      read back from the generated Claude, Codex, launchd and systemd
 #      files resolve and execute that Orbit (and Node) under env -i,
 #      with tools/bin first, and a second run changes nothing
+#  17. standalone install (install.sh copied alone, no adjacent app tree):
+#      without an app bundle it fails before any service is written and
+#      names ORBIT_OFFICE_APP_BUNDLE; an invalid bundle fails the same
+#      way; a valid bundle provisions a runnable entrypoint under the
+#      data folder, a rerun is idempotent, and deleting the entrypoint
+#      is repaired by the bundle (and named when no bundle is given)
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -376,6 +382,14 @@ STUB
 chmod +x "$BIN/orbit" "$BIN/npm" "$BIN/systemctl" "$BIN/launchctl" "$BIN/ffmpeg" \
     "$BIN/curl" "$BIN/tar" "$BIN/uv"
 
+# A prepared app bundle for installs with no adjacent app tree (the piped
+# form and the standalone section): a runnable entrypoint plus a runtime file.
+APP_BUNDLE="$ROOT/app-bundle"
+mkdir -p "$APP_BUNDLE/packages/server/dist" "$APP_BUNDLE/packages/contracts/dist"
+printf '{"name":"orbit-office-app","type":"module"}\n' > "$APP_BUNDLE/package.json"
+printf 'console.log("orbit-office standalone stub app");\n' > "$APP_BUNDLE/packages/server/dist/main.js"
+printf '// app runtime file\n' > "$APP_BUNDLE/packages/contracts/dist/index.js"
+
 snapshot() { # snapshot <home> : sorted relative paths + file hashes
     (cd "$1" && find . -type f | sort | while IFS= read -r _f; do
         if command -v sha256sum >/dev/null 2>&1; then
@@ -446,6 +460,7 @@ run_install_piped() {
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
+            ORBIT_OFFICE_APP_BUNDLE="$APP_BUNDLE" \
             bash --posix -s -- --yes > "$_out" 2>&1
     else
         cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
@@ -455,8 +470,50 @@ run_install_piped() {
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
+            ORBIT_OFFICE_APP_BUNDLE="$APP_BUNDLE" \
             sh -s -- --yes > "$_out" 2>&1
     fi
+}
+
+# Like run_install, but runs a copy of install.sh that sits alone in a
+# temp directory: no adjacent app/package.json and no plugin tree, which
+# is the standalone (curl-pipe style) layout.
+run_install_standalone() { # run_install_standalone <home> <env...> -- <args...>
+    _home="$1"; shift
+    if [ ! -f "$STUB_STATE/current-home" ] || [ "$(cat "$STUB_STATE/current-home")" != "$_home" ]; then
+        rm -f "$STUB_STATE"/plugin-* "$STUB_STATE"/secret.*
+        printf '%s' "$_home" > "$STUB_STATE/current-home"
+    fi
+    _envs=""
+    _uv_url="$FIXTURE"
+    while [ $# -gt 0 ] && [ "$1" != "--" ]; do
+        case "$1" in
+            ORBIT_OFFICE_UV_URL=none) _uv_url="" ;;
+            ORBIT_OFFICE_UV_URL=*) _uv_url=${1#ORBIT_OFFICE_UV_URL=} ;;
+            *) _envs="$_envs $1" ;;
+        esac
+        shift
+    done
+    [ $# -gt 0 ] && shift
+    _uv_env=""
+    if [ -n "$_uv_url" ]; then
+        _uv_env="ORBIT_OFFICE_UV_URL=$_uv_url"
+    fi
+    _yes="--yes"
+    [ -z "${NO_YES:-}" ] || _yes=""
+    # shellcheck disable=SC2086
+    env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
+        STUB_MANIFEST="$MANIFEST" \
+        STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
+        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" \
+        STUB_UV_ARCHIVE="$FIXTURE" \
+        STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
+        STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" \
+        STUB_INIT_FIXTURES="$INIT_FIXTURES" \
+        STUB_ORBIT_SRC="$BIN/orbit" \
+        ORBIT_OFFICE_OS=linux \
+        $_uv_env $_envs \
+        sh "$ROOT/standalone-src/install.sh" $_yes "$@" < /dev/null
 }
 
 TOOLS_REL=".local/share/orbit-office/tools"
@@ -590,6 +647,8 @@ for _piped_kind in sh bash-posix; do
         test -f "$PIPED_HOME/orbit/library/.office/config.yaml"
     check "piped ($_piped_kind): agent step still runs" \
         grep -q '"orbit"' "$PIPED_HOME/.claude/settings.json"
+    check "piped ($_piped_kind): app bundle provisions the service entrypoint" \
+        test -f "$PIPED_HOME/.local/share/orbit-office/app/packages/server/dist/main.js"
 done
 
 # ---------------------------------------------------------------------------
@@ -1449,5 +1508,91 @@ check "custom-prefix macos second run changes nothing in HOME" \
 check "existing Orbit in the non-system prefix is left unchanged" \
     cmp -s "$CUSTOM_BIN/orbit" "$ROOT/custom-orbit-before"
 check "existing Node in the non-system prefix is left unchanged" test -L "$CUSTOM_BIN/node"
+
+# ---------------------------------------------------------------------------
+# 17. Standalone install: no adjacent app tree
+# ---------------------------------------------------------------------------
+
+STANDALONE_SRC="$ROOT/standalone-src"; mkdir -p "$STANDALONE_SRC"
+cp "$INSTALL_SH" "$STANDALONE_SRC/install.sh"
+APP_BUNDLE="$ROOT/app-bundle"
+mkdir -p "$APP_BUNDLE/packages/server/dist" "$APP_BUNDLE/packages/contracts/dist"
+printf '{"name":"orbit-office-app","type":"module"}\n' > "$APP_BUNDLE/package.json"
+printf 'console.log("orbit-office standalone stub app");\n' > "$APP_BUNDLE/packages/server/dist/main.js"
+printf '// app runtime file\n' > "$APP_BUNDLE/packages/contracts/dist/index.js"
+INVALID_APP_BUNDLE="$ROOT/app-bundle-invalid"
+mkdir -p "$INVALID_APP_BUNDLE/packages/server/dist"
+
+SA_NOAPP="$ROOT/home-standalone-noapp"; mkdir -p "$SA_NOAPP"
+OUT_SA_NOAPP="$ROOT/out-standalone-noapp.txt"
+if run_install_standalone "$SA_NOAPP" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" -- > "$OUT_SA_NOAPP" 2>&1; then
+    fail "standalone without an app bundle stops the install"
+else
+    ok "standalone without an app bundle stops the install"
+fi
+check "standalone failure names ORBIT_OFFICE_APP_BUNDLE" \
+    grep -F "ORBIT_OFFICE_APP_BUNDLE" "$OUT_SA_NOAPP"
+check "standalone failure names the missing entrypoint" \
+    grep -F "packages/server/dist/main.js" "$OUT_SA_NOAPP"
+check "standalone failure writes no systemd unit" \
+    test ! -e "$SA_NOAPP/.config/systemd/user/orbit-office.service"
+check "standalone failure claims no app success URL" \
+    sh -c '! grep -qF "app: http://localhost" "$1"' sh "$OUT_SA_NOAPP"
+check "standalone failure leaves no service marker" \
+    sh -c '! grep -qx service_installed "$1" 2>/dev/null' sh "$SA_NOAPP/.local/share/orbit-office/install-state"
+
+SA_BAD="$ROOT/home-standalone-badapp"; mkdir -p "$SA_BAD"
+OUT_SA_BAD="$ROOT/out-standalone-badapp.txt"
+if run_install_standalone "$SA_BAD" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" "ORBIT_OFFICE_APP_BUNDLE=$INVALID_APP_BUNDLE" -- > "$OUT_SA_BAD" 2>&1; then
+    fail "standalone with an invalid app bundle stops the install"
+else
+    ok "standalone with an invalid app bundle stops the install"
+fi
+check "invalid bundle failure names the missing entrypoint" \
+    grep -F "packages/server/dist/main.js" "$OUT_SA_BAD"
+check "invalid bundle writes no systemd unit" \
+    test ! -e "$SA_BAD/.config/systemd/user/orbit-office.service"
+
+SA_HOME="$ROOT/home-standalone-app"; mkdir -p "$SA_HOME"
+OUT_SA="$ROOT/out-standalone-app.txt"
+run_install_standalone "$SA_HOME" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" "ORBIT_OFFICE_APP_BUNDLE=$APP_BUNDLE" -- > "$OUT_SA" 2>&1 \
+    || { cat "$OUT_SA" >&2; fail "standalone with an app bundle exits 0"; }
+ok "standalone with an app bundle exits 0"
+SA_ENTRY="$SA_HOME/.local/share/orbit-office/app/packages/server/dist/main.js"
+check "standalone provisions the service entrypoint" test -f "$SA_ENTRY"
+check "standalone provisions required runtime files" \
+    test -f "$SA_HOME/.local/share/orbit-office/app/packages/contracts/dist/index.js"
+check "standalone entrypoint is runnable under node" \
+    sh -c '"$1" "$2" | grep -q "orbit-office standalone stub app"' sh "$(command -v node)" "$SA_ENTRY"
+check "standalone systemd unit points at the provisioned entrypoint" \
+    grep -F "$SA_ENTRY" "$SA_HOME/.config/systemd/user/orbit-office.service"
+snapshot "$SA_HOME" > "$ROOT/snap-standalone1.txt"
+OUT_SA2="$ROOT/out-standalone-app2.txt"
+run_install_standalone "$SA_HOME" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" -- > "$OUT_SA2" 2>&1 \
+    || { cat "$OUT_SA2" >&2; fail "standalone rerun without a bundle exits 0 on a complete install"; }
+ok "standalone rerun without a bundle exits 0 on a complete install"
+snapshot "$SA_HOME" > "$ROOT/snap-standalone2.txt"
+check "standalone complete rerun changes nothing" cmp -s "$ROOT/snap-standalone1.txt" "$ROOT/snap-standalone2.txt"
+OUT_SA3="$ROOT/out-standalone-app3.txt"
+run_install_standalone "$SA_HOME" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" "ORBIT_OFFICE_APP_BUNDLE=$APP_BUNDLE" -- > "$OUT_SA3" 2>&1 \
+    || { cat "$OUT_SA3" >&2; fail "standalone rerun with the same bundle exits 0"; }
+snapshot "$SA_HOME" > "$ROOT/snap-standalone3.txt"
+check "standalone bundle rerun changes nothing" cmp -s "$ROOT/snap-standalone1.txt" "$ROOT/snap-standalone3.txt"
+
+rm -f "$SA_ENTRY"
+OUT_SA_PARTIAL="$ROOT/out-standalone-partial.txt"
+if run_install_standalone "$SA_HOME" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" -- > "$OUT_SA_PARTIAL" 2>&1; then
+    fail "standalone partial install without a bundle stops the install"
+else
+    ok "standalone partial install without a bundle stops the install"
+fi
+check "partial failure names the concrete missing entrypoint" \
+    grep -F "$SA_ENTRY" "$OUT_SA_PARTIAL"
+OUT_SA_REPAIR="$ROOT/out-standalone-repair.txt"
+run_install_standalone "$SA_HOME" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" "ORBIT_OFFICE_APP_BUNDLE=$APP_BUNDLE" -- > "$OUT_SA_REPAIR" 2>&1 \
+    || { cat "$OUT_SA_REPAIR" >&2; fail "standalone partial install is repaired by the bundle"; }
+ok "standalone partial install is repaired by the bundle"
+check "repaired entrypoint exists and runs" \
+    sh -c '"$1" "$2" | grep -q "orbit-office standalone stub app"' sh "$(command -v node)" "$SA_ENTRY"
 
 printf 'PASS: %s checks\n' "$PASS"

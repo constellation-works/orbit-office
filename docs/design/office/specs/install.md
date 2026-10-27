@@ -8,7 +8,7 @@ last_validated: 2026-10-26
 
 Source: spec §13.5.
 
-Run `./install.sh` from a clone to install everything without a manual Orbit or scaffold step. A piped install also requires a prepared plugin bundle, as described below. The script is idempotent: every step checks first and
+Run `./install.sh` from a clone to install everything without a manual Orbit or scaffold step. A piped install also requires a prepared plugin bundle and a prepared app bundle, as described below. The script is idempotent: every step checks first and
 does only what is missing, so re-running it repairs a partial install and changes nothing on
 a complete one. It prints each step as it goes and a summary at the end.
 
@@ -126,9 +126,21 @@ spaces, so script shebangs that name the interpreter keep working.
    [execpolicy rules](https://developers.openai.com/codex/rules) govern commands outside
    the sandbox. The summary reports this limitation instead of claiming those calls
    are blocked.
-9. **App.** Builds the app and installs it as a login service (a launchd agent on macOS, a
-   systemd user unit on Linux), then opens `http://localhost:<port>`, where the browser
-   offers to install it as a PWA.
+9. **App.** Provisions and verifies the app, then installs it as a login service (a launchd
+   agent on macOS, a systemd user unit on Linux), then opens `http://localhost:<port>`,
+   where the browser offers to install it as a PWA. In a clone the app is built from the
+   adjacent `app/` tree (`npm run build` whenever `packages/server/dist/main.js` is missing
+   or unrunnable, whatever an earlier marker claims). Without an adjacent tree,
+   `ORBIT_OFFICE_APP_BUNDLE` selects an unpacked app bundle containing
+   `packages/server/dist/main.js` and its runtime files; the bundle is copied to
+   `app/` under the per-user data folder. With neither a tree nor a bundle, the step
+   stops before any service file is written or enabled and names the missing
+   entrypoint and both remedies (run from a clone, or set `ORBIT_OFFICE_APP_BUNDLE`).
+   An invalid bundle (not a directory, or no runnable entrypoint) stops the same way.
+   The entrypoint must exist, be non-empty and parse under `node --check` before the
+   service is written. A complete app already under the data folder needs no bundle
+   on re-run and changes nothing; a partial one is repaired by supplying the bundle
+   again, and without one the failure names the concrete missing entrypoint.
 
 The summary lists what was created, where, and the uninstall command
 (`install.sh --uninstall`). Uninstall removes the service, the MCP entry and its deny rules, the plugins and the
@@ -150,6 +162,9 @@ Publishing the orbit-office release that carries the prebuilt export is the main
 call. Until one exists, run from a clone (`--from-source` builds office from that
 clone's commit) or supply a prepared `ORBIT_OFFICE_PLUGIN_BUNDLE`. A piped install
 needs that bundle; it cannot assemble gateway exports without the source tree.
+A standalone install (no adjacent `app/` tree, as in the piped form) likewise needs
+a prepared `ORBIT_OFFICE_APP_BUNDLE` for the app, as step 9 describes; without one
+it stops at the app step rather than installing a service with nothing to run.
 
 Run `sh scripts/install/test-install.sh` for the installer acceptance harness. It uses
 temporary homes, stub Orbit and service managers, local archive fixtures and a PTY
