@@ -169,12 +169,54 @@ case "$OS" in
     macos) _path_rest="/usr/bin:/bin:/usr/sbin:/sbin" ;;
     *) _path_rest="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ;;
 esac
-AGENT_PATH="$TOOLS_BIN:$_path_rest"
+# Generated runtime PATH (MCP entries and the login service): tools/bin
+# first, then the directories holding the resolved `orbit` and `node`
+# executables, then the system directories. An Orbit or Node installed
+# under a user prefix (nvm, a user npm prefix, ~/.local/bin, Homebrew)
+# is visible to this installer through its PATH but not through the
+# fixed system directories alone, so those directories are captured
+# here and refreshed after step 3 has ensured Orbit is present (a
+# just-installed Orbit was not resolvable when this script started).
+# Only absolute directories are captured: a relative PATH entry would
+# resolve against a different working directory in the generated
+# environment. The existing Orbit is never moved or changed by this.
+AGENT_PATH="$TOOLS_BIN"
+agent_path_append() {
+    case ":$AGENT_PATH:" in
+        *":$1:"*) ;;
+        *) AGENT_PATH="$AGENT_PATH:$1" ;;
+    esac
+}
+compute_agent_path() {
+    AGENT_PATH="$TOOLS_BIN"
+    for _rt_tool in orbit node; do
+        _rt_resolved=$(command -v "$_rt_tool" 2>/dev/null || printf '')
+        case "$_rt_resolved" in
+            /*/*) agent_path_append "$(dirname -- "$_rt_resolved")" ;;
+            *) ;;
+        esac
+    done
+    _rt_rest="$_path_rest"
+    while [ -n "$_rt_rest" ]; do
+        case "$_rt_rest" in
+            *:*)
+                agent_path_append "${_rt_rest%%:*}"
+                _rt_rest="${_rt_rest#*:}" ;;
+            *)
+                agent_path_append "$_rt_rest"
+                _rt_rest="" ;;
+        esac
+    done
+}
+compute_agent_path
 _nl='
 '
-case "$AGENT_PATH" in
-    *\"*|*"$_nl"*|*\\*) die "agent PATH cannot be encoded: $AGENT_PATH" ;;
-esac
+validate_agent_path() {
+    case "$AGENT_PATH" in
+        *\"*|*"$_nl"*|*\\*) die "agent PATH cannot be encoded: $AGENT_PATH" ;;
+    esac
+}
+validate_agent_path
 SERVICE_NAME="orbit-office"
 SYSTEMD_UNIT="$HOME/.config/systemd/user/orbit-office.service"
 LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.orbit-office.app.plist"
@@ -1165,15 +1207,15 @@ register_mcp_claude() {
     say "agent: already configured (Orbit MCP entry and gateway deny rules in $AGENT_SETTINGS)"
 }
 
-# True when the Codex orbit table already puts tools/bin on PATH.
-# The env map is inline on that table so uninstall, which stops at the
-# next [header], removes it with the section.
+# True when the Codex orbit table already carries exactly the current
+# generated PATH. The env map is inline on that table so uninstall,
+# which stops at the next [header], removes it with the section.
 codex_orbit_path_current() {
     [ -f "$AGENT_SETTINGS" ] || return 1
-    awk -v bin="$TOOLS_BIN" '
+    awk -v want="env = { PATH = \"$AGENT_PATH\" }" '
         /^\[mcp_servers\.orbit\]$/ { in_s = 1; next }
         /^\[/ { in_s = 0 }
-        in_s && index($0, "PATH") && index($0, bin) { found = 1 }
+        in_s && $0 == want { found = 1 }
         END { exit !found }
     ' "$AGENT_SETTINGS"
 }
@@ -1381,6 +1423,8 @@ remove_recorded_skills() {
 
 step_agent() {
     step "8 agent"
+    compute_agent_path
+    validate_agent_path
     case "$AGENT" in
         claude) register_mcp_claude ;;
         codex) register_mcp_codex ;;
@@ -1417,6 +1461,8 @@ step_agent() {
 
 step_app() {
     step "9 app"
+    compute_agent_path
+    validate_agent_path
     _node_bin=$(command -v node 2>/dev/null || printf 'node')
     if [ -n "$APP_SRC" ]; then
         if [ -f "$APP_SRC/packages/server/dist/main.js" ] || state_has "app_built"; then
