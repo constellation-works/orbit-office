@@ -110,7 +110,7 @@ plugin/.orbit-plugin/
   schemas/             <tool>.request.json, <tool>.response.json, config.json
   definitions/         routines/  auto_tasks/  activities/   one file per definition
   skills/<skill>/      SKILL.md
-  tests/conformance/   one golden file per tool (the manifest globs *.yaml)
+  tests/conformance/   one golden file per tool (the manifest globs *.yaml; 00-init.yaml sorts first)
 ```
 
 ## Web app

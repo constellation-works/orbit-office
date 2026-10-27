@@ -228,6 +228,15 @@ impl LibraryStore {
         };
         Git::ensure_available(&probe_cwd)?;
 
+        // Snapshot the layout the report lists before the writer state is
+        // bootstrapped: the default state dir lives under `.office`, so
+        // creating it first would hide `.office` from `created`.
+        let missing_layout: Vec<String> = LAYOUT_DIRS
+            .iter()
+            .filter(|dir| !candidate.join(dir).exists())
+            .map(|dir| (*dir).to_string())
+            .collect();
+
         // Bootstrap only the lock directory; Library and index writes wait
         // until this guard is held, and completeness is checked under it.
         std::fs::create_dir_all(state_dir)
@@ -291,12 +300,7 @@ impl LibraryStore {
             });
         }
 
-        let mut created: Vec<String> = Vec::new();
-        for dir in LAYOUT_DIRS {
-            if !candidate.join(dir).exists() {
-                created.push((*dir).to_string());
-            }
-        }
+        let mut created = missing_layout;
         files.ensure_layout()?;
         for dir in LAYOUT_DIRS {
             if *dir == ".office" {

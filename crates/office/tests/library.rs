@@ -40,14 +40,26 @@ impl Env {
         input: serde_json::Value,
         path: &str,
     ) -> serde_json::Value {
+        let context = serde_json::json!({
+            "workspace_root": self.workspace,
+            "plugin_state": self.state,
+        });
+        self.run_envelope(tool, input, context, path)
+    }
+
+    /// Run the binary with one envelope and exactly this context.
+    fn run_envelope(
+        &self,
+        tool: &str,
+        input: serde_json::Value,
+        context: serde_json::Value,
+        path: &str,
+    ) -> serde_json::Value {
         let request = serde_json::json!({
             "schema_version": 1,
             "tool": tool,
             "input": input,
-            "context": {
-                "workspace_root": self.workspace,
-                "plugin_state": self.state,
-            }
+            "context": context,
         })
         .to_string();
         let mut child = Command::new(BIN)
@@ -567,6 +579,19 @@ fn markdown_under(root: &Path) -> Vec<String> {
     }
     found.sort();
     found
+}
+
+#[test]
+fn init_lists_the_office_directory_it_creates_without_a_plugin_state() {
+    // With no plugin state dir the writer state defaults to `.office/state`
+    // inside the Library, so `.office` must still be reported as created.
+    let env = Env::new();
+    let path = std::env::var("PATH").expect("PATH");
+    let context = serde_json::json!({ "workspace_root": env.workspace });
+    let init = env.run_envelope("office.init", serde_json::json!({}), context, &path);
+    assert_eq!(init["ok"], serde_json::json!(true), "{init}");
+    let created = init["output"]["created"].as_array().expect("created");
+    assert!(created.iter().any(|item| item == ".office"), "{init}");
 }
 
 #[test]

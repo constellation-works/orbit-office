@@ -24,6 +24,9 @@ uncommenting its block and adding its schemas and golden
   disabled. Empty in the scaffold; definitions land with the tools they call.
 - `.orbit-plugin/tests/conformance/<tool>.yaml` — one golden file per
   built tool for `orbit plugin test` (no network, no credentials).
+  `orbit plugin test` runs the files in path order over one shared
+  workspace, so `00-init.yaml` sorts first and scaffolds the Library before
+  any other golden runs.
 - `../crates/` — the Rust backend at the repo root (`../ARCHITECTURE.md`):
   `office-tools` holds the registry, dispatch and one module per tool;
   `office-core` the envelope and contract types; the `office` binary is the
