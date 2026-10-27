@@ -346,6 +346,9 @@ impl TryFrom<Value> for Settings {
                     settings.scripts.validate()?;
                 }
                 "open_weights" => settings.open_weights = open_weights(value)?,
+                // The pre-batch initializer wrote this unset value. A configured
+                // old endpoint cannot be mapped safely to the new route block.
+                "open_weights_endpoint" if value.is_null() => {}
                 _ => return Err(invalid(key, "unknown setting")),
             }
         }

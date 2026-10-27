@@ -120,6 +120,42 @@ fn single_setting_refuses_unknown_leaves_and_bad_values_without_mutation() {
 }
 
 #[test]
+fn pre_batch_default_config_loads() {
+    // Exact default emitted by office.init before the private-route change.
+    let yaml = "retention:
+  video: 90
+  meeting: 90
+  chat: null
+  email: null
+  doc: null
+  receipt: null
+  bill: null
+  conversation: null
+  note: null
+sensitivity:
+  video: normal
+  meeting: normal
+  chat: normal
+  email: normal
+  doc: normal
+  receipt: normal
+  bill: normal
+  conversation: normal
+  note: normal
+packs: [meetings]
+thresholds:
+  repetition_count: 3
+  window_days: 30
+  stale_days: 90
+  friction_count: 2
+  new_subject_count: 2
+  unused_days: 30
+open_weights_endpoint: null
+";
+    assert_eq!(Settings::from_yaml(yaml).unwrap(), Settings::default());
+}
+
+#[test]
 fn partial_yaml_merges_policy_defaults_without_creating_observations() {
     assert_eq!(Settings::from_yaml("").expect("empty"), Settings::default());
     assert_eq!(

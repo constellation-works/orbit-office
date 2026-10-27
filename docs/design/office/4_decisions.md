@@ -983,6 +983,35 @@ machine", which it does not.
   costs three tiny calls. The demo uses a provider, labelled as a third
   party.
 
+## The old unset endpoint remains readable
+
+**Recorded:** 2026-10-27
+
+**Code anchors:** `crates/office-core/src/domain/settings.rs`
+
+### Context and decision
+
+The earlier initializer wrote `open_weights_endpoint: null` in every Library.
+The new private route needs a full `open_weights` block, so an old configured
+endpoint cannot safely supply the model, destination kind and label. That old
+key is removed for non-null values; users must configure the new block.
+The old null value is accepted as an unset route so existing default Libraries
+remain readable and a subsequent config update removes the obsolete key.
+
+**Deviation from STD-01@2 §R35:** the removed key is refused when non-null,
+and the accepted null value is ignored without a stderr warning. The pure
+settings parser has no warning channel, and propagating one through every
+Library read and init path would change the Library interface. This bounded
+exception preserves the common default without guessing a route or silently
+routing private material to an endpoint. It does not provide the standard's
+one-release warning or compatibility for configured old endpoints.
+
+### Consequences
+
+Libraries with the old default can load and update settings. Libraries with an
+old configured endpoint receive an error naming the key and need manual
+migration to the new `open_weights` block.
+
 ## office.attach stages its copies inside the Library
 
 **Recorded:** 2026-10-27
