@@ -95,9 +95,12 @@ spaces, so script shebangs that name the interpreter keep working.
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set. The prompt needs a terminal
    on stdin: a piped install without one (piped stdin is the script itself)
-   never reads stdin for a secret, skips each unset secret and prints the
-   `orbit plugin secret set office <name>` command to set it later. Values supplied
-   through the environment are still stored in either case.
+   never reads stdin for a secret and skips each unset secret. The skip line depends
+   on the secret. A required secret (the Meta API key) prints the
+   `orbit plugin secret set office <name>` command to set it later. An optional secret
+   (`open_weights_token`) prints only `secrets: open_weights_token skipped (optional)`,
+   with no command; set it later with `orbit plugin secret set office open_weights_token`.
+   Values supplied through the environment are still stored in either case.
 7. **Scaffold.** `orbit tool run office.init --json --full`: the Library's layout, git
    repository, config, `.gitignore` and index, then the first Library commit. The CLI exits 0
    and prints the tool's output object on stdout. That object has no top-level `ok`. The step
