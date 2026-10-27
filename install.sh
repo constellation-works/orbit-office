@@ -320,6 +320,65 @@ dir_is_empty() {
     [ -z "$(ls -A "$1" 2>/dev/null)" ]
 }
 
+# lexical_path PATH : PATH made absolute with empty, `.` and `..` segments
+# folded, without touching the filesystem ($HOME/, $HOME/., // and /. all
+# come out as $HOME or /).
+lexical_path() {
+    case "$1" in
+        /*) _lp_rest="$1/" ;;
+        *) _lp_rest="$(pwd)/$1/" ;;
+    esac
+    _lp_out=""
+    while [ -n "$_lp_rest" ]; do
+        _lp_seg=${_lp_rest%%/*}
+        _lp_rest=${_lp_rest#*/}
+        case "$_lp_seg" in
+            ''|.) ;;
+            ..) _lp_out=${_lp_out%/*} ;;
+            *) _lp_out="$_lp_out/$_lp_seg" ;;
+        esac
+    done
+    printf '%s\n' "${_lp_out:-/}"
+}
+
+# physical_path DIR : the symlink-free path of an existing directory;
+# fails when DIR is not one.
+physical_path() {
+    _pp=$(CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P) || return 1
+    lexical_path "$_pp"
+}
+
+# Is PATH empty, HOME or /? Compares what the path names, not how it is
+# spelled: a trailing slash, dot segments, repeated slashes and symlinks
+# to either are caught. Purge deletes recursively, so either view
+# matching is enough to refuse.
+is_protected_path() {
+    [ -n "$1" ] || return 0
+    _home_lex=$(lexical_path "$HOME")
+    case "$(lexical_path "$1")" in
+        "/"|"$_home_lex") return 0 ;;
+        *) ;;
+    esac
+    if _path_phys=$(physical_path "$1"); then
+        _home_phys=$(physical_path "$HOME") || _home_phys=$_home_lex
+        case "$_path_phys" in
+            "/"|"$_home_phys") return 0 ;;
+            *) ;;
+        esac
+    fi
+    return 1
+}
+
+# Refuse to purge a workspace or data folder that is a protected path.
+refuse_protected_purge() {
+    if is_protected_path "$WORKSPACE"; then
+        die "refusing to purge $WORKSPACE: it is a protected path"
+    fi
+    if is_protected_path "$DATA_DIR"; then
+        die "refusing to purge the data folder $DATA_DIR: it is a protected path"
+    fi
+}
+
 # Does this installer own $WORKSPACE?
 # STD-03@2 §R29: ownership is recorded provenance, never a location, a
 # name, or the absence of another claim. Proof is the install-state line
@@ -1687,14 +1746,7 @@ do_uninstall() {
     # Prove ownership before any teardown. A refusal must leave the
     # service, plugin, tools, workspace and data folder in place.
     if [ "$_purge" -eq 1 ]; then
-        case "$WORKSPACE" in
-            "$HOME"|"/"|"") die "refusing to purge $WORKSPACE" ;;
-            *) ;;
-        esac
-        case "$DATA_DIR" in
-            "$HOME"|"/"|"") die "refusing to purge the data folder $DATA_DIR: it is a protected path" ;;
-            *) ;;
-        esac
+        refuse_protected_purge
         if ! is_office_workspace; then
             die "refusing to purge $WORKSPACE: it is not an office workspace this installer owns"
         fi
@@ -1778,17 +1830,11 @@ do_uninstall() {
     state_clear "app_built"
     state_clear "agent_registered"
     if [ "$_purge" -eq 1 ]; then
-        # The check above already ran. Repeat the protected-path guards
+        # The check above already ran. Repeat the protected-path guard
         # immediately before the deletes so HOME, / and an empty path
-        # cannot be removed even if that earlier check is bypassed.
-        case "$WORKSPACE" in
-            "$HOME"|"/"|"") die "refusing to purge $WORKSPACE" ;;
-            *) ;;
-        esac
-        case "$DATA_DIR" in
-            "$HOME"|"/"|"") die "refusing to purge the data folder $DATA_DIR: it is a protected path" ;;
-            *) ;;
-        esac
+        # cannot be removed even if that earlier check is bypassed or
+        # teardown created a path that now resolves to one of them.
+        refuse_protected_purge
         if [ -e "$WORKSPACE" ]; then
             rm -rf "$WORKSPACE"
             say "purge: removed the workspace $WORKSPACE"

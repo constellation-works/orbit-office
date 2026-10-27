@@ -10,7 +10,9 @@
 #   2. older Orbit stops with the upgrade command; newer warns on
 #   3. --uninstall removes tools/ and keeps ~/orbit; --purge removes an
 #      owned workspace, refuses any other folder and refuses a data
-#      folder that is HOME (ORBIT_OFFICE_DATA_DIR=HOME)
+#      folder or workspace that is HOME or /, however it is spelled
+#      (trailing or repeated slashes, dot segments, a symlink), before
+#      any teardown and with every file left unchanged
 #   4. a non-empty unrelated workspace folder is refused, including by
 #      --purge --home
 #   5. missing Orbit is installed from npm
@@ -857,9 +859,8 @@ check "purge removes the data folder of a recorded workspace" \
 
 # --purge with ORBIT_OFFICE_DATA_DIR set to the home folder is refused before
 # any teardown. The workspace is recorded as owned, so the data-folder guard
-# is the only thing between this purge and the deletes. "/" is not run here:
-# if the guard regressed, an unguarded purge with DATA_DIR=/ would rm -rf the
-# host root.
+# is the only thing between this purge and the deletes. "/" and the other
+# spellings run below, behind an rm guard.
 HOME4X="$ROOT/home4-protected-data"
 OWNED_X="$HOME4X/orbit"
 mkdir -p "$OWNED_X"
@@ -893,6 +894,95 @@ ok "purge of an ordinary data folder override exits 0"
 check "purge removes the ordinary data folder override" test ! -e "$CUSTOM_X"
 check "purge removes the workspace recorded under the override" test ! -e "$OWNED_X"
 check "purge keeps the home folder" grep -qx keep "$HOME4X/keep.txt"
+
+# Equivalent spellings of HOME and / are the same protected paths:
+# trailing and repeated slashes, `.` and `..` segments and a symlink.
+# Each purge must be refused before any teardown, for the data folder
+# and for the workspace, with every file in the temp home unchanged.
+# These runs put an `rm` guard first on PATH: it refuses, and logs, any
+# operand that resolves to / or HOME, so a regressed installer guard
+# fails the check instead of deleting the host root or the temp home.
+RM_GUARD_BIN="$ROOT/bin-rm-guard"
+mkdir -p "$RM_GUARD_BIN"
+REAL_RM=$(command -v rm) || fail "rm is on PATH"
+cat > "$RM_GUARD_BIN/rm" <<STUB
+#!/bin/sh
+_home=\$(CDPATH='' cd -P -- "\$HOME" 2>/dev/null && pwd -P) || _home=/
+for _op in "\$@"; do
+    case "\$_op" in -*) continue ;; *) ;; esac
+    _phys=\$(CDPATH='' cd -P -- "\$_op" 2>/dev/null && pwd -P) || continue
+    case "\$_phys" in
+        /|//|"\$_home")
+            printf '%s\n' "\$_op" >> "\${STUB_STATE:?}/rm-guard.log"
+            exit 1 ;;
+        *) ;;
+    esac
+done
+exec "$REAL_RM" "\$@"
+STUB
+chmod +x "$RM_GUARD_BIN/rm"
+
+# check_protected_purge <label> <home> <expected line> <run_install args...>
+check_protected_purge() {
+    _cp_label="$1"; _cp_home="$2"; _cp_expect="$3"; shift 3
+    _cp_out="$ROOT/out-protected-alias.txt"
+    rm -f "$STUB_STATE/rm-guard.log"
+    snapshot "$_cp_home" > "$ROOT/snap-alias-before.txt"
+    if (TEST_PATH="$RM_GUARD_BIN:$BIN:$NODE_DIR:/usr/bin:/bin" \
+        run_install "$_cp_home" "$@") > "$_cp_out" 2>&1; then
+        cat "$_cp_out" >&2
+        fail "$_cp_label: purge is refused"
+    fi
+    ok "$_cp_label: purge is refused"
+    check "$_cp_label: refusal names the protected path" \
+        grep -qxF "error: $_cp_expect" "$_cp_out"
+    snapshot "$_cp_home" > "$ROOT/snap-alias-after.txt"
+    check "$_cp_label: refusal leaves every file unchanged" \
+        cmp -s "$ROOT/snap-alias-before.txt" "$ROOT/snap-alias-after.txt"
+    check "$_cp_label: nothing tried to delete HOME or /" \
+        test ! -e "$STUB_STATE/rm-guard.log"
+}
+
+HOME4A="$ROOT/home4-alias"
+OWNED_A="$HOME4A/orbit"
+DATA_A="$HOME4A/.local/share/orbit-office"
+mkdir -p "$OWNED_A" "$DATA_A/tools/bin" "$HOME4A/.config/systemd/user"
+printf 'gone\n' > "$OWNED_A/sentinel.txt"
+printf 'keep\n' > "$HOME4A/keep.txt"
+printf 'tool\n' > "$DATA_A/tools/bin/keep"
+printf '[Unit]\n' > "$HOME4A/.config/systemd/user/orbit-office.service"
+# Data folder aliases read install-state from HOME itself, which records
+# the default workspace as owned: the protected-path guard alone refuses.
+printf 'workspace_path=%s\n' "$OWNED_A" > "$HOME4A/install-state"
+HOME_LINK_A="$ROOT/home4-alias-link"
+ln -s "$HOME4A" "$HOME_LINK_A"
+for _alias in "$HOME4A/" "$HOME4A//" "$HOME4A/." "$HOME4A/./" \
+    "$HOME4A/orbit/.." "$HOME_LINK_A" "$HOME_LINK_A/"; do
+    check_protected_purge "data folder $_alias" "$HOME4A" \
+        "refusing to purge the data folder $_alias: it is a protected path" \
+        "ORBIT_OFFICE_DATA_DIR=$_alias" -- --purge
+done
+for _alias in / // /. /./ //.; do
+    check_protected_purge "data folder $_alias" "$HOME4A" \
+        "refusing to purge the data folder $_alias: it is a protected path" \
+        "ORBIT_OFFICE_DATA_DIR=$_alias" -- --purge
+done
+
+# Workspace aliases are recorded as owned in the default data folder,
+# spelled as the installer sees them (one trailing slash stripped).
+for _ws in "$HOME4A/." "$HOME4A/" "$HOME4A/orbit/.." "$HOME_LINK_A" \
+    / /. //.; do
+    printf 'workspace_path=%s\n' "$_ws" >> "$DATA_A/install-state"
+done
+for _pair in "$HOME4A/.|$HOME4A/." "$HOME4A//|$HOME4A/" \
+    "$HOME4A/./|$HOME4A/." "$HOME4A/orbit/..|$HOME4A/orbit/.." \
+    "$HOME_LINK_A/|$HOME_LINK_A" "//|/" "/.|/." "//.|//." "/./|/."; do
+    _given=${_pair%%|*}; _seen=${_pair#*|}
+    check_protected_purge "workspace $_given" "$HOME4A" \
+        "refusing to purge $_seen: it is a protected path" \
+        -- --purge --home "$_given"
+done
+check "alias refusals keep the owned workspace" grep -qx gone "$OWNED_A/sentinel.txt"
 
 # The partial tree step 4 writes before the state line is the same proof
 # adoption uses, so purge removes it and a later install still adopts it.
