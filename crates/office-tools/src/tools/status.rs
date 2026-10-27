@@ -37,12 +37,16 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         })
         .collect();
     // An unavailable Library adapter (no roots in context) reads as
-    // uninitialized health; status itself never refuses for that.
-    let health = call
-        .ports
-        .library
-        .health()
-        .unwrap_or_else(|_| office_core::ports::LibraryHealth::uninitialized());
+    // uninitialized health; status itself never refuses for that. Any other
+    // failure, such as an invalid config or a pending write, is returned as
+    // its typed error rather than reported as an uninitialized Library.
+    let health = match call.ports.library.health() {
+        Ok(health) => health,
+        Err(office_core::Error::LibraryUnavailable) => {
+            office_core::ports::LibraryHealth::uninitialized()
+        }
+        Err(error) => return Err(error),
+    };
     Ok(json!({
         "version": VERSION,
         "secrets": secrets,
