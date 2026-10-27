@@ -47,10 +47,16 @@ The Models port's `TranscribeRequest.duration_seconds` carries duration from
 the caller's media metadata, rounding fractional seconds up. The adapter does
 not probe audio. `ModelConfig.audio_splitter` configures the ffmpeg executable,
 split threshold and maximum chunk length (both lengths default to 600 seconds).
+Transcription accepts WAV and MP3 only. `audio/wav`, `audio/wave` and
+`audio/x-wav` are sent as `wav`; `audio/mpeg` and `audio/mp3` are sent as `mp3`.
+The model schema takes no other `input_audio` format, so every other MIME type
+(M4A/MP4, AAC, FLAC, Ogg, WebM) is refused before staging, splitting or any model
+call, at every length. The adapter does not transcode: sources in other
+containers are converted to WAV or MP3 before transcription.
+
 At or below the threshold, transcription sends the original bytes directly and
 runs no subprocess. Above it, the adapter stages the recording privately and
-uses the supervised splitter, preserving the container (WAV, MP3, M4A/MP4, AAC,
-FLAC, Ogg or WebM); other long-audio MIME types are refused.
+uses the supervised splitter, which keeps the WAV or MP3 container.
 
 Every chunk passes through the same sensitivity routing with the original
 language hint. Private chunks reach only the configured open-weights endpoint.

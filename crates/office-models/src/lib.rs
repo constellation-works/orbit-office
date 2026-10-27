@@ -55,8 +55,10 @@
 //! A chunk whose reply is not the JSON transcript shape contributes text
 //! only. A failed chunk fails the transcription; temporary audio is
 //! removed on success and error.
-//! Long audio supports WAV, MP3, M4A/MP4, AAC, FLAC, Ogg and WebM MIME types;
-//! other containers are refused before staging rather than given a false suffix.
+//! Transcription accepts WAV (`audio/wav`, `audio/wave`, `audio/x-wav`) and
+//! MP3 (`audio/mpeg`, `audio/mp3`) audio, sent to the model as `wav` or `mp3`.
+//! Other containers are refused before staging or any model call, because the
+//! model schema takes no other `input_audio` format.
 
 // Library code never prints; diagnostics go through `tracing` (STD-02 R15).
 #![deny(clippy::print_stderr, clippy::print_stdout)]
@@ -187,17 +189,18 @@ impl RoutedClient {
         meta::reply_text(&host, &response)
     }
 
-    /// Transcribe one audio chunk. Segment timestamps are relative to this
-    /// chunk; the caller shifts them onto the original recording.
+    /// Transcribe one audio chunk in `format` (`wav` or `mp3`). Segment
+    /// timestamps are relative to this chunk; the caller shifts them onto the
+    /// original recording.
     fn transcribe_chunk(
         &self,
         sensitivity: office_common::Sensitivity,
-        mime: &str,
+        format: &str,
         audio: &[u8],
         language: Option<&str>,
     ) -> Result<meta::ParsedTranscript> {
         let (host, response) = self.post(sensitivity, |resolved| {
-            meta::transcribe_body(&resolved.model, mime, audio, language)
+            meta::transcribe_body(&resolved.model, format, audio, language)
         })?;
         meta::parse_transcript(&host, &response)
     }

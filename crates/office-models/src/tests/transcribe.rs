@@ -63,7 +63,7 @@ fn request(duration_seconds: u64, sensitivity: Sensitivity) -> TranscribeRequest
     }
 }
 
-fn assert_chunks(server: &FakeServer, chunks: &[&[u8]], token: &str, model: &str) {
+fn assert_chunks(server: &FakeServer, chunks: &[&[u8]], token: &str, model: &str, format: &str) {
     let requests = server.requests();
     assert_eq!(requests.len(), chunks.len());
     for (request, chunk) in requests.iter().zip(chunks) {
@@ -86,7 +86,7 @@ fn assert_chunks(server: &FakeServer, chunks: &[&[u8]], token: &str, model: &str
         );
         assert_eq!(body["response_format"]["json_schema"]["name"], "transcript");
         assert_eq!(body["response_format"]["json_schema"]["strict"], true);
-        assert_eq!(content[1]["input_audio"]["format"], "wav");
+        assert_eq!(content[1]["input_audio"]["format"], format);
         let audio = base64::engine::general_purpose::STANDARD
             .decode(
                 content[1]["input_audio"]["data"]
@@ -140,6 +140,7 @@ fn transcribes_long_recordings_in_multiple_routed_requests() {
         &[b"audio-0-600", b"audio-600-600", b"audio-1200-300"],
         "Bearer test-meta-key",
         "muse-spark-1.3",
+        "wav",
     );
     assert_eq!(
         std::fs::read(ffmpeg.directory.path().join("input")).expect("staged original"),
@@ -224,6 +225,7 @@ fn routes_every_private_chunk_to_open_weights_with_configured_lengths() {
         &[b"audio-0-20", b"audio-20-20", b"audio-40-5"],
         "Bearer test-baseten-token",
         "meta-models/muse-spark-open-1026",
+        "wav",
     );
     ffmpeg.assert_cleaned();
 }
@@ -253,6 +255,7 @@ fn at_or_below_threshold_never_runs_ffmpeg() {
         &[&audio[0], &audio[1], &audio[2]],
         "Bearer test-meta-key",
         "muse-spark-1.3",
+        "wav",
     );
     ffmpeg.assert_not_run();
 }
@@ -356,4 +359,103 @@ fn missing_ffmpeg_output_fails_without_sending_audio_and_cleans_staging() {
     assert_eq!(error.code(), "media_io_failed");
     assert!(server.requests().is_empty());
     ffmpeg.assert_cleaned();
+}
+
+#[test]
+fn transcribes_long_mp3_recordings_as_mp3_under_each_alias() {
+    for mime in ["audio/mpeg", "audio/mp3"] {
+        let ffmpeg = Ffmpeg::splitting();
+        let server = FakeServer::start_replies(vec![
+            (200, chat_reply("first")),
+            (200, chat_reply("second")),
+            (200, chat_reply("third")),
+        ]);
+        let mut config = hosted_config(&server.base_url);
+        config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
+        let adapter = client(config);
+        let models: &dyn Models = &adapter;
+        let mut request = request(1500, Sensitivity::Normal);
+        request.mime = mime.into();
+        let transcript = models.transcribe(&request).expect("transcribe long mp3");
+        assert_eq!(transcript.text, "first\nsecond\nthird");
+        assert_chunks(
+            &server,
+            &[b"audio-0-600", b"audio-600-600", b"audio-1200-300"],
+            "Bearer test-meta-key",
+            "muse-spark-1.3",
+            "mp3",
+        );
+        let calls =
+            std::fs::read_to_string(ffmpeg.directory.path().join("calls")).expect("ffmpeg args");
+        let args: Vec<_> = calls.lines().collect();
+        for call in args.chunks_exact(10) {
+            assert_eq!(
+                std::path::Path::new(call[9])
+                    .extension()
+                    .expect("MP3 suffix"),
+                "mp3",
+                "{mime} staged chunks must keep an MP3 suffix"
+            );
+        }
+        ffmpeg.assert_cleaned();
+    }
+}
+
+#[test]
+fn sends_short_mp3_audio_with_the_mp3_format() {
+    let ffmpeg = Ffmpeg::new("exit 99");
+    let server = FakeServer::start(200, chat_reply("unsplit"));
+    let mut config = hosted_config(&server.base_url);
+    config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
+    let adapter = client(config);
+    let models: &dyn Models = &adapter;
+    let mut request = request(1, Sensitivity::Normal);
+    request.mime = "audio/mpeg".into();
+    let audio = request.audio.clone();
+    assert_eq!(
+        models.transcribe(&request).expect("short mp3").text,
+        "unsplit"
+    );
+    assert_chunks(
+        &server,
+        &[audio.as_slice()],
+        "Bearer test-meta-key",
+        "muse-spark-1.3",
+        "mp3",
+    );
+    ffmpeg.assert_not_run();
+}
+
+#[test]
+fn refuses_containers_the_model_schema_cannot_take_before_any_model_call() {
+    for mime in [
+        "audio/mp4",
+        "audio/m4a",
+        "audio/x-m4a",
+        "audio/aac",
+        "audio/flac",
+        "audio/ogg",
+        "audio/webm",
+    ] {
+        for duration in [1, 1500] {
+            let ffmpeg = Ffmpeg::new("exit 99");
+            let server = FakeServer::start(200, chat_reply("must not receive audio"));
+            let mut config = hosted_config(&server.base_url);
+            config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
+            let adapter = client(config);
+            let models: &dyn Models = &adapter;
+            let mut request = request(duration, Sensitivity::Normal);
+            request.mime = mime.into();
+            let error = models
+                .transcribe(&request)
+                .expect_err("container the schema cannot take");
+            assert_eq!(
+                error.code(),
+                "media_unsupported_format",
+                "{mime} at {duration}s"
+            );
+            assert!(server.requests().is_empty(), "{mime} at {duration}s");
+            ffmpeg.assert_not_run();
+        }
+    }
 }

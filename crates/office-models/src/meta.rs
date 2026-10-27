@@ -37,14 +37,14 @@ pub(crate) fn transcribe_instruction(language: Option<&str>) -> String {
     )
 }
 
-/// Body for a transcription call: the audio as one `input_audio` part.
+/// Body for a transcription call: the audio as one `input_audio` part in
+/// `format`, which is `wav` or `mp3`, the only values the schema accepts.
 pub(crate) fn transcribe_body(
     model: &str,
-    mime: &str,
+    format: &str,
     audio: &[u8],
     language: Option<&str>,
 ) -> Value {
-    let format = mime.rsplit('/').next().unwrap_or("wav");
     json!({
         "model": model,
         "messages": [{
