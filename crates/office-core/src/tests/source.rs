@@ -64,6 +64,45 @@ fn anchors_distinguish_malformed_from_out_of_range() {
 }
 
 #[test]
+fn time_anchors_resolve_to_the_turn_in_progress() {
+    let body = "[00:10:00] Jane: one\n\n[00:12:31] Dee: two";
+    let span = |raw: &str| anchor_span(body, parse_anchor(raw).expect("anchor"), raw);
+    assert_eq!(
+        span("#t=00:10:00").expect("first turn"),
+        "[00:10:00] Jane: one"
+    );
+    assert_eq!(
+        span("#t=00:11:00").expect("interior"),
+        "[00:10:00] Jane: one"
+    );
+    assert_eq!(
+        span("#t=00:12:31").expect("last turn"),
+        "[00:12:31] Dee: two"
+    );
+    for raw in ["#t=00:09:59", "#t=00:12:32"] {
+        assert_eq!(
+            span(raw).expect_err("out of range").code(),
+            "anchor_out_of_range",
+            "{raw}"
+        );
+    }
+    assert_eq!(
+        anchor_span(
+            "no turns",
+            parse_anchor("#t=00:00:00").expect("anchor"),
+            "#t=00:00:00"
+        )
+        .expect_err("no turns")
+        .code(),
+        "anchor_out_of_range"
+    );
+    assert_eq!(
+        parse_anchor("#t=99:99:99").expect_err("malformed").code(),
+        "anchor_invalid"
+    );
+}
+
+#[test]
 fn vtt_import_keeps_speakers_and_cue_times() {
     let vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Jane>Hi there.</v>\n\n00:01:05.500 --> 00:01:07.000\nDaniel: Next point.\n";
     assert_eq!(
