@@ -68,16 +68,32 @@ impl IndexStore {
         &self.path
     }
 
+    /// True when a schema migration left pre-upgrade rows whose
+    /// template/date still need a rescan from their files.
+    pub(crate) fn needs_backfill(&self) -> Result<bool> {
+        let conn = self.lock()?;
+        let pending: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM index_backfill_pending WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::sqlite(&self.path, "read backfill marker", e))?;
+        Ok(pending > 0)
+    }
+
     /// Replace the whole index with `documents` in one transaction. This
     /// is what `reindex` does: the files are the truth, the index is
-    /// rebuilt from them.
+    /// rebuilt from them. A successful rebuild also clears the migration
+    /// backfill marker in the same transaction.
     pub(crate) fn rebuild(&self, documents: &[DocumentRecord]) -> Result<()> {
         let mut conn = self.lock()?;
         let tx = conn
             .transaction()
             .map_err(|e| Error::sqlite(&self.path, "begin rebuild", e))?;
         tx.execute_batch(
-            "DELETE FROM cites; DELETE FROM links; DELETE FROM documents_fts; DELETE FROM documents;",
+            "DELETE FROM cites; DELETE FROM links; DELETE FROM documents_fts; DELETE FROM documents;
+             DELETE FROM index_backfill_pending;",
         )
         .map_err(|e| Error::sqlite(&self.path, "clear index", e))?;
         for document in documents {
