@@ -254,13 +254,14 @@ fn timeout_kills_descendants_holding_log_pipes_and_names_the_bound() {
     f.prepare();
     f.execution.request.args = vec!["timeout".into()];
     let bounds = ScriptBounds {
-        timeout_seconds: 1,
+        timeout_seconds: 3,
         ..Default::default()
     };
     let start = std::time::Instant::now();
     let error = f.store.run(&f.execution, &bounds).unwrap_err();
+    assert_eq!(error.code(), "script_bound_exceeded");
     assert!(error.to_string().contains("timeout_seconds"), "{error}");
-    assert!(start.elapsed() < Duration::from_secs(4));
+    assert!(start.elapsed() < Duration::from_secs(bounds.timeout_seconds + 3));
     let pid = fs::read_to_string(f.runs()[0].join("tmp/child.pid")).unwrap();
     // On Linux an orphan can remain a zombie until init reaps it; it is no longer executing.
     #[cfg(target_os = "linux")]
