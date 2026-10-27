@@ -40,7 +40,11 @@ async function renderTodos(root: HTMLElement): Promise<void> {
   }
 
   async function tick(): Promise<void> {
-    if (!alive() || busy) return;
+    if (!alive()) {
+      stop();
+      return;
+    }
+    if (busy) return;
     try {
       await refresh();
     } catch {

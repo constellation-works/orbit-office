@@ -221,6 +221,50 @@ test("a load failure and a close both go through the app server", async () => {
   failed.replaceChildren();
 });
 
+test("polling intervals are cleared after navigation away", async () => {
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  const intervals = new Map();
+  const calls = [];
+  globalThis.setInterval = (callback) => {
+    const handle = { callback, unref() {} };
+    intervals.set(handle, callback);
+    return handle;
+  };
+  globalThis.clearInterval = (handle) => intervals.delete(handle);
+  globalThis.fetch = async (path) => {
+    calls.push(path);
+    return new Response(JSON.stringify(MODEL));
+  };
+
+  try {
+    const baseline = intervals.size;
+    for (let visit = 0; visit < 3; visit += 1) {
+      const root = connectedRoot();
+      await screen.render(root);
+      assert.equal(intervals.size, baseline + 1);
+
+      const [[handle, callback]] = intervals.entries();
+      const requestsBeforePoll = calls.length;
+      callback();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.equal(calls.length, requestsBeforePoll + 1);
+      assert.equal(intervals.size, baseline + 1);
+
+      const requestsBeforeNavigation = calls.length;
+      root.replaceChildren();
+      callback();
+
+      assert.equal(intervals.has(handle), false);
+      assert.equal(intervals.size, baseline);
+      assert.equal(calls.length, requestsBeforeNavigation);
+    }
+  } finally {
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+  }
+});
+
 test("a payload that is not a to-do list is refused", () => {
   assert.equal(modelFromPayload({ you: [], agents: [{ title: "Missing pieces" }] }), null);
   const root = connectedRoot();
