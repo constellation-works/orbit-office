@@ -123,7 +123,8 @@ The summary lists what was created, where, and the uninstall command
 `tools` folder (`uv` and its Python, which nothing else uses). It keeps `~/orbit` and the
 Library unless `--purge` is given. `--purge` deletes that workspace only after the same
 ownership check as adoption, and otherwise refuses with a message that names the path and
-removes nothing, including the per-user data folder.
+removes nothing, including the per-user data folder. A data folder that is the home folder or
+`/` (set with `ORBIT_OFFICE_DATA_DIR`) is refused the same way, before any teardown.
 
 Plugin-authored commits in the Library use a fixed author (`orbit-office
 <office@orbit.local>`) passed per commit, so they need no git identity and are easy to tell
