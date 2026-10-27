@@ -82,10 +82,15 @@ spaces, so script shebangs that name the interpreter keep working.
 6. **Secrets.** Prompts for the Meta API key, and optionally the Baseten token, with hidden
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set.
-7. **Scaffold.** `orbit tool run office.init`: the Library's layout, git repository, config,
-   `.gitignore` and index, then the first Library commit. The step is done only when the
-   response is an `ok` envelope. An error envelope, even with exit 0, stops the install and
-   names its code; nothing is recorded, so the next run asks `office.init` again.
+7. **Scaffold.** `orbit tool run office.init --json --full`: the Library's layout, git
+   repository, config, `.gitignore` and index, then the first Library commit. The CLI exits 0
+   and prints the tool's output object on stdout. That object has no top-level `ok`. The step
+   is done for that object, including a retry that prints `{"already_initialized": true, "created": []}`
+   and exits 0. An `{ok: true}` envelope is also accepted. A non-zero exit stops the install.
+   The office code is read from the JSON object on stderr (`code`, or `error.code`), including
+   when a WARN line precedes the JSON, and the failure names that code. An `{ok: false}`
+   envelope on stdout, even with exit 0, also stops the install and names its code. Nothing
+   is recorded on failure, so the next run asks `office.init` again.
 8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Muse Code's
    `settings.json`, keeping a backup of the old file, and installs the office skills. It
    also adds deny rules for direct shell use of `curl`, `wget`, `http`, `aws` and `gcloud`,
