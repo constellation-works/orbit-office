@@ -45,6 +45,36 @@ There is no Chat screen: conversation happens in the user's agent CLI.
 Citations the agent prints are `http://localhost` links that open the
 app's source or page view.
 
+### Today implementation
+
+Today and `GET /api/today` are built. The endpoint polls `orbit.task.list`
+through a shared Orbit client, with separate active and completed listings
+(200 items each). Its shared contract is `Today` in `app/packages/contracts`.
+The browser polls the endpoint five seconds after the preceding read settles.
+Navigating away stops polling and prevents a late response replacing the new
+screen. Open results, background panels and keyboard focus survive refreshes.
+
+- Needs you selects `proposed` tasks tagged `proposal`, all `review` tasks,
+  then unfinished `owner:you` tasks. This order also determines the label
+  when a task matches more than one kind.
+- Agents working on selects `in-progress` tasks tagged `owner:agent`,
+  excluding `owner:you`, and shows one line per task.
+- Done today selects `done` tasks whose latest transition to `done` falls
+  between local midnight and the snapshot time. Last-edit timestamps do not
+  establish completion. Each result opens its recorded execution summary;
+  missing summaries are explicitly identified. “About this work” opens the
+  recorded task description as provenance on every item. Source-specific
+  navigation will arrive with the Source and Library screens.
+
+Empty sections have their own messages. A failed or malformed Orbit read
+refuses the whole snapshot; the UI reports that failure and retains previous
+data when available. A capped listing and completed work without a usable
+completion date are explicitly reported. Limits may omit older unfinished
+work or a result whose record was subsequently edited; this is a bounded
+snapshot, not a complete history. The view supports the shared light theme.
+Empty `drop-zone` and per-item `approval-actions` slots reserve integration
+points; uploading and approval mutations remain separate features.
+
 ## Rules
 
 - Each item has one primary action (approve, edit or dismiss) and a provenance link on every agent output.

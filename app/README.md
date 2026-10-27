@@ -6,10 +6,10 @@ To-dos, Routines, Library, Insights, Review. No ids, crews, runs or raw
 statuses are ever shown. There is no Chat screen: conversation happens in
 the user's agent CLI.
 
-**Status: scaffold, with the app server built.** Every server feature
-and web screen still exists as a planned stub: planned features mount no
-routes, and planned screens are left out of the navigation. `/healthz`
-lists the built features. The server itself — its Orbit client, static
+**Status: Today and the app server are built.** Today is the landing screen,
+backed by `GET /api/today`. Other features and screens remain planned:
+planned features mount no routes, and planned screens stay out of navigation.
+`/healthz` lists the built features. The server itself — its Orbit client, static
 serving with loopback Host/Origin guards, and the dispatch pass — is
 built (below).
 
@@ -51,6 +51,27 @@ layout is in `../ARCHITECTURE.md` ("Web app").
 The shared UI pieces and responsive styles can be viewed at `/demo.html`
 when the app server is running. Screens can import the pieces from `web/src/ui/`
 and use `web/src/api/` for server requests.
+
+Today shows suggestions awaiting a decision, work ready for review, your
+unfinished to-dos, active agent work, and results finished in the server's
+local calendar day. Open a result to read its recorded outcome; “About this
+work” opens its recorded background. It refreshes every five seconds without
+overlapping requests, retaining open results and showing refresh failures.
+Lists are capped at 200 active and 200 completed items, with a visible notice
+when limited. A missing completion date is reported rather than inferred from
+the last edit. Uploads and approval controls have reserved slots for their
+own features; Today currently reads work only.
+
+The Today browser behavior suite uses the host's verified browser kit:
+
+```bash
+. "$ORBIT_BROWSER_KIT_ENV"
+node --test app/packages/web/test/today.browser.mjs  # from the repository root, after the app build
+```
+
+Set `TODAY_SCREENSHOTS_DIR` to a directory under `.orbit/tmp/` to also capture
+the populated and empty Today views at desktop and 375px widths. This suite
+uses an in-memory Orbit client and starts and closes its own loopback server.
 
 ## Develop
 

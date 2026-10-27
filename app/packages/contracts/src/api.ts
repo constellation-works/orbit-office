@@ -43,3 +43,30 @@ export interface AgentCliStatus {
 export interface SettingsStatus {
   agentCli: AgentCliStatus;
 }
+
+/** Work shown on Today. Keys identify items for the UI, never display labels. */
+export interface TodayItem {
+  key: string;
+  title: string;
+  background: string;
+}
+
+export interface TodayNeed extends TodayItem {
+  kind: "proposal" | "approval" | "todo";
+}
+
+export interface TodayResult extends TodayItem {
+  /** The recorded outcome, or null when no outcome was recorded. */
+  result: string | null;
+}
+
+/** `GET /api/today`: a live snapshot in the app server's local calendar day. */
+export interface Today {
+  needs_you: TodayNeed[];
+  agents_working_on: TodayItem[];
+  done_today: TodayResult[];
+  /** At least one Orbit listing reached its limit. */
+  truncated: boolean;
+  /** Completed items whose completion history could not establish a date. */
+  completion_dates_unavailable: number;
+}
