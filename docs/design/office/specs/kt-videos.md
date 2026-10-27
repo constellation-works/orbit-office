@@ -15,7 +15,7 @@ cited knowledge
 
 Meetings stay supported but are not the hero. A meeting's actions are cheaper
 to tell the agent directly, and pasted notes and imported `.vtt` transcripts
-cover the rest. The `meetings` pack remains, without its own routine.
+cover the rest. The `meetings` pack remains. The calendar gives it routines of its own: prep before a meeting and capture after it ([calendar.md](./calendar.md)).
 
 ## What the user gets from one video
 

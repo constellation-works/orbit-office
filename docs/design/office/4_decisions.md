@@ -1088,6 +1088,63 @@ settles normally with the real exit code and output.
   just before its deadline can be reported as a timeout if a descendant
   holds its pipes past the bound.
 
+## The calendar is a read-only snapshot with prep before and capture after
+
+**Recorded:** 2026-10-27
+**Code anchors:** [specs/calendar.md](./specs/calendar.md)
+
+### Context
+
+Daniel asked for a calendar in the app, kept by the agents: routines and
+meetings on one view, prep before a meeting, and a saved transcript and
+summary after it. Meetings already had a pack (`.vtt` transcripts and
+pasted notes through `office.extract`), but no routine and no way to know
+a meeting was coming. Outlook is the calendar most users have. There is no
+email sync to ride on, and Orbit has no trigger that fires before an
+external event.
+
+### Decision
+
+- **Read, never write.** The calendar is read through `gateway` (an ICS
+  feed with a `secret_path` connection, or Microsoft Graph with an
+  `oauth2_device` connection). RSVPs, new events and moved events are
+  outward-facing actions and are not built.
+- **A snapshot in plugin state, not the Library.** The events are a
+  schedule, not something that happened. Each sync replaces them
+  atomically in `{{plugin_state}}/calendar/`. A meeting enters the Library
+  only when its notes or transcript are captured, as a `meeting` source
+  linked by the event key.
+- **Prep and capture are routines that poll the snapshot.** They do not
+  use a new Orbit trigger: `office-meeting-prep` and `office-meeting-inbox`
+  run every 15 minutes, de-duplicated by event key and source. This
+  revises [the hero pack decision](#the-hero-pack-is-kt-videos-not-meeting-recordings):
+  meetings now have routines of their own. Calls that aren't recorded are
+  still not captured.
+- **Rejected:**
+  - committing events to the Library's git (a commit every 15 minutes of
+    churn and personal detail, with no lasting value);
+  - waiting for email sync (it doesn't exist);
+  - an Orbit "before event" trigger (a core change, which is out of scope
+    for the event);
+  - office fetching the feed itself (only model inference may leave the
+    machine outside the gateway's audit).
+
+### Consequences
+
+- The day's meetings, their prep and their outcome share one screen, and
+  each captured meeting feeds the person and client pages that the next
+  meeting's prep reads.
+- Invite bodies are untrusted text from outside. Every model input quotes
+  them as data.
+- Cost:
+  - two new gateway auth schemes, one of them an OAuth refresh-token
+    rotation;
+  - a bounded ICS recurrence and Windows time-zone reader in office;
+  - a new owner-only state file;
+  - three routines;
+  - a prep model call per meeting, capped per run.
+  Recurrence rules outside the subset show their first instance only.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.

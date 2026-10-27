@@ -201,6 +201,7 @@ from `.vtt` transcripts and pasted notes.
 | Proposal kinds, signals, lifecycle | [specs/proposals.md](./specs/proposals.md) |
 | Metrics definitions and review production | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) |
 | Screens, app rules, citation links | [specs/web-app.md](./specs/web-app.md) |
+| Calendar sync, meeting prep and capture from an event | [specs/calendar.md](./specs/calendar.md) |
 | Selection record, tray, pull/push, safety | [specs/selection-sharing.md](./specs/selection-sharing.md) |
 | Model routing by sensitivity | [specs/models-and-privacy.md](./specs/models-and-privacy.md) |
 

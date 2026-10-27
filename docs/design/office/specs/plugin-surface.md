@@ -18,11 +18,14 @@ Source: spec §12. The one-call envelope is
 
 | Tool | Kind | MCP | Purpose |
 |---|---|---|---|
-| `office.capture` | mutating | workspace | Create a source from an upload path or pasted text; dedupe; return the id |
+| `office.capture` | mutating | workspace | Create a source from an upload path or pasted text; dedupe; return the id. An optional `event_key` links a `meeting` source to its calendar event ([calendar.md](./calendar.md#capture-after-the-meeting)) |
 | `office.transcribe` | mutating | workspace | Transcribe a video or meeting source's audio into its body in chunks (Muse Voice Transcribe); a no-op when a `.vtt` was imported |
 | `office.video-plan` | mutating | **none** | Plan a video: duration, deduplicated keyframes, model-call counts, cost estimate; `confirm` with the digest the user saw ([kt-videos.md](./kt-videos.md)) |
 | `office.frames` | mutating | **none** | Extract a confirmed video's keyframes and read them with Muse Spark image input into `frames.md` |
 | `office.extract` | mutating | workspace | From a source, produce structured JSON plus a task artifact: `profile: kt` gives chapters, gotchas, knowledge candidates, runbook steps and questions; `profile: meeting` gives a summary, decisions and to-dos; `profile: digest` writes a source's `digest.json` |
+| `office.calendar-sync` | mutating | **none** | Read the calendar through a gateway connection (or a workspace `.ics` file) and atomically replace the event snapshot in plugin state ([calendar.md](./calendar.md#officecalendar-sync)) |
+| `office.calendar-list` | read_only | workspace | Events in a range, each with its prep artifact, captured sources and matched person pages; attendee emails never returned |
+| `office.meeting-prep` | mutating | **none** | Write a cited prep brief artifact for each meeting starting within the lead time; run only by the `office-meeting-prep` routine ([calendar.md](./calendar.md#prep-officemeeting-prep)) |
 | `office.source-show` | read_only | workspace | Return source text, provenance, citing documents/tasks and chapters; optional anchor, history and capped original/frame media ([library.md](./library.md#sources)) |
 | `office.source-set-sensitivity` | mutating | **none** | Set source sensitivity under the writer lock; refuse private-to-normal |
 | `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, template, tag, series and date |
@@ -118,6 +121,9 @@ Activities have no schedule switch. Definitions load only when listed in
 - **Routines:**
   - `office-kt-inbox`: every 15 minutes, seeded disabled, process confirmed video plans: transcribe, frames, extract (`kt`), then `office.consolidate` over the videos' digests; extraction files question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
   - `office-bootstrap`: every 15 minutes, run a confirmed bootstrap batch: digests (and the KT steps for videos), then `office.consolidate` ([library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation)).
+  - `office-calendar-sync`: every 15 minutes, seeded disabled; `office.calendar-sync` ([calendar.md](./calendar.md)).
+  - `office-meeting-prep`: every 15 minutes, seeded disabled; `office.meeting-prep` for meetings within the lead time.
+  - `office-meeting-inbox`: every 15 minutes, with the `meetings` pack: transcribe, extract (`meeting`) and save `summary.md` for each captured meeting without one.
   - `office-signals`: daily.
   - `office-daily-digest`: daily at `5 0 * * *`, seeded disabled. Targets `job:office-daily-digest`, whose sole step inlines a deterministic `plugin.tool_call` activity (`config.tool: office.digest`). The routine and job are registered in `spec.definitions`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).
 - **Auto-tasks:**

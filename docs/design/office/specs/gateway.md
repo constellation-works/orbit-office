@@ -78,7 +78,8 @@ never by an agent:
 - **`base_url`** must be `https`, except plain `http` to a loopback address
   (the demo's mock API).
 - **`auth.scheme`** is `bearer`, `basic`, `header` (with a header name in
-  `auth.header`) or `none`. For `basic`, `auth.username` holds the user name
+  `auth.header`) or `none`. `secret_path` and `oauth2_device` are specified
+  for the calendar and not built yet ([calendar.md](./calendar.md#gateway-auth-schemes-this-needs)). For `basic`, `auth.username` holds the user name
   and the slot holds the password.
 - **`disabled: true`** keeps a connection but refuses calls through it as
   `unknown_connection`.

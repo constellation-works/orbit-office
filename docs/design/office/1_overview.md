@@ -109,6 +109,7 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 | Proposals and their signals | [specs/proposals.md](./specs/proposals.md) | [ORB-18721] done, [ORB-18722] done |
 | Analytics and generated reviews | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) | [ORB-18724] done |
 | Web app screens and rules | [specs/web-app.md](./specs/web-app.md) | [ORB-18727] done, [ORB-18728] done |
+| Calendar: read-only sync, meeting prep, capture after the meeting | [specs/calendar.md](./specs/calendar.md) | proposed |
 | Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-18723] done |
 | Models and privacy routing | [specs/models-and-privacy.md](./specs/models-and-privacy.md) | [ORB-18712] done |
 | Hackathon compliance, demo and build plan | [specs/delivery.md](./specs/delivery.md) | [ORB-16585] |
