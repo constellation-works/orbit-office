@@ -19,7 +19,8 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   const route = today.routes[0];
   const fallback = createHandler();
   const server = createServer((request, response) => {
-    if (request.url === "/api/today") void route.handle(request, response);
+    if (request.url === "/api/setup") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "ready" })); }
+    else if (request.url === "/api/today") void route.handle(request, response);
     else fallback(request, response);
   });
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -187,7 +188,8 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
   const server = createServer((request, response) => {
     const path = (request.url ?? "/").split("?")[0];
     const route = [...today.routes, ...approvals.routes].find((item) => item.method === request.method && item.path === path);
-    if (route) void route.handle(request, response);
+    if (path === "/api/setup") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "ready" })); }
+    else if (route) void route.handle(request, response);
     else fallback(request, response);
   });
   t.after(() => new Promise((resolve) => server.close(resolve)));

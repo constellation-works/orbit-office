@@ -435,7 +435,7 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
 
   function execute(name: string, input: Record<string, unknown>): Promise<unknown> {
     return new Promise<unknown>((resolve, reject) => {
-      const child = spawn(command, ["tool", "run", name, "--json", "--input", JSON.stringify(input)], {
+      const child = spawn(command, ["tool", "run", name, "--json", ...(name === "office.init" ? ["--full"] : []), "--input", JSON.stringify(input)], {
         env,
         stdio: ["ignore", "pipe", "pipe"],
         // Own process group so a timeout can signal the whole tree (STD-03 R11/R12).

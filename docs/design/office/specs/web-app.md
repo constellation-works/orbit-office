@@ -35,7 +35,7 @@ Source: spec §13.1–§13.2 and §13.4.
 
 | Screen | Content |
 |---|---|
-| **Today** | Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
+| **Today** | Library setup card when missing; otherwise Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
 | **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge |
 | **Routines** | The next hour as one track (a mark per scheduled run, hollow where a paused routine skips its slot), then On and Paused tables: a switch, the routine and what it does, when it runs (plain words, with the cron line beneath), when it runs next (worked out from the schedule in the computer's time zone) and how its last time went (from `last_fire` in `orbit.auto_task.list`: when, and its task's state in words; task ids stay on the server). Retention settings below. Full run history and produced outputs await an Orbit listing change; scheduled background jobs are managed in Orbit. |
@@ -52,6 +52,10 @@ source anchor; source links open the Source screen using `/?source=<id>#t=hh:mm:
 ### Review implementation
 
 Review searches the quarterly and yearly review series, reads each returned artifact body, and orders the returned reviews by approval time. Search is bounded to 100 hits per series and matches indexed text, so it is not a complete review listing. At most 100 reviews are shown, with a notice at the limit. Review citation links retain their source references; the Source screen accepts anchored localhost URLs. Regenerate requests the review auto-task and explains when that request is refused.
+
+### Library setup
+
+`GET /api/setup` reads `office.status` Library health. When the Library is missing, Today replaces Needs you with a Set up your Library card describing the scaffold. Set up shows progress and calls `POST /api/setup` once; the server calls `office.init` as the user with full output. Created and already initialized both lead to normal Today and refreshed rail counts. Failures show a reason and fix without automatic retries. If the plugin is disabled or the workspace unregistered, the card directs the user to `office init` instead of offering the action. Other screens link back to Today while setup is needed.
 
 ### Today implementation
 

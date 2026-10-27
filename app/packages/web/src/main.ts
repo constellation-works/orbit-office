@@ -4,14 +4,14 @@
  * ids, crews, runs or raw statuses. There is no Chat screen; conversation
  * happens in the user's agent CLI.
  */
-import type { Today } from "@orbit-office/contracts";
+import type { SetupResult, SetupStatus, Today } from "@orbit-office/contracts";
 
 import { screenHash } from "./api/source-location.js";
-import { getJson, getPrivateRoute } from "./api/client.js";
+import { getJson, getPrivateRoute, postJson } from "./api/client.js";
 import { drawRail, setRailCount } from "./nav.js";
 import { registerServiceWorker } from "./pwa/register.js";
 import { navigableScreens, screenForHash } from "./router.js";
-import { PRIVATE_ROUTE_EVENT, RAIL_REFRESH_EVENT, applyFooter } from "./ui/index.js";
+import { PRIVATE_ROUTE_EVENT, RAIL_REFRESH_EVENT, applyFooter, card, requestRailRefresh } from "./ui/index.js";
 
 registerServiceWorker();
 
@@ -45,7 +45,9 @@ async function loadCounts(nav: HTMLElement): Promise<void> {
   ]);
 }
 
+let screenGeneration = 0;
 async function drawScreen(root: HTMLElement): Promise<void> {
+  const generation = ++screenGeneration;
   const screen = screenForHash(screenHash(window.location.search, window.location.hash));
   if (screen?.render === undefined) {
     const note = document.createElement("p");
@@ -53,7 +55,64 @@ async function drawScreen(root: HTMLElement): Promise<void> {
     root.replaceChildren(note);
     return;
   }
-  await screen.render(root);
+  let setup: SetupStatus;
+  try { setup = await getJson<SetupStatus>("/api/setup"); }
+  catch { setup = { state: "unavailable", reason: "Office could not check your Library.", fix: "Run office init in your workspace." }; }
+  if (generation !== screenGeneration) return;
+  if (setup.state === "ready") { await screen.render(root); return; }
+  if (screen.id !== "today") {
+    const section = document.createElement("section");
+    const heading = document.createElement("h1");
+    heading.textContent = setup.state === "missing" ? "Your Library isn’t set up yet" : "Your Library is unavailable";
+    const link = document.createElement("a");
+    link.href = "#today";
+    link.textContent = "Go to Today";
+    section.append(heading, link);
+    root.replaceChildren(section);
+    return;
+  }
+  const view = document.createElement("div");
+  view.className = "today";
+  const heading = document.createElement("h1");
+  heading.textContent = "Today";
+  const content = document.createElement("div");
+  content.className = "card-content";
+  const description = document.createElement("p");
+  description.textContent = "Create your Library’s folders, configuration, templates and index.";
+  content.append(description);
+  const message = document.createElement("p");
+  message.setAttribute("role", "status");
+  if (setup.reason) message.textContent = `${setup.reason} ${setup.fix ?? ""}`;
+  content.append(message);
+  let button: HTMLButtonElement | undefined;
+  if (setup.state === "missing") {
+    button = document.createElement("button");
+    button.className = "primary-action";
+    button.type = "button";
+    button.textContent = "Set up";
+    button.addEventListener("click", () => {
+      if (button === undefined || button.disabled) return;
+      button.disabled = true;
+      message.textContent = "Setting up your Library…";
+      void postJson<SetupResult | SetupStatus>("/api/setup", {}).then((result) => {
+        if (generation !== screenGeneration) return;
+        if ("already_initialized" in result) {
+          requestRailRefresh();
+          void drawScreen(root);
+        } else {
+          message.textContent = `${result.reason ?? "Setup could not finish."} ${result.fix ?? "Run office init in your workspace."}`;
+          if (button !== undefined && result.state !== "plugin_disabled" && result.state !== "workspace_unregistered") button.disabled = false;
+          else button?.remove();
+        }
+      }).catch(() => {
+        if (generation !== screenGeneration) return;
+        message.textContent = "Setup could not finish. Run office init in your workspace, then try again.";
+        if (button !== undefined) button.disabled = false;
+      });
+    });
+  }
+  view.append(heading, card("Set up your Library", content, button, { label: "Get started", tone: "attention" }));
+  root.replaceChildren(view);
 }
 
 const nav = document.getElementById("nav");

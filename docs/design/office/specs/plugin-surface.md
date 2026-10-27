@@ -54,7 +54,7 @@ Source: spec §12. The one-call envelope is
 Rules:
 
 - `mcp_scope: none` tools are callable only by the app, through
-  `orbit tool run`, and by the install script for `office.init`. The
+  `orbit tool run`, and by the install script and the app acting as the user for `office.init`. The
   orchestrator cannot scaffold the Library, approve its own proposals,
   write knowledge, promote artifacts, record selections, change source sensitivity or settings,
   write digests, run scripts or reindex
