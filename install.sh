@@ -796,7 +796,35 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { spawnSync } = require("node:child_process");
-const help = `Usage: office init [path] [--yes]
+const help = `Usage: office <command> [path] [options]
+
+Commands:
+  init [path] [--yes]   Create or repair an office workspace and its Library
+  open [path]           Open the app for a workspace in the default browser,
+                        starting its installed app service first if stopped
+  status [path] [--json]
+                        Report workspace, plugin, Library, secret, private
+                        route, app service and agent CLI health
+
+Default path: ~/orbit (or ORBIT_OFFICE_HOME; for open/status, the workspace
+the installed app service is bound to when known). Plugins must already be
+installed for init.
+
+Options:
+  --yes       (init) Enable plugins without the consent question
+  --json      (status) Print one JSON object instead of plain words
+  -h, --help  Show this help (or one command's help, e.g. office status --help)
+
+Exit codes: 0 success, 1 setup/health/tool failure, 2 usage error.
+
+Examples:
+  office init
+  office init ~/another-office --yes
+  office open
+  office status
+  office status ~/another-office --json
+`;
+const initHelp = `Usage: office init [path] [--yes]
 
 Create or repair an office workspace and its Library.
 Default path: ~/orbit (or ORBIT_OFFICE_HOME). Plugins must already be installed.
@@ -813,6 +841,29 @@ Examples:
   office init
   office init ~/another-office --yes
 `;
+const openHelp = `Usage: office open [path]
+
+Open the app for a workspace in the default browser. Starts the installed
+app service first when it is stopped. Without a service, exits 1 naming
+install.sh. Default path: the installed workspace (see office --help).
+
+Options:
+  -h, --help  Show this help
+
+Exit codes: 0 opened, 1 no service/mismatch/start or browser failure, 2 usage.
+`;
+const statusHelp = `Usage: office status [path] [--json]
+
+Report workspace registration, office/gateway enablement, Library health
+(from office.status), Meta API key presence, the private route, the app
+service and its URL, and agent CLI registration. Changes nothing.
+
+Options:
+  --json      Print one JSON object with the same facts
+  -h, --help  Show this help
+
+Exit codes: 0 healthy, 1 something needed is missing, 2 usage error.
+`;
 const say = (message) => process.stderr.write(message + "\n");
 function fail(message, code = 1) {
   say("error: " + message);
@@ -823,13 +874,16 @@ if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
   process.stdout.write(help);
   process.exit(0);
 }
-if (args.shift() !== "init") fail("expected 'office init [path] [--yes]'; use --help", 2);
+const command = args.shift();
+if (!["init", "open", "status"].includes(command)) fail("expected 'office init', 'office open' or 'office status'; use --help", 2);
 let yes = false;
+let jsonOutput = false;
 let target;
 for (const arg of args) {
-  if (arg === "--yes") yes = true;
+  if (command === "init" && arg === "--yes") yes = true;
+  else if (command === "status" && arg === "--json") jsonOutput = true;
   else if (["--help", "-h"].includes(arg)) {
-    process.stdout.write(help);
+    process.stdout.write(command === "init" ? initHelp : command === "open" ? openHelp : statusHelp);
     process.exit(0);
   } else if (arg.startsWith("-")) fail("unknown option: " + arg + "; use --help", 2);
   else if (target !== undefined) fail("expected one workspace path; use --help", 2);
@@ -910,6 +964,213 @@ function writeAtomic(file, content) {
     const parent = fs.openSync(path.dirname(file), "r");
     try { fs.fsyncSync(parent); } finally { fs.closeSync(parent); }
   } finally { if (exists(temp)) fs.unlinkSync(temp); }
+}
+function isMacos() {
+  return ["macos", "macOS", "Darwin", "darwin"].includes(process.env.ORBIT_OFFICE_OS || "") || (!process.env.ORBIT_OFFICE_OS && process.platform === "darwin");
+}
+function dataDir() {
+  return path.resolve(process.env.ORBIT_OFFICE_DATA_DIR || (isMacos() ? path.join(process.env.HOME, "Library/Application Support/orbit-office") : path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME, ".local/share"), "orbit-office")));
+}
+function readInstallState() {
+  try { return fs.readFileSync(path.join(dataDir(), "install-state"), "utf8").split("\n"); }
+  catch (_) { return []; }
+}
+function runOptional(commandName, argv, cwd) {
+  return spawnSync(commandName, argv, {
+    cwd, encoding: "utf8", timeout: 300000, maxBuffer: 8 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, PATH: path.join(process.env.HOME, ".local/share/orbit-office/tools/bin") + path.delimiter + (process.env.PATH || "") },
+  });
+}
+function xmlUnescape(value) {
+  return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+}
+function serviceInfo() {
+  const macos = isMacos();
+  const file = macos ? path.join(process.env.HOME, "Library/LaunchAgents/com.orbit-office.app.plist") : path.join(process.env.HOME, ".config/systemd/user/orbit-office.service");
+  const installed = Boolean(exists(file) && exists(file).isFile());
+  let port = Number(process.env.ORBIT_OFFICE_PORT || 4317) || 4317;
+  let bound = null;
+  if (installed) {
+    let text = "";
+    try { text = fs.readFileSync(file, "utf8"); } catch (_) {}
+    if (macos) {
+      const pm = /<key>PORT<\/key>\s*<string>([^<]+)<\/string>/.exec(text);
+      if (pm && Number(pm[1])) port = Number(pm[1]);
+      const wm = /<key>ORBIT_OFFICE_WORKSPACE<\/key>\s*<string>([^<]*)<\/string>/.exec(text);
+      if (wm) bound = xmlUnescape(wm[1]);
+    } else {
+      const pm = /Environment="?PORT=([0-9]+)"?/.exec(text);
+      if (pm) port = Number(pm[1]);
+      const wm = /Environment="?ORBIT_OFFICE_WORKSPACE=([^"\n]+)"?/.exec(text);
+      if (wm) bound = wm[1].replace(/\\"/g, '"').replace(/%%/g, "%").replace(/\\\\/g, "\\");
+    }
+  }
+  let running = false;
+  if (installed) {
+    const result = macos ? runOptional("launchctl", ["list", "com.orbit-office.app"], process.env.HOME) : runOptional("systemctl", ["--user", "is-active", "orbit-office.service"], process.env.HOME);
+    running = !result.error && result.status === 0;
+  }
+  return { installed, running, file, macos, port, boundWorkspace: bound ? resolvePhysical(bound) : null, url: "http://localhost:" + port + "/" };
+}
+function defaultWorkspace() {
+  if (target) return path.resolve(target);
+  if (process.env.ORBIT_OFFICE_HOME) return path.resolve(process.env.ORBIT_OFFICE_HOME);
+  const svc = serviceInfo();
+  if (svc.boundWorkspace) return svc.boundWorkspace;
+  const recorded = readInstallState().filter((line) => line.startsWith("workspace_path=")).map((line) => line.slice("workspace_path=".length)).filter(Boolean);
+  if (recorded.length) return path.resolve(recorded[recorded.length - 1]);
+  return path.join(process.env.HOME, "orbit");
+}
+function resolveWorkspace() {
+  if (target === "") fail("workspace path must not be empty", 2);
+  return resolvePhysical(defaultWorkspace());
+}
+function startService(svc) {
+  const result = svc.macos ? runOptional("launchctl", ["load", svc.file], process.env.HOME) : runOptional("systemctl", ["--user", "start", "orbit-office.service"], process.env.HOME);
+  return !result.error && result.status === 0;
+}
+function agentCliRegistered() {
+  const mentions = (value) => typeof value === "string" && value.toLowerCase().includes("orbit");
+  const checkJson = (file) => {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      const servers = parsed && typeof parsed === "object" ? parsed.mcpServers : null;
+      if (!servers || typeof servers !== "object") return false;
+      return Object.entries(servers).some(([name, entry]) => mentions(name) || mentions(entry && entry.command) || (Array.isArray(entry && entry.args) && entry.args.some(mentions)) || mentions(entry && entry.url));
+    } catch (_) { return false; }
+  };
+  const claudeDir = process.env.CLAUDE_CONFIG_DIR || process.env.HOME;
+  if (checkJson(path.join(claudeDir, ".claude.json"))) return true;
+  if (checkJson(path.join(process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, "settings.json") : path.join(process.env.HOME, ".claude", "settings.json")))) return true;
+  const museDir = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME, ".config");
+  if (checkJson(path.join(museDir, "muse", "settings.json"))) return true;
+  try {
+    const toml = fs.readFileSync(path.join(process.env.CODEX_HOME || path.join(process.env.HOME, ".codex"), "config.toml"), "utf8");
+    if (/\[mcp_servers[.\]]/i.test(toml) && toml.toLowerCase().includes("orbit")) return true;
+  } catch (_) {}
+  return false;
+}
+function collectStatus(workspace) {
+  const problems = [];
+  const add = (check, problem, fix) => problems.push({ check, problem, fix });
+  const cwd = exists(workspace) ? workspace : process.env.HOME;
+  let registered = false;
+  const wsResult = runOptional("orbit", ["workspace", "list", "--json"], cwd);
+  if (!wsResult.error && wsResult.status === 0) {
+    try {
+      const rows = JSON.parse(wsResult.stdout);
+      registered = Array.isArray(rows) && rows.some((row) => row && typeof row.repo_root === "string" && resolvePhysical(row.repo_root) === workspace && row.status === "active");
+    } catch (_) {}
+  }
+  if (!registered) add("workspace", "workspace is not registered: " + workspace, "office init " + workspace);
+  const enabled = { office: false, gateway: false };
+  const pluginResult = runOptional("orbit", ["plugin", "list", "--json", "--workspace", workspace], cwd);
+  if (!pluginResult.error && pluginResult.status === 0) {
+    try {
+      const rows = JSON.parse(pluginResult.stdout);
+      if (Array.isArray(rows)) for (const name of ["office", "gateway"]) {
+        const row = rows.find((plugin) => plugin && plugin.name === name);
+        enabled[name] = Boolean(row && row.host_enabled === true && row.workspace_toggle === true);
+      }
+    } catch (_) {}
+  }
+  for (const name of ["office", "gateway"]) if (!enabled[name]) add("plugin_" + name, "plugin '" + name + "' is not enabled in this workspace", "office init " + workspace);
+  let tool = null;
+  const toolResult = runOptional("orbit", ["tool", "run", "office.status", "--json", "--input", "{}", "--workspace", workspace], cwd);
+  if (!toolResult.error && toolResult.status === 0) {
+    const parsed = parseLoose(toolResult.stdout);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.library) tool = parsed;
+  }
+  const library = tool && tool.library ? {
+    initialized: tool.library.initialized === true,
+    documents: typeof tool.library.documents === "number" ? tool.library.documents : 0,
+    ...(tool.library.documents_by_kind ? { documents_by_kind: tool.library.documents_by_kind } : {}),
+    ...(tool.library.pages_off_template !== undefined ? { pages_off_template: tool.library.pages_off_template } : {}),
+    ...(tool.library.template_invalid !== undefined ? { template_invalid: tool.library.template_invalid } : {}),
+  } : { initialized: false, documents: 0 };
+  if (!library.initialized) add("library", "Library is not initialized (not scaffolded)", "office init " + workspace);
+  let meta = tool && tool.secrets && typeof tool.secrets.meta_api_key === "string" ? tool.secrets.meta_api_key : null;
+  if (meta !== "set" && meta !== "unset") {
+    meta = "unset";
+    const secretResult = runOptional("orbit", ["plugin", "secret", "list", "office"], cwd);
+    if (!secretResult.error && secretResult.status === 0) {
+      for (const line of String(secretResult.stdout || "").split("\n")) {
+        const parts = line.trim().split(/\s+/);
+        if (parts[0] === "meta_api_key" && parts.includes("set") && !parts.includes("unset")) meta = "set";
+      }
+    }
+  } else if (meta !== "set") {
+    const secretResult = runOptional("orbit", ["plugin", "secret", "list", "office"], cwd);
+    if (!secretResult.error && secretResult.status === 0) {
+      for (const line of String(secretResult.stdout || "").split("\n")) {
+        const parts = line.trim().split(/\s+/);
+        if (parts[0] === "meta_api_key" && parts.includes("set") && !parts.includes("unset")) meta = "set";
+      }
+    }
+  }
+  if (meta !== "set") add("meta_api_key", "Meta API key is not set", "orbit plugin secret set office meta_api_key");
+  const privateRoute = tool && tool.open_weights !== undefined ? tool.open_weights : null;
+  const svc = serviceInfo();
+  if (!svc.installed) add("app_service", "app service is not installed", "install.sh");
+  else if (!svc.running) add("app_service", "app service is not running", "office open " + workspace);
+  const agentRegistered = agentCliRegistered();
+  if (!agentRegistered) add("agent_cli", "agent CLI registration is missing (no Orbit MCP entry)", "install.sh");
+  return {
+    workspace, workspace_registered: registered,
+    plugins: { office: enabled.office, gateway: enabled.gateway },
+    library, secrets: { meta_api_key: meta }, meta_api_key: meta,
+    private_route: privateRoute,
+    app_service: { installed: svc.installed, running: svc.running, url: svc.url, port: svc.port, workspace: svc.boundWorkspace },
+    app: { installed: svc.installed, running: svc.running, url: svc.url },
+    agent_cli: { registered: agentRegistered },
+    ok: problems.length === 0, problems,
+  };
+}
+function statusMain() {
+  if (!process.env.HOME) fail("HOME is not set");
+  const workspace = resolveWorkspace();
+  const report = collectStatus(workspace);
+  if (jsonOutput) {
+    process.stdout.write(JSON.stringify(report) + "\n");
+  } else {
+    const lines = [];
+    lines.push("Workspace: " + report.workspace + " — " + (report.workspace_registered ? "registered" : "not registered"));
+    lines.push("Plugins: office " + (report.plugins.office ? "enabled" : "not enabled") + "; gateway " + (report.plugins.gateway ? "enabled" : "not enabled"));
+    lines.push("Library: " + (report.library.initialized ? "initialized (" + report.library.documents + " documents)" : "not initialized"));
+    lines.push("Meta API key: " + report.meta_api_key);
+    if (report.private_route && typeof report.private_route === "object") {
+      lines.push("Private route: configured (" + (report.private_route.endpoint || "") + (report.private_route.model ? ", model " + report.private_route.model : "") + ")");
+    } else lines.push("Private route: not configured (optional)");
+    if (!report.app_service.installed) lines.push("App service: not installed");
+    else if (report.app_service.running) lines.push("App service: running at " + report.app_service.url);
+    else lines.push("App service: stopped (installed; not running) — " + report.app_service.url);
+    lines.push("Agent CLI: " + (report.agent_cli.registered ? "registered" : "not registered"));
+    if (report.ok) lines.push("Status: OK");
+    else {
+      lines.push("Problems:");
+      for (const problem of report.problems) lines.push("- " + problem.problem + " — fix: " + problem.fix);
+    }
+    process.stdout.write(lines.join("\n") + "\n");
+  }
+  process.exit(report.ok ? 0 : 1);
+}
+function openMain() {
+  if (!process.env.HOME) fail("HOME is not set");
+  if (target === "") fail("workspace path must not be empty", 2);
+  const workspace = resolveWorkspace();
+  let svc = serviceInfo();
+  if (!svc.installed) fail("app service is not installed; run install.sh to install it");
+  if (svc.boundWorkspace && svc.boundWorkspace !== workspace) fail("app service serves " + svc.boundWorkspace + " not " + workspace + "; run install.sh --home " + workspace + " to install the service for this workspace");
+  if (!svc.running) {
+    startService(svc);
+    svc = serviceInfo();
+    if (!svc.running) fail("app service did not start; fix the login service and re-run, or run install.sh");
+  }
+  const browser = process.env.ORBIT_OFFICE_BROWSER || (svc.macos ? "open" : "xdg-open");
+  const result = spawnSync(browser, [svc.url], { stdio: "ignore", env: process.env });
+  if (result.error || result.status !== 0) fail("could not open " + svc.url + " with " + browser + (result.error ? ": " + result.error.message : " (exit: " + result.status + ")"));
+  say("app: " + svc.url);
 }
 function main() {
   const requested = path.resolve(target || process.env.ORBIT_OFFICE_HOME || path.join(process.env.HOME, "orbit"));
@@ -1016,7 +1277,7 @@ function main() {
   mark("scaffolded");
   say("scaffold: already initialized or repaired (office.init, " + workspace + "/library)");
 }
-try { main(); } catch (error) { fail(error.message); }
+try { if (command === "open") openMain(); else if (command === "status") statusMain(); else main(); } catch (error) { fail(error.message); }
 OFFICE_LAUNCHER
     if [ -e "$LAUNCHER" ] || [ -L "$LAUNCHER" ]; then
         [ -f "$LAUNCHER" ] && [ ! -L "$LAUNCHER" ] \
