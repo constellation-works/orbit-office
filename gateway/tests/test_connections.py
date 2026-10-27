@@ -109,7 +109,17 @@ class Put(GatewayCase):
         self.assertEqual(schema_errors(plain, schema), [])
 
     def test_an_idempotency_header_cannot_carry_auth_or_an_agent_header(self) -> None:
-        for header in ("Authorization", "Cookie", "Content-Type", "If-Match", "Accept", "Host", "bad header"):
+        for header in (
+            "Authorization",
+            "Cookie",
+            "Content-Type",
+            "If-Match",
+            "Accept",
+            "Host",
+            "User-Agent",
+            "user-agent",
+            "bad header",
+        ):
             with self.subTest(header=header):
                 self.refused("invalid_connection", "connection-put", put_input(idempotency_header=header))
         keyed = {"name": "keyed", "base_url": "https://api.acme.example/", "auth": {"scheme": "header", "header": "X-Api-Key"}}
