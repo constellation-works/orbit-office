@@ -18,7 +18,7 @@ use crate::driver::sqlite::connection::IndexStore;
 use crate::{Error, Result};
 
 /// A Library and its index. Construction may create layout/index directories;
-/// read methods never create state or acquire the writer lock.
+/// read methods never create state or wait for the writer lock.
 pub struct LibraryStore {
     files: LibraryFs,
     index: IndexStore,
@@ -284,6 +284,7 @@ impl LibraryStore {
             .journal_path()
             .try_exists()
             .map_err(|e| Error::io("inspect write journal", self.journal_path(), e))?
+            && WriterLock::journal_is_abandoned(&self.state, &self.journal_path())?
         {
             return Err(Error::PendingWrite {
                 root: self.library_root().into(),
@@ -405,32 +406,32 @@ impl LibraryStore {
         Ok(record)
     }
 
-    /// Read a current document from disk, without the writer lock.
+    /// Read a current document from disk, without waiting for the writer lock.
     pub fn read_document(&self, relative: &Path) -> Result<DocumentRecord> {
         self.read_ready()?;
         self.files.validate_document_path(relative)?;
         self.files.read_document(relative)
     }
 
-    /// One indexed document by id, if present. Does not take the writer lock.
+    /// One indexed document by id, if present. Does not wait for the writer lock.
     pub fn get(&self, id: &str) -> Result<Option<DocumentRecord>> {
         self.read_ready()?;
         self.index.get(id)
     }
 
-    /// Number of indexed documents. Does not take the writer lock.
+    /// Number of indexed documents. Does not wait for the writer lock.
     pub fn document_count(&self) -> Result<u32> {
         self.read_ready()?;
         self.index.count()
     }
 
-    /// Full-text search; filters apply before the limit. No writer lock.
+    /// Full-text search; filters apply before the limit. No writer-lock wait.
     pub fn search(&self, query: &str, filter: &SearchFilter) -> Result<Vec<SearchHit>> {
         self.read_ready()?;
         self.index.search(query, filter)
     }
 
-    /// Newest-first commits touching this document. No writer lock.
+    /// Newest-first commits touching this document. No writer-lock wait.
     pub fn history(&self, relative: &Path) -> Result<Vec<Revision>> {
         self.read_ready()?;
         self.files.validate_document_path(relative)?;

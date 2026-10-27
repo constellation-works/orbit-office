@@ -172,8 +172,12 @@ process.
   commit (and around reindex/recovery). Acquisition uses the bounded `File::try_lock`
   form of the standard-library file lock, with a five-second deadline and a diagnostic
   holder record. Lock order is writer file lock, then the short-lived index mutex.
-  Reads take no writer lock. A pending write journal refuses reads until recovery
-  completes; see [store.md](docs/design/office/specs/store.md).
-- The app server's Orbit client caps concurrent `orbit` subprocesses at four by default
+  Reads never wait for the writer file lock or acquire it exclusively. If a write journal
+  exists, a nonblocking shared probe of the existing lock distinguishes a live writer
+  from an abandoned journal without creating lock/holder state. Reads during a live
+  write may observe old or new files, index records and committed history, with no
+  snapshot across them. A journal remaining under an idle probe (or with no lock file)
+  refuses reads until recovery; see [store.md](docs/design/office/specs/store.md).
+  The app server's Orbit client caps concurrent `orbit` subprocesses at four by default
   (configurable), queues calls FIFO, times out every call, and shares one in-flight poll
   between browser tabs. Its dispatch pass is single-flight.

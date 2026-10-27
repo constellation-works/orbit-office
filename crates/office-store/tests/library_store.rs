@@ -262,6 +262,148 @@ fn port_reads_and_search_succeed_while_writer_lock_is_held() {
 }
 
 #[test]
+#[cfg(unix)]
+fn reads_succeed_during_a_journaled_write() {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    use std::time::{Duration, Instant};
+
+    // The explicit test-only subprocess isolates PATH from every other test.
+    // The git shim uses this same fixture as a bounded commit barrier, never
+    // a production self-reexec path. EOF releases it even if the reader panics.
+    if let Some(marker) = std::env::var_os("OFFICE_TEST_COMMIT_BARRIER") {
+        let address = std::fs::read_to_string(marker).expect("barrier address");
+        let mut stream = TcpStream::connect(address).expect("connect commit barrier");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .expect("barrier deadline");
+        let mut release = [0];
+        stream.read_exact(&mut release).expect("release commit");
+        return;
+    }
+    let Some(root) = std::env::var_os("OFFICE_TEST_LIVE_WRITE_ROOT") else {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let bin = dir.path().join("bin");
+        std::fs::create_dir(&bin).expect("shim directory");
+        let inherited_path = std::env::var_os("PATH").unwrap_or_default();
+        let real_git = std::env::split_paths(&inherited_path)
+            .map(|path| path.join("git"))
+            .find(|path| path.is_file())
+            .expect("git on PATH")
+            .canonicalize()
+            .expect("resolve git");
+        symlink(real_git, bin.join("git.real")).expect("real git");
+        let shim = bin.join("git");
+        std::fs::write(
+            &shim,
+            "#!/bin/sh\n\
+             for arg in \"$@\"; do\n\
+               if [ \"$arg\" = commit ] && [ -f \"$HOME/commit-barrier\" ]; then\n\
+                 OFFICE_TEST_COMMIT_BARRIER=\"$HOME/commit-barrier\" \"$HOME/test-harness\" --exact reads_succeed_during_a_journaled_write --nocapture || exit $?\n\
+               fi\n\
+             done\n\
+             exec \"${0%/*}/git.real\" \"$@\"\n",
+        )
+        .expect("git shim");
+        std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o700))
+            .expect("executable shim");
+        let path = std::env::join_paths(
+            std::iter::once(bin).chain(std::env::split_paths(&inherited_path)),
+        )
+        .expect("isolated PATH");
+        let mut command =
+            std::process::Command::new(std::env::current_exe().expect("test fixture"));
+        command
+            .args(["--exact", "reads_succeed_during_a_journaled_write"])
+            .current_dir(dir.path())
+            .env_clear()
+            .env("PATH", path)
+            .env("HOME", dir.path())
+            .env("OFFICE_TEST_LIVE_WRITE_ROOT", dir.path());
+        let (status, output) =
+            office_common::process::run(&mut command, dir.path()).expect("isolated fixture");
+        assert!(
+            status.success(),
+            "live-write fixture exited {status}: {output}"
+        );
+        return;
+    };
+    let root = Path::new(&root);
+    let library = root.join("library");
+    let state = root.join("state");
+    initialize(&library);
+    let store = LibraryStore::open(&library, &state).expect("store");
+    let path = Path::new("knowledge/domain/dom-acme.md");
+    store.write_document(path, DOMAIN).expect("initial write");
+    let previous_history = store.history(path).expect("initial history");
+    let updated = DOMAIN.replace("title: Acme renewal", "title: Acme renewal updated");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("commit barrier");
+    listener.set_nonblocking(true).expect("nonblocking accept");
+    symlink(
+        std::env::current_exe().expect("test fixture"),
+        state.join("test-harness"),
+    )
+    .expect("barrier fixture");
+    std::fs::write(
+        state.join("commit-barrier"),
+        listener.local_addr().expect("barrier address").to_string(),
+    )
+    .expect("enable commit barrier");
+
+    std::thread::scope(|scope| {
+        let writer = scope.spawn(|| store.write_document(path, &updated));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut barrier = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(!writer.is_finished(), "writer exited before commit barrier");
+                    assert!(
+                        Instant::now() < deadline,
+                        "writer did not reach commit barrier"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept commit barrier: {error}"),
+            }
+        };
+        assert!(state.join("library.pending-write.json").exists());
+        let document = store.read_document(path);
+        let indexed = store.get("dom-acme-renewal");
+        let hits = store.search("renewal", &SearchFilter::default());
+        let history = store.history(path);
+        let settings = store.settings();
+        let count = store.document_count();
+        let hash = store.file_sha256(path);
+        let health = store.health();
+        let still_in_flight =
+            !writer.is_finished() && state.join("library.pending-write.json").exists();
+        barrier.write_all(&[1]).expect("release commit");
+        drop(barrier);
+        let written = writer.join().expect("writer").expect("completed write");
+
+        assert!(
+            still_in_flight,
+            "reads must complete before the writer is released"
+        );
+        assert_eq!(document.expect("read during write"), written);
+        assert_eq!(indexed.expect("get during write"), Some(written.clone()));
+        let hits = hits.expect("search during write");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].title, "Acme renewal updated");
+        assert_eq!(history.expect("history during write"), previous_history);
+        settings.expect("settings during write");
+        assert_eq!(count.expect("count during write"), 1);
+        assert_eq!(hash.expect("hash during write").len(), 64);
+        assert_eq!(health.expect("health during write").documents_total, 1);
+        assert_eq!(store.read_document(path).expect("completed read"), written);
+        assert_eq!(store.history(path).expect("completed history").len(), 2);
+        assert!(!state.join("library.pending-write.json").exists());
+    });
+}
+
+#[test]
 fn readiness_refuses_uninitialized_and_validates_settings_on_every_read() {
     let dir = tempfile::tempdir().expect("tempdir");
     let library = dir.path().join("library");
@@ -337,10 +479,30 @@ fn interrupted_write_replays_and_committed_replay_does_not_duplicate_commit() {
         journal.to_string(),
     )
     .expect("interrupted decision");
-    assert_eq!(
-        store.read_document(Path::new(path)).unwrap_err().code(),
-        "library_write_pending"
-    );
+    let assert_pending_reads = || {
+        for error in [
+            store.read_document(Path::new(path)).unwrap_err(),
+            store.get("dom-acme-renewal").unwrap_err(),
+            store
+                .search("renewal", &SearchFilter::default())
+                .unwrap_err(),
+            store.history(Path::new(path)).unwrap_err(),
+            store.settings().unwrap_err(),
+            store.document_count().unwrap_err(),
+            store.file_sha256(Path::new(path)).unwrap_err(),
+            store.health().unwrap_err(),
+        ] {
+            assert_eq!(error.code(), "library_write_pending");
+        }
+        assert_eq!(
+            std::fs::read_to_string(state.join("library.pending-write.json"))
+                .expect("kept journal"),
+            journal.to_string()
+        );
+    };
+    assert!(!state.join("library.writer.lock").exists());
+    assert_pending_reads();
+    assert!(!state.join("library.writer.lock").exists());
     let recovered = LibraryStore::open(&library, &state).expect("recover before exposure");
     let doc = recovered
         .read_document(Path::new(path))
@@ -353,6 +515,9 @@ fn interrupted_write_replays_and_committed_replay_does_not_duplicate_commit() {
         journal.to_string(),
     )
     .expect("post-commit decision");
+    // A stale holder record and an existing, unlocked file are not a live writer.
+    assert!(state.join("library.writer.lock").exists());
+    assert_pending_reads();
     LibraryStore::open(&library, &state).expect("idempotent recovery");
     assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "1");
     assert!(!state.join("library.pending-write.json").exists());

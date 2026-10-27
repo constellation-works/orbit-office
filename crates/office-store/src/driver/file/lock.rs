@@ -15,6 +15,32 @@ pub(crate) struct WriterLock {
 }
 
 impl WriterLock {
+    /// Classify a journal without waiting or creating lock/holder state.
+    /// An idle probe holds a shared lock through the journal recheck, so a
+    /// completed write is not confused with a new writer's journal.
+    pub(crate) fn journal_is_abandoned(state: &Path, journal: &Path) -> Result<bool> {
+        let path = state.join("library.writer.lock");
+        let probe = match File::open(&path) {
+            Ok(file) => Some(file),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(Error::io("open writer lock for read probe", &path, e)),
+        };
+        if let Some(file) = &probe {
+            match file.try_lock_shared() {
+                Ok(()) => {}
+                Err(TryLockError::WouldBlock) => return Ok(false),
+                Err(TryLockError::Error(e)) => {
+                    return Err(Error::io("probe writer lock", &path, e));
+                }
+            }
+        }
+        // Keep the shared probe alive until after this check. Missing lock
+        // state cannot protect a journal; only a real kernel lock marks it live.
+        journal
+            .try_exists()
+            .map_err(|e| Error::io("inspect write journal", journal, e))
+    }
+
     pub(crate) fn acquire(state: &Path) -> Result<Self> {
         let path = state.join("library.writer.lock");
         let mut options = OpenOptions::new();
