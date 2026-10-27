@@ -127,6 +127,10 @@ impl Error {
     pub fn retryable(&self) -> bool {
         match self {
             Self::Model { retryable, .. } => *retryable,
+            Self::TemplateInvalid { .. } => false,
+            Self::PageIdMismatch { .. } => false,
+            Self::TemplateTypeMismatch { .. } => false,
+            Self::MissingSection { .. } => false,
             Self::LibraryUnavailable => false,
             Self::Library { .. } => false,
             Self::InvalidSetting { .. } => false,
