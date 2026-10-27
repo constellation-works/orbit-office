@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.artifact-list request",
+  "description": "List artifact summaries newest first. Every filter narrows the inventory before the limit.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["report", "doc", "draft", "script", "data", "review", "other"],
+      "description": "Only artifacts of this kind."
+    },
+    "series": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Only artifacts in this series (exact match, for example acme-renewal-research)."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Most artifacts to return (default 20). The response total counts every match and truncated says whether more exist."
+    }
+  },
+  "additionalProperties": false
+}

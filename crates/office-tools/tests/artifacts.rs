@@ -1,7 +1,7 @@
 //! Artifact tools through their public dispatch boundary and fake ports.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use office_core::ports::Ports;
+use office_core::ports::{Library, Ports};
 use office_testkit::{
     envelope,
     fakes::{FakeClock, FakeLibrary, FakeModels, FakeOrbit},
@@ -264,6 +264,172 @@ fn refusals_never_publish_partial_outputs_or_accept_caller_approval_provenance()
     );
     assert_eq!(response["error"]["code"], "orbit_unavailable");
     assert!(ports.library.artifact_documents().unwrap().is_empty());
+}
+
+fn list_ports(library: FakeLibrary) -> Ports<'static> {
+    Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
+        library: Box::new(library),
+        models: Box::new(FakeModels::new()),
+        orbit: Box::new(FakeOrbit::default()),
+        clock: Box::new(FakeClock(std::time::SystemTime::UNIX_EPOCH)),
+        selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+    }
+}
+
+fn seed_list_fixtures(library: &FakeLibrary) {
+    for (id, kind, series, title, approved, sensitivity) in [
+        (
+            "art-20261001-alpha-report",
+            "report",
+            "alpha",
+            "Alpha report",
+            "2026-10-01T10:00:00Z",
+            "normal",
+        ),
+        (
+            "art-20261003-beta-report",
+            "report",
+            "beta",
+            "Beta report",
+            "2026-10-03T10:00:00Z",
+            "private",
+        ),
+        (
+            "art-20261002-alpha-data",
+            "data",
+            "alpha",
+            "Alpha data",
+            "2026-10-02T10:00:00Z",
+            "normal",
+        ),
+    ] {
+        let path = format!("artifacts/{}/{}/{}/artifact.md", &id[4..8], &id[8..10], id);
+        library
+            .write_document(
+                std::path::Path::new(&path),
+                &format!("---\nid: {id}\nkind: {kind}\ntitle: {title}\nsummary: Fixture\nfiles: [report.md]\ntask: fixture-task\nproduced_by: {{ crew: fixture-crew, at: \"2026-09-01T00:00:00Z\" }}\napproved: {{ by: user, at: \"{approved}\", edited: false }}\ncites: []\nseries: {series}\nversion: 1\nsensitivity: {sensitivity}\ntags: []\n---\n"),
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn artifact_list_filters_sorts_newest_first_and_bounds_with_total_and_truncated() {
+    let empty = call(
+        &list_ports(FakeLibrary::initialized()),
+        "office.artifact-list",
+        json!({}),
+    );
+    assert_eq!(
+        empty["output"],
+        json!({"artifacts":[],"total":0,"truncated":false}),
+        "{empty}"
+    );
+    let library = FakeLibrary::initialized();
+    seed_list_fixtures(&library);
+    let ports = list_ports(library);
+    let all = call(&ports, "office.artifact-list", json!({}));
+    assert_eq!(all["ok"], true, "{all}");
+    let ids: Vec<_> = all["output"]["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "art-20261003-beta-report",
+            "art-20261002-alpha-data",
+            "art-20261001-alpha-report"
+        ]
+    );
+    assert_eq!(all["output"]["total"], 3);
+    assert_eq!(all["output"]["truncated"], false);
+    assert_eq!(
+        all["output"]["artifacts"][0],
+        json!({"id":"art-20261003-beta-report","kind":"report","series":"beta","title":"Beta report","approved_at":"2026-10-03T10:00:00Z","sensitivity":"private"})
+    );
+    let by_kind = call(&ports, "office.artifact-list", json!({"kind":"report"}));
+    let ids: Vec<_> = by_kind["output"]["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        ["art-20261003-beta-report", "art-20261001-alpha-report"]
+    );
+    assert_eq!(by_kind["output"]["total"], 2);
+    let by_series = call(&ports, "office.artifact-list", json!({"series":"alpha"}));
+    let ids: Vec<_> = by_series["output"]["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        ["art-20261002-alpha-data", "art-20261001-alpha-report"]
+    );
+    assert_eq!(by_series["output"]["total"], 2);
+    let bounded = call(&ports, "office.artifact-list", json!({"limit":2}));
+    assert_eq!(bounded["output"]["artifacts"].as_array().unwrap().len(), 2);
+    assert_eq!(bounded["output"]["total"], 3);
+    assert_eq!(bounded["output"]["truncated"], true);
+    let exact = call(&ports, "office.artifact-list", json!({"limit":3}));
+    assert_eq!(exact["output"]["truncated"], false);
+}
+
+#[test]
+fn artifact_list_refuses_invalid_filters_limits_and_unknown_keys() {
+    let ports = list_ports(FakeLibrary::initialized());
+    for input in [
+        json!({"kind":"bogus"}),
+        json!({"kind":42}),
+        json!({"series":""}),
+        json!({"series":42}),
+        json!({"limit":0}),
+        json!({"limit":101}),
+        json!({"limit":"2"}),
+        json!({"extra":true}),
+    ] {
+        let response = call(&ports, "office.artifact-list", input);
+        assert_eq!(response["error"]["code"], "invalid_argument", "{response}");
+    }
+}
+
+#[test]
+fn artifact_list_conformance_golden_replays_through_public_dispatch() {
+    let library = FakeLibrary::initialized();
+    seed_list_fixtures(&library);
+    let ports = list_ports(library);
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugin/.orbit-plugin/tests/conformance/artifact-list.yaml");
+    let golden = std::fs::read_to_string(path).unwrap();
+    let mut input = None;
+    let mut cases = 0;
+    for line in golden.lines() {
+        if let Some(value) = line.strip_prefix("    input: ") {
+            input = Some(serde_json::from_str::<Value>(value).unwrap());
+        }
+        for (prefix, success) in [("      output: ", true), ("      error: ", false)] {
+            if let Some(value) = line.strip_prefix(prefix) {
+                let expect: Value = serde_json::from_str(value).unwrap();
+                let response = call(&ports, "office.artifact-list", input.take().unwrap());
+                assert_eq!(response["ok"], success, "{response}");
+                if success {
+                    assert_eq!(response["output"], expect);
+                } else {
+                    assert_eq!(response["error"]["code"], expect["code"]);
+                }
+                cases += 1;
+            }
+        }
+    }
+    assert_eq!(cases, 5, "all artifact-list golden cases must run");
 }
 
 #[test]

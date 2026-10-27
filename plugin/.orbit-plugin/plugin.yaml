@@ -162,6 +162,16 @@ spec:
 
     # ---- artifacts ----
 
+    - name: artifact-list
+      description: >-
+        List artifact summaries (id, kind, series, title, approved date,
+        sensitivity), newest first, optionally filtered by kind and
+        series, bounded by limit with total and truncated.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/artifact-list.request.json }
+      output_schema: { $ref: schemas/artifact-list.response.json }
+
     - name: artifact-show
       description: >-
         Read an artifact, its files, its series history and what cites
