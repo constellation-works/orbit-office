@@ -1,17 +1,11 @@
 schemaVersion: 1
 kind: PluginTest
 tests:
-  # Runs on the shared conformance Library (scaffolded by config-set.yaml's
-  # init case in path order after this file only when the harness has
-  # initialized it; the success case is a pasted-text capture).
-  - name: capture_pasted_text_returns_a_source_id
-    tool: capture
-    input: {"kind": "note", "title": "Conformance note", "text": "Conformance pasted text."}
-    expect:
-      output:
-        kind: note
-        title: Conformance note
-        deduplicated: false
+  # Runs after 00-init.yaml has scaffolded the shared conformance Library. The
+  # pasted-text capture is not pinned here: its output carries a source id and
+  # path minted from the runtime clock date, and a golden must match the whole
+  # output exactly. crates/office/tests/library.rs covers capture through the
+  # binary.
   - name: capture_refuses_unknown_input
     tool: capture
     input: {"text": "x", "verbose": true}

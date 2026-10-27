@@ -1,9 +1,9 @@
 schemaVersion: 1
 kind: PluginTest
 tests:
-  # Runs after config-set.yaml and init.yaml in the shared conformance
-  # workspace, so the Library and its bundled templates exist. These writes
-  # add two domain pages; reindex.yaml and status.yaml count them.
+  # Runs after 00-init.yaml in the shared conformance workspace, so the
+  # Library and its bundled templates exist. These writes add two domain
+  # pages; reindex.yaml and status.yaml count them.
   - name: knowledge_show_setup_writes_the_user_page
     tool: knowledge-write
     input:
