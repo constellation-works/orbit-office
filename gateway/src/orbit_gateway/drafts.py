@@ -21,7 +21,10 @@ approved by the user and sent at most once (docs/design/office/specs/gateway.md,
   A reply that does arrive, but whose body is cut off, is `sent` with
   `truncated` true: the write went out once, and the body is not reported
   as complete. The connection's idempotency header, when it names one,
-  carries the draft id. Redirects are returned, never followed.
+  carries the draft id. Redirects are returned, never followed. A
+  successful send then closes the approval task as `done` by the legal
+  lifecycle steps: `done` is accepted only from `review`, and that step
+  carries an execution summary.
 
 With `http.py`, the only module that opens network connections.
 """
@@ -439,7 +442,10 @@ def _send(call: Call, root: Path, record: audit.Record, redactor: Redactor) -> d
 
     # The task must still be open: a dismissed draft is never sent.
     orbit = callbacks.Orbit(call.environ, workspace, redactor)
-    task = orbit.call("orbit.task.show", {"id": task_id, "fields": ["id", "status", "terminal"]})
+    task = orbit.call(
+        "orbit.task.show",
+        {"id": task_id, "fields": ["id", "status", "terminal", "execution_summary"]},
+    )
     if _dismissed(task):
         with _lock(root, draft_id):
             current = _load(root, draft_id)
@@ -529,7 +535,16 @@ def _send(call: Call, root: Path, record: audit.Record, redactor: Redactor) -> d
             "truncated": truncated,
         }
     )
-    output.update(_note_task(orbit, task_id, close=True, note=f"Sent once: {method} {request['url']} answered {status}."))
+    output.update(
+        _note_task(
+            orbit,
+            task_id,
+            close=True,
+            note=f"Sent once: {method} {request['url']} answered {status}.",
+            status=task.get("status"),
+            has_summary=_has_summary(task),
+        )
+    )
     return output
 
 
@@ -550,17 +565,72 @@ def _output(document: dict[str, Any], connection: Connection, outcome: str, stat
     }
 
 
-def _note_task(orbit: callbacks.Orbit, task_id: str, close: bool, note: str) -> dict[str, Any]:
-    """Close the task (or comment on it). The send has happened either way, so
-    a failed callback is reported in the result, never raised."""
-    payload: dict[str, Any] = {"id": task_id, "comment": note}
-    if close:
-        payload.update({"status": "done", "note": note})
+# `done` is reachable only from `review`, and moving to `in-progress` from
+# anywhere but `backlog` needs a plan. The other open statuses therefore go
+# through `backlog` first. An empty tuple means the task is already `done`.
+_CLOSE_FROM: dict[str, tuple[str, ...]] = {
+    "review": ("done",),
+    "in-progress": ("review", "done"),
+    "backlog": ("in-progress", "review", "done"),
+    "proposed": ("backlog", "in-progress", "review", "done"),
+    "someday": ("backlog", "in-progress", "review", "done"),
+    "blocked": ("backlog", "in-progress", "review", "done"),
+    "done": (),
+}
+
+
+def _has_summary(task: dict[str, Any]) -> bool:
+    summary = task.get("execution_summary")
+    return isinstance(summary, str) and bool(summary.strip())
+
+
+def _note_task(
+    orbit: callbacks.Orbit,
+    task_id: str,
+    close: bool,
+    note: str,
+    status: object = None,
+    has_summary: bool = False,
+) -> dict[str, Any]:
+    """Comment on the task, and when `close` is set walk it to `done`.
+
+    The send has happened either way, so a failed callback is reported in
+    the result, never raised. A direct `status: done` is refused from every
+    status but `review`, which used to leave the approval task open.
+    """
+    if not close:
+        return _comment(orbit, task_id, note)
+
+    steps = _CLOSE_FROM.get(status) if isinstance(status, str) else None
+    if steps is None:
+        # This status cannot reach `done`. Record the send and report the
+        # close failure, so the task is not an untouched open approval.
+        commented = _comment(orbit, task_id, note)
+        if "task_error" in commented:
+            return commented
+        return {"task_closed": False, "task_error": "not_closable"}
     try:
-        orbit.call("orbit.task.update", payload)
+        if not steps:
+            orbit.call("orbit.task.update", {"id": task_id, "comment": note})
+        else:
+            for index, target in enumerate(steps):
+                payload: dict[str, Any] = {"id": task_id, "status": target, "note": note}
+                if index == 0:
+                    payload["comment"] = note
+                if target == "done" and not has_summary:
+                    payload["execution_summary"] = note
+                orbit.call("orbit.task.update", payload)
     except GatewayError as error:
         return {"task_closed": False, "task_error": error.code}
-    return {"task_closed": close}
+    return {"task_closed": True}
+
+
+def _comment(orbit: callbacks.Orbit, task_id: str, note: str) -> dict[str, Any]:
+    try:
+        orbit.call("orbit.task.update", {"id": task_id, "comment": note})
+    except GatewayError as error:
+        return {"task_closed": False, "task_error": error.code}
+    return {"task_closed": False}
 
 
 # ---------------------------------------------------------------------------
