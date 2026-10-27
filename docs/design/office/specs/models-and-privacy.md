@@ -33,3 +33,21 @@ Source: spec §9.
 The plugin's network grant is `any` (the only setting that reaches remote
 hosts), but the code calls only the Meta and Baseten endpoints named in
 config. That restriction is a code rule, reviewed, not a sandbox setting.
+
+## Long recordings
+
+The Models port's `TranscribeRequest.duration_seconds` carries duration from
+the caller's media metadata, rounding fractional seconds up. The adapter does
+not probe audio. `ModelConfig.audio_splitter` configures the ffmpeg executable,
+split threshold and maximum chunk length (both lengths default to 600 seconds).
+At or below the threshold, transcription sends the original bytes directly and
+runs no subprocess. Above it, the adapter stages the recording privately and
+uses the supervised splitter, preserving the container (WAV, MP3, M4A/MP4, AAC,
+FLAC, Ogg or WebM); other long-audio MIME types are refused.
+
+Every chunk passes through the same sensitivity routing with the original
+language hint. Private chunks reach only the configured open-weights endpoint.
+The current plain-text provider replies are joined with newlines in recording
+order; timestamp and speaker segments remain empty until a provider reports
+them. Any split or model failure fails the transcription instead of returning
+a partial success. Temporary audio is cleaned up on success and failure.

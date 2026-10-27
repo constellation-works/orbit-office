@@ -33,6 +33,19 @@
 //! routing function ([`routing::route`]): `private` material goes only
 //! to the open-weights endpoint from Library settings and is refused
 //! when none is configured.
+//!
+//! Transcription takes its duration from `TranscribeRequest::duration_seconds`
+//! (caller-supplied metadata, rounded up); this adapter never probes media.
+//! `ModelConfig::audio_splitter` defaults to splitting only above 600 seconds,
+//! into chunks of at most 600 seconds. Short recordings go straight to the
+//! routed call without files or subprocesses. Long recordings are staged in a
+//! private temporary directory and split by supervised ffmpeg. Each chunk uses
+//! the original sensitivity, MIME type and language hint. Plain-text replies
+//! are joined with newlines in recording order; speaker/timestamp segments stay
+//! empty because the provider currently returns only text. A failed chunk fails
+//! the transcription; temporary audio is removed on success and error.
+//! Long audio supports WAV, MP3, M4A/MP4, AAC, FLAC, Ogg and WebM MIME types;
+//! other containers are refused before staging rather than given a false suffix.
 
 // Library code never prints; diagnostics go through `tracing` (STD-02 R15).
 #![deny(clippy::print_stderr, clippy::print_stdout)]
@@ -44,6 +57,7 @@ mod http;
 pub mod media;
 mod meta;
 mod routing;
+mod transcribe;
 
 use std::time::Duration;
 
@@ -80,6 +94,8 @@ pub struct ModelConfig {
     pub hosted_model: String,
     /// Open-weights model slug.
     pub open_weights_model: String,
+    /// Executable, split threshold and maximum chunk length for transcription.
+    pub audio_splitter: media::AudioSplitter,
 }
 
 impl ModelConfig {
@@ -93,6 +109,7 @@ impl ModelConfig {
             open_weights_endpoint: None,
             hosted_model: DEFAULT_HOSTED_MODEL.to_string(),
             open_weights_model: DEFAULT_OPEN_WEIGHTS_MODEL.to_string(),
+            audio_splitter: media::AudioSplitter::default(),
         }
     }
 }
@@ -167,18 +184,7 @@ enum Operation<'a> {
 
 impl Models for RoutedClient {
     fn transcribe(&self, request: &TranscribeRequest) -> Result<Transcript> {
-        let text = self.call(
-            request.sensitivity,
-            Operation::Transcribe {
-                mime: &request.mime,
-                audio: &request.audio,
-                language: request.language.as_deref(),
-            },
-        )?;
-        Ok(Transcript {
-            text,
-            segments: Vec::new(),
-        })
+        transcribe::transcribe(self, request)
     }
 
     fn extract(&self, request: &ExtractRequest) -> Result<Value> {
