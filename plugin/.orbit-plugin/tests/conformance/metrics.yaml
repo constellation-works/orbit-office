@@ -1,6 +1,7 @@
 # Offline empty Orbit/Library history is provided by the public-dispatch
-# fixture runner in crates/office-tools/src/tools/tests/insights.rs. A
-# `library:` line sets that case's Library settings; policy defaults otherwise.
+# fixture runner in crates/office-tools/src/tools/tests/insights.rs.
+# Orbit's PluginTest schema has no per-case Library settings, so the
+# demo.simulated_until case lives in that file as a Rust test.
 schemaVersion: 1
 kind: PluginTest
 tests:
@@ -9,12 +10,6 @@ tests:
     input: {"since": "2026-10-05", "until": "2026-10-12"}
     expect:
       output: {"since": "2026-10-05", "until": "2026-10-12", "totals": {"automation": {"automated_count": 0, "manual_count": 0, "total_count": 0, "automated_minutes": 0, "manual_minutes": 0, "total_minutes": 0, "count_ratio": null, "minutes_ratio": null}, "conversions": [], "hours_returned": 0.0, "first_pass_acceptance": {"numerator": 0, "denominator": 0, "ratio": null}, "knowledge_coverage": {"numerator": 0, "denominator": 0, "ratio": null}, "proposal_acceptance": {"accepted": 0, "dismissed": 0, "ratio": null}, "open_load": []}, "weeks": [{"since": "2026-10-05", "until": "2026-10-12", "metrics": {"automation": {"automated_count": 0, "manual_count": 0, "total_count": 0, "automated_minutes": 0, "manual_minutes": 0, "total_minutes": 0, "count_ratio": null, "minutes_ratio": null}, "conversions": [], "hours_returned": 0.0, "first_pass_acceptance": {"numerator": 0, "denominator": 0, "ratio": null}, "knowledge_coverage": {"numerator": 0, "denominator": 0, "ratio": null}, "proposal_acceptance": {"accepted": 0, "dismissed": 0, "ratio": null}, "open_load": []}}]}
-  - name: metrics_reports_simulated_until_when_configured
-    tool: metrics
-    library: {"demo": {"simulated_until": "2026-10-12"}}
-    input: {"since": "2026-10-05", "until": "2026-10-12"}
-    expect:
-      output: {"since": "2026-10-05", "until": "2026-10-12", "simulated_until": "2026-10-12", "totals": {"automation": {"automated_count": 0, "manual_count": 0, "total_count": 0, "automated_minutes": 0, "manual_minutes": 0, "total_minutes": 0, "count_ratio": null, "minutes_ratio": null}, "conversions": [], "hours_returned": 0.0, "first_pass_acceptance": {"numerator": 0, "denominator": 0, "ratio": null}, "knowledge_coverage": {"numerator": 0, "denominator": 0, "ratio": null}, "proposal_acceptance": {"accepted": 0, "dismissed": 0, "ratio": null}, "open_load": []}, "weeks": [{"since": "2026-10-05", "until": "2026-10-12", "metrics": {"automation": {"automated_count": 0, "manual_count": 0, "total_count": 0, "automated_minutes": 0, "manual_minutes": 0, "total_minutes": 0, "count_ratio": null, "minutes_ratio": null}, "conversions": [], "hours_returned": 0.0, "first_pass_acceptance": {"numerator": 0, "denominator": 0, "ratio": null}, "knowledge_coverage": {"numerator": 0, "denominator": 0, "ratio": null}, "proposal_acceptance": {"accepted": 0, "dismissed": 0, "ratio": null}, "open_load": []}}]}
   - name: metrics_refuses_unknown_input
     tool: metrics
     input: {"since":"2026-10-05","until":"2026-10-12","invent":true}
