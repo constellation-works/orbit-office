@@ -135,6 +135,7 @@ captured_at: 2026-10-28T15:02:11-04:00
 captured_by: upload      # upload | paste | routine | orchestrator
 origin: "Zoom recording, uploaded"     # free text: "Slack #pricing, pasted"
 participants: [Jane Park (Acme), Daniel]
+event: { key: "<event-key>", series: "<series-uid>" } # event-backed meetings only
 sensitivity: normal      # normal | private
 original: { file: original.m4a, sha256: …, bytes: 48211234, media_type: audio/mp4 }
 derived_by: { transcription: { route: hosted, model: muse-voice-transcribe } }   # how the body was produced
@@ -168,6 +169,22 @@ chapter data. The source body's anchor behavior is unchanged.
 `anchor`, generated PNG `file` and `text`. The file names follow the processing
 order (`0000.png`, `0001.png`, …). `gotchas` reads only already extracted
 `Gotcha: ` claims from `digest.json`, returning their text and citations.
+The `summary` field contains the text of `summary.md` when present and is
+null otherwise; the source body remains a separate field.
+Use `document: summary` to select `summary.md` for `body`, `text` and `span`.
+Line anchors (`#L<start>[-<end>]`) validate against the selected document;
+`document: source` is the default and preserves transcript anchor behavior.
+An absent selected summary refuses with `summary_missing`. The file driver
+folds summary text into the source's search record, including after reindex,
+without rewriting `source.md` or allocating another source id.
+
+`office.capture` accepts `event_key` to copy the calendar occurrence's title,
+start (`occurred_at`), attendee names and sensitivity into a `meeting` source.
+The `event: {key, series}` mapping stores its occurrence key and series UID.
+Those values replace caller-supplied metadata. An unknown key refuses with
+`unknown_event`; event capture cannot append conversation entries and never
+deduplicates, so several notes/transcripts may belong to one occurrence.
+Uploaded VTT files import timestamped turns just like `transcript_path`.
 Both lists are empty when their sidecars are absent; malformed sidecars refuse
 the read rather than inventing display data.
 

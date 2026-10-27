@@ -15,7 +15,15 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::ReadOnly,
         mcp_scope: McpScope::Workspace,
     },
-    &["id", "source_id", "anchor", "history", "media", "frame"],
+    &[
+        "id",
+        "source_id",
+        "anchor",
+        "history",
+        "media",
+        "frame",
+        "document",
+    ],
     run,
 );
 
@@ -64,18 +72,34 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         .map(|text| access::gotchas(&text))
         .transpose()?
         .unwrap_or_default();
+    let summary = call.ports.library.source_sidecar(&id, "summary.md")?;
+    let selected_body = match call.input.get("document") {
+        None | Some(Value::Null) => &view.body,
+        Some(Value::String(name)) if name == "source" => &view.body,
+        Some(Value::String(name)) if name == "summary" => {
+            summary.as_ref().ok_or(Error::Library {
+                code: "summary_missing",
+                message: "this source has no summary".into(),
+            })?
+        }
+        Some(_) => {
+            return Err(Error::InvalidArgument(
+                "document must be source or summary".into(),
+            ));
+        }
+    };
     let (cited_by, task_citers_available, cited_by_truncated) = citers(call, &id)?;
     let (span, resolved_anchor) = match &anchor {
         Some(raw) => {
             let parsed = parse_anchor(raw)?;
             (
-                Some(anchor_span(&view.body, parsed, raw)?),
+                Some(anchor_span(selected_body, parsed, raw)?),
                 Some(raw.clone()),
             )
         }
         None => (None, None),
     };
-    let body = span.clone().unwrap_or_else(|| view.body.clone());
+    let body = span.clone().unwrap_or_else(|| selected_body.clone());
     let mut output = json!({
         "id": view.id,
         "kind": view.kind,
@@ -97,6 +121,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "chapters": chapters,
         "frames": frames,
         "gotchas": gotchas,
+        "summary": summary,
     });
     if let Some(selection) = media {
         let media = call.ports.library.source_media(&id, &selection)?;

@@ -214,9 +214,26 @@ job that inlines a deterministic `plugin.tool_call`
   2. runs `office.extract` with `profile: meeting`;
   3. writes `summary.md` beside `source.md`: the summary and cited
      decisions, anchorable as `#L…` like any body.
-  It is a deterministic job, like `office-kt-inbox`. The extraction's
+  It is a deterministic job, like `office-kt-inbox`, seeded disabled with the
+  meetings pack. Its one `plugin.tool_call` step invokes `office.extract`
+  with `{profile: meeting}` and no `id`. This inbox mode walks all meeting
+  sources in path order and returns `{profile: meeting, processed: [<id>, …]}`.
+  It leaves an existing transcript/notes body unchanged. Audio duration is
+  inspected locally with ffprobe before bounded transcription. Direct
+  extraction with an `id` also saves the summary; a task is optional for
+  meeting extraction and, when supplied, receives the structured artifact.
+  Use `office.source-show` with `document: summary` and a `#L…` anchor to
+  select and validate summary lines. Summary text is indexed under the source
+  id and survives reindex. The extraction's
   `to_dos` are filed as they are today, tagged `owner:<owner>` and
-  `source:<id>` ([kt-videos.md](./kt-videos.md)).
+  `source:<id>` ([kt-videos.md](./kt-videos.md)). A partial transcription
+  records `transcript-state.json`; an incomplete state refuses summarization
+  as `transcription_incomplete`. Extraction persists `extract-result.json`
+  before filing to-dos and publishes `summary.md` only after filing succeeds.
+  If it stops in between, `meeting_processing_incomplete` holds the retry for
+  reconciliation rather than risking duplicate to-dos. Already summarized
+  sources are skipped by the inbox and direct re-extraction refuses with
+  `meeting_already_summarized`.
 - **The transcript is the source body.** It is never rewritten. A
   correction is a new version (`v2.md`), as for every source
   ([library.md](./library.md#sources)).

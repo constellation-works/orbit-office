@@ -24,3 +24,9 @@ tests:
     expect:
       error:
         code: invalid_conversation_entry_kind
+  - name: capture_refuses_unknown_event
+    tool: capture
+    input: {"event_key":"missing-event", "text":"Notes"}
+    expect:
+      error:
+        code: unknown_event

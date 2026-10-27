@@ -32,6 +32,13 @@
       "type": "string",
       "pattern": "^[0-9]{4,10}\\.png$",
       "description": "Generated frame basename, required only for media: frame (for example 0000.png)."
+    },
+    "document": {
+      "enum": [
+        "source",
+        "summary"
+      ],
+      "description": "Select the source body (default) or summary.md. Line anchors are checked against the selected document; the summary field always returns the complete summary when available."
     }
   },
   "additionalProperties": false

@@ -307,5 +307,11 @@ actual extraction provenance and `extract-result.json`. Completed window replies
 are retained in `extract-window-<index>.json` if a later request fails. Each
 question files an `owner:you`, `source:<id>`, `kt-question` to-do; this tool files
 no knowledge proposal. A meeting instead produces `summary`, cited `decisions`
-and `to_dos` with `owner: you|agent`; filed tasks carry `owner:<owner>` and
-`source:<id>` tags. Both profiles attach the full structured output to `task`.
+and `to_dos` with `owner: you|agent`; it also writes `summary.md` beside the
+unchanged transcript after the to-dos succeed. The meeting profile allows
+an omitted task (no task artifact), and omitting `id` runs the deterministic
+meeting inbox ([calendar.md](./calendar.md#capture-after-the-meeting)).
+Summary decisions cite the original transcript/notes anchors; summary line
+selection uses `office.source-show` with `document: summary`. Filed tasks
+carry `owner:<owner>` and `source:<id>` tags. When `task` is supplied, either
+profile attaches its full structured output.

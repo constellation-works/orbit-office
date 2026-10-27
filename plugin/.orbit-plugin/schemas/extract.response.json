@@ -67,16 +67,38 @@
       "items": {
         "type": "object"
       }
+    },
+    "processed": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
-  "required": [
-    "id",
-    "profile",
-    "result",
-    "dropped",
-    "calls",
-    "derived_by",
-    "to_dos"
-  ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "id",
+        "profile",
+        "result",
+        "dropped",
+        "calls",
+        "derived_by",
+        "to_dos"
+      ]
+    },
+    {
+      "required": [
+        "profile",
+        "processed"
+      ],
+      "properties": {
+        "profile": {
+          "const": "meeting"
+        }
+      }
+    }
+  ]
 }

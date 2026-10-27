@@ -3,6 +3,7 @@
   "title": "office.capture request",
   "type": "object",
   "properties": {
+    "event_key": { "type": "string", "minLength": 1, "description": "Calendar occurrence key. Creates a meeting with its title, start, attendee names and sensitivity. Unknown keys are refused; incompatible with conversation entries or append_to. Event captures never deduplicate." },
     "kind": { "type": "string", "description": "Source kind: video, meeting, chat, email, doc, receipt, bill, conversation or note. Inferred as video for video uploads or doc for document uploads when absent." },
     "title": { "type": "string", "description": "Source title; defaults to the upload file name or first text line." },
     "text": { "type": "string", "description": "Pasted text, or the single entry text with entry_kind." },

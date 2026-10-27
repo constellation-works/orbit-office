@@ -1,5 +1,6 @@
 //! Cited digest, KT and meeting extraction. No knowledge proposals are filed here.
 mod digest_profile;
+mod meeting;
 use super::transcribe::{approved, required_string, reserve};
 use crate::registry::{Call, Tool};
 use office_core::domain::source::{Anchor, parse_anchor, sha256_hex, source_body, video};
@@ -25,8 +26,11 @@ struct Entry {
     text: String,
 }
 fn run(call: &Call<'_>) -> Result<Value> {
-    let id = required_string(call, "id")?;
     let profile = required_string(call, "profile")?;
+    if profile == "meeting" && !call.input.contains_key("id") {
+        return meeting::inbox(call);
+    }
+    let id = required_string(call, "id")?;
     if profile == "digest" {
         return digest_profile::run(call, id);
     }
@@ -44,12 +48,12 @@ fn run(call: &Call<'_>) -> Result<Value> {
                 .ok_or_else(|| Error::InvalidArgument("task must be a nonempty string".into()))
         })
         .transpose()?
-        .or_else(|| call.context.get("task_id").and_then(Value::as_str))
-        .ok_or_else(|| {
-            Error::InvalidArgument(
-                "extract requires task (or context.task_id) for its result artifact".into(),
-            )
-        })?;
+        .or_else(|| call.context.get("task_id").and_then(Value::as_str));
+    if task.is_none() && profile != "meeting" {
+        return Err(Error::InvalidArgument(
+            "extract requires task (or context.task_id) for its result artifact".into(),
+        ));
+    }
     let view = call.ports.library.read_source(id)?;
     if (profile == "kt" && view.kind != "video") || (profile == "meeting" && view.kind != "meeting")
     {
@@ -57,6 +61,51 @@ fn run(call: &Call<'_>) -> Result<Value> {
             "invalid_source_kind",
             "profile must match the video's or meeting's source kind",
         ));
+    }
+    if profile == "meeting" {
+        if view.body.trim().is_empty() {
+            return Err(video::refusal(
+                "transcript_missing",
+                "meeting extraction requires notes or a complete transcript",
+            ));
+        }
+        if let Some(text) = call
+            .ports
+            .library
+            .source_sidecar(id, "transcript-state.json")?
+        {
+            let state: Value = serde_json::from_str(&text).map_err(|_| {
+                video::refusal("invalid_source", "invalid meeting transcript state")
+            })?;
+            if state["complete"] != true {
+                return Err(video::refusal(
+                    "transcription_incomplete",
+                    "finish the meeting transcription before extracting",
+                ));
+            }
+        }
+        if call
+            .ports
+            .library
+            .source_sidecar(id, "summary.md")?
+            .is_some()
+        {
+            return Err(video::refusal(
+                "meeting_already_summarized",
+                "meeting already has a summary",
+            ));
+        }
+        if call
+            .ports
+            .library
+            .source_sidecar(id, "extract-result.json")?
+            .is_some()
+        {
+            return Err(video::refusal(
+                "meeting_processing_incomplete",
+                "a previous extraction may have filed to-dos; reconcile it before retrying",
+            ));
+        }
     }
     let state = if profile == "kt" {
         Some(approved(call, id)?)
@@ -237,6 +286,15 @@ fn run(call: &Call<'_>) -> Result<Value> {
     call.ports
         .library
         .write_source_processing(id, &revision, None, &reply.derived_by, &files)?;
+    // Keep the exact post-extraction revision pinned across external to-do calls.
+    // A reread after those calls could silently bless a concurrent transcript edit.
+    let summary_revision = if profile == "meeting" {
+        let (processed, _) =
+            office_core::domain::source::processing_markdown(&markdown, None, &reply.derived_by)?;
+        Some(sha256_hex(processed.as_bytes()))
+    } else {
+        None
+    };
     let mut todos = Vec::new();
     let items = list(
         &result,
@@ -266,7 +324,22 @@ fn run(call: &Call<'_>) -> Result<Value> {
         todos.push(call.ports.orbit.task_add(object(&input)?)?);
     }
     let output = json!({"id":id,"profile":profile,"result":result,"dropped":dropped,"calls":count,"derived_by":reply.derived_by,"to_dos":todos});
-    attach(call, id, task, &output)?;
+    if let Some(task) = task {
+        attach(call, id, task, &output)?;
+    }
+    if let Some(revision) = summary_revision {
+        // Publish the completion marker only after the to-dos and optional artifact succeed.
+        call.ports.library.write_source_processing(
+            id,
+            &revision,
+            None,
+            &reply.derived_by,
+            &[(
+                "summary.md".into(),
+                meeting::summary(id, &result)?.into_bytes(),
+            )],
+        )?;
+    }
     Ok(output)
 }
 fn attach(call: &Call<'_>, id: &str, task: &str, output: &Value) -> Result<()> {

@@ -664,3 +664,19 @@ fn source_show_refuses_malformed_frame_and_gotcha_sidecars() {
         assert_eq!(response["error"]["code"], code, "{response}");
     }
 }
+
+#[test]
+fn source_show_returns_meeting_summary_without_changing_source_body() {
+    let library = fixture(b"video", false, Default::default());
+    library
+        .insert_source_sidecar(ID, "summary.md", "# Summary\n\nDecision: ship.\n")
+        .unwrap();
+    let ports = ports(library);
+    let response = call("office.source-show", json!({"id":ID}), &ports);
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        response["output"]["summary"],
+        "# Summary\n\nDecision: ship.\n"
+    );
+    assert_eq!(response["output"]["body"], "Transcript.");
+}

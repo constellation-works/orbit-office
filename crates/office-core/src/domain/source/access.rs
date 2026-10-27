@@ -332,7 +332,16 @@ pub fn gotchas(text: &str) -> Result<Vec<Value>> {
 /// Validate a readable derived source sidecar at the shared port boundary.
 /// Summary presence is consumed by the calendar without reading arbitrary files.
 pub fn validate_sidecar(name: &str) -> Result<()> {
-    if ["frames.md", "chapters.md", "digest.json", "summary.md"].contains(&name) {
+    if [
+        "frames.md",
+        "chapters.md",
+        "digest.json",
+        "summary.md",
+        "extract-result.json",
+        "transcript-state.json",
+    ]
+    .contains(&name)
+    {
         Ok(())
     } else {
         Err(refusal("unsafe_path", "unsupported source sidecar"))

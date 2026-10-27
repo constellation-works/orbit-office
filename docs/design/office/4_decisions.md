@@ -1308,3 +1308,25 @@ they do not affect its sources, inference or approved budget (STD-03@2 §R28).
 This preserves existing preview digests instead of regenerating unrelated
 conformance goldens when the calendar block is introduced. A public dispatch
 regression checks confirmation after changing calendar.connection.
+
+
+## Calendar meeting capture owns its routine registration and summary sidecar
+
+This feature's task grants the narrow exception for the plugin manifest's
+integrator ownership: register the meeting inbox job/routine in the same change.
+The same manifest change declares ffprobe, required for local meeting audio
+duration inspection before transcription. It adds no crate or dependency edge. The inbox uses the existing `office.extract`
+meeting profile with no id, keeping deterministic orchestration in application
+code behind the same Library, Calendar, Models and Orbit ports. Each new source
+copies only event identity, public attendee names and the event's sensitivity;
+event captures deliberately bypass content deduplication.
+
+`summary.md` is a completion marker published after to-do filing, and is folded
+into the source index record by the same companion-reading path as chapters.
+The source body remains the original evidence. `document: summary` gives
+source-show a separate line-anchor space without changing transcript anchors.
+An extraction result without a summary is an uncertain to-do handoff and refuses
+automatic repetition; partial transcription has its own completion receipt.
+Neither condition permits silently accepting partial evidence or duplicating
+to-dos. The disabled 15-minute routine is included with the meetings pack, like
+the KT routine; enabling it remains the onboarding/user choice.
