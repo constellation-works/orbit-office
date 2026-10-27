@@ -7,6 +7,6 @@
 // Library code never prints; diagnostics go through `tracing` (STD-02 R15).
 #![deny(clippy::print_stderr, clippy::print_stdout)]
 
-mod envelope;
-mod fakes;
+pub mod envelope;
+pub mod fakes;
 mod library_fixture;

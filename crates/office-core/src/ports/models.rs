@@ -1,3 +1,4 @@
-//! The model ports: transcription, extraction and vision, with privacy
-//! routing (adapter: `office-models`).
-//! Reserved: declared by the first task that needs it.
+//! Model access port.
+
+/// Model access; operations will be added with the adapter.
+pub trait Models {}

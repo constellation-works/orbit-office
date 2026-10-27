@@ -14,6 +14,9 @@ use crate::error::{Error, Result};
 /// The exec protocol version this backend speaks.
 pub const SCHEMA_VERSION: u64 = 1;
 
+/// Context supplied by Orbit for a call.
+pub type Context = Map<String, Value>;
+
 /// One parsed request envelope.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Request {
@@ -22,7 +25,7 @@ pub struct Request {
     /// Tool input (an empty object when absent).
     pub input: Map<String, Value>,
     /// Call context from Orbit: identity, secrets, roots (an empty object when absent).
-    pub context: Map<String, Value>,
+    pub context: Context,
 }
 
 /// Parse a raw request envelope.

@@ -26,8 +26,9 @@ backend only through Orbit's tools).
 
 Port traits are declared in `office-core` because an adapter crate must depend on the crate
 that defines the trait it implements (Rust's orphan rule). A trait declaration does no I/O,
-so the domain stays pure. A port is declared by the first task that needs it, in its own
-file under `ports/`, together with its adapter and its fake.
+so the domain stays pure. The four port interfaces and fakes are established together for dispatch; adapter
+operations arrive with the first task that needs them. Each port has its own file.
+The testkit depends on core for those fakes; tools use the testkit only as a dev-dependency.
 
 The plugin backend is one process per call, so it is synchronous: no async runtime. HTTP
 goes through a blocking client inside `office-models`.

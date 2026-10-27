@@ -6,8 +6,7 @@
 //! - [`tool`] holds the tool contract types every tool module declares;
 //! - [`error`] is the crate's typed [`Error`];
 //! - `domain/` will hold the domain model and its rules, and `ports/` the
-//!   traits the application calls to reach files, models and Orbit. Each
-//!   arrives with the first task that needs it (ARCHITECTURE.md).
+//!   traits the application calls to reach files, models and Orbit.
 //!
 //! It does no I/O, never parses command-line arguments, never touches the
 //! terminal and never decides where data lives: identity and secrets arrive
@@ -21,7 +20,7 @@
 
 mod domain;
 mod error;
-mod ports;
+pub mod ports;
 pub mod protocol;
 mod secrets;
 pub mod tool;
