@@ -81,7 +81,7 @@ refuses the whole snapshot; the UI reports that failure and retains previous
 data when available. A capped listing and completed work without a usable
 completion date are explicitly reported. Limits may omit older unfinished
 work or a result whose record was subsequently edited; this is a bounded
-snapshot, not a complete history. The view supports the shared light theme.
+snapshot, not a complete history. The view uses the shared dark theme.
 An empty `drop-zone` slot reserves the upload integration point; uploading
 remains a separate feature. Each Needs-you card except the user's own to-dos
 carries its `approval-actions` (below).
@@ -128,7 +128,7 @@ Source JSON is served by `GET /api/sources?id=…`, originals and frames by
 `/api/sources`). Media stays behind `office.source-show` and its privacy checks;
 byte ranges allow seeking, but the tool's existing **512 KiB** media cap still
 applies. Larger, expired or refused originals show an unavailable message while
-the source text remains readable. Source supports the shared light theme.
+the source text remains readable. Source uses the shared dark theme.
 
 ### Approvals implementation
 
@@ -162,6 +162,23 @@ output, or a gateway draft's connection, method, URL, body and digest.
 To-dos are built ([ORB-18728]). `GET /api/todos` lists You and Agents
 columns; each to-do shows its source and attached knowledge, and the user
 can close their own. An agent to-do has no close action.
+
+## Look
+
+One dark theme, taken from Orbit's dashboard and written fresh for the app:
+Geist (bundled under the OFL in `web/static/fonts/`), a side rail that
+stacks above the content on a phone, and panels drawn with a border on the
+edge and hairlines inside. `web/static/style.css` defines the colour tokens
+and the shared patterns. Screens style themselves with `var(--…)` tokens,
+never literal colours:
+
+- **Card**: an optional kicker (a short coloured label naming the kind of
+  item), the title, the content, then actions.
+- **Pill**: a short label or chip; its tone says needs you (amber), an agent
+  is on it (cyan), finished (green), private (violet) or failed (red).
+- **Tile**: one number and its label, in a wrapping row (Today's counts,
+  Insights).
+- **Section label**: small upper-case heading over a panel.
 
 ## Rules
 

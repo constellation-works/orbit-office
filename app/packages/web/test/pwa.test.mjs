@@ -49,7 +49,7 @@ await import("../dist/pwa/sw.js");
 /** Fresh stub environment; `seed` pre-fills the shell cache like an install. */
 function useWorkerEnv({ seed = [], fetchImpl } = {}) {
   const addedAll = [];
-  const stores = new Map([["office-shell-v5", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
+  const stores = new Map([["office-shell-v6", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
   Object.defineProperty(globalThis, "self", {
     value: {
       location: { origin: "http://office.test" },
@@ -108,6 +108,8 @@ function fetchEvent(url, { method = "GET", mode = "cors" } = {}) {
 const SHELL = [
   "/",
   "/style.css",
+  "/fonts/geist-latin.woff2",
+  "/fonts/geist-mono-latin.woff2",
   "/main.js",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
@@ -120,6 +122,7 @@ const SHELL = [
   "/ui/index.js",
   "/ui/card.js",
   "/ui/pill.js",
+  "/ui/tile.js",
   "/ui/provenance.js",
   "/ui/action.js",
   "/ui/state.js",
@@ -207,7 +210,7 @@ test("activate drops old caches and keeps the current shell", async () => {
   let waited = null;
   listeners.activate({ waitUntil: (promise) => { waited = promise; } });
   await waited;
-  assert.deepEqual([...stores.keys()], ["office-shell-v5"]);
+  assert.deepEqual([...stores.keys()], ["office-shell-v6"]);
 });
 
 test("live-data requests are left to the network, never answered from cache", async () => {
@@ -246,11 +249,11 @@ test("other same-origin requests go to the network and are not stored", async ()
     fetchImpl: async () => new Response("live"),
   });
   const listeners = workerListeners;
-  const before = stores.get("office-shell-v5").size;
+  const before = stores.get("office-shell-v6").size;
   const { event, answered } = fetchEvent("http://office.test/demo.html");
   listeners.fetch(event);
   assert.equal(await (await answered()).text(), "live");
-  assert.equal(stores.get("office-shell-v5").size, before);
+  assert.equal(stores.get("office-shell-v6").size, before);
 });
 
 test("a failed navigation falls back to the cached shell", async () => {

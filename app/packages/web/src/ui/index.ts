@@ -1,5 +1,6 @@
-export { card } from "./card.js";
-export { pill } from "./pill.js";
+export { card, type CardKicker } from "./card.js";
+export { pill, type Tone } from "./pill.js";
+export { tile, tileRow } from "./tile.js";
 export { provenanceLink } from "./provenance.js";
 export { primaryAction } from "./action.js";
 export { emptyState, errorState } from "./state.js";

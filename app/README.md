@@ -30,7 +30,7 @@ the old slot value with `orbit plugin secret rm gateway <slot>`.
 API calls reads `gateway.audit-list`, showing up to 100 recent requests newest
 first, with time, connection, method, path, HTTP status, size, duration and caller
 labels. It omits response bodies and internal caller identifiers. Both sections
-show failures and empty states separately, and support the shared light theme
+show failures and empty states separately, and use the shared dark theme
 at desktop and phone widths. The Settings endpoints are
 `GET /api/settings/connections`, `POST /api/settings/connections/put`,
 `GET /api/settings/private-route`, `POST /api/settings/private-route` and
@@ -123,7 +123,7 @@ SETTINGS_SCREENSHOTS_DIR="$PWD/.orbit/tmp/screenshots" node --test app/packages/
 
 Run this from the repository root after the app build. It captures Connections,
 the connection editor, API calls, and the private route (empty and configured)
-at 1440px and 375px in the light theme. The app has no dark theme. A before
+at 1440px and 375px in the dark theme. The app has no light theme. A before
 shot of the private route was not captured: the base revision has no such section.
 
 ## Develop
@@ -152,7 +152,7 @@ Uploads need the installed `ORBIT_OFFICE_WORKSPACE` binding. They are staged
 inside that workspace with owner-only permissions, bounded to 256 MiB per file,
 and cleaned after capture. Media reads use Office tools exclusively; their
 512 KiB original/frame cap applies, and the screen explains unavailable media.
-The view uses the shared light theme and stacks at phone widths.
+The view uses the shared dark theme and stacks at phone widths.
 
 After building, run the Source browser suite from the repository root with the
 verified browser kit:

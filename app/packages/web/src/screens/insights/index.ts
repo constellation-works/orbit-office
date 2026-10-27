@@ -1,7 +1,7 @@
 /** Weekly automation and the work it has made possible. */
 import { getJson } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
-import { card, emptyState, errorState } from "../../ui/index.js";
+import { emptyState, errorState, tile } from "../../ui/index.js";
 
 interface Share { ratio: number | null }
 interface Metrics {
@@ -21,9 +21,9 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, text: string): H
 function percent(value: number | null): string { return value === null ? "Not enough data" : `${Math.round(value * 100)}%`; }
 
 export function drawInsights(data: Insights): HTMLElement {
-  const root = document.createElement("div");
+  const root = document.createElement("div"); root.className = "insights";
   const style = document.createElement("style");
-  style.textContent = `.insights-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem}.insights-tiles article{min-width:0;padding:1rem}.insights-tiles h3{font-size:1rem}.insights-value{font-size:1.5rem;font-weight:700}.insights-chart{width:100%;height:auto;max-height:260px}.insights-weeks{display:flex;flex-wrap:wrap;gap:.5rem 1rem;padding:0;list-style:none}.insights-weeks li{font-size:.85rem}.insights-list li{margin:.6rem 0}`;
+  style.textContent = `.insights h2{margin:28px 0 4px}.insights-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.insights-chart{display:block;width:100%;height:auto;max-height:260px;margin:12px 0;padding:16px;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);color:var(--accent)}.insights-weeks{display:flex;flex-wrap:wrap;gap:6px;padding:0;margin:0;list-style:none}.insights-weeks li{font-size:12px;padding:3px 8px;border-radius:4px;background:var(--bg-hover);color:var(--fg-dim)}.insights-list{margin:8px 0 0;padding:0;list-style:none;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius)}.insights-list li{padding:13px 16px;font-size:14px}.insights-list li+li{border-top:1px solid var(--hair)}`;
   root.append(style);
   const tiles = document.createElement("div"); tiles.className = "insights-tiles";
   const metrics = data.totals;
@@ -36,10 +36,7 @@ export function drawInsights(data: Insights): HTMLElement {
     ["Suggestions accepted", percent(metrics.proposal_acceptance.ratio)],
     ["Open to-dos", String(metrics.open_load.length)],
   ];
-  for (const [label, value] of tileValues) {
-    const number = element("p", value); number.className = "insights-value";
-    tiles.append(card(label, number));
-  }
+  for (const [label, value] of tileValues) tiles.append(tile(label, value));
   root.append(tiles, element("h2", "Automation over time"), element("p", "The share of completed work done for you each week."));
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 600 200"); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Weekly share of work automated; details follow"); svg.classList.add("insights-chart");

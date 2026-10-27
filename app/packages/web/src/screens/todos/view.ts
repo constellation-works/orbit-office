@@ -13,18 +13,28 @@ export interface TodoDrawOptions {
 }
 
 const STYLE = `
-.todos-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
-.todos-column h2 { font-size: 1.4rem; }
-.todos-lede { margin: 6px 0 16px; }
-.todos-column .card + .card { margin-top: 16px; }
-.card-content p.todos-kicker { margin: 14px 0 4px; font-size: .75rem; font-weight: 700; letter-spacing: .04em; color: #225e55; }
-.card-content p.todos-kicker:first-child, .card-content p.todos-note:first-child { margin-top: 0; }
-.card-content p.todos-note { margin: 0; }
-.todos-knowledge { margin: 0; padding-left: 1.15rem; }
+.todos-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.todos-column { background: var(--bg-rail); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.todos-column h2 { display: flex; align-items: center; gap: 8px; padding: 4px 4px 0; font-size: 13px; font-weight: 600; color: var(--fg-dim); }
+.todos-column h2::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 4px; background: var(--attention); }
+.todos-column--agents h2::before { background: var(--working); }
+.todos-lede { margin: 2px 4px 12px; }
+.todos-column .card { position: relative; padding: 12px; gap: 10px; border-radius: 8px; }
+.todos-column .card > h3 { font-size: 14px; }
+.todos-column .card + .card { margin-top: 10px; }
+.todos-column .card-content { display: flex; flex-wrap: wrap; gap: 6px; }
+.card-content p.todos-kicker { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
+.card-content p.todos-note { margin: 0; font-size: 12px; color: var(--fg-mute); }
+.todos-column .card-content > div { display: contents; }
+.todos-column .provenance, .todos-knowledge li { font-size: 12px; padding: 3px 7px; border-radius: 4px; background: var(--bg-hover); }
+.todos-column .provenance { color: var(--accent); }
+.todos-knowledge { display: contents; list-style: none; }
+.todos-knowledge li { color: var(--fg-dim); }
+.todos-column .primary-action { min-height: 36px; font-size: 13px; }
 .todos-more { margin-top: 20px; }
 .todos-marker { display: none; }
 @media (max-width: 720px) {
-  .todos-columns { grid-template-columns: 1fr; gap: 32px; }
+  .todos-columns { grid-template-columns: minmax(0, 1fr); }
 }
 `;
 

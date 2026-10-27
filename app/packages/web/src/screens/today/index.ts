@@ -3,7 +3,7 @@ import type { Today, TodayItem, TodayNeed, TodayResult } from "@orbit-office/con
 
 import { getJson } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
-import { card, emptyState, errorState, pill, provenanceLink } from "../../ui/index.js";
+import { card, emptyState, errorState, pill, provenanceLink, tile, tileRow } from "../../ui/index.js";
 import { ApprovalControls, serverApprovals, type ApprovalApi } from "./approvals.js";
 
 function paragraph(text: string): HTMLParagraphElement {
@@ -40,7 +40,7 @@ const NEED_LABELS: Record<TodayNeed["kind"], string> = {
 function needCard(item: TodayNeed, controls: ApprovalControls): HTMLElement {
   const content = document.createElement("div");
   content.className = "card-content";
-  content.append(pill(NEED_LABELS[item.kind]), background(item));
+  content.append(background(item));
   switch (item.kind) {
     case "proposal":
       content.append(...controls.proposal(item));
@@ -57,7 +57,7 @@ function needCard(item: TodayNeed, controls: ApprovalControls): HTMLElement {
     case "todo":
       break;
   }
-  return card(item.title, content);
+  return card(item.title, content, undefined, { label: NEED_LABELS[item.kind], tone: "attention" });
 }
 
 /** One card for proposals that belong together: the onboarding set or one bootstrap subject. */
@@ -66,9 +66,11 @@ function groupCard(key: string, title: string, items: readonly TodayNeed[], cont
   content.className = "card-content";
   const onboarding = key === "onboarding";
   const count = paragraph(`${items.length} suggested ${items.length === 1 ? "page" : "pages"}. Review each one, or accept them all.`);
-  content.append(pill(onboarding ? "Suggested pages for your Library" : "New Library pages to review"), count,
-    ...controls.proposalGroup(key, items));
-  const element = card(title, content);
+  content.append(count, ...controls.proposalGroup(key, items));
+  const element = card(title, content, undefined, {
+    label: onboarding ? "Suggested pages for your Library" : "New Library pages to review",
+    tone: "attention",
+  });
   element.classList.add("card--group");
   element.dataset.group = key;
   return element;
@@ -140,7 +142,8 @@ function section<T extends TodayItem>(title: string, items: readonly T[], empty:
 
 function drawToday(snapshot: Today, controls: ApprovalControls): HTMLElement {
   const body = document.createElement("div");
-  const needs = cardSection("Needs you", needCards(snapshot.needs_you, controls), "Nothing needs your attention.");
+  const needed = needCards(snapshot.needs_you, controls);
+  const needs = cardSection("Needs you", needed, "Nothing needs your attention.");
   const working = section("Agents working on", snapshot.agents_working_on, "No agent work is underway.", (item) => {
     const line = document.createElement("article");
     line.className = "today-working-line";
@@ -151,7 +154,16 @@ function drawToday(snapshot: Today, controls: ApprovalControls): HTMLElement {
   });
   working.classList.add("today-working");
   const done = section("Done today", snapshot.done_today, "No completed work yet today.", resultCard);
-  body.append(needs, working, done);
+  done.classList.add("today-done");
+  const split = document.createElement("div");
+  split.className = "today-split";
+  split.append(working, done);
+  const counts = tileRow([
+    tile("Needs you", String(needed.length), "attention"),
+    tile("Agents working", String(snapshot.agents_working_on.length), "working"),
+    tile("Done today", String(snapshot.done_today.length), "done"),
+  ], "Today at a glance");
+  body.append(counts, needs, split);
   if (snapshot.truncated || snapshot.completion_dates_unavailable > 0) {
     const notice = paragraph([
       snapshot.truncated ? "Showing a limited selection of your work." : "",

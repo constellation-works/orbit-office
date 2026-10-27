@@ -6,7 +6,7 @@ import { card, errorState } from "../../ui/index.js";
 
 function draw(root: HTMLElement, list: ReviewList): void {
   const style = document.createElement("style");
-  style.textContent = `.review-list { display: grid; gap: 16px; } .review-line { white-space: pre-wrap; overflow-wrap: anywhere; margin: .5rem 0; } .review-action { margin: 1rem 0; }`;
+  style.textContent = `.review-list { display: grid; gap: 12px; } .review-line { white-space: pre-wrap; overflow-wrap: anywhere; margin: .5rem 0; } .review-action { margin: 1rem 0; }`;
   const page = document.createElement("section");
   const title = document.createElement("h1"); title.textContent = "Review";
   const intro = document.createElement("p"); intro.className = "intro"; intro.textContent = "Your reviews and the sources behind them.";

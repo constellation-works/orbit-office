@@ -59,7 +59,8 @@ async function render(root: HTMLElement): Promise<void> {
   try {
     const data = await getJson<{ routines: Routine[] }>("/api/routines");
     const section = document.createElement("section"); section.className = "routines";
-    section.append(element("p", "Scheduled background jobs are managed in Orbit."));
+    const note = element("p", "Scheduled background jobs are managed in Orbit."); note.className = "intro";
+    section.append(element("h1", "Routines"), note);
     const grid = document.createElement("div"); grid.className = "card-grid";
     for (const item of data.routines) {
       const card = document.createElement("article"); card.className = "card";
