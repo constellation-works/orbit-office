@@ -5,18 +5,25 @@
  * app may call. It never reads `.orbit/` directly and never uses Orbit's
  * dashboard HTTP API (docs/design/office/specs/web-app.md#authority).
  *
- * Concurrency (ARCHITECTURE.md, "Runtime concurrency"): at most
- * `maxConcurrent` `orbit` subprocesses run at once (default 4); the rest
- * wait in a FIFO queue. Every call has a timeout. Failures are typed
- * errors, never bare strings. `pollTool` adds a single-flight cache so
- * many browser tabs polling the same tool share one subprocess, and a
- * short-lived result is reused inside `pollCacheTtlMs`.
+ * Concurrency (ARCHITECTURE.md, "Runtime concurrency"; STD-03 R2): at most
+ * `maxConcurrent` `orbit` subprocesses run at once (default 4). Further
+ * calls wait in a FIFO queue of at most `maxQueued` entries (default 32).
+ * When that queue is full the call is refused with `queue_full` and is not
+ * retained. A queued call still waiting after `queueWaitMs` (default: the
+ * same value as `timeoutMs`) is removed and rejected with `queue_timeout`,
+ * so abandoned work cannot wait indefinitely. Admitted calls keep FIFO
+ * order. The execution timeout starts when a slot is acquired. Failures
+ * are typed errors, never bare strings. `pollTool` adds a single-flight
+ * cache so many browser tabs polling the same tool share one subprocess,
+ * and a short-lived result is reused inside `pollCacheTtlMs`.
  */
 import { spawn } from "node:child_process";
 
 /** Machine-readable failure kind carried by every {@link OrbitError}. */
 export type OrbitErrorCode =
   | "timeout"
+  | "queue_timeout"
+  | "queue_full"
   | "spawn_failed"
   | "exit_nonzero"
   | "invalid_output"
@@ -42,6 +49,34 @@ export class OrbitTimeoutError extends OrbitError {
   ) {
     super("timeout", `orbit tool ${toolName} timed out after ${timeoutMs} ms`);
     this.name = "OrbitTimeoutError";
+  }
+}
+
+/** A call waited in the queue until `queueWaitMs` and was cancelled before it ran. */
+export class OrbitQueueTimeoutError extends OrbitError {
+  constructor(
+    readonly toolName: string,
+    readonly queueWaitMs: number,
+  ) {
+    super(
+      "queue_timeout",
+      `orbit tool ${toolName} cancelled after waiting ${queueWaitMs} ms for a subprocess slot`,
+    );
+    this.name = "OrbitQueueTimeoutError";
+  }
+}
+
+/**
+ * The wait queue was already at `maxQueued`, so the call was refused.
+ * Nothing was retained for it.
+ */
+export class OrbitQueueFullError extends OrbitError {
+  constructor(
+    readonly toolName: string,
+    readonly maxQueued: number,
+  ) {
+    super("queue_full", `orbit tool ${toolName} refused: ${maxQueued} calls are already waiting`);
+    this.name = "OrbitQueueFullError";
   }
 }
 
@@ -82,8 +117,25 @@ export interface OrbitClientOptions {
   command?: string;
   /** Max concurrent subprocesses. Default 4. Must be at least 1. */
   maxConcurrent?: number;
-  /** Per-call timeout in milliseconds (execution, excluding queue wait). Default 30_000. */
+  /**
+   * Max calls waiting for a subprocess slot. Default 32. Must be a
+   * non-negative integer. When every slot is busy and this many calls are
+   * already waiting, the new call is refused with {@link OrbitQueueFullError}
+   * and is not enqueued (STD-03 R2: refuse). Admitted calls stay FIFO.
+   * `0` refuses every call that cannot start immediately.
+   */
+  maxQueued?: number;
+  /**
+   * Per-call execution timeout in milliseconds. It starts when a subprocess
+   * slot is acquired, so queue wait does not consume it. Default 30_000.
+   */
   timeoutMs?: number;
+  /**
+   * How long a call may wait in the queue before it is removed and rejected
+   * with {@link OrbitQueueTimeoutError}. Default: `timeoutMs`. This bounds
+   * abandoned work that has not yet started a subprocess.
+   */
+  queueWaitMs?: number;
   /** How long a `pollTool` result stays reusable. Default 2_000. `0` disables reuse. */
   pollCacheTtlMs?: number;
   /** Environment for the child. Default `process.env` (the call runs as the user). */
@@ -107,6 +159,8 @@ export interface OrbitToolClient {
 }
 
 const DEFAULT_MAX_CONCURRENT = 4;
+/** Finite wait-queue capacity. Full callers are refused, not enqueued. */
+const DEFAULT_MAX_QUEUED = 32;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_CACHE_TTL_MS = 2_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
@@ -130,6 +184,7 @@ function stableStringify(value: unknown): string {
 }
 
 interface QueuedCall {
+  /** Start this admitted call. Clears its queue-wait deadline. */
   run: () => void;
 }
 
@@ -137,18 +192,30 @@ interface QueuedCall {
 export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolClient {
   const command = options.command ?? "orbit";
   const maxConcurrent = options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
+  const maxQueued = options.maxQueued ?? DEFAULT_MAX_QUEUED;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const queueWaitMs = options.queueWaitMs ?? timeoutMs;
   const pollCacheTtlMs = options.pollCacheTtlMs ?? DEFAULT_POLL_CACHE_TTL_MS;
   const env = options.env ?? process.env;
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
     throw new RangeError("maxConcurrent must be a positive integer");
   }
+  if (!Number.isInteger(maxQueued) || maxQueued < 0) {
+    throw new RangeError("maxQueued must be a non-negative integer");
+  }
   if (!(timeoutMs > 0)) {
     throw new RangeError("timeoutMs must be positive");
   }
+  if (!Number.isFinite(queueWaitMs) || !(queueWaitMs > 0)) {
+    throw new RangeError("queueWaitMs must be a positive finite number");
+  }
 
   let active = 0;
+  // STD-03 R2: bounded queue. When `queue.length` is already `maxQueued`,
+  // the producer is refused (`queue_full`) and no entry is retained.
+  // Waiters stay in insertion order. A waiter still present after
+  // `queueWaitMs` is removed and rejected (`queue_timeout`).
   const queue: QueuedCall[] = [];
   const inflightPolls = new Map<string, Promise<unknown>>();
   const pollCache = new Map<string, { value: unknown; expiresAt: number }>();
@@ -157,7 +224,6 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
     while (active < maxConcurrent && queue.length > 0) {
       const next = queue.shift();
       if (next === undefined) break;
-      active += 1;
       next.run();
     }
   }
@@ -167,23 +233,63 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
     pump();
   }
 
-  /** Run one subprocess, honouring the concurrency cap and timeout. */
+  function begin(
+    name: string,
+    input: Record<string, unknown>,
+    resolve: (value: unknown) => void,
+    reject: (reason: unknown) => void,
+  ): void {
+    active += 1;
+    execute(name, input).then(
+      (value) => {
+        release();
+        resolve(value);
+      },
+      (error: unknown) => {
+        release();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  }
+
+  /**
+   * Admit one call. A free slot and an empty queue starts it now. Otherwise
+   * it joins the FIFO queue, or is refused when that queue is already full.
+   */
   function runSubprocess(name: string, input: Record<string, unknown>): Promise<unknown> {
     return new Promise<unknown>((resolve, reject) => {
-      queue.push({
+      if (active < maxConcurrent && queue.length === 0) {
+        begin(name, input, resolve, reject);
+        return;
+      }
+      if (queue.length >= maxQueued) {
+        reject(new OrbitQueueFullError(name, maxQueued));
+        return;
+      }
+
+      let settled = false;
+      const waiting: { entry: QueuedCall | null } = { entry: null };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        const entry = waiting.entry;
+        if (entry !== null) {
+          const index = queue.indexOf(entry);
+          if (index >= 0) queue.splice(index, 1);
+        }
+        reject(new OrbitQueueTimeoutError(name, queueWaitMs));
+      }, queueWaitMs);
+      timer.unref();
+      const entry: QueuedCall = {
         run: () => {
-          execute(name, input).then(
-            (value) => {
-              release();
-              resolve(value);
-            },
-            (error: unknown) => {
-              release();
-              reject(error instanceof Error ? error : new Error(String(error)));
-            },
-          );
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          begin(name, input, resolve, reject);
         },
-      });
+      };
+      waiting.entry = entry;
+      queue.push(entry);
       pump();
     });
   }

@@ -71,7 +71,11 @@ layout is in `../ARCHITECTURE.md` ("Web app").
   tools, including the tools hidden from MCP that only the app may call.
   It never reads `.orbit/` directly, and never through Orbit's dashboard
   HTTP API. Concurrent subprocesses are capped (configurable, default
-  4) with a FIFO queue, a per-call timeout and typed errors; `pollTool`
+  4). Further calls wait FIFO, at most 32 by default (configurable). A
+  call past that limit is refused and is not queued. A queued call is
+  cancelled if it is still waiting when its queue deadline expires
+  (by default the same length as the execution timeout). Each running
+  call has its own execution timeout. Failures are typed errors. `pollTool`
   shares one in-flight poll (and briefly caches its result) so many
   browser tabs polling together spawn one subprocess.
 - It owns the dispatch pass (`packages/server/src/dispatch/`): every 30

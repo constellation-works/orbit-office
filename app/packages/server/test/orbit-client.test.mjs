@@ -3,7 +3,13 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createOrbitClient, OrbitExitError, OrbitTimeoutError } from "../dist/orbit/client.js";
+import {
+  createOrbitClient,
+  OrbitExitError,
+  OrbitQueueFullError,
+  OrbitQueueTimeoutError,
+  OrbitTimeoutError,
+} from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
 import { installSupervisionDoubles, timerAt } from "./supervision-doubles.mjs";
 
@@ -231,4 +237,222 @@ test("a live tool child that ignores SIGTERM is killed and the call times out", 
   } finally {
     doubles.restore();
   }
+});
+
+/** Client whose subprocesses are the supervision doubles. */
+function queuedClient(options = {}) {
+  return createOrbitClient({
+    ...SUPERVISION_CLIENT,
+    maxConcurrent: 1,
+    maxQueued: 4,
+    timeoutMs: 1_000,
+    queueWaitMs: 5_000,
+    ...options,
+  });
+}
+
+function childInput(child) {
+  return JSON.parse(child.args[5]);
+}
+
+/** Settle a rejection without leaving it unhandled when the assertion fails first. */
+function capturedRejection(promise) {
+  return promise.then(
+    () => {
+      throw new Error("expected the call to reject");
+    },
+    (error) => error,
+  );
+}
+
+test("a full queue refuses the next call and admitted calls stay FIFO", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = queuedClient({ maxQueued: 2 });
+    const first = client.callTool("orbit.task.show", { id: "first" });
+    const second = client.callTool("orbit.task.show", { id: "second" });
+    const third = client.callTool("orbit.task.show", { id: "third" });
+    assert.equal(client.activeCount, 1);
+    assert.equal(client.queuedCount, 2);
+    assert.equal(doubles.children.length, 1);
+
+    const refused = capturedRejection(client.callTool("orbit.task.show", { id: "refused" }));
+    assert.equal(client.queuedCount, 2);
+    assert.equal(doubles.children.length, 1);
+    const error = await refused;
+    assert.ok(error instanceof OrbitQueueFullError, `expected OrbitQueueFullError, got ${error}`);
+    assert.equal(error.code, "queue_full");
+    assert.equal(error.maxQueued, 2);
+    assert.equal(error.toolName, "orbit.task.show");
+
+    doubles.children[0].finish(0, null);
+    await first;
+    assert.equal(childInput(doubles.children[1]).id, "second");
+    assert.equal(client.queuedCount, 1);
+    doubles.children[1].finish(0, null);
+    await second;
+    assert.equal(childInput(doubles.children[2]).id, "third");
+    assert.equal(client.queuedCount, 0);
+    doubles.children[2].finish(0, null);
+    await third;
+    assert.equal(client.activeCount, 0);
+    assert.equal(client.queuedCount, 0);
+    assert.deepEqual(
+      doubles.children.map((child) => childInput(child).id),
+      ["first", "second", "third"],
+    );
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("a zero-length queue refuses a call that cannot start immediately", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = queuedClient({ maxQueued: 0 });
+    const held = client.callTool("orbit.task.show", { id: "held" });
+    assert.equal(client.queuedCount, 0);
+    const error = await capturedRejection(client.callTool("orbit.task.show", { id: "refused" }));
+    assert.ok(error instanceof OrbitQueueFullError, `expected OrbitQueueFullError, got ${error}`);
+    assert.equal(error.code, "queue_full");
+    assert.equal(error.maxQueued, 0);
+    assert.equal(client.queuedCount, 0);
+    assert.equal(doubles.children.length, 1);
+    doubles.children[0].finish(0, null);
+    assert.equal(await held, null);
+    assert.equal(client.activeCount, 0);
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("a queued call is cancelled when its queue-wait deadline expires", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = queuedClient({ queueWaitMs: 40 });
+    const held = client.callTool("orbit.task.show", { id: "held" });
+    const cancelled = capturedRejection(client.callTool("orbit.task.show", { id: "cancelled" }));
+    const later = client.callTool("orbit.task.show", { id: "later" });
+    assert.equal(client.queuedCount, 2);
+    assert.equal(doubles.children.length, 1);
+    const executionTimers = doubles.timers.filter((timer) => timer.ms === 1_000 && !timer.cleared);
+    const waitTimers = doubles.timers.filter((timer) => timer.ms === 40 && !timer.cleared);
+    assert.equal(executionTimers.length, 1, "the running call keeps one execution deadline");
+    assert.equal(waitTimers.length, 2, "each waiter has its own queue deadline");
+
+    waitTimers[0].fn();
+    assert.equal(client.queuedCount, 1);
+    assert.equal(doubles.children.length, 1);
+    const error = await cancelled;
+    assert.ok(error instanceof OrbitQueueTimeoutError, `expected OrbitQueueTimeoutError, got ${error}`);
+    assert.equal(error.code, "queue_timeout");
+    assert.equal(error.queueWaitMs, 40);
+    assert.equal(error.toolName, "orbit.task.show");
+    assert.equal(waitTimers[1].cleared, false, "a later waiter keeps its own deadline");
+
+    doubles.children[0].finish(0, null);
+    await held;
+    assert.equal(childInput(doubles.children[1]).id, "later");
+    assert.equal(client.queuedCount, 0);
+    doubles.children[1].finish(0, null);
+    await later;
+    assert.equal(client.activeCount, 0);
+    assert.equal(client.queuedCount, 0);
+    assert.deepEqual(
+      doubles.children.map((child) => childInput(child).id),
+      ["held", "later"],
+    );
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("an omitted queue deadline matches the execution timeout", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = queuedClient({ timeoutMs: 80, queueWaitMs: undefined });
+    const held = client.callTool("orbit.task.show", { id: "held" });
+    const waiting = capturedRejection(client.callTool("orbit.task.show", { id: "waiting" }));
+    const timers = doubles.timers.filter((timer) => timer.ms === 80);
+    assert.equal(timers.length, 2);
+    timers[1].fn();
+    const error = await waiting;
+    assert.ok(error instanceof OrbitQueueTimeoutError, `expected OrbitQueueTimeoutError, got ${error}`);
+    assert.equal(error.queueWaitMs, 80);
+    assert.equal(error.code, "queue_timeout");
+    assert.equal(timers[0].cleared, false);
+    assert.equal(doubles.children.length, 1);
+    assert.equal(client.queuedCount, 0);
+    doubles.children[0].finish(0, null);
+    assert.equal(await held, null);
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("the default queue admits 32 waiters and refuses the next", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = queuedClient({ maxQueued: undefined, queueWaitMs: 60_000 });
+    // Fixed batch pinning the documented default. Not a load test.
+    const admitted = [];
+    for (let index = 0; index < 33; index += 1) {
+      admitted.push(client.callTool("orbit.task.show", { id: `Q-${index}` }));
+    }
+    assert.equal(client.activeCount, 1);
+    assert.equal(client.queuedCount, 32);
+    assert.equal(doubles.children.length, 1);
+    const error = await capturedRejection(client.callTool("orbit.task.show", { id: "refused" }));
+    assert.ok(error instanceof OrbitQueueFullError, `expected OrbitQueueFullError, got ${error}`);
+    assert.equal(error.code, "queue_full");
+    assert.equal(error.maxQueued, 32);
+    assert.equal(client.queuedCount, 32);
+    assert.equal(doubles.children.length, 1);
+
+    for (const call of admitted) {
+      const running = doubles.children.find((child) => child.exitCode === null && child.closed === false);
+      assert.ok(running, "expected the admitted call to be running");
+      running.finish(0, null);
+      assert.equal(await call, null);
+    }
+    assert.equal(client.activeCount, 0);
+    assert.equal(client.queuedCount, 0);
+    assert.equal(doubles.children.length, 33);
+    assert.equal(
+      doubles.children.some((child) => childInput(child).id === "refused"),
+      false,
+    );
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("identical polls share one queued slot", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = queuedClient({ pollCacheTtlMs: 0 });
+    const held = client.callTool("orbit.task.show", { id: "held" });
+    const first = client.pollTool("orbit.task.list", { status: "backlog" });
+    const second = client.pollTool("orbit.task.list", { status: "backlog" });
+    assert.equal(client.queuedCount, 1);
+    assert.equal(doubles.children.length, 1);
+    doubles.children[0].finish(0, null);
+    await held;
+    assert.equal(doubles.children.length, 2);
+    assert.equal(doubles.children[1].args[2], "orbit.task.list");
+    doubles.children[1].finish(0, null);
+    assert.equal(await first, null);
+    assert.equal(await second, null);
+    assert.equal(client.activeCount, 0);
+    assert.equal(client.queuedCount, 0);
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("queue bounds reject a capacity or deadline that is not finite", () => {
+  assert.throws(() => createOrbitClient({ maxQueued: -1 }), RangeError);
+  assert.throws(() => createOrbitClient({ maxQueued: 1.5 }), RangeError);
+  assert.throws(() => createOrbitClient({ queueWaitMs: 0 }), RangeError);
+  assert.throws(() => createOrbitClient({ queueWaitMs: Number.POSITIVE_INFINITY }), RangeError);
 });
