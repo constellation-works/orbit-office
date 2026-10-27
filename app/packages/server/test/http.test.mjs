@@ -126,6 +126,23 @@ test("a cross-site Origin is refused; a matching loopback Origin is allowed", as
   assert.equal(post.status, 403);
 });
 
+test("explicit HTTP default ports are accepted as the same loopback authority", async (t) => {
+  const { port } = await startTestServer(t);
+  for (const [host, origin] of [
+    ["localhost:80", "http://localhost"],
+    ["localhost:80", "http://localhost:80"],
+    ["127.0.0.1:80", "http://127.0.0.1"],
+    ["[::1]:80", "http://[::1]"],
+  ]) {
+    const res = await request(port, {
+      method: "POST",
+      path: "/healthz",
+      headers: { host, origin },
+    });
+    assert.equal(res.status, 404, `${host} and ${origin} should pass the guard`);
+  }
+});
+
 test("path traversal never escapes the web roots", async (t) => {
   const { port, host } = await startTestServer(t);
   for (const path of ["/../secret.txt", "/%2e%2e/secret.txt", "/static/../../secret.txt"]) {
@@ -224,5 +241,32 @@ test("guard rejects missing and unparsable Host headers directly", () => {
       headers: { host: "[::1]:4317", origin: "http://[::1]:4317" },
     }).ok,
     true,
+  );
+});
+
+test("guard treats explicit and implicit HTTP default ports as equivalent", () => {
+  for (const [host, origin] of [
+    ["localhost:80", "http://localhost"],
+    ["localhost:80", "http://localhost:80"],
+    ["localhost", "http://localhost:80"],
+    ["127.0.0.1:80", "http://127.0.0.1"],
+    ["127.0.0.1", "http://127.0.0.1:80"],
+    ["[::1]:80", "http://[::1]"],
+    ["[::1]", "http://[::1]:80"],
+  ]) {
+    assert.deepEqual(
+      checkLoopbackRequest({ method: "POST", headers: { host, origin } }),
+      { ok: true, host },
+      `${host} and ${origin} should identify the same loopback HTTP authority`,
+    );
+  }
+
+  assert.equal(
+    checkLoopbackRequest({ method: "POST", headers: { host: "localhost:80", origin: "http://localhost:81" } }).ok,
+    false,
+  );
+  assert.equal(
+    checkLoopbackRequest({ method: "POST", headers: { host: "localhost:81", origin: "http://localhost" } }).ok,
+    false,
   );
 });
