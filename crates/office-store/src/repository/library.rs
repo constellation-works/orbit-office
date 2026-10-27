@@ -256,15 +256,28 @@ impl LibraryStore {
         };
         Git::ensure_available(&probe_cwd)?;
 
-        // Snapshot the layout the report lists before the writer state is
-        // bootstrapped: the default state dir lives under `.office`, so
-        // creating it first would hide `.office` from `created`.
-        let missing_layout: Vec<String> = LAYOUT_DIRS
-            .iter()
-            .filter(|dir| !candidate.join(dir).exists())
-            .map(|dir| (*dir).to_string())
-            .collect();
-
+        // The default writer state lives beneath .office. Claim that one
+        // directory atomically at bootstrap, before the lock exists; all
+        // other layout attribution is decided while holding the lock.
+        let office = candidate.join(".office");
+        let absolute_state = std::path::absolute(state_dir)
+            .map_err(|e| Error::io("resolve writer state", state_dir, e))?;
+        let resolved_state = resolve_existing_ancestor(&normalize_path(&absolute_state))?;
+        let mut bootstrapped_office = false;
+        if resolved_state.starts_with(&office) {
+            LibraryFs::create_private_dirs(&candidate)?;
+            let mut builder = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            match builder.create(&office) {
+                Ok(()) => bootstrapped_office = true,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(Error::io("create Library directory", &office, e)),
+            }
+        }
         // Bootstrap only the lock directory; Library and index writes wait
         // until this guard is held, and completeness is checked under it.
         std::fs::create_dir_all(state_dir)
@@ -328,7 +341,13 @@ impl LibraryStore {
             });
         }
 
-        let mut created = missing_layout;
+        let mut created: Vec<String> = LAYOUT_DIRS
+            .iter()
+            .filter(|dir| {
+                !candidate.join(dir).exists() || (**dir == ".office" && bootstrapped_office)
+            })
+            .map(|dir| (*dir).to_string())
+            .collect();
         files.ensure_layout()?;
         for dir in LAYOUT_DIRS {
             if *dir == ".office" {
