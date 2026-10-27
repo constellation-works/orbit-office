@@ -2,3 +2,5 @@
 //! source of truth; everything in the SQLite driver is derived from it.
 
 pub(crate) mod library;
+
+pub(crate) mod lock;

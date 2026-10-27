@@ -35,7 +35,7 @@ impl PortsBuilder {
     #[must_use]
     pub fn build(self) -> office_core::ports::Ports<'static> {
         office_core::ports::Ports {
-            library: Box::new(FakeLibrary),
+            library: Box::new(FakeLibrary::initialized()),
             models: Box::new(FakeModels),
             orbit: Box::new(FakeOrbit),
             clock: Box::new(FakeClock(self.now)),

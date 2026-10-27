@@ -113,3 +113,47 @@ Orbit builds the Rust backend at install time for `git+` pinned sources
 a local directory install, `make -C plugin export` prebuilds the same
 binary into the export. The launcher (`bin/office`) execs `bin/office-bin`
 and builds nothing at call time.
+
+### Library settings shape
+
+The pure `Settings::from_yaml` loader supports two-level YAML mappings, scalars,
+and inline or two-space-indented block lists of pack names (JSON mappings are
+also accepted). Quotes and comments are supported. Unsupported YAML constructs,
+duplicate YAML keys, unknown keys/kinds/packs and invalid types/ranges are refused
+with `invalid_library_setting` naming the dotted key; raw values are never echoed.
+The adapter validates `.office/config.yaml` on every Library read. A missing
+file requires `office.init`; missing keys within a present file use these defaults:
+
+```yaml
+retention:
+  meeting: 90
+  chat: null
+  email: null
+  doc: null
+  receipt: null
+  bill: null
+  conversation: null
+  note: null
+sensitivity:
+  meeting: normal
+  chat: normal
+  email: normal
+  doc: normal
+  receipt: normal
+  bill: normal
+  conversation: normal
+  note: normal
+packs: [meetings]
+thresholds:
+  repetition_count: 3
+  window_days: 30
+  stale_days: 90
+open_weights_endpoint: null
+```
+
+Retention is a positive integer up to 36,500 days or `null` (keep indefinitely).
+Sensitivity is `normal` or `private`. Packs are distinct names from `meetings`
+and `receipts`; an empty list disables all packs. Repetition count is 1–10,000;
+window/stale days are 1–36,500. The optional endpoint is an HTTP(S) URL with a
+host and no embedded credentials. No timestamp is synthesized by defaults.
+These are Library policy settings, independent of plugin installation config.

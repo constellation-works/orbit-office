@@ -16,11 +16,11 @@ and machinery are reused, the code is this project's.
 
 | orbit-store | office-store | Owns |
 |---|---|---|
-| `contracts/` | `src/contracts.rs` | I/O-free record shapes: `DocumentRecord`, `DocumentKind`, `SearchFilter`, `SearchHit` |
+| `contracts/` | `src/contracts.rs` | Compatible re-exports of core record shapes: `DocumentRecord`, `DocumentKind`, `SearchFilter`, `SearchHit`, `Revision` |
 | `fs/` (path_safety, lock, yaml) | `office-common::fs` (`path_safety`, `atomic`, `hash`) | Single-safe-component id validation, atomic owner-only writes (temp + fsync + rename + dir fsync), SHA-256 pinning/dedupe. Shared machinery lives in the foundation crate, as orbit's does in `orbit-common`. |
 | `driver/file/` | `src/driver/file/library.rs` | The Library as plain Markdown: layout, frontmatter parsing, full scan for reindex |
 | `driver/sqlite/` (connection, migration registry) | `src/driver/sqlite/` (`connection.rs`, `migration.rs`) | One writer connection behind a mutex; owner-only database file; the same pragmas on every connection (WAL, `busy_timeout` 5000, `foreign_keys=ON`, `synchronous=NORMAL`); ordered migrations with `user_version`, refusing a newer schema |
-| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index in one call), `read_document`, `get`, `search`, `file_sha256` |
+| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `get`, `search`, `file_sha256` |
 
 What is deliberately not carried over: orbit-store's read pool, forward-
 compatible read-only open, failure-class SQL functions, task reservations
@@ -37,9 +37,66 @@ tool needs them, as new migration steps — never as edits to step 1.
 
 - **Files are the truth.** The index is rebuildable at any time
   (`reindex` = scan + one-transaction rebuild); a write that succeeds is
-  indexed in the same call, so the index never lags a successful write.
+  indexed and committed in the same call, so the index never lags a successful write.
 - **Preconditions before side effects:** path components are validated
   before any write; unknown document kinds and newer index schemas are
   refused, never guessed or rewritten.
 - **Secrets never enter the store.** Frontmatter conventions forbid them
   ([library.md](./library.md)); the store indexes what it is given.
+
+## Library port and writes
+
+`office_core::ports::Library` exposes current document reads, document writes,
+filtered search, newest-first path history, readiness and settings. `LibraryStore`
+implements it; `office-testkit::fakes::FakeLibrary` implements the same operations
+in memory. The store's existing record exports are re-exports of
+`office_core::domain::knowledge`, so callers keep the same types. The shared
+frontmatter parser is pure and is also used by the fake.
+
+`open` creates layout/index state, but never runs `git init` or writes settings.
+The readiness check verifies the Library's own `.git` directory and valid
+`.office/config.yaml`; a missing repository or config requires `office.init`.
+Document reads/search/history/settings refuse uninitialized Libraries. Reindex
+remains available as an adapter operation; its tool is a separate deliverable.
+
+A document write holds `plugin_state/library.writer.lock` from before recovery
+and validation through file replacement, SQLite upsert and git commit. Reindex
+uses the same lock. The standard-library advisory file lock is acquired with
+`File::try_lock` (the bounded form of `File::lock`), with a five-second deadline;
+`library.writer.owner.json` records the PID, acquisition time and label for timeout
+diagnostics. Closing the file releases the lock. SQLite's mutex/transaction is
+short-lived and is never held across git. Reads never acquire the writer lock.
+Production calls to one Library must use the same plugin state directory.
+`open_in_memory` uses `.office/state` for writer state and a process-local index;
+it is for tests/scans, not concurrent production indexing.
+
+A versioned, atomically written `library.pending-write.json` is the durable
+commit decision for the operation. Its document text and write token are replayed
+idempotently under the writer lock before an interrupted store opens. A failure
+after that decision leaves the journal intact and read operations refuse with
+`library_write_pending` until recovery completes. Invalid/newer journals are
+preserved and refused. A token in the commit message prevents a replay after
+commit from duplicating the commit. The journal is private (0600), and completion
+fsyncs its removal. A live reader may observe the old or new file; these calls do
+not promise a cross-file snapshot during an active write.
+
+Each write stages only its Markdown path and commits with `--only --allow-empty`,
+using the per-commit author and committer `orbit-office <office@orbit.local>`.
+Unrelated staged files remain staged and do not enter that commit. `original.*`
+paths are refused, including `original.md`; originals are never staged by this
+adapter even when `.gitignore` is missing. The initialization tool still owns
+writing the Library's `.gitignore`. Repeated identical writes create empty write
+event commits; path history shows the commits that actually changed the file.
+Changing a document's id at the same path replaces its old index row; using an
+id already indexed at a different path is refused before the write decision.
+
+Git commands and test git fixtures share `office_common::process::run`. They use argument vectors, an empty stdin, a clean environment, disabled
+hooks/fsmonitor/signing/auto-maintenance, a 30-second deadline and concurrent
+stdout/stderr drains capped at 512 KiB per stream (1 MiB total). Linux/macOS supervision uses an owned
+process group and `waitid(WNOWAIT)` to observe exit without releasing the PID;
+it sweeps the group before reaping. Timeout/error cleanup sends TERM, waits up to
+200 ms, then KILLs and reaps. Pipe completion waits are bounded. Git diagnostics
+are not embedded in errors because they can contain document text or credentials.
+The small POSIX FFI boundary has documented Linux/macOS ABI assumptions and
+safety comments; there is no new external dependency. CI validates both supported
+platforms; this task's local execution can validate only its host platform.

@@ -4,3 +4,5 @@
 
 pub(crate) mod file;
 pub(crate) mod sqlite;
+
+pub(crate) mod git;

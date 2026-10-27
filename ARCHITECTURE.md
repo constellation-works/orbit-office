@@ -15,14 +15,18 @@ backend only through Orbit's tools).
 
 | Tier | Crate | Owns | May depend on (internal) |
 |------|-------|------|--------------------------|
-| 0. Foundation | `office-common` | The common error, fs mechanisms (path safety, atomic writes, SHA-256), SQLite connection defaults (`sqlite` feature), small shared types. | — |
-| 1. Domain | `office-core` | **Pure.** The exec envelope (`protocol`), tool contract types (`tool`), declared secret names, the domain model and its rules (`domain/`), and the port traits the application calls (`ports/`). No I/O. | `office-common` |
+| 0. Foundation | `office-common` | The common error, fs mechanisms (path safety, atomic writes, SHA-256), SQLite connection defaults (`sqlite` feature), bounded subprocess supervision shared by adapters and fixtures, small shared types. | — |
+| 1. Domain | `office-core` | **Pure.** The exec envelope (`protocol`), tool contract types (`tool`), declared secret names, the domain model and its rules (`domain/`, including Library records and validated settings), and the port traits the application calls (`ports/`). No I/O. | `office-common` |
 | 2. Adapters | `office-store` | Implements the Library port: Markdown files (the source of truth), the rebuildable SQLite index, the Library's own git repository and its writer lock. Structured after `orbit-store`. | `office-common`, `office-core` |
 | 2. Adapters | `office-models` | Implements the model ports: Meta Model API (Muse Spark, Muse Voice Transcribe), Baseten (Muse Spark Open), privacy routing. The only crate that may speak HTTP. | `office-common`, `office-core` |
 | 2. Adapters | `office-orbit` | Implements the Orbit port: the manifest's `orbit_tools` callbacks (`task.add`, `task.artifact.put`, …). | `office-common`, `office-core` |
 | 3. Application | `office-tools` | One module per tool, the tool registry and dispatch. Talks to adapters **only through `office-core` ports**, so every tool runs against fakes. | `office-common`, `office-core` |
 | 4. Composition + surface | `office` (binary) | `app`: builds the adapters, hands them to `office-tools`, serves one exec call. `cli`, `output`: argv, the one stdout envelope, exit codes. | every crate above |
 | Test support | `office-testkit` | Fake ports, a Library fixture builder, envelope helpers. **Dev-dependency only**: no crate may list it under `[dependencies]`. | `office-common`, `office-core`, `office-store` |
+
+`office-store` now uses its allowed `office-core` edge for the Library port and shared
+records; `office-core` uses `office-common` for the shared sensitivity enum. Store record
+exports remain compatible re-exports.
 
 Port traits are declared in `office-core` because an adapter crate must depend on the crate
 that defines the trait it implements (Rust's orphan rule). A trait declaration does no I/O,
@@ -163,8 +167,12 @@ process.
 
 - Today: every SQLite connection runs in WAL mode with a 5-second busy timeout
   (`office-common` `storage::sqlite`).
-- Planned, with the first Library write tool: `office-store` takes one writer lock (a file
-  lock under `plugin_state`) around a write, its index update and its Library commit.
-  Reads take no lock.
+- `office-store` takes one OS advisory writer lock at
+  `plugin_state/library.writer.lock` around a write, its index update and its Library
+  commit (and around reindex/recovery). Acquisition uses the bounded `File::try_lock`
+  form of the standard-library file lock, with a five-second deadline and a diagnostic
+  holder record. Lock order is writer file lock, then the short-lived index mutex.
+  Reads take no writer lock. A pending write journal refuses reads until recovery
+  completes; see [store.md](docs/design/office/specs/store.md).
 - Planned, with the Orbit client: the app server caps concurrent `orbit` subprocesses,
   shares one in-flight poll between browser tabs, and runs the dispatch pass single-flight.

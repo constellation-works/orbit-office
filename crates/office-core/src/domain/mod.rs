@@ -4,11 +4,11 @@
 //! STD-02@3 §R17 deviation recorded in 4_decisions.md).
 
 mod artifact;
-mod knowledge;
+pub mod knowledge;
 mod metrics;
 mod proposal;
 mod selection;
 mod session;
-mod settings;
+pub mod settings;
 mod signals;
 mod source;

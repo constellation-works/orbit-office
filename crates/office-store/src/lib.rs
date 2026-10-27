@@ -4,13 +4,13 @@
 //! [Orbit](https://github.com/constellation-works/orbit), a labelled
 //! dependency — none of its code is vendored here): file and SQLite
 //! drivers stay behind a repository facade, narrow filesystem mechanics
-//! live in [`fs`], and the SQLite schema grows through an ordered
+//! live in `office_common::fs`, and the SQLite schema grows through an ordered
 //! migration registry. The shape is reused; the code is this project's.
 //!
 //! Shared mechanisms (fs, SQLite defaults, common types) live in
 //! `office-common`, this workspace's `orbit-common` counterpart.
 //!
-//! - [`contracts`] holds the record shapes every driver agrees on.
+//! - [`contracts`] re-exports the pure core Library record shapes.
 //! - [`repository::LibraryStore`] is the one surface callers use: it owns
 //!   a Library root (plain Markdown files, the source of truth) and an
 //!   index database under plugin state (rebuildable at any time).
@@ -27,7 +27,7 @@ mod driver;
 mod error;
 mod repository;
 
-pub use contracts::{DocumentKind, DocumentRecord, SearchFilter, SearchHit};
+pub use contracts::{DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit};
 pub use error::{Error, Result};
 pub use repository::LibraryStore;
 

@@ -13,6 +13,15 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// A supervised child exceeded its deadline.
+    #[error("subprocess exceeded its deadline")]
+    ProcessTimeout,
+    /// A supervised child exceeded its per-stream capture budget.
+    #[error("subprocess exceeded its output capture limit")]
+    ProcessOutputLimit,
+    /// The platform has no supported process group supervisor.
+    #[error("subprocess supervision requires Linux or macOS")]
+    ProcessUnsupported,
     /// An id or path component is not a single safe path component.
     #[error("{kind} id must be a single path component without separators or traversal: {value}")]
     UnsafePath {
@@ -39,6 +48,9 @@ impl Error {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
+            Self::ProcessTimeout => "process_timeout",
+            Self::ProcessOutputLimit => "process_output_limit",
+            Self::ProcessUnsupported => "process_unsupported",
             Self::UnsafePath { .. } => "unsafe_path",
             Self::Io { .. } => "io_error",
         }
