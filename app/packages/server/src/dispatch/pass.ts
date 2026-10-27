@@ -97,6 +97,20 @@ export interface ShipOptions {
   timeoutMs?: number;
 }
 
+/**
+ * Max stderr bytes retained for ship diagnostics (STD-03 R15).
+ * The failure message shows only a short preview of these bytes; the
+ * ceiling bounds retained and concatenated memory on every path,
+ * including successful long-running dispatches.
+ */
+export const MAX_SHIP_STDERR_BYTES = 8 * 1024;
+
+/** Characters of captured stderr shown in the failure message. */
+const SHIP_STDERR_PREVIEW_CHARS = 500;
+
+/** Marker appended when captured stderr was truncated. */
+const SHIP_STDERR_TRUNCATED_MARK = "... [truncated]";
+
 /** Submit ids with `orbit run ship <ids>` (review-only: no `--complete`). */
 export function shipTasks(ids: readonly string[], options: ShipOptions = {}): Promise<void> {
   if (ids.length === 0) return Promise.resolve();
@@ -135,8 +149,21 @@ export function shipTasks(ids: readonly string[], options: ShipOptions = {}): Pr
       clearTimeout(timer);
       if (killer !== undefined) clearTimeout(killer);
     };
+    let stderrBytes = 0;
+    let stderrTruncated = false;
     const stderrChunks: Buffer[] = [];
-    child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      // Drain every chunk so the child never blocks on a full pipe, but
+      // retain at most MAX_SHIP_STDERR_BYTES from the first chunks (STD-03 R15).
+      if (stderrTruncated) return;
+      const length = Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+      stderrBytes += length;
+      if (stderrBytes > MAX_SHIP_STDERR_BYTES) {
+        stderrTruncated = true;
+        return;
+      }
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
     child.stdout.on("data", () => undefined);
     child.on("error", (error) => {
       clearTimers();
@@ -150,8 +177,13 @@ export function shipTasks(ids: readonly string[], options: ShipOptions = {}): Pr
         return;
       }
       if (code !== 0) {
-        const stderr = Buffer.concat(stderrChunks).toString("utf8").trim().slice(0, 500);
-        reject(new Error(`orbit run ship failed (code ${code ?? "none"}, signal ${signal ?? "none"}): ${stderr}`));
+        // Bounded: stderrChunks holds at most MAX_SHIP_STDERR_BYTES, so this
+        // concat never touches unbounded data (STD-03 R15).
+        const captured = Buffer.concat(stderrChunks).toString("utf8").trim();
+        const preview = captured.slice(0, SHIP_STDERR_PREVIEW_CHARS);
+        const wasCut = stderrTruncated || preview.length < captured.length;
+        const suffix = wasCut ? ` ${SHIP_STDERR_TRUNCATED_MARK}` : "";
+        reject(new Error(`orbit run ship failed (code ${code ?? "none"}, signal ${signal ?? "none"}): ${preview}${suffix}`));
         return;
       }
       resolve();
