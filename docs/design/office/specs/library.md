@@ -56,7 +56,10 @@ workspace and enabled the plugin. The user never runs it by hand.
 `office.init` (mutating, `mcp_scope: none`) does, in order:
 
 1. Refuses if `library_dir` is not inside the granted write root
-   (`{{workspace}}/library`), or if `git` is missing.
+   (`{{workspace}}/library`) after resolving existing path components, if the
+   destination itself is a symlink, or if `git` is missing. Missing destination
+   components are checked against their nearest existing ancestor before any
+   Library or index is created.
 2. Creates the layout directories, with a `.gitkeep` in each empty one.
 3. Runs `git init` in `library/` if it is not already a repository.
 4. Writes `.office/config.yaml` from the plugin's bundled default, and the
