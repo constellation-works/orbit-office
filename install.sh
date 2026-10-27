@@ -16,6 +16,21 @@ PLUGIN_NAME="office"
 REPO_GIT_URL="https://github.com/constellation-works/orbit-office.git"
 DEFAULT_PORT="4317"
 
+# Pinned agent toolchain (spec step 2). The four archive digests were
+# recorded from the uv 0.13.6 release asset sha256.sum and checked by
+# hashing those archives (2026-10-26). Nothing in the environment can
+# replace a digest. ORBIT_OFFICE_UV_URL may only change which archive
+# is fetched; the bytes are still checked against the digest recorded
+# for that file name (STD-05@1 §R23). The fixture name is the harness
+# archive scripts/install/fixtures/uv-test-fixture.tar.gz.
+UV_VERSION="0.13.6"
+PYTHON_VERSION="3.12"
+UV_SHA256_MACOS_ARM64="60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472"
+UV_SHA256_MACOS_X86_64="63ba17fdda55ad1a230d4b37fc6017ffa10c23688c83818bd3bfdf914c652a02"
+UV_SHA256_LINUX_X86_64="f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645"
+UV_SHA256_LINUX_AARCH64="229e194255c7958d86d56e8790d969a6f74736592133f0dfd0076f754c642c1d"
+UV_SHA256_FIXTURE="1865ac48a9aea37d3cc88091cc20ed9d513c5c73985a0823384ffb37e3542e20"
+
 say() { printf '%s\n' "$*"; }
 step() { printf '==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
@@ -25,9 +40,10 @@ usage() {
     cat <<'EOF'
 Usage: install.sh [options]
 
-Install orbit-office: Orbit (when missing), the ~/orbit workspace,
-the office plugin, secrets, the Library scaffold, agent CLI
-registration and the app as a login service. Idempotent.
+Install orbit-office: a pinned uv and Python 3.12, Orbit (when
+missing), the ~/orbit workspace, the office plugin, secrets, the
+Library scaffold, agent CLI registration and the app as a login
+service. Idempotent.
 
 Options:
   --home DIR       Workspace folder (default: ~/orbit)
@@ -36,8 +52,9 @@ Options:
                    (needs cargo) instead of a local/prebuilt export
   --agent NAME     Agent CLI to register: claude (default) or codex
   --port PORT      App port (default: 4317, or $ORBIT_OFFICE_PORT)
-  --uninstall      Remove the service, the MCP entry and the plugin;
-                   keeps the workspace and the Library
+  --uninstall      Remove the service, the MCP entry, the plugin and
+                   the tools folder (uv and its Python); keeps the
+                   workspace and the Library
   --purge          Like --uninstall, and also removes the workspace
   -h, --help       Show this help
 
@@ -47,6 +64,12 @@ Environment:
   ORBIT_OFFICE_PLUGIN_SOURCE Plugin source for `orbit plugin add`
   ORBIT_OFFICE_META_API_KEY  Meta API key (used instead of prompting)
   ORBIT_OFFICE_BASETEN_TOKEN Baseten token (used instead of prompting)
+  ORBIT_OFFICE_OS            Platform override (macos or linux)
+  ORBIT_OFFICE_ARCH          Architecture override (x86_64 or arm64)
+  ORBIT_OFFICE_UV_URL        Fetch this uv archive instead of the
+                             GitHub asset. The recorded SHA-256 for
+                             that archive name still applies; this
+                             does not override the checksum
 EOF
 }
 
@@ -120,6 +143,31 @@ else
     DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/orbit-office"
 fi
 STATE_FILE="$DATA_DIR/install-state"
+
+ARCH_RAW="${ORBIT_OFFICE_ARCH:-$(uname -m 2>/dev/null || printf 'unknown')}"
+case "$ARCH_RAW" in
+    arm64|aarch64) ARCH="arm64" ;;
+    x86_64|amd64) ARCH="x86_64" ;;
+    *) ARCH="$ARCH_RAW" ;;
+esac
+
+# uv and Python live here on both systems, not under DATA_DIR. On macOS
+# DATA_DIR has spaces and follows ORBIT_OFFICE_DATA_DIR; shebangs need
+# a stable path with no spaces.
+TOOLS_DIR="$HOME/.local/share/orbit-office/tools"
+TOOLS_BIN="$TOOLS_DIR/bin"
+TOOLS_PYTHON="$TOOLS_DIR/python"
+TOOLS_CACHE="$TOOLS_DIR/cache"
+case "$OS" in
+    macos) _path_rest="/usr/bin:/bin:/usr/sbin:/sbin" ;;
+    *) _path_rest="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ;;
+esac
+AGENT_PATH="$TOOLS_BIN:$_path_rest"
+_nl='
+'
+case "$AGENT_PATH" in
+    *\"*|*"$_nl"*|*\\*) die "agent PATH cannot be encoded: $AGENT_PATH" ;;
+esac
 SERVICE_NAME="orbit-office"
 SYSTEMD_UNIT="$HOME/.config/systemd/user/orbit-office.service"
 LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.orbit-office.app.plist"
@@ -333,11 +381,198 @@ set_secret() {
 }
 
 # ---------------------------------------------------------------------------
+# Pinned uv and Python (spec step 2)
+# ---------------------------------------------------------------------------
+
+sha256_file() {
+    _f="$1"
+    _line=""
+    if command -v sha256sum >/dev/null 2>&1; then
+        _line=$(sha256sum "$_f") || return 1
+    elif command -v shasum >/dev/null 2>&1; then
+        _line=$(shasum -a 256 "$_f") || return 1
+    else
+        return 2
+    fi
+    printf '%s\n' "${_line%% *}"
+}
+
+uv_target() {
+    case "$OS:$ARCH" in
+        macos:arm64) printf '%s\n' "aarch64-apple-darwin" ;;
+        macos:x86_64) printf '%s\n' "x86_64-apple-darwin" ;;
+        linux:x86_64) printf '%s\n' "x86_64-unknown-linux-gnu" ;;
+        linux:arm64) printf '%s\n' "aarch64-unknown-linux-gnu" ;;
+        *) die "unsupported platform $OS/$ARCH for the pinned uv $UV_VERSION archive" ;;
+    esac
+}
+
+# URL of the archive to fetch. ORBIT_OFFICE_UV_URL is a seam for the
+# harness; it does not select the expected digest.
+uv_archive_url() {
+    if [ -n "${ORBIT_OFFICE_UV_URL:-}" ]; then
+        printf '%s\n' "$ORBIT_OFFICE_UV_URL"
+        return 0
+    fi
+    printf 'https://github.com/astral-sh/uv/releases/download/%s/uv-%s.tar.gz\n' \
+        "$UV_VERSION" "$(uv_target)"
+}
+
+# Digest recorded for this archive name. Empty when the name is not pinned.
+uv_expected_sha256() {
+    _base="$1"
+    _base=${_base%%\?*}
+    _base=${_base%%#*}
+    _base=${_base%/}
+    _base=${_base##*/}
+    case "$_base" in
+        uv-aarch64-apple-darwin.tar.gz) printf '%s\n' "$UV_SHA256_MACOS_ARM64" ;;
+        uv-x86_64-apple-darwin.tar.gz) printf '%s\n' "$UV_SHA256_MACOS_X86_64" ;;
+        uv-x86_64-unknown-linux-gnu.tar.gz) printf '%s\n' "$UV_SHA256_LINUX_X86_64" ;;
+        uv-aarch64-unknown-linux-gnu.tar.gz) printf '%s\n' "$UV_SHA256_LINUX_AARCH64" ;;
+        uv-test-fixture.tar.gz) printf '%s\n' "$UV_SHA256_FIXTURE" ;;
+        *) printf '\n' ;;
+    esac
+}
+
+uv_download_cleanup() {
+    rm -rf "$TOOLS_DIR/.download"
+    rmdir "$TOOLS_DIR" 2>/dev/null || true
+}
+
+# Install tools/bin/uv from the pinned archive. Never uses a uv already
+# on PATH. Checksum failure returns before tar runs.
+install_pinned_uv() {
+    command -v curl >/dev/null 2>&1 || die "curl is required to download uv $UV_VERSION"
+    _url=$(uv_archive_url)
+    _expected=$(uv_expected_sha256 "$_url")
+    if [ -z "$_expected" ]; then
+        die "uv: no recorded SHA-256 for $_url; refusing to unpack"
+    fi
+    mkdir -p "$TOOLS_DIR"
+    _work="$TOOLS_DIR/.download"
+    rm -rf "$_work"
+    mkdir -p "$_work"
+    _archive="$_work/uv.tar.gz"
+    if ! curl -fsSL "$_url" -o "$_archive"; then
+        uv_download_cleanup
+        die "uv: failed to download $_url"
+    fi
+    _sha_rc=0
+    _got=$(sha256_file "$_archive") || _sha_rc=$?
+    if [ "$_sha_rc" -eq 2 ]; then
+        uv_download_cleanup
+        die "sha256sum or shasum is required to verify the uv archive"
+    fi
+    if [ "$_sha_rc" -ne 0 ] || [ -z "${_got:-}" ]; then
+        uv_download_cleanup
+        die "uv: could not compute the SHA-256 of the downloaded archive"
+    fi
+    if [ "$_got" != "$_expected" ]; then
+        uv_download_cleanup
+        die "uv archive SHA-256 mismatch for $_url: expected $_expected, got $_got; not unpacked"
+    fi
+    command -v tar >/dev/null 2>&1 || {
+        uv_download_cleanup
+        die "tar is required to unpack the uv archive"
+    }
+    mkdir -p "$_work/unpack"
+    if ! tar -xzf "$_archive" -C "$_work/unpack"; then
+        uv_download_cleanup
+        die "uv: failed to unpack the archive"
+    fi
+    _bin=""
+    for _cand in "$_work/unpack"/*/uv "$_work/unpack"/uv; do
+        if [ -f "$_cand" ] && [ ! -L "$_cand" ]; then
+            _bin="$_cand"
+            break
+        fi
+    done
+    if [ -z "$_bin" ]; then
+        uv_download_cleanup
+        die "uv: archive contains no uv binary"
+    fi
+    mkdir -p "$TOOLS_BIN"
+    cp "$_bin" "$TOOLS_BIN/uv.tmp.$$"
+    chmod 755 "$TOOLS_BIN/uv.tmp.$$"
+    mv "$TOOLS_BIN/uv.tmp.$$" "$TOOLS_BIN/uv"
+    rm -rf "$_work"
+}
+
+uv_is_pinned() {
+    [ -x "$TOOLS_BIN/uv" ] || return 1
+    _uv_out=$("$TOOLS_BIN/uv" --version 2>/dev/null || true)
+    _uv_got=$(printf '%s\n' "$_uv_out" | awk 'NR == 1 { print $2 }')
+    [ "$_uv_got" = "$UV_VERSION" ]
+}
+
+# True when python3 --version prints the pinned minor (3.12 or 3.12.x).
+python_version_ok() {
+    [ -x "$TOOLS_BIN/python3" ] || return 1
+    _py_out=$("$TOOLS_BIN/python3" --version 2>&1) || return 1
+    _py_got=$(printf '%s\n' "$_py_out" | awk 'NR == 1 { print $2 }')
+    case "$_py_got" in
+        "$PYTHON_VERSION"|"$PYTHON_VERSION".*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+python_already_installed() {
+    uv_is_pinned || return 1
+    [ -e "$TOOLS_BIN/python" ] || return 1
+    [ -e "$TOOLS_BIN/python3" ] || return 1
+    python_version_ok
+}
+
+install_pinned_python() {
+    mkdir -p "$TOOLS_PYTHON" "$TOOLS_CACHE" "$TOOLS_BIN"
+    # --no-bin (also UV_PYTHON_INSTALL_BIN=0) keeps uv from linking
+    # interpreters into ~/.local/bin. The cache stays under tools/.
+    # Confirmed on the pinned uv: `python install --help` lists both.
+    if ! UV_PYTHON_INSTALL_DIR="$TOOLS_PYTHON" \
+        UV_PYTHON_INSTALL_BIN=0 \
+        UV_CACHE_DIR="$TOOLS_CACHE" \
+        "$TOOLS_BIN/uv" python install --no-bin --cache-dir "$TOOLS_CACHE" "$PYTHON_VERSION"
+    then
+        die "uv python install $PYTHON_VERSION failed"
+    fi
+    _py=$(UV_PYTHON_INSTALL_DIR="$TOOLS_PYTHON" \
+        UV_CACHE_DIR="$TOOLS_CACHE" \
+        "$TOOLS_BIN/uv" python find --no-project "$PYTHON_VERSION") || \
+        die "uv python find $PYTHON_VERSION failed"
+    case "$_py" in
+        "$TOOLS_PYTHON"/*) ;;
+        *) die "uv python find $PYTHON_VERSION returned '${_py:-nothing}', outside $TOOLS_PYTHON" ;;
+    esac
+    [ -x "$_py" ] || die "uv python find $PYTHON_VERSION is not executable: $_py"
+    ln -sfn "$_py" "$TOOLS_BIN/python3"
+    ln -sfn "$_py" "$TOOLS_BIN/python"
+    if ! python_version_ok; then
+        _py_out=$("$TOOLS_BIN/python3" --version 2>&1 || true)
+        die "python: $TOOLS_BIN/python3 --version must print the pinned minor version $PYTHON_VERSION; got: ${_py_out:-nothing}"
+    fi
+    say "python: installed uv $UV_VERSION and Python $PYTHON_VERSION ($TOOLS_DIR)"
+}
+
+step_python() {
+    step "2 python"
+    if python_already_installed; then
+        say "python: already done (uv $UV_VERSION and Python $PYTHON_VERSION in $TOOLS_DIR)"
+        return 0
+    fi
+    # A uv on PATH is ignored; only the binary we just verified is used.
+    if ! uv_is_pinned; then
+        install_pinned_uv
+    fi
+    install_pinned_python
+}
+
+# ---------------------------------------------------------------------------
 # Install steps
 # ---------------------------------------------------------------------------
 
 step_preflight() {
-    step "preflight"
+    step "1 preflight"
     case "$OS" in
         macos|linux) say "preflight: already done (platform $OS)" ;;
         *) die "unsupported platform '$OS_RAW': macOS or Linux required (Windows: use WSL2)" ;;
@@ -390,7 +625,7 @@ step_preflight() {
 }
 
 step_orbit() {
-    step "orbit"
+    step "3 orbit"
     if command -v orbit >/dev/null 2>&1; then
         _raw=$(orbit --version 2>/dev/null || printf '')
         _version=$(extract_version "$_raw")
@@ -419,7 +654,7 @@ step_orbit() {
 }
 
 step_workspace() {
-    step "workspace"
+    step "4 workspace"
     check_workspace_adoptable
     if [ -d "$WORKSPACE/.git" ]; then
         say "workspace: git repository already done ($WORKSPACE)"
@@ -475,7 +710,7 @@ plugin_is_listed() {
 }
 
 step_plugin() {
-    step "plugin"
+    step "5 plugin"
     if plugin_is_listed || state_has "plugin_added"; then
         say "plugin: already added ($PLUGIN_NAME)"
     else
@@ -516,13 +751,13 @@ step_plugin() {
 }
 
 step_secrets() {
-    step "secrets"
+    step "6 secrets"
     set_secret "meta_api_key" "${ORBIT_OFFICE_META_API_KEY:-${META_API_KEY:-}}" 0
     set_secret "baseten_token" "${ORBIT_OFFICE_BASETEN_TOKEN:-${BASETEN_TOKEN:-}}" 1
 }
 
 step_scaffold() {
-    step "scaffold"
+    step "7 scaffold"
     if [ -f "$WORKSPACE/library/.office/config.yaml" ] \
         || [ -d "$WORKSPACE/library/.git" ] \
         || state_has "scaffolded"; then
@@ -540,39 +775,84 @@ step_scaffold() {
 
 # Register the Orbit MCP entry with the agent CLI. Node is a proven
 # prerequisite, so JSON edits go through it; the old file is backed up
-# once to <settings>.bak. Prints "already" when the entry is present.
+# once to <settings>.bak. The entry is "already done" only when it
+# matches the desired command, args and PATH. A marker from an older
+# install is not enough: that install had no tools/bin on PATH.
 register_mcp_claude() {
     _file="$AGENT_SETTINGS"
     mkdir -p "$(dirname -- "$_file")"
-    if [ -f "$_file" ] && grep -q '"orbit"' "$_file" 2>/dev/null \
-        && state_has "agent_registered"; then
-        say "agent: already done (Orbit MCP entry in $_file)"
-        return 0
-    fi
-    if [ -f "$_file" ] && [ ! -f "$_file.bak" ]; then
-        cp "$_file" "$_file.bak"
-        say "agent: backed up $_file to $_file.bak"
-    fi
-    SETTINGS_FILE="$_file" node <<'NODE'
+    _had_bak=0
+    [ -f "$_file.bak" ] && _had_bak=1
+    _rc=0
+    SETTINGS_FILE="$_file" ORBIT_OFFICE_AGENT_PATH="$AGENT_PATH" node <<'NODE' || _rc=$?
 const fs = require("fs");
 const file = process.env.SETTINGS_FILE;
+const agentPath = process.env.ORBIT_OFFICE_AGENT_PATH;
+if (!agentPath) {
+  process.stderr.write("ORBIT_OFFICE_AGENT_PATH is required\n");
+  process.exit(1);
+}
+const desired = {
+  command: "orbit",
+  args: ["mcp", "serve"],
+  env: { PATH: agentPath }
+};
 let data = {};
 if (fs.existsSync(file)) {
   const text = fs.readFileSync(file, "utf8").trim();
   if (text) data = JSON.parse(text);
 }
-if (!data.mcpServers || typeof data.mcpServers !== "object") data.mcpServers = {};
-data.mcpServers.orbit = { command: "orbit", args: ["mcp", "serve"] };
+if (!data.mcpServers || typeof data.mcpServers !== "object" || Array.isArray(data.mcpServers)) {
+  data.mcpServers = {};
+}
+if (JSON.stringify(data.mcpServers.orbit) === JSON.stringify(desired)) {
+  process.exit(42);
+}
+if (fs.existsSync(file) && !fs.existsSync(file + ".bak")) {
+  fs.copyFileSync(file, file + ".bak");
+}
+data.mcpServers.orbit = desired;
 fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
 NODE
+    if [ "$_rc" -eq 42 ]; then
+        state_mark "agent_registered"
+        say "agent: already done (Orbit MCP entry in $_file)"
+        return 0
+    fi
+    if [ "$_rc" -ne 0 ]; then
+        die "agent: could not write the Orbit MCP entry to $_file"
+    fi
+    if [ "$_had_bak" -eq 0 ] && [ -f "$_file.bak" ]; then
+        say "agent: backed up $_file to $_file.bak"
+    fi
     state_mark "agent_registered"
     say "agent: added the Orbit MCP entry to $_file"
+}
+
+# True when the Codex orbit table already puts tools/bin on PATH.
+# The env map is inline on that table so uninstall, which stops at the
+# next [header], removes it with the section.
+codex_orbit_path_current() {
+    [ -f "$AGENT_SETTINGS" ] || return 1
+    awk -v bin="$TOOLS_BIN" '
+        /^\[mcp_servers\.orbit\]$/ { in_s = 1; next }
+        /^\[/ { in_s = 0 }
+        in_s && index($0, "PATH") && index($0, bin) { found = 1 }
+        END { exit !found }
+    ' "$AGENT_SETTINGS"
+}
+
+strip_codex_orbit_section() {
+    _file="$1"
+    _tmp="$_file.tmp.$$"
+    awk '/^\[mcp_servers\.orbit\]$/{skip=1; next} /^\[/{skip=0} !skip' "$_file" > "$_tmp"
+    mv "$_tmp" "$_file"
 }
 
 register_mcp_codex() {
     _file="$AGENT_SETTINGS"
     mkdir -p "$(dirname -- "$_file")"
-    if [ -f "$_file" ] && grep -q 'mcp_servers.orbit' "$_file" 2>/dev/null; then
+    if codex_orbit_path_current; then
         state_mark "agent_registered"
         say "agent: already done (Orbit MCP entry in $_file)"
         return 0
@@ -581,10 +861,17 @@ register_mcp_codex() {
         cp "$_file" "$_file.bak"
         say "agent: backed up $_file to $_file.bak"
     fi
+    if [ -f "$_file" ] && grep -q '^\[mcp_servers\.orbit\]$' "$_file" 2>/dev/null; then
+        strip_codex_orbit_section "$_file"
+    fi
+    if [ -s "$_file" ]; then
+        printf '\n' >> "$_file"
+    fi
     {
-        printf '\n[mcp_servers.orbit]\n'
+        printf '[mcp_servers.orbit]\n'
         printf 'command = "orbit"\n'
         printf 'args = ["mcp", "serve"]\n'
+        printf 'env = { PATH = "%s" }\n' "$AGENT_PATH"
     } >> "$_file"
     state_mark "agent_registered"
     say "agent: added the Orbit MCP entry to $_file"
@@ -614,14 +901,12 @@ remove_mcp_codex() {
         say "agent: already removed (no Orbit MCP entry)"
         return 0
     fi
-    _tmp="$_file.tmp.$$"
-    awk '/^\[mcp_servers\.orbit\]/{skip=1; next} /^\[/{skip=0} !skip' "$_file" > "$_tmp" \
-        && mv "$_tmp" "$_file"
+    strip_codex_orbit_section "$_file"
     say "agent: removed the Orbit MCP entry from $_file"
 }
 
 step_agent() {
-    step "agent"
+    step "8 agent"
     case "$AGENT" in
         claude) register_mcp_claude ;;
         codex) register_mcp_codex ;;
@@ -646,7 +931,7 @@ step_agent() {
 }
 
 step_app() {
-    step "app"
+    step "9 app"
     _node_bin=$(command -v node 2>/dev/null || printf 'node')
     if [ -n "$APP_SRC" ]; then
         if [ -f "$APP_SRC/packages/server/dist/main.js" ] || state_has "app_built"; then
@@ -672,7 +957,7 @@ step_app() {
   <key>ProgramArguments</key>
   <array><string>$_node_bin</string><string>$_server_js</string></array>
   <key>EnvironmentVariables</key>
-  <dict><key>PORT</key><string>$PORT</string><key>HOST</key><string>127.0.0.1</string></dict>
+  <dict><key>PORT</key><string>$PORT</string><key>HOST</key><string>127.0.0.1</string><key>PATH</key><string>$AGENT_PATH</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
 </dict>
@@ -704,6 +989,7 @@ WorkingDirectory=$_app_home
 ExecStart=$_node_bin $_server_js
 Environment=PORT=$PORT
 Environment=HOST=127.0.0.1
+Environment=PATH=$AGENT_PATH
 Restart=on-failure
 
 [Install]
@@ -805,6 +1091,19 @@ do_uninstall() {
     else
         say "uninstall: plugin already removed"
     fi
+    # tools/ is not the data folder. On Linux the data folder is its
+    # parent; on macOS they are different trees. Remove only tools/.
+    case "$TOOLS_DIR" in
+        "$HOME/.local/share/orbit-office/tools")
+            if [ -e "$TOOLS_DIR" ]; then
+                rm -rf "$TOOLS_DIR"
+                say "uninstall: removed tools ($TOOLS_DIR)"
+            else
+                say "uninstall: tools already removed"
+            fi
+            ;;
+        *) die "refusing to remove unexpected tools path $TOOLS_DIR" ;;
+    esac
     state_clear "plugin_added"
     state_clear "plugin_enabled"
     state_clear "service_installed"
@@ -844,6 +1143,7 @@ fi
 
 check_workspace_adoptable
 step_preflight
+step_python
 step_orbit
 step_workspace
 step_plugin
@@ -856,6 +1156,7 @@ step "summary"
 say "summary: workspace  $WORKSPACE"
 say "summary: library    $WORKSPACE/library"
 say "summary: data       $DATA_DIR"
+say "summary: tools      $TOOLS_DIR"
 say "summary: app        http://localhost:$PORT/"
 say "summary: uninstall  install.sh --uninstall (keeps $WORKSPACE)"
 say "summary: purge      install.sh --purge (also removes $WORKSPACE)"
