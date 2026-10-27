@@ -51,7 +51,7 @@ fn status_reports_an_uninitialized_library_without_refusing() {
     let context = Map::new();
     let ports = office_core::ports::Ports {
         library: Box::new(office_testkit::fakes::FakeLibrary::default()),
-        models: Box::new(office_testkit::fakes::FakeModels),
+        models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit),
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,

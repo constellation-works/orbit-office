@@ -141,8 +141,16 @@ ban "$CORE"          'std::env::|home_dir|current_dir'           "the core crate
 # The application reaches files, models and Orbit only through ports.
 ban "$TOOLS"         'std::(fs|net|process)|tempfile::|rustix::' "office-tools is the application: use an office-core port, not direct I/O"
 ban "$TOOLS"         'std::env::|home_dir|current_dir'           "office-tools must not read the environment or discover paths"
-# Model calls are HTTP only; process spawning belongs elsewhere.
-ban "$MODELS"        'std::process'                              "office-models speaks HTTP only: no subprocesses"
+# Model calls are HTTP only; the one subprocess exception is media.rs
+# (ffmpeg audio splitting, STD-03 supervised), so std::process anywhere
+# else in office-models fails here.
+MODELS_PROCESS_HITS=$(grep -rnHE --include='*.rs' --exclude-dir=tests 'std::process' "$MODELS" 2>/dev/null \
+  | grep -v "^$MODELS/media.rs:" \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)
+if [[ -n "$MODELS_PROCESS_HITS" ]]; then
+  echo "$MODELS_PROCESS_HITS" >&2
+  err "office-models speaks HTTP only: std::process is confined to media.rs (ffmpeg)"
+fi
 # Composition does not know about parsing or rendering (R2).
 ban "$CLI/app.rs"    'crate::(cli|output)'                       "app.rs (composition) must not import surface modules"
 # Rendering is derived from payloads only; it never reaches back up (R1).

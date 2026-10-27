@@ -12,7 +12,7 @@ fn call(tool: &str, input: Value, ports: &office_core::ports::Ports<'_>) -> Valu
 fn ports(library: office_testkit::fakes::FakeLibrary) -> office_core::ports::Ports<'static> {
     office_core::ports::Ports {
         library: Box::new(library),
-        models: Box::new(office_testkit::fakes::FakeModels),
+        models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit),
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,

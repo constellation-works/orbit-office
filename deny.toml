@@ -20,6 +20,12 @@ allow = [
     "Unicode-3.0",
     # Zlib: foldhash, pulled in by hashbrown -> hashlink -> rusqlite (office-store).
     "Zlib",
+    # ISC: ring, rustls, rustls-webpki and untrusted, pulled in by ureq (office-models).
+    "ISC",
+    # BSD-3-Clause: pulled in by ureq's rustls stack (office-models).
+    "BSD-3-Clause",
+    # CDLA-Permissive-2.0: webpki-roots root certificates, pulled in by ureq (office-models).
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.9
 

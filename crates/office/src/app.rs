@@ -13,14 +13,64 @@ use serde_json::Value;
 
 use crate::error::Result;
 
-// Models and Orbit adapters arrive with their first port operations.
+// The Orbit adapter arrives with its first port operations.
 // In particular, constructing these handles does no I/O.
 struct ContextHandle<'a> {
     #[expect(dead_code, reason = "adapter operations will use the call context")]
     context: &'a Context,
 }
-impl Models for ContextHandle<'_> {}
 impl Orbit for ContextHandle<'_> {}
+
+/// The real model adapter for one call. Construction does no I/O: the
+/// routed client is built per operation from the context's secrets and
+/// the Library's open-weights endpoint, so a call without a Library or
+/// secrets still constructs and only the operation itself can refuse.
+struct ContextModels<'a> {
+    context: &'a Context,
+    library: RealLibrary,
+}
+
+impl ContextModels<'_> {
+    fn client(&self) -> office_models::RoutedClient {
+        let secret = |name: &str| {
+            self.context
+                .get("secrets")
+                .and_then(|secrets| secrets.get(name))
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        };
+        let mut config =
+            office_models::ModelConfig::new(secret("meta_api_key"), secret("baseten_token"));
+        config.open_weights_endpoint = self
+            .library
+            .settings()
+            .ok()
+            .and_then(|settings| settings.open_weights_endpoint);
+        office_models::RoutedClient::new(config)
+    }
+}
+
+impl Models for ContextModels<'_> {
+    fn transcribe(
+        &self,
+        request: &office_core::ports::TranscribeRequest,
+    ) -> office_core::Result<office_core::ports::Transcript> {
+        self.client().transcribe(request)
+    }
+    fn extract(
+        &self,
+        request: &office_core::ports::ExtractRequest,
+    ) -> office_core::Result<serde_json::Value> {
+        self.client().extract(request)
+    }
+    fn read_image(
+        &self,
+        request: &office_core::ports::ImageRequest,
+    ) -> office_core::Result<office_core::ports::ImageReading> {
+        self.client().read_image(request)
+    }
+}
 struct SystemClock;
 impl Clock for SystemClock {
     fn now(&self) -> SystemTime {
@@ -140,7 +190,10 @@ impl Library for RealLibrary {
 fn ports(context: &Context) -> Ports<'_> {
     Ports {
         library: Box::new(RealLibrary::from_context(context)),
-        models: Box::new(ContextHandle { context }),
+        models: Box::new(ContextModels {
+            context,
+            library: RealLibrary::from_context(context),
+        }),
         orbit: Box::new(ContextHandle { context }),
         clock: Box::new(SystemClock),
     }
