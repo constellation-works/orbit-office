@@ -82,7 +82,9 @@ done
 [ -f "$MANIFEST" ] || { printf 'missing %s\n' "$MANIFEST" >&2; exit 1; }
 REAL_TAR=$(command -v tar) || { printf 'tar is required\n' >&2; exit 1; }
 
-ROOT=$(mktemp -d)
+mkdir -p "$SCRIPT_DIR/../../.orbit/tmp"
+ROOT=$(mktemp -d "$SCRIPT_DIR/../../.orbit/tmp/install-test.XXXXXX")
+ROOT=$(CDPATH='' cd -- "$ROOT" && pwd -P)
 trap 'rm -rf "$ROOT"' EXIT INT TERM
 
 PASS=0
@@ -155,13 +157,33 @@ case "${1:-} ${2:-}" in
     "--version ")
         printf 'orbit %s\n' "${STUB_ORBIT_VERSION:-0.34.0}" ;;
     "plugin list")
-        for _plugin in office gateway cloudcli; do
-            _suffix=".$_plugin"
-            [ "$_plugin" != office ] || _suffix=""
-            if [ -f "$state/plugin-added$_suffix" ]; then
-                printf '%s\t0.1.0\tenabled\tenabled\t3\tok\n' "$_plugin"
-            fi
-        done ;;
+        case " $* " in
+            *" --json "*)
+                node - "$state" "$PWD" <<'JSON'
+const fs = require("fs"), path = require("path");
+const [state, cwd] = process.argv.slice(2);
+const present = (name) => fs.existsSync(path.join(state, name));
+const rows = [];
+for (const name of ["office", "gateway", "cloudcli"]) {
+  const suffix = name === "office" ? "" : "." + name;
+  if (!present("plugin-added" + suffix)) continue;
+  const host = present("plugin-active" + suffix);
+  const toggle = fs.existsSync(path.join(cwd, ".orbit", "enabled-" + name));
+  rows.push({name, host_enabled: host, workspace_toggle: toggle || null,
+    permissions: ["fs", "network", ...(name === "cloudcli" ? [] : ["orbit_tools"])].map(grant => ({grant, granted: host}))});
+}
+process.stdout.write(JSON.stringify(rows));
+JSON
+                ;;
+            *)
+                for _plugin in office gateway cloudcli; do
+                    _suffix=".$_plugin"
+                    [ "$_plugin" != office ] || _suffix=""
+                    if [ -f "$state/plugin-added$_suffix" ]; then
+                        printf '%s\t0.1.0\tenabled\tenabled\t3\tok\n' "$_plugin"
+                    fi
+                done ;;
+        esac ;;
     "plugin add")
         _source=${3:?}
         case "$_source" in
@@ -191,6 +213,16 @@ case "${1:-} ${2:-}" in
         # Like Orbit: enable records the grants given, and the plugin is
         # active only when every permission the manifest requests is granted.
         _plugin=${3:?}
+        printf '%s: %s\n' "$PWD" "$*" >> "$state/enable-workspaces.log"
+        case " $* " in
+            *" --scope workspace "*)
+                case " $* " in *" --grant "*) printf 'workspace scope refuses grants\n' >&2; exit 1 ;; esac
+                _suffix=".$_plugin"; [ "$_plugin" != office ] || _suffix=""
+                [ -f "$state/plugin-active$_suffix" ] || exit 1
+                [ -d .orbit ] || { printf 'enable must select a registered workspace\n' >&2; exit 1; }
+                : > ".orbit/enabled-$_plugin"
+                exit 0 ;;
+        esac
         if [ "$_plugin" != office ] && [ "$(command -v python3)" != "$HOME/.local/share/orbit-office/tools/bin/python3" ]; then
             printf 'plugin enable must resolve the managed Python\n' >&2; exit 1
         fi
@@ -247,9 +279,19 @@ case "${1:-} ${2:-}" in
             *) exit 1 ;;
         esac ;;
     "workspace init")
-        mkdir -p .orbit; printf 'initialized\n' ;;
+        mkdir -p .orbit
+        grep -qxF "$PWD" "$state/workspace-roots" 2>/dev/null || printf '%s\n' "$PWD" >> "$state/workspace-roots"
+        printf 'initialized\n' ;;
     "workspace list")
-        if [ -n "${STUB_WORKSPACE_LIST:-}" ]; then printf '%s\n' "$STUB_WORKSPACE_LIST"; fi ;;
+        case " $* " in
+            *" --json "*) node - "$state/workspace-roots" <<'JSON'
+const fs = require("fs"), file = process.argv[2];
+const roots = fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean) : [];
+process.stdout.write(JSON.stringify(roots.map(repo_root => ({repo_root, status: "active"}))));
+JSON
+                ;;
+            *) if [ -n "${STUB_WORKSPACE_LIST:-}" ]; then printf '%s\n' "$STUB_WORKSPACE_LIST"; fi ;;
+        esac ;;
     "tool run")
         # office.init uses recorded `orbit tool run --json --full` bytes.
         # success and already are stdout objects with no top-level ok and
@@ -609,6 +651,7 @@ assert_home_scope() { # files stay under the workspace, data/tools, service, MCP
     (cd "$_home" && find . \( -type f -o -type l \) | sort) | while IFS= read -r _f; do
         case "$_f" in
             ./orbit|./orbit/*) ;;
+            ./.local/bin/office) ;;
             ./.local/share/orbit-office|./.local/share/orbit-office/*) ;;
             ./.config/systemd|./.config/systemd/*) ;;
             ./.claude|./.claude/*) ;;
@@ -633,10 +676,10 @@ assert_profiles_untouched() {
             fail "shell profile was created: $_p"
         fi
     done
-    if [ -e "$_home/.local/bin" ]; then
-        fail "~/.local/bin was created (system uv/python path)"
-    fi
-    ok "shell profiles and ~/.local/bin untouched"
+    for _tool in uv python python3; do
+        if [ -e "$_home/.local/bin/$_tool" ]; then fail "system $_tool path was created"; fi
+    done
+    ok "shell profiles and system uv/python paths untouched"
 }
 
 # ---------------------------------------------------------------------------
@@ -650,6 +693,7 @@ OUT1="$ROOT/out1.txt"
 run_install "$HOME1" -- > "$OUT1" 2>&1 || { cat "$OUT1" >&2; fail "first install exits 0"; }
 ok "first install exits 0"
 SNAP1="$ROOT/snap1.txt"; snapshot "$HOME1" > "$SNAP1"
+check "installer creates the standalone office launcher" test -x "$HOME1/.local/bin/office"
 check "workspace is a git repo" test -d "$HOME1/orbit/.git"
 check "workspace registered (.orbit)" test -d "$HOME1/orbit/.orbit"
 check "library scaffolded" test -f "$HOME1/orbit/library/.office/config.yaml"
@@ -706,6 +750,80 @@ for _word in python orbit workspace plugin scaffold agent service; do
         cat "$OUT2" >&2; fail "second run reports $_word as already done"
     fi
 done
+
+# The installed launcher is the real user entry point, independent of install.sh.
+run_office() { # run_office <home> <args...>
+    _office_home="$1"; shift
+    env -i HOME="$_office_home" PATH="$BIN:$NODE_DIR:/usr/bin:/bin" \
+        STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
+        STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
+        STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" STUB_INIT_FIXTURES="$INIT_FIXTURES" \
+        ORBIT_OFFICE_OS=linux ORBIT_OFFICE_HOME="${OFFICE_TEST_HOME:-}" "$_office_home/.local/bin/office" "$@" < /dev/null
+}
+WS2="$ROOT/second workspace"
+run_office "$HOME1" init "$WS2" --yes > "$ROOT/office-second" 2>&1 \
+    || { cat "$ROOT/office-second" >&2; fail "office init creates a second workspace"; }
+check "office init creates first workspace commit" git -C "$WS2" rev-parse --verify HEAD
+check "office init creates main branch" sh -c '[ "$(git -C "$1" branch --show-current)" = main ]' sh "$WS2"
+check "office init ignores the Library" grep -qxF /library/ "$WS2/.gitignore"
+check "office init fills repo-local git name" git -C "$WS2" config --local user.name
+check "office init fills repo-local git email" git -C "$WS2" config --local user.email
+check "office init registers selected folder" grep -qxF "$WS2" "$STUB_STATE/workspace-roots"
+check "office init enables office in selected folder" test -f "$WS2/.orbit/enabled-office"
+check "office init enables gateway in selected folder" test -f "$WS2/.orbit/enabled-gateway"
+check "office init scaffolds the selected Library" test -f "$WS2/library/.office/config.yaml"
+snapshot "$WS2" > "$ROOT/office-ws-before"
+snapshot "$HOME1" > "$ROOT/office-home-before"
+(STUB_INIT_MODE=already run_office "$HOME1" init "$WS2") > "$ROOT/office-already" 2>&1 \
+    || { cat "$ROOT/office-already" >&2; fail "office init accepts already_initialized"; }
+snapshot "$WS2" > "$ROOT/office-ws-after"
+snapshot "$HOME1" > "$ROOT/office-home-after"
+check "office init repeat preserves workspace bytes" cmp -s "$ROOT/office-ws-before" "$ROOT/office-ws-after"
+check "office init repeat preserves install bytes" cmp -s "$ROOT/office-home-before" "$ROOT/office-home-after"
+check "office init repeat does not ask consent" sh -c '! grep -q "Consent:" "$1"' sh "$ROOT/office-already"
+run_office "$HOME1" init > "$ROOT/office-default" 2>&1 \
+    || { cat "$ROOT/office-default" >&2; fail "office init uses default ~/orbit"; }
+check "office init default names ~/orbit" grep -F "$HOME1/orbit/library" "$ROOT/office-default"
+(OFFICE_TEST_HOME="$WS2" run_office "$HOME1" init) > "$ROOT/office-env-default" 2>&1 \
+    || { cat "$ROOT/office-env-default" >&2; fail "office init honors ORBIT_OFFICE_HOME"; }
+check "office env default names selected Library" grep -F "$WS2/library" "$ROOT/office-env-default"
+(cd "$ROOT" && run_office "$HOME1" init './second workspace') > "$ROOT/office-relative" 2>&1 \
+    || { cat "$ROOT/office-relative" >&2; fail "office init accepts relative path"; }
+check "relative office init names resolved Library" grep -F "$WS2/library" "$ROOT/office-relative"
+# A stale .orbit directory and ownership receipt are insufficient registration.
+# The old global scaffold marker is also insufficient when the Library is missing.
+: > "$STUB_STATE/workspace-roots"
+mv "$WS2/library" "$ROOT/saved-second-library"
+run_office "$HOME1" init "$WS2" > "$ROOT/office-repair" 2>&1 \
+    || { cat "$ROOT/office-repair" >&2; fail "office init repairs missing registration and Library"; }
+check "office init repairs registration despite receipt" grep -qxF "$WS2" "$STUB_STATE/workspace-roots"
+check "office init repairs Library despite global marker" test -f "$WS2/library/.office/config.yaml"
+REFUSED="$ROOT/unrelated-office"; mkdir -p "$REFUSED/.orbit" "$REFUSED/library"
+printf 'keep\n' > "$REFUSED/sentinel"
+snapshot "$REFUSED" > "$ROOT/office-refused-before"
+snapshot "$HOME1" > "$ROOT/office-refused-home-before"
+if run_office "$HOME1" init "$REFUSED" --yes > "$ROOT/office-refused" 2>&1; then
+    fail "office init refuses unrelated non-empty folder"
+else ok "office init refuses unrelated non-empty folder"; fi
+check "office init refusal names folder and reason" grep -F "refusing to adopt non-empty folder $REFUSED: it is not an office workspace" "$ROOT/office-refused"
+snapshot "$REFUSED" > "$ROOT/office-refused-after"
+snapshot "$HOME1" > "$ROOT/office-refused-home-after"
+check "office init refusal preserves folder bytes" cmp -s "$ROOT/office-refused-before" "$ROOT/office-refused-after"
+check "office init refusal preserves install bytes" cmp -s "$ROOT/office-refused-home-before" "$ROOT/office-refused-home-after"
+for _mode in error ok-false; do
+    if (STUB_INIT_MODE="$_mode" run_office "$HOME1" init "$WS2") > "$ROOT/office-error-$_mode" 2>&1; then
+        fail "office init $_mode must fail"
+    else ok "office init $_mode fails"; fi
+    check "office init $_mode prints office error code" grep -F 'code: library_dir_outside_workspace' "$ROOT/office-error-$_mode"
+done
+run_office "$HOME1" --help > "$ROOT/office-help" 2>&1
+if [ "${UPDATE_GOLDENS:-0}" = 1 ]; then cp "$ROOT/office-help" "$SCRIPT_DIR/fixtures/office-help.stdout"; fi
+check "office help matches its shipped golden" cmp -s "$ROOT/office-help" "$SCRIPT_DIR/fixtures/office-help.stdout"
+run_office "$HOME1" init --help > "$ROOT/office-init-help" 2>&1
+check "office init help matches root help" cmp -s "$ROOT/office-help" "$ROOT/office-init-help"
+if run_office "$HOME1" status > "$ROOT/office-usage" 2>&1; then fail "office rejects unimplemented commands";
+else _usage_rc=$?; check "office usage exits 2" test "$_usage_rc" -eq 2; fi
+check "office launcher is recorded as created" grep -qxF "launcher_path=$HOME1/.local/bin/office" "$HOME1/.local/share/orbit-office/install-state"
 
 # ---------------------------------------------------------------------------
 # 14. Piped curl-to-sh: no secret is stored from the script text itself
@@ -842,12 +960,36 @@ check "uninstall removes the plugin (stub)" test ! -e "$STUB_STATE/plugin-added"
 check "uninstall keeps the workspace" test -d "$HOME1/orbit"
 check "uninstall keeps the Library" test -d "$HOME1/orbit/library"
 check "uninstall removes tools" test ! -e "$HOME1/$TOOLS_REL"
+check "uninstall removes installer-owned launcher" test ! -e "$HOME1/.local/bin/office"
 
 OUT_PURGE="$ROOT/out-purge.txt"
 run_install "$HOME1" -- --purge > "$OUT_PURGE" 2>&1 \
     || { cat "$OUT_PURGE" >&2; fail "purge exits 0"; }
 ok "purge exits 0"
 check "purge removes the workspace" test ! -e "$HOME1/orbit"
+
+# A pre-existing identical launcher is reusable but never owned for uninstall.
+UNOWNED_HOME="$ROOT/unowned-launcher-home"
+mkdir -p "$UNOWNED_HOME/.local/bin"
+# Copy a launcher from an installed home (HOME3 is the newer-Orbit installation).
+cp "$HOME3/.local/bin/office" "$UNOWNED_HOME/.local/bin/office"
+run_install "$UNOWNED_HOME" -- > "$ROOT/unowned-install" 2>&1 \
+    || { cat "$ROOT/unowned-install" >&2; fail "install reuses identical unowned launcher"; }
+check "installer does not claim pre-existing launcher" sh -c '! grep -q "^launcher_path=" "$1"' sh "$UNOWNED_HOME/.local/share/orbit-office/install-state"
+run_install "$UNOWNED_HOME" -- --uninstall > "$ROOT/unowned-uninstall" 2>&1 \
+    || { cat "$ROOT/unowned-uninstall" >&2; fail "uninstall with unowned launcher succeeds"; }
+check "uninstall keeps unrecorded launcher" test -x "$UNOWNED_HOME/.local/bin/office"
+MODIFIED_HOME="$ROOT/modified-launcher-home"; mkdir -p "$MODIFIED_HOME"
+run_install "$MODIFIED_HOME" -- > "$ROOT/modified-install" 2>&1 \
+    || { cat "$ROOT/modified-install" >&2; fail "install before launcher edit"; }
+printf '// user addition\n' >> "$MODIFIED_HOME/.local/bin/office"
+cp "$MODIFIED_HOME/.local/bin/office" "$ROOT/modified-office-before"
+if run_install "$MODIFIED_HOME" -- > "$ROOT/modified-reinstall" 2>&1; then fail "reinstall must preserve modified launcher";
+else ok "reinstall refuses to overwrite modified launcher"; fi
+run_install "$MODIFIED_HOME" -- --uninstall > "$ROOT/modified-uninstall" 2>&1 \
+    || { cat "$ROOT/modified-uninstall" >&2; fail "uninstall keeps edited launcher"; }
+check "uninstall preserves edited launcher bytes" cmp -s "$MODIFIED_HOME/.local/bin/office" "$ROOT/modified-office-before"
+
 
 # ---------------------------------------------------------------------------
 # 4. A non-empty unrelated folder is refused
@@ -1721,6 +1863,9 @@ try:
     with open(os.path.join(state, "orbit.log")) as log:
         assert "plugin secret set office open_weights_token\n" in log.read()
     assert os.path.isfile(os.path.join(state, "secret.open_weights_token"))
+except Exception:
+    sys.stderr.buffer.write(transcript)
+    raise
 finally:
     if child.poll() is None:
         child.kill()
