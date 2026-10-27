@@ -67,7 +67,10 @@ Rules:
 
 `orbit_tools` callbacks requested: `orbit.task.add`, `orbit.task.update`,
 `orbit.task.list`, `orbit.task.show`, `orbit.task.artifact.get`,
-`orbit.task.artifact.put`, `orbit.friction.add`, `orbit.search`.
+`orbit.task.artifact.put`, `orbit.friction.add`, `orbit.search`,
+`orbit.auto_task.add`, `orbit.auto_task.update`, `orbit.auto_task.list`.
+The auto-task callbacks serve accepted `auto_task` proposals
+([proposals.md](./proposals.md)); Orbit has no routine-create callback.
 
 The synchronous `office-core::ports::Orbit` port has one method per callback.
 It forwards JSON objects intact to Orbit's schemas (unknown keys are not dropped)
@@ -98,8 +101,8 @@ details are discarded. Missing executables, malformed responses, unstructured
 nonzero exits and supervisor failures are distinct typed adapter errors. Calls
 are never automatically retried. A mutating callback that started but lost its
 reply reports `orbit_outcome_unknown`; a failed spawn is a transport failure,
-since no write could have been sent. Confirm the task or artifact state in Orbit
-before retrying an unknown outcome.
+since no write could have been sent. Confirm the task, artifact or auto-task
+state in Orbit before retrying an unknown outcome.
 An absent callback context refuses with `orbit_unavailable`. The recording testkit
 fake queues explicit results and exposes full calls through a shared clone; an
 unconfigured reply also refuses rather than inventing a successful write.
@@ -174,6 +177,7 @@ file requires `office.init`; missing keys within a present file use these defaul
 
 ```yaml
 retention:
+  video: 90
   meeting: 90
   chat: null
   email: null
@@ -183,6 +187,7 @@ retention:
   conversation: null
   note: null
 sensitivity:
+  video: normal
   meeting: normal
   chat: normal
   email: normal
@@ -191,7 +196,15 @@ sensitivity:
   bill: normal
   conversation: normal
   note: normal
-packs: [meetings]
+packs: [kt, meetings]
+video:
+  max_frames_per_hour: 120
+  scene_threshold: 0.3
+costs:
+  currency: null
+  audio_minute: null
+  image: null
+  text_1k_tokens: null
 thresholds:
   repetition_count: 3
   window_days: 30
@@ -200,8 +213,8 @@ open_weights: null
 ```
 
 Retention is a positive integer up to 36,500 days or `null` (keep indefinitely).
-Sensitivity is `normal` or `private`. Packs are distinct names from `meetings`
-and `receipts`; an empty list disables all packs. Repetition count is 1–10,000;
+Sensitivity is `normal` or `private`. Packs are distinct names from `kt`,
+`meetings` and `receipts`; an empty list disables all packs. Repetition count is 1–10,000;
 window/stale days are 1–36,500. The optional `open_weights` block names the
 private route ([models-and-privacy.md](./models-and-privacy.md#the-private-route)):
 `endpoint` (an OpenAI-compatible base URL over HTTPS, or HTTP(S) on loopback,
@@ -235,13 +248,16 @@ values):
 
 `office.config-set` takes exactly `{"key":"retention.meeting","value":30}`.
 The value is typed JSON, not a YAML string. Supported keys are
-`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `packs`,
+`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>`, `packs`,
 `open_weights.<endpoint|model|kind|label>` and the whole `open_weights` block
 (a mapping of those four keys, or null), using the kinds, threshold names and
 bounds above. A leaf needs the block to exist. Changing the endpoint or model
-clears the recorded capabilities; `open_weights.capabilities` and
-`open_weights.verified_at` are refused with `invalid_library_setting`, because
-only `office.private-route-check` writes them.
+clears the recorded capabilities. A whole-block update follows the same rule:
+when both endpoint and model are unchanged, it preserves the recorded
+capabilities and verification time; changing either clears both. The
+`open_weights.capabilities` and `open_weights.verified_at` fields are refused
+with `invalid_library_setting`, because only `office.private-route-check`
+writes them.
 The additional thresholds `friction_count` and `new_subject_count` default to
 2 (range 1–10,000); `unused_days` defaults to 30 (range 1–36,500).
 Whole retention/sensitivity/threshold mappings cannot be replaced in one call.
@@ -260,8 +276,12 @@ including defaults; hand-edited comments and formatting are not retained.
 Repeated identical updates still add one write-event commit. No network or
 secrets are needed. Secrets remain managed by Orbit's plugin secret surface.
 The KT pack adds the `video` kind, the `kt` pack, and the `video` and `costs` keys
-([kt-videos.md](./kt-videos.md#settings)). They land with the KT task, and the
-default pack list then becomes `[kt, meetings]`.
+([kt-videos.md](./kt-videos.md#settings)). The default pack list is `[kt, meetings]`.
+`video.max_frames_per_hour` is an integer from 1 through 600, and
+`video.scene_threshold` is a finite number from 0.05 through 0.95. The cost
+rates are finite, nonnegative numbers or null, and `costs.currency` is a
+three-letter uppercase currency code or null. Missing keys receive these
+defaults; existing explicit pack lists keep their values.
 
 ## Task References
 
@@ -278,3 +298,5 @@ bytes, plus the reply envelope. Its stderr stays at 512 KiB. The shared
 supervisor still bounds both streams and reaps the whole process group.
 Promotion separately enforces the decoded 1 MiB per-file limit before a
 Library write; increasing the transport allowance does not raise that limit.
+
+Script execution bounds are validated Library settings under `scripts`; defaults, caps and approval/preparation contracts are specified in [scripts.md](./scripts.md#implementation-contracts).

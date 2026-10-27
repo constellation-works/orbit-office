@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::Error;
-use crate::fs::atomic::{write_atomic, write_atomic_new};
+use crate::fs::atomic::{temp_path, write_atomic, write_atomic_new, write_atomic_with_counter};
 use crate::fs::hash::{sha256_file, sha256_hex};
 use crate::fs::path_safety::{normalize_path, validate_path_stem};
 
@@ -131,44 +131,56 @@ fn atomic_write_survives_concurrent_writers_to_the_same_target() {
 }
 
 #[test]
-fn atomic_write_never_follows_a_planted_symlink_at_the_legacy_temp_path() {
+fn atomic_write_never_follows_planted_symlinks_at_predicted_temp_paths() {
+    use std::sync::atomic::AtomicU64;
+
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("page.md");
-    // The temp name the pre-fix code always used: process id plus target
-    // name, with no per-call uniqueness.
-    let legacy_tmp = dir
-        .path()
-        .join(format!(".office-store-{}-page.md.tmp", std::process::id()));
     let victim = dir.path().join("victim.md");
     std::fs::write(&victim, b"victim-contents").expect("write victim");
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&victim, &legacy_tmp).expect("plant symlink");
-    #[cfg(not(unix))]
-    std::fs::write(&legacy_tmp, b"planted-blocker").expect("plant blocker");
-    write_atomic(&path, b"payload").expect("write around planted entry");
+    // Plant entries at the temp names the current scheme will produce for
+    // the next few sequence numbers of a fresh counter. Exclusive create
+    // must refuse each one and retry with the next name; following a link
+    // (e.g. `File::create`) would truncate/write through to the victim,
+    // and dropping the retry would fail the write outright.
+    let counter = AtomicU64::new(0);
+    let mut planted = Vec::new();
+    for seq in 0..3 {
+        let tmp = temp_path(dir.path(), "page.md", seq);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&victim, &tmp).expect("plant symlink");
+        #[cfg(not(unix))]
+        std::fs::write(&tmp, b"planted-blocker").expect("plant blocker");
+        planted.push(tmp);
+    }
+    write_atomic_with_counter(&path, b"payload", &counter).expect("write around planted entries");
     assert_eq!(
         std::fs::read_to_string(&path).expect("read back"),
         "payload"
     );
-    #[cfg(unix)]
-    {
+    assert_eq!(
+        std::fs::read_to_string(&victim).expect("victim intact"),
+        "victim-contents",
+        "victim must be untouched: a planted symlink must never be followed"
+    );
+    for tmp in &planted {
+        #[cfg(unix)]
+        {
+            assert!(
+                std::fs::symlink_metadata(tmp)
+                    .expect("planted entry still present")
+                    .file_type()
+                    .is_symlink(),
+                "planted symlink must not be replaced or removed: {tmp:?}"
+            );
+            assert_eq!(std::fs::read_link(tmp).expect("read link"), victim);
+        }
+        #[cfg(not(unix))]
         assert_eq!(
-            std::fs::read_to_string(&victim).expect("victim intact"),
-            "victim-contents"
-        );
-        assert!(
-            std::fs::symlink_metadata(&legacy_tmp)
-                .expect("planted entry still present")
-                .file_type()
-                .is_symlink(),
-            "planted symlink must not be replaced or removed"
+            std::fs::read_to_string(tmp).expect("planted entry intact"),
+            "planted-blocker"
         );
     }
-    #[cfg(not(unix))]
-    assert_eq!(
-        std::fs::read_to_string(&legacy_tmp).expect("planted entry intact"),
-        "planted-blocker"
-    );
 }
 
 #[test]

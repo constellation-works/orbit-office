@@ -20,7 +20,7 @@ and machinery are reused, the code is this project's.
 | `fs/` (path_safety, lock, yaml) | `office-common::fs` (`path_safety`, `atomic`, `hash`) | Single-safe-component id validation, atomic owner-only writes (temp + fsync + publication + dir fsync; rename for replacement, hard link for exclusive creation), SHA-256 pinning/dedupe. Shared machinery lives in the foundation crate, as orbit's does in `orbit-common`. |
 | `driver/file/` | `src/driver/file/library.rs` | The Library as plain Markdown: layout, frontmatter parsing, full scan for reindex |
 | `driver/sqlite/` (connection, migration registry) | `src/driver/sqlite/` (`connection.rs`, `migration.rs`) | One writer connection behind a mutex; owner-only database file; the same pragmas on every connection (WAL, `busy_timeout` 5000, `foreign_keys=ON`, `synchronous=NORMAL`); ordered migrations with `user_version`, refusing a newer schema |
-| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `read_text`, `get`, `backlinks`, `knowledge_pages`, `templates`, `search`, `head_commit`, `stage_attachment`/`remove_staged`, `file_sha256` |
+| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `read_text`, `get`, `backlinks`, `knowledge_pages`, `source_documents`, `templates`, `search`, `head_commit`, `stage_attachment`/`remove_staged`, `file_sha256` |
 
 What is deliberately not carried over: orbit-store's read pool, forward-
 compatible read-only open, failure-class SQL functions, task reservations
@@ -49,7 +49,7 @@ tool needs them, as new migration steps — never as edits to step 1.
   versions such as `v2.md`, artifact companions and `proposals/` are
   not documents of this call. `original.*` stays refused on every
   path, including under `knowledge/`.
-- **Scans do not follow symlinks.** `reindex` and knowledge-page reads
+- **Scans do not follow symlinks.** `reindex`, knowledge-page reads and source-document reads
   skip a symlink file or directory instead of opening it, including a
   symlinked layer directory (`sources`, `knowledge`, `artifacts`).
   Content reached only through a link is neither indexed nor returned,
@@ -63,7 +63,11 @@ tool needs them, as new migration steps — never as edits to step 1.
   belongs — returns `io_error` before the index transaction. Previously
   indexed rows stay searchable. Knowledge-page reads use the same walk:
   a missing or symlinked `knowledge` directory is an empty page list,
-  and any other enumeration error fails the read.
+  and any other enumeration error fails the read. `source_documents` reads
+  every `sources/**/source.md` with complete frontmatter and body, in path
+  order with no search cap. It uses the same missing-layer and symlink rules;
+  originals, `v2.md` sidecars and other Library layers are excluded. An
+  enumeration or file-read failure refuses the entire document listing.
 - **Preconditions before side effects:** path components are validated
   before any write; unknown document kinds and newer index schemas are
   refused, never guessed or rewritten.
@@ -198,3 +202,27 @@ then publishes with one directory rename. Existing staging or published
 files are accepted only when their bytes are identical to the decision. A conflicting existing file preserves both it and
 the journal for diagnosis. Replaying after commit does not duplicate the
 commit. Companion Markdown files remain outside the document index.
+
+### Video plans and derived files
+
+Video plans and call reservations update `sources/**/source.md` under the same
+writer lock. A revision comparison refuses a stale writer with `plan_changed`.
+Version-5 `video` journals bind the updated source and its `frames.md` and
+`frames/<index>.png` companion bytes. Recovery validates the source ledger,
+companion names and physical path containment before replaying files, indexing
+and committing; older versions and artifact bundles retain their existing
+validation. The PNGs remain ignored and are excluded from the video commit.
+Only source Markdown and `frames.md` are committed by a frame result.
+
+The index still has one row per source ID. Reading/indexing its `source.md`
+appends the bodies of sibling `frames.md` and `chapters.md` to the indexed body.
+These companions do not create independent document IDs. Reindex reproduces
+the same combined row; symlinked or unreadable companions refuse the scan instead
+of dropping searchable content. Generic `write_document` still accepts only
+primary indexed documents; video writes publish companions through their
+journaled operation.
+
+Initialization writes `original.*` and `frames/` in a new `.gitignore`. On an
+existing Library, it appends a missing `frames/` line while preserving all
+existing bytes (adding a separating newline when needed), commits the update,
+and is a no-op on the next call. It refuses a symlink at this fixed root path.

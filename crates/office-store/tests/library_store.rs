@@ -1358,6 +1358,192 @@ fn init_rejects_symlinked_destinations_outside_the_grant_before_writing() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn a_symlinked_grant_root_is_refused_wherever_it_points() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    let library = workspace.join("library");
+    let state = dir.path().join("state");
+    // Outside the workspace, inside it, and dangling.
+    let targets = [
+        dir.path().join("outside"),
+        workspace.join("library-real"),
+        dir.path().join("missing"),
+    ];
+    for target in &targets {
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        if target.file_name() != Some(std::ffi::OsStr::new("missing")) {
+            std::fs::create_dir_all(target).expect("target");
+        }
+        symlink(target, &library).expect("symlink grant root");
+
+        let nested = library.join("subdir");
+        let err = LibraryStore::confine_to_grant(&nested, &workspace).expect_err("nested");
+        assert_eq!(
+            err.code(),
+            "library_dir_outside_workspace",
+            "{}",
+            target.display()
+        );
+        let err = LibraryStore::initialize_at(&library, &state, Some("library/subdir"), &workspace)
+            .expect_err("init nested");
+        assert_eq!(
+            err.code(),
+            "library_dir_outside_workspace",
+            "{}",
+            target.display()
+        );
+        assert!(LibraryStore::confine_to_grant(&library, &workspace).is_err());
+        assert!(!target.join("subdir").exists(), "{}", target.display());
+        assert!(!state.exists(), "{}", target.display());
+        std::fs::remove_file(&library).expect("unlink grant root");
+    }
+
+    // A real library directory under a linked workspace is still granted.
+    let real = dir.path().join("real-workspace");
+    std::fs::create_dir_all(real.join("library")).expect("real library");
+    let linked = dir.path().join("linked-workspace");
+    symlink(&real, &linked).expect("symlink workspace");
+    LibraryStore::confine_to_grant(&linked.join("library/subdir"), &linked)
+        .expect("physical library under a linked workspace");
+}
+
+// The open lock descriptor is a handshake that the retry has passed its
+// pre-lock work. The fixture then leaves the same partial layout an earlier
+// failed initializer could have left while owning that lock.
+#[cfg(target_os = "linux")]
+#[test]
+fn init_retry_does_not_claim_layout_created_by_the_previous_writer() {
+    use std::fs::OpenOptions;
+    use std::time::{Duration, Instant};
+
+    for internal_state in [false, true] {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path().join("workspace");
+        let library = workspace.join("library");
+        let state = if internal_state {
+            library.join(".office/state")
+        } else {
+            dir.path().join("state")
+        };
+        // An obstructed git init leaves a real partial scaffold. Move it
+        // aside until the retry is waiting, to control the interleaving.
+        let partial = dir.path().join("partial");
+        if !internal_state {
+            std::fs::create_dir_all(&library).expect("library");
+            std::fs::write(library.join(".git"), "obstruction").expect("obstruct git init");
+            assert!(LibraryStore::initialize_at(&library, &state, None, &workspace).is_err());
+            assert!(library.join("sources").is_dir());
+            std::fs::remove_file(library.join(".git")).expect("remove fixture obstruction");
+            std::fs::rename(&library, &partial).expect("stage partial scaffold");
+        }
+        std::fs::create_dir_all(&state).expect("state");
+        let lock_path = state.join("library.writer.lock");
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .expect("lock file");
+        lock.lock().expect("hold lock");
+        std::thread::scope(|scope| {
+            let retry =
+                scope.spawn(|| LibraryStore::initialize_at(&library, &state, None, &workspace));
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let observed = loop {
+                let count = std::fs::read_dir("/proc/self/fd")
+                    .expect("descriptors")
+                    .filter_map(Result::ok)
+                    .filter(|entry| {
+                        std::fs::read_link(entry.path()).is_ok_and(|target| target == lock_path)
+                    })
+                    .count();
+                if count >= 2 {
+                    break true;
+                }
+                if retry.is_finished() || Instant::now() >= deadline {
+                    break false;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            if observed {
+                if internal_state {
+                    std::fs::create_dir_all(library.join("sources")).expect("partial sources");
+                    std::fs::create_dir_all(library.join("knowledge/domain"))
+                        .expect("partial knowledge");
+                    std::fs::create_dir_all(library.join(".office")).expect("partial office");
+                } else {
+                    std::fs::rename(&partial, &library).expect("publish partial scaffold");
+                }
+            }
+            drop(lock);
+            let outcome = retry.join().expect("retry thread").expect("retry init");
+            assert!(observed, "retry did not open the writer lock");
+            for path in ["sources", "knowledge/domain", ".office"] {
+                assert!(
+                    !outcome.created.iter().any(|created| created == path),
+                    "{path}: {:?}",
+                    outcome.created
+                );
+            }
+            if internal_state {
+                assert!(
+                    outcome
+                        .created
+                        .iter()
+                        .any(|path| path == "knowledge/runbooks")
+                );
+                assert!(
+                    outcome
+                        .created
+                        .iter()
+                        .any(|path| path == "sources/.gitkeep")
+                );
+            } else {
+                assert!(
+                    !outcome
+                        .created
+                        .iter()
+                        .any(|path| path == "knowledge/runbooks")
+                );
+                assert!(
+                    !outcome
+                        .created
+                        .iter()
+                        .any(|path| path == "sources/.gitkeep")
+                );
+            }
+        });
+    }
+}
+
+#[test]
+fn init_reports_office_created_by_internal_state_bootstrap_only_once() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let library = workspace.join("library");
+    let state = library.join(".office/state");
+    let first =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("first init");
+    assert_eq!(
+        first
+            .created
+            .iter()
+            .filter(|path| *path == ".office")
+            .count(),
+        1
+    );
+    let second =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("repeat init");
+    assert!(second.already_initialized);
+    assert!(second.created.is_empty());
+}
+
 #[test]
 fn init_copies_missing_templates_and_health_reports_template_drift() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -2144,4 +2330,157 @@ fn artifact_bundle_refusals_leave_files_index_and_commits_unchanged() {
     assert_eq!(store.head_commit().unwrap(), None);
     assert!(!state.join("library.pending-write.json").exists());
     assert!(!root.join(a.path().unwrap()).exists());
+}
+
+#[test]
+fn derived_video_text_is_indexed_under_the_source_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let library = dir.path().join("library");
+    initialize(&library);
+    let parent = "sources/2026/10/src-20261028-acme-qbr";
+    write(&library, &format!("{parent}/source.md"), MEETING);
+    write(
+        &library,
+        &format!("{parent}/frames.md"),
+        "[00:00:10] Quasar rotation panel #frame=00:00:10",
+    );
+    write(
+        &library,
+        &format!("{parent}/chapters.md"),
+        "Neutrino maintenance chapter",
+    );
+    let store = LibraryStore::open(&library, &dir.path().join("state")).unwrap();
+    assert_eq!(store.reindex().unwrap(), 1);
+    for phrase in ["Quasar", "Neutrino"] {
+        let hits = store.search(phrase, &SearchFilter::default()).unwrap();
+        assert_eq!(hits.len(), 1, "{phrase}");
+        assert_eq!(hits[0].id, "src-20261028-acme-qbr");
+    }
+}
+#[test]
+fn video_result_journal_recovers_markdown_image_budget_and_source_index_together() {
+    use office_core::domain::endpoint::ModelRoute;
+    use office_core::domain::source::{sha256_hex, video};
+    use office_core::ports::{CaptureSourceRequest, DerivedBy, Library};
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let state_dir = dir.path().join("state");
+    let upload = dir.path().join("video.mp4");
+    std::fs::write(&upload, b"video").unwrap();
+    let store = LibraryStore::open(&root, &state_dir).unwrap();
+    let captured = store
+        .capture_source(&CaptureSourceRequest {
+            upload_path: Some(upload.to_string_lossy().into()),
+            captured_at: "1970-01-01T00:00:00Z".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    let source = store.read_video(&captured.id).unwrap();
+    let plan = video::plan(
+        &source,
+        &video::VideoAnalysis {
+            duration_ms: 60000,
+            has_audio: false,
+            candidates: vec![video::VideoFrame {
+                time_ms: 10000,
+                score: 800000,
+                dhash: 0,
+            }],
+        },
+        &store.settings().unwrap(),
+        "normal",
+    )
+    .unwrap();
+    store
+        .mutate_video(
+            &captured.id,
+            &sha256_hex(source.markdown.as_bytes()),
+            video::VideoMutation::Plan {
+                plan: Box::new(plan.clone()),
+                confirm_digest: None,
+                at: "1970-01-01T00:00:00Z".into(),
+            },
+        )
+        .unwrap();
+    let source = store.read_video(&captured.id).unwrap();
+    store
+        .mutate_video(
+            &captured.id,
+            &sha256_hex(source.markdown.as_bytes()),
+            video::VideoMutation::Plan {
+                plan: Box::new(plan.clone()),
+                confirm_digest: Some(plan.digest.clone()),
+                at: "1970-01-01T00:00:00Z".into(),
+            },
+        )
+        .unwrap();
+    let source = store.read_video(&captured.id).unwrap();
+    store
+        .mutate_video(
+            &captured.id,
+            &sha256_hex(source.markdown.as_bytes()),
+            video::VideoMutation::Reserve {
+                digest: plan.digest.clone(),
+                index: 0,
+            },
+        )
+        .unwrap();
+    let source = store.read_video(&captured.id).unwrap();
+    let write = video::apply(
+        &source,
+        &store.settings().unwrap(),
+        video::VideoMutation::Frame {
+            digest: plan.digest,
+            index: 0,
+            image: b"PNG fixture".to_vec(),
+            text: "Quasar recovered frame".into(),
+            derived_by: DerivedBy {
+                route: ModelRoute::Hosted,
+                model: "fixture".into(),
+            },
+        },
+    )
+    .unwrap();
+    let files = write
+        .files
+        .into_iter()
+        .map(|(path, bytes)| office_core::domain::artifact::ArtifactFile { path, bytes })
+        .collect::<Vec<_>>();
+    let decision = serde_json::json!({"version":5,"kind":"video","root":root.canonicalize().unwrap(),"relative":source.path,"text":write.markdown,"token":"777-222","bundle":files});
+    std::fs::write(
+        state_dir.join("library.pending-write.json"),
+        serde_json::to_vec(&decision).unwrap(),
+    )
+    .unwrap();
+    drop(store);
+    let recovered = LibraryStore::open(&root, &state_dir).unwrap();
+    let source = recovered.read_video(&captured.id).unwrap();
+    let state = video::state(&source.markdown).unwrap().unwrap();
+    assert_eq!(state.frames_read, 1);
+    assert_eq!(state.calls.frames, 1);
+    let parent = Path::new(&source.path).parent().unwrap();
+    assert_eq!(
+        std::fs::read(root.join(parent).join("frames/0000.png")).unwrap(),
+        b"PNG fixture"
+    );
+    assert_eq!(
+        recovered
+            .search("Quasar", &SearchFilter::default())
+            .unwrap()[0]
+            .id,
+        captured.id
+    );
+    assert!(!state_dir.join("library.pending-write.json").exists());
+    let mut unsafe_decision = decision;
+    unsafe_decision["bundle"][0]["path"] = "../escape.png".into();
+    std::fs::write(
+        state_dir.join("library.pending-write.json"),
+        serde_json::to_vec(&unsafe_decision).unwrap(),
+    )
+    .unwrap();
+    drop(recovered);
+    assert!(LibraryStore::open(&root, &state_dir).is_err());
+    assert!(state_dir.join("library.pending-write.json").exists());
+    assert!(!root.join(parent).join("../escape.png").exists());
 }

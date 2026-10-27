@@ -10,7 +10,9 @@
 #   2. older Orbit stops with the upgrade command; newer warns on
 #   3. --uninstall removes tools/ and keeps ~/orbit; --purge removes an
 #      owned workspace, refuses any other folder and refuses a data
-#      folder that is HOME (ORBIT_OFFICE_DATA_DIR=HOME)
+#      folder or workspace that is HOME or /, however it is spelled
+#      (trailing or repeated slashes, dot segments, a symlink), before
+#      any teardown and with every file left unchanged
 #   4. a non-empty unrelated workspace folder is refused, including by
 #      --purge --home
 #   5. missing Orbit is installed from npm
@@ -27,8 +29,13 @@
 #  13. enable grants every permission plugin.yaml requests: the plugin is
 #      active and office.init is not refused with policy_denied
 #  14. the documented curl-to-sh form (install.sh itself on a piped stdin,
-#      under sh and under bash --posix) stores no secret from script text
-#      and still runs the scaffold and agent steps
+#      under sh and under bash --posix, from an empty temporary working
+#      directory, with prepared plugin and app bundles) stores no secret
+#      from script text and still runs the scaffold and agent steps
+#  20. a piped install with no plugin bundle and no clone fails with the
+#      bundle error from an empty working directory and from a decoy git
+#      checkout carrying a gateway/ tree: it pins no git HEAD from the
+#      working directory and copies no gateway export from it
 #  15. a pre-existing same-named user skill survives install and
 #      uninstall byte-for-byte for claude and codex; uninstall removes
 #      only installer-copied skills still unmodified, keeps a skill the
@@ -44,6 +51,11 @@
 #      data folder, a rerun is idempotent, and deleting the entrypoint
 #      is repaired by the bundle (and named when no bundle is given)
 
+#  19. Claude MCP registration lands in ${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json
+#      and the existing agentCliStatus API reports Claude Code connected,
+#      including with CLAUDE_CONFIG_DIR set; uninstall removes only an
+#      installer-owned entry and preserves unrelated / user-owned entries,
+#      and a misplaced entry from an earlier install is migrated.
 #  18. Failed service activation is never marked complete: a failing or
 #      missing systemctl/launchctl stops the step with a service error and
 #      leaves no service_installed marker, and the next run with the
@@ -209,6 +221,10 @@ case "${1:-} ${2:-}" in
     "plugin remove")
         _suffix=".${3:?}"
         [ "$3" != office ] || _suffix=""
+        if [ ! -f "$state/plugin-added$_suffix" ]; then
+            printf 'stub: plugin record is already gone\n' >&2
+            exit 1
+        fi
         rm -f "$state/plugin-added$_suffix" "$state/plugin-enabled$_suffix" "$state/plugin-active$_suffix"
         printf 'removed\n' ;;
     "plugin disable")
@@ -419,6 +435,15 @@ printf '{"name":"orbit-office-app","type":"module"}\n' > "$APP_BUNDLE/package.js
 printf 'console.log("orbit-office standalone stub app");\n' > "$APP_BUNDLE/packages/server/dist/main.js"
 printf '// app runtime file\n' > "$APP_BUNDLE/packages/contracts/dist/index.js"
 
+# A prepared plugin bundle for the piped form: office and gateway exports,
+# as a release bundle carries them.
+PLUGIN_BUNDLE="$ROOT/plugin-bundle"
+mkdir -p "$PLUGIN_BUNDLE"
+cp -R "$SCRIPT_DIR/../../plugin" "$PLUGIN_BUNDLE/office"
+printf '#!/bin/sh\nexit 0\n' > "$PLUGIN_BUNDLE/office/.orbit-plugin/bin/office-bin"
+chmod +x "$PLUGIN_BUNDLE/office/.orbit-plugin/bin/office-bin"
+python3 -I "$SCRIPT_DIR/../../gateway/scripts/export.py" gateway "$PLUGIN_BUNDLE/gateway" > /dev/null
+
 snapshot() { # snapshot <home> : sorted relative paths + file hashes
     (cd "$1" && find . -type f | sort | while IFS= read -r _f; do
         if command -v sha256sum >/dev/null 2>&1; then
@@ -429,6 +454,20 @@ snapshot() { # snapshot <home> : sorted relative paths + file hashes
         printf '%s  %s\n' "${_hash%% *}" "$_f"
     done)
     (cd "$1" && find . -type d | sort)
+}
+
+AGENT_CLI_TS="$SCRIPT_DIR/../../app/packages/server/src/features/settings/agent-cli.ts"
+NODE_BIN=$(command -v node)
+cat > "$ROOT/agent-status.mjs" <<'EOF'
+const m = await import(new URL("file://" + process.argv[2]));
+process.stdout.write(JSON.stringify(m.agentCliStatus()));
+EOF
+agent_cli_status() { # agent_cli_status <home> [claude_config_dir]
+    if [ -n "${2:-}" ]; then
+        env -i HOME="$1" CLAUDE_CONFIG_DIR="$2" "$NODE_BIN" --experimental-strip-types "$ROOT/agent-status.mjs" "$AGENT_CLI_TS" 2>/dev/null
+    else
+        env -i HOME="$1" "$NODE_BIN" --experimental-strip-types "$ROOT/agent-status.mjs" "$AGENT_CLI_TS" 2>/dev/null
+    fi
 }
 
 run_install() { # run_install <home> <extra env...> -- <args...>
@@ -476,31 +515,47 @@ run_install() { # run_install <home> <extra env...> -- <args...>
 
 # Run the documented curl-to-sh form: install.sh itself is the shell's
 # stdin (a pipe), so a secret read from stdin would consume script text.
+# The shell runs in $PIPED_CWD, or in a fresh empty temporary working
+# directory when PIPED_CWD is unset, never in this harness's clone.
+# PIPED_NO_PLUGIN_BUNDLE=1 omits ORBIT_OFFICE_PLUGIN_BUNDLE.
 # run_install_piped <home> <sh|bash-posix> <output>
 run_install_piped() {
     _home="$1"; _kind="$2"; _out="$3"
     printf '%s' "$_home" > "$STUB_STATE/current-home"
     rm -f "$STUB_STATE"/plugin-* "$STUB_STATE"/secret.*
+    _cwd="${PIPED_CWD:-}"
+    if [ -z "$_cwd" ]; then
+        _cwd=$(mktemp -d "$ROOT/piped-cwd.XXXXXX")
+    fi
+    mkdir -p "$_cwd"
+    _plugin_bundle_env=""
+    if [ "${PIPED_NO_PLUGIN_BUNDLE:-0}" != 1 ]; then
+        _plugin_bundle_env="ORBIT_OFFICE_PLUGIN_BUNDLE=$PLUGIN_BUNDLE"
+    fi
     if [ "$_kind" = bash-posix ]; then
-        cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
+        # shellcheck disable=SC2086
+        (cd "$_cwd" && cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
             STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
             STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
             STUB_ORBIT_VERSION=0.34.0 STUB_UV_ARCHIVE="$FIXTURE" \
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
+            $_plugin_bundle_env \
             ORBIT_OFFICE_APP_BUNDLE="$APP_BUNDLE" \
-            bash --posix -s -- --yes > "$_out" 2>&1
+            bash --posix -s -- --yes > "$_out" 2>&1)
     else
-        cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
+        # shellcheck disable=SC2086
+        (cd "$_cwd" && cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
             STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
             STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
             STUB_ORBIT_VERSION=0.34.0 STUB_UV_ARCHIVE="$FIXTURE" \
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
+            $_plugin_bundle_env \
             ORBIT_OFFICE_APP_BUNDLE="$APP_BUNDLE" \
-            sh -s -- --yes > "$_out" 2>&1
+            sh -s -- --yes > "$_out" 2>&1)
     fi
 }
 
@@ -557,6 +612,7 @@ assert_home_scope() { # files stay under the workspace, data/tools, service, MCP
             ./.local/share/orbit-office|./.local/share/orbit-office/*) ;;
             ./.config/systemd|./.config/systemd/*) ;;
             ./.claude|./.claude/*) ;;
+            ./.claude.json|./.claude.json.bak) ;;
             ./.codex|./.codex/*) ;;
             ./Library/LaunchAgents|./Library/LaunchAgents/*) ;;
             ./Library/Application\ Support/orbit-office|./Library/Application\ Support/orbit-office/*) ;;
@@ -600,7 +656,8 @@ check "library scaffolded" test -f "$HOME1/orbit/library/.office/config.yaml"
 check "first run records the scaffolded marker" \
     grep -qx scaffolded "$HOME1/.local/share/orbit-office/install-state"
 check "systemd unit written" test -f "$HOME1/.config/systemd/user/orbit-office.service"
-check "MCP entry written" grep -q '"orbit"' "$HOME1/.claude/settings.json"
+check "MCP entry written" grep -q '"orbit"' "$HOME1/.claude.json"
+check "MCP entry not written to settings.json" sh -c '! grep -q "\"orbit\"" "$1"' sh "$HOME1/.claude/settings.json"
 check "plugin added (stub)" test -f "$STUB_STATE/plugin-added"
 check "plugin enabled (stub)" test -f "$STUB_STATE/plugin-enabled"
 check "gateway is enabled with office" grep -qF "plugin enable gateway " "$STUB_STATE/orbit.log"
@@ -621,7 +678,7 @@ check "python3 --version prints 3.12" \
 check "systemd PATH starts with tools/bin" \
     grep -F "Environment=PATH=$TOOLS1/bin:" "$HOME1/.config/systemd/user/orbit-office.service"
 check "MCP PATH starts with tools/bin" \
-    grep -F "\"PATH\": \"$TOOLS1/bin:" "$HOME1/.claude/settings.json"
+    grep -F "\"PATH\": \"$TOOLS1/bin:" "$HOME1/.claude.json"
 check "uv install passed --no-bin" grep -F "python install --no-bin" "$STUB_STATE/uv-fixture.log"
 check "uv cache stays under tools" \
     grep -F "UV_CACHE_DIR=$TOOLS1/cache" "$STUB_STATE/uv-fixture.log"
@@ -668,17 +725,72 @@ for _piped_kind in sh bash-posix; do
         test ! -e "$STUB_STATE/secret.open_weights_token"
     check "piped ($_piped_kind): no open_weights_token value recorded from script text" \
         test ! -e "$STUB_STATE/secret.open_weights_token.value"
-    check "piped ($_piped_kind): meta_api_key skip is reported" \
-        grep -F "secrets: meta_api_key skipped (no input" "$PIPED_OUT"
-    check "piped ($_piped_kind): open_weights_token skip is reported" \
-        grep -F "secrets: open_weights_token skipped (optional)" "$PIPED_OUT"
+    check "piped ($_piped_kind): required meta_api_key skip prints the set-later command" \
+        grep -qxF "secrets: meta_api_key skipped (no input; set it later with: orbit plugin secret set office meta_api_key)" "$PIPED_OUT"
+    check "piped ($_piped_kind): optional open_weights_token skip prints no set command" \
+        grep -qxF "secrets: open_weights_token skipped (optional)" "$PIPED_OUT"
     check "piped ($_piped_kind): scaffold step still runs" \
         test -f "$PIPED_HOME/orbit/library/.office/config.yaml"
     check "piped ($_piped_kind): agent step still runs" \
-        grep -q '"orbit"' "$PIPED_HOME/.claude/settings.json"
+        grep -q '"orbit"' "$PIPED_HOME/.claude.json"
     check "piped ($_piped_kind): app bundle provisions the service entrypoint" \
         test -f "$PIPED_HOME/.local/share/orbit-office/app/packages/server/dist/main.js"
 done
+
+# ---------------------------------------------------------------------------
+# 20. Piped with no plugin bundle and no clone: bundle error from any cwd
+# ---------------------------------------------------------------------------
+
+PIPED_EMPTY_CWD=$(mktemp -d "$ROOT/piped-empty.XXXXXX")
+NO_BUNDLE_HOME="$ROOT/piped-no-bundle-home"; mkdir -p "$NO_BUNDLE_HOME"
+OUT_NO_BUNDLE="$ROOT/out-piped-no-bundle.txt"
+PIPED_NO_PLUGIN_BUNDLE=1
+PIPED_CWD="$PIPED_EMPTY_CWD"
+if run_install_piped "$NO_BUNDLE_HOME" sh "$OUT_NO_BUNDLE"; then
+    PIPED_NO_PLUGIN_BUNDLE=0; PIPED_CWD=""
+    cat "$OUT_NO_BUNDLE" >&2; fail "piped install with no bundle from an empty working directory fails"
+fi
+PIPED_NO_PLUGIN_BUNDLE=0; PIPED_CWD=""
+ok "piped install with no bundle from an empty working directory fails"
+check "piped no-bundle (empty cwd) fails with the bundle error" \
+    grep -F "otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE" "$OUT_NO_BUNDLE"
+check "piped no-bundle (empty cwd) adds no plugin" \
+    test ! -e "$STUB_STATE/plugin-added"
+check "piped no-bundle (empty cwd) creates no gateway export" \
+    test ! -e "$NO_BUNDLE_HOME/.local/share/orbit-office/plugins/gateway"
+
+# A decoy checkout: a git repository whose HEAD is not this clone's, with
+# a gateway/ tree that must not be read as the export source.
+DECOY="$ROOT/piped-decoy-checkout"
+mkdir -p "$DECOY"
+cp -R "$SCRIPT_DIR/../../gateway" "$DECOY/gateway"
+printf 'decoy\n' > "$DECOY/README"
+env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git -C "$DECOY" init -q -b main
+env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git -C "$DECOY" add README gateway
+env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git -C "$DECOY" -c user.name=decoy -c user.email=decoy@localhost commit -qm decoy
+DECOY_HEAD=$(git -C "$DECOY" rev-parse HEAD)
+DECOY_HOME="$ROOT/piped-decoy-home"; mkdir -p "$DECOY_HOME"
+OUT_DECOY="$ROOT/out-piped-decoy.txt"
+: > "$STUB_STATE/orbit.log"
+PIPED_NO_PLUGIN_BUNDLE=1
+PIPED_CWD="$DECOY"
+if run_install_piped "$DECOY_HOME" sh "$OUT_DECOY"; then
+    PIPED_NO_PLUGIN_BUNDLE=0; PIPED_CWD=""
+    cat "$OUT_DECOY" >&2; fail "piped install with no bundle from a decoy checkout fails"
+fi
+PIPED_NO_PLUGIN_BUNDLE=0; PIPED_CWD=""
+ok "piped install with no bundle from a decoy checkout fails"
+check "piped no-bundle (decoy cwd) fails with the bundle error" \
+    grep -F "otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE" "$OUT_DECOY"
+check "piped no-bundle (decoy cwd) pins no git HEAD from the working directory" \
+    sh -c '! grep -F "$2" "$1"' sh "$STUB_STATE/orbit.log" "git+https://github.com/constellation-works/orbit-office.git#$DECOY_HEAD"
+check "piped no-bundle (decoy cwd) adds no plugin" \
+    test ! -e "$STUB_STATE/plugin-added"
+check "piped no-bundle (decoy cwd) creates no gateway export" \
+    test ! -e "$DECOY_HOME/.local/share/orbit-office/plugins/gateway"
 
 # ---------------------------------------------------------------------------
 # 2. Older Orbit stops; newer warns and continues
@@ -709,12 +821,19 @@ check "newer Orbit warns" grep -qi "newer" "$OUT_NEW"
 # ---------------------------------------------------------------------------
 
 OUT_UN="$ROOT/out-un.txt"
+# Simulate someone removing the Orbit plugin record while the install-state
+# ownership marker remains. The stub's plugin remove now fails in this case.
+check "office ownership marker exists before missing-record uninstall" \
+    grep -qx plugin_added "$HOME1/.local/share/orbit-office/install-state"
+rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled" "$STUB_STATE/plugin-active"
 run_install "$HOME1" -- --uninstall > "$OUT_UN" 2>&1 \
     || { cat "$OUT_UN" >&2; fail "uninstall exits 0"; }
 ok "uninstall exits 0"
+check "missing Orbit plugin record still clears office ownership markers" \
+    sh -c '! grep -Eq "^plugin_(added|enabled)$" "$1"' sh "$HOME1/.local/share/orbit-office/install-state"
 check "uninstall removes the service unit" \
     test ! -e "$HOME1/.config/systemd/user/orbit-office.service"
-if grep -q '"orbit"' "$HOME1/.claude/settings.json" 2>/dev/null; then
+if grep -q '"orbit"' "$HOME1/.claude.json" 2>/dev/null; then
     fail "uninstall removes the MCP entry"
 else
     ok "uninstall removes the MCP entry"
@@ -857,9 +976,8 @@ check "purge removes the data folder of a recorded workspace" \
 
 # --purge with ORBIT_OFFICE_DATA_DIR set to the home folder is refused before
 # any teardown. The workspace is recorded as owned, so the data-folder guard
-# is the only thing between this purge and the deletes. "/" is not run here:
-# if the guard regressed, an unguarded purge with DATA_DIR=/ would rm -rf the
-# host root.
+# is the only thing between this purge and the deletes. "/" and the other
+# spellings run below, behind an rm guard.
 HOME4X="$ROOT/home4-protected-data"
 OWNED_X="$HOME4X/orbit"
 mkdir -p "$OWNED_X"
@@ -893,6 +1011,95 @@ ok "purge of an ordinary data folder override exits 0"
 check "purge removes the ordinary data folder override" test ! -e "$CUSTOM_X"
 check "purge removes the workspace recorded under the override" test ! -e "$OWNED_X"
 check "purge keeps the home folder" grep -qx keep "$HOME4X/keep.txt"
+
+# Equivalent spellings of HOME and / are the same protected paths:
+# trailing and repeated slashes, `.` and `..` segments and a symlink.
+# Each purge must be refused before any teardown, for the data folder
+# and for the workspace, with every file in the temp home unchanged.
+# These runs put an `rm` guard first on PATH: it refuses, and logs, any
+# operand that resolves to / or HOME, so a regressed installer guard
+# fails the check instead of deleting the host root or the temp home.
+RM_GUARD_BIN="$ROOT/bin-rm-guard"
+mkdir -p "$RM_GUARD_BIN"
+REAL_RM=$(command -v rm) || fail "rm is on PATH"
+cat > "$RM_GUARD_BIN/rm" <<STUB
+#!/bin/sh
+_home=\$(CDPATH='' cd -P -- "\$HOME" 2>/dev/null && pwd -P) || _home=/
+for _op in "\$@"; do
+    case "\$_op" in -*) continue ;; *) ;; esac
+    _phys=\$(CDPATH='' cd -P -- "\$_op" 2>/dev/null && pwd -P) || continue
+    case "\$_phys" in
+        /|//|"\$_home")
+            printf '%s\n' "\$_op" >> "\${STUB_STATE:?}/rm-guard.log"
+            exit 1 ;;
+        *) ;;
+    esac
+done
+exec "$REAL_RM" "\$@"
+STUB
+chmod +x "$RM_GUARD_BIN/rm"
+
+# check_protected_purge <label> <home> <expected line> <run_install args...>
+check_protected_purge() {
+    _cp_label="$1"; _cp_home="$2"; _cp_expect="$3"; shift 3
+    _cp_out="$ROOT/out-protected-alias.txt"
+    rm -f "$STUB_STATE/rm-guard.log"
+    snapshot "$_cp_home" > "$ROOT/snap-alias-before.txt"
+    if (TEST_PATH="$RM_GUARD_BIN:$BIN:$NODE_DIR:/usr/bin:/bin" \
+        run_install "$_cp_home" "$@") > "$_cp_out" 2>&1; then
+        cat "$_cp_out" >&2
+        fail "$_cp_label: purge is refused"
+    fi
+    ok "$_cp_label: purge is refused"
+    check "$_cp_label: refusal names the protected path" \
+        grep -qxF "error: $_cp_expect" "$_cp_out"
+    snapshot "$_cp_home" > "$ROOT/snap-alias-after.txt"
+    check "$_cp_label: refusal leaves every file unchanged" \
+        cmp -s "$ROOT/snap-alias-before.txt" "$ROOT/snap-alias-after.txt"
+    check "$_cp_label: nothing tried to delete HOME or /" \
+        test ! -e "$STUB_STATE/rm-guard.log"
+}
+
+HOME4A="$ROOT/home4-alias"
+OWNED_A="$HOME4A/orbit"
+DATA_A="$HOME4A/.local/share/orbit-office"
+mkdir -p "$OWNED_A" "$DATA_A/tools/bin" "$HOME4A/.config/systemd/user"
+printf 'gone\n' > "$OWNED_A/sentinel.txt"
+printf 'keep\n' > "$HOME4A/keep.txt"
+printf 'tool\n' > "$DATA_A/tools/bin/keep"
+printf '[Unit]\n' > "$HOME4A/.config/systemd/user/orbit-office.service"
+# Data folder aliases read install-state from HOME itself, which records
+# the default workspace as owned: the protected-path guard alone refuses.
+printf 'workspace_path=%s\n' "$OWNED_A" > "$HOME4A/install-state"
+HOME_LINK_A="$ROOT/home4-alias-link"
+ln -s "$HOME4A" "$HOME_LINK_A"
+for _alias in "$HOME4A/" "$HOME4A//" "$HOME4A/." "$HOME4A/./" \
+    "$HOME4A/orbit/.." "$HOME_LINK_A" "$HOME_LINK_A/"; do
+    check_protected_purge "data folder $_alias" "$HOME4A" \
+        "refusing to purge the data folder $_alias: it is a protected path" \
+        "ORBIT_OFFICE_DATA_DIR=$_alias" -- --purge
+done
+for _alias in / // /. /./ //.; do
+    check_protected_purge "data folder $_alias" "$HOME4A" \
+        "refusing to purge the data folder $_alias: it is a protected path" \
+        "ORBIT_OFFICE_DATA_DIR=$_alias" -- --purge
+done
+
+# Workspace aliases are recorded as owned in the default data folder,
+# spelled as the installer sees them (one trailing slash stripped).
+for _ws in "$HOME4A/." "$HOME4A/" "$HOME4A/orbit/.." "$HOME_LINK_A" \
+    / /. //.; do
+    printf 'workspace_path=%s\n' "$_ws" >> "$DATA_A/install-state"
+done
+for _pair in "$HOME4A/.|$HOME4A/." "$HOME4A//|$HOME4A/" \
+    "$HOME4A/./|$HOME4A/." "$HOME4A/orbit/..|$HOME4A/orbit/.." \
+    "$HOME_LINK_A/|$HOME_LINK_A" "//|/" "/.|/." "//.|//." "/./|/."; do
+    _given=${_pair%%|*}; _seen=${_pair#*|}
+    check_protected_purge "workspace $_given" "$HOME4A" \
+        "refusing to purge $_seen: it is a protected path" \
+        -- --purge --home "$_given"
+done
+check "alias refusals keep the owned workspace" grep -qx gone "$OWNED_A/sentinel.txt"
 
 # The partial tree step 4 writes before the state line is the same proof
 # adoption uses, so purge removes it and a later install still adopts it.
@@ -1048,7 +1255,7 @@ check "macos data dir is not the tools dir" test ! -e "$HOME8/custom-data/tools"
 check "no systemd unit on the macos run" \
     test ! -e "$HOME8/.config/systemd/user/orbit-office.service"
 check "macos MCP PATH starts with tools/bin" \
-    grep -F "\"PATH\": \"$MAC_TOOLS/bin:" "$HOME8/.claude/settings.json"
+    grep -F "\"PATH\": \"$MAC_TOOLS/bin:" "$HOME8/.claude.json"
 assert_profiles_untouched "$HOME8"
 
 # ---------------------------------------------------------------------------
@@ -1107,7 +1314,9 @@ run_install "$HOME10" -- > "$OUT_REPAIR" 2>&1 \
     || { cat "$OUT_REPAIR" >&2; fail "claude repair install exits 0"; }
 ok "claude repair install exits 0"
 check "repaired MCP PATH starts with tools/bin" \
-    grep -F "\"PATH\": \"$HOME10/$TOOLS_REL/bin:" "$HOME10/.claude/settings.json"
+    grep -F "\"PATH\": \"$HOME10/$TOOLS_REL/bin:" "$HOME10/.claude.json"
+check "misplaced MCP entry migrated out of settings.json" \
+    sh -c '! grep -q "\"orbit\"" "$1"' sh "$HOME10/.claude/settings.json"
 SNAP_REPAIR="$ROOT/snap-repair.txt"
 snapshot "$HOME10" > "$SNAP_REPAIR"
 OUT_REPAIR2="$ROOT/out-repair2.txt"
@@ -1324,18 +1533,22 @@ cp "$CFG15" "$ROOT/original15.json"
 run_install "$HOME15" -- > "$ROOT/out-settings15.txt" 2>&1 \
     || { cat "$ROOT/out-settings15.txt" >&2; fail "non-canonical settings install exits 0"; }
 check "backup is the exact original settings" cmp -s "$CFG15.bak" "$ROOT/original15.json"
-if ! node - "$CFG15" "$ROOT/original15.json" "$HOME15/.local/share/orbit-office/claude-settings.json" <<'NODE'
+if ! node - "$CFG15" "$ROOT/original15.json" "$HOME15/.local/share/orbit-office/claude-settings.json" "$HOME15/.claude.json" <<'NODE'
 const fs = require("fs");
-const [file, original, receipt] = process.argv.slice(2);
+const [file, original, receipt, mcpFile] = process.argv.slice(2);
 const text = fs.readFileSync(file, "utf8");
 const data = JSON.parse(text);
 const expected = ["Bash(curl *)", "Read(/keep)", "Bash(wget *)", "Bash(http *)", "Bash(aws *)", "Bash(gcloud *)"];
 if (JSON.stringify(data.permissions.deny) !== JSON.stringify(expected)) process.exit(1);
+if (data.mcpServers.orbit) process.exit(1);
+if (JSON.stringify(data.mcpServers.other) !== JSON.stringify({command:"kept"})) process.exit(1);
+const mcp = JSON.parse(fs.readFileSync(mcpFile, "utf8"));
+if (!mcp.mcpServers.orbit || mcp.mcpServers.orbit.command !== "orbit") process.exit(1);
 const owned = JSON.parse(fs.readFileSync(receipt, "utf8")).added;
 if (owned.length !== 4 || owned.includes("Bash(curl *)")) process.exit(1);
-// Remove precisely the inserted entries from the observed file. All other
-// whitespace, escaped strings, Unicode and numeric spellings must match.
-let stripped = text.replace(',"orbit": ' + JSON.stringify(data.mcpServers.orbit, null, 2), "");
+// Remove precisely the inserted deny entries from the observed file. All
+// other whitespace, escaped strings, Unicode and numeric spellings match.
+let stripped = text;
 for (const rule of expected.slice(2)) stripped = stripped.replace("," + JSON.stringify(rule), "");
 if (stripped !== fs.readFileSync(original, "utf8")) process.exit(1);
 // Simulate a user adding another rule after installation.
@@ -1349,6 +1562,8 @@ check "uninstall keeps pre-existing and subsequently added user rules byte-for-b
     node -e 'const fs=require("fs"); const want=fs.readFileSync(process.argv[2],"utf8").replace("\"Read(/keep)\"", "\"Read(/keep)\",\"Bash(user *)\""); process.exit(fs.readFileSync(process.argv[1],"utf8")===want?0:1)' "$CFG15" "$ROOT/original15.json"
 check "uninstall keeps original backup" cmp -s "$CFG15.bak" "$ROOT/original15.json"
 check "uninstall clears ownership receipt" test ! -e "$HOME15/.local/share/orbit-office/claude-settings.json"
+check "uninstall clears MCP ownership receipt" test ! -e "$HOME15/.local/share/orbit-office/claude-mcp.json"
+check "uninstall removes owned MCP entry from .claude.json" sh -c '! grep -q "\"orbit\"" "$1"' sh "$HOME15/.claude.json"
 
 # Missing, empty and complete rule containers are all reversible. Existing
 # all-five deny rules must never become installer-owned.
@@ -1380,6 +1595,59 @@ for _bad_json in '{invalid' '{"permissions":{"deny":"wrong"}}' '{"permissions":{
     check "invalid settings have no backup or receipt" sh -c '[ ! -e "$1.bak" ] && [ ! -e "$2" ]' sh "$_bad_home/.claude/settings.json" "$_bad_home/.local/share/orbit-office/claude-settings.json"
 done
 check "Codex summary describes its sandbox deny limitation" grep -F "deny rules unavailable for sandboxed Codex shell calls" "$OUT_CODEX"
+
+# Ordinary settings files: an empty file, a group-writable (664) file and
+# a symlinked file must install (proceed), and an unusable settings file
+# must not abort --uninstall partway.
+EMPTY_SET_HOME="$ROOT/home-empty-settings"; mkdir -p "$EMPTY_SET_HOME/.claude"
+: > "$EMPTY_SET_HOME/.claude/settings.json"
+run_install "$EMPTY_SET_HOME" -- > "$ROOT/out-empty-settings.txt" 2>&1 \
+    || { cat "$ROOT/out-empty-settings.txt" >&2; fail "empty settings install exits 0"; }
+ok "empty settings install exits 0"
+check "empty settings gains exactly five deny rules" \
+    node -e 'const d=require(process.argv[1]).permissions.deny; process.exit(d.length===5&&new Set(d).size===5?0:1)' "$EMPTY_SET_HOME/.claude/settings.json"
+check "empty settings install writes the MCP entry" grep -q '"orbit"' "$EMPTY_SET_HOME/.claude.json"
+
+GROUP_SET_HOME="$ROOT/home-group-settings"; mkdir -p "$GROUP_SET_HOME/.claude"
+printf '{"kept":true}\n' > "$GROUP_SET_HOME/.claude/settings.json"
+chmod 664 "$GROUP_SET_HOME/.claude/settings.json"
+run_install "$GROUP_SET_HOME" -- > "$ROOT/out-group-settings.txt" 2>&1 \
+    || { cat "$ROOT/out-group-settings.txt" >&2; fail "group-writable settings install exits 0"; }
+ok "group-writable settings install exits 0"
+check "group-writable settings keeps user keys and gains five deny rules" \
+    node -e 'const d=require(process.argv[1]); process.exit(d.kept===true&&d.permissions.deny.length===5?0:1)' "$GROUP_SET_HOME/.claude/settings.json"
+
+LINK_SET_HOME="$ROOT/home-link-settings"; mkdir -p "$LINK_SET_HOME/.claude"
+printf '{"kept":true}\n' > "$LINK_SET_HOME/.claude/real-settings.json"
+ln -s real-settings.json "$LINK_SET_HOME/.claude/settings.json"
+run_install "$LINK_SET_HOME" -- > "$ROOT/out-link-settings.txt" 2>&1 \
+    || { cat "$ROOT/out-link-settings.txt" >&2; fail "symlinked settings install exits 0"; }
+ok "symlinked settings install exits 0"
+check "symlinked settings remains a symlink" test -L "$LINK_SET_HOME/.claude/settings.json"
+check "symlinked settings target keeps user keys and gains five deny rules" \
+    node -e 'const d=require(process.argv[1]); process.exit(d.kept===true&&d.permissions.deny.length===5?0:1)' "$LINK_SET_HOME/.claude/real-settings.json"
+
+UNUSABLE_HOME="$ROOT/home-unusable-settings"
+run_install "$UNUSABLE_HOME" -- > "$ROOT/out-unusable-install.txt" 2>&1 \
+    || { cat "$ROOT/out-unusable-install.txt" >&2; fail "unusable-settings setup install exits 0"; }
+ok "unusable-settings setup install exits 0"
+printf '{invalid' > "$UNUSABLE_HOME/.claude/settings.json"
+cp "$UNUSABLE_HOME/.claude/settings.json" "$ROOT/unusable-original"
+run_install "$UNUSABLE_HOME" -- --uninstall > "$ROOT/out-unusable-un.txt" 2>&1 \
+    || { cat "$ROOT/out-unusable-un.txt" >&2; fail "uninstall with unusable settings exits 0"; }
+ok "uninstall with unusable settings exits 0"
+check "uninstall with unusable settings warns instead of dying" \
+    grep -qi 'warning:' "$ROOT/out-unusable-un.txt"
+check "uninstall with unusable settings leaves the file byte-identical" \
+    cmp -s "$UNUSABLE_HOME/.claude/settings.json" "$ROOT/unusable-original"
+check "uninstall with unusable settings removes the service unit" \
+    test ! -e "$UNUSABLE_HOME/.config/systemd/user/orbit-office.service"
+check "uninstall with unusable settings removes the plugin (stub)" \
+    test ! -e "$STUB_STATE/plugin-added"
+check "uninstall with unusable settings removes tools" \
+    test ! -e "$UNUSABLE_HOME/$TOOLS_REL"
+check "uninstall with unusable settings keeps the workspace" \
+    test -d "$UNUSABLE_HOME/orbit"
 
 # Drive the real interactive entry point over a PTY. The stty wrapper emits
 # a synchronization marker only AFTER the actual terminal has disabled echo;
@@ -1564,7 +1832,7 @@ OUT_CUSTOM_RT="$ROOT/out-custom-runtime.txt"
 (TEST_PATH="$CUSTOM_BIN:/usr/bin:/bin" run_install "$CUSTOM_HOME" -- > "$OUT_CUSTOM_RT" 2>&1) \
     || { cat "$OUT_CUSTOM_RT" >&2; fail "custom-prefix install exits 0"; }
 ok "custom-prefix install exits 0"
-CLAUDE_RT_PATH=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(d.mcpServers.orbit.env.PATH)' "$CUSTOM_HOME/.claude/settings.json") \
+CLAUDE_RT_PATH=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(d.mcpServers.orbit.env.PATH)' "$CUSTOM_HOME/.claude.json") \
     || fail "custom-prefix: Claude MCP PATH is readable"
 check_runtime_path "Claude MCP (linux, custom prefix)" "$CLAUDE_RT_PATH" "$CUSTOM_HOME"
 SYSTEMD_RT_PATH=$(sed -n 's/^Environment=PATH=//p' "$CUSTOM_HOME/.config/systemd/user/orbit-office.service" | head -n 1)
@@ -1831,5 +2099,93 @@ run_install "$HOME_L_MISSING" ORBIT_OFFICE_OS=macos "ORBIT_OFFICE_DATA_DIR=$L_MI
 ok "launchd retry after missing manager exits 0"
 check "launchd retry after missing manager records the marker" \
     grep -qx service_installed "$L_MISSING_DATA/install-state"
+
+# ---------------------------------------------------------------------------
+# 19. Claude MCP registration is read back through agentCliStatus, honours
+#     CLAUDE_CONFIG_DIR, and uninstall removes only installer-owned entries
+# ---------------------------------------------------------------------------
+
+HOME19="$ROOT/home19"; mkdir -p "$HOME19"
+run_install "$HOME19" -- > "$ROOT/out19.txt" 2>&1 \
+    || { cat "$ROOT/out19.txt" >&2; fail "claude .claude.json install exits 0"; }
+ok "claude .claude.json install exits 0"
+_status19=$(agent_cli_status "$HOME19") || fail "agentCliStatus runs for home19"
+[ "$_status19" = '{"cli":"Claude Code","connected":true}' ] \
+    || { printf '%s\n' "$_status19" >&2; fail "agentCliStatus connected (default)"; }
+ok "agentCliStatus connected (default)"
+
+HOME19B="$ROOT/home19b"; mkdir -p "$HOME19B"
+CLAUDE_DIR19="$HOME19B/custom-claude"
+run_install "$HOME19B" "CLAUDE_CONFIG_DIR=$CLAUDE_DIR19" -- > "$ROOT/out19b.txt" 2>&1 \
+    || { cat "$ROOT/out19b.txt" >&2; fail "claude CLAUDE_CONFIG_DIR install exits 0"; }
+ok "claude CLAUDE_CONFIG_DIR install exits 0"
+check "CLAUDE_CONFIG_DIR registration lands in its .claude.json" \
+    grep -q '"orbit"' "$CLAUDE_DIR19/.claude.json"
+check "CLAUDE_CONFIG_DIR install writes no default .claude.json" \
+    test ! -e "$HOME19B/.claude.json"
+_status19b=$(agent_cli_status "$HOME19B" "$CLAUDE_DIR19") || fail "agentCliStatus runs for override"
+[ "$_status19b" = '{"cli":"Claude Code","connected":true}' ] \
+    || { printf '%s\n' "$_status19b" >&2; fail "agentCliStatus connected (CLAUDE_CONFIG_DIR)"; }
+ok "agentCliStatus connected (CLAUDE_CONFIG_DIR)"
+run_install "$HOME19B" "CLAUDE_CONFIG_DIR=$CLAUDE_DIR19" -- --uninstall > "$ROOT/out19b-un.txt" 2>&1 \
+    || { cat "$ROOT/out19b-un.txt" >&2; fail "claude CLAUDE_CONFIG_DIR uninstall exits 0"; }
+check "CLAUDE_CONFIG_DIR uninstall removes owned entry" \
+    sh -c '! grep -q "\"orbit\"" "$1"' sh "$CLAUDE_DIR19/.claude.json"
+
+# A user-owned exact entry is not claimed: capture the installer entry,
+# restore it as a pre-existing file with an unrelated key, reinstall, and
+# uninstall must keep both.
+HOME19C="$ROOT/home19c"; mkdir -p "$HOME19C"
+run_install "$HOME19C" -- > "$ROOT/out19c.txt" 2>&1 \
+    || { cat "$ROOT/out19c.txt" >&2; fail "user-owned setup install exits 0"; }
+cp "$HOME19C/.claude.json" "$ROOT/user-owned-claude.json"
+run_install "$HOME19C" -- --uninstall > "$ROOT/out19c-un.txt" 2>&1 \
+    || { cat "$ROOT/out19c-un.txt" >&2; fail "user-owned setup uninstall exits 0"; }
+node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); d.unrelated={"keep":true}; fs.writeFileSync(process.argv[1], JSON.stringify(d,null,2)+"\n")' "$ROOT/user-owned-claude.json"
+cp "$ROOT/user-owned-claude.json" "$HOME19C/.claude.json"
+run_install "$HOME19C" -- > "$ROOT/out19c2.txt" 2>&1 \
+    || { cat "$ROOT/out19c2.txt" >&2; fail "user-owned reinstall exits 0"; }
+check "pre-existing exact MCP entry is not claimed as owned" \
+    grep -q '"owned":false' "$HOME19C/.local/share/orbit-office/claude-mcp.json"
+run_install "$HOME19C" -- --uninstall > "$ROOT/out19c2-un.txt" 2>&1 \
+    || { cat "$ROOT/out19c2-un.txt" >&2; fail "user-owned uninstall exits 0"; }
+check "uninstall keeps a user-owned MCP entry" grep -q '"orbit"' "$HOME19C/.claude.json"
+check "uninstall keeps unrelated .claude.json settings" grep -q '"unrelated"' "$HOME19C/.claude.json"
+
+# Invalid .claude.json fails closed and is left byte-identical.
+HOME19D="$ROOT/home19d"; mkdir -p "$HOME19D"
+printf '{invalid' > "$HOME19D/.claude.json"
+cp "$HOME19D/.claude.json" "$ROOT/bad-claude-json"
+if run_install "$HOME19D" -- > "$ROOT/out19d.txt" 2>&1; then fail "invalid .claude.json must refuse"; fi
+ok "invalid .claude.json refuses install"
+check "invalid .claude.json remains byte-identical" cmp -s "$HOME19D/.claude.json" "$ROOT/bad-claude-json"
+check "invalid .claude.json creates no MCP receipt" \
+    test ! -e "$HOME19D/.local/share/orbit-office/claude-mcp.json"
+
+# ---------------------------------------------------------------------------
+# 20. Retired token env vars warn and still store the token (STD-01 R35)
+# ---------------------------------------------------------------------------
+
+HOME_OLD1="$ROOT/home-old-token-1"; mkdir -p "$HOME_OLD1"
+run_install "$HOME_OLD1" ORBIT_OFFICE_BASETEN_TOKEN=old-token-must-not-echo-1 -- > "$ROOT/out-old1.txt" 2>&1 \
+    || { cat "$ROOT/out-old1.txt" >&2; fail "ORBIT_OFFICE_BASETEN_TOKEN install exits 0"; }
+ok "ORBIT_OFFICE_BASETEN_TOKEN install exits 0"
+check "ORBIT_OFFICE_BASETEN_TOKEN warns naming the old variable and its replacement" \
+    grep -F "warning: ORBIT_OFFICE_BASETEN_TOKEN is deprecated; use ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN instead" "$ROOT/out-old1.txt"
+check "ORBIT_OFFICE_BASETEN_TOKEN warning never echoes its value" \
+    sh -c '! grep -q "old-token-must-not-echo-1" "$1"' sh "$ROOT/out-old1.txt"
+check "ORBIT_OFFICE_BASETEN_TOKEN is stored as open_weights_token" \
+    test -f "$STUB_STATE/secret.open_weights_token"
+
+HOME_OLD2="$ROOT/home-old-token-2"; mkdir -p "$HOME_OLD2"
+run_install "$HOME_OLD2" BASETEN_TOKEN=old-token-must-not-echo-2 -- > "$ROOT/out-old2.txt" 2>&1 \
+    || { cat "$ROOT/out-old2.txt" >&2; fail "BASETEN_TOKEN install exits 0"; }
+ok "BASETEN_TOKEN install exits 0"
+check "BASETEN_TOKEN warns naming the old variable and its replacement" \
+    grep -F "warning: BASETEN_TOKEN is deprecated; use OPEN_WEIGHTS_TOKEN instead" "$ROOT/out-old2.txt"
+check "BASETEN_TOKEN warning never echoes its value" \
+    sh -c '! grep -q "old-token-must-not-echo-2" "$1"' sh "$ROOT/out-old2.txt"
+check "BASETEN_TOKEN is stored as open_weights_token" \
+    test -f "$STUB_STATE/secret.open_weights_token"
 
 printf 'PASS: %s checks\n' "$PASS"

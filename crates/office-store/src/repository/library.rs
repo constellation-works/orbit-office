@@ -61,6 +61,17 @@ struct PendingOriginal {
     bytes: Vec<u8>,
 }
 
+/// Keep upload extensions safe for conversion and inline source frontmatter.
+/// A non-alphanumeric suffix starts an untrusted tail, so retain only the
+/// leading ASCII alphanumeric extension and normalize it to lowercase.
+fn normalize_upload_extension(extension: &str) -> String {
+    extension
+        .chars()
+        .take_while(|character| character.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
 /// A journal as read from disk, before its version gate is applied.
 /// Version-1 journals predate `kind` and are always documents; version-2
 /// journals must carry `kind` explicitly. Defaulting a missing `kind` on
@@ -68,6 +79,7 @@ struct PendingOriginal {
 /// recovery refuses it instead. Version 3 adds a document's original upload;
 /// earlier readers refuse that version rather than dropping its bytes.
 /// Version 4 binds an artifact document and every immutable companion byte.
+/// Version 5 binds a video source update and its mutable derived files.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPendingWrite {
@@ -93,6 +105,7 @@ impl RawPendingWrite {
             (2, Some(WriteKind::Settings), None, None) => WriteKind::Settings,
             (3, Some(WriteKind::Document), Some(_), None) => WriteKind::Document,
             (4, Some(WriteKind::Artifact), None, Some(_)) => WriteKind::Artifact,
+            (5, Some(WriteKind::Video), None, Some(_)) => WriteKind::Video,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -119,6 +132,7 @@ enum WriteKind {
     Document,
     Settings,
     Artifact,
+    Video,
 }
 
 impl LibraryStore {
@@ -210,9 +224,10 @@ impl LibraryStore {
 
     /// Scaffold a Library at the requested location (specs/library.md,
     /// "Scaffolding: `office.init`"), in spec order. Creates only what is
-    /// missing and never overwrites an existing config, `.gitignore`,
-    /// template or page. A complete Library, including every bundled
-    /// template file, reports `already_initialized` with no commit.
+    /// missing and preserves existing config, templates and pages. Appends
+    /// `frames/` to an existing `.gitignore` when needed, preserving other lines.
+    /// A complete Library, including every bundled template file, reports
+    /// `already_initialized` with no commit.
     /// Holds the writer lock from before inspecting Library state through
     /// scaffolding, recovery, indexing and the initialization commit.
     pub fn initialize_at(
@@ -245,15 +260,28 @@ impl LibraryStore {
         };
         Git::ensure_available(&probe_cwd)?;
 
-        // Snapshot the layout the report lists before the writer state is
-        // bootstrapped: the default state dir lives under `.office`, so
-        // creating it first would hide `.office` from `created`.
-        let missing_layout: Vec<String> = LAYOUT_DIRS
-            .iter()
-            .filter(|dir| !candidate.join(dir).exists())
-            .map(|dir| (*dir).to_string())
-            .collect();
-
+        // The default writer state lives beneath .office. Claim that one
+        // directory atomically at bootstrap, before the lock exists; all
+        // other layout attribution is decided while holding the lock.
+        let office = candidate.join(".office");
+        let absolute_state = std::path::absolute(state_dir)
+            .map_err(|e| Error::io("resolve writer state", state_dir, e))?;
+        let resolved_state = resolve_existing_ancestor(&normalize_path(&absolute_state))?;
+        let mut bootstrapped_office = false;
+        if resolved_state.starts_with(&office) {
+            LibraryFs::create_private_dirs(&candidate)?;
+            let mut builder = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            match builder.create(&office) {
+                Ok(()) => bootstrapped_office = true,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(Error::io("create Library directory", &office, e)),
+            }
+        }
         // Bootstrap only the lock directory; Library and index writes wait
         // until this guard is held, and completeness is checked under it.
         std::fs::create_dir_all(state_dir)
@@ -293,7 +321,10 @@ impl LibraryStore {
             // An invalid existing config is refused, never overwritten.
             Settings::from_yaml(text)?;
         }
-        let gitignore_exists = candidate.join(".gitignore").exists();
+        let gitignore = files.gitignore_text()?;
+        let gitignore_exists = gitignore.is_some();
+        let gitignore_text = gitignore.unwrap_or_default();
+        let frames_ignored = gitignore_text.lines().any(|line| line == "frames/");
         let index_exists = state_dir.join("index.sqlite").exists();
         let layout_complete = LAYOUT_DIRS.iter().all(|dir| {
             let path = candidate.join(dir);
@@ -307,6 +338,7 @@ impl LibraryStore {
         if is_repo
             && config_text.is_some()
             && gitignore_exists
+            && frames_ignored
             && index_exists
             && layout_complete
             && templates_present
@@ -317,7 +349,13 @@ impl LibraryStore {
             });
         }
 
-        let mut created = missing_layout;
+        let mut created: Vec<String> = LAYOUT_DIRS
+            .iter()
+            .filter(|dir| {
+                !candidate.join(dir).exists() || (**dir == ".office" && bootstrapped_office)
+            })
+            .map(|dir| (*dir).to_string())
+            .collect();
         files.ensure_layout()?;
         for dir in LAYOUT_DIRS {
             if *dir == ".office" {
@@ -341,8 +379,17 @@ impl LibraryStore {
             )?;
             created.push(".office/config.yaml".to_string());
         }
-        if !gitignore_exists {
-            write_atomic(&candidate.join(".gitignore"), b"original.*\n")?;
+        if !gitignore_exists || !frames_ignored {
+            let mut text = if gitignore_exists {
+                gitignore_text
+            } else {
+                "original.*\n".into()
+            };
+            if !text.is_empty() && !text.ends_with('\n') {
+                text.push('\n');
+            }
+            text.push_str("frames/\n");
+            write_atomic(&candidate.join(".gitignore"), text.as_bytes())?;
             created.push(".gitignore".to_string());
         }
         // Only the paths this call created are committed, so a later restore
@@ -639,6 +686,47 @@ impl LibraryStore {
         let Some(files) = &pending.bundle else {
             return Ok(());
         };
+        if matches!(pending.kind, WriteKind::Video) {
+            if pending.version != 5
+                || pending.original.is_some()
+                || !pending.relative.starts_with("sources/")
+                || !pending.relative.ends_with("/source.md")
+            {
+                return Err(Error::Journal {
+                    path: self.journal_path(),
+                });
+            }
+            self.files
+                .validate_document_path(Path::new(&pending.relative))?;
+            office_core::domain::source::video::state(&pending.text)
+                .map_err(Error::from)?
+                .ok_or_else(|| Error::Journal {
+                    path: self.journal_path(),
+                })?;
+            let parent = Path::new(&pending.relative)
+                .parent()
+                .ok_or_else(|| Error::Journal {
+                    path: self.journal_path(),
+                })?;
+            let mut seen = std::collections::BTreeSet::new();
+            for file in files {
+                let image = file
+                    .path
+                    .strip_prefix("frames/")
+                    .and_then(|s| s.strip_suffix(".png"))
+                    .is_some_and(|s| {
+                        (4..=6).contains(&s.len()) && s.bytes().all(|c| c.is_ascii_digit())
+                    });
+                if (file.path != "frames.md" && !image) || !seen.insert(&file.path) {
+                    return Err(Error::Journal {
+                        path: self.journal_path(),
+                    });
+                }
+                self.files
+                    .validate_relative_path(&parent.join(&file.path))?;
+            }
+            return Ok(());
+        }
         if !matches!(pending.kind, WriteKind::Artifact)
             || pending.version != 4
             || pending.original.is_some()
@@ -680,7 +768,9 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: if bundle.is_some() {
+            version: if matches!(kind, WriteKind::Video) {
+                5
+            } else if bundle.is_some() {
                 4
             } else if original.is_some() {
                 3
@@ -763,7 +853,7 @@ impl LibraryStore {
         let raw: RawPendingWrite =
             serde_json::from_slice(&bytes).map_err(|_| Error::Journal { path: path.clone() })?;
         let pending = raw.into_pending(&path)?;
-        if !(1..=4).contains(&pending.version)
+        if !(1..=5).contains(&pending.version)
             || pending.root != self.library_root()
             || pending.token.is_empty()
             || !pending
@@ -783,7 +873,7 @@ impl LibraryStore {
                     &pending.text,
                 ))?;
             }
-            WriteKind::Artifact => {
+            WriteKind::Artifact | WriteKind::Video => {
                 self.require_initialized()?;
                 self.validate_bundle(&pending)?;
                 self.validate_identity(&DocumentRecord::from_markdown(
@@ -836,6 +926,28 @@ impl LibraryStore {
                 self.index
                     .upsert(&self.files.read_document(Path::new(&pending.relative))?)?;
             }
+            WriteKind::Video => {
+                self.validate_bundle(pending)?;
+                let parent =
+                    Path::new(&pending.relative)
+                        .parent()
+                        .ok_or_else(|| Error::Journal {
+                            path: self.journal_path(),
+                        })?;
+                for file in pending.bundle.as_deref().unwrap_or_default() {
+                    let relative = parent.join(&file.path);
+                    self.files.validate_relative_path(&relative)?;
+                    let path = self.library_root().join(&relative);
+                    if let Some(parent) = path.parent() {
+                        LibraryFs::create_private_dirs(parent)?;
+                    }
+                    write_atomic(&path, &file.bytes)?;
+                }
+                self.files
+                    .write_document(Path::new(&pending.relative), &pending.text)?;
+                self.index
+                    .upsert(&self.files.read_document(Path::new(&pending.relative))?)?;
+            }
             WriteKind::Settings => self.files.write_settings(&pending.text)?,
         }
         let mut paths = vec![pending.relative.clone()];
@@ -848,6 +960,9 @@ impl LibraryStore {
             paths.extend(
                 files
                     .iter()
+                    .filter(|file| {
+                        !matches!(pending.kind, WriteKind::Video) || file.path == "frames.md"
+                    })
                     .map(|file| parent.join(&file.path).to_string_lossy().to_string()),
             );
         }
@@ -888,6 +1003,21 @@ impl LibraryStore {
         Ok(self
             .files
             .read_knowledge_markdown()?
+            .into_iter()
+            .map(|(path, markdown)| LibraryText {
+                path,
+                markdown: Some(markdown),
+            })
+            .collect())
+    }
+
+    /// Every current source file, in path order, without a search limit.
+    /// Reads full Markdown from disk without waiting for the writer lock.
+    pub fn source_documents(&self) -> Result<Vec<LibraryText>> {
+        self.read_ready()?;
+        Ok(self
+            .files
+            .read_source_markdown()?
             .into_iter()
             .map(|(path, markdown)| LibraryText {
                 path,
@@ -959,7 +1089,8 @@ impl LibraryStore {
         if Path::new(raw)
             .extension()
             .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| convert::is_document(&ext.to_ascii_lowercase()))
+            .map(normalize_upload_extension)
+            .is_some_and(|ext| convert::is_document(&ext))
         {
             use std::io::Read;
             let file = std::fs::File::open(&canonical)
@@ -1010,11 +1141,8 @@ impl LibraryStore {
         if let Some(raw) = &request.upload_path {
             let bytes = self.read_contained(raw)?;
             let path = Path::new(raw);
-            upload_ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
+            upload_ext =
+                normalize_upload_extension(path.extension().and_then(|e| e.to_str()).unwrap_or(""));
             upload_stem = path
                 .file_stem()
                 .and_then(|e| e.to_str())
@@ -1035,7 +1163,7 @@ impl LibraryStore {
                     "transcript_path must be UTF-8 WebVTT".to_string(),
                 )
             })?;
-            transcript_body = Some(vtt_to_body(&text));
+            transcript_body = Some(vtt_to_body(&text)?);
         }
         let converted = if transcript_body.is_none() {
             upload_bytes
@@ -1503,6 +1631,10 @@ struct GrantedRoot {
 /// Lexical `..` and absolute paths are normalized first so a join cannot
 /// spell a different root. A missing suffix is appended to its canonical
 /// ancestor; the spelled path alone is never the decision.
+///
+/// The grant is the workspace's own `library` directory: the workspace is
+/// resolved, `library` is not. A `library` link, even to a directory inside
+/// the workspace, is refused, so its target never becomes the allowed root.
 fn resolve_within_grant(candidate: &Path, workspace_root: &Path) -> Result<GrantedRoot> {
     let allowed = normalize_path(&workspace_root.join("library"));
     let candidate = normalize_path(candidate);
@@ -1512,9 +1644,6 @@ fn resolve_within_grant(candidate: &Path, workspace_root: &Path) -> Result<Grant
             allowed,
         });
     }
-    // Resolve the grant and destination before creating the lock, index or
-    // Library. A missing suffix is appended to its canonical ancestor.
-    let allowed = resolve_existing_ancestor(&allowed)?;
     if std::fs::symlink_metadata(&candidate).is_ok_and(|metadata| metadata.file_type().is_symlink())
     {
         return Err(Error::UnsafePath {
@@ -1522,6 +1651,15 @@ fn resolve_within_grant(candidate: &Path, workspace_root: &Path) -> Result<Grant
             value: candidate.display().to_string(),
         });
     }
+    if std::fs::symlink_metadata(&allowed).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Err(Error::LibraryDirOutside {
+            requested: candidate,
+            allowed,
+        });
+    }
+    // Resolve the grant and destination before creating the lock, index or
+    // Library. A missing suffix is appended to its canonical ancestor.
+    let allowed = resolve_existing_ancestor(&normalize_path(workspace_root))?.join("library");
     let candidate = resolve_existing_ancestor(&candidate)?;
     if !candidate.starts_with(&allowed) {
         return Err(Error::LibraryDirOutside {
@@ -1589,6 +1727,77 @@ fn dir_is_empty(path: &Path) -> bool {
 }
 
 impl office_core::ports::Library for LibraryStore {
+    fn read_video(
+        &self,
+        id: &str,
+    ) -> office_core::Result<office_core::domain::source::video::VideoSource> {
+        use office_core::domain::source::video::{VideoSource, refusal};
+        let view = self.read_source(id)?;
+        if view.kind != "video" {
+            return Err(refusal("not_a_video_source", "source is not a video"));
+        }
+        let markdown = self.files.read_text(Path::new(&view.path))?;
+        let meta = parse_source_meta(&markdown);
+        let name = meta
+            .original_file
+            .as_deref()
+            .filter(|name| name.starts_with("original."))
+            .ok_or_else(|| refusal("original_unavailable", "video original is unavailable"))?;
+        let relative = Path::new(&view.path)
+            .parent()
+            .ok_or_else(|| refusal("invalid_video_source", "source path has no parent"))?
+            .join(name);
+        self.files.validate_relative_path(&relative)?;
+        let bytes = std::fs::read(self.library_root().join(&relative))
+            .map_err(|_| refusal("original_unavailable", "video original is unavailable"))?;
+        if meta.sha256.as_deref() != Some(sha256_hex(&bytes).as_str()) {
+            return Err(refusal(
+                "plan_changed",
+                "original no longer matches its recorded digest",
+            ));
+        }
+        Ok(VideoSource {
+            path: view.path,
+            markdown,
+            bytes,
+        })
+    }
+    fn mutate_video(
+        &self,
+        id: &str,
+        revision: &str,
+        mutation: office_core::domain::source::video::VideoMutation,
+    ) -> office_core::Result<office_core::domain::source::video::VideoState> {
+        use office_core::domain::source::video::{apply, refusal};
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        let source = <Self as office_core::ports::Library>::read_video(self, id)?;
+        if sha256_hex(source.markdown.as_bytes()) != revision {
+            return Err(refusal(
+                "plan_changed",
+                "video changed during processing; read its current plan",
+            ));
+        }
+        let write = apply(&source, &self.settings()?, mutation)?;
+        if write.markdown == source.markdown && write.files.is_empty() {
+            return Ok(write.state);
+        }
+        let files = write
+            .files
+            .into_iter()
+            .map(|(path, bytes)| ArtifactFile { path, bytes })
+            .collect();
+        let pending = self.decide(
+            WriteKind::Video,
+            &source.path,
+            &write.markdown,
+            None,
+            Some(files),
+        )?;
+        self.finish(&pending)?;
+        Ok(write.state)
+    }
+
     fn promote_artifact(
         &self,
         artifact: &Artifact,
@@ -1614,6 +1823,9 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::knowledge_pages(self)?)
+    }
+    fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(Self::source_documents(self)?)
     }
     fn templates(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::templates(self)?)

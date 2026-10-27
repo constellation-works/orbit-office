@@ -60,8 +60,10 @@ pub struct PageFact {
     pub last_verified_days_ago: Option<u32>,
     /// Ids of newer sources/tasks citing this page after verification.
     pub cited_by: Vec<String>,
-    /// A newer source contradicts or extends this page.
+    /// A newer citing source is available for contradiction/extension review.
     pub has_newer_evidence: bool,
+    /// Outgoing source citations from the page, including optional anchors.
+    pub cites: Vec<String>,
 }
 
 /// One Library source, reduced to what the signals read.
@@ -414,6 +416,12 @@ fn entries(body: &str, marker: &str) -> Vec<String> {
     body.lines()
         .filter_map(|line| {
             let line = line.trim().trim_start_matches(['-', '*', ' ']);
+            // Conversation capture writes `[RFC3339] kind: text`.
+            let line = line
+                .strip_prefix('[')
+                .and_then(|rest| rest.split_once(']'))
+                .filter(|(stamp, _)| stamp.contains('T'))
+                .map_or(line, |(_, rest)| rest.trim_start());
             line.strip_prefix(marker)
                 .map(|rest| rest.trim().trim_matches('"').to_string())
         })
@@ -428,7 +436,11 @@ fn unrecorded_direction(facts: &SignalFacts) -> Vec<Candidate> {
         .pages
         .iter()
         .filter(|p| p.id == "dom-standing-directions")
-        .flat_map(|p| p.cited_by.iter().map(String::as_str))
+        .flat_map(|p| {
+            p.cites
+                .iter()
+                .map(|cite| cite.split('#').next().unwrap_or(cite))
+        })
         .collect();
     let mut out = Vec::new();
     for source in &facts.sources {

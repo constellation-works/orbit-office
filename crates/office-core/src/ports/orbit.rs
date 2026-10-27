@@ -4,7 +4,8 @@ use serde_json::{Map, Value};
 
 use crate::{Error, Result};
 
-/// Exactly the task, artifact, friction and search callbacks used by Office.
+/// Exactly the task, artifact, friction, search and auto-task callbacks used by
+/// Office.
 ///
 /// Inputs are forwarded intact to Orbit's versioned tool schemas, including
 /// unknown keys so Orbit can refuse them. Identity and credentials are supplied
@@ -41,6 +42,18 @@ pub trait Orbit {
     }
     /// Search Orbit records.
     fn search(&self, _input: &Map<String, Value>) -> Result<Value> {
+        Err(Error::OrbitUnavailable)
+    }
+    /// Create an auto-task definition.
+    fn auto_task_add(&self, _input: &Map<String, Value>) -> Result<Value> {
+        Err(Error::OrbitUnavailable)
+    }
+    /// Update an auto-task definition, including enabling or disabling it.
+    fn auto_task_update(&self, _input: &Map<String, Value>) -> Result<Value> {
+        Err(Error::OrbitUnavailable)
+    }
+    /// List auto-task definitions.
+    fn auto_task_list(&self, _input: &Map<String, Value>) -> Result<Value> {
         Err(Error::OrbitUnavailable)
     }
 }

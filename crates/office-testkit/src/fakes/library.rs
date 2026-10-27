@@ -26,6 +26,7 @@ use std::path::PathBuf;
 /// A Library fake with explicit readiness and settings, and no host I/O.
 #[derive(Default)]
 pub struct FakeLibrary {
+    originals: RefCell<BTreeMap<String, Vec<u8>>>,
     artifact_files: RefCell<BTreeMap<String, Vec<u8>>>,
     documents: RefCell<BTreeMap<String, DocumentRecord>>,
     texts: RefCell<BTreeMap<String, String>>,
@@ -92,6 +93,14 @@ impl FakeStaging {
 }
 
 impl FakeLibrary {
+    /// Seed an in-memory video with explicit source Markdown and original bytes.
+    pub fn insert_video(&self, relative: &Path, markdown: &str, bytes: &[u8]) -> Result<()> {
+        let meta = office_core::domain::source::parse_source_meta(markdown);
+        self.write_document(relative, markdown)?;
+        self.originals.borrow_mut().insert(meta.id, bytes.to_vec());
+        Ok(())
+    }
+
     /// An initialized, empty fixture with policy defaults.
     #[must_use]
     pub fn initialized() -> Self {
@@ -121,6 +130,14 @@ impl FakeLibrary {
     #[must_use]
     pub fn staging(&self) -> FakeStaging {
         self.staging.clone()
+    }
+
+    /// Replace one existing document's revision history with explicit fixture
+    /// timestamps. Does no host I/O and leaves other documents unchanged.
+    pub fn set_history(&self, relative: &Path, revisions: Vec<Revision>) -> Result<()> {
+        let record = self.read_document(relative)?;
+        self.revisions.borrow_mut().insert(record.path, revisions);
+        Ok(())
     }
 
     fn record_commit(&self) {
@@ -173,6 +190,81 @@ impl FakeLibrary {
 }
 
 impl Library for FakeLibrary {
+    fn read_video(&self, id: &str) -> Result<office_core::domain::source::video::VideoSource> {
+        use office_core::domain::source::video::{VideoSource, refusal};
+        self.ready()?;
+        let doc = self
+            .get(id)?
+            .ok_or_else(|| refusal("source_not_found", "source was not found"))?;
+        let markdown = self.read_text(Path::new(&doc.path))?;
+        let meta = office_core::domain::source::parse_source_meta(&markdown);
+        if meta.kind != "video" {
+            return Err(refusal("not_a_video_source", "source is not a video"));
+        }
+        let bytes = self
+            .originals
+            .borrow()
+            .get(id)
+            .cloned()
+            .ok_or_else(|| refusal("original_unavailable", "video original is unavailable"))?;
+        if meta.sha256.as_deref() != Some(sha256_hex(&bytes).as_str()) {
+            return Err(refusal(
+                "plan_changed",
+                "original no longer matches its recorded digest",
+            ));
+        }
+        Ok(VideoSource {
+            path: doc.path,
+            markdown,
+            bytes,
+        })
+    }
+    fn mutate_video(
+        &self,
+        id: &str,
+        revision: &str,
+        mutation: office_core::domain::source::video::VideoMutation,
+    ) -> Result<office_core::domain::source::video::VideoState> {
+        use office_core::domain::source::video::{apply, refusal};
+        let source = self.read_video(id)?;
+        if sha256_hex(source.markdown.as_bytes()) != revision {
+            return Err(refusal("plan_changed", "video changed during processing"));
+        }
+        let write = apply(&source, &self.settings()?, mutation)?;
+        if write.markdown == source.markdown && write.files.is_empty() {
+            return Ok(write.state);
+        }
+        let mut record = self.write_document(Path::new(&source.path), &write.markdown)?;
+        if let Some(view) = self.sources.borrow_mut().get_mut(id) {
+            view.sensitivity = write.state.plan.sensitivity.clone();
+            view.body = office_core::domain::source::source_body(&write.markdown);
+        }
+        let parent = Path::new(&source.path)
+            .parent()
+            .ok_or_else(|| refusal("invalid_video_source", "source path has no parent"))?;
+        for (name, bytes) in write.files {
+            let path = parent.join(&name).to_string_lossy().to_string();
+            if name == "frames.md" {
+                self.texts
+                    .borrow_mut()
+                    .insert(path.clone(), String::from_utf8_lossy(&bytes).into());
+            }
+            self.artifact_files.borrow_mut().insert(path, bytes);
+        }
+        if let Some(frames) = self
+            .texts
+            .borrow()
+            .get(&parent.join("frames.md").to_string_lossy().to_string())
+        {
+            record.body.push_str("\n\n");
+            record.body.push_str(frames);
+        }
+        self.documents
+            .borrow_mut()
+            .insert(record.path.clone(), record);
+        Ok(write.state)
+    }
+
     fn promote_artifact(
         &self,
         candidate: &office_core::domain::artifact::Artifact,
@@ -360,6 +452,20 @@ impl Library for FakeLibrary {
             .borrow()
             .iter()
             .filter(|(path, _)| path.starts_with("knowledge/"))
+            .map(|(path, markdown)| LibraryText {
+                path: path.clone(),
+                markdown: Some(markdown.clone()),
+            })
+            .collect())
+    }
+
+    fn source_documents(&self) -> Result<Vec<LibraryText>> {
+        self.ready()?;
+        Ok(self
+            .texts
+            .borrow()
+            .iter()
+            .filter(|(path, _)| path.starts_with("sources/") && path.ends_with("/source.md"))
             .map(|(path, markdown)| LibraryText {
                 path: path.clone(),
                 markdown: Some(markdown.clone()),
@@ -567,7 +673,7 @@ impl Library for FakeLibrary {
             let text = String::from_utf8(bytes).map_err(|_| {
                 Error::InvalidArgument("transcript_path must be UTF-8 WebVTT".to_string())
             })?;
-            transcript_body = Some(vtt_to_body(&text));
+            transcript_body = Some(vtt_to_body(&text)?);
         }
         let explicit_kind = match &request.kind {
             Some(k) => Some(SourceKind::parse(k).ok_or_else(|| Error::Library {
@@ -735,7 +841,13 @@ impl Library for FakeLibrary {
             version: 1,
         };
         self.sources.borrow_mut().insert(id.clone(), view);
+        if let Some(bytes) = &upload_bytes {
+            self.originals
+                .borrow_mut()
+                .insert(id.clone(), bytes.clone());
+        }
         // Mirror into documents so search/health see the source.
+        let original_name = format!("original.{upload_ext}");
         let markdown = render_source(&RenderSource {
             id: &id,
             kind,
@@ -754,7 +866,12 @@ impl Library for FakeLibrary {
             participants: &request.participants,
             tags: &request.tags,
             sensitivity,
-            original: None,
+            original: match (&sha, bytes_len, &media_type) {
+                (Some(sha), Some(bytes), Some(media)) => {
+                    Some((original_name.as_str(), sha.as_str(), bytes, media.as_str()))
+                }
+                _ => None,
+            },
             derived_transcription: derived,
             retention_days: settings.retention.get(kind.as_str()).copied().flatten(),
             body: &body,

@@ -120,6 +120,46 @@ fn single_setting_refuses_unknown_leaves_and_bad_values_without_mutation() {
 }
 
 #[test]
+fn pre_batch_default_config_loads() {
+    // Exact default emitted by office.init before the private-route change.
+    let yaml = "retention:
+  video: 90
+  meeting: 90
+  chat: null
+  email: null
+  doc: null
+  receipt: null
+  bill: null
+  conversation: null
+  note: null
+sensitivity:
+  video: normal
+  meeting: normal
+  chat: normal
+  email: normal
+  doc: normal
+  receipt: normal
+  bill: normal
+  conversation: normal
+  note: normal
+packs: [meetings]
+thresholds:
+  repetition_count: 3
+  window_days: 30
+  stale_days: 90
+  friction_count: 2
+  new_subject_count: 2
+  unused_days: 30
+open_weights_endpoint: null
+";
+    let expected = Settings {
+        packs: vec!["meetings".into()],
+        ..Settings::default()
+    };
+    assert_eq!(Settings::from_yaml(yaml).unwrap(), expected);
+}
+
+#[test]
 fn partial_yaml_merges_policy_defaults_without_creating_observations() {
     assert_eq!(Settings::from_yaml("").expect("empty"), Settings::default());
     assert_eq!(
@@ -149,6 +189,55 @@ fn partial_yaml_merges_policy_defaults_without_creating_observations() {
         serde_json::from_value::<Settings>(encoded).expect("roundtrip"),
         settings
     );
+}
+
+#[test]
+fn a_single_quoted_value_with_a_doubled_quote_keeps_a_later_hash_as_text() {
+    // `''` is an escaped quote, not a close and reopen, so ` #` stays in the value.
+    let settings = Settings::from_yaml(&BLOCK.replace(
+        "label: Acme's server",
+        "label: 'Acme''s #1 server'   # shown in the app",
+    ))
+    .expect("single-quoted label");
+    assert_eq!(
+        settings.open_weights.expect("block").label,
+        "Acme's #1 server"
+    );
+}
+
+#[test]
+fn a_double_quoted_value_with_escaped_quotes_keeps_a_later_hash_as_text() {
+    // A backslash-escaped quote does not close the value, so ` # x` stays in it.
+    let settings = Settings::from_yaml(&BLOCK.replace(
+        "label: Acme's server",
+        r#"label: "say \"hi\" # x"   # shown in the app"#,
+    ))
+    .expect("double-quoted label");
+    assert_eq!(
+        settings.open_weights.expect("block").label,
+        r#"say "hi" # x"#
+    );
+}
+
+#[test]
+fn a_backslash_does_not_escape_inside_a_single_quoted_value() {
+    // YAML single quotes have no backslash escapes: the quote after `\` closes.
+    let settings = Settings::from_yaml(&BLOCK.replace(
+        "label: Acme's server",
+        r"label: 'Acme\'   # shown in the app",
+    ))
+    .expect("backslash label");
+    assert_eq!(settings.open_weights.expect("block").label, r"Acme\");
+}
+
+#[test]
+fn a_doubled_quote_with_no_closing_quote_is_refused_not_cut_at_the_hash() {
+    // `''` is an escaped quote, so this single-quoted value never closes and
+    // ` # shown` is text, not a comment. YAML refuses the value.
+    let key = refused_key(Settings::from_yaml(
+        &BLOCK.replace("label: Acme's server", "label: 'Acme'' # shown in the app"),
+    ));
+    assert_eq!(key, "open_weights.label");
 }
 
 #[test]
@@ -463,5 +552,90 @@ fn the_check_records_capabilities_and_a_new_endpoint_or_model_clears_them() {
             .expect_err("no block")
             .code(),
         "private_route_changed"
+    );
+}
+
+#[test]
+fn whole_block_updates_preserve_checks_only_when_endpoint_and_model_are_unchanged() {
+    let configured = Settings::default()
+        .with_setting("open_weights", block_value())
+        .expect("block");
+    let checked = configured
+        .with_route_check(
+            "https://muse.internal.acme.example/v1",
+            "meta-models/Muse-Spark-Open-816B-A42B",
+            &[Capability::Image, Capability::Text],
+            "2026-10-27T14:02:00+00:00",
+        )
+        .expect("record");
+
+    let mut relabelled_block = block_value();
+    relabelled_block["label"] = json!("Acme GPU cluster");
+    let relabelled = checked
+        .with_setting("open_weights", relabelled_block)
+        .expect("whole-block relabel");
+    let route = relabelled.open_weights.expect("block");
+    assert_eq!(
+        route.capabilities,
+        Some(vec![Capability::Text, Capability::Image])
+    );
+    assert_eq!(
+        route.verified_at.as_deref(),
+        Some("2026-10-27T14:02:00+00:00")
+    );
+
+    for (field, value) in [
+        ("endpoint", json!("https://muse2.internal.acme.example/v1")),
+        ("model", json!("another-model")),
+    ] {
+        let mut changed_block = block_value();
+        changed_block[field] = value;
+        let changed = checked
+            .with_setting("open_weights", changed_block)
+            .expect("whole-block route change")
+            .open_weights
+            .expect("block");
+        assert_eq!(changed.capabilities, None, "{field}");
+        assert_eq!(changed.verified_at, None, "{field}");
+    }
+
+    let unchecked = configured
+        .with_setting("open_weights", block_value())
+        .expect("unchanged unchecked block")
+        .open_weights
+        .expect("block");
+    assert_eq!(unchecked.capabilities, None);
+    assert_eq!(unchecked.verified_at, None);
+}
+
+#[test]
+fn video_defaults_and_cost_bounds() {
+    let defaults = Settings::default();
+    assert_eq!(defaults.packs, ["kt", "meetings"]);
+    let encoded = serde_json::to_value(&defaults).unwrap();
+    assert_eq!(encoded["video"]["max_frames_per_hour"], 120);
+    assert_eq!(encoded["video"]["scene_threshold"], 0.3);
+    for (key, value) in [
+        ("video.max_frames_per_hour", json!(0)),
+        ("video.max_frames_per_hour", json!(601)),
+        ("video.scene_threshold", json!(0.049)),
+        ("video.scene_threshold", json!(0.951)),
+        ("costs.image", json!(-0.1)),
+        ("costs.currency", json!("dollars")),
+    ] {
+        let error = defaults.with_setting(key, value).unwrap_err();
+        assert_eq!(error.code(), "invalid_library_setting");
+        assert!(error.to_string().contains(key));
+    }
+    let configured = defaults
+        .with_setting("costs.image", json!(0.01))
+        .unwrap()
+        .with_setting("costs.currency", json!("USD"))
+        .unwrap()
+        .with_setting("packs", json!(["kt", "meetings"]))
+        .unwrap();
+    assert_eq!(
+        Settings::from_yaml(&configured.to_yaml().unwrap()).unwrap(),
+        configured
     );
 }

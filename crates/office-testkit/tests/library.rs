@@ -9,6 +9,43 @@ use std::io::Write as _;
 use std::path::Path;
 
 #[test]
+fn fake_source_documents_return_full_markdown_in_path_order_without_a_limit() {
+    let fake = FakeLibrary::initialized();
+    let port: &dyn Library = &fake;
+    let mut expected = Vec::new();
+    for index in (0..105).rev() {
+        let path = format!("sources/src-{index:03}/source.md");
+        let markdown = format!(
+            "---\nid: src-{index:03}\nparticipants: [Priya]\n---\n{}\ndirection: cite evidence",
+            "context ".repeat(30)
+        );
+        port.write_document(Path::new(&path), &markdown)
+            .expect("source");
+        expected.push(office_core::ports::LibraryText {
+            path,
+            markdown: Some(markdown),
+        });
+    }
+    port.write_document(
+        Path::new("knowledge/domain/example.md"),
+        "---\nid: dom-example\n---\nPage",
+    )
+    .expect("knowledge page");
+    expected.reverse();
+    assert_eq!(
+        port.source_documents().expect("all source documents"),
+        expected
+    );
+    assert_eq!(
+        FakeLibrary::default()
+            .source_documents()
+            .expect_err("uninitialized")
+            .code(),
+        "library_not_initialized"
+    );
+}
+
+#[test]
 fn fake_implements_read_write_filtered_search_history_settings_and_readiness() {
     let fake = FakeLibrary::initialized();
     let port: &dyn Library = &fake;
@@ -167,4 +204,34 @@ fn fake_initialize_accepts_the_library_and_workspace_relative_library_dirs() {
         assert!(!outcome.already_initialized, "{inside}");
         assert!(port.is_initialized().expect("initialized"));
     }
+}
+
+#[test]
+fn explicit_fixture_history_replaces_only_the_named_document_without_host_io() {
+    use office_core::domain::knowledge::Revision;
+    let fake = FakeLibrary::initialized();
+    for id in ["one", "two"] {
+        fake.write_document(
+            Path::new(&format!("knowledge/domain/dom-{id}.md")),
+            &format!("---\nid: dom-{id}\n---\nPage"),
+        )
+        .expect("seed");
+    }
+    let path = Path::new("knowledge/domain/dom-one.md");
+    let revisions = vec![Revision {
+        commit: "fixture-commit".into(),
+        author: "Fixture".into(),
+        email: "fixture@example.invalid".into(),
+        authored_at: "2026-10-05T00:00:00Z".into(),
+        message: "Create page".into(),
+    }];
+    fake.set_history(path, revisions.clone()).expect("history");
+    assert_eq!(fake.history(path).expect("read"), revisions);
+    assert_eq!(
+        fake.history(Path::new("knowledge/domain/dom-two.md"))
+            .expect("other")[0]
+            .authored_at,
+        "1970-01-01T00:00:00+00:00"
+    );
+    assert!(fake.set_history(Path::new("missing.md"), vec![]).is_err());
 }

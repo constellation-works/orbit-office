@@ -20,7 +20,7 @@ fn status_reports_set_and_unset_secrets_without_values() {
     .expect("status succeeds");
     assert_eq!(output["secrets"]["meta_api_key"], json!("set"));
     assert_eq!(output["secrets"]["open_weights_token"], json!("unset"));
-    assert!(output["secrets"].get("baseten_token").is_none());
+    assert_eq!(output["secrets"]["baseten_token"], json!("unset"));
     assert!(
         !output.to_string().contains("do-not-echo-this"),
         "a secret value must never appear in output"
@@ -57,6 +57,7 @@ fn status_reports_off_template_pages_and_names_a_broken_template() {
     library.pages_off_template = 2;
     library.template_invalid = vec![".office/templates/notes.md".to_string()];
     let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(library),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
@@ -85,6 +86,7 @@ fn status_reports_an_uninitialized_library_without_refusing() {
     let input = Map::new();
     let context = Map::new();
     let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(office_testkit::fakes::FakeLibrary::default()),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
@@ -122,6 +124,7 @@ fn status_returns_a_pending_write_as_its_typed_error_not_as_uninitialized() {
     let input = Map::new();
     let context = Map::new();
     let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(PendingWriteLibrary),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
@@ -148,6 +151,7 @@ fn status_reports_an_unavailable_library_adapter_as_uninitialized_without_refusi
     let input = Map::new();
     let context = Map::new();
     let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(NoLibrary),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
@@ -183,10 +187,31 @@ fn status_reports_the_private_route_token_and_never_the_retired_name() {
     .expect("status succeeds");
     assert_eq!(
         output["secrets"],
-        json!({"meta_api_key": "unset", "open_weights_token": "set"})
+        json!({"meta_api_key": "unset", "open_weights_token": "set", "baseten_token": "set"})
     );
     assert!(!output.to_string().contains("do-not-echo-this"));
     assert_eq!(output["open_weights"], json!(null));
+}
+
+#[test]
+fn status_accepts_the_retired_secret_name_as_the_open_weights_alias() {
+    let input = Map::new();
+    let mut context = Map::new();
+    context.insert(
+        "secrets".to_string(),
+        json!({ "baseten_token": "do-not-echo-this" }),
+    );
+    let output = run(&Call {
+        ports: &office_testkit::fakes::PortsBuilder::default().build(),
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(
+        output["secrets"],
+        json!({"meta_api_key": "unset", "open_weights_token": "set", "baseten_token": "set"})
+    );
+    assert!(!output.to_string().contains("do-not-echo-this"));
 }
 
 #[test]
@@ -213,6 +238,7 @@ fn status_reports_a_configured_private_endpoint_and_never_its_token() {
         ..office_core::domain::settings::Settings::default()
     };
     let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(library),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
@@ -265,6 +291,7 @@ fn status_returns_a_settings_refusal_instead_of_a_missing_endpoint() {
     let input = Map::new();
     let context = Map::new();
     let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(BrokenSettings),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),

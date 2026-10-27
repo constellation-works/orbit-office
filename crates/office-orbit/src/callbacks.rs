@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use crate::{Error, Result};
 
 /// Office's complete callback allowlist; no namespace or wildcard expansion.
-pub const ORBIT_TOOLS: [&str; 8] = [
+pub const ORBIT_TOOLS: [&str; 11] = [
     "orbit.task.add",
     "orbit.task.update",
     "orbit.task.list",
@@ -19,6 +19,9 @@ pub const ORBIT_TOOLS: [&str; 8] = [
     "orbit.task.artifact.put",
     "orbit.friction.add",
     "orbit.search",
+    "orbit.auto_task.add",
+    "orbit.auto_task.update",
+    "orbit.auto_task.list",
 ];
 
 /// Non-secret environment names needed by the callback CLI. Composition reads
@@ -167,7 +170,12 @@ fn process_failure(tool: &str, error: office_common::Error) -> Error {
 fn indeterminate(tool: &str, failure: Error) -> Error {
     if matches!(
         tool,
-        "orbit.task.add" | "orbit.task.update" | "orbit.task.artifact.put" | "orbit.friction.add"
+        "orbit.task.add"
+            | "orbit.task.update"
+            | "orbit.task.artifact.put"
+            | "orbit.friction.add"
+            | "orbit.auto_task.add"
+            | "orbit.auto_task.update"
     ) {
         Error::OutcomeUnknown(Box::new(failure))
     } else {
@@ -199,5 +207,14 @@ impl Orbit for OrbitCallbacks {
     }
     fn search(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
         Ok(self.call("orbit.search", input)?)
+    }
+    fn auto_task_add(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
+        Ok(self.call("orbit.auto_task.add", input)?)
+    }
+    fn auto_task_update(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
+        Ok(self.call("orbit.auto_task.update", input)?)
+    }
+    fn auto_task_list(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
+        Ok(self.call("orbit.auto_task.list", input)?)
     }
 }

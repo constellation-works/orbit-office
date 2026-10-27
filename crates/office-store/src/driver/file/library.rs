@@ -89,6 +89,16 @@ impl LibraryFs {
             .map_err(|e| Error::io("create Library directory", path, e))
     }
 
+    /// Read the fixed root ignore file, refusing a symlink before use.
+    pub(crate) fn gitignore_text(&self) -> Result<Option<String>> {
+        let path = self.root.join(".gitignore");
+        refuse_symlink(&path)?;
+        match std::fs::read_to_string(&path) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(Error::io("read gitignore", path, error)),
+        }
+    }
     /// Read internal settings without following a symlink out of the Library.
     pub(crate) fn settings_text(&self) -> Result<Option<String>> {
         self.validate_settings_path()?;
@@ -332,7 +342,36 @@ impl LibraryFs {
         let path = self.root.join(relative);
         refuse_symlink(&path)?;
         let text = std::fs::read_to_string(&path).map_err(|e| Error::io("read", &path, e))?;
-        Ok(DocumentRecord::from_markdown(relative, &text))
+        let mut record = DocumentRecord::from_markdown(relative, &text);
+        if relative.starts_with("sources")
+            && relative.file_name().is_some_and(|name| name == "source.md")
+        {
+            let parent = relative.parent().ok_or_else(|| Error::UnsafePath {
+                kind: "source",
+                value: relative.display().to_string(),
+            })?;
+            for name in ["frames.md", "chapters.md"] {
+                let companion = parent.join(name);
+                self.validate_relative_path(&companion)?;
+                match std::fs::read_to_string(self.root.join(&companion)) {
+                    Ok(text) => {
+                        record.body.push_str("\n\n");
+                        record
+                            .body
+                            .push_str(&office_core::domain::source::source_body(&text));
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(Error::io(
+                            "read source companion",
+                            self.root.join(&companion),
+                            error,
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(record)
     }
 
     /// Write one document atomically at a Library-relative path. Every
@@ -544,21 +583,30 @@ impl LibraryFs {
     /// that still reaches this read is refused. A missing `knowledge`
     /// directory is an empty list. Any other enumeration failure is an error.
     pub(crate) fn read_knowledge_markdown(&self) -> Result<Vec<(String, String)>> {
+        self.read_layer_markdown("knowledge", &[])
+    }
+
+    /// Every current source's complete Markdown; no search cap or excerpts.
+    pub(crate) fn read_source_markdown(&self) -> Result<Vec<(String, String)>> {
+        self.read_layer_markdown("sources", &["source"])
+    }
+
+    fn read_layer_markdown(&self, layer: &str, stems: &[&str]) -> Result<Vec<(String, String)>> {
         let mut files = Vec::new();
-        collect_optional_layer(&self.root.join("knowledge"), &mut files, &[])?;
+        collect_optional_layer(&self.root.join(layer), &mut files, stems)?;
         files.sort();
         let mut pages = Vec::new();
         for path in files {
             refuse_symlink(&path)?;
             let relative = path.strip_prefix(&self.root).map_err(|_| {
                 Error::io(
-                    "relativize knowledge page",
+                    "relativize Library document",
                     &path,
                     std::io::Error::other("path escaped the Library"),
                 )
             })?;
             let text = std::fs::read_to_string(&path)
-                .map_err(|error| Error::io("read knowledge page", &path, error))?;
+                .map_err(|error| Error::io("read Library document", &path, error))?;
             pages.push((relative.to_string_lossy().replace('\\', "/"), text));
         }
         Ok(pages)

@@ -1,0 +1,15 @@
+# Offline video fixture and fixed clock supplied by the public dispatch runner
+# in crates/office-tools/src/tools/tests/frames.rs. No network or secrets.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: frames_fixture_success
+    tool: frames
+    input: {"id":"src-19700101-video"}
+    expect:
+      output: {"calls":{"audio":0,"extract":0,"frames":4},"frames_read":4,"id":"src-19700101-video","path":"sources/1970/01/src-19700101-video/frames.md"}
+  - name: frames_refuses_unknown_input
+    tool: frames
+    input: {"id":"src-19700101-video","extra":true}
+    expect:
+      error: {"code":"invalid_argument"}

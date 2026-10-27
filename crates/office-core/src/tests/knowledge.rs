@@ -228,6 +228,17 @@ fn frontmatter_refusals_name_the_field() {
 }
 
 #[test]
+fn timestamp_overflow_is_refused_by_citation_resolution() {
+    for stamp in ["1152921504606846976:00:00", "5124095576030431:00:16"] {
+        assert!(resolve_anchor("[00:00:00] Jane: zero", &format!("t={stamp}")).is_err());
+        assert!(resolve_anchor(&format!("[{stamp}] Jane: overflow"), "t=00:00:00").is_err());
+    }
+    for stamp in ["100:00:00", "5124095576040:25:51", "5124095576030431:00:15"] {
+        assert!(resolve_anchor(&format!("[{stamp}] Jane: valid"), &format!("t={stamp}")).is_ok());
+    }
+}
+
+#[test]
 fn anchors_resolve_against_the_source_body() {
     let meeting = "[00:10:00] Jane: one\n\n[00:12:31] Dee: two\n";
     assert!(resolve_anchor(meeting, "t=00:12:31").is_ok());

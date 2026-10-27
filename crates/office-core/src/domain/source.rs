@@ -3,6 +3,9 @@
 //! The meeting body is the first rule this module owns. Capture, ids and
 //! retention stay with the task that builds `office.transcribe`.
 
+/// KT video planning and processing state.
+pub mod video;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use office_common::Sensitivity;
@@ -85,7 +88,7 @@ fn format_turn(segment: &TranscriptSegment) -> String {
 
 /// Seconds from an `hh:mm:ss` stamp, in the form `clock_time` writes and
 /// the knowledge citation validator accepts.
-fn parse_clock_seconds(stamp: &str) -> Option<u64> {
+pub(crate) fn parse_clock_seconds(stamp: &str) -> Option<u64> {
     let mut parts = stamp.split(':');
     let (h, m, s) = (parts.next()?, parts.next()?, parts.next()?);
     if parts.next().is_some()
@@ -98,7 +101,16 @@ fn parse_clock_seconds(stamp: &str) -> Option<u64> {
         return None;
     }
     let (h, m, s): (u64, u64, u64) = (h.parse().ok()?, m.parse().ok()?, s.parse().ok()?);
-    (m < 60 && s < 60).then(|| h * 3_600 + m * 60 + s)
+    checked_clock_seconds(h, m, s)
+}
+
+fn checked_clock_seconds(h: u64, m: u64, s: u64) -> Option<u64> {
+    if m >= 60 || s >= 60 {
+        return None;
+    }
+    h.checked_mul(3_600)?
+        .checked_add(m.checked_mul(60)?)?
+        .checked_add(s)
 }
 
 /// `hh:mm:ss` from a millisecond offset. Hours grow past 99 instead of wrapping.
@@ -397,11 +409,8 @@ pub fn parse_anchor(raw: &str) -> Result<Anchor> {
         };
         let parse = |p: &str| p.parse::<u64>().map_err(|_| anchor_invalid(raw));
         let (h, m, s) = (parse(h)?, parse(m)?, parse(s)?);
-        if m >= 60 || s >= 60 {
-            return Err(anchor_invalid(raw));
-        }
         return Ok(Anchor::Time {
-            seconds: h * 3600 + m * 60 + s,
+            seconds: checked_clock_seconds(h, m, s).ok_or_else(|| anchor_invalid(raw))?,
         });
     }
     if let Some(rest) = text.strip_prefix('L') {
@@ -616,9 +625,10 @@ pub fn format_conversation_entry(captured_at: &str, kind: &str, text: &str) -> R
 
 /// Import a WebVTT transcript as meeting-style `#t=` turns. Speaker names
 /// come from `<v Name>` voice spans or a leading `Name:`; cue start times
-/// become the turn timestamps. No model call is involved.
-#[must_use]
-pub fn vtt_to_body(vtt: &str) -> String {
+/// become the turn timestamps. Both cue endpoints must fit in `u64`
+/// milliseconds; malformed or overflowing timestamps refuse the import.
+/// No model call is involved.
+pub fn vtt_to_body(vtt: &str) -> Result<String> {
     let mut turns: Vec<String> = Vec::new();
     let mut cue_start_ms: Option<u64> = None;
     let mut cue_lines: Vec<String> = Vec::new();
@@ -640,9 +650,12 @@ pub fn vtt_to_body(vtt: &str) -> String {
     };
     for line in vtt.lines() {
         let line = line.trim();
-        if line.contains("-->") {
+        if let Some((start, end)) = line.split_once("-->") {
             flush(&mut turns, &mut cue_start_ms, &mut cue_lines);
-            cue_start_ms = line.split("-->").next().and_then(parse_vtt_time);
+            cue_start_ms = Some(parse_vtt_time(start)?);
+            // End times do not become turn starts, but must not silently
+            // accept overflow either. Cue settings follow the endpoint.
+            parse_vtt_time(end.split_whitespace().next().unwrap_or(""))?;
         } else if line.is_empty() {
             flush(&mut turns, &mut cue_start_ms, &mut cue_lines);
         } else if cue_start_ms.is_some() {
@@ -653,23 +666,46 @@ pub fn vtt_to_body(vtt: &str) -> String {
         }
     }
     flush(&mut turns, &mut cue_start_ms, &mut cue_lines);
-    turns.join("\n\n")
+    Ok(turns.join("\n\n"))
 }
 
-fn parse_vtt_time(token: &str) -> Option<u64> {
+fn parse_vtt_time(token: &str) -> Result<u64> {
     let token = token.trim();
+    let malformed = || {
+        // The token comes from transcript contents; diagnostics must not
+        // echo arbitrary speech or secrets from a malformed timing line.
+        Error::InvalidArgument(
+            "WebVTT timestamp is malformed; use hh:mm:ss.mmm or mm:ss.mmm".into(),
+        )
+    };
     let (hms, frac) = token.split_once('.').unwrap_or((token, "0"));
-    let mut parts = hms.split(':');
-    let nums: Vec<u64> = parts
-        .by_ref()
+    let nums: Vec<u64> = hms
+        .split(':')
         .map(|p| p.parse().ok())
-        .collect::<Option<Vec<_>>>()?;
-    let millis: u64 = frac.chars().take(3).collect::<String>().parse().ok()?;
-    match nums.as_slice() {
-        [m, s] => Some((m * 60 + s) * 1_000 + millis),
-        [h, m, s] => Some((h * 3600 + m * 60 + s) * 1_000 + millis),
-        _ => None,
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(malformed)?;
+    let millis: u64 = frac
+        .chars()
+        .take(3)
+        .collect::<String>()
+        .parse()
+        .map_err(|_| malformed())?;
+    let (h, m, s) = match nums.as_slice() {
+        [m, s] => (0, *m, *s),
+        [h, m, s] => (*h, *m, *s),
+        _ => return Err(malformed()),
+    };
+    if m >= 60 || s >= 60 {
+        return Err(malformed());
     }
+    checked_clock_seconds(h, m, s)
+        .and_then(|seconds| seconds.checked_mul(1_000))
+        .and_then(|ms| ms.checked_add(millis))
+        .ok_or_else(|| {
+            Error::InvalidArgument(
+                "WebVTT timestamp exceeds the supported u64 millisecond range".into(),
+            )
+        })
 }
 
 fn split_vtt_speaker(raw: &str) -> (Option<String>, String) {
@@ -731,6 +767,40 @@ pub fn source_body(text: &str) -> String {
             after.strip_prefix('\n').unwrap_or(after).to_string()
         }
         None => text.to_string(),
+    }
+}
+
+/// Read source participants using the Library's YAML subset, including
+/// quoted names and block lists. Malformed metadata is refused rather than
+/// silently treated as a source with no participants.
+pub fn parse_source_participants(text: &str) -> Result<Vec<String>> {
+    use crate::domain::knowledge::frontmatter;
+
+    let (header, _) = frontmatter::split(text)?;
+    let fields = frontmatter::parse(header)?;
+    let Some((_, value)) = fields.iter().find(|(key, _)| key == "participants") else {
+        return Ok(Vec::new());
+    };
+    match value {
+        serde_json::Value::Null => Ok(Vec::new()),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| Error::InvalidFrontmatter {
+                        field: "participants".into(),
+                        reason: "expected a list of strings",
+                    })
+            })
+            .collect(),
+        serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_)
+        | serde_json::Value::Object(_) => Err(Error::InvalidFrontmatter {
+            field: "participants".into(),
+            reason: "expected a list of strings",
+        }),
     }
 }
 

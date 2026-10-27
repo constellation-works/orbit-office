@@ -14,7 +14,8 @@ use crate::{Error, Result};
 pub struct InitOutcome {
     /// True when a complete Library already existed and nothing changed.
     pub already_initialized: bool,
-    /// Library-relative (or state-relative) paths this call created, sorted.
+    /// Library-relative (or state-relative) paths created or upgraded, sorted.
+    /// An existing `.gitignore` appears when its frames rule was added.
     pub created: Vec<String>,
 }
 
@@ -83,6 +84,21 @@ pub fn not_initialized_error() -> Error {
 /// An adapter must override all operations; defaults support contexts that have
 /// no Library (for example the status-only dispatch scaffold).
 pub trait Library {
+    /// Read a contained video's original and Markdown; verify original SHA-256.
+    fn read_video(&self, _id: &str) -> Result<crate::domain::source::video::VideoSource> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Compare the Markdown revision and apply a video mutation under the writer lock.
+    /// Persist call reservations before inference; journal derived files with the source.
+    fn mutate_video(
+        &self,
+        _id: &str,
+        _revision: &str,
+        _mutation: crate::domain::source::video::VideoMutation,
+    ) -> Result<crate::domain::source::video::VideoState> {
+        Err(Error::LibraryUnavailable)
+    }
+
     /// Publish a new immutable artifact bundle, assigning its series version
     /// and unique id under the writer lock, then indexing and committing once.
     fn promote_artifact(
@@ -117,6 +133,12 @@ pub trait Library {
     }
     /// Every knowledge page file (`knowledge/**/*.md`), in path order.
     fn knowledge_pages(&self) -> Result<Vec<LibraryText>> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Every source document (`sources/**/source.md`), with full frontmatter
+    /// and body, without a result limit, in path order. Originals and version
+    /// sidecars are excluded; symlinks are never followed.
+    fn source_documents(&self) -> Result<Vec<LibraryText>> {
         Err(Error::LibraryUnavailable)
     }
     /// Every template file in `.office/templates/`, in path order.

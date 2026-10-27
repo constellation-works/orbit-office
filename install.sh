@@ -73,6 +73,13 @@ Environment:
   ORBIT_OFFICE_META_API_KEY  Meta API key (used instead of prompting)
   ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN  Private-route endpoint token (used
                              instead of prompting; optional)
+  ORBIT_OFFICE_BASETEN_TOKEN Deprecated alias of
+                             ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN, accepted
+                             with a warning for one release
+  BASETEN_TOKEN              Deprecated alias of OPEN_WEIGHTS_TOKEN,
+                             accepted with a warning for one release
+  CLAUDE_CONFIG_DIR          Claude Code config directory (default: HOME);
+                             its .claude.json holds the MCP entry
   ORBIT_OFFICE_OS            Platform override (macos or linux)
   ORBIT_OFFICE_ARCH          Architecture override (x86_64 or arm64)
   ORBIT_OFFICE_UV_URL        Fetch this uv archive instead of the
@@ -132,6 +139,13 @@ esac
 case "$WORKSPACE" in
     */) WORKSPACE=${WORKSPACE%/} ;;
     *) ;;
+esac
+# A relative workspace must be made absolute before any comparison or
+# recorded state (workspace_path, is_office_workspace) uses it, and before
+# it is delivered to the app as ORBIT_OFFICE_WORKSPACE.
+case "$WORKSPACE" in
+    /*) ;;
+    *) WORKSPACE="$PWD/$WORKSPACE" ;;
 esac
 [ -n "$WORKSPACE" ] || die "--home must not be empty"
 
@@ -248,8 +262,26 @@ fi
 
 AGENT_SETTINGS=""
 SKILLS_DIR=""
+# Claude Code reads its MCP servers from ${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json
+# (the app's agentCliStatus reader checks exactly that file), while its
+# permissions.deny rules live in settings.json under its config directory.
+# The two files are therefore edited separately; the legacy settings path
+# is where installers before this fix misplaced the MCP entry.
+CLAUDE_CONFIG_FILE=""
+CLAUDE_LEGACY_SETTINGS="$HOME/.claude/settings.json"
 case "$AGENT" in
-    claude) AGENT_SETTINGS="$HOME/.claude/settings.json"; SKILLS_DIR="$HOME/.claude/skills" ;;
+    claude)
+        if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+            _claude_config_dir="$CLAUDE_CONFIG_DIR"
+            AGENT_SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
+            SKILLS_DIR="$CLAUDE_CONFIG_DIR/skills"
+        else
+            _claude_config_dir="$HOME"
+            AGENT_SETTINGS="$HOME/.claude/settings.json"
+            SKILLS_DIR="$HOME/.claude/skills"
+        fi
+        CLAUDE_CONFIG_FILE="$_claude_config_dir/.claude.json"
+        ;;
     codex) AGENT_SETTINGS="$HOME/.codex/config.toml"; SKILLS_DIR="$HOME/.codex/skills" ;;
 esac
 SKILLS_RECEIPT="$DATA_DIR/agent-skills-$AGENT.txt"
@@ -320,6 +352,65 @@ dir_is_empty() {
     [ -z "$(ls -A "$1" 2>/dev/null)" ]
 }
 
+# lexical_path PATH : PATH made absolute with empty, `.` and `..` segments
+# folded, without touching the filesystem ($HOME/, $HOME/., // and /. all
+# come out as $HOME or /).
+lexical_path() {
+    case "$1" in
+        /*) _lp_rest="$1/" ;;
+        *) _lp_rest="$(pwd)/$1/" ;;
+    esac
+    _lp_out=""
+    while [ -n "$_lp_rest" ]; do
+        _lp_seg=${_lp_rest%%/*}
+        _lp_rest=${_lp_rest#*/}
+        case "$_lp_seg" in
+            ''|.) ;;
+            ..) _lp_out=${_lp_out%/*} ;;
+            *) _lp_out="$_lp_out/$_lp_seg" ;;
+        esac
+    done
+    printf '%s\n' "${_lp_out:-/}"
+}
+
+# physical_path DIR : the symlink-free path of an existing directory;
+# fails when DIR is not one.
+physical_path() {
+    _pp=$(CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P) || return 1
+    lexical_path "$_pp"
+}
+
+# Is PATH empty, HOME or /? Compares what the path names, not how it is
+# spelled: a trailing slash, dot segments, repeated slashes and symlinks
+# to either are caught. Purge deletes recursively, so either view
+# matching is enough to refuse.
+is_protected_path() {
+    [ -n "$1" ] || return 0
+    _home_lex=$(lexical_path "$HOME")
+    case "$(lexical_path "$1")" in
+        "/"|"$_home_lex") return 0 ;;
+        *) ;;
+    esac
+    if _path_phys=$(physical_path "$1"); then
+        _home_phys=$(physical_path "$HOME") || _home_phys=$_home_lex
+        case "$_path_phys" in
+            "/"|"$_home_phys") return 0 ;;
+            *) ;;
+        esac
+    fi
+    return 1
+}
+
+# Refuse to purge a workspace or data folder that is a protected path.
+refuse_protected_purge() {
+    if is_protected_path "$WORKSPACE"; then
+        die "refusing to purge $WORKSPACE: it is a protected path"
+    fi
+    if is_protected_path "$DATA_DIR"; then
+        die "refusing to purge the data folder $DATA_DIR: it is a protected path"
+    fi
+}
+
 # Does this installer own $WORKSPACE?
 # STD-03@2 §R29: ownership is recorded provenance, never a location, a
 # name, or the absence of another claim. Proof is the install-state line
@@ -365,7 +456,7 @@ check_workspace_adoptable() {
 # printing the grants, so a piped install never hangs on a question.
 consent_enable_plugin() {
     say "The plugins $INSTALL_PLUGINS request these grants:"
-    say "  office: fs {{workspace}}, {{plugin_state}}; network unscoped; orbit_tools task, friction and search"
+    say "  office: fs {{workspace}}, {{plugin_state}}; network unscoped; orbit_tools task, friction, search and auto-task"
     say "  gateway: fs {{workspace}}/.orbit-gateway, {{plugin_state}}; network unscoped; orbit_tools task add/artifact/show/update"
     if [ "$WITH_CLOUDCLI" -eq 1 ]; then
         say "  cloudcli: fs {{plugin_state}}; network unscoped; programs python3, aws, gcloud"
@@ -762,8 +853,8 @@ step_workspace() {
 }
 
 plugin_is_listed() {
-    command -v orbit >/dev/null 2>&1 || return 1
-    _list=$(orbit plugin list 2>/dev/null) || return 1
+    command -v orbit >/dev/null 2>&1 || return 2
+    _list=$(orbit plugin list 2>/dev/null) || return 2
     printf '%s\n' "$_list" | awk -v name="$1" '$1 == name { found=1 } END { exit !found }'
 }
 
@@ -777,12 +868,20 @@ plugin_marker() {
 # export as gateway/scripts/export.py, including the shared Python package.
 # A release bundle already has this layout and is used without rebuilding.
 gateway_export() {
+    if [ -z "$SCRIPT_DIR" ]; then
+        printf '%s\n' "plugin export unavailable; run from a clone or set ORBIT_OFFICE_PLUGIN_BUNDLE" >&2
+        return 1
+    fi
     EXPORT_REPO="$SCRIPT_DIR" EXPORT_OUT="$DATA_DIR/plugins/$1" EXPORT_NAME="$1" node <<'NODE'
 const fs = require("fs");
 const path = require("path");
 const repo = process.env.EXPORT_REPO;
 const out = process.env.EXPORT_OUT;
 const name = process.env.EXPORT_NAME;
+if (!repo) {
+  process.stderr.write("plugin export unavailable; run from a clone or set ORBIT_OFFICE_PLUGIN_BUNDLE\n");
+  process.exit(1);
+}
 const source = path.join(repo, "gateway", "plugins", name, ".orbit-plugin");
 const shared = path.join(repo, "gateway", "src", "orbit_gateway");
 if (!fs.existsSync(path.join(source, "plugin.yaml")) || !fs.existsSync(shared)) {
@@ -840,6 +939,9 @@ step_plugin() {
                 _source="$ORBIT_OFFICE_PLUGIN_SOURCE"
             elif [ "$FROM_SOURCE" -eq 1 ] || [ -z "$PLUGIN_SRC" ] \
                 || [ ! -x "$PLUGIN_SRC/.orbit-plugin/bin/office-bin" ]; then
+                if [ -z "$SCRIPT_DIR" ] || [ ! -e "$SCRIPT_DIR/.git" ]; then
+                    die "--from-source needs a clone; otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE"
+                fi
                 _ref=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null) \
                     || die "--from-source needs a clone; otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE"
                 _source="git+$REPO_GIT_URL#$_ref"
@@ -879,7 +981,24 @@ step_plugin() {
 step_secrets() {
     step "6 secrets"
     set_secret "meta_api_key" "${ORBIT_OFFICE_META_API_KEY:-${META_API_KEY:-}}" 0
-    set_secret "open_weights_token" "${ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN:-${OPEN_WEIGHTS_TOKEN:-}}" 1
+    # STD-01@2 §R35: the retired names stay accepted for one release as
+    # aliases of their replacements, each use warning on stderr. The
+    # warning names the variable only; its value is never echoed.
+    _open_weights_token="${ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN:-${OPEN_WEIGHTS_TOKEN:-}}"
+    if [ -n "${ORBIT_OFFICE_BASETEN_TOKEN:-}" ]; then
+        warn "ORBIT_OFFICE_BASETEN_TOKEN is deprecated; use ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN instead"
+        if [ -z "$_open_weights_token" ]; then
+            _open_weights_token="$ORBIT_OFFICE_BASETEN_TOKEN"
+        fi
+    fi
+    if [ -n "${BASETEN_TOKEN:-}" ]; then
+        warn "BASETEN_TOKEN is deprecated; use OPEN_WEIGHTS_TOKEN instead"
+        if [ -z "$_open_weights_token" ]; then
+            _open_weights_token="$BASETEN_TOKEN"
+        fi
+    fi
+    set_secret "open_weights_token" "$_open_weights_token" 1
+    _open_weights_token=""
 }
 
 # Prints "ok" when office.init succeeded, otherwise the office code, or
@@ -1010,23 +1129,30 @@ step_scaffold() {
 # install is not enough: that install had no tools/bin on PATH.
 # JSON.parse validates the document; the range parser below locates entries
 # so edits splice only their bytes. Never round-trip unrelated user settings.
-# The receipt contains only owned rule names and newly created containers.
+# Receipts contain only owned items: claude-settings.json holds added deny
+# rule names and newly created containers; claude-mcp.json holds whether
+# the MCP entry in .claude.json is installer-owned and its new containers.
 edit_claude_settings() {
     SETTINGS_FILE="$AGENT_SETTINGS" SETTINGS_RECEIPT="$DATA_DIR/claude-settings.json" \
+    MCP_FILE="$CLAUDE_CONFIG_FILE" MCP_RECEIPT="$DATA_DIR/claude-mcp.json" \
+    LEGACY_FILE="$CLAUDE_LEGACY_SETTINGS" \
     SETTINGS_MODE="$1" ORBIT_OFFICE_AGENT_PATH="$AGENT_PATH" node <<'NODE'
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const file = process.env.SETTINGS_FILE;
-const receiptFile = process.env.SETTINGS_RECEIPT;
+const settingsFile = process.env.SETTINGS_FILE;
+const settingsReceiptFile = process.env.SETTINGS_RECEIPT;
+const mcpFile = process.env.MCP_FILE;
+const mcpReceiptFile = process.env.MCP_RECEIPT;
+const legacyFile = process.env.LEGACY_FILE;
 const installing = process.env.SETTINGS_MODE === "install";
 const rules = ["curl", "wget", "http", "aws", "gcloud"].map((p) => `Bash(${p} *)`);
 const object = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 function regular(p) {
   try {
-    const stat = fs.lstatSync(p);
-    if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o022) !== 0) {
-      throw new Error("expected an owned regular file without group/world write access");
+    const stat = fs.statSync(p);
+    if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o002) !== 0) {
+      throw new Error("expected an owned regular file without world write access");
     }
     return true;
   } catch (e) {
@@ -1036,37 +1162,30 @@ function regular(p) {
 }
 function write(p, text) {
   regular(p);
-  fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
-  const tmp = p + "." + crypto.randomBytes(12).toString("hex");
+  let dest = p;
+  try {
+    if (fs.lstatSync(p).isSymbolicLink()) dest = fs.realpathSync(p);
+  } catch (e) {
+    if (e.code !== "ENOENT") throw e;
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+  const tmp = dest + "." + crypto.randomBytes(12).toString("hex");
   try {
     const fd = fs.openSync(tmp, "wx", 0o600);
     try { fs.writeFileSync(fd, text); fs.fsyncSync(fd); }
     finally { fs.closeSync(fd); }
-    fs.renameSync(tmp, p);
+    fs.renameSync(tmp, dest);
   } finally {
     if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
   }
 }
-try {
-  let receipt = { added: [], containers: [] };
-  if (regular(receiptFile)) receipt = JSON.parse(fs.readFileSync(receiptFile, "utf8"));
-  if (!object(receipt) || !Array.isArray(receipt.added) || !Array.isArray(receipt.containers) ||
-      receipt.added.some((r) => !rules.includes(r)) ||
-      receipt.containers.some((p) => !["permissions", "permissions.deny", "mcpServers"].includes(p))) {
-    throw new Error("invalid receipt");
-  }
-  const existed = regular(file);
-  if (!existed && !installing) {
-    if (regular(receiptFile)) fs.unlinkSync(receiptFile);
-    process.exit(0);
-  }
-  const original = existed ? fs.readFileSync(file, "utf8") : "{}\n";
-  let text = original;
-  // A validated JSON tree with source ranges, including property names.
-  // Duplicate keys are refused: two values for one setting are ambiguous.
-  function tree() {
-    if (!object(JSON.parse(text))) throw new Error("settings must be an object");
+// A validated JSON tree with source ranges. Duplicate keys are refused.
+function makeDoc(original) {
+  const doc = { text: original };
+  doc.tree = function () {
+    if (!object(JSON.parse(doc.text))) throw new Error("settings must be an object");
     let pos = 0;
+    const text = doc.text;
     const ws = () => { while (/\s/.test(text[pos] || "x")) pos++; };
     function string() {
       const start = pos++;
@@ -1087,7 +1206,7 @@ try {
           const entryStart = pos;
           let key;
           if (kind === "{") {
-            key = string(); ws(); pos++; // colon, already JSON-validated
+            key = string(); ws(); pos++;
             if (keys.has(key)) throw new Error("duplicate key");
             keys.add(key);
           }
@@ -1095,7 +1214,7 @@ try {
           entries.push({ key, start: entryStart, end: node.end, node });
           ws();
           if (text[pos] === close) break;
-          pos++; ws(); // comma
+          pos++; ws();
         }
         pos++;
       } else if (kind === '"') {
@@ -1106,9 +1225,9 @@ try {
       return { start, end: pos, kind, entries };
     }
     return value();
-  }
-  function locate(keys) {
-    let node = tree();
+  };
+  doc.locate = function (keys) {
+    let node = doc.tree();
     for (const key of keys) {
       if (node.kind !== "{") throw new Error("expected object");
       const entry = node.entries.find((e) => e.key === key);
@@ -1116,97 +1235,171 @@ try {
       node = entry.node;
     }
     return node;
-  }
-  function splice(start, end, added) { text = text.slice(0, start) + added + text.slice(end); }
-  function append(node, encoded) {
+  };
+  doc.splice = function (start, end, added) { doc.text = doc.text.slice(0, start) + added + doc.text.slice(end); };
+  doc.append = function (node, encoded) {
     const last = node.entries.at(-1);
     const offset = last ? last.end : node.start + 1;
-    splice(offset, offset, (last ? "," : "") + encoded);
-  }
-  function ensureObject(keys) {
-    const node = locate(keys);
+    doc.splice(offset, offset, (last ? "," : "") + encoded);
+  };
+  doc.set = function (keys, value) {
+    const parent = doc.locate(keys.slice(0, -1));
+    const key = keys.at(-1);
+    const entry = parent.entries.find((e) => e.key === key);
+    const encoded = JSON.stringify(value, null, 2);
+    if (entry) doc.splice(entry.node.start, entry.node.end, encoded);
+    else doc.append(parent, JSON.stringify(key) + ": " + encoded);
+  };
+  doc.removeEntry = function (parent, index) {
+    const entry = parent.entries[index];
+    if (index > 0) doc.splice(parent.entries[index - 1].end, entry.end, "");
+    else if (parent.entries.length > 1) doc.splice(entry.start, parent.entries[1].start, "");
+    else doc.splice(entry.start, entry.end, "");
+  };
+  doc.remove = function (keys) {
+    const parent = doc.locate(keys.slice(0, -1));
+    if (!parent) return;
+    const index = parent.entries.findIndex((e) => e.key === keys.at(-1));
+    if (index >= 0) doc.removeEntry(parent, index);
+  };
+  doc.ensureObject = function (keys, containers) {
+    const node = doc.locate(keys);
     if (node) {
       if (node.kind !== "{") throw new Error("expected object");
       return;
     }
-    set(keys, {});
-    receipt.containers.push(keys.join("."));
+    doc.set(keys, {});
+    containers.push(keys.join("."));
+  };
+  // Remove a misplaced mcpServers.orbit from a settings document; drop
+  // the container only when it becomes empty.
+  doc.removeMisplacedOrbit = function () {
+    if (!doc.locate(["mcpServers", "orbit"])) return;
+    doc.remove(["mcpServers", "orbit"]);
+    const servers = doc.locate(["mcpServers"]);
+    if (servers && servers.entries.length === 0) doc.remove(["mcpServers"]);
+  };
+  return doc;
+}
+try {
+  let settingsReceipt = { added: [], containers: [] };
+  const settingsReceiptExisted = regular(settingsReceiptFile);
+  if (settingsReceiptExisted) settingsReceipt = JSON.parse(fs.readFileSync(settingsReceiptFile, "utf8"));
+  if (!object(settingsReceipt) || !Array.isArray(settingsReceipt.added) || !Array.isArray(settingsReceipt.containers) ||
+      settingsReceipt.added.some((r) => !rules.includes(r)) ||
+      settingsReceipt.containers.some((p) => !["permissions", "permissions.deny", "mcpServers"].includes(p))) {
+    throw new Error("invalid receipt");
   }
-  function set(keys, value) {
-    const parent = locate(keys.slice(0, -1));
-    const key = keys.at(-1);
-    const entry = parent.entries.find((e) => e.key === key);
-    const encoded = JSON.stringify(value, null, 2);
-    if (entry) splice(entry.node.start, entry.node.end, encoded);
-    else append(parent, JSON.stringify(key) + ": " + encoded);
+  let mcpReceipt = { owned: false, containers: [] };
+  const mcpReceiptExisted = regular(mcpReceiptFile);
+  if (mcpReceiptExisted) mcpReceipt = JSON.parse(fs.readFileSync(mcpReceiptFile, "utf8"));
+  if (!object(mcpReceipt) || typeof mcpReceipt.owned !== "boolean" || !Array.isArray(mcpReceipt.containers) ||
+      mcpReceipt.containers.some((p) => p !== "mcpServers")) {
+    throw new Error("invalid mcp receipt");
   }
-  function removeEntry(parent, index) {
-    const entry = parent.entries[index];
-    if (index > 0) splice(parent.entries[index - 1].end, entry.end, "");
-    else if (parent.entries.length > 1) splice(entry.start, parent.entries[1].start, "");
-    else splice(entry.start, entry.end, "");
+  const load = (file) => {
+    const existed = regular(file);
+    const raw = existed ? fs.readFileSync(file, "utf8") : "{}\n";
+    const original = raw.trim() === "" ? "{}\n" : raw;
+    return { file, existed, original, doc: makeDoc(original) };
+  };
+  const mcp = load(mcpFile);
+  const settings = load(settingsFile);
+  const legacyDistinct = legacyFile && legacyFile !== settingsFile && legacyFile !== mcpFile;
+  const legacy = legacyDistinct ? load(legacyFile) : null;
+  if (!installing && !mcp.existed && !settings.existed && !legacy?.existed) {
+    if (mcpReceiptExisted) fs.unlinkSync(mcpReceiptFile);
+    if (settingsReceiptExisted) fs.unlinkSync(settingsReceiptFile);
+    process.exit(0);
   }
-  function remove(keys) {
-    const parent = locate(keys.slice(0, -1));
-    if (!parent) return;
-    const index = parent.entries.findIndex((e) => e.key === keys.at(-1));
-    if (index >= 0) removeEntry(parent, index);
-  }
-  tree(); // refuse malformed/ambiguous JSON even if no rule needs adding
+  // Validate every document before any edit.
+  mcp.doc.tree(); settings.doc.tree(); if (legacy) legacy.doc.tree();
   if (installing) {
-    ensureObject(["mcpServers"]);
+    // MCP registration in the file the reader checks.
     const desired = { command: "orbit", args: ["mcp", "serve"], env: { PATH: process.env.ORBIT_OFFICE_AGENT_PATH } };
-    const orbit = locate(["mcpServers", "orbit"]);
-    if (!orbit || JSON.stringify(JSON.parse(text.slice(orbit.start, orbit.end))) !== JSON.stringify(desired)) {
-      set(["mcpServers", "orbit"], desired);
+    const priorOrbit = mcp.doc.locate(["mcpServers", "orbit"]);
+    const priorMatches = priorOrbit &&
+      JSON.stringify(JSON.parse(mcp.doc.text.slice(priorOrbit.start, priorOrbit.end))) === JSON.stringify(desired);
+    if (!priorMatches) mcpReceipt.owned = true;
+    mcp.doc.ensureObject(["mcpServers"], mcpReceipt.containers);
+    const orbit = mcp.doc.locate(["mcpServers", "orbit"]);
+    if (!orbit || JSON.stringify(JSON.parse(mcp.doc.text.slice(orbit.start, orbit.end))) !== JSON.stringify(desired)) {
+      mcp.doc.set(["mcpServers", "orbit"], desired);
     }
-    ensureObject(["permissions"]);
-    if (!locate(["permissions", "deny"])) {
-      set(["permissions", "deny"], []);
-      receipt.containers.push("permissions.deny");
+    // Deny rules stay in settings.json.
+    settings.doc.ensureObject(["permissions"], settingsReceipt.containers);
+    if (!settings.doc.locate(["permissions", "deny"])) {
+      settings.doc.set(["permissions", "deny"], []);
+      settingsReceipt.containers.push("permissions.deny");
     }
-    let deny = locate(["permissions", "deny"]);
+    let deny = settings.doc.locate(["permissions", "deny"]);
     if (deny.kind !== "[") throw new Error("deny must be an array");
-    const existing = JSON.parse(text.slice(deny.start, deny.end));
+    const existing = JSON.parse(settings.doc.text.slice(deny.start, deny.end));
     if (existing.some((r) => typeof r !== "string")) throw new Error("deny rules must be strings");
     for (const rule of rules) {
       if (existing.includes(rule)) continue;
-      deny = locate(["permissions", "deny"]);
-      append(deny, JSON.stringify(rule));
-      if (!receipt.added.includes(rule)) receipt.added.push(rule);
+      deny = settings.doc.locate(["permissions", "deny"]);
+      settings.doc.append(deny, JSON.stringify(rule));
+      if (!settingsReceipt.added.includes(rule)) settingsReceipt.added.push(rule);
     }
+    settingsReceipt.containers = settingsReceipt.containers.filter((c) => c !== "mcpServers");
+    // Migrate the earlier misplaced registration out of settings files.
+    settings.doc.removeMisplacedOrbit();
+    if (legacy && legacy.existed) legacy.doc.removeMisplacedOrbit();
   } else {
-    for (const rule of receipt.added) {
-      const deny = locate(["permissions", "deny"]);
+    if (mcpReceipt.owned) {
+      mcp.doc.remove(["mcpServers", "orbit"]);
+      for (const key of [...mcpReceipt.containers].reverse()) {
+        const keys = key.split(".");
+        const node = mcp.doc.locate(keys);
+        if (node && node.entries.length === 0) mcp.doc.remove(keys);
+      }
+    }
+    for (const rule of settingsReceipt.added) {
+      const deny = settings.doc.locate(["permissions", "deny"]);
       if (!deny) continue;
       if (deny.kind !== "[") throw new Error("deny must be an array");
-      const index = deny.entries.findIndex((e) => JSON.parse(text.slice(e.start, e.end)) === rule);
-      if (index >= 0) removeEntry(deny, index);
+      const index = deny.entries.findIndex((e) => JSON.parse(settings.doc.text.slice(e.start, e.end)) === rule);
+      if (index >= 0) settings.doc.removeEntry(deny, index);
     }
-    remove(["mcpServers", "orbit"]);
-    // Only remove containers we created, and only when still empty.
-    for (const key of [...receipt.containers].reverse()) {
+    // Legacy misplaced entry: owned when an installer receipt proves a
+    // prior installer edited that settings family.
+    if (settingsReceiptExisted || mcpReceiptExisted) settings.doc.removeMisplacedOrbit();
+    for (const key of [...settingsReceipt.containers].reverse()) {
+      if (key === "mcpServers") continue;
       const keys = key.split(".");
-      const node = locate(keys);
-      if (node && node.entries.length === 0) remove(keys);
+      const node = settings.doc.locate(keys);
+      if (node && node.entries.length === 0) settings.doc.remove(keys);
+    }
+    if (legacy && legacy.existed && (settingsReceiptExisted || mcpReceiptExisted)) {
+      legacy.doc.removeMisplacedOrbit();
     }
   }
-  // Validate all edits before the first write. Back up the exact original
-  // once. Persist ownership before settings so a retry can undo a partial write.
-  tree();
-  const serializedReceipt = JSON.stringify(receipt) + "\n";
-  if (installing && (!regular(receiptFile) || fs.readFileSync(receiptFile, "utf8") !== serializedReceipt)) {
-    write(receiptFile, serializedReceipt);
+  mcp.doc.tree(); settings.doc.tree(); if (legacy) legacy.doc.tree();
+  const persistReceipt = (file, receipt, existed) => {
+    const serialized = JSON.stringify(receipt) + "\n";
+    if (!existed || fs.readFileSync(file, "utf8") !== serialized) write(file, serialized);
+  };
+  if (installing) {
+    persistReceipt(mcpReceiptFile, mcpReceipt, mcpReceiptExisted);
+    persistReceipt(settingsReceiptFile, settingsReceipt, settingsReceiptExisted);
   }
-  if (text !== original || !existed) {
-    if (existed && !regular(file + ".bak")) {
-      fs.writeFileSync(file + ".bak", original, { flag: "wx", mode: 0o600 });
+  const persistDoc = (entry, createWhenMissing) => {
+    if (entry.doc.text !== entry.original) {
+      if (entry.existed && !regular(entry.file + ".bak")) {
+        fs.writeFileSync(entry.file + ".bak", entry.original, { flag: "wx", mode: 0o600 });
+      }
+      write(entry.file, entry.doc.text);
+    } else if (!entry.existed && installing && createWhenMissing) {
+      write(entry.file, entry.doc.text);
     }
-    write(file, text);
+  };
+  persistDoc(mcp, true); persistDoc(settings, true); if (legacy) persistDoc(legacy, false);
+  if (!installing) {
+    if (regular(mcpReceiptFile)) fs.unlinkSync(mcpReceiptFile);
+    if (regular(settingsReceiptFile)) fs.unlinkSync(settingsReceiptFile);
   }
-  if (!installing && regular(receiptFile)) fs.unlinkSync(receiptFile);
 } catch (_) {
-  // JSON parser errors can include the user's setting values; never echo them.
   process.stderr.write("agent settings update refused; existing JSON and ownership receipt must be valid regular files\n");
   process.exit(1);
 }
@@ -1214,9 +1407,9 @@ NODE
 }
 
 register_mcp_claude() {
-    edit_claude_settings install || die "agent: could not update $AGENT_SETTINGS (check JSON, types and file permissions)"
+    edit_claude_settings install || die "agent: could not update $CLAUDE_CONFIG_FILE and $AGENT_SETTINGS (check JSON, types and file permissions)"
     state_mark "agent_registered"
-    say "agent: already configured (Orbit MCP entry and gateway deny rules in $AGENT_SETTINGS)"
+    say "agent: already configured (Orbit MCP entry in $CLAUDE_CONFIG_FILE and gateway deny rules in $AGENT_SETTINGS)"
 }
 
 # True when the Codex orbit table already carries exactly the current
@@ -1268,8 +1461,11 @@ register_mcp_codex() {
 }
 
 remove_mcp_claude() {
-    edit_claude_settings uninstall || die "agent: could not remove owned entries from $AGENT_SETTINGS"
-    say "agent: removed the Orbit MCP entry and recorded deny rules from $AGENT_SETTINGS"
+    if edit_claude_settings uninstall; then
+        say "agent: removed the owned Orbit MCP entry from $CLAUDE_CONFIG_FILE and recorded deny rules from $AGENT_SETTINGS"
+    else
+        warn "agent: could not remove owned entries from $CLAUDE_CONFIG_FILE and $AGENT_SETTINGS; leaving them in place and continuing uninstall"
+    fi
 }
 
 remove_mcp_codex() {
@@ -1537,6 +1733,15 @@ step_app() {
     app_entrypoint_ok "$_app_home" \
         || die "app: missing or unrunnable entrypoint at $_app_home/packages/server/dist/main.js; provision the app (clone build or ORBIT_OFFICE_APP_BUNDLE) before installing the service, then re-run"
     _server_js="$_app_home/packages/server/dist/main.js"
+    # Workspace binding for the app (ORBIT_OFFICE_WORKSPACE): the absolute
+    # workspace path recorded as workspace_path. It names the workspace
+    # only; it grants no operator capability (see client.ts authority note).
+    # The value expands inside unquoted heredocs, so escape it for the
+    # target format: XML for the plist, and for systemd a double-quoted
+    # Environment= assignment with backslash, quote and percent escaped
+    # (percent is doubled to escape systemd specifiers).
+    _workspace_xml=$(printf '%s' "$WORKSPACE" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+    _workspace_systemd=$(printf '%s' "$WORKSPACE" | sed -e 's/\\/\\\\/g' -e 's/%/%%/g' -e 's/"/\\"/g')
     if [ "$OS" = "macos" ]; then
         if write_if_changed "$LAUNCHD_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1547,7 +1752,7 @@ step_app() {
   <key>ProgramArguments</key>
   <array><string>$_node_bin</string><string>$_server_js</string></array>
   <key>EnvironmentVariables</key>
-  <dict><key>PORT</key><string>$PORT</string><key>HOST</key><string>127.0.0.1</string><key>PATH</key><string>$AGENT_PATH</string></dict>
+  <dict><key>PORT</key><string>$PORT</string><key>HOST</key><string>127.0.0.1</string><key>PATH</key><string>$AGENT_PATH</string><key>ORBIT_OFFICE_WORKSPACE</key><string>$_workspace_xml</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
 </dict>
@@ -1609,6 +1814,7 @@ ExecStart=$_node_bin $_server_js
 Environment=PORT=$PORT
 Environment=HOST=127.0.0.1
 Environment=PATH=$AGENT_PATH
+Environment="ORBIT_OFFICE_WORKSPACE=$_workspace_systemd"
 Restart=on-failure
 
 [Install]
@@ -1687,14 +1893,7 @@ do_uninstall() {
     # Prove ownership before any teardown. A refusal must leave the
     # service, plugin, tools, workspace and data folder in place.
     if [ "$_purge" -eq 1 ]; then
-        case "$WORKSPACE" in
-            "$HOME"|"/"|"") die "refusing to purge $WORKSPACE" ;;
-            *) ;;
-        esac
-        case "$DATA_DIR" in
-            "$HOME"|"/"|"") die "refusing to purge the data folder $DATA_DIR: it is a protected path" ;;
-            *) ;;
-        esac
+        refuse_protected_purge
         if ! is_office_workspace; then
             die "refusing to purge $WORKSPACE: it is not an office workspace this installer owns"
         fi
@@ -1748,9 +1947,16 @@ do_uninstall() {
         fi
         if [ "$_owned" -eq 1 ]; then
             command -v orbit >/dev/null 2>&1 || die "uninstall: Orbit is required to remove $_plugin"
-            orbit plugin remove "$_plugin" --yes >/dev/null 2>&1 \
-                || die "uninstall: could not remove $_plugin; retry when Orbit is available"
-            say "uninstall: removed the $_plugin plugin"
+            if plugin_is_listed "$_plugin"; then
+                orbit plugin remove "$_plugin" --yes >/dev/null 2>&1 \
+                    || die "uninstall: could not remove $_plugin; retry when Orbit is available"
+                say "uninstall: removed the $_plugin plugin"
+            else
+                _list_status=$?
+                [ "$_list_status" -eq 1 ] \
+                    || die "uninstall: could not list Orbit plugins; retry when Orbit is available"
+                say "uninstall: $_plugin plugin already removed"
+            fi
         fi
         state_clear "$_added"
         state_clear "$(plugin_marker "$_plugin" enabled)"
@@ -1778,17 +1984,11 @@ do_uninstall() {
     state_clear "app_built"
     state_clear "agent_registered"
     if [ "$_purge" -eq 1 ]; then
-        # The check above already ran. Repeat the protected-path guards
+        # The check above already ran. Repeat the protected-path guard
         # immediately before the deletes so HOME, / and an empty path
-        # cannot be removed even if that earlier check is bypassed.
-        case "$WORKSPACE" in
-            "$HOME"|"/"|"") die "refusing to purge $WORKSPACE" ;;
-            *) ;;
-        esac
-        case "$DATA_DIR" in
-            "$HOME"|"/"|"") die "refusing to purge the data folder $DATA_DIR: it is a protected path" ;;
-            *) ;;
-        esac
+        # cannot be removed even if that earlier check is bypassed or
+        # teardown created a path that now resolves to one of them.
+        refuse_protected_purge
         if [ -e "$WORKSPACE" ]; then
             rm -rf "$WORKSPACE"
             say "purge: removed the workspace $WORKSPACE"

@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "since": {
+      "type": "string",
+      "format": "date",
+      "description": "Inclusive UTC calendar date"
+    },
+    "until": {
+      "type": "string",
+      "format": "date",
+      "description": "Exclusive UTC calendar date"
+    }
+  },
+  "required": [
+    "since",
+    "until"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.metrics request"
+}

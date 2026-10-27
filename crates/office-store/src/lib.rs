@@ -28,6 +28,7 @@ mod error;
 mod repository;
 
 pub use contracts::{DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit};
+pub use driver::script::ScriptStore;
 pub use error::{Error, Result};
 pub use repository::LibraryStore;
 

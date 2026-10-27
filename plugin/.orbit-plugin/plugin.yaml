@@ -48,6 +48,9 @@ spec:
       - orbit.task.artifact.put
       - orbit.friction.add
       - orbit.search
+      - orbit.auto_task.add
+      - orbit.auto_task.update
+      - orbit.auto_task.list
 
   secrets:
     - name: meta_api_key
@@ -93,24 +96,24 @@ spec:
     #   input_schema: { $ref: schemas/transcribe.request.json }
     #   output_schema: { $ref: schemas/transcribe.response.json }
 
-    # - name: video-plan
-    #   description: >-
-    #     Plan a video source's processing: duration, deduplicated
-    #     keyframes, model-call counts and a cost estimate; confirm it with
-    #     the digest the user saw.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/video-plan.request.json }
-    #   output_schema: { $ref: schemas/video-plan.response.json }
+    - name: video-plan
+      description: >-
+        Plan a video source's processing: duration, deduplicated
+        keyframes, model-call counts and a cost estimate; confirm it with
+        the digest the user saw.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/video-plan.request.json }
+      output_schema: { $ref: schemas/video-plan.response.json }
 
-    # - name: frames
-    #   description: >-
-    #     Extract a confirmed video's planned keyframes and read each with
-    #     Muse Spark image input; run only by the KT routine.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/frames.request.json }
-    #   output_schema: { $ref: schemas/frames.response.json }
+    - name: frames
+      description: >-
+        Extract a confirmed video's planned keyframes and read each with
+        Muse Spark image input; run only by the KT routine.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/frames.request.json }
+      output_schema: { $ref: schemas/frames.response.json }
 
     # - name: extract
     #   description: >-
@@ -294,15 +297,15 @@ spec:
 
     # ---- scripts ----
 
-    # - name: script-run
-    #   description: >-
-    #     Run an approved, pinned script artifact offline in its own run
-    #     directory, within its bounds, and file its outputs for review;
-    #     run only by routine and auto-task steps.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/script-run.request.json }
-    #   output_schema: { $ref: schemas/script-run.response.json }
+    - name: script-run
+      description: >-
+        Run an approved, pinned script artifact offline in its own run
+        directory, within its bounds, and file its outputs for review;
+        run only by routine and auto-task steps.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/script-run.request.json }
+      output_schema: { $ref: schemas/script-run.response.json }
 
     # ---- bootstrap ----
 
@@ -335,22 +338,25 @@ spec:
 
     # ---- insights ----
 
-    # - name: metrics
-    #   description: >-
-    #     Compute the analytics metrics for a window.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/metrics.request.json }
-    #   output_schema: { $ref: schemas/metrics.response.json }
+    - name: metrics
+      description: >-
+        Compute the analytics metrics for a window.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/metrics.request.json }
+      output_schema: { $ref: schemas/metrics.response.json }
 
-    # - name: review-inputs
-    #   description: >-
-    #     Gather a period's completed work, conversions, metrics,
-    #     decisions and knowledge changes for a review.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/review-inputs.request.json }
-    #   output_schema: { $ref: schemas/review-inputs.response.json }
+    - name: review-inputs
+      description: >-
+        Gather a period's completed work, conversions, metrics,
+        decisions and knowledge changes for a review.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/review-inputs.request.json }
+      output_schema: { $ref: schemas/review-inputs.response.json }
+
+  definitions:
+    auto_tasks: [definitions/auto_tasks/office-review.yaml]
 
   definitions:
     activities: [definitions/activities/office-agent-todo.yaml]

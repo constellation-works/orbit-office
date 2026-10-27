@@ -95,9 +95,12 @@ spaces, so script shebangs that name the interpreter keep working.
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set. The prompt needs a terminal
    on stdin: a piped install without one (piped stdin is the script itself)
-   never reads stdin for a secret, skips each unset secret and prints the
-   `orbit plugin secret set office <name>` command to set it later. Values supplied
-   through the environment are still stored in either case.
+   never reads stdin for a secret and skips each unset secret. The skip line depends
+   on the secret. A required secret (the Meta API key) prints the
+   `orbit plugin secret set office <name>` command to set it later. An optional secret
+   (`open_weights_token`) prints only `secrets: open_weights_token skipped (optional)`,
+   with no command; set it later with `orbit plugin secret set office open_weights_token`.
+   Values supplied through the environment are still stored in either case.
 7. **Scaffold.** `orbit tool run office.init --json --full`: the Library's layout, git
    repository, config, `.gitignore` and index, then the first Library commit. The CLI exits 0
    and prints the tool's output object on stdout. That object has no top-level `ok`. The step
@@ -107,8 +110,10 @@ spaces, so script shebangs that name the interpreter keep working.
    when a WARN line precedes the JSON, and the failure names that code. An `{ok: false}`
    envelope on stdout, even with exit 0, also stops the install and names its code. Nothing
    is recorded on failure, so the next run asks `office.init` again.
-8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Muse Code's
-   `settings.json`, keeping a backup of the old file, and installs the office skills. A
+8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Claude Code's
+   `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` — the file Claude Code and the
+   app's connection check actually read — keeping a backup of the old file
+   (`.claude.json.bak`), and installs the office skills. A
    skill already present under the same name is left untouched and is not claimed: the
    installer records only the skills it itself copies, as one `<name> <sha256>` line per
    skill in `<data>/agent-skills-<agent>.txt`, where the digest covers every file's
@@ -119,13 +124,24 @@ spaces, so script shebangs that name the interpreter keep working.
    removes only the ones it added. With `--agent claude|codex` it registers the other CLI
    instead. A CLI with no per-command deny rules is reported as such.
    Claude gets `Bash(curl *)`, `Bash(wget *)`, `Bash(http *)`, `Bash(aws *)` and
-   `Bash(gcloud *)` in `~/.claude/settings.json`'s `permissions.deny`, using the
+   `Bash(gcloud *)` in `settings.json`'s `permissions.deny` (under
+   `$CLAUDE_CONFIG_DIR` when set, otherwise `~/.claude/settings.json`), using the
    [documented Bash permission syntax](https://code.claude.com/docs/en/permissions).
-   The installer splices JSON entries without reformatting other settings, keeps the
-   original bytes in `settings.json.bak`, and records only newly added rules and
-   containers in `<data>/claude-settings.json`. Uninstall removes those rules while
-   keeping pre-existing rules and later user additions. Invalid JSON, duplicate keys,
-   incompatible field types and unsafe settings/receipt files stop the edit.
+   The installer splices JSON entries in both files without reformatting other
+   settings, keeps each file's original bytes in a sibling `.bak`, and records
+   ownership separately: only newly added deny rules and containers in
+   `<data>/claude-settings.json`, and whether it created or updated the MCP
+   entry (and any container it created) in `<data>/claude-mcp.json`. Uninstall
+   removes the MCP entry only when that receipt proves the installer owns it,
+   and removes the recorded deny rules while keeping pre-existing rules, a
+   pre-existing identical MCP entry and later user additions. Installers
+   before this fix wrote `mcpServers.orbit` into `~/.claude/settings.json`,
+   where no reader looks for it: install migrates that misplaced entry out of
+   the settings file (keeping any other `mcpServers` entries and settings)
+   while writing the effective `.claude.json` entry, and uninstall cleans the
+   misplaced entry only when an installer receipt proves a prior install.
+   Invalid JSON, duplicate keys, incompatible field types and unsafe
+   settings/receipt files stop the edit.
    Codex has no equivalent deny settings for sandboxed shell calls: its
    [execpolicy rules](https://developers.openai.com/codex/rules) govern commands outside
    the sandbox. The summary reports this limitation instead of claiming those calls
@@ -155,8 +171,11 @@ skill are kept in place and named in the output with their path, and a repeated 
 is a safe no-op for them. It keeps `~/orbit` and the
 Library unless `--purge` is given. `--purge` deletes that workspace only after the same
 ownership check as adoption, and otherwise refuses with a message that names the path and
-removes nothing, including the per-user data folder. A data folder that is the home folder or
-`/` (set with `ORBIT_OFFICE_DATA_DIR`) is refused the same way, before any teardown.
+removes nothing, including the per-user data folder. A workspace or data folder (set with
+`--home` or `ORBIT_OFFICE_DATA_DIR`) that is the home folder or `/` is refused the same way,
+before any teardown and again just before the deletes. The check compares the folder the
+path names, not its spelling: a trailing or repeated slash, `.` and `..` segments and a
+symlink to either are refused too.
 
 Plugin-authored commits in the Library use a fixed author (`orbit-office
 <office@orbit.local>`) passed per commit, so they need no git identity and are easy to tell

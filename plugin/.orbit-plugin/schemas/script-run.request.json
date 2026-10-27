@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.script-run request",
+  "type": "object",
+  "properties": {
+    "artifact": {
+      "type": "string",
+      "pattern": "^art-[0-9]{8}-[a-z0-9-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "args": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "output": {
+      "title": "Script output",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "report",
+            "doc",
+            "draft",
+            "script",
+            "data",
+            "review",
+            "other"
+          ]
+        },
+        "series": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        }
+      },
+      "required": [
+        "title",
+        "kind",
+        "series"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "artifact",
+    "sha256",
+    "output"
+  ],
+  "additionalProperties": false
+}

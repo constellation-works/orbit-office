@@ -91,6 +91,36 @@ fn capture_upload_dedupes_and_classifies_video_with_vtt() {
 }
 
 #[test]
+fn capture_refuses_vtt_timestamp_overflow_without_saving_a_source() {
+    let (dir, transcript) = temp_file("overflow.vtt", b"");
+    let ports = ports();
+    for stamp in [
+        "1152921504606846976:00:00.000",
+        "5124095576030431:00:16.000",
+        "5124095576030:25:52.000",
+        "5124095576030:25:51.616",
+        "18446744073709551615:00.000",
+    ] {
+        for (start, end) in [(stamp, "00:00:03.000"), ("00:00:01.000", stamp)] {
+            std::fs::write(
+                &transcript,
+                format!("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nJane: valid first cue\n\n{start} --> {end}\nJane: overflow\n"),
+            ).expect("transcript");
+            let response = call(
+                "office.capture",
+                json!({"kind": "meeting", "title": "Overflow", "text": "fallback", "transcript_path": transcript}),
+                &ports,
+            );
+            assert_eq!(response["ok"], json!(false), "{response}");
+            assert_eq!(response["error"]["code"], "invalid_argument", "{response}");
+            assert!(ports.library.source_documents().unwrap().is_empty());
+        }
+    }
+    std::fs::remove_file(transcript).expect("remove fixture");
+    std::fs::remove_dir(dir).expect("remove fixture directory");
+}
+
+#[test]
 fn capture_accepts_each_video_extension_as_video() {
     for ext in ["mp4", "webm", "mov", "m4a"] {
         let (_dir, file) = temp_file(&format!("clip.{ext}"), b"bytes");

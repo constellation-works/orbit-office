@@ -1,11 +1,15 @@
 mod attach;
 mod capture;
+mod frames;
 mod init;
+mod insights;
 mod knowledge_show;
 mod knowledge_write;
 mod private_route_check;
 mod reindex;
+mod script_run;
 mod search;
 mod show;
 mod signals_scan;
 mod status;
+mod video_plan;

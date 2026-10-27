@@ -956,6 +956,19 @@ machine", which it does not.
 - Preview shows the route per call group. Private material is never sent to
   the hosted API.
 - `open_weights_token` replaces `baseten_token`.
+- **Deviation (STD-01@2 §R10, §R35):** renaming the status envelope field
+  `secrets.baseten_token` and the installer inputs
+  `ORBIT_OFFICE_BASETEN_TOKEN` / `BASETEN_TOKEN` is a breaking change
+  under STD-01@2 §R10 (stable machine field names) and §R35 (a renamed
+  config key stays accepted for at least one release with a warning).
+  The original rename recorded no citation and shipped no alias or
+  warning. For one release from this record, the old installer inputs
+  are accepted as aliases of `ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN` /
+  `OPEN_WEIGHTS_TOKEN` with a stderr warning naming the old variable
+  and its replacement (never its value), and `office.status` emits
+  `secrets.baseten_token` as a deprecated alias mirroring
+  `secrets.open_weights_token`. After that release the aliases are
+  removed and the old names are refused rather than silently ignored.
 - **Attribution:** "Built with Muse Spark Open", shown as the license asks.
 - The audience is **every office worker, software engineers included**. The
   pitch names engineering work alongside the rest.
@@ -969,6 +982,35 @@ machine", which it does not.
   choice, so the Settings screen states the destination plainly. The check
   costs three tiny calls. The demo uses a provider, labelled as a third
   party.
+
+## The old unset endpoint remains readable
+
+**Recorded:** 2026-10-27
+
+**Code anchors:** `crates/office-core/src/domain/settings.rs`
+
+### Context and decision
+
+The earlier initializer wrote `open_weights_endpoint: null` in every Library.
+The new private route needs a full `open_weights` block, so an old configured
+endpoint cannot safely supply the model, destination kind and label. That old
+key is removed for non-null values; users must configure the new block.
+The old null value is accepted as an unset route so existing default Libraries
+remain readable and a subsequent config update removes the obsolete key.
+
+**Deviation from STD-01@2 §R35:** the removed key is refused when non-null,
+and the accepted null value is ignored without a stderr warning. The pure
+settings parser has no warning channel, and propagating one through every
+Library read and init path would change the Library interface. This bounded
+exception preserves the common default without guessing a route or silently
+routing private material to an endpoint. It does not provide the standard's
+one-release warning or compatibility for configured old endpoints.
+
+### Consequences
+
+Libraries with the old default can load and update settings. Libraries with an
+old configured endpoint receive an error naming the key and need manual
+migration to the new `open_weights` block.
 
 ## office.attach stages its copies inside the Library
 

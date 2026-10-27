@@ -12,7 +12,7 @@ type Method = fn(&dyn Orbit, &Map<String, Value>) -> Result<Value>;
 fn observer_sees_every_filed_payload_after_the_fake_is_boxed() {
     let fake = FakeOrbit::default();
     let port: Box<dyn Orbit> = Box::new(fake.clone());
-    let callbacks: [(&str, Method); 8] = [
+    let callbacks: [(&str, Method); 11] = [
         ("orbit.task.add", |p, i| p.task_add(i)),
         ("orbit.task.update", |p, i| p.task_update(i)),
         ("orbit.task.list", |p, i| p.task_list(i)),
@@ -21,6 +21,9 @@ fn observer_sees_every_filed_payload_after_the_fake_is_boxed() {
         ("orbit.task.artifact.put", |p, i| p.task_artifact_put(i)),
         ("orbit.friction.add", |p, i| p.friction_add(i)),
         ("orbit.search", |p, i| p.search(i)),
+        ("orbit.auto_task.add", |p, i| p.auto_task_add(i)),
+        ("orbit.auto_task.update", |p, i| p.auto_task_update(i)),
+        ("orbit.auto_task.list", |p, i| p.auto_task_list(i)),
     ];
     let input = json!({"title":"filed", "metadata":{"files":["output.md"]}});
     for (name, method) in callbacks {
@@ -31,7 +34,7 @@ fn observer_sees_every_filed_payload_after_the_fake_is_boxed() {
         );
     }
     let calls = fake.calls();
-    assert_eq!(calls.len(), 8);
+    assert_eq!(calls.len(), 11);
     for (call, (name, _)) in calls.iter().zip(callbacks) {
         assert_eq!(call.tool, name);
         assert_eq!(&call.input, input.as_object().unwrap());

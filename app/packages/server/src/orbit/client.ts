@@ -16,6 +16,31 @@
  * are typed errors, never bare strings. `pollTool` adds a single-flight
  * cache so many browser tabs polling the same tool share one subprocess,
  * and a short-lived result is reused inside `pollCacheTtlMs`.
+ *
+ * Workspace binding: the installed app receives its workspace as the
+ * `ORBIT_OFFICE_WORKSPACE` environment variable (install.sh service
+ * templates; the absolute path recorded as `workspace_path`). Tools that
+ * require an explicit workspace selector (see
+ * {@link WORKSPACE_REQUIRING_TOOLS}: `orbit.routine.control` and
+ * `orbit.auto_task.mint`) get `workspace: <binding>` injected into their
+ * input when the caller did not supply one. All other tools are sent unchanged, so callers
+ * that rely on cwd discovery (for example to-dos calling
+ * `orbit.task.list`) keep working. No code here reads `.orbit/`.
+ *
+ * Authority: the binding names the workspace and grants no operator
+ * capability. No `ORBIT_OPERATOR` or other authority variable is put in
+ * the service templates, because that would be a standing operator grant
+ * to a login service. Until an Orbit-side decision delivers the operator
+ * capability to the installed app by another mechanism,
+ * `orbit.routine.control` returns `capability_denied` to the app; the
+ * precise Orbit-side follow-up is filed in ws_orbit (see the ORB-18898
+ * handoff) and ORB-18731 stays blocked on it. The same applies to
+ * `orbit.auto_task.mint`: `orbit tool show orbit.auto_task.mint` states
+ * its `acknowledge_unconditional` acknowledgment "requires operator
+ * authority", so {@link OrbitToolClient.mintAutoTask} does not succeed
+ * without operator authority for an installed-workspace caller; Orbit's
+ * `capability_denied` is reported as a typed `not_permitted` error and
+ * no capability is granted here.
  */
 import { spawn } from "node:child_process";
 
@@ -27,7 +52,9 @@ export type OrbitErrorCode =
   | "spawn_failed"
   | "exit_nonzero"
   | "invalid_output"
-  | "output_too_large";
+  | "output_too_large"
+  | "not_permitted"
+  | "unknown_auto_task";
 
 /** Base class for every failure of the Orbit client. */
 export class OrbitError extends Error {
@@ -104,6 +131,43 @@ export class OrbitExitError extends OrbitError {
   }
 }
 
+/**
+ * Orbit refused `orbit.auto_task.mint` because the caller does not hold the
+ * capability it requires (`capability_denied`). Minting unconditionally
+ * requires operator authority (see `orbit tool show orbit.auto_task.mint`),
+ * which the installed app does not hold, so a feature should show this in
+ * plain words rather than retry.
+ */
+export class OrbitNotPermittedError extends OrbitError {
+  constructor(
+    readonly toolName: string,
+    readonly autoTaskName: string,
+    cause?: unknown,
+  ) {
+    super(
+      "not_permitted",
+      `not permitted to mint auto-task "${autoTaskName}": Orbit denied the capability this app does not hold`,
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = "OrbitNotPermittedError";
+  }
+}
+
+/** No auto-task definition with the requested name exists in the workspace. */
+export class OrbitUnknownAutoTaskError extends OrbitError {
+  constructor(
+    readonly autoTaskName: string,
+    cause?: unknown,
+  ) {
+    super(
+      "unknown_auto_task",
+      `no auto-task named "${autoTaskName}" is defined in this workspace`,
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = "OrbitUnknownAutoTaskError";
+  }
+}
+
 /** The subprocess answered, but its stdout was not valid JSON. */
 export class OrbitInvalidOutputError extends OrbitError {
   constructor(toolName: string, cause: unknown) {
@@ -140,6 +204,14 @@ export interface OrbitClientOptions {
   pollCacheTtlMs?: number;
   /** Environment for the child. Default `process.env` (the call runs as the user). */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Installed-workspace binding: the absolute workspace path delivered as
+   * `ORBIT_OFFICE_WORKSPACE` by install.sh. Default: that variable from
+   * `env` (or `process.env`). An explicit value overrides the environment;
+   * an empty value is treated as unset. Used only for
+   * {@link WORKSPACE_REQUIRING_TOOLS}; see the module docstring.
+   */
+  workspace?: string;
   /** Captured-output byte ceiling per stream. Default 10 MiB. */
   maxOutputBytes?: number;
 }
@@ -147,6 +219,17 @@ export interface OrbitClientOptions {
 export interface OrbitToolClient {
   /** Call one tool by name, e.g. `orbit.task.list` or `office.status`. Never cached. */
   callTool(name: string, input: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Mint one task now from the named auto-task definition via
+   * `orbit.auto_task.mint`, with the installed workspace binding and
+   * `acknowledge_unconditional: true`, under the same supervision, timeout
+   * and output bounds as every other call. Rejects with
+   * {@link OrbitUnknownAutoTaskError} when no such definition exists and
+   * {@link OrbitNotPermittedError} (`not_permitted`) when Orbit reports
+   * `capability_denied`, which is the expected outcome for the installed
+   * app until Orbit grants it operator authority by another mechanism.
+   */
+  mintAutoTask(name: string): Promise<unknown>;
   /**
    * Poll one tool: concurrent identical polls share one subprocess, and a
    * fresh result is reused for `pollCacheTtlMs` so many tabs share one call.
@@ -164,6 +247,19 @@ const DEFAULT_MAX_QUEUED = 32;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_CACHE_TTL_MS = 2_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+
+/** Environment variable carrying the installed-workspace binding. */
+export const WORKSPACE_ENV = "ORBIT_OFFICE_WORKSPACE";
+
+/**
+ * Tools that require an explicit `workspace` selector in their input.
+ * Only these receive the installed-workspace binding; every other tool
+ * is sent exactly as the caller wrote it.
+ */
+export const WORKSPACE_REQUIRING_TOOLS: ReadonlySet<string> = new Set([
+  "orbit.routine.control",
+  "orbit.auto_task.mint",
+]);
 
 /** Stable cache key: tool name plus JSON with recursively sorted keys. */
 function cacheKey(name: string, input: Record<string, unknown>): string {
@@ -188,6 +284,45 @@ interface QueuedCall {
   run: () => void;
 }
 
+/** Extract Orbit's `{error, code}` refusal from a subprocess stderr line. */
+function orbitRefusal(stderr: string): { code: string; message: string } | null {
+  try {
+    const parsed: unknown = JSON.parse(stderr.trim());
+    if (parsed !== null && typeof parsed === "object") {
+      const record = parsed as Record<string, unknown>;
+      if (typeof record.code === "string") {
+        return { code: record.code, message: typeof record.error === "string" ? record.error : "" };
+      }
+    }
+  } catch {
+    // Not a JSON refusal; the caller keeps the original exit error.
+  }
+  return null;
+}
+
+/** Map an `orbit.auto_task.mint` failure to its typed error, or keep it. */
+function mapMintError(name: string, error: unknown): unknown {
+  if (!(error instanceof OrbitExitError)) return error;
+  const refusal = orbitRefusal(error.stderr);
+  const code = refusal?.code ?? "";
+  const message = (refusal?.message ?? error.stderr).toLowerCase();
+  if (code === "capability_denied" || code === "policy_denied" || message.includes("capability denied")) {
+    return new OrbitNotPermittedError(error.toolName, name, error);
+  }
+  if (
+    code === "auto_task_not_found" ||
+    code === "not_found" ||
+    code === "unknown_auto_task" ||
+    code.includes("not_found") ||
+    message.includes("unknown auto-task") ||
+    message.includes("auto-task not found") ||
+    message.includes("no auto-task")
+  ) {
+    return new OrbitUnknownAutoTaskError(name, error);
+  }
+  return error;
+}
+
 /** The `orbit tool run --json` client. See the module docstring. */
 export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolClient {
   const command = options.command ?? "orbit";
@@ -197,6 +332,8 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
   const queueWaitMs = options.queueWaitMs ?? timeoutMs;
   const pollCacheTtlMs = options.pollCacheTtlMs ?? DEFAULT_POLL_CACHE_TTL_MS;
   const env = options.env ?? process.env;
+  const rawWorkspace = options.workspace ?? env[WORKSPACE_ENV];
+  const workspaceBinding = rawWorkspace !== undefined && rawWorkspace.trim() !== "" ? rawWorkspace : undefined;
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
     throw new RangeError("maxConcurrent must be a positive integer");
@@ -453,19 +590,41 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
     });
   }
 
+  /** Inject the binding before any cache key is built from the input. */
+  function withWorkspace(name: string, input: Record<string, unknown>): Record<string, unknown> {
+    if (!WORKSPACE_REQUIRING_TOOLS.has(name)) return input;
+    if (workspaceBinding === undefined) return input;
+    if (input.workspace !== undefined) return input;
+    return { ...input, workspace: workspaceBinding };
+  }
+
   return {
     callTool(name, input) {
-      return runSubprocess(name, input);
+      return runSubprocess(name, withWorkspace(name, input));
+    },
+    async mintAutoTask(name) {
+      if (typeof name !== "string" || name.trim() === "") {
+        throw new RangeError("mintAutoTask name must be a non-empty string");
+      }
+      try {
+        return await runSubprocess(
+          "orbit.auto_task.mint",
+          withWorkspace("orbit.auto_task.mint", { name, acknowledge_unconditional: true }),
+        );
+      } catch (error) {
+        throw mapMintError(name, error);
+      }
     },
     pollTool(name, input) {
-      const key = cacheKey(name, input);
+      const effective = withWorkspace(name, input);
+      const key = cacheKey(name, effective);
       const cached = pollCache.get(key);
       if (cached !== undefined && cached.expiresAt > Date.now()) {
         return Promise.resolve(cached.value);
       }
       const inflight = inflightPolls.get(key);
       if (inflight !== undefined) return inflight;
-      const promise = runSubprocess(name, input).then(
+      const promise = runSubprocess(name, effective).then(
         (value) => {
           inflightPolls.delete(key);
           if (pollCacheTtlMs > 0) {

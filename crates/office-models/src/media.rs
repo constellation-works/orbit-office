@@ -151,3 +151,254 @@ impl AudioSplitter {
         Ok(outputs)
     }
 }
+
+/// Supervised local video inspection/extraction; no credentials and no inference.
+#[derive(Clone, Debug)]
+pub struct VideoProcessor {
+    /// ffprobe executable (injectable for fixture tests).
+    pub ffprobe: PathBuf,
+    /// ffmpeg executable (injectable for fixture tests).
+    pub ffmpeg: PathBuf,
+}
+impl Default for VideoProcessor {
+    fn default() -> Self {
+        Self {
+            ffprobe: "ffprobe".into(),
+            ffmpeg: "ffmpeg".into(),
+        }
+    }
+}
+impl VideoProcessor {
+    fn run(&self, program: &Path, args: &[String], dir: &Path) -> office_core::Result<Vec<u8>> {
+        let mut command = Command::new(program);
+        command.env_clear();
+        if let Some(path) = std::env::var_os("PATH") {
+            command.env("PATH", path);
+        }
+        command
+            .current_dir(dir)
+            .env("HOME", dir)
+            .env("TMPDIR", dir)
+            .args(args);
+        let output = office_common::process::run_captured_with_stdout_limit(
+            &mut command,
+            dir,
+            8 * 1024 * 1024,
+        )
+        .map_err(|error| video_error(&format!("media process failed: {}", error.code())))?;
+        if !output.status.success() {
+            return Err(video_error("media process exited unsuccessfully"));
+        }
+        Ok(output.stdout)
+    }
+    fn stage(bytes: &[u8]) -> office_core::Result<tempfile::TempDir> {
+        let dir =
+            tempfile::tempdir().map_err(|_| video_error("cannot create private media staging"))?;
+        office_common::fs::atomic::write_atomic(&dir.path().join("input"), bytes)
+            .map_err(|_| video_error("cannot stage video"))?;
+        Ok(dir)
+    }
+    /// Probe duration and audio streams, then decode scene thumbnails and metadata.
+    pub fn analyze(
+        &self,
+        bytes: &[u8],
+        threshold: &serde_json::Number,
+    ) -> office_core::Result<office_core::domain::source::video::VideoAnalysis> {
+        use office_core::domain::source::video::{VideoAnalysis, VideoFrame};
+        let dir = Self::stage(bytes)?;
+        let output = self.run(
+            &self.ffprobe,
+            &[
+                "-v".into(),
+                "error".into(),
+                "-show_entries".into(),
+                "format=duration:stream=codec_type".into(),
+                "-of".into(),
+                "json".into(),
+                "input".into(),
+            ],
+            dir.path(),
+        )?;
+        let probe: serde_json::Value = serde_json::from_slice(&output)
+            .map_err(|_| video_error("ffprobe returned invalid metadata"))?;
+        let duration = probe["format"]["duration"]
+            .as_str()
+            .ok_or_else(|| video_error("ffprobe duration missing"))?;
+        let duration_ms = decimal_scaled(duration, 1000, true)?;
+        if duration_ms == 0 || duration_ms > 604_800_000 {
+            return Err(video_error(
+                "video duration must be positive and at most seven days",
+            ));
+        }
+        let streams = probe["streams"]
+            .as_array()
+            .ok_or_else(|| video_error("ffprobe streams missing"))?;
+        let has_audio = streams.iter().any(|stream| stream["codec_type"] == "audio");
+        let has_video = streams.iter().any(|stream| stream["codec_type"] == "video");
+        if !has_video {
+            return Ok(VideoAnalysis {
+                duration_ms,
+                has_audio,
+                candidates: Vec::new(),
+            });
+        }
+        // prev_selected_t is local to this select filter. Spacing bounds both
+        // decoder output and metadata volume before the pure selection repeats it.
+        let filter = format!(
+            "select='gt(scene,{threshold})*(isnan(prev_selected_t)+gte(t-prev_selected_t,10))',metadata=print:file=scenes.txt,scale=9:8,format=gray"
+        );
+        let raw = self.run(
+            &self.ffmpeg,
+            &[
+                "-nostdin".into(),
+                "-v".into(),
+                "error".into(),
+                "-i".into(),
+                "input".into(),
+                "-an".into(),
+                "-vf".into(),
+                filter,
+                "-vsync".into(),
+                "vfr".into(),
+                "-f".into(),
+                "rawvideo".into(),
+                "-pix_fmt".into(),
+                "gray".into(),
+                "pipe:1".into(),
+            ],
+            dir.path(),
+        )?;
+        use std::io::Read as _;
+        let mut metadata = String::new();
+        std::fs::File::open(dir.path().join("scenes.txt"))
+            .and_then(|file| {
+                file.take(16 * 1024 * 1024 + 1)
+                    .read_to_string(&mut metadata)
+            })
+            .map_err(|_| video_error("cannot read scene metadata"))?;
+        if metadata.len() > 16 * 1024 * 1024 {
+            return Err(video_error("scene metadata exceeds its bound"));
+        }
+        let mut scenes = Vec::new();
+        let mut timestamp = None;
+        for line in metadata.lines() {
+            if let Some(raw) = line.split("pts_time:").nth(1) {
+                if timestamp.is_some() {
+                    return Err(video_error("scene score missing"));
+                }
+                timestamp = Some(decimal_scaled(
+                    raw.split_whitespace().next().unwrap_or(""),
+                    1000,
+                    false,
+                )?);
+            } else if let Some(raw) = line.strip_prefix("lavfi.scene_score=") {
+                let time_ms = timestamp
+                    .take()
+                    .ok_or_else(|| video_error("scene timestamp missing"))?;
+                let score = u32::try_from(decimal_scaled(raw, 1_000_000, false)?)
+                    .map_err(|_| video_error("scene score overflow"))?;
+                if score > 1_000_000 {
+                    return Err(video_error("scene score out of range"));
+                }
+                scenes.push((time_ms, score));
+            }
+        }
+        if timestamp.is_some() || raw.len() != scenes.len() * 72 {
+            return Err(video_error("scene thumbnails and metadata disagree"));
+        }
+        let candidates = scenes
+            .into_iter()
+            .zip(raw.chunks_exact(72))
+            .map(|((time_ms, score), thumbnail)| {
+                let mut dhash = 0_u64;
+                for row in thumbnail.chunks_exact(9) {
+                    for pair in row.windows(2) {
+                        dhash = (dhash << 1) | u64::from(pair[0] > pair[1]);
+                    }
+                }
+                VideoFrame {
+                    time_ms,
+                    score,
+                    dhash,
+                }
+            })
+            .collect();
+        Ok(VideoAnalysis {
+            duration_ms,
+            has_audio,
+            candidates,
+        })
+    }
+    /// Decode a single PNG, width 640, preserving aspect ratio.
+    pub fn frame(&self, bytes: &[u8], time_ms: u64) -> office_core::Result<Vec<u8>> {
+        let dir = Self::stage(bytes)?;
+        let image = self.run(
+            &self.ffmpeg,
+            &[
+                "-nostdin".into(),
+                "-v".into(),
+                "error".into(),
+                "-ss".into(),
+                format!("{}.{:03}", time_ms / 1000, time_ms % 1000),
+                "-i".into(),
+                "input".into(),
+                "-frames:v".into(),
+                "1".into(),
+                "-vf".into(),
+                "scale=640:-1".into(),
+                "-f".into(),
+                "image2pipe".into(),
+                "-vcodec".into(),
+                "png".into(),
+                "pipe:1".into(),
+            ],
+            dir.path(),
+        )?;
+        if !image.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return Err(video_error("ffmpeg returned no PNG frame"));
+        }
+        Ok(image)
+    }
+}
+fn video_error(message: &str) -> Error {
+    Error::Model {
+        code: "media_processing_failed",
+        message: message.into(),
+        retryable: false,
+    }
+}
+/// Decimal conversion without floating point, overflow or narrowing casts.
+fn decimal_scaled(raw: &str, scale: u64, ceil: bool) -> office_core::Result<u64> {
+    let (whole, fraction) = raw.split_once('.').unwrap_or((raw, ""));
+    if whole.is_empty()
+        || !whole.bytes().all(|c| c.is_ascii_digit())
+        || !fraction.bytes().all(|c| c.is_ascii_digit())
+        || fraction.len() > 12
+    {
+        return Err(video_error("invalid decimal media metadata"));
+    }
+    let whole = whole
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(scale))
+        .ok_or_else(|| video_error("media metadata overflow"))?;
+    let denominator =
+        10_u64.pow(u32::try_from(fraction.len()).map_err(|_| video_error("decimal overflow"))?);
+    let numerator = if fraction.is_empty() {
+        0
+    } else {
+        fraction
+            .parse::<u64>()
+            .map_err(|_| video_error("invalid decimal"))?
+    };
+    let scaled = numerator
+        .checked_mul(scale)
+        .ok_or_else(|| video_error("media metadata overflow"))?;
+    whole
+        .checked_add(if ceil {
+            scaled.div_ceil(denominator)
+        } else {
+            scaled / denominator
+        })
+        .ok_or_else(|| video_error("media metadata overflow"))
+}

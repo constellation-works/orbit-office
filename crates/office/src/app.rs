@@ -56,6 +56,17 @@ impl ContextModels<'_> {
 }
 
 impl Models for ContextModels<'_> {
+    fn analyze_video(
+        &self,
+        bytes: &[u8],
+        threshold: &serde_json::Number,
+    ) -> office_core::Result<office_core::domain::source::video::VideoAnalysis> {
+        office_models::media::VideoProcessor::default().analyze(bytes, threshold)
+    }
+    fn video_frame(&self, bytes: &[u8], time_ms: u64) -> office_core::Result<Vec<u8>> {
+        office_models::media::VideoProcessor::default().frame(bytes, time_ms)
+    }
+
     fn transcribe(
         &self,
         request: &office_core::ports::TranscribeRequest,
@@ -68,6 +79,30 @@ impl Models for ContextModels<'_> {
     ) -> office_core::Result<Routed<Value>> {
         self.client()?.extract(request)
     }
+    fn read_planned_image(
+        &self,
+        request: &office_core::ports::ImageRequest,
+        expected: &str,
+    ) -> office_core::Result<Routed<office_core::ports::ImageReading>> {
+        let settings = self.library.settings()?;
+        if office_core::domain::source::video::settings_digest(&settings)? != expected {
+            return Err(office_core::domain::source::video::refusal(
+                "plan_changed",
+                "model route changed after confirmation",
+            ));
+        }
+        let secret = |name: &str| {
+            self.context
+                .get("secrets")
+                .and_then(|s| s.get(name))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        };
+        let mut config =
+            office_models::ModelConfig::new(secret("meta_api_key"), secret("open_weights_token"));
+        config.open_weights = settings.open_weights;
+        office_models::RoutedClient::new(config).read_image(request)
+    }
     fn read_image(
         &self,
         request: &office_core::ports::ImageRequest,
@@ -76,6 +111,56 @@ impl Models for ContextModels<'_> {
     }
     fn check_private_route(&self) -> office_core::Result<office_core::ports::RouteCheck> {
         self.client()?.check_private_route()
+    }
+}
+// Resolve the same grant as every Library caller before constructing a runner.
+struct ContextScripts<'a> {
+    context: &'a Context,
+}
+impl office_core::ports::ScriptRunner for ContextScripts<'_> {
+    fn prepare(
+        &self,
+        script: &office_core::domain::script::ScriptPreparation,
+    ) -> office_core::Result<()> {
+        self.runner()?.prepare(script)
+    }
+    fn run(
+        &self,
+        execution: &office_core::domain::script::ScriptExecution,
+        bounds: &office_core::domain::script::ScriptBounds,
+    ) -> office_core::Result<(
+        office_core::domain::script::ScriptResult,
+        Vec<office_core::domain::script::ScriptFile>,
+    )> {
+        let mut execution = execution.clone();
+        if execution.run_id.is_none() {
+            execution.run_id = std::env::var("ORBIT_RUN_ID").ok();
+        }
+        self.runner()?.run(&execution, bounds)
+    }
+}
+impl ContextScripts<'_> {
+    fn runner(&self) -> office_core::Result<office_store::ScriptStore> {
+        let library = RealLibrary::from_context(self.context);
+        library.ensure_grant()?;
+        let root = library
+            .library
+            .ok_or(office_core::Error::LibraryUnavailable)?;
+        let state = library
+            .state
+            .ok_or(office_core::Error::LibraryUnavailable)?;
+        let environment = ["PATH", "LANG", "TZ"]
+            .iter()
+            .filter_map(|name| std::env::var_os(name).map(|value| ((*name).into(), value)))
+            .collect();
+        // Match the existing Library attachment adapter's granted staging root.
+        let staging = root.join(".office/attach");
+        Ok(office_store::ScriptStore::new(
+            root,
+            state,
+            staging,
+            environment,
+        ))
     }
 }
 struct SystemClock;
@@ -163,6 +248,21 @@ impl RealLibrary {
 }
 
 impl Library for RealLibrary {
+    fn read_video(
+        &self,
+        id: &str,
+    ) -> office_core::Result<office_core::domain::source::video::VideoSource> {
+        <LibraryStore as Library>::read_video(&self.store()?, id)
+    }
+    fn mutate_video(
+        &self,
+        id: &str,
+        revision: &str,
+        mutation: office_core::domain::source::video::VideoMutation,
+    ) -> office_core::Result<office_core::domain::source::video::VideoState> {
+        <LibraryStore as Library>::mutate_video(&self.store()?, id, revision, mutation)
+    }
+
     fn promote_artifact(
         &self,
         artifact: &office_core::domain::artifact::Artifact,
@@ -192,6 +292,9 @@ impl Library for RealLibrary {
     }
     fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::knowledge_pages(&self.store()?)?)
+    }
+    fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(LibraryStore::source_documents(&self.store()?)?)
     }
     fn templates(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::templates(&self.store()?)?)
@@ -298,6 +401,7 @@ fn ports(context: &Context) -> Ports<'_> {
         Box::new(ContextHandle { context })
     };
     Ports {
+        scripts: Box::new(ContextScripts { context }),
         library: Box::new(RealLibrary::from_context(context)),
         models: Box::new(ContextModels {
             context,

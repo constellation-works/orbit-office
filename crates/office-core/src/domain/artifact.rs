@@ -29,7 +29,9 @@ pub enum ArtifactError {
     #[error("task has no artifacts to promote")]
     NoArtifacts,
     /// Only reviewed task outputs can be approved.
-    #[error("task output must be in review or done before promotion")]
+    #[error(
+        "task output must be in review or done, or proposed with script-output tag, before promotion"
+    )]
     NotReviewable,
     /// A file exceeds Orbit's bound.
     #[error("artifact file exceeds the 1 MiB limit")]

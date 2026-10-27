@@ -283,7 +283,20 @@ fn unreadable_settings_are_reported_not_as_an_unset_open_weights_block() {
     assert_eq!(env.tool("office.init", json!({}), json!({}))["ok"], true);
     let config_path = env.workspace.join("library/.office/config.yaml");
     let mut config = std::fs::read_to_string(&config_path).expect("config");
+    // The pre-batch default's null legacy key loads as an unset route.
     config.push_str("open_weights_endpoint: null\n");
+    std::fs::write(&config_path, &config).expect("rewrite config");
+    let response = env.tool("office.private-route-check", json!({}), json!({}));
+    assert_eq!(response["ok"], false, "{response}");
+    assert_eq!(
+        response["error"]["code"], "private_endpoint_unconfigured",
+        "{response}"
+    );
+    // A configured legacy endpoint is refused, not treated as unset.
+    let config = config.replace(
+        "open_weights_endpoint: null\n",
+        "open_weights_endpoint: \"http://127.0.0.1:9/v1\"\n",
+    );
     std::fs::write(&config_path, config).expect("rewrite config");
     let response = env.tool("office.private-route-check", json!({}), json!({}));
     assert_eq!(response["ok"], false, "{response}");
@@ -309,7 +322,7 @@ fn status_reports_the_open_weights_token_by_presence_only() {
     );
     assert_eq!(
         response["output"]["secrets"],
-        json!({"meta_api_key": "unset", "open_weights_token": "set"})
+        json!({"meta_api_key": "unset", "open_weights_token": "set", "baseten_token": "set"})
     );
     assert!(!response.to_string().contains("fixture-token"));
 }
