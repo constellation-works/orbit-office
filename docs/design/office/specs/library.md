@@ -135,7 +135,7 @@ origin: "Zoom recording, uploaded"     # free text: "Slack #pricing, pasted"
 participants: [Jane Park (Acme), Daniel]
 sensitivity: normal      # normal | private
 original: { file: original.m4a, sha256: …, bytes: 48211234, media_type: audio/mp4 }
-derived_by: { transcription: muse-voice-transcribe, at: … }   # how the body was produced
+derived_by: { transcription: { route: hosted, model: muse-voice-transcribe } }   # how the body was produced
 version: 1
 supersedes: null
 retention: { original_until: 2027-01-26 }  # from config; null = keep
@@ -144,7 +144,7 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 **Body: anchorable text.**
 
 - **Video:** the transcript as for a meeting, plus `frames.md` (frame readings, `#frame=00:12:31`) and `chapters.md` (`#chapter=3`) beside it ([kt-videos.md](./kt-videos.md#library-shape)).
-- **Meeting:** one paragraph per speaker turn, prefixed with `[hh:mm:ss] Speaker:`, paragraphs separated by a blank line. The anchor is `#t=00:12:31`. When the transcript reports no turns, the body is the transcript text, unchanged. A long recording transcribed in chunks keeps a chunk that reported no turns as that text, unchanged, in the chunk's position among the turn paragraphs. A chunk that reported turns contributes those turns, not a second copy of its text.
+- **Meeting:** one paragraph per speaker turn, prefixed with `[hh:mm:ss] Speaker:`, paragraphs separated by a blank line. The anchor is `#t=00:12:31`. The transcribe tool gives text-only replies stable positional timestamps within each chunk (see [kt-videos.md](./kt-videos.md#built-tool-contracts)); reported timestamps are shifted by the chunk offset. A chunk that reported turns contributes those turns, not a second copy of its text.
 
   Time anchors and source turns support hours above 99 and use checked `u64` seconds.
   A timestamp exceeding that range is refused as `anchor_invalid` by source-show
@@ -159,7 +159,7 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 
 **Rules:**
 
-- **Immutable.** A correction writes `v2.md` with `supersedes` set. Citations name a version when it matters, otherwise the latest.
+- **Immutable versions.** Model transcription publishes `v1.md`, then corrections or additional completed chunks publish `v2.md`, `v3.md`, and so on, with `supersedes` set. Existing version files are never replaced. `source.md` is the materialized current view for display and indexing; its update and the new snapshot share one writer-locked journal decision. Citations name a version when it matters, otherwise the latest.
 - **Dedupe.** If the `sha256` of the original, or of the normalized pasted text, matches an existing source, capture returns that source instead of creating a new one.
 - **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. Short directives typed by the user are not captured separately: they go in the `conversation` source.
 - **Conversation sources.** The skill has the agent open one `conversation` source per session and append to it whenever the user makes a decision or gives a standing direction, and for each action it takes. Instead of an end-of-session summary, the agent keeps a rolling `handoff` entry current, and the next session starts from `office.session-brief`, which leads with that handoff ([sessions.md](./sessions.md)). The user's directions are decisions, and the review needs them.

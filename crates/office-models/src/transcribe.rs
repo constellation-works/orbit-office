@@ -8,6 +8,32 @@ use office_core::{Error, Result};
 
 use crate::{RoutedClient, http, media, meta, routing};
 
+/// A planned window always spends exactly one inference, independently of the
+/// general audio splitter's configurable threshold.
+pub(crate) fn planned(
+    client: &RoutedClient,
+    request: &TranscribeRequest,
+) -> Result<Routed<Transcript>> {
+    if request.duration_seconds == 0 || request.duration_seconds > 600 {
+        return Err(office_core::domain::source::video::refusal(
+            "plan_exceeded",
+            "planned audio window exceeds ten minutes",
+        ));
+    }
+    let format = audio_format(&request.mime)?;
+    let resolved = routing::route(request.sensitivity, Capability::Audio, &client.config)?;
+    let parsed = client.transcribe_chunk(
+        request.sensitivity,
+        format,
+        &request.audio,
+        request.language.as_deref(),
+    )?;
+    Ok(Routed {
+        value: shift_turns(parsed, 0)?,
+        derived_by: resolved.derived_by(),
+    })
+}
+
 pub(crate) fn transcribe(
     client: &RoutedClient,
     request: &TranscribeRequest,

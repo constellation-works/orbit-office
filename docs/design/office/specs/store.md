@@ -246,3 +246,26 @@ approvals and consumed call counts are validated before the decision and again
 on recovery; bundle entries are contained `sources/**/source.md` paths only.
 Recovery writes/indexes those sources, replaces the ledger and commits exactly
 those paths once. Earlier journal versions retain their existing validation.
+
+### Transcript versions and extraction results
+
+`Library::read_media` reads video or meeting originals through the same contained
+path and recorded-SHA check as `read_video`. Optional `source_sidecar` reads allow
+only `frames.md`, `chapters.md` and `digest.json`, distinguishing absent files
+from unreadable files and refusing symlinks.
+
+Version-7 `source_processing` journals bind source provenance, the current
+`source.md` view, immutable `vN.md` transcript snapshots and derived extraction
+files. `write_source_processing` compares the source revision under the writer
+lock. Version files publish without replacement; recovery accepts an existing
+snapshot only when its bytes match. Sidecars are limited to `chapters.md`,
+`digest.json`, `extract-result.json` and numbered `extract-window-<index>.json`
+files. Physical containment and names are checked before deciding and on replay.
+Every derived text file is committed with the source; frame PNGs remain ignored.
+The source index is rebuilt from the updated current body and its companions.
+
+Audio and extraction reservations use the existing video journal before each
+model request. The ledger records `audio_completed` separately from consumed
+calls and binds generated transcripts by content hash. An interrupted model
+request cannot be silently repeated or mistaken for completed audio. A stale
+result revision refuses publication instead of overwriting a newer source.

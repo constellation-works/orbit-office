@@ -169,7 +169,60 @@ impl Default for VideoProcessor {
     }
 }
 impl VideoProcessor {
+    /// Decode at most ten minutes from a media container into mono 16-kHz WAV.
+    pub fn audio(
+        &self,
+        bytes: &[u8],
+        start_seconds: u64,
+        length_seconds: u64,
+    ) -> office_core::Result<Vec<u8>> {
+        if length_seconds == 0 || length_seconds > 600 || start_seconds > 604_800 {
+            return Err(video_error(
+                "audio window must be positive, at most ten minutes and within seven days",
+            ));
+        }
+        let dir = Self::stage(bytes)?;
+        let audio = self.run_bounded(
+            &self.ffmpeg,
+            &[
+                "-nostdin".into(),
+                "-v".into(),
+                "error".into(),
+                "-ss".into(),
+                start_seconds.to_string(),
+                "-i".into(),
+                "input".into(),
+                "-t".into(),
+                length_seconds.to_string(),
+                "-vn".into(),
+                "-ac".into(),
+                "1".into(),
+                "-ar".into(),
+                "16000".into(),
+                "-c:a".into(),
+                "pcm_s16le".into(),
+                "-f".into(),
+                "wav".into(),
+                "pipe:1".into(),
+            ],
+            dir.path(),
+            20 * 1024 * 1024,
+        )?;
+        if !audio.starts_with(b"RIFF") || audio.get(8..12) != Some(b"WAVE") {
+            return Err(video_error("ffmpeg returned no WAV audio"));
+        }
+        Ok(audio)
+    }
     fn run(&self, program: &Path, args: &[String], dir: &Path) -> office_core::Result<Vec<u8>> {
+        self.run_bounded(program, args, dir, 8 * 1024 * 1024)
+    }
+    fn run_bounded(
+        &self,
+        program: &Path,
+        args: &[String],
+        dir: &Path,
+        limit: u64,
+    ) -> office_core::Result<Vec<u8>> {
         let mut command = Command::new(program);
         command.env_clear();
         if let Some(path) = std::env::var_os("PATH") {
@@ -180,12 +233,9 @@ impl VideoProcessor {
             .env("HOME", dir)
             .env("TMPDIR", dir)
             .args(args);
-        let output = office_common::process::run_captured_with_stdout_limit(
-            &mut command,
-            dir,
-            8 * 1024 * 1024,
-        )
-        .map_err(|error| video_error(&format!("media process failed: {}", error.code())))?;
+        let output =
+            office_common::process::run_captured_with_stdout_limit(&mut command, dir, limit)
+                .map_err(|error| video_error(&format!("media process failed: {}", error.code())))?;
         if !output.status.success() {
             return Err(video_error("media process exited unsuccessfully"));
         }

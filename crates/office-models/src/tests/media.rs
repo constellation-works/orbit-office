@@ -178,3 +178,28 @@ fn frame_extraction_uses_planned_offset_and_640_pixel_png_output() {
         b"\x89PNG\r\n\x1a\nfixture"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn audio_extraction_decodes_a_bounded_offset_as_wav_and_refuses_invalid_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let ffmpeg = dir.path().join("ffmpeg");
+    executable(
+        &ffmpeg,
+        "#!/bin/sh\n[ -f input ] || exit 12\n[ -z \"$META_API_KEY\" ] || exit 13\n[ \"$HOME\" = \"$TMPDIR\" ] || exit 14\n[ \"$4\" = '-ss' ] && [ \"$5\" = '600' ] || exit 15\n[ \"$8\" = '-t' ] && [ \"$9\" = '120' ] || exit 16\nprintf 'RIFFxxxxWAVEfixture'\n",
+    );
+    let processor = crate::media::VideoProcessor {
+        ffmpeg: ffmpeg.clone(),
+        ffprobe: "/nonexistent".into(),
+    };
+    assert_eq!(
+        processor.audio(b"video", 600, 120).unwrap(),
+        b"RIFFxxxxWAVEfixture"
+    );
+    assert!(processor.audio(b"video", 0, 0).is_err());
+    assert!(processor.audio(b"video", 0, 601).is_err());
+    executable(&ffmpeg, "#!/bin/sh\nprintf 'invalid'\n");
+    assert!(processor.audio(b"video", 0, 1).is_err());
+    executable(&ffmpeg, "#!/bin/sh\nexit 1\n");
+    assert!(processor.audio(b"video", 0, 1).is_err());
+}

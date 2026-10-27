@@ -256,6 +256,20 @@ enum Operation<'a> {
 }
 
 impl Models for RoutedClient {
+    fn media_audio(&self, bytes: &[u8], start: u64, length: u64) -> Result<Vec<u8>> {
+        media::VideoProcessor {
+            ffmpeg: self.config.audio_splitter.ffmpeg_path.clone(),
+            ..media::VideoProcessor::default()
+        }
+        .audio(bytes, start, length)
+    }
+    fn transcribe_planned(
+        &self,
+        request: &TranscribeRequest,
+        _settings_digest: &str,
+    ) -> Result<Routed<Transcript>> {
+        transcribe::planned(self, request)
+    }
     fn transcribe(&self, request: &TranscribeRequest) -> Result<Routed<Transcript>> {
         transcribe::transcribe(self, request)
     }

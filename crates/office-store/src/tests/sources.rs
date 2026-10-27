@@ -197,3 +197,124 @@ fn capture_vtt_transcript_keeps_numeric_and_keyword_prefixed_cue_text() {
         source.body
     );
 }
+
+#[test]
+fn processing_persists_immutable_versions_sidecars_provenance_and_indexed_latest_body() {
+    use office_core::domain::{endpoint::ModelRoute, source::sha256_hex};
+    use office_core::ports::{DerivedBy, Library};
+    let (_dir, store, workspace) = setup();
+    let upload = workspace.join("meeting.wav");
+    std::fs::write(&upload, b"recording").unwrap();
+    let captured = store
+        .capture_source(&CaptureSourceRequest {
+            upload_path: Some(upload.to_string_lossy().into()),
+            kind: Some("meeting".into()),
+            title: Some("Meeting".into()),
+            ..request()
+        })
+        .unwrap();
+    let media = Library::read_media(&store, &captured.id).unwrap();
+    assert_eq!(media.bytes, b"recording");
+    let derived = DerivedBy {
+        route: ModelRoute::Hosted,
+        model: "fixture".into(),
+    };
+    let first = Library::write_source_processing(
+        &store,
+        &captured.id,
+        &sha256_hex(media.markdown.as_bytes()),
+        Some("[00:00:00] Ada: First.\n"),
+        &derived,
+        &[],
+    )
+    .unwrap();
+    assert_eq!(first.version, 1);
+    let directory = workspace
+        .join("library")
+        .join(std::path::Path::new(&first.path).parent().unwrap());
+    let snapshot = std::fs::read(directory.join("v1.md")).unwrap();
+    let markdown = store.read_text(std::path::Path::new(&first.path)).unwrap();
+    let second=Library::write_source_processing(&store,&captured.id,&sha256_hex(markdown.as_bytes()),Some("[00:00:00] Ada: Corrected.\n"),&derived,&[("chapters.md".into(),b"## Chapter 1 [core]\n".to_vec()),("digest.json".into(),br#"{"summary":"Meeting","subjects":[],"claims":[],"procedures":[],"terms":[],"refs":[]}"#.to_vec())]).unwrap();
+    assert_eq!(second.version, 2);
+    assert_eq!(std::fs::read(directory.join("v1.md")).unwrap(), snapshot);
+    assert!(
+        std::fs::read_to_string(directory.join("v2.md"))
+            .unwrap()
+            .contains("supersedes: \"v1.md\"")
+    );
+    assert_eq!(
+        Library::source_sidecar(&store, &captured.id, "chapters.md")
+            .unwrap()
+            .unwrap(),
+        "## Chapter 1 [core]\n"
+    );
+    let record = store.get(&captured.id).unwrap().unwrap();
+    assert!(record.body.contains("Corrected."));
+    assert!(record.body.contains("Chapter 1"));
+    assert!(
+        Library::write_source_processing(&store, &captured.id, "stale", None, &derived, &[])
+            .is_err()
+    );
+    assert!(Library::source_sidecar(&store, &captured.id, "../original.wav").is_err());
+    assert!(
+        Library::bootstrap_snapshot(&store).unwrap().sources[0]
+            .digest
+            .is_some()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn processing_refuses_symlinked_sidecars_and_versions_without_writing_outside() {
+    use office_core::domain::{endpoint::ModelRoute, source::sha256_hex};
+    use office_core::ports::{DerivedBy, Library};
+    use std::os::unix::fs::symlink;
+    let (dir, store, workspace) = setup();
+    let source = store
+        .capture_source(&CaptureSourceRequest {
+            text: Some("Source".into()),
+            ..request()
+        })
+        .unwrap();
+    let outside = dir.path().join("outside");
+    std::fs::write(&outside, b"keep").unwrap();
+    let parent = workspace
+        .join("library")
+        .join(std::path::Path::new(&source.path).parent().unwrap());
+    symlink(&outside, parent.join("chapters.md")).unwrap();
+    assert!(Library::source_sidecar(&store, &source.id, "chapters.md").is_err());
+    let markdown = store.read_text(std::path::Path::new(&source.path)).unwrap();
+    let derived = DerivedBy {
+        route: ModelRoute::Hosted,
+        model: "fixture".into(),
+    };
+    assert!(
+        Library::write_source_processing(
+            &store,
+            &source.id,
+            &sha256_hex(markdown.as_bytes()),
+            None,
+            &derived,
+            &[("chapters.md".into(), b"replace".to_vec())]
+        )
+        .is_err()
+    );
+    assert_eq!(std::fs::read(&outside).unwrap(), b"keep");
+    assert_eq!(
+        store.read_text(std::path::Path::new(&source.path)).unwrap(),
+        markdown
+    );
+    symlink(&outside, parent.join("v1.md")).unwrap();
+    assert!(
+        Library::write_source_processing(
+            &store,
+            &source.id,
+            &sha256_hex(markdown.as_bytes()),
+            Some("Turn"),
+            &derived,
+            &[]
+        )
+        .is_err()
+    );
+    assert_eq!(std::fs::read(&outside).unwrap(), b"keep");
+}

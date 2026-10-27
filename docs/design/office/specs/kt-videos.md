@@ -123,9 +123,13 @@ confirmed plans. Each is a `plugin.tool_call` step:
    [models-and-privacy.md](./models-and-privacy.md#long-recordings)) and
    transcribes it in chunks, adding each chunk's offset to the turns the
    model returned so those timestamps line up with the recording.
-   Timestamps exist only where the model returns turns: a chunk whose
-   reply returns none contributes text with no timestamps. With a VTT
-   it does nothing.
+   When the model returns no timestamps, each nonempty transcript line gets
+   a positional timestamp: its chunk offset plus its line index in seconds,
+   capped at the last second of that chunk. These fallback anchors are stable
+   positions, not measured speech alignment. With an imported VTT it does nothing.
+   Completed chunks are published as immutable transcript versions before the
+   next request; an uncertain request consumes its slot and cannot be retried
+   against that confirmation.
 2. **`office.frames`** (mutating, `mcp_scope: none`) extracts the planned
    frames to `frames/` and reads each with Muse Spark image input: what is on
    screen (slide, code, terminal, dashboard, diagram, a face) and the visible
@@ -253,3 +257,37 @@ are exercised offline through the public tool entry point.
 The source's `video` mapping exposes `duration_s`, `plan_digest`, `confirmed_at`,
 `calls` and `frames_read`; its detailed `plan` and `readings` are quoted JSON
 scalars so they remain readable within the Library's bounded YAML subset.
+
+`office.transcribe` accepts `id`, optional `language`, and `duration_seconds`
+(required for a meeting, 1–604800). A video's duration comes exclusively from
+its confirmed plan. It decodes each window, at most ten minutes, to mono 16-kHz
+WAV through supervised ffmpeg, then makes exactly one Models request for that
+window. Returned turns use their start time plus the window offset. The output
+contains `id`, `path`, `version`, `noop` and `chunks`. Provenance records the
+actual model and route, and the video ledger distinguishes consumed audio calls
+from `audio_completed`. Extraction refuses incomplete audio even when the last
+failed call consumed the final slot. Generated transcript hashes keep the
+original confirmation usable for the following frame/extract steps.
+
+`office.extract` accepts `id`, `profile: kt|meeting` and `task` (or the trusted
+`context.task_id`) for the structured result artifact `extract/<source-id>.json`.
+A KT profile requires completed planned transcription and frame readings. The
+single-call budget is fifteen minutes of recording; longer recordings use all
+15-minute windows, including empty ones, then exactly one merge call, matching
+the video's plan. Transcript and frame paragraphs are merged by absolute time.
+Every model request carries a closed JSON Schema. Chapters have `title`,
+`label: core|tangent`, `start` and `end` in absolute seconds; candidates use
+`template`, `target_page` and cited `claims`. Runbooks contain `inputs`, cited
+`steps` and `done_when`. Glossary items use `term`, `definition` and `cites`.
+Questions and gotchas use `text` and `cites`.
+
+`dropped` counts `uncited`, `dangling` and `tangent` items. Citations must name
+supplied source turn/frame anchors; any invalid citation drops the whole item.
+Tangent claims, runbook steps and terms are excluded; cited gotchas remain.
+The source receives `chapters.md`, the bootstrap-compatible `digest.json`,
+actual extraction provenance and `extract-result.json`. Completed window replies
+are retained in `extract-window-<index>.json` if a later request fails. Each
+question files an `owner:you`, `source:<id>`, `kt-question` to-do; this tool files
+no knowledge proposal. A meeting instead produces `summary`, cited `decisions`
+and `to_dos` with `owner: you|agent`; filed tasks carry `owner:<owner>` and
+`source:<id>` tags. Both profiles attach the full structured output to `task`.

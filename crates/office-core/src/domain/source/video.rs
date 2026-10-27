@@ -90,6 +90,12 @@ pub struct FrameReading {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VideoState {
+    /// Audio replies durably published, excluding failed or uncertain requests.
+    #[serde(default)]
+    pub audio_completed: usize,
+    /// Digest of the transcript produced under this plan, preserving its approved input.
+    #[serde(default)]
+    pub transcription_sha256: Option<String>,
     /// Preview that is or will be approved.
     pub plan: VideoPlan,
     /// Timestamp of the first matching confirmation.
@@ -113,6 +119,15 @@ pub struct VideoSource {
 }
 /// One compare-and-swap Library mutation. Call reservations are durable before inference.
 pub enum VideoMutation {
+    /// Durably consume the next audio or extraction call before inference.
+    ReserveProcessing {
+        /// Approved digest.
+        digest: String,
+        /// `audio` or `extract`.
+        group: String,
+        /// Zero-based next call.
+        index: usize,
+    },
     /// Save a preview or confirm the digest shown by the caller.
     Plan {
         /// New preview.
@@ -207,6 +222,15 @@ fn decode_state(raw: &str) -> Result<VideoState> {
         return Err(invalid());
     }
     let state = VideoState {
+        audio_completed: value
+            .get("audio_completed")
+            .map(count)
+            .transpose()?
+            .unwrap_or(0),
+        transcription_sha256: value
+            .get("transcription_sha256")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         plan,
         confirmed_at,
         calls,
@@ -218,6 +242,7 @@ fn decode_state(raw: &str) -> Result<VideoState> {
         || state.calls.frames > state.plan.counts.frames
         || state.frames_read > state.calls.frames
         || state.calls.audio > state.plan.counts.audio
+        || state.audio_completed > state.calls.audio
         || state.calls.extract > state.plan.counts.extract
         || state
             .readings
@@ -236,13 +261,13 @@ fn encode_state(state: &VideoState) -> Result<String> {
         &json!({"duration_s":state.plan.duration_ms.div_ceil(1000),"plan_digest":state.plan.digest,
         "plan":serde_json::to_string(&state.plan).map_err(|_|invalid())?,
         "confirmed_at":state.confirmed_at,"calls":state.calls,"frames_read":state.frames_read,
-        "readings":serde_json::to_string(&state.readings).map_err(|_|invalid())?}),
+        "readings":serde_json::to_string(&state.readings).map_err(|_|invalid())?, "transcription_sha256":state.transcription_sha256,"audio_completed":state.audio_completed}),
     ))
 }
 // Emit the Library's supported YAML flow subset (plain keys plus JSON scalars).
 // Larger nested state is stored as quoted JSON so unrelated frontmatter readers
 // can still read participants, tags and provenance within their depth bound.
-fn flow(value: &Value) -> String {
+pub(super) fn flow(value: &Value) -> String {
     match value {
         Value::Object(map) => format!(
             "{{ {} }}",
@@ -257,6 +282,30 @@ fn flow(value: &Value) -> String {
         ),
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.to_string(),
     }
+}
+/// Record the generated transcript hash without changing the approved plan digest.
+pub(super) fn with_transcript(markdown: &str, body: &str) -> Result<Option<String>> {
+    if super::parse_source_meta(markdown).kind == "video" && state(markdown)?.is_none() {
+        return Err(refusal(
+            "plan_unconfirmed",
+            "preview and confirm the video plan first",
+        ));
+    }
+    state(markdown)?
+        .map(|mut state| {
+            if state.confirmed_at.is_none()
+                || state.calls.audio != state.audio_completed.saturating_add(1)
+            {
+                return Err(refusal(
+                    "plan_exceeded",
+                    "transcript has no outstanding approved audio reservation",
+                ));
+            }
+            state.audio_completed += 1;
+            state.transcription_sha256 = Some(sha256_hex(body.as_bytes()));
+            encode_state(&state)
+        })
+        .transpose()
 }
 /// Policy identity excludes unrelated Library settings and includes private capabilities.
 pub fn settings_digest(settings: &Settings) -> Result<String> {
@@ -464,7 +513,11 @@ pub fn verify(source: &VideoSource, settings: &Settings, state: &VideoState) -> 
     let meta = parse_source_meta(&source.markdown);
     if plan.digest != digest(plan)?
         || plan.original_sha256 != sha256_hex(&source.bytes)
-        || plan.transcript_sha256 != sha256_hex(source_body(&source.markdown).as_bytes())
+        || state
+            .transcription_sha256
+            .as_deref()
+            .unwrap_or(&plan.transcript_sha256)
+            != sha256_hex(source_body(&source.markdown).as_bytes())
         || plan.settings_digest != settings_digest(settings)?
         || plan.id != meta.id
         || plan.sensitivity != meta.sensitivity
@@ -485,6 +538,31 @@ pub fn apply(
     let previous = state(&source.markdown)?;
     let mut files = Vec::new();
     let next = match mutation {
+        VideoMutation::ReserveProcessing {
+            digest,
+            group,
+            index,
+        } => {
+            let mut old = approved(source, settings, previous, &digest)?;
+            let (used, cap) = match group.as_str() {
+                "audio" => (&mut old.calls.audio, old.plan.counts.audio),
+                "extract" => (&mut old.calls.extract, old.plan.counts.extract),
+                _ => {
+                    return Err(refusal(
+                        "invalid_video_plan",
+                        "unknown processing call group",
+                    ));
+                }
+            };
+            if *used != index || index >= cap {
+                return Err(refusal(
+                    "plan_exceeded",
+                    "processing call would exceed the confirmed plan or repeat an uncertain call",
+                ));
+            }
+            *used += 1;
+            old
+        }
         VideoMutation::Plan {
             plan,
             confirm_digest,
@@ -522,6 +600,8 @@ pub fn apply(
                 old
             } else {
                 VideoState {
+                    audio_completed: 0,
+                    transcription_sha256: None,
                     plan: *plan,
                     confirmed_at: None,
                     calls: VideoCalls::default(),
