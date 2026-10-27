@@ -36,7 +36,7 @@ Source: spec §12. The one-call envelope is
 | `office.proposal-create` | mutating | workspace | File a proposal task, its artifact and its evidence page |
 | `office.proposal-accept` | mutating | **none** | Apply a proposal's payload; close the task |
 | `office.metrics` | read_only | workspace | Compute the analytics metrics for a window |
-| `office.selection-get` | mutating | workspace | Return the user's fresh, unused selections from the app and mark them consumed. Mutating because it consumes |
+| `office.selection-get` | mutating | workspace | Return the user's fresh, unused selections from the app; consumes them unless `peek: true`. Mutating because the default consumes |
 | `office.selection-put` | mutating | **none** | Record a selection from the app; `clear: true` empties the tray |
 | `office.session-brief` | read_only | workspace | Assemble the session-start brief from Orbit and the Library, with no model call ([sessions.md](./sessions.md#session-brief)) |
 | `office.digest` | mutating | **none** | Write the day's digest artifact with one Muse Spark call; run only by the `office-daily-digest` routine ([sessions.md](./sessions.md#daily-digest)) |

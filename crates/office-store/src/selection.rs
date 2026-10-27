@@ -66,6 +66,12 @@ impl SelectionStore {
         self.transact(|tray| tray.put(request, now))
     }
 
+    /// Return fresh selections without consuming them.
+    pub fn peek(&self, now: SystemTime) -> Result<Vec<Selection>> {
+        let conn = self.connect()?;
+        Ok(load(&conn, &self.path)?.peek(now))
+    }
+
     /// Return fresh selections and mark them consumed.
     pub fn get(&self, now: SystemTime) -> Result<Vec<Selection>> {
         self.transact(|tray| tray.get(now))

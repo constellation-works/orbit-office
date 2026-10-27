@@ -14,6 +14,9 @@ pub trait Selections {
     /// Record a selection, optionally emptying the tray first.
     fn put(&self, request: &PutRequest, now: SystemTime) -> Result<PutResult>;
 
+    /// Return fresh selections without marking them consumed.
+    fn peek(&self, now: SystemTime) -> Result<Vec<Selection>>;
+
     /// Return every fresh selection and mark each one consumed.
     fn get(&self, now: SystemTime) -> Result<Vec<Selection>>;
 }
@@ -24,6 +27,10 @@ pub struct UnavailableSelections;
 
 impl Selections for UnavailableSelections {
     fn put(&self, _request: &PutRequest, _now: SystemTime) -> Result<PutResult> {
+        Err(unavailable())
+    }
+
+    fn peek(&self, _now: SystemTime) -> Result<Vec<Selection>> {
         Err(unavailable())
     }
 

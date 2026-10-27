@@ -93,6 +93,10 @@ fn selection_put_and_get_use_a_tray_beside_the_index() {
     assert!(tray.is_file(), "selections database exists");
     assert_ne!(index, tray);
 
+    let peek = env.tool("office.selection-get", serde_json::json!({"peek": true}));
+    assert_eq!(peek["ok"], true, "{peek}");
+    assert_eq!(peek["output"]["selections"][0]["quote"], "alpha");
+
     let first = env.tool("office.selection-get", serde_json::json!({}));
     assert_eq!(first["ok"], true, "{first}");
     assert_eq!(

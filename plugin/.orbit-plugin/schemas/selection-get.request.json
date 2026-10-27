@@ -2,6 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.selection-get request",
   "type": "object",
-  "properties": {},
+  "properties": {
+    "peek": { "type": "boolean", "description": "Return fresh selections without consuming them." }
+  },
   "additionalProperties": false
 }

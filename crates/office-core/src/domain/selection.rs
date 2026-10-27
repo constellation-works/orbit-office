@@ -214,8 +214,7 @@ impl Tray {
     /// each returned row consumed at `now`.
     #[must_use]
     pub fn get(&mut self, now: SystemTime) -> Vec<Selection> {
-        let mut chosen = self.fresh(now);
-        chosen.sort_by_key(|selection| selection.selected_at);
+        let chosen = self.peek(now);
         let ids: Vec<String> = chosen
             .iter()
             .map(|selection| selection.id.clone())
@@ -225,6 +224,14 @@ impl Tray {
                 row.consumed_at = Some(now);
             }
         }
+        chosen
+    }
+
+    /// Fresh, unconsumed selections in tray order without consuming them.
+    #[must_use]
+    pub fn peek(&self, now: SystemTime) -> Vec<Selection> {
+        let mut chosen = self.fresh(now);
+        chosen.sort_by_key(|selection| selection.selected_at);
         chosen
     }
 
