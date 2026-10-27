@@ -30,7 +30,8 @@ use crate::{Error, Result};
 const LATEST_PENDING_WRITE_VERSION: u32 = 8;
 
 /// A Library and its index. Construction may create layout/index directories;
-/// read methods never create state or wait for the writer lock.
+/// read methods never create state or wait for the writer lock. Bounded media
+/// reads hold a nonblocking shared probe to serialize privacy changes.
 pub struct LibraryStore {
     files: LibraryFs,
     index: IndexStore,
@@ -2043,6 +2044,111 @@ impl office_core::ports::Library for LibraryStore {
             ));
         }
         Ok(source)
+    }
+    fn source_media(
+        &self,
+        id: &str,
+        selection: &office_core::domain::source::access::MediaSelection,
+    ) -> office_core::Result<office_core::domain::source::access::SourceMedia> {
+        use office_core::domain::source::{access, video::refusal};
+        use std::io::Read;
+        // Keep this fresh descriptor alive until after payload access. A normal
+        // source cannot be upgraded to private between policy and bytes.
+        let path = self.state.join("library.writer.lock");
+        let guard =
+            std::fs::File::open(&path).map_err(|e| Error::io("open media read guard", &path, e))?;
+        match guard.try_lock_shared() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock) => {
+                return Err(refusal(
+                    "library_writer_busy",
+                    "source media is unavailable during a Library write; retry the read",
+                ));
+            }
+            Err(std::fs::TryLockError::Error(e)) => {
+                return Err(Error::io("lock source media read", &path, e).into());
+            }
+        }
+        let source = self.read_source(id)?;
+        let markdown = self.files.read_text(Path::new(&source.path))?;
+        let (name, media_type) = access::media_file(&markdown, selection, &self.settings()?)?;
+        let relative = Path::new(&source.path).with_file_name(&name);
+        self.files.validate_relative_path(&relative)?;
+        let path = self.library_root().join(relative);
+        // Refuse special files before open: opening a FIFO could otherwise
+        // block before the descriptor's own metadata can be checked.
+        if !std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()) {
+            return Err(refusal(
+                "source_media_unavailable",
+                "source media is not an available regular file",
+            ));
+        }
+        let file = std::fs::File::open(&path).map_err(|_| {
+            refusal(
+                "source_media_unavailable",
+                "source media file is unavailable",
+            )
+        })?;
+        let metadata = file
+            .metadata()
+            .map_err(|e| Error::io("inspect source media", &path, e))?;
+        if !metadata.is_file() {
+            return Err(refusal(
+                "source_media_unavailable",
+                "source media is not a regular file",
+            ));
+        }
+        let limit = u64::try_from(access::MEDIA_LIMIT)
+            .map_err(|_| refusal("invalid_source", "media limit overflow"))?;
+        if metadata.len() > limit {
+            return Ok(access::SourceMedia {
+                name,
+                media_type,
+                bytes: metadata.len(),
+                content: None,
+            });
+        }
+        let mut bytes = Vec::new();
+        file.take(limit + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| Error::io("read bounded source media", &path, e))?;
+        let size = u64::try_from(bytes.len())
+            .map_err(|_| refusal("invalid_source", "media size overflow"))?;
+        let content = if size > limit {
+            None
+        } else {
+            if matches!(selection, access::MediaSelection::Original)
+                && parse_source_meta(&markdown).sha256.as_deref()
+                    != Some(sha256_hex(&bytes).as_str())
+            {
+                return Err(refusal(
+                    "plan_changed",
+                    "original no longer matches its recorded digest",
+                ));
+            }
+            Some(bytes)
+        };
+        Ok(access::SourceMedia {
+            name,
+            media_type,
+            bytes: size,
+            content,
+        })
+    }
+    fn set_source_sensitivity(
+        &self,
+        id: &str,
+        sensitivity: &str,
+    ) -> office_core::Result<SourceView> {
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        let source = self.read_source(id)?;
+        let markdown = self.files.read_text(Path::new(&source.path))?;
+        let next = office_core::domain::source::access::with_sensitivity(&markdown, sensitivity)?;
+        if next != markdown {
+            self.write_document_locked(Path::new(&source.path), &next)?;
+        }
+        self.read_source(id)
     }
     fn read_media(
         &self,

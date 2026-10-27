@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.source-set-sensitivity request",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sensitivity": {
+      "enum": [
+        "normal",
+        "private"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "sensitivity"
+  ],
+  "additionalProperties": false
+}

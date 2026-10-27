@@ -23,7 +23,8 @@ Source: spec §12. The one-call envelope is
 | `office.video-plan` | mutating | **none** | Plan a video: duration, deduplicated keyframes, model-call counts, cost estimate; `confirm` with the digest the user saw ([kt-videos.md](./kt-videos.md)) |
 | `office.frames` | mutating | **none** | Extract a confirmed video's keyframes and read them with Muse Spark image input into `frames.md` |
 | `office.extract` | mutating | workspace | From a source, produce structured JSON plus a task artifact: `profile: kt` gives chapters, gotchas, knowledge candidates, runbook steps and questions; `profile: meeting` gives a summary, decisions and to-dos; `profile: digest` writes a source's `digest.json` |
-| `office.source-show` | read_only | workspace | Return a source, optionally at an anchor |
+| `office.source-show` | read_only | workspace | Return source text, provenance, citing documents/tasks and chapters; optional anchor, history and capped original/frame media ([library.md](./library.md#sources)) |
+| `office.source-set-sensitivity` | mutating | **none** | Set source sensitivity under the writer lock; refuse private-to-normal |
 | `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, template, tag, series and date |
 | `office.knowledge-show` | read_only | workspace | Read a page and its back-links |
 | `office.knowledge-write` | mutating | **none** | Create or update a page; validate frontmatter, cites and its template ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)); commit |
@@ -55,7 +56,7 @@ Rules:
 - `mcp_scope: none` tools are callable only by the app, through
   `orbit tool run`, and by the install script for `office.init`. The
   orchestrator cannot scaffold the Library, approve its own proposals,
-  write knowledge, promote artifacts, record selections, change settings,
+  write knowledge, promote artifacts, record selections, change source sensitivity or settings,
   write digests, run scripts or reindex
   ([orchestrator.md](./orchestrator.md)).
 - `execution_kind` is about consequence: anything that changes state or

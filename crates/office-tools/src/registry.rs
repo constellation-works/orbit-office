@@ -91,6 +91,7 @@ static TOOLS: &[Tool] = &[
     sources::frames::TOOL,
     sources::extract::TOOL,
     sources::show::TOOL,
+    sources::set_sensitivity::TOOL,
     // knowledge (specs/library.md)
     knowledge::list::TOOL,
     knowledge::show::TOOL,

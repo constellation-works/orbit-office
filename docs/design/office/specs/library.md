@@ -143,6 +143,52 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 
 **Body: anchorable text.**
 
+`office.source-show` preserves the display fields (`body` and its `text` alias,
+optional anchor `span`, identity, original metadata and version), and adds
+`derived_by`, `cited_by` and `chapters`. `derived_by` is the recorded
+transcription/extraction/frame provenance; an unprocessed source returns `{}`.
+`cited_by` contains `id`, `title` and `kind` for indexed Library backlinks
+(sources, domain/runbook pages and artifacts), plus tasks tagged
+`source:<source-id>`. Task lookup makes one `orbit.task.list` callback with that
+exact tag and a 100-task cap, including terminal tasks. `cited_by_truncated`
+reports an omitted task tail. A missing or refused callback session leaves
+Library backlinks available and sets `task_citers_available: false`; consumers
+must treat the task list as unknown. A malformed successful callback refuses
+with `source_citers_invalid`.
+
+`chapters` is empty without `chapters.md`; otherwise it parses the format
+written by `office.extract` into `number`, `title`, `label` (`core` or
+`tangent`), `start` (whole seconds) and a `#t=hh:mm:ss` anchor. An unreadable
+or malformed sidecar refuses the read, with `invalid_chapters` for malformed
+chapter data. The source body's anchor behavior is unchanged.
+
+Media is opt-in: `{"id":"<source-id>","media":"original"}` reads the
+recorded original; `{"id":"<source-id>","media":"frame","frame":"0000.png"}`
+reads a generated PNG under that source's `frames/`. Frame basenames have
+4–10 digits; arbitrary paths are refused. The optional `media` response has
+`name`, `media_type`, `bytes`, `content_base64`, `limit_bytes`, `too_large` and
+`truncated`. The fixed cap is **524,288 raw bytes (512 KiB)**. Up to and including
+the cap, base64 contains the complete file (at most 699,052 encoded characters).
+Above it, `content_base64` is null and both flags are true; no partial media is
+returned. Disk reads consume at most the cap plus one byte, regardless of the
+frontmatter's claimed byte count, and verify the original's recorded digest
+when returning its payload. Missing files return `source_media_unavailable`.
+Media reads check the latest source and private-route policy under a
+nonblocking shared writer lock; a live writer returns `library_writer_busy`.
+They never create lock state. Private media follows
+[the private-route rules](./models-and-privacy.md#what-private-changes).
+
+`office.source-set-sensitivity` (mutating, `mcp_scope: none`) takes
+`{"id":"<source-id>","sensitivity":"private"}` or `normal` and returns
+`id`, `path` and `sensitivity`. Under the writer lock it updates the current
+source's sensitivity, preserves unrelated metadata and body, reindexes and
+commits once. Repeating the current value changes nothing and makes no commit.
+Private-to-normal is refused with `sensitivity_downgrade_refused`, naming
+`sensitivity`, and leaves the file, index and history unchanged. Unknown input
+keys and sensitivity values are refused. Both tools have closed schemas;
+their fixture conformance goldens replay offline with
+`cargo test -p office-tools --lib tools::tests::show --locked`.
+
 - **Video:** the transcript as for a meeting, plus `frames.md` (frame readings, `#frame=00:12:31`) and `chapters.md` (`#chapter=3`) beside it ([kt-videos.md](./kt-videos.md#library-shape)).
 - **Meeting:** one paragraph per speaker turn, prefixed with `[hh:mm:ss] Speaker:`, paragraphs separated by a blank line. The anchor is `#t=00:12:31`. The transcribe tool gives text-only replies stable positional timestamps within each chunk (see [kt-videos.md](./kt-videos.md#built-tool-contracts)); reported timestamps are shifted by the chunk offset. A chunk that reported turns contributes those turns, not a second copy of its text.
 

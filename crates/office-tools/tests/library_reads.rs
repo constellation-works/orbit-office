@@ -242,6 +242,12 @@ fn every_show_returns_bounded_history_and_preserves_omitted_and_false_responses(
 struct WithoutHistory(FakeLibrary);
 
 impl Library for WithoutHistory {
+    fn read_text(&self, path: &Path) -> office_core::Result<String> {
+        self.0.read_text(path)
+    }
+    fn source_sidecar(&self, id: &str, name: &str) -> office_core::Result<Option<String>> {
+        self.0.source_sidecar(id, name)
+    }
     fn is_initialized(&self) -> office_core::Result<bool> {
         self.0.is_initialized()
     }

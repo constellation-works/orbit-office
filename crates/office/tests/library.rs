@@ -10,6 +10,69 @@ use std::process::{Command, Stdio};
 
 const BIN: &str = env!("CARGO_BIN_EXE_office");
 
+#[test]
+fn source_sensitivity_is_monotonic_through_the_binary() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", serde_json::json!({}))["ok"], true);
+    let captured = env.tool(
+        "office.capture",
+        serde_json::json!({
+            "kind":"note", "title":"Privacy", "text":"Preserve this body.", "sensitivity":"normal"
+        }),
+    );
+    assert_eq!(captured["ok"], true, "{captured}");
+    let id = &captured["output"]["id"];
+    let path = env
+        .library()
+        .join(captured["output"]["path"].as_str().unwrap());
+    let before = std::fs::read_to_string(&path).unwrap();
+    let upgraded = env.tool(
+        "office.source-set-sensitivity",
+        serde_json::json!({"id":id,"sensitivity":"private"}),
+    );
+    assert_eq!(upgraded["ok"], true, "{upgraded}");
+    assert_eq!(upgraded["output"]["sensitivity"], "private");
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        after,
+        before.replace("sensitivity: normal", "sensitivity: private")
+    );
+    let head = git(&env.library(), &["rev-parse", "HEAD"]);
+    let same = env.tool(
+        "office.source-set-sensitivity",
+        serde_json::json!({"id":id,"sensitivity":"private"}),
+    );
+    assert_eq!(same["ok"], true, "{same}");
+    let refused = env.tool(
+        "office.source-set-sensitivity",
+        serde_json::json!({"id":id,"sensitivity":"normal"}),
+    );
+    assert_eq!(
+        refused["error"]["code"], "sensitivity_downgrade_refused",
+        "{refused}"
+    );
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("sensitivity")
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), after);
+    assert_eq!(git(&env.library(), &["rev-parse", "HEAD"]), head);
+    let shown = env.tool("office.source-show", serde_json::json!({"id":id}));
+    assert_eq!(shown["output"]["sensitivity"], "private", "{shown}");
+    assert_eq!(shown["output"]["body"], "Preserve this body.");
+    let store = office_store::LibraryStore::open(&env.library(), &env.state).unwrap();
+    assert_eq!(
+        store
+            .get(id.as_str().unwrap())
+            .unwrap()
+            .unwrap()
+            .sensitivity,
+        "private"
+    );
+}
+
 #[path = "document_capture/mod.rs"]
 mod document_capture;
 

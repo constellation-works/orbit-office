@@ -4,6 +4,58 @@ use crate::domain::source::meeting_body;
 use crate::ports::{Transcript, TranscriptChunk, TranscriptSegment};
 
 #[test]
+fn source_metadata_retains_quoted_original_numbers_and_versions() {
+    let meta = crate::domain::source::parse_source_meta(
+        "---\nid: src-fixture\nversion: \"3\"\noriginal: { bytes: \"5\", file: \"original.mp4\", media_type: \"video/mp4\", sha256: \"abc\" }\n---\nBody.",
+    );
+    assert_eq!(meta.version, 3);
+    assert_eq!(meta.bytes, Some(5));
+    assert_eq!(meta.original_file.as_deref(), Some("original.mp4"));
+    assert_eq!(meta.sha256.as_deref(), Some("abc"));
+    assert_eq!(meta.media_type.as_deref(), Some("video/mp4"));
+}
+
+#[test]
+fn sensitivity_updates_preserve_unrelated_metadata_and_refuse_invalid_privacy_state() {
+    use crate::domain::source::access::with_sensitivity;
+    let original = "---\nid: src-fixture\n# Comment\nsensitivity : normal # annotation\nversion: 3\nderived_by: { transcription: vtt-import }\n---\nBody\nsensitivity: normal\n";
+    let updated = with_sensitivity(original, "private").unwrap();
+    assert_eq!(
+        updated,
+        original.replacen(
+            "sensitivity : normal # annotation",
+            "sensitivity: private",
+            1
+        )
+    );
+    assert_eq!(with_sensitivity(&updated, "private").unwrap(), updated);
+    assert_eq!(
+        with_sensitivity(&updated, "normal").unwrap_err().code(),
+        "sensitivity_downgrade_refused"
+    );
+    let missing = "---\nid: src-fixture\n---\nBody.";
+    assert_eq!(
+        with_sensitivity(missing, "private").unwrap(),
+        "---\nsensitivity: private\nid: src-fixture\n---\nBody."
+    );
+    assert_eq!(
+        with_sensitivity(
+            "---\nsensitivity: private\nsensitivity: normal\n---\n",
+            "normal"
+        )
+        .unwrap_err()
+        .code(),
+        "invalid_frontmatter"
+    );
+    assert_eq!(
+        with_sensitivity("---\nsensitivity: unknown\n---\n", "normal")
+            .unwrap_err()
+            .code(),
+        "invalid_source"
+    );
+}
+
+#[test]
 fn source_participants_preserve_quoted_punctuation_and_block_lists() {
     use crate::domain::source::parse_source_participants;
 

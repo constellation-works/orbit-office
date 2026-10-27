@@ -128,11 +128,20 @@ spec:
 
     - name: source-show
       description: >-
-        Return a source, optionally at an anchor and with bounded document history.
+        Return a source with provenance, citers and chapters, optionally at an
+        anchor, with bounded document history or bounded original/frame media.
       execution_kind: read_only
       mcp_scope: workspace
       input_schema: { $ref: schemas/source-show.request.json }
       output_schema: { $ref: schemas/source-show.response.json }
+
+    - name: source-set-sensitivity
+      description: >-
+        Set source sensitivity. Private sources cannot be downgraded to normal.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/source-set-sensitivity.request.json }
+      output_schema: { $ref: schemas/source-set-sensitivity.response.json }
 
     # ---- knowledge ----
 
