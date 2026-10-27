@@ -45,14 +45,24 @@ struct PendingWrite {
     relative: String,
     text: String,
     token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    original: Option<PendingOriginal>,
+}
+
+/// Upload bytes belong to the decision, never to the caller's temporary path.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PendingOriginal {
+    relative: String,
+    bytes: Vec<u8>,
 }
 
 /// A journal as read from disk, before its version gate is applied.
 /// Version-1 journals predate `kind` and are always documents; version-2
 /// journals must carry `kind` explicitly. Defaulting a missing `kind` on
 /// a version-2 journal would silently change what the journal means, so
-/// recovery refuses it instead (STD-02: a persisted shape only widens
-/// through an explicit version step).
+/// recovery refuses it instead. Version 3 adds a document's original upload;
+/// earlier readers refuse that version rather than dropping its bytes.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPendingWrite {
@@ -63,14 +73,17 @@ struct RawPendingWrite {
     relative: String,
     text: String,
     token: String,
+    #[serde(default)]
+    original: Option<PendingOriginal>,
 }
 
 impl RawPendingWrite {
     /// Apply the version gate and produce the replayable decision.
     fn into_pending(self, path: &Path) -> Result<PendingWrite> {
-        let kind = match (self.version, self.kind) {
-            (1, None) | (1, Some(WriteKind::Document)) => WriteKind::Document,
-            (2, Some(kind)) => kind,
+        let kind = match (self.version, self.kind, &self.original) {
+            (1, None | Some(WriteKind::Document), None) => WriteKind::Document,
+            (2, Some(kind), None) => kind,
+            (3, Some(WriteKind::Document), Some(_)) => WriteKind::Document,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -84,6 +97,7 @@ impl RawPendingWrite {
             relative: self.relative,
             text: self.text,
             token: self.token,
+            original: self.original,
         })
     }
 }
@@ -433,7 +447,7 @@ impl LibraryStore {
         let settings = self.settings()?.with_setting(key, value)?;
         let text = settings.to_yaml()?;
         self.files.validate_settings_path()?;
-        let pending = self.decide(WriteKind::Settings, ".office/config.yaml", &text)?;
+        let pending = self.decide(WriteKind::Settings, ".office/config.yaml", &text, None)?;
         self.finish(&pending)
     }
 
@@ -453,7 +467,7 @@ impl LibraryStore {
                 .with_route_check(endpoint, model, capabilities, verified_at)?;
         let text = settings.to_yaml()?;
         self.files.validate_settings_path()?;
-        let pending = self.decide(WriteKind::Settings, ".office/config.yaml", &text)?;
+        let pending = self.decide(WriteKind::Settings, ".office/config.yaml", &text, None)?;
         self.finish(&pending)
     }
 
@@ -519,12 +533,18 @@ impl LibraryStore {
             kind: "document",
             value: relative.display().to_string(),
         })?;
-        let pending = self.decide(WriteKind::Document, relative, text)?;
+        let pending = self.decide(WriteKind::Document, relative, text, None)?;
         self.finish(&pending)?;
         self.files.read_document(Path::new(relative))
     }
 
-    fn decide(&self, kind: WriteKind, relative: &str, text: &str) -> Result<PendingWrite> {
+    fn decide(
+        &self,
+        kind: WriteKind,
+        relative: &str,
+        text: &str,
+        original: Option<PendingOriginal>,
+    ) -> Result<PendingWrite> {
         let time = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| {
             Error::io(
                 "read write decision time",
@@ -533,13 +553,15 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: 2,
+            version: if original.is_some() { 3 } else { 2 },
             kind,
             root: self.library_root().into(),
             relative: relative.into(),
             text: text.into(),
             token: format!("{}-{}", std::process::id(), time.as_nanos()),
+            original,
         };
+        self.validate_original(&pending)?;
         let bytes = serde_json::to_vec(&pending).map_err(|_| Error::Journal {
             path: self.journal_path(),
         })?;
@@ -565,6 +587,37 @@ impl LibraryStore {
         self.state.join("library.pending-write.json")
     }
 
+    /// A version-3 upload can publish only the named original beside its
+    /// source document, with the digest and byte count the document records.
+    fn validate_original(&self, pending: &PendingWrite) -> Result<()> {
+        let Some(original) = &pending.original else {
+            return Ok(());
+        };
+        let source = Path::new(&pending.relative);
+        let relative = Path::new(&original.relative);
+        self.files.validate_relative_path(relative)?;
+        let meta = parse_source_meta(&pending.text);
+        if !source.starts_with("sources")
+            || source.file_name().is_none_or(|name| name != "source.md")
+            || source.parent() != relative.parent()
+            || !relative
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name.starts_with("original.") && meta.original_file.as_deref() == Some(name)
+                })
+            || meta.sha256.as_deref() != Some(sha256_hex(&original.bytes).as_str())
+            || u64::try_from(original.bytes.len())
+                .ok()
+                .is_none_or(|count| meta.bytes != Some(count))
+        {
+            return Err(Error::Journal {
+                path: self.journal_path(),
+            });
+        }
+        Ok(())
+    }
+
     fn recover(&self) -> Result<()> {
         let path = self.journal_path();
         let bytes = match std::fs::read(&path) {
@@ -575,7 +628,7 @@ impl LibraryStore {
         let raw: RawPendingWrite =
             serde_json::from_slice(&bytes).map_err(|_| Error::Journal { path: path.clone() })?;
         let pending = raw.into_pending(&path)?;
-        if !(1..=2).contains(&pending.version)
+        if !(1..=3).contains(&pending.version)
             || pending.root != self.library_root()
             || pending.token.is_empty()
             || !pending
@@ -610,6 +663,7 @@ impl LibraryStore {
                 Settings::from_yaml(&pending.text)?;
             }
         }
+        self.validate_original(&pending)?;
         self.finish(&pending)
     }
 
@@ -617,6 +671,10 @@ impl LibraryStore {
         match pending.kind {
             WriteKind::Document => {
                 let relative = Path::new(&pending.relative);
+                if let Some(original) = &pending.original {
+                    self.files
+                        .write_original(Path::new(&original.relative), &original.bytes)?;
+                }
                 self.files.write_document(relative, &pending.text)?;
                 let record = self.files.read_document(relative)?;
                 self.index.upsert(&record)?;
@@ -840,7 +898,7 @@ impl LibraryStore {
             }
             new_text.push_str(&body);
             let pending = self
-                .decide(WriteKind::Document, path, &new_text)
+                .decide(WriteKind::Document, path, &new_text, None)
                 .map_err(office_core::Error::from)?;
             self.finish(&pending).map_err(office_core::Error::from)?;
             return Ok(SourceOutcome {
@@ -982,18 +1040,24 @@ impl LibraryStore {
                 }
             });
         let base = source_id_base(&request.captured_at, &title);
-        let known_ids: Vec<String> = existing
+        let mut known_ids: Vec<String> = existing
             .iter()
             .map(|(_, text)| parse_source_meta(text).id)
             .collect();
-        let id = unique_source_id(&base, |candidate| known_ids.iter().any(|k| k == candidate));
         let date = &request.captured_at;
         let (yyyy, mm) = if date.len() >= 7 {
             (&date[0..4], &date[5..7])
         } else {
             ("1970", "01")
         };
-        let rel_dir = format!("sources/{yyyy}/{mm}/{id}");
+        let month = format!("sources/{yyyy}/{mm}");
+        known_ids.extend(
+            self.files
+                .entry_names(Path::new(&month))
+                .map_err(office_core::Error::from)?,
+        );
+        let id = unique_source_id(&base, |candidate| known_ids.iter().any(|k| k == candidate));
+        let rel_dir = format!("{month}/{id}");
         let rel_path = format!("{rel_dir}/source.md");
         let sensitivity = match &request.sensitivity {
             Some(s) => Sensitivity::parse(s).ok_or_else(|| {
@@ -1010,11 +1074,6 @@ impl LibraryStore {
         let original_name = upload_bytes
             .as_ref()
             .map(|_| format!("original.{upload_ext}"));
-        if let (Some(bytes), Some(name)) = (&upload_bytes, &original_name) {
-            self.files
-                .write_bytes(Path::new(&format!("{rel_dir}/{name}")), bytes)
-                .map_err(office_core::Error::from)?;
-        }
         let markdown = render_source(&RenderSource {
             id: &id,
             kind,
@@ -1042,8 +1101,22 @@ impl LibraryStore {
             retention_days: settings.retention.get(kind.as_str()).copied().flatten(),
             body: &body,
         });
+        self.files
+            .validate_document_path(Path::new(&rel_path))
+            .map_err(office_core::Error::from)?;
+        self.validate_identity(&DocumentRecord::from_markdown(
+            Path::new(&rel_path),
+            &markdown,
+        ))
+        .map_err(office_core::Error::from)?;
+        let original = upload_bytes
+            .zip(original_name)
+            .map(|(bytes, name)| PendingOriginal {
+                relative: format!("{rel_dir}/{name}"),
+                bytes,
+            });
         let pending = self
-            .decide(WriteKind::Document, &rel_path, &markdown)
+            .decide(WriteKind::Document, &rel_path, &markdown, original)
             .map_err(office_core::Error::from)?;
         self.finish(&pending).map_err(office_core::Error::from)?;
         Ok(SourceOutcome {
