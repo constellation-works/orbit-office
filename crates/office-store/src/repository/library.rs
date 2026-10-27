@@ -1199,7 +1199,7 @@ impl LibraryStore {
                         office_core::domain::source::merge_source_tags(text, &request.tags)?
                     {
                         let pending = self
-                            .decide(WriteKind::Document, path, &markdown, None)
+                            .decide(WriteKind::Document, path, &markdown, None, None)
                             .map_err(office_core::Error::from)?;
                         self.finish(&pending).map_err(office_core::Error::from)?;
                     }
