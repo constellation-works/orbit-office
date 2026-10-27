@@ -47,6 +47,12 @@ fn transcribes_private_audio_through_the_open_weights_endpoint() {
         })
         .expect("transcribe");
     assert_eq!(transcript.text, "private transcript");
+    assert!(transcript.segments.is_empty());
+    let body = &open.requests()[0].body;
+    assert!(
+        body.contains("segments") && body.contains("start_ms") && body.contains("speaker"),
+        "private transcription must ask for speaker turns and timestamps"
+    );
     assert_eq!(open.requests().len(), 1);
 }
 

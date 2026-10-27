@@ -17,6 +17,96 @@ fn transcribe_request() -> TranscribeRequest {
 }
 
 #[test]
+fn maps_reported_speaker_turns_through_the_models_port() {
+    let content = r#"{"text":"Jane opened. Daniel agreed.","segments":[{"speaker":"Jane","start_ms":0,"end_ms":4000,"text":"Jane opened."},{"speaker":null,"start_ms":751000,"end_ms":752500,"text":"Daniel agreed."}]}"#;
+    let server = FakeServer::start(200, chat_reply(content));
+    let adapter = client(hosted_config(&server.base_url));
+    let models: &dyn Models = &adapter;
+    let transcript = models
+        .transcribe(&transcribe_request())
+        .expect("transcribe");
+    assert_eq!(transcript.text, "Jane opened. Daniel agreed.");
+    assert_eq!(transcript.segments.len(), 2);
+    assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Jane"));
+    assert_eq!(transcript.segments[0].start_ms, 0);
+    assert_eq!(transcript.segments[0].end_ms, 4000);
+    assert_eq!(transcript.segments[0].text, "Jane opened.");
+    assert_eq!(transcript.segments[1].speaker, None);
+    assert_eq!(transcript.segments[1].start_ms, 751_000);
+    assert_eq!(transcript.segments[1].end_ms, 752_500);
+    assert_eq!(transcript.segments[1].text, "Daniel agreed.");
+    assert_eq!(
+        office_core::domain::source::meeting_body(&transcript),
+        "[00:00:00] Jane: Jane opened.\n\n[00:12:31] Speaker: Daniel agreed."
+    );
+    let body: serde_json::Value =
+        serde_json::from_str(&server.requests()[0].body).expect("JSON request");
+    let instruction = body["messages"][0]["content"][0]["text"]
+        .as_str()
+        .expect("instruction");
+    assert!(
+        instruction.contains("segments")
+            && instruction.contains("start_ms")
+            && instruction.contains("speaker"),
+        "transcription must ask for speaker turns and timestamps"
+    );
+    assert_eq!(body["response_format"]["json_schema"]["name"], "transcript");
+}
+
+#[test]
+fn keeps_text_and_no_turns_when_the_reply_reports_none() {
+    let server = FakeServer::start(200, chat_reply(r#"{"text":"no turns","segments":[]}"#));
+    let models: &dyn Models = &client(hosted_config(&server.base_url));
+    let transcript = models
+        .transcribe(&transcribe_request())
+        .expect("transcribe");
+    assert_eq!(transcript.text, "no turns");
+    assert!(transcript.segments.is_empty());
+    assert_eq!(
+        office_core::domain::source::meeting_body(&transcript),
+        "no turns"
+    );
+}
+
+#[test]
+fn drops_a_malformed_turn_and_keeps_its_siblings() {
+    let content = r#"{"text":"kept","segments":[
+        {"speaker":"  Ada  ","start_ms":0,"end_ms":10,"text":"  hello  "},
+        {"speaker":"Nope","end_ms":10,"text":"missing start"},
+        {"speaker":"Late","start_ms":20,"end_ms":10,"text":"ends before it starts"},
+        {"speaker":"","start_ms":30,"end_ms":40,"text":"blank speaker"},
+        {"speaker":1,"start_ms":50,"end_ms":60,"text":"bad speaker"}
+    ]}"#;
+    let server = FakeServer::start(200, chat_reply(content));
+    let models: &dyn Models = &client(hosted_config(&server.base_url));
+    let transcript = models
+        .transcribe(&transcribe_request())
+        .expect("transcribe");
+    assert_eq!(transcript.text, "kept");
+    assert_eq!(transcript.segments.len(), 2);
+    assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Ada"));
+    assert_eq!(transcript.segments[0].text, "hello");
+    assert_eq!(transcript.segments[1].speaker, None);
+    assert_eq!(transcript.segments[1].text, "blank speaker");
+    assert_eq!(transcript.segments[1].start_ms, 30);
+}
+
+#[test]
+fn reads_speaker_turns_from_a_fenced_json_reply() {
+    let content = "```json\n{\"text\":\"hello\",\"segments\":[{\"speaker\":\"Jane\",\"start_ms\":1000,\"end_ms\":2000,\"text\":\"hello\"}]}\n```";
+    let server = FakeServer::start(200, chat_reply(content));
+    let models: &dyn Models = &client(hosted_config(&server.base_url));
+    let transcript = models
+        .transcribe(&transcribe_request())
+        .expect("transcribe");
+    assert_eq!(transcript.text, "hello");
+    assert_eq!(transcript.segments.len(), 1);
+    assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Jane"));
+    assert_eq!(transcript.segments[0].start_ms, 1_000);
+    assert_eq!(transcript.segments[0].end_ms, 2_000);
+}
+
+#[test]
 fn transcribes_audio_on_the_hosted_endpoint() {
     let server = FakeServer::start(200, chat_reply("hello from the meeting"));
     let models = client(hosted_config(&server.base_url));
@@ -24,6 +114,7 @@ fn transcribes_audio_on_the_hosted_endpoint() {
         .transcribe(&transcribe_request())
         .expect("transcribe");
     assert_eq!(transcript.text, "hello from the meeting");
+    assert!(transcript.segments.is_empty());
     let requests = server.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].path, "/v1/chat/completions");
