@@ -597,17 +597,25 @@ pub fn render_source(input: &RenderSource<'_>) -> String {
     out.push_str(&format!("kind: {}\n", input.kind.as_str()));
     out.push_str(&format!("title: {}\n", yaml_quote(input.title)));
     if let Some(at) = input.occurred_at {
-        out.push_str(&format!("occurred_at: {at}\n"));
+        out.push_str(&format!("occurred_at: {}\n", serde_json::json!(at)));
     }
     out.push_str(&format!("captured_at: {}\n", input.captured_at));
-    out.push_str(&format!("captured_by: {}\n", input.captured_by));
+    out.push_str(&format!(
+        "captured_by: {}\n",
+        serde_json::json!(input.captured_by)
+    ));
     if let Some(origin) = input.origin {
         out.push_str(&format!("origin: {}\n", yaml_quote(origin)));
     }
     if !input.participants.is_empty() {
         out.push_str(&format!(
             "participants: [{}]\n",
-            input.participants.join(", ")
+            input
+                .participants
+                .iter()
+                .map(|item| serde_json::json!(item).to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     out.push_str(&format!("sensitivity: {}\n", input.sensitivity.as_str()));

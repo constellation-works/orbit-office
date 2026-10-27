@@ -1279,3 +1279,50 @@ fn search_and_attach_through_the_binary_copy_model_views_at_the_library_commit()
         "attach commits nothing"
     );
 }
+
+#[test]
+fn private_capture_metadata_cannot_inject_frontmatter() {
+    for (field, payload) in [
+        ("captured_by", "paste\nsensitivity: normal\n---\ninjected"),
+        (
+            "occurred_at",
+            "2026-10-27\nsensitivity: normal\n---\ninjected",
+        ),
+        ("participants", "Alice]\nsensitivity: normal\n---\ninjected"),
+    ] {
+        let env = Env::new();
+        assert_eq!(env.tool("office.init", serde_json::json!({}))["ok"], true);
+        let mut input = serde_json::json!({"kind": "note", "title": "Private fixture", "text": "original private body\n", "sensitivity": "private"});
+        input[field] = if field == "participants" {
+            serde_json::json!([payload])
+        } else {
+            serde_json::json!(payload)
+        };
+        let captured = env.tool("office.capture", input);
+        assert_eq!(captured["ok"], true, "{field}: {captured}");
+        assert_eq!(captured["output"]["sensitivity"], "private");
+        let id = captured["output"]["id"].as_str().unwrap();
+        for reindex in [false, true] {
+            if reindex {
+                let result = env.tool("office.reindex", serde_json::json!({}));
+                assert_eq!(result["ok"], true, "{result}");
+            }
+            let shown = env.tool("office.source-show", serde_json::json!({"id": id}));
+            assert_eq!(
+                shown["output"]["sensitivity"], "private",
+                "{field}: {shown}"
+            );
+            assert_eq!(
+                shown["output"]["body"], "original private body",
+                "{field}: {shown}"
+            );
+            let store = office_store::LibraryStore::open(&env.library(), &env.state).unwrap();
+            let indexed = store.get(id).unwrap().unwrap();
+            assert_eq!(indexed.sensitivity, "private", "{field}: {indexed:?}");
+            assert_eq!(
+                indexed.body, "original private body",
+                "{field}: {indexed:?}"
+            );
+        }
+    }
+}
