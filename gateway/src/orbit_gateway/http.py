@@ -287,9 +287,11 @@ def _send(
     record.path = urllib.parse.urlsplit(url).path
     try:
         data = b"" if method == "HEAD" else read_limited(response, connection.max_response_bytes + 1, deadline, connection.timeout_seconds)
+        remaining = getattr(response, "length", None)
     finally:
         response.close()
-    truncated = len(data) > connection.max_response_bytes
+    cut_off = method != "HEAD" and isinstance(remaining, int) and remaining > 0
+    truncated = cut_off or len(data) > connection.max_response_bytes
     data = data[: connection.max_response_bytes]
     content_type = response.headers.get("Content-Type")
     body, digest = shape_body(data, response.headers, truncated, redactor)

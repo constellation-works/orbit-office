@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 
-from tests.support import TOKEN, GatewayCase, Reply, Server, json_reply
+from tests.support import TOKEN, CutoffServer, GatewayCase, Reply, Server, json_reply
 
 
 class ResponseShape(GatewayCase):
@@ -71,6 +71,25 @@ class ResponseShape(GatewayCase):
         out = self.ok("http-get", {"connection": "exact", "path": "five"})
         self.assertEqual(out["body"], {"kind": "text", "text": "12345"})
         self.assertFalse(out["truncated"])
+
+    def test_response_closed_after_headers_is_truncated(self) -> None:
+        self._assert_cutoff(b"")
+
+    def test_response_closed_mid_body_is_truncated(self) -> None:
+        self._assert_cutoff(b'{"id":42')
+
+    def _assert_cutoff(self, body: bytes) -> None:
+        cutoff = CutoffServer(self, body=body, declared=32)
+        self.put("cut", cutoff.origin + "/", scheme="none")
+
+        out = self.ok("http-get", {"connection": "cut", "path": "orders"})
+
+        self.assertEqual(out["status"], 200)
+        self.assertEqual(out["bytes"], len(body))
+        self.assertTrue(out["truncated"])
+        self.assertNotEqual((out["body"]["kind"], out["truncated"]), ("none", False))
+        self.assertEqual(len(cutoff.requests), 1)
+        self.assertTrue(cutoff.requests[0].startswith(b"GET /orders HTTP/1.1"))
 
     def test_head_returns_no_body(self) -> None:
         self.server.routes["/v2/users"] = json_reply({"users": []})
