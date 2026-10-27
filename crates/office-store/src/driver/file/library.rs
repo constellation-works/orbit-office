@@ -178,6 +178,134 @@ impl LibraryFs {
         Ok(())
     }
 
+    /// Stage a complete immutable artifact beside its destination and publish
+    /// it with one directory rename. The durable journal owns staging on every
+    /// error path; readers never scan that reserved staging directory.
+    pub(crate) fn publish_artifact_bundle(
+        &self,
+        relative: &Path,
+        text: &str,
+        files: &[office_core::domain::artifact::ArtifactFile],
+        token: &str,
+    ) -> Result<()> {
+        self.validate_document_path(relative)?;
+        let directory = relative.parent().ok_or_else(|| Error::UnsafePath {
+            kind: "artifact",
+            value: relative.display().to_string(),
+        })?;
+        let destination = self.root.join(directory);
+        let mut expected = files
+            .iter()
+            .map(|file| (file.path.as_str(), file.bytes.as_slice()))
+            .collect::<Vec<_>>();
+        expected.push(("artifact.md", text.as_bytes()));
+        match std::fs::symlink_metadata(&destination) {
+            Ok(metadata) if metadata.is_dir() => {
+                // Recovery after publication may only verify, never repair or
+                // replace an immutable published directory.
+                for (name, bytes) in &expected {
+                    self.validate_relative_path(&directory.join(name))?;
+                    let path = destination.join(name);
+                    let actual = std::fs::read(&path)
+                        .map_err(|e| Error::io("verify published artifact", &path, e))?;
+                    if actual != *bytes {
+                        return Err(Error::Corrupt {
+                            path,
+                            reason: "published artifact differs from the decided bundle".into(),
+                        });
+                    }
+                }
+                return Ok(());
+            }
+            Ok(_) => {
+                return Err(Error::UnsafePath {
+                    kind: "occupied artifact",
+                    value: directory.display().to_string(),
+                });
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(Error::io("inspect artifact destination", &destination, e)),
+        }
+        let parent = destination.parent().ok_or_else(|| Error::UnsafePath {
+            kind: "artifact",
+            value: directory.display().to_string(),
+        })?;
+        Self::create_private_dirs(parent)?;
+        let staging = parent.join(format!(".office-pending-artifact-{token}"));
+        refuse_symlink(&staging)?;
+        Self::create_private_dirs(&staging)?;
+        for (name, bytes) in &expected {
+            let path = staging.join(name);
+            // Names were validated by the domain. Validate every existing
+            // staging component too: a stale journal never grants a symlink.
+            let mut physical = staging.clone();
+            for component in Path::new(name).components() {
+                let std::path::Component::Normal(component) = component else {
+                    return Err(Error::UnsafePath {
+                        kind: "artifact file",
+                        value: (*name).into(),
+                    });
+                };
+                physical.push(component);
+                refuse_symlink(&physical)?;
+            }
+            if let Some(parent) = path.parent() {
+                Self::create_private_dirs(parent)?;
+            }
+            match write_atomic_new(&path, bytes) {
+                Ok(()) => {}
+                Err(office_common::Error::Io { source, .. })
+                    if source.kind() == std::io::ErrorKind::AlreadyExists =>
+                {
+                    let actual = std::fs::read(&path)
+                        .map_err(|e| Error::io("verify staged artifact", &path, e))?;
+                    if actual != *bytes {
+                        return Err(Error::Corrupt {
+                            path,
+                            reason: "staged artifact differs from the decided bundle".into(),
+                        });
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
+            let mut ancestor = path.parent();
+            while let Some(dir) = ancestor {
+                std::fs::File::open(dir)
+                    .and_then(|file| file.sync_all())
+                    .map_err(|e| Error::io("sync staged artifact", dir, e))?;
+                if dir == parent {
+                    break;
+                }
+                ancestor = dir.parent();
+            }
+        }
+        // Only plugin writers share this root, serialized by the writer lock.
+        // Refuse a newly occupied destination rather than replacing it.
+        match std::fs::symlink_metadata(&destination) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Ok(_) => {
+                return Err(Error::UnsafePath {
+                    kind: "occupied artifact",
+                    value: directory.display().to_string(),
+                });
+            }
+            Err(e) => return Err(Error::io("inspect artifact destination", &destination, e)),
+        }
+        std::fs::rename(&staging, &destination)
+            .map_err(|e| Error::io("publish artifact bundle", &destination, e))?;
+        let mut ancestor = Some(parent);
+        while let Some(dir) = ancestor {
+            std::fs::File::open(dir)
+                .and_then(|file| file.sync_all())
+                .map_err(|e| Error::io("sync artifact directory", dir, e))?;
+            if dir == self.root {
+                break;
+            }
+            ancestor = dir.parent();
+        }
+        Ok(())
+    }
+
     /// Names already occupying a capture month, including empty directories,
     /// regular files and dangling symlinks. Inspection failures are not vacancy.
     pub(crate) fn entry_names(&self, relative: &Path) -> Result<Vec<String>> {
@@ -391,6 +519,26 @@ impl LibraryFs {
         Ok(templates)
     }
 
+    /// Artifact frontmatter files only; companion Markdown is never indexed.
+    pub(crate) fn read_artifact_markdown(&self) -> Result<Vec<(String, String)>> {
+        let mut paths = Vec::new();
+        collect_optional_layer(&self.root.join("artifacts"), &mut paths, &["artifact"])?;
+        paths.sort();
+        paths
+            .into_iter()
+            .map(|path| {
+                let relative = path
+                    .strip_prefix(&self.root)
+                    .map_err(|_| Error::UnsafePath {
+                        kind: "artifact",
+                        value: path.display().to_string(),
+                    })?;
+                let text = self.read_text(relative)?;
+                Ok((relative.to_string_lossy().replace('\\', "/"), text))
+            })
+            .collect()
+    }
+
     /// Knowledge Markdown, Library-relative path then full text, in path order.
     /// Templates are not included. Symlinks are not followed; a symlink leaf
     /// that still reaches this read is refused. A missing `knowledge`
@@ -473,6 +621,13 @@ fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>, stems: &[&str]) -> Resul
             continue;
         }
         if file_type.is_dir() {
+            if entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with(".office-pending-artifact-"))
+            {
+                continue;
+            }
             collect_markdown(&path, out, stems)?;
         } else if markdown_selected(&path, stems) {
             out.push(path);

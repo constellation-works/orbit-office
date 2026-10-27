@@ -24,7 +24,7 @@ fn invalid(field: &str, reason: &'static str) -> Error {
 
 /// Split leading `---` frontmatter from the body (the closing delimiter is
 /// a line holding only `---`). The body is returned verbatim.
-pub(super) fn split(text: &str) -> Result<(&str, &str)> {
+pub(crate) fn split(text: &str) -> Result<(&str, &str)> {
     let rest = text
         .strip_prefix("---\n")
         .or_else(|| text.strip_prefix("---\r\n"))
@@ -47,7 +47,7 @@ struct Line<'a> {
 
 /// Parse the frontmatter into its top-level fields, in file order.
 /// Duplicate keys are refused.
-pub(super) fn parse(text: &str) -> Result<Vec<(String, Value)>> {
+pub(crate) fn parse(text: &str) -> Result<Vec<(String, Value)>> {
     let mut lines = Vec::new();
     let mut field = "frontmatter".to_string();
     for raw in text.lines() {

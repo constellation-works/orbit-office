@@ -1866,3 +1866,168 @@ fn a_version_one_index_migrates_and_reindex_fills_template_and_date() {
         .expect("version");
     assert_eq!(version, 2);
 }
+
+fn artifact_candidate() -> office_core::domain::artifact::Artifact {
+    use office_core::domain::artifact::{Approval, Approver, Artifact, ArtifactManifest, Producer};
+    Artifact::approved(
+        serde_json::from_value::<ArtifactManifest>(serde_json::json!({
+            "kind":"report","title":"Promoted output","files":["report.md","data/results.bin"],
+            "series":"fixture-series","summary":"Approved fixture", "cites":[]
+        }))
+        .unwrap(),
+        "<id>".into(),
+        Producer {
+            crew: Some("fixture-crew".into()),
+            runbook: Some("rb-research".into()),
+            at: Some("2026-10-27T10:00:00Z".into()),
+        },
+        Approval {
+            by: Approver::User,
+            at: "2026-10-27T11:00:00Z".into(),
+            edited: true,
+        },
+    )
+    .unwrap()
+}
+
+fn artifact_files() -> Vec<office_core::domain::artifact::ArtifactFile> {
+    use office_core::domain::artifact::ArtifactFile;
+    vec![
+        ArtifactFile {
+            path: "report.md".into(),
+            bytes: b"Approved report\n".to_vec(),
+        },
+        ArtifactFile {
+            path: "data/results.bin".into(),
+            bytes: vec![0, 255, 128, 3],
+        },
+    ]
+}
+
+#[test]
+fn artifact_promotion_commits_the_complete_bundle_and_keeps_every_revision() {
+    use office_core::domain::artifact::Artifact;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let state = dir.path().join("state");
+    let store = LibraryStore::open(&root, &state).unwrap();
+    // Unrelated staged content must stay out of the artifact commit.
+    std::fs::write(root.join("unrelated.txt"), "preserve").unwrap();
+    git(&root, &["add", "unrelated.txt"]);
+    let first = store
+        .promote_artifact(&artifact_candidate(), &artifact_files())
+        .unwrap();
+    let path = first.path().unwrap();
+    let parent = Path::new(&path).parent().unwrap();
+    assert_eq!(
+        std::fs::read(root.join(parent).join("data/results.bin")).unwrap(),
+        [0, 255, 128, 3]
+    );
+    assert_eq!(
+        Artifact::from_markdown(&store.read_text(Path::new(&path)).unwrap()).unwrap(),
+        first
+    );
+    assert_eq!(first.produced_by.crew.as_deref(), Some("fixture-crew"));
+    assert!(first.approved.edited);
+    assert_eq!(first.version, 1);
+    let committed = git(&root, &["show", "--format=", "--name-only", "HEAD"]);
+    let mut names: Vec<_> = committed.lines().filter(|s| !s.is_empty()).collect();
+    names.sort();
+    let mut expected = vec![
+        path.clone(),
+        format!("{}/report.md", parent.display()),
+        format!("{}/data/results.bin", parent.display()),
+    ];
+    expected.sort();
+    assert_eq!(names, expected);
+    assert_eq!(git(&root, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    assert_eq!(
+        git(&root, &["diff", "--cached", "--name-only"]).trim(),
+        "unrelated.txt"
+    );
+    let original = std::fs::read(root.join(&path)).unwrap();
+    let next = store
+        .promote_artifact(&artifact_candidate(), &artifact_files())
+        .unwrap();
+    assert_ne!(next.id, first.id);
+    assert_eq!(next.version, 2);
+    assert_eq!(next.supersedes, Some(first.id.clone()));
+    assert_eq!(std::fs::read(root.join(&path)).unwrap(), original);
+    assert_eq!(git(&root, &["rev-list", "--count", "HEAD"]).trim(), "2");
+    store.reindex().unwrap();
+    assert_eq!(store.document_count().unwrap(), 2);
+    assert_eq!(
+        store.get(&next.id).unwrap().unwrap().series.as_deref(),
+        Some("fixture-series")
+    );
+    assert_eq!(store.artifact_documents().unwrap().len(), 2);
+}
+
+#[test]
+fn artifact_journal_recovers_partial_publication_and_never_duplicates_the_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let state = dir.path().join("state");
+    let store = LibraryStore::open(&root, &state).unwrap();
+    let a = artifact_candidate();
+    let path = a.path().unwrap();
+    let text = a.to_markdown().unwrap();
+    let parent = Path::new(&path).parent().unwrap();
+    let staging = root
+        .join(parent.parent().unwrap())
+        .join(".office-pending-artifact-777-111");
+    std::fs::create_dir_all(&staging).unwrap();
+    std::fs::write(staging.join("report.md"), b"Approved report\n").unwrap();
+    assert!(!root.join(&path).exists());
+    assert_eq!(store.reindex().unwrap(), 0);
+    let journal = state.join("library.pending-write.json");
+    let decision = serde_json::json!({"version":4,"kind":"artifact","root":root.canonicalize().unwrap(),"relative":path,"text":text,"token":"777-111","bundle":artifact_files()});
+    std::fs::write(&journal, serde_json::to_vec(&decision).unwrap()).unwrap();
+    drop(store);
+    let recovered = LibraryStore::open(&root, &state).unwrap();
+    assert_eq!(
+        recovered.get(&a.id).unwrap().unwrap().series.as_deref(),
+        Some("fixture-series")
+    );
+    assert_eq!(
+        std::fs::read(root.join(parent).join("data/results.bin")).unwrap(),
+        [0, 255, 128, 3]
+    );
+    assert!(!journal.exists());
+    assert_eq!(git(&root, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    // A crash after commit, before removing the journal, is also idempotent.
+    std::fs::write(&journal, serde_json::to_vec(&decision).unwrap()).unwrap();
+    drop(recovered);
+    LibraryStore::open(&root, &state).unwrap();
+    assert_eq!(git(&root, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    assert!(!journal.exists());
+}
+
+#[test]
+fn artifact_bundle_refusals_leave_files_index_and_commits_unchanged() {
+    use office_core::domain::artifact::Approver;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let state = dir.path().join("state");
+    let store = LibraryStore::open(&root, &state).unwrap();
+    let mut a = artifact_candidate();
+    a.approved.by = Approver::Routine;
+    assert_eq!(
+        store
+            .promote_artifact(&a, &artifact_files())
+            .unwrap_err()
+            .code(),
+        "artifact_routine_approval_refused"
+    );
+    a.approved.by = Approver::User;
+    let mut files = artifact_files();
+    files[1].path = "../../outside".into();
+    assert!(store.promote_artifact(&a, &files).is_err());
+    assert_eq!(store.document_count().unwrap(), 0);
+    assert_eq!(store.head_commit().unwrap(), None);
+    assert!(!state.join("library.pending-write.json").exists());
+    assert!(!root.join(a.path().unwrap()).exists());
+}

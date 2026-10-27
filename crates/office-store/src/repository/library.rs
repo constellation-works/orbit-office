@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use office_common::Sensitivity;
 use office_common::fs::{atomic::write_atomic, hash::sha256_file};
+use office_core::domain::artifact::{Artifact, ArtifactFile};
 use office_core::domain::settings::Settings;
 use office_core::domain::source::{
     RenderSource, SourceKind, format_conversation_entry, is_video_extension,
@@ -48,6 +49,8 @@ struct PendingWrite {
     token: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     original: Option<PendingOriginal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bundle: Option<Vec<ArtifactFile>>,
 }
 
 /// Upload bytes belong to the decision, never to the caller's temporary path.
@@ -64,6 +67,7 @@ struct PendingOriginal {
 /// a version-2 journal would silently change what the journal means, so
 /// recovery refuses it instead. Version 3 adds a document's original upload;
 /// earlier readers refuse that version rather than dropping its bytes.
+/// Version 4 binds an artifact document and every immutable companion byte.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPendingWrite {
@@ -76,15 +80,19 @@ struct RawPendingWrite {
     token: String,
     #[serde(default)]
     original: Option<PendingOriginal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bundle: Option<Vec<ArtifactFile>>,
 }
 
 impl RawPendingWrite {
     /// Apply the version gate and produce the replayable decision.
     fn into_pending(self, path: &Path) -> Result<PendingWrite> {
-        let kind = match (self.version, self.kind, &self.original) {
-            (1, None | Some(WriteKind::Document), None) => WriteKind::Document,
-            (2, Some(kind), None) => kind,
-            (3, Some(WriteKind::Document), Some(_)) => WriteKind::Document,
+        let kind = match (self.version, self.kind, &self.original, &self.bundle) {
+            (1, None | Some(WriteKind::Document), None, None) => WriteKind::Document,
+            (2, Some(WriteKind::Document), None, None) => WriteKind::Document,
+            (2, Some(WriteKind::Settings), None, None) => WriteKind::Settings,
+            (3, Some(WriteKind::Document), Some(_), None) => WriteKind::Document,
+            (4, Some(WriteKind::Artifact), None, Some(_)) => WriteKind::Artifact,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -99,6 +107,7 @@ impl RawPendingWrite {
             text: self.text,
             token: self.token,
             original: self.original,
+            bundle: self.bundle,
         })
     }
 }
@@ -109,6 +118,7 @@ enum WriteKind {
     #[default]
     Document,
     Settings,
+    Artifact,
 }
 
 impl LibraryStore {
@@ -448,7 +458,13 @@ impl LibraryStore {
         let settings = self.settings()?.with_setting(key, value)?;
         let text = settings.to_yaml()?;
         self.files.validate_settings_path()?;
-        let pending = self.decide(WriteKind::Settings, ".office/config.yaml", &text, None)?;
+        let pending = self.decide(
+            WriteKind::Settings,
+            ".office/config.yaml",
+            &text,
+            None,
+            None,
+        )?;
         self.finish(&pending)
     }
 
@@ -468,7 +484,13 @@ impl LibraryStore {
                 .with_route_check(endpoint, model, capabilities, verified_at)?;
         let text = settings.to_yaml()?;
         self.files.validate_settings_path()?;
-        let pending = self.decide(WriteKind::Settings, ".office/config.yaml", &text, None)?;
+        let pending = self.decide(
+            WriteKind::Settings,
+            ".office/config.yaml",
+            &text,
+            None,
+            None,
+        )?;
         self.finish(&pending)
     }
 
@@ -534,9 +556,102 @@ impl LibraryStore {
             kind: "document",
             value: relative.display().to_string(),
         })?;
-        let pending = self.decide(WriteKind::Document, relative, text, None)?;
+        let pending = self.decide(WriteKind::Document, relative, text, None, None)?;
         self.finish(&pending)?;
         self.files.read_document(Path::new(relative))
+    }
+
+    /// Promote an entire artifact while holding the writer lock across version
+    /// allocation, durable decision, byte publication, index and one commit.
+    pub fn promote_artifact(
+        &self,
+        candidate: &Artifact,
+        files: &[ArtifactFile],
+    ) -> Result<Artifact> {
+        candidate
+            .validate_bundle(files)
+            .map_err(office_core::Error::from)?;
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        self.require_initialized()?;
+        let history = self
+            .files
+            .read_artifact_markdown()?
+            .into_iter()
+            .map(|(path, text)| {
+                Artifact::from_document(&path, &text)
+                    .map_err(office_core::Error::from)
+                    .map_err(Error::from)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let path = candidate.path().map_err(office_core::Error::from)?;
+        let month = Path::new(&path)
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| Error::Journal {
+                path: self.journal_path(),
+            })?;
+        let occupied = self.files.entry_names(month)?;
+        let artifact = candidate
+            .next_version(&history, |id| {
+                occupied.iter().any(|name| name.eq_ignore_ascii_case(id))
+            })
+            .map_err(office_core::Error::from)?;
+        let relative = artifact.path().map_err(office_core::Error::from)?;
+        let text = artifact.to_markdown().map_err(office_core::Error::from)?;
+        self.validate_identity(&DocumentRecord::from_markdown(Path::new(&relative), &text))?;
+        let pending = self.decide(
+            WriteKind::Artifact,
+            &relative,
+            &text,
+            None,
+            Some(files.to_vec()),
+        )?;
+        self.finish(&pending)?;
+        Ok(artifact)
+    }
+
+    /// Read every artifact frontmatter file, without truncating series history.
+    pub fn artifact_documents(&self) -> Result<Vec<LibraryText>> {
+        self.read_ready()?;
+        Ok(self
+            .files
+            .read_artifact_markdown()?
+            .into_iter()
+            .map(|(path, markdown)| LibraryText {
+                path,
+                markdown: Some(markdown),
+            })
+            .collect())
+    }
+
+    fn validate_bundle(&self, pending: &PendingWrite) -> Result<()> {
+        let Some(files) = &pending.bundle else {
+            return Ok(());
+        };
+        if !matches!(pending.kind, WriteKind::Artifact)
+            || pending.version != 4
+            || pending.original.is_some()
+        {
+            return Err(Error::Journal {
+                path: self.journal_path(),
+            });
+        }
+        let artifact = Artifact::from_document(&pending.relative, &pending.text)
+            .map_err(office_core::Error::from)?;
+        artifact
+            .validate_bundle(files)
+            .map_err(office_core::Error::from)?;
+        let relative = Path::new(&pending.relative);
+        self.files.validate_document_path(relative)?;
+        let parent = relative.parent().ok_or_else(|| Error::Journal {
+            path: self.journal_path(),
+        })?;
+        for file in files {
+            self.files
+                .validate_relative_path(&parent.join(&file.path))?;
+        }
+        Ok(())
     }
 
     fn decide(
@@ -545,6 +660,7 @@ impl LibraryStore {
         relative: &str,
         text: &str,
         original: Option<PendingOriginal>,
+        bundle: Option<Vec<ArtifactFile>>,
     ) -> Result<PendingWrite> {
         let time = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| {
             Error::io(
@@ -554,15 +670,23 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: if original.is_some() { 3 } else { 2 },
+            version: if bundle.is_some() {
+                4
+            } else if original.is_some() {
+                3
+            } else {
+                2
+            },
             kind,
             root: self.library_root().into(),
             relative: relative.into(),
             text: text.into(),
             token: format!("{}-{}", std::process::id(), time.as_nanos()),
             original,
+            bundle,
         };
         self.validate_original(&pending)?;
+        self.validate_bundle(&pending)?;
         let bytes = serde_json::to_vec(&pending).map_err(|_| Error::Journal {
             path: self.journal_path(),
         })?;
@@ -629,7 +753,7 @@ impl LibraryStore {
         let raw: RawPendingWrite =
             serde_json::from_slice(&bytes).map_err(|_| Error::Journal { path: path.clone() })?;
         let pending = raw.into_pending(&path)?;
-        if !(1..=3).contains(&pending.version)
+        if !(1..=4).contains(&pending.version)
             || pending.root != self.library_root()
             || pending.token.is_empty()
             || !pending
@@ -644,6 +768,14 @@ impl LibraryStore {
                 self.require_initialized()?;
                 self.files
                     .validate_document_path(Path::new(&pending.relative))?;
+                self.validate_identity(&DocumentRecord::from_markdown(
+                    Path::new(&pending.relative),
+                    &pending.text,
+                ))?;
+            }
+            WriteKind::Artifact => {
+                self.require_initialized()?;
+                self.validate_bundle(&pending)?;
                 self.validate_identity(&DocumentRecord::from_markdown(
                     Path::new(&pending.relative),
                     &pending.text,
@@ -680,9 +812,36 @@ impl LibraryStore {
                 let record = self.files.read_document(relative)?;
                 self.index.upsert(&record)?;
             }
+            WriteKind::Artifact => {
+                self.validate_bundle(pending)?;
+                let files = pending.bundle.as_deref().ok_or_else(|| Error::Journal {
+                    path: self.journal_path(),
+                })?;
+                self.files.publish_artifact_bundle(
+                    Path::new(&pending.relative),
+                    &pending.text,
+                    files,
+                    &pending.token,
+                )?;
+                self.index
+                    .upsert(&self.files.read_document(Path::new(&pending.relative))?)?;
+            }
             WriteKind::Settings => self.files.write_settings(&pending.text)?,
         }
-        self.git.commit(&pending.relative, &pending.token)?;
+        let mut paths = vec![pending.relative.clone()];
+        if let Some(files) = &pending.bundle {
+            let parent = Path::new(&pending.relative)
+                .parent()
+                .ok_or_else(|| Error::Journal {
+                    path: self.journal_path(),
+                })?;
+            paths.extend(
+                files
+                    .iter()
+                    .map(|file| parent.join(&file.path).to_string_lossy().to_string()),
+            );
+        }
+        self.git.commit_paths(&paths, &pending.token)?;
         let path = self.journal_path();
         std::fs::remove_file(&path)
             .map_err(|e| Error::io("clear completed write journal", path, e))?;
@@ -933,7 +1092,7 @@ impl LibraryStore {
                 office_core::domain::source::merge_source_tags(&new_text, &request.tags)?
                     .unwrap_or(new_text);
             let pending = self
-                .decide(WriteKind::Document, path, &new_text, None)
+                .decide(WriteKind::Document, path, &new_text, None, None)
                 .map_err(office_core::Error::from)?;
             self.finish(&pending).map_err(office_core::Error::from)?;
             return Ok(SourceOutcome {
@@ -1158,7 +1317,7 @@ impl LibraryStore {
                 bytes,
             });
         let pending = self
-            .decide(WriteKind::Document, &rel_path, &markdown, original)
+            .decide(WriteKind::Document, &rel_path, &markdown, original, None)
             .map_err(office_core::Error::from)?;
         self.finish(&pending).map_err(office_core::Error::from)?;
         Ok(SourceOutcome {
@@ -1420,6 +1579,17 @@ fn dir_is_empty(path: &Path) -> bool {
 }
 
 impl office_core::ports::Library for LibraryStore {
+    fn promote_artifact(
+        &self,
+        artifact: &Artifact,
+        files: &[ArtifactFile],
+    ) -> office_core::Result<Artifact> {
+        Ok(Self::promote_artifact(self, artifact, files)?)
+    }
+    fn artifact_documents(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(Self::artifact_documents(self)?)
+    }
+
     fn read_document(&self, relative: &Path) -> office_core::Result<DocumentRecord> {
         Ok(Self::read_document(self, relative)?)
     }

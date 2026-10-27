@@ -83,6 +83,20 @@ pub fn not_initialized_error() -> Error {
 /// An adapter must override all operations; defaults support contexts that have
 /// no Library (for example the status-only dispatch scaffold).
 pub trait Library {
+    /// Publish a new immutable artifact bundle, assigning its series version
+    /// and unique id under the writer lock, then indexing and committing once.
+    fn promote_artifact(
+        &self,
+        _artifact: &crate::domain::artifact::Artifact,
+        _files: &[crate::domain::artifact::ArtifactFile],
+    ) -> Result<crate::domain::artifact::Artifact> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Every artifact frontmatter file, without a result limit, in path order.
+    fn artifact_documents(&self) -> Result<Vec<LibraryText>> {
+        Err(Error::LibraryUnavailable)
+    }
+
     /// Read the current document by Library-relative path, without a writer lock.
     fn read_document(&self, _relative: &Path) -> Result<DocumentRecord> {
         Err(Error::LibraryUnavailable)

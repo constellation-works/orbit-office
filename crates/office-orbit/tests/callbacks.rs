@@ -303,3 +303,41 @@ fn callback_descriptor_is_inherited_without_becoming_tool_input() {
     assert_eq!(receipt["input"], json!({}));
     drop(inherited);
 }
+
+#[test]
+fn artifact_reads_carry_one_mib_even_when_json_escaping_expands_the_payload() {
+    let stub = Stub::new();
+    let content = "\u{0001}".repeat(1_048_576);
+    let expected = json!({"content":content,"size":1_048_576});
+    stub.response(&expected);
+    let received = stub
+        .adapter()
+        .task_artifact_get(
+            json!({"id":"<id>","path":"report.txt"})
+                .as_object()
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(received, expected);
+}
+
+#[test]
+fn the_artifact_reply_allowance_keeps_other_stdout_and_all_stderr_bounded() {
+    let stub = Stub::new();
+    stub.response(&json!({"content":"x".repeat(512*1024+1)}));
+    assert!(
+        stub.adapter()
+            .task_show(json!({"id":"<id>"}).as_object().unwrap())
+            .is_err()
+    );
+    stub.raw_response(json!({"stdout":"{}","stderr":"x".repeat(512*1024+1)}));
+    assert!(
+        stub.adapter()
+            .task_artifact_get(
+                json!({"id":"<id>","path":"output.txt"})
+                    .as_object()
+                    .unwrap()
+            )
+            .is_err()
+    );
+}

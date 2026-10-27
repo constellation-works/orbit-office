@@ -21,7 +21,7 @@ const TIMEOUT: Duration = Duration::from_secs(30);
 pub struct CapturedOutput {
     /// Actual exit status, after the process group has been swept and reaped.
     pub status: ExitStatus,
-    /// Captured standard output, at most 512 KiB.
+    /// Captured standard output, within the selected stdout budget.
     pub stdout: Vec<u8>,
     /// Captured standard error, at most 512 KiB.
     pub stderr: Vec<u8>,
@@ -31,11 +31,34 @@ pub struct CapturedOutput {
 /// for protocols whose machine-readable errors arrive on stderr.
 #[cfg(unix)]
 pub fn run_captured(command: &mut Command, root: &Path) -> Result<CapturedOutput> {
-    run_captured_bounded(command, root, TIMEOUT, OUTPUT_LIMIT)
+    run_captured_bounded(command, root, TIMEOUT, OUTPUT_LIMIT, OUTPUT_LIMIT)
 }
 
 #[cfg(not(unix))]
 pub fn run_captured(_command: &mut Command, _root: &Path) -> Result<CapturedOutput> {
+    Err(Error::ProcessUnsupported)
+}
+
+/// Capture a protocol whose encoded success reply needs a larger stdout
+/// budget. Stderr retains the default 512 KiB bound, and the same 30-second
+/// deadline, process-group cleanup and bounded drains apply. The adapter
+/// chooses the budget from its protocol contract, never from caller input.
+#[cfg(unix)]
+pub fn run_captured_with_stdout_limit(
+    command: &mut Command,
+    root: &Path,
+    stdout_limit: u64,
+) -> Result<CapturedOutput> {
+    run_captured_bounded(command, root, TIMEOUT, stdout_limit, OUTPUT_LIMIT)
+}
+
+/// Unsupported-platform counterpart of the bounded protocol capture.
+#[cfg(not(unix))]
+pub fn run_captured_with_stdout_limit(
+    _command: &mut Command,
+    _root: &Path,
+    _stdout_limit: u64,
+) -> Result<CapturedOutput> {
     Err(Error::ProcessUnsupported)
 }
 
@@ -61,17 +84,16 @@ pub(crate) fn run_bounded(
     // Preserve run's established I/O error shape for existing adapters. The
     // captured protocol API exposes ProcessSpawn so callers can distinguish a
     // request never sent from one whose reply was lost.
-    let output =
-        run_captured_bounded(command, root, timeout, output_limit).map_err(
-            |error| match error {
-                Error::ProcessSpawn { source, .. } => Error::io("start subprocess", root, source),
-                other @ (Error::ProcessTimeout
-                | Error::ProcessOutputLimit
-                | Error::ProcessUnsupported
-                | Error::UnsafePath { .. }
-                | Error::Io { .. }) => other,
-            },
-        )?;
+    let output = run_captured_bounded(command, root, timeout, output_limit, output_limit).map_err(
+        |error| match error {
+            Error::ProcessSpawn { source, .. } => Error::io("start subprocess", root, source),
+            other @ (Error::ProcessTimeout
+            | Error::ProcessOutputLimit
+            | Error::ProcessUnsupported
+            | Error::UnsafePath { .. }
+            | Error::Io { .. }) => other,
+        },
+    )?;
     let text = String::from_utf8(output.stdout)
         .map_err(|e| Error::io("decode subprocess output", root, std::io::Error::other(e)))?;
     Ok((output.status, text))
@@ -83,6 +105,7 @@ fn run_captured_bounded(
     root: &Path,
     timeout: Duration,
     output_limit: u64,
+    stderr_limit: u64,
 ) -> Result<CapturedOutput> {
     use std::os::unix::process::CommandExt;
     command
@@ -114,7 +137,7 @@ fn run_captured_bounded(
         )
     })?;
     let mut out = Reader::start(stdout, Arc::clone(&limited), output_limit);
-    let mut err = Reader::start(stderr, Arc::clone(&limited), output_limit);
+    let mut err = Reader::start(stderr, Arc::clone(&limited), stderr_limit);
     let deadline = Instant::now() + timeout;
     let outcome = (|| {
         loop {
@@ -160,7 +183,7 @@ pub fn run(_command: &mut Command, _root: &Path) -> Result<(ExitStatus, String)>
     Err(Error::ProcessUnsupported)
 }
 
-/// Each stream reader owns at most OUTPUT_LIMIT+1 bytes and one result slot.
+/// Each stream reader owns at most its selected limit plus one byte and one result slot.
 /// The producer waits if the bounded result slot is full (one send per reader).
 struct Reader {
     receiver: mpsc::Receiver<std::io::Result<Vec<u8>>>,

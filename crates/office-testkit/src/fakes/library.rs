@@ -26,6 +26,7 @@ use std::path::PathBuf;
 /// A Library fake with explicit readiness and settings, and no host I/O.
 #[derive(Default)]
 pub struct FakeLibrary {
+    artifact_files: RefCell<BTreeMap<String, Vec<u8>>>,
     documents: RefCell<BTreeMap<String, DocumentRecord>>,
     texts: RefCell<BTreeMap<String, String>>,
     revisions: RefCell<BTreeMap<String, Vec<Revision>>>,
@@ -172,6 +173,47 @@ impl FakeLibrary {
 }
 
 impl Library for FakeLibrary {
+    fn promote_artifact(
+        &self,
+        candidate: &office_core::domain::artifact::Artifact,
+        files: &[office_core::domain::artifact::ArtifactFile],
+    ) -> Result<office_core::domain::artifact::Artifact> {
+        use office_core::domain::artifact::Artifact;
+        self.ready()?;
+        candidate.validate_bundle(files)?;
+        let history = self
+            .artifact_documents()?
+            .into_iter()
+            .map(|file| {
+                let text = file.markdown.ok_or(Error::LibraryUnavailable)?;
+                Ok(Artifact::from_document(&file.path, &text)?)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let artifact = candidate.next_version(&history, |_| false)?;
+        let path = artifact.path()?;
+        self.write_document(Path::new(&path), &artifact.to_markdown()?)?;
+        for file in files {
+            self.artifact_files.borrow_mut().insert(
+                format!("{}/{}", path.trim_end_matches("/artifact.md"), file.path),
+                file.bytes.clone(),
+            );
+        }
+        Ok(artifact)
+    }
+    fn artifact_documents(&self) -> Result<Vec<LibraryText>> {
+        self.ready()?;
+        Ok(self
+            .texts
+            .borrow()
+            .iter()
+            .filter(|(path, _)| path.starts_with("artifacts/") && path.ends_with("/artifact.md"))
+            .map(|(path, text)| LibraryText {
+                path: path.clone(),
+                markdown: Some(text.clone()),
+            })
+            .collect())
+    }
+
     fn read_document(&self, relative: &Path) -> Result<DocumentRecord> {
         self.ready()?;
         self.documents

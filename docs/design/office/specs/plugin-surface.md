@@ -251,3 +251,13 @@ default pack list then becomes `[kt, meetings]`.
 - [ORB-18838] — renamed the scaffold README's KT routine from `office-meeting-inbox` to `office-kt-inbox`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
+
+### Artifact callback reply budget
+
+The default Orbit callback capture remains 512 KiB per stream with a
+30-second deadline. `orbit.task.artifact.get` alone allows stdout up to
+6 MiB plus 64 KiB: a 1 MiB file can expand sixfold when JSON escapes control
+bytes, plus the reply envelope. Its stderr stays at 512 KiB. The shared
+supervisor still bounds both streams and reaps the whole process group.
+Promotion separately enforces the decoded 1 MiB per-file limit before a
+Library write; increasing the transport allowance does not raise that limit.

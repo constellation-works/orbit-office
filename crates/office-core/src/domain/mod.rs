@@ -3,7 +3,7 @@
 //! that needs an area fills it (ARCHITECTURE.md; the reservation is the
 //! STD-02@3 §R17 deviation recorded in 4_decisions.md).
 
-mod artifact;
+pub mod artifact;
 mod bootstrap;
 pub mod endpoint;
 pub mod knowledge;

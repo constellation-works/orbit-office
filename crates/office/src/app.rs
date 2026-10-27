@@ -163,6 +163,17 @@ impl RealLibrary {
 }
 
 impl Library for RealLibrary {
+    fn promote_artifact(
+        &self,
+        artifact: &office_core::domain::artifact::Artifact,
+        files: &[office_core::domain::artifact::ArtifactFile],
+    ) -> office_core::Result<office_core::domain::artifact::Artifact> {
+        Ok(self.store()?.promote_artifact(artifact, files)?)
+    }
+    fn artifact_documents(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(self.store()?.artifact_documents()?)
+    }
+
     fn read_document(&self, relative: &Path) -> office_core::Result<DocumentRecord> {
         Ok(LibraryStore::read_document(&self.store()?, relative)?)
     }

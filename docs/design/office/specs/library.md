@@ -231,6 +231,64 @@ tags: [client:acme]
 - **`report`** in the series `digest-daily` is the daily digest, the one artifact promoted without review (`approved.by: routine`; [sessions.md](./sessions.md#daily-digest)).
 - **`data`** (csv, json) records its schema in the summary, so later tasks can use it without opening it.
 
+**Promotion contract.** `office.artifact-promote` takes
+`{"task":"<id>","edited":false}` and an optional `manifest` task-artifact
+path (default `artifact-manifest.json`). The MCP-hidden call is the user's
+approval action; it accepts no approver, crew, version or approval timestamp
+in input. The task must be in `review` or `done`. Its closed JSON manifest is:
+
+```json
+{
+  "kind": "report",
+  "title": "Renewal research",
+  "summary": "Approved findings",
+  "files": ["report.md", "data/prices.csv"],
+  "series": "renewal-research",
+  "cites": ["dom-project-acme-renewal"],
+  "tags": ["client:acme"],
+  "runbook": "rb-pricing-research",
+  "sensitivity": "normal"
+}
+```
+
+`kind`, `title`, `files` and `series` are required. The remaining fields
+are optional; unknown fields are refused. Files name existing task artifacts
+and keep their relative names inside the new artifact directory. Each file,
+including the manifest, is at most 1 MiB. Text and base64-encoded binary
+payloads are copied losslessly. Absolute paths, traversal, hidden components,
+backslashes, duplicate names, file/directory conflicts and any companion
+named `artifact.md` are refused. The manifest is metadata, not an output
+file. A task with no artifacts returns `task_has_no_artifacts`; invalid
+metadata returns `invalid_artifact`, oversized files `artifact_too_large`,
+invalid payloads `artifact_payload_invalid`, and an unreviewable task
+`task_not_reviewable`. All task files are read before publication, so a
+callback failure writes nothing to the Library.
+
+Promotion stamps `approved.by: user`, the current approval time, and `edited`
+(default false). `produced_by.crew` and `produced_by.at` preserve the source
+task's recorded crew and update timestamp; unknown values stay null. Its
+runbook comes from the manifest. Cited documents must exist, and their
+sensitivity raises the artifact's sensitivity when necessary. Version and
+collision-free id allocation happen under the writer lock. A journal covers
+the metadata and every file's exact bytes; recovery finishes that same
+version and commit after an interruption. Older artifacts stay unchanged.
+The shared domain refuses routine approval with
+`artifact_routine_approval_refused` unless both kind `report` and series
+`digest-daily` match, including when loading artifact frontmatter.
+
+`office.artifact-show` takes `{"id":"art-YYYYMMDD-<slug>"}` and returns the
+complete artifact metadata, its Library-relative `path`, file `name`/`path`
+pairs, `series_history` newest version first, and indexed `backlinks` with
+the same shape as knowledge-show. A missing artifact returns
+`artifact_not_found`. Companion files are listed, never executed or sent to
+a model. Series enumeration is not limited by the search result cap.
+
+The artifact conformance goldens include successful and refused requests.
+Their source task and fixed clock are fixtures: run
+`cargo test -p office-tools --test artifacts` to replay both files through
+public dispatch with the Orbit and Library fakes, offline and without
+secrets. They require that fixture setup when used in another harness.
+
 **Compounding.** `office.attach` can attach earlier artifacts in the same
 series, or approved artifacts of the same kind, as examples. Last quarter's
 approved review, or the QBR deck the user accepted unedited, becomes the
