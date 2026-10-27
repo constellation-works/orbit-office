@@ -134,7 +134,26 @@ fn offline_run_has_only_allowlisted_environment_literal_argv_and_readonly_inputs
     assert_eq!(record["args"], json!(f.execution.request.args));
     assert_eq!(record["readonly"], true);
     let env = record["env"].as_object().unwrap();
-    let mut keys: Vec<_> = env.keys().map(String::as_str).collect();
+    // The fake `uv` runs under `/usr/bin/python3`, which on macOS is the
+    // Xcode shim: it injects these keys after the runner's cleared env, so
+    // they are not something the runner passed.
+    let shim: &[&str] = if cfg!(target_os = "macos") {
+        &[
+            "CPATH",
+            "LC_CTYPE",
+            "LIBRARY_PATH",
+            "MANPATH",
+            "SDKROOT",
+            "__CF_USER_TEXT_ENCODING",
+        ]
+    } else {
+        &[]
+    };
+    let mut keys: Vec<_> = env
+        .keys()
+        .map(String::as_str)
+        .filter(|key| !shim.contains(key))
+        .collect();
     keys.sort();
     assert_eq!(
         keys,

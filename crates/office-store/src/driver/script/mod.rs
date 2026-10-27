@@ -303,9 +303,14 @@ impl ScriptRunner for ScriptStore {
                 checked_path(&self.library, relative)?;
             }
             private_dir(&self.staging)?;
+            // Stage under the physical path: the Library port accepts a staged
+            // file only under its canonical root, and an aliased ancestor
+            // (macOS `/var` -> `/private/var`) would otherwise fail that check.
+            let staging =
+                fs::canonicalize(&self.staging).map_err(|_| adapter("resolve output staging"))?;
             let stage_guard = tempfile::Builder::new()
                 .prefix("script-output-")
-                .tempdir_in(&self.staging)
+                .tempdir_in(&staging)
                 .map_err(|_| adapter("stage output"))?;
             let stage = stage_guard.path();
             for name in &files {

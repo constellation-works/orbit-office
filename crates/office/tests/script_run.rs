@@ -199,8 +199,23 @@ fn binary_composes_safe_runner_and_files_one_task_with_outputs_and_manifests() {
     );
     let record: Value =
         serde_json::from_slice(&fs::read(dir.join("tmp/record.json")).unwrap()).unwrap();
-    let env = record["env"].as_object().unwrap();
-    assert_eq!(env.len(), 7);
+    let mut env = record["env"].as_object().unwrap().clone();
+    // The fake `uv` runs under `/usr/bin/python3`, which on macOS is the
+    // Xcode shim: it injects these keys after the runner's cleared env, so
+    // they are not something the runner passed.
+    if cfg!(target_os = "macos") {
+        for key in [
+            "CPATH",
+            "LC_CTYPE",
+            "LIBRARY_PATH",
+            "MANPATH",
+            "SDKROOT",
+            "__CF_USER_TEXT_ENCODING",
+        ] {
+            env.remove(key);
+        }
+    }
+    assert_eq!(env.len(), 7, "{env:?}");
     assert!(!env.contains_key("AMBIENT_SECRET"));
     assert!(!env.contains_key("ORBIT_BIN"));
     assert!(!env.contains_key("ORBIT_RUN_ID"));
