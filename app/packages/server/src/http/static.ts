@@ -86,12 +86,19 @@ export async function serveStatic(
     if (file === undefined) continue;
     const info = await stat(file);
     const type = CONTENT_TYPES[extname(file).toLowerCase()] ?? "application/octet-stream";
-    response.writeHead(200, {
+    const headers: Record<string, string | number> = {
       "content-type": type,
       "content-length": info.size,
       "cache-control": "no-cache",
       "x-content-type-options": "nosniff",
-    });
+    };
+    if (decoded.endsWith("/sw.js")) {
+      // The worker compiled from `web/src/pwa/sw.ts` is served below the
+      // root (`web/dist/pwa/sw.js`); this header lets it control the whole
+      // app scope, which Chrome's install criteria require.
+      headers["service-worker-allowed"] = "/";
+    }
+    response.writeHead(200, headers);
     if (request.method === "HEAD") {
       response.end();
       return true;

@@ -38,6 +38,7 @@ async function startTestServer(t) {
   await writeFile(join(staticDir, "index.html"), "<!doctype html><title>Office</title><h1>Office</h1>\n");
   await writeFile(join(staticDir, "style.css"), "body { margin: 0; }\n");
   await writeFile(join(distDir, "main.js"), "console.log('office');\n");
+  await writeFile(join(distDir, "sw.js"), "self.addEventListener('fetch', () => {});\n");
   await writeFile(join(root, "secret.txt"), "not served\n");
   const server = createServer(createHandler({ staticDir, distDir }));
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -64,6 +65,17 @@ test("the UI is served at / and compiled assets from dist", async (t) => {
   const css = await request(port, { path: "/style.css", headers: { host } });
   assert.equal(css.status, 200);
   assert.match(css.headers["content-type"], /^text\/css/);
+});
+
+test("a worker script response allows the app scope; other scripts do not", async (t) => {
+  const { port, host } = await startTestServer(t);
+  const worker = await request(port, { path: "/sw.js", headers: { host } });
+  assert.equal(worker.status, 200);
+  assert.equal(worker.headers["service-worker-allowed"], "/");
+
+  const script = await request(port, { path: "/main.js", headers: { host } });
+  assert.equal(script.status, 200);
+  assert.equal(script.headers["service-worker-allowed"], undefined);
 });
 
 test("healthz answers on a loopback host and 404s unknown paths", async (t) => {

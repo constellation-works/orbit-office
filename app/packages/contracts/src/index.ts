@@ -5,4 +5,4 @@
  * types join here, generated from the plugin's JSON Schemas, as tools are
  * built.
  */
-export type { FeatureName, Health, ScreenId, Status } from "./api.js";
+export type { AgentCliStatus, FeatureName, Health, ScreenId, SettingsStatus, Status } from "./api.js";

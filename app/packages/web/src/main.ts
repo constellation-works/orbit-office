@@ -4,7 +4,10 @@
  * ids, crews, runs or raw statuses. There is no Chat screen; conversation
  * happens in the user's agent CLI.
  */
+import { registerServiceWorker } from "./pwa/register.js";
 import { navigableScreens, screenForHash } from "./router.js";
+
+registerServiceWorker();
 
 function drawNav(nav: HTMLElement): void {
   nav.replaceChildren(
