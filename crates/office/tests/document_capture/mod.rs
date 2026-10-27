@@ -230,6 +230,57 @@ fn pdf_pages_ocr_and_converter_refusals_are_atomic() {
 }
 
 #[test]
+fn office_xml_entities_decode_and_unknown_entities_are_refused() {
+    let env = initialized();
+    let expected = "Tom & Jerry < Spike & Tyke";
+    let docx = upload(
+        &env,
+        "entities.docx",
+        include_bytes!("../fixtures/capture/entities.docx"),
+    );
+    let docx_body = show(&env, &docx, None)["output"]["body"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(docx_body.contains(expected), "{docx_body}");
+    for raw in ["&amp;", "&lt;", "&#38;"] {
+        assert!(!docx_body.contains(raw), "left {raw} encoded: {docx_body}");
+    }
+
+    let pptx = upload(
+        &env,
+        "entities.pptx",
+        include_bytes!("../fixtures/capture/entities.pptx"),
+    );
+    let pptx_body = show(&env, &pptx, None)["output"]["body"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(pptx_body.contains(expected), "{pptx_body}");
+    for raw in ["&amp;", "&lt;", "&#38;"] {
+        assert!(!pptx_body.contains(raw), "left {raw} encoded: {pptx_body}");
+    }
+
+    let head = git(&env.library(), &["rev-parse", "HEAD"]);
+    let source_entries = std::fs::read_dir(env.library().join("sources"))
+        .unwrap()
+        .count();
+    let refused = upload(
+        &env,
+        "unknown-entity.docx",
+        include_bytes!("../fixtures/capture/unknown-entity.docx"),
+    );
+    assert_eq!(refused["error"]["code"], "document_invalid", "{refused}");
+    assert_eq!(git(&env.library(), &["rev-parse", "HEAD"]), head);
+    assert_eq!(
+        std::fs::read_dir(env.library().join("sources"))
+            .unwrap()
+            .count(),
+        source_entries
+    );
+}
+
+#[test]
 fn malformed_or_unsafe_office_archives_leave_no_sources_or_commits() {
     let env = initialized();
     let head = git(&env.library(), &["rev-parse", "HEAD"]);
