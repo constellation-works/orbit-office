@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Feature } from "../../http/types.js";
 import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
+import { defaultPluginRoots, readDefinitionNames, type DefinitionNames } from "./definitions.js";
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -28,30 +29,90 @@ function lastFire(value: unknown): { kind: "fired" | "skipped"; at: string; task
   return { kind: value.kind, at: value.at, task_status: typeof value.task_status === "string" ? value.task_status : null };
 }
 const kinds = ["video", "meeting", "chat", "email", "doc", "receipt", "bill", "conversation", "note"];
-export function createRoutinesFeature(client: OrbitToolClient): Feature {
+
+async function routineListing(client: OrbitToolClient): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await client.callTool("orbit.routine.control", { action: "list", offset, limit: 50 });
+    if (!object(page) || !Array.isArray(page.items) || !object(page.pagination) ||
+        !Array.isArray(page.notes) || page.notes.length > 0) throw new Error("invalid routine listing");
+    for (const row of page.items) {
+      if (!object(row) || typeof row.name !== "string" || typeof row.description !== "string" ||
+          typeof row.enabled !== "boolean" || typeof row.effective !== "boolean" ||
+          typeof row.target !== "string" || !object(row.schedule)) throw new Error("invalid routine listing");
+      rows.push(row);
+    }
+    const next = page.pagination.next_offset;
+    if (next === null) return rows;
+    if (typeof next !== "number" || !Number.isSafeInteger(next) || next !== offset + page.items.length || next <= offset) {
+      throw new Error("invalid routine pagination");
+    }
+    offset = next;
+    if (offset >= 10000) throw new Error("routine listing exceeds snapshot limit");
+  }
+}
+
+export function createRoutinesFeature(client: OrbitToolClient, options: { pluginRoots?: readonly string[] } = {}): Feature {
+  let names: DefinitionNames | undefined;
+  try { names = readDefinitionNames(options.pluginRoots ?? defaultPluginRoots()); }
+  catch { /* A bad shipped tree makes this feature unavailable, not the other screens. */ }
+  const definitions = (): DefinitionNames => {
+    if (!names) throw new Error("shipped definitions unavailable");
+    return names;
+  };
   return { name: "routines", status: "built", routes: [
     { method: "GET", path: "/api/routines", async handle(_request, response) {
       try {
+        const shipped = definitions();
         const list = await client.callTool("orbit.auto_task.list", {});
         if (!Array.isArray(list)) throw new Error("invalid listing");
         const routines = list.map((row: unknown) => {
           if (!object(row) || typeof row.name !== "string" || typeof row.description !== "string" ||
               typeof row.effective_enabled !== "boolean" || !object(row.schedule)) throw new Error("invalid listing");
-          return { name: row.name, description: row.description, schedule: row.schedule,
+          return { kind: "auto_task", name: row.name, description: row.description, schedule: row.schedule,
             enabled: row.effective_enabled, skipped_reason: typeof row.skipped_reason === "string" ? row.skipped_reason : null,
             last_fire: lastFire(row.last_fire) };
         });
-        send(response, 200, { routines });
+        let jobs: Record<string, unknown>[] = [];
+        let routinesUnavailable = false;
+        try { jobs = await routineListing(client); }
+        catch (error) {
+          if (!object(error) || error.code !== "not_permitted") throw error;
+          routinesUnavailable = true;
+        }
+        const visible = routines.filter(row => shipped.auto_tasks.has(row.name));
+        const visibleJobs = jobs.filter(row => shipped.routines.has(String(row.name)));
+        send(response, 200, { routines: [...visible, ...visibleJobs.map(row => ({
+          kind: "routine", name: row.name, description: row.description, schedule: row.schedule,
+          enabled: row.effective, skipped_reason: typeof row.toggle_reason === "string" ? row.toggle_reason : null,
+          last_fire: object(row.last_fire) && typeof row.last_fire.at === "string" ? {
+            kind: "fired", at: row.last_fire.at, task_status: null,
+            run_state: typeof row.last_fire.state === "string" ? row.last_fire.state : "unknown",
+          } : null,
+        }))], hidden_count: list.length - visible.length + jobs.length - visibleJobs.length,
+          routines_unavailable: routinesUnavailable });
       } catch { send(response, 502, { error: "unavailable" }); }
     } },
     { method: "POST", path: "/api/routines/toggle", async handle(request, response) {
       try {
         const input = await body(request);
-        if (!object(input) || Object.keys(input).some(key => !["name", "enabled"].includes(key)) ||
-            typeof input.name !== "string" || !input.name || typeof input.enabled !== "boolean") {
+        if (!object(input) || Object.keys(input).some(key => !["name", "enabled", "kind"].includes(key)) ||
+            typeof input.name !== "string" || !input.name || typeof input.enabled !== "boolean" ||
+            !(input.kind === undefined || input.kind === "auto_task" || input.kind === "routine")) {
           send(response, 400, { error: "invalid_input" }); return;
         }
-        await client.callTool("orbit.auto_task.update", { name: input.name, enabled: input.enabled });
+        const kind = input.kind === "routine" ? "routine" : "auto_task";
+        if (!(kind === "routine" ? definitions().routines : definitions().auto_tasks).has(input.name)) {
+          send(response, 400, { error: "invalid_input" }); return;
+        }
+        if (kind === "routine") {
+          const rows = await routineListing(client);
+          const row = rows.find(row => row.name === input.name);
+          if (!row) throw new Error("routine unavailable");
+          await client.callTool("orbit.routine.control", { action: "toggle", name: input.name,
+            expected_enabled: row.enabled, enabled: input.enabled, target: row.target });
+        } else await client.callTool("orbit.auto_task.update", { name: input.name, enabled: input.enabled });
         send(response, 200, { ok: true });
       } catch { send(response, 502, { error: "unavailable" }); }
     } },

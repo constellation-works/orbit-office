@@ -11,8 +11,9 @@ import { styles } from "./style.js";
 
 export { scheduleWords } from "./schedule.js";
 
-interface LastFire { kind: "fired" | "skipped"; at: string; task_status: string | null }
+interface LastFire { kind: "fired" | "skipped"; at: string; task_status: string | null; run_state?: string }
 interface Routine {
+  kind?: "auto_task" | "routine";
   name: string;
   description: string;
   schedule: Record<string, unknown>;
@@ -20,6 +21,7 @@ interface Routine {
   skipped_reason: string | null;
   last_fire?: LastFire | null;
 }
+interface Listing { routines: Routine[]; hidden_count: number; routines_unavailable: boolean }
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text: string, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -113,13 +115,15 @@ function lastCell(item: Routine, now: Date): HTMLElement {
     node.append(main, element("span", "It was not due to run then.", "routine-cell-sub"));
     return node;
   }
-  const words = fire.task_status === null ? "Its task was removed" : TASK_WORDS[fire.task_status] ?? "Ran";
+  const words = fire.run_state !== undefined
+    ? ({ completed: "Finished", success: "Finished", failed: "Failed", running: "Working on it", stopped: "Stopped", pending: "Queued" }[fire.run_state] ?? "Ran")
+    : fire.task_status === null ? "Its task was removed" : TASK_WORDS[fire.task_status] ?? "Ran";
   main.append(element("span", "", `routine-dot routine-dot--${taskTone(fire.task_status)}`), element("span", `Ran ${relativeWords(at, now)}`));
   node.append(main, element("span", words, "routine-cell-sub"));
   return node;
 }
 
-function routineRow(item: Routine, now: Date, onChanged: (routines: Routine[]) => void): HTMLElement {
+function routineRow(item: Routine, now: Date, onChanged: (listing: Listing) => void): HTMLElement {
   const row = element("article", "", "routine-row");
   const toggle = document.createElement("input");
   toggle.type = "checkbox";
@@ -141,13 +145,13 @@ function routineRow(item: Routine, now: Date, onChanged: (routines: Routine[]) =
     const desired = toggle.checked; toggle.disabled = true; message.textContent = "";
     void (async () => {
       try {
-        await postJson("/api/routines/toggle", { name: item.name, enabled: desired });
-        const latest = await getJson<{ routines: Routine[] }>("/api/routines");
-        const updated = latest.routines.find(routine => routine.name === item.name);
+        await postJson("/api/routines/toggle", { kind: item.kind ?? "auto_task", name: item.name, enabled: desired });
+        const latest = await getJson<Listing>("/api/routines");
+        const updated = latest.routines.find(routine => routine.name === item.name && routine.kind === item.kind);
         if (!updated) throw new Error("routine unavailable");
         toggle.checked = updated.enabled; item.enabled = updated.enabled;
         requestRailRefresh();
-        onChanged(latest.routines);
+        onChanged(latest);
       } catch {
         toggle.checked = item.enabled; message.textContent = "Could not confirm this change. Refresh and try again.";
       } finally { toggle.disabled = false; }
@@ -158,7 +162,7 @@ function routineRow(item: Routine, now: Date, onChanged: (routines: Routine[]) =
   return row;
 }
 
-function group(tone: "on" | "off", title: string, hint: string, items: readonly Routine[], now: Date, onChanged: (routines: Routine[]) => void): HTMLElement {
+function group(tone: "on" | "off", title: string, hint: string, items: readonly Routine[], now: Date, onChanged: (listing: Listing) => void): HTMLElement {
   const section = element("section", "", "routine-group");
   section.setAttribute("aria-label", title);
   const head = element("div", "", "routine-group-head");
@@ -216,9 +220,10 @@ function nextHour(routines: readonly Routine[], now: Date): HTMLElement {
   return strip;
 }
 
-function draw(root: HTMLElement, routines: Routine[]): void {
+function draw(root: HTMLElement, listing: Listing): void {
+  const { routines } = listing;
   const now = new Date();
-  const redraw = (latest: Routine[]): void => draw(root, latest);
+  const redraw = (latest: Listing): void => draw(root, latest);
   const page = element("section", "", "routines");
   const style = document.createElement("style");
   style.textContent = styles;
@@ -229,21 +234,23 @@ function draw(root: HTMLElement, routines: Routine[]): void {
   titles.append(element("h1", "Routines"), element("p", "Work that runs for you on a schedule. Results land in Today.", "intro"));
   header.append(titles, element("span", `${on.length} on of ${routines.length}`, "routines-total"));
   page.append(style, header);
+  page.append(element("p", `${listing.hidden_count} Orbit developer routines hidden`, "routines-hidden"));
+  if (listing.routines_unavailable) page.append(element("p", "Some routines are unavailable with this connection. The hidden count covers only the routines this connection can read.", "intro"));
   if (!routines.length) page.append(element("p", "No routines are available.", "intro"));
   else page.append(
     nextHour(routines, now),
     group("on", "On", "runs on its schedule on this computer", on, now, redraw),
     group("off", "Paused", "switched off — scheduled times are skipped", off, now, redraw),
   );
-  page.append(element("p", "Background jobs that keep the Library tidy are managed in Orbit.", "routines-footnote"), retentionForm());
+  page.append(retentionForm());
   root.replaceChildren(page);
 }
 
 async function render(root: HTMLElement): Promise<void> {
   root.replaceChildren(element("p", "Loading routines."));
   try {
-    const data = await getJson<{ routines: Routine[] }>("/api/routines");
-    draw(root, data.routines);
+    const data = await getJson<Listing>("/api/routines");
+    draw(root, data);
   } catch { root.replaceChildren(element("p", "Routines are unavailable. Try again in a moment.")); }
 }
 

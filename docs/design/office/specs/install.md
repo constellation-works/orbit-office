@@ -1,6 +1,6 @@
 ---
 type: design
-summary: "Spec: install script — one idempotent command that installs Orbit and a pinned Python, sets up git and the workspace, enables the plugin, scaffolds the Library and installs the app"
+summary: "Spec: install script — one idempotent command that installs the Orbit Office distribution, its Orbit engine, component plugins, workspace, Library and app"
 last_validated: 2026-10-27
 ---
 
@@ -19,6 +19,30 @@ different folders. The app and the plugin export are unpacked to the per-user da
 Linux), never inside the workspace. The tools the script installs for agents (`uv` and a
 pinned Python) go in `~/.local/share/orbit-office/tools` on both systems, a path with no
 spaces, so script shebangs that name the interpreter keep working.
+
+## Office workspace preset (pending Orbit support)
+
+Orbit Office is a distribution of Orbit: an app built on Orbit as its engine.
+Installation assembles the app and the `office`, `gateway` and optional `cloudcli`
+component plugins. The office workspace preset is follow-up work that depends on
+Orbit's workspace-presets contract; this change only filters the app's Routines view.
+
+Once Orbit's workspace-presets support is available, the distribution will ship
+an office preset in the supported format. It must select `seeding.routines: none`
+and `seeding.auto_tasks: none`, enable `office-daily-digest`, `office-kt-inbox` and
+`office-signals` by name, and leave `office-bootstrap` under the confirmation
+rules in [library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation).
+`office init` and this installer must apply that preset through Orbit's workspace
+initialization interface. A fresh temporary workspace must then demonstrate that
+no Orbit shipped developer routines or auto-tasks were seeded and that the
+selected office definitions are enabled.
+
+**Blocked on Orbit's preset contract.** There is no preset file or preset
+application in the current installer. Initialization still uses ordinary Orbit
+workspace defaults. Do not replace the missing policy by deleting those defaults
+one by one. This section describes pending work, not an available install option.
+
+## Installation steps
 
 **Steps:**
 
@@ -152,7 +176,9 @@ spaces, so script shebangs that name the interpreter keep working.
    adjacent `app/` tree (`npm run build` whenever `packages/server/dist/main.js` is missing
    or unrunnable, whatever an earlier marker claims). Without an adjacent tree,
    `ORBIT_OFFICE_APP_BUNDLE` selects an unpacked app bundle containing
-   `packages/server/dist/main.js` and its runtime files; the bundle is copied to
+   `packages/server/dist/main.js` and its runtime files, including the shipped
+   `office` and `gateway` manifests and definition trees at
+   `plugins/{office,gateway}/.orbit-plugin` (see [web-app.md](./web-app.md#distribution-routines)); the bundle is copied to
    `app/` under the per-user data folder. With neither a tree nor a bundle, the step
    stops before any service file is written or enabled and names the missing
    entrypoint and both remedies (run from a clone, or set `ORBIT_OFFICE_APP_BUNDLE`).

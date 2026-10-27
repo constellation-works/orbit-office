@@ -1,13 +1,21 @@
 # orbit-office
 
-Local-first office work on [Orbit](https://github.com/constellation-works/orbit), for
-any office worker, software engineers included. An Orbit plugin (`office`, Rust) and a
-standalone web app (TypeScript) turn onboarding material, hour-long knowledge-transfer
+Orbit Office is a distribution of [Orbit](https://github.com/constellation-works/orbit):
+an app built on Orbit as its engine. It brings local-first office work to any office
+worker, software engineers included. The standalone web app (TypeScript) and its
+`office` plugin (Rust) turn onboarding material, hour-long knowledge-transfer
 videos, pasted chats and other sources into a cited Library (KT videos come back as a
 chaptered index with the tangents folded away), to-dos for you and for agents,
 evidence-backed proposals and generated reviews. Private material can go to Meta's
 open-weights Muse Spark Open on an endpoint you choose instead of the hosted API.
 Built with Muse Spark Open.
+
+The distribution combines the app with the `office` and `gateway` component plugins,
+and optionally `cloudcli`. Its planned office workspace preset selects the initial
+configuration and automation; integration awaits Orbit's preset support
+([installation spec](docs/design/office/specs/install.md#office-workspace-preset-pending-orbit-support)).
+See the [glossary](docs/design/office/references/glossary.md) for distribution,
+component and preset.
 
 > **Pre-existing vs built for the hackathon:** Orbit is a pre-existing open-source
 > agent runtime (MIT), used here as a labelled dependency pinned to a tested commit
@@ -57,8 +65,8 @@ not the exit code), 1 when a command fails and 2 on a usage error.
 
 Tested against Orbit `0.34.0`. Orbit is not vendored. The install script
 (`install.sh`, specified in `docs/design/office/specs/install.md`) installs
-it from npm when it is missing; by hand, install it separately, then add this
-plugin from a fresh export of a commit (see `plugin/README.md`).
+it from npm when it is missing; by hand, install it separately, then add the
+`office` component plugin from a fresh export of a commit (see `plugin/README.md`).
 
 ## Development
 

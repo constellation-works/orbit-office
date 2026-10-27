@@ -32,8 +32,9 @@
  * the service templates, because that would be a standing operator grant
  * to a login service. Until an Orbit-side decision delivers the operator
  * capability to the installed app by another mechanism,
- * `orbit.routine.control` returns `capability_denied` to the app; the
- * app instead manages auto-tasks using the permitted list and update tools.
+ * `orbit.routine.control` returns `capability_denied` to the app. Routines
+ * reports that scheduled routines are unavailable while keeping the permitted
+ * auto-task listing and updates available.
  * The same applies to
  * `orbit.auto_task.mint`: `orbit tool show orbit.auto_task.mint` states
  * its `acknowledge_unconditional` acknowledgment "requires operator

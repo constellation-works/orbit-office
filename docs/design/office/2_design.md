@@ -7,8 +7,8 @@ status: Draft
 feature: office
 doc_role: design
 type: design
-summary: How the system fits together — Orbit, the Rust plugin backend, the web app as the user's console, and the user's agent CLI as orchestrator.
-tags: [office, plugin, orbit, architecture]
+summary: How the Orbit Office distribution fits together — Orbit as engine, component plugins, the web app as the user's console, and the user's agent CLI as orchestrator.
+tags: [office, distribution, orbit, architecture]
 paths: ["crates/**", "plugin/**", "app/**"]
 related_features: [office]
 related_artifacts: [ORB-16585]
@@ -20,6 +20,11 @@ Source: spec §5, §6.6, §8, §13 and §18. Mechanism contracts live in
 `specs/`; this doc is the map between them.
 
 ## 1. System shape
+
+Orbit Office is a distribution of Orbit: an app built on Orbit as its engine.
+Its component plugins are `office`, `gateway` and optional `cloudcli`. A planned
+office workspace preset supplies configuration and automation defaults once Orbit
+supports presets ([install spec](./specs/install.md#office-workspace-preset-pending-orbit-support)).
 
 ```
 ┌──────────────────────────── user's machine ────────────────────────────┐

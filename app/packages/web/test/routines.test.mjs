@@ -26,7 +26,7 @@ test("screen displays effective state, skip reason and retention refusal", async
   globalThis.document = { createElement: tag => new Element(tag) };
   const calls = []; let enabled = false;
   globalThis.fetch = async (path, options = {}) => {
-    if (path === "/api/routines") return new Response(JSON.stringify({ routines: [{ name: "meeting-sweep", description: "process meetings", schedule: { every_minutes: 15 }, enabled, skipped_reason: "seeded by plugin:x, which is switched off in this workspace" }] }));
+    if (path === "/api/routines") return new Response(JSON.stringify({ hidden_count: 35, routines_unavailable: false, routines: [{ kind: "auto_task", name: "meeting-sweep", description: "process meetings", schedule: { every_minutes: 15 }, enabled, skipped_reason: "seeded by plugin:x, which is switched off in this workspace" }] }));
     calls.push([path, JSON.parse(options.body)]);
     if (path.endsWith("toggle")) { enabled = true; return new Response('{}'); }
     return new Response(JSON.stringify({ error: "refused", reason: "Retention must be positive." }), { status: 400 });
@@ -36,6 +36,7 @@ test("screen displays effective state, skip reason and retention refusal", async
     assert.match(root.textContent, /Meeting sweep/);
     assert.match(root.textContent, /process meetings/);
     assert.match(root.textContent, /Every 15 minutes/);
+    assert.match(root.textContent, /35 Orbit developer routines hidden/);
     assert.match(root.textContent, /Its plugin is switched off in this workspace/);
     // No recorded fire reads as "Never", not as a run that happened.
     assert.match(root.textContent, /Never/);
@@ -44,7 +45,8 @@ test("screen displays effective state, skip reason and retention refusal", async
     assert.equal(checkbox.checked, false); checkbox.checked = true; checkbox.listeners.change();
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(checkbox.checked, true);
-    assert.deepEqual(calls[0], ["/api/routines/toggle", { name: "meeting-sweep", enabled: true }]);
+    assert.deepEqual(calls[0], ["/api/routines/toggle", { kind: "auto_task", name: "meeting-sweep", enabled: true }]);
+    assert.match(root.textContent, /35 Orbit developer routines hidden/);
     const form = all(root).find(node => node.tag === "form");
     const select = all(form).find(node => node.tag === "select"); select.value = "meeting";
     const days = all(form).find(node => node.tag === "input"); days.value = "-1";
