@@ -34,6 +34,7 @@ fn fixture(
     let library = FakeLibrary::initialized();
     let artifact = Artifact::approved(
         ArtifactManifest {
+            event_key: None,
             kind,
             title: "Script".into(),
             summary: String::new(),

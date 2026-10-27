@@ -86,6 +86,7 @@ static TOOLS: &[Tool] = &[
     status::TOOL,
     calendar::sync::TOOL,
     calendar::list::TOOL,
+    calendar::meeting_prep::TOOL,
     // sources (specs/library.md)
     sources::capture::TOOL,
     sources::transcribe::TOOL,

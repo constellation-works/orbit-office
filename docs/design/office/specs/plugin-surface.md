@@ -60,7 +60,7 @@ Rules:
   `orbit tool run`, and by the install script and the app acting as the user for `office.init`. The
   orchestrator cannot scaffold the Library, approve its own proposals,
   write knowledge, promote artifacts, record selections, change source sensitivity or settings,
-  write digests, run scripts or reindex
+  write digests or meeting prep, run scripts or reindex
   ([orchestrator.md](./orchestrator.md)).
 - `execution_kind` is about consequence: anything that changes state or
   costs money is `mutating`, including `selection-get` (it consumes).
@@ -124,7 +124,7 @@ Activities have no schedule switch. Definitions load only when listed in
   - `office-kt-inbox`: every 15 minutes, seeded disabled, process confirmed video plans: transcribe, frames, extract (`kt`), then `office.consolidate` over the videos' digests; extraction files question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
   - `office-bootstrap`: every 15 minutes, run a confirmed bootstrap batch: digests (and the KT steps for videos), then `office.consolidate` ([library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation)).
   - `office-calendar-sync`: every 15 minutes, seeded disabled; `office.calendar-sync` ([calendar.md](./calendar.md)).
-  - `office-meeting-prep`: every 15 minutes, seeded disabled; `office.meeting-prep` for meetings within the lead time.
+  - `office-meeting-prep`: every 15 minutes (`*/15 * * * *`), seeded disabled. Targets `job:office-meeting-prep`, whose sole deterministic step inlines `plugin.tool_call` with `config.tool: office.meeting-prep`, `input: {}`. Writes one report per eligible event key.
   - `office-meeting-inbox`: every 15 minutes, with the `meetings` pack: transcribe, extract (`meeting`) and save `summary.md` for each captured meeting without one.
   - `office-signals`: daily.
   - `office-daily-digest`: daily at `5 0 * * *`, seeded disabled. Targets `job:office-daily-digest`, whose sole step inlines a deterministic `plugin.tool_call` activity (`config.tool: office.digest`). The routine and job are registered in `spec.definitions`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).
@@ -318,7 +318,7 @@ Script execution bounds are validated Library settings under `scripts`; defaults
 
 ### Calendar settings and results
 
-The two calendar tools are built. `calendar-sync` accepts only an optional
+Calendar sync, list and meeting prep are built. `calendar-sync` accepts only an optional
 workspace-relative `ics_file`, writes a private versioned atomic snapshot, and
 returns event/skipped counts, its window and sync timestamp. `calendar-list`
 requires RFC 3339 `from`/`until` at most 42 days apart, optionally includes
@@ -330,8 +330,12 @@ invite text. Ranges are half-open and include overlapping events.
 connection name using letters, digits, `_`, `-`), `calendar.window_days_past`
 and `calendar.window_days_ahead` (integers 1–90, default 14/30),
 `calendar.prep_lead_minutes` (15–1440, default 120) and
-`calendar.prep_max_per_run` (1–20, default 5). The prep settings are validated
-for the separate meeting-prep feature. The calendar-sync job inlines the
-single deterministic call, and its routine is seeded disabled every 15 minutes.
+`calendar.prep_max_per_run` (1–20, default 5). These settings control
+`office.meeting-prep`. It accepts `{}` and returns written/skipped counts
+and per-event key, reason and artifact/path. Prep artifacts add optional
+`event_key` frontmatter, surfaced by `calendar-list.prep` and artifact-show.
+Private inputs without an endpoint are reported per event without inference.
+The calendar-sync job inlines a single deterministic call, and its routine is
+seeded disabled every 15 minutes.
 See [calendar.md](./calendar.md#callback-and-snapshot-implementation) for bounds,
 timezone/recurrence rules, callback grants and persistence semantics.
