@@ -70,3 +70,27 @@ export interface Today {
   /** Completed items whose completion history could not establish a date. */
   completion_dates_unavailable: number;
 }
+
+/**
+ * One open to-do on `GET /api/todos`.
+ * Labels are plain words: no ids, crews, runs, paths, or raw statuses.
+ */
+export interface TodoItem {
+  /** Used only to close the to-do. The screen must not render it. */
+  id: string;
+  title: string;
+  /** Source name, or null when the to-do has no source. */
+  source: string | null;
+  /** Names of knowledge attached to the to-do. */
+  knowledge: string[];
+  /** True only for the user's own to-dos, which offer a close action. */
+  closable: boolean;
+}
+
+/** `GET /api/todos`: the You and Agents columns. */
+export interface TodoList {
+  you: TodoItem[];
+  agents: TodoItem[];
+  /** True when Orbit had more matching to-dos than this list includes. */
+  more: boolean;
+}
