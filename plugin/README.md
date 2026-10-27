@@ -5,8 +5,8 @@ The plugin tree lives in `.orbit-plugin/`; `orbit plugin validate` /
 `orbit plugin test` run against a fresh export of this directory (see
 `make export`).
 
-**Status: scaffold.** Only the `office.status` tool is built. Every other
-tool is planned: it has a registry row in
+**Status: scaffold.** The manifest enables `status`, `init`, `reindex`, `config-set`
+and `signals-scan`. Every other tool is planned: it has a registry row in
 `../crates/office-tools/src/registry.rs` and a commented block in its slot in
 `plugin.yaml`, and is not advertised until built. Building one means
 uncommenting its block and adding its schemas and golden

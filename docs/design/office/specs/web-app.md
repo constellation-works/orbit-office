@@ -20,7 +20,7 @@ Source: spec §13.1–§13.2 and §13.4.
   (`office.knowledge-write`, `office.proposal-accept`,
   `office.artifact-promote`, `office.selection-put`, `office.config-set`,
   `office.reindex`). Settings changed in the app, such as retention on the
-  Routines screen, are written with `office.config-set`.
+  Routines screen, are written with `office.config-set` ([ORB-18711]).
 - It never reads `.orbit/` directly. Orbit's HTTP API is not used; it
   belongs to Orbit's own dashboard (spec §18.3).
 - It owns the **dispatch pass**: every 30 seconds it lists `backlog` tasks
@@ -49,7 +49,7 @@ planned source screen ships.
 
 ### Today implementation
 
-Today and `GET /api/today` are built. The endpoint polls `orbit.task.list`
+Today and `GET /api/today` are built ([ORB-18727]). The endpoint polls `orbit.task.list`
 through a shared Orbit client, with separate active and completed listings
 (200 items each). Its shared contract is `Today` in `app/packages/contracts`.
 The browser polls the endpoint five seconds after the preceding read settles.
@@ -77,6 +77,12 @@ snapshot, not a complete history. The view supports the shared light theme.
 Empty `drop-zone` and per-item `approval-actions` slots reserve integration
 points; uploading and approval mutations remain separate features.
 
+### To-dos implementation
+
+To-dos are built ([ORB-18728]). `GET /api/todos` lists You and Agents
+columns; each to-do shows its source and attached knowledge, and the user
+can close their own. An agent to-do has no close action.
+
 ## Rules
 
 - Each item has one primary action (approve, edit or dismiss) and a provenance link on every agent output.
@@ -101,3 +107,17 @@ For the event the app ships as a local web app, not a desktop app
   Needs you, and native drag-and-drop for recordings. Tauri does not
   bundle Node, so the server either ships as a sidecar or moves into the
   `office` binary.
+
+The installable shell (manifest and service worker) and the agent-CLI
+settings read have landed ([ORB-18735]). Connections and the API calls
+view are the rest of Settings ([ORB-18798]).
+
+## Task References
+
+- [ORB-18711] — builds `office.config-set` for Library settings.
+- [ORB-18727] — built the Today screen and `GET /api/today`.
+- [ORB-18728] — built the To-dos screen and `GET /api/todos`.
+- [ORB-18735] — built the PWA shell and the settings feature's agent-CLI read.
+- [ORB-18798] — builds the Settings connections and API calls views.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
