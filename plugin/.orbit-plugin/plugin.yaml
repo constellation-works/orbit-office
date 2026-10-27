@@ -309,14 +309,14 @@ spec:
 
     # ---- bootstrap ----
 
-    # - name: batch-plan
-    #   description: >-
-    #     Plan a Library bootstrap phase's batch: model calls and cost;
-    #     confirm it with the digest the user saw.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/batch-plan.request.json }
-    #   output_schema: { $ref: schemas/batch-plan.response.json }
+    - name: batch-plan
+      description: >-
+        Plan a Library bootstrap phase's batch: model calls and cost;
+        confirm it with the digest the user saw.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/batch-plan.request.json }
+      output_schema: { $ref: schemas/batch-plan.response.json }
 
     # - name: consolidate
     #   description: >-
@@ -327,14 +327,14 @@ spec:
     #   input_schema: { $ref: schemas/consolidate.request.json }
     #   output_schema: { $ref: schemas/consolidate.response.json }
 
-    # - name: bootstrap-status
-    #   description: >-
-    #     Report Library setup progress per bootstrap phase, with the
-    #     computed gaps.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/bootstrap-status.request.json }
-    #   output_schema: { $ref: schemas/bootstrap-status.response.json }
+    - name: bootstrap-status
+      description: >-
+        Report Library setup progress per bootstrap phase, with the
+        computed gaps.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/bootstrap-status.request.json }
+      output_schema: { $ref: schemas/bootstrap-status.response.json }
 
     # ---- insights ----
 

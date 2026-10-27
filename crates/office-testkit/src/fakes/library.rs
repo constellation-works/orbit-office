@@ -26,6 +26,8 @@ use std::path::PathBuf;
 /// A Library fake with explicit readiness and settings, and no host I/O.
 #[derive(Default)]
 pub struct FakeLibrary {
+    bootstrap_batches: RefCell<BTreeMap<String, office_core::domain::bootstrap::Batch>>,
+    bootstrap_digests: RefCell<BTreeMap<String, serde_json::Value>>,
     originals: RefCell<BTreeMap<String, Vec<u8>>>,
     artifact_files: RefCell<BTreeMap<String, Vec<u8>>>,
     documents: RefCell<BTreeMap<String, DocumentRecord>>,
@@ -93,6 +95,23 @@ impl FakeStaging {
 }
 
 impl FakeLibrary {
+    /// Seed a validated digest sidecar by source id, without host I/O.
+    pub fn insert_digest(&self, id: &str, value: serde_json::Value) -> Result<()> {
+        office_core::domain::bootstrap::digest(&value)?;
+        if !self
+            .documents
+            .borrow()
+            .values()
+            .any(|d| d.id == id && d.kind == DocumentKind::Source)
+        {
+            return Err(Error::Library {
+                code: "source_not_found",
+                message: "digest source is absent".into(),
+            });
+        }
+        self.bootstrap_digests.borrow_mut().insert(id.into(), value);
+        Ok(())
+    }
     /// Seed an in-memory video with explicit source Markdown and original bytes.
     pub fn insert_video(&self, relative: &Path, markdown: &str, bytes: &[u8]) -> Result<()> {
         let meta = office_core::domain::source::parse_source_meta(markdown);
@@ -190,6 +209,56 @@ impl FakeLibrary {
 }
 
 impl Library for FakeLibrary {
+    fn bootstrap_snapshot(&self) -> Result<office_core::domain::bootstrap::Snapshot> {
+        use office_core::domain::bootstrap::{Snapshot, Source};
+        self.ready()?;
+        let mut snapshot = Snapshot {
+            batches: self.bootstrap_batches.borrow().clone(),
+            ..Snapshot::default()
+        };
+        for file in self.source_documents()? {
+            let markdown = file.markdown.ok_or(Error::LibraryUnavailable)?;
+            let id = office_core::domain::source::parse_source_meta(&markdown).id;
+            snapshot.sources.push(Source {
+                path: file.path,
+                markdown,
+                digest: self.bootstrap_digests.borrow().get(&id).cloned(),
+            });
+        }
+        for file in self.knowledge_pages()? {
+            snapshot
+                .pages
+                .insert(file.path, file.markdown.ok_or(Error::LibraryUnavailable)?);
+        }
+        Ok(snapshot)
+    }
+    fn mutate_batch(
+        &self,
+        revision: &str,
+        mutation: office_core::domain::bootstrap::Mutation,
+    ) -> Result<office_core::domain::bootstrap::Batch> {
+        let snapshot = self.bootstrap_snapshot()?;
+        let settings = self.settings()?;
+        if snapshot.revision(&settings)? != revision {
+            return Err(office_core::domain::source::video::refusal(
+                "plan_changed",
+                "Library changed during batch planning; preview again",
+            ));
+        }
+        let write = office_core::domain::bootstrap::apply(&snapshot, &settings, mutation)?;
+        if write.batches != snapshot.batches || !write.sources.is_empty() {
+            for (path, markdown) in write.sources {
+                self.write_document(Path::new(&path), &markdown)?;
+                let id = office_core::domain::source::parse_source_meta(&markdown).id;
+                if let Some(source) = self.sources.borrow_mut().get_mut(&id) {
+                    source.sensitivity = "private".into();
+                }
+            }
+            *self.bootstrap_batches.borrow_mut() = write.batches;
+            self.record_commit();
+        }
+        Ok(write.batch)
+    }
     fn read_video(&self, id: &str) -> Result<office_core::domain::source::video::VideoSource> {
         use office_core::domain::source::video::{VideoSource, refusal};
         self.ready()?;

@@ -80,6 +80,7 @@ fn normalize_upload_extension(extension: &str) -> String {
 /// earlier readers refuse that version rather than dropping its bytes.
 /// Version 4 binds an artifact document and every immutable companion byte.
 /// Version 5 binds a video source update and its mutable derived files.
+/// Version 6 binds bootstrap phase ledgers and source privacy updates.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPendingWrite {
@@ -106,6 +107,7 @@ impl RawPendingWrite {
             (3, Some(WriteKind::Document), Some(_), None) => WriteKind::Document,
             (4, Some(WriteKind::Artifact), None, Some(_)) => WriteKind::Artifact,
             (5, Some(WriteKind::Video), None, Some(_)) => WriteKind::Video,
+            (6, Some(WriteKind::Bootstrap), None, Some(_)) => WriteKind::Bootstrap,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -133,6 +135,7 @@ enum WriteKind {
     Settings,
     Artifact,
     Video,
+    Bootstrap,
 }
 
 impl LibraryStore {
@@ -177,6 +180,24 @@ impl LibraryStore {
         let state = root.join(".office/state");
         std::fs::create_dir_all(&state).map_err(|e| Error::io("create writer state", &state, e))?;
         Self::compose(root, &state, IndexStore::open_in_memory()?)
+    }
+
+    /// Open only for bootstrap file reads. No layout, disk index, writer lock,
+    /// migration, backfill or journal recovery is performed. An abandoned
+    /// write refuses through read_ready; a missing index/state stays missing.
+    pub fn open_for_bootstrap_read(library_root: &Path, state_dir: &Path) -> Result<Self> {
+        let root = library_root
+            .canonicalize()
+            .map_err(|e| Error::io("resolve Library", library_root, e))?;
+        let store = Self {
+            files: LibraryFs::new(root.clone()),
+            index: IndexStore::open_in_memory()?,
+            state: state_dir.to_path_buf(),
+            git: Git::new(&root, state_dir),
+            upload_roots: Vec::new(),
+        };
+        store.read_ready()?;
+        Ok(store)
     }
 
     fn compose(root: PathBuf, state: &Path, index: IndexStore) -> Result<Self> {
@@ -686,6 +707,39 @@ impl LibraryStore {
         let Some(files) = &pending.bundle else {
             return Ok(());
         };
+        if matches!(pending.kind, WriteKind::Bootstrap) {
+            if pending.version != 6
+                || pending.relative != ".office/bootstrap.json"
+                || pending.original.is_some()
+            {
+                return Err(Error::Journal {
+                    path: self.journal_path(),
+                });
+            }
+            self.files.validate_bootstrap_path()?;
+            let batches = serde_json::from_str(&pending.text).map_err(|_| Error::Journal {
+                path: self.journal_path(),
+            })?;
+            office_core::domain::bootstrap::validate_batches(&batches)?;
+            let mut seen = std::collections::BTreeSet::new();
+            for file in files {
+                let relative = Path::new(&file.path);
+                if !file.path.starts_with("sources/")
+                    || !file.path.ends_with("/source.md")
+                    || !seen.insert(&file.path)
+                {
+                    return Err(Error::Journal {
+                        path: self.journal_path(),
+                    });
+                }
+                self.files.validate_document_path(relative)?;
+                let markdown = std::str::from_utf8(&file.bytes).map_err(|_| Error::Journal {
+                    path: self.journal_path(),
+                })?;
+                self.validate_identity(&DocumentRecord::from_markdown(relative, markdown))?;
+            }
+            return Ok(());
+        }
         if matches!(pending.kind, WriteKind::Video) {
             if pending.version != 5
                 || pending.original.is_some()
@@ -768,7 +822,9 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: if matches!(kind, WriteKind::Video) {
+            version: if matches!(kind, WriteKind::Bootstrap) {
+                6
+            } else if matches!(kind, WriteKind::Video) {
                 5
             } else if bundle.is_some() {
                 4
@@ -853,7 +909,7 @@ impl LibraryStore {
         let raw: RawPendingWrite =
             serde_json::from_slice(&bytes).map_err(|_| Error::Journal { path: path.clone() })?;
         let pending = raw.into_pending(&path)?;
-        if !(1..=5).contains(&pending.version)
+        if !(1..=6).contains(&pending.version)
             || pending.root != self.library_root()
             || pending.token.is_empty()
             || !pending
@@ -880,6 +936,10 @@ impl LibraryStore {
                     Path::new(&pending.relative),
                     &pending.text,
                 ))?;
+            }
+            WriteKind::Bootstrap => {
+                self.require_initialized()?;
+                self.validate_bundle(&pending)?;
             }
             WriteKind::Settings => {
                 if pending.version != 2 || pending.relative != ".office/config.yaml" {
@@ -948,6 +1008,18 @@ impl LibraryStore {
                 self.index
                     .upsert(&self.files.read_document(Path::new(&pending.relative))?)?;
             }
+            WriteKind::Bootstrap => {
+                self.validate_bundle(pending)?;
+                for file in pending.bundle.as_deref().unwrap_or_default() {
+                    let text = std::str::from_utf8(&file.bytes).map_err(|_| Error::Journal {
+                        path: self.journal_path(),
+                    })?;
+                    self.files.write_document(Path::new(&file.path), text)?;
+                    self.index
+                        .upsert(&self.files.read_document(Path::new(&file.path))?)?;
+                }
+                self.files.write_bootstrap(&pending.text)?;
+            }
             WriteKind::Settings => self.files.write_settings(&pending.text)?,
         }
         let mut paths = vec![pending.relative.clone()];
@@ -963,7 +1035,13 @@ impl LibraryStore {
                     .filter(|file| {
                         !matches!(pending.kind, WriteKind::Video) || file.path == "frames.md"
                     })
-                    .map(|file| parent.join(&file.path).to_string_lossy().to_string()),
+                    .map(|file| {
+                        if matches!(pending.kind, WriteKind::Bootstrap) {
+                            file.path.clone()
+                        } else {
+                            parent.join(&file.path).to_string_lossy().to_string()
+                        }
+                    }),
             );
         }
         self.git.commit_paths(&paths, &pending.token)?;
@@ -1727,6 +1805,104 @@ fn dir_is_empty(path: &Path) -> bool {
 }
 
 impl office_core::ports::Library for LibraryStore {
+    fn bootstrap_snapshot(&self) -> office_core::Result<office_core::domain::bootstrap::Snapshot> {
+        use office_core::domain::bootstrap::{Snapshot, Source, digest, validate_batches};
+        self.read_ready()?;
+        let mut snapshot = Snapshot::default();
+        for file in self.source_documents()? {
+            let markdown = file.markdown.ok_or_else(|| {
+                office_core::domain::source::video::refusal(
+                    "invalid_bootstrap_data",
+                    "source is unreadable",
+                )
+            })?;
+            let path = Path::new(&file.path).with_file_name("digest.json");
+            let value = self
+                .files
+                .optional_bootstrap_json(&path)?
+                .map(|text| {
+                    serde_json::from_str::<serde_json::Value>(&text).map_err(|_| {
+                        office_core::domain::source::video::refusal(
+                            "invalid_bootstrap_data",
+                            "digest.json is malformed",
+                        )
+                    })
+                })
+                .transpose()?;
+            if let Some(value) = &value {
+                digest(value)?;
+            }
+            snapshot.sources.push(Source {
+                path: file.path,
+                markdown,
+                digest: value,
+            });
+        }
+        for page in self.knowledge_pages()? {
+            let markdown = page.markdown.ok_or_else(|| {
+                office_core::domain::source::video::refusal(
+                    "invalid_bootstrap_data",
+                    "page is unreadable",
+                )
+            })?;
+            snapshot.pages.insert(page.path, markdown);
+        }
+        if let Some(text) = self
+            .files
+            .optional_bootstrap_json(Path::new(".office/bootstrap.json"))?
+        {
+            snapshot.batches = serde_json::from_str(&text).map_err(|_| {
+                office_core::domain::source::video::refusal(
+                    "invalid_bootstrap_data",
+                    "bootstrap ledger is malformed",
+                )
+            })?;
+            validate_batches(&snapshot.batches)?;
+        }
+        Ok(snapshot)
+    }
+
+    fn mutate_batch(
+        &self,
+        revision: &str,
+        mutation: office_core::domain::bootstrap::Mutation,
+    ) -> office_core::Result<office_core::domain::bootstrap::Batch> {
+        use office_core::domain::{bootstrap, source::video::refusal};
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        let snapshot = <Self as office_core::ports::Library>::bootstrap_snapshot(self)?;
+        let settings = self.settings()?;
+        if snapshot.revision(&settings)? != revision {
+            return Err(refusal(
+                "plan_changed",
+                "Library changed during batch planning; preview again",
+            ));
+        }
+        let write = bootstrap::apply(&snapshot, &settings, mutation)?;
+        if write.batches == snapshot.batches && write.sources.is_empty() {
+            return Ok(write.batch);
+        }
+        let text = serde_json::to_string_pretty(&write.batches)
+            .map_err(|_| refusal("invalid_bootstrap_data", "cannot encode bootstrap ledger"))?;
+        let files = write
+            .sources
+            .into_iter()
+            .map(|(path, text)| ArtifactFile {
+                path,
+                bytes: text.into_bytes(),
+            })
+            .collect();
+        let pending = self.decide(
+            WriteKind::Bootstrap,
+            ".office/bootstrap.json",
+            &text,
+            None,
+            Some(files),
+        )?;
+        self.finish(&pending)?;
+        Ok(write.batch)
+    }
+
     fn read_video(
         &self,
         id: &str,

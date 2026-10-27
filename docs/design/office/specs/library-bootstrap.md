@@ -227,3 +227,70 @@ runbook.
   for the `careful` tier, and its context window.
 - The size of a typical Confluence export, to set the digest call's input
   cap and the windowing for long documents.
+
+## Built tool contracts
+
+`office.batch-plan` accepts `phase` (`docs`, `kt`, `team`, `process`), optional
+`sensitivity: private`, and `confirm: true` with the preview's `digest`.
+Preview and confirmation make no inference requests. Video metadata and frame
+candidates are inspected locally through the same planner as `office.video-plan`;
+its exact per-video previews are retained in `plan.videos`. A document with
+`needs_ocr` metadata is counted as captured but excluded from the batch.
+
+The response is the durable phase ledger: `plan`, `confirmed_at`, per-group
+`used` call counts, `extra`, `extra_confirmed_at`, `extra_used`, `consolidating`
+and `overflow`. `plan.counts` separates `digest`, `audio`, `frames`, `extract`
+and estimated `careful` calls. Each entry of `plan.groups` names its source
+(or null for consolidation), count and destination's route, label and model.
+Private marking updates every pending source in the batch in the same
+recoverable transaction as the preview. It never downgrades existing private
+sources. A mixed batch routes its careful consolidation to the private route
+when any input is private, including earlier-phase digest inputs.
+
+Careful estimates use normalized heading subjects and earlier-phase digest
+names/aliases, merging intersecting alias groups transitively, with one call as
+the minimum for a nonempty batch. Text estimates use four characters per token,
+a document output allowance of 1,024 tokens, and 2,048 tokens per careful
+call. Video estimates use the shared video planner's audio, image and timeline
+units. Prices use `costs.text_1k_tokens`, `costs.audio_minute`, `costs.image` and
+`costs.currency`; when any applicable rate is missing, `estimate` is null and
+`rates_unset` names the missing keys. These are estimates, never a billed price.
+
+After stage one, call with `additional_careful: true` to preview only the
+additional subject groups beyond the initial careful estimate. Confirm that
+smaller preview with `additional_careful: true`, `confirm: true` and its own
+`extra.digest`. Missing source digests refuse with `digests_incomplete`;
+unconfirmed batches refuse with `plan_unconfirmed`. Changed source content,
+phase membership, settings, routes or preview evidence refuse confirmation
+with `plan_changed`. Repeating an unchanged confirmation preserves its original
+timestamp and writes nothing.
+
+Execution integrations use `Library::mutate_batch` to reserve a call before
+inference. Each original group and the separately confirmed additional careful
+allowance has a hard ceiling; an uncertain/failed request still consumes its
+slot. Additional previews derive counts from stored digests, never caller-supplied
+numbers. The consolidation runner records active subject ids and subjects
+waiting under the page cap with the port's `Progress` mutation. Building that
+runner remains the responsibility of `office.consolidate`.
+
+`office.bootstrap-status` accepts an empty object and returns all four phases in
+order. It reads complete source files, validated `digest.json` sidecars and
+knowledge pages, plus the complete projected Orbit task list. It refuses a
+truncated task list rather than reporting partial counts. Knowledge proposals
+tagged `bootstrap:<phase>`, `proposal`, and `proposal:knowledge_add` or
+`proposal:knowledge_update` count as proposed until decided, accepted at `done`,
+and dismissed at `rejected`. Consolidating and overflow counts come from the
+phase ledger, with zero before a runner has recorded any work.
+
+Gap kinds are `subject_without_page`, `procedure_without_runbook`,
+`owner_without_person` and `policy_without_current_as_of`, each with a
+normalized subject and sorted distinct supporting source ids. Subject evidence
+is counted per distinct source in the phase. Titles and aliases match pages;
+procedures require an accepted page under `knowledge/runbooks/` or using the
+runbook template, and an owner requires the person template. An owner is a
+person subject whose role contains the word `owner`. A policy digest is
+identified by `kind_hint` containing the word `policy`; maintained policy pages
+use the `policy` tag. A current `as_of` is a valid date or timestamp, no later
+than now, no older than `thresholds.stale_days`, and (for pages) at least as new
+as the latest cited digest's date. Status never creates a ledger, index or
+layout, and refuses an abandoned write pending recovery by a mutating operation.

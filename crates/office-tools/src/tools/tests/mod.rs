@@ -1,4 +1,6 @@
 mod attach;
+mod batch_plan;
+mod bootstrap_status;
 mod capture;
 mod frames;
 mod init;

@@ -226,3 +226,23 @@ Initialization writes `original.*` and `frames/` in a new `.gitignore`. On an
 existing Library, it appends a missing `frames/` line while preserving all
 existing bytes (adding a separating newline when needed), commits the update,
 and is a no-op on the next call. It refuses a symlink at this fixed root path.
+
+### Bootstrap previews and phase progress
+
+The fixed `.office/bootstrap.json` file maps phase names to complete batch
+ledgers. `Library::bootstrap_snapshot` reads every current source and optional
+sibling `digest.json`, knowledge page, and phase ledger without an index result
+limit. Malformed or unreadable JSON and symlinked sidecars/ledgers refuse the
+read. `open_for_bootstrap_read` opens no on-disk index, creates no directories,
+and performs no recovery or backfill, so bootstrap status also works with a
+missing disk index or plugin-state directory. Its internal unused index is
+in memory. An abandoned journal refuses reads as `library_write_pending`.
+
+`Library::mutate_batch` compares the complete snapshot/settings revision under
+the writer lock and returns `plan_changed` before a decision on a stale write.
+Version-6 `bootstrap` journals bind the entire phase-ledger replacement and all
+source privacy updates. The ledger's fixed path, phase names, signed plans,
+approvals and consumed call counts are validated before the decision and again
+on recovery; bundle entries are contained `sources/**/source.md` paths only.
+Recovery writes/indexes those sources, replaces the ledger and commits exactly
+those paths once. Earlier journal versions retain their existing validation.

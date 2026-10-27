@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.bootstrap-status response",
+  "type": "object",
+  "properties": {
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "enum": [
+              "docs",
+              "kt",
+              "team",
+              "process"
+            ]
+          },
+          "captured": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "digested": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "consolidating": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proposed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "accepted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "dismissed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "overflow_waiting": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "subject_without_page",
+                    "procedure_without_runbook",
+                    "owner_without_person",
+                    "policy_without_current_as_of"
+                  ]
+                },
+                "subject": {
+                  "type": "string"
+                },
+                "sources": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "subject",
+                "sources"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "phase",
+          "captured",
+          "digested",
+          "consolidating",
+          "proposed",
+          "accepted",
+          "dismissed",
+          "overflow_waiting",
+          "gaps"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "phases"
+  ],
+  "additionalProperties": false
+}
