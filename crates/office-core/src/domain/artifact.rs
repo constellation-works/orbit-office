@@ -25,6 +25,9 @@ pub enum ArtifactError {
     /// Routine approval has exactly one allowed use.
     #[error("routine approval is allowed only for a report in series digest-daily")]
     RoutineApproval,
+    /// Another caller already published this routine's daily report.
+    #[error("daily digest already exists; read the existing report")]
+    DigestExists,
     /// The task has no output to promote.
     #[error("task has no artifacts to promote")]
     NoArtifacts,
@@ -51,6 +54,7 @@ impl ArtifactError {
         match self {
             Self::Invalid { .. } => "invalid_artifact",
             Self::RoutineApproval => "artifact_routine_approval_refused",
+            Self::DigestExists => "digest_already_exists",
             Self::NoArtifacts => "task_has_no_artifacts",
             Self::NotReviewable => "task_not_reviewable",
             Self::TooLarge => "artifact_too_large",
@@ -308,6 +312,18 @@ impl Artifact {
         mut occupied: impl FnMut(&str) -> bool,
     ) -> Result<Self> {
         self.validate()?;
+        // Called under the Library writer lock, including by concurrent digest
+        // callers that gathered before either published. Other artifact series
+        // continue to allocate ordinary versions.
+        if self.approved.by == Approver::Routine
+            && self.series == "digest-daily"
+            && self.task.starts_with("routine:office-daily-digest/")
+            && history
+                .iter()
+                .any(|a| a.series == self.series && a.task == self.task)
+        {
+            return Err(ArtifactError::DigestExists);
+        }
         let latest = history
             .iter()
             .filter(|a| a.series == self.series)

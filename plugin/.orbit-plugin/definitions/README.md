@@ -1,8 +1,8 @@
 # Seeded definitions
 
 Definitions land only with the tools they call. Routines and auto-tasks are
-seeded `enabled: false` with `dedupe: skip_if_open`; activities use Orbit's
-schemaVersion 2 Activity envelope and have no schedule switch or dedupe key.
+seeded `enabled: false`; auto-tasks use `dedupe: skip_if_open`. Activities use
+Orbit's schemaVersion 2 Activity envelope and have no schedule switch or dedupe key.
 
 - Routines: `office-kt-inbox` (every 15 minutes), `office-signals` (daily),
   `office-daily-digest` (daily).
@@ -24,8 +24,16 @@ No definition may require an outward-facing action.
 Plugin definitions are loaded only when listed in `spec.definitions` in
 `plugin.yaml`. The activity is registered in `spec.definitions.activities`
 as `definitions/activities/office-agent-todo.yaml`. Merely placing a file
-in this directory does not register it. The routines and auto-tasks listed
-above remain planned.
+in this directory does not register it. The other listed routines and
+`office-knowledge-maintenance` remain planned.
+
+`office-daily-digest` is registered under `spec.definitions.routines` and
+its single-step job under `spec.definitions.jobs`. The job contains an inline
+deterministic activity with `action: plugin.tool_call` and
+`config.tool: office.digest`. It creates no agent loop, crew or task. The
+routine runs daily at `5 0 * * *`; the tool defaults to the previous complete
+UTC day. `max_active_runs: 1` bounds the job. The inline activity needs no
+separate activity registration or `required_tools` field.
 
 From the repository root, run `python3 -I plugin/tests/test_activities.py`
 with Orbit >=0.34 installed. The regression checks validate temporary plugin

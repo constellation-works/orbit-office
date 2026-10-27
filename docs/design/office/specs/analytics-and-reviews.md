@@ -111,8 +111,11 @@ commit change during a read refuses the snapshot for retry.
 
 `review-inputs` returns period-completed tasks with their output paths,
 period-accepted proposals, the same complete metrics report, period-approved
-outputs, and daily digests separately. Conversation sources contain only
-entries timestamped in the period, with their original source line anchors;
+outputs, and daily digests separately. Daily digests use their `day:` tag
+for period selection, so a report published after midnight belongs to the
+day it summarizes; legacy reports without that tag use approval time.
+Conversation sources contain only entries timestamped in the period, with
+their original source line anchors;
 an old session appended during the period is included. Knowledge changes
 are selected by Library git revision timestamps, with commit ids, paths and
 subjects. A later revision or a newer current page header does not hide an

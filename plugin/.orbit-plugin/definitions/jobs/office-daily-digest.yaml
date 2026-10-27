@@ -1,0 +1,17 @@
+schemaVersion: 2
+kind: Job
+metadata:
+  name: office-daily-digest
+spec:
+  state: enabled
+  kind: workflow
+  max_active_runs: 1
+  steps:
+    - id: digest
+      timeout_seconds: 300
+      spec:
+        type: deterministic
+        action: plugin.tool_call
+        config:
+          tool: office.digest
+          input: {}

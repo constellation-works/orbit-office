@@ -35,7 +35,23 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let mut outputs = Vec::new();
     let mut daily_digests = Vec::new();
     for artifact in &facts.artifacts {
-        if window.contains(&artifact.approved.at)? {
+        // A daily report is published after its UTC day has ended. Older
+        // digests without a day tag retain their approval-date interpretation.
+        let day = if artifact.series == "digest-daily" {
+            let days: Vec<_> = artifact
+                .tags
+                .iter()
+                .filter_map(|tag| tag.strip_prefix("day:"))
+                .collect();
+            match days.as_slice() {
+                [] => artifact.approved.at.clone(),
+                [day] => format!("{day}T00:00:00Z"),
+                _ => return Err(invalid_data("daily digest day")),
+            }
+        } else {
+            artifact.approved.at.clone()
+        };
+        if window.contains(&day)? {
             let item = json!({"artifact":artifact, "path":artifact.path()?});
             if artifact.series == "digest-daily" {
                 daily_digests.push(item);

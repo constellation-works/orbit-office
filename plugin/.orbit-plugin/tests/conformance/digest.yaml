@@ -1,0 +1,14 @@
+# Replayed through public dispatch with empty Library/Orbit fakes, offline.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: empty_day
+    tool: digest
+    input: {"day":"2026-10-26"}
+    expect:
+      output: {"day":"2026-10-26","written":false,"reason":"no_activity","artifact":null,"path":null}
+  - name: refuses_invalid_day
+    tool: digest
+    input: {"day":"2026-02-30"}
+    expect:
+      error: {"code":"invalid_argument"}

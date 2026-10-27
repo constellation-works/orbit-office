@@ -2548,3 +2548,34 @@ fn video_result_journal_recovers_markdown_image_budget_and_source_index_together
     assert!(state_dir.join("library.pending-write.json").exists());
     assert!(!root.join(parent).join("../escape.png").exists());
 }
+
+#[test]
+fn daily_digest_duplicate_candidates_cannot_publish_twice() {
+    use office_core::domain::artifact::Approver;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let state = dir.path().join("state");
+    let store = LibraryStore::open(&root, &state).unwrap();
+    let mut candidate = artifact_candidate();
+    candidate.series = "digest-daily".into();
+    candidate.task = "routine:office-daily-digest/2026-10-26".into();
+    candidate.approved.by = Approver::Routine;
+    candidate.approved.edited = false;
+    // Both callers can hold this same candidate before either publishes it.
+    store
+        .promote_artifact(&candidate, &artifact_files())
+        .unwrap();
+    let head = store.head_commit().unwrap();
+    let error = store
+        .promote_artifact(&candidate, &artifact_files())
+        .unwrap_err();
+    assert_eq!(error.code(), "digest_already_exists");
+    assert_eq!(store.head_commit().unwrap(), head);
+    assert_eq!(store.artifact_documents().unwrap().len(), 1);
+    candidate.task = "routine:office-daily-digest/2026-10-27".into();
+    let next = store
+        .promote_artifact(&candidate, &artifact_files())
+        .unwrap();
+    assert_eq!(next.version, 2);
+}

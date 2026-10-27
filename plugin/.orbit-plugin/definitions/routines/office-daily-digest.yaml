@@ -1,0 +1,7 @@
+schemaVersion: 1
+name: office-daily-digest
+description: Write the previous complete UTC day's cited digest with one model call.
+enabled: false
+trigger:
+  cron: "5 0 * * *"
+target: job:office-daily-digest
