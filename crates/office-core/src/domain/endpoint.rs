@@ -247,7 +247,7 @@ fn is_valid_port(port: &str) -> bool {
         && port.parse::<u16>().is_ok()
 }
 
-/// The authority is syntactically usable: a bracketed literal may be
+/// The authority is syntactically usable: a bracketed IPv6 literal may be
 /// followed only by nothing or a valid port, and any other host may carry
 /// at most one valid port. Extracting an allowlisted host does not prove
 /// the remaining authority is valid, so it is checked in full here.
@@ -264,7 +264,7 @@ fn has_valid_authority(url: &str) -> bool {
         let Some((host, after)) = literal.split_once(']') else {
             return false;
         };
-        if host.is_empty() {
+        if host.parse::<core::net::Ipv6Addr>().is_err() {
             return false;
         }
         return match after {
