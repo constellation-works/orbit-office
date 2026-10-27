@@ -198,6 +198,13 @@ def agent_headers(
             )
         if not isinstance(value, str) or "\r" in value or "\n" in value:
             raise GatewayError("invalid_argument", f"header {name!r} must be a single-line string")
+        try:
+            value.encode("latin-1")
+        except UnicodeEncodeError:
+            raise GatewayError(
+                "invalid_argument",
+                f"header {name!r} must be encodable as latin-1; http.client cannot send it",
+            ) from None
         out[name] = value
     return out
 

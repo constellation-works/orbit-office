@@ -122,6 +122,21 @@ class Draft(DraftCase):
         self.refused("invalid_argument", "http-draft", {"connection": "acme", "method": "POST", "status": "sent"})
         self.assertEqual(self.orbit.calls(), [])
 
+    def test_a_header_value_outside_latin_1_is_refused_at_draft_time(self) -> None:
+        error = self.refused(
+            "invalid_argument",
+            "http-draft",
+            {"connection": "acme", "method": "POST", "path": "deals", "headers": {"Accept-Language": "€-en"}},
+            secrets=self.secrets,
+        )
+        self.assertIn("latin-1", error["message"])
+        self.assertEqual(self.orbit.calls(), [], "a refused draft files no task")
+        self.assertEqual(self.draft_files(), [])
+        self.assertEqual(self.server.seen, [], "drafting sends nothing")
+        # A value inside latin-1 still drafts.
+        out = self.draft(headers={"Accept-Language": "é-en"})
+        self.assertEqual(out["request"]["headers"]["Accept-Language"], "é-en")
+
     def test_a_valid_draft_stores_the_request_and_its_sha256_and_files_one_task(self) -> None:
         out = self.draft(headers={"If-Match": '"v3"'}, query={"notify": False})
         self.assertRegex(out["draft"], DRAFT_ID)
