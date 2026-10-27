@@ -23,6 +23,8 @@
 #      an {ok:false} stdout envelope with exit 0 still does too
 #  12. a non-interactive run without --yes prints the grants, enables the
 #      plugin with them and does not ask
+#  13. enable grants every permission plugin.yaml requests: the plugin is
+#      active and office.init is not refused with policy_denied
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -30,6 +32,7 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 1
 INSTALL_SH="$SCRIPT_DIR/../../install.sh"
 FIXTURE="$SCRIPT_DIR/fixtures/uv-test-fixture.tar.gz"
 INIT_FIXTURES="$SCRIPT_DIR/fixtures/office-init"
+MANIFEST="$SCRIPT_DIR/../../plugin/.orbit-plugin/plugin.yaml"
 [ -f "$INSTALL_SH" ] || { printf 'missing %s\n' "$INSTALL_SH" >&2; exit 1; }
 [ -f "$FIXTURE" ] || { printf 'missing %s\n' "$FIXTURE" >&2; exit 1; }
 for _need in success.stdout success.exit already.stdout already.exit \
@@ -39,6 +42,7 @@ for _need in success.stdout success.exit already.stdout already.exit \
         exit 1
     }
 done
+[ -f "$MANIFEST" ] || { printf 'missing %s\n' "$MANIFEST" >&2; exit 1; }
 REAL_TAR=$(command -v tar) || { printf 'tar is required\n' >&2; exit 1; }
 
 ROOT=$(mktemp -d)
@@ -120,12 +124,31 @@ case "${1:-} ${2:-}" in
     "plugin add")
         : > "$state/plugin-added"; printf 'added\n' ;;
     "plugin enable")
-        : > "$state/plugin-enabled"; printf 'enabled\n' ;;
+        # Like Orbit: enable records the grants given, and the plugin is
+        # active only when every permission the manifest requests is granted.
+        : > "$state/plugin-enabled"
+        rm -f "$state/plugin-active" "$state/plugin-grants"
+        _prev=""
+        for _a in "$@"; do
+            if [ "$_prev" = "--grant" ]; then
+                printf '%s\n' "$_a" | tr ',' '\n' | sed 's/=.*//' >> "$state/plugin-grants"
+            fi
+            _prev=$_a
+        done
+        _missing=""
+        for _p in $(awk '/^  permissions:/ { p = 1; next } /^  [^ #]/ { p = 0 } p && /^    [a-z_]+:/ { sub(/:.*/, ""); sub(/^ +/, ""); print }' "${STUB_MANIFEST:?}"); do
+            grep -qxF "$_p" "$state/plugin-grants" || _missing="$_missing $_p"
+        done
+        if [ -n "$_missing" ]; then
+            printf "Plugin is inactive: plugin 'office' requests%s but this host has not granted it\n" "$_missing"
+        else
+            : > "$state/plugin-active"; printf 'enabled\n'
+        fi ;;
     "plugin remove")
-        rm -f "$state/plugin-added" "$state/plugin-enabled"
+        rm -f "$state/plugin-added" "$state/plugin-enabled" "$state/plugin-active"
         printf 'removed\n' ;;
     "plugin disable")
-        rm -f "$state/plugin-enabled"; printf 'disabled\n' ;;
+        rm -f "$state/plugin-enabled" "$state/plugin-active"; printf 'disabled\n' ;;
     "plugin secret")
         case "${3:-}" in
             list)
@@ -152,6 +175,11 @@ case "${1:-} ${2:-}" in
         # the JSON object on stderr. ok-false is the direct office
         # binary's {ok:false} envelope on stdout with exit 0.
         if [ "${3:-}" = "office.init" ]; then
+            # Orbit refuses a tool of a plugin that is not active: stderr, exit 1.
+            if [ ! -f "$state/plugin-active" ]; then
+                printf '%s\n' "{\"code\":\"policy_denied\",\"message\":\"policy denied: plugin 'office' requests orbit_tools (spec.permissions.orbit_tools) but this host has not granted it\"}" >&2
+                exit 1
+            fi
             _mode="${STUB_INIT_MODE:-ok}"
             _fix="${STUB_INIT_FIXTURES:?}"
             case "$_mode" in
@@ -335,6 +363,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
     [ -z "${NO_YES:-}" ] || _yes=""
     # shellcheck disable=SC2086
     env -i PATH="${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin" HOME="$_home" STUB_STATE="$STUB_STATE" \
+        STUB_MANIFEST="$MANIFEST" \
         STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" \
         STUB_UV_ARCHIVE="$FIXTURE" \
         STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
@@ -404,6 +433,7 @@ check "systemd unit written" test -f "$HOME1/.config/systemd/user/orbit-office.s
 check "MCP entry written" grep -q '"orbit"' "$HOME1/.claude/settings.json"
 check "plugin added (stub)" test -f "$STUB_STATE/plugin-added"
 check "plugin enabled (stub)" test -f "$STUB_STATE/plugin-enabled"
+check "plugin active (stub): every manifest permission granted" test -f "$STUB_STATE/plugin-active"
 check "step 2 is numbered" grep -q '==> 2 python' "$OUT1"
 for _n in 1 3 4 5 6 7 8 9; do
     check "step $_n is numbered" grep -q "==> $_n " "$OUT1"
@@ -897,7 +927,7 @@ check "already_initialized object records the scaffolded marker" \
 # ---------------------------------------------------------------------------
 
 HOME12N="$ROOT/home12n"; mkdir -p "$HOME12N"
-rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled"
+rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled" "$STUB_STATE/plugin-active"
 : > "$STUB_STATE/orbit.log"
 OUT_NOYES="$ROOT/out-noyes.txt"
 NO_YES=1 run_install "$HOME12N" -- > "$OUT_NOYES" 2>&1 \
@@ -909,8 +939,26 @@ check "non-interactive run says it proceeds" \
     grep -qF "non-interactive run, enabling office" "$OUT_NOYES"
 check "printed network grant is unscoped" \
     grep -qF "network unscoped" "$OUT_NOYES"
-check "plugin enabled with the fs and network grants" \
-    grep -qF "plugin enable office --grant fs={{workspace}},{{plugin_state}} --grant network" "$STUB_STATE/orbit.log"
+check "printed grants include orbit_tools" \
+    grep -qF "orbit_tools" "$OUT_NOYES"
+check "plugin enabled with the fs, network and orbit_tools grants" \
+    grep -qF "plugin enable office --grant fs={{workspace}},{{plugin_state}} --grant network --grant orbit_tools" "$STUB_STATE/orbit.log"
 check "plugin enabled (stub, non-interactive)" test -f "$STUB_STATE/plugin-enabled"
+
+# ---------------------------------------------------------------------------
+# 13. Enable grants every permission plugin.yaml requests. A grant left out
+#     leaves the plugin inactive, and then office.init is refused with
+#     policy_denied, so the install must not get that far.
+# ---------------------------------------------------------------------------
+
+HOME13="$ROOT/home13"; mkdir -p "$HOME13"
+rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled" "$STUB_STATE/plugin-active"
+OUT_GRANTS="$ROOT/out-grants.txt"
+run_install "$HOME13" -- > "$OUT_GRANTS" 2>&1 \
+    || { cat "$OUT_GRANTS" >&2; fail "install with the manifest grants exits 0"; }
+ok "install with the manifest grants exits 0"
+check "plugin is active after enable" test -f "$STUB_STATE/plugin-active"
+check "office.init is not refused with policy_denied" \
+    sh -c '! grep -q policy_denied "$1"' sh "$OUT_GRANTS"
 
 printf 'PASS: %s checks\n' "$PASS"
