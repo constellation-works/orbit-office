@@ -11,6 +11,9 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// Approved script refusal or bounded execution failure.
+    #[error(transparent)]
+    Script(#[from] crate::domain::script::ScriptError),
     /// Artifact metadata, approval, payload or lookup refusal.
     #[error(transparent)]
     Artifact(#[from] crate::domain::artifact::ArtifactError),
@@ -185,7 +188,7 @@ pub enum Error {
     },
     /// A single-setting update named no supported policy leaf (including secrets).
     #[error(
-        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, packs, open_weights or open_weights.<endpoint|model|kind|label>"
+        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, packs, open_weights or open_weights.<endpoint|model|kind|label>"
     )]
     UnknownSetting {
         /// Refused key, never the supplied value.
@@ -231,6 +234,7 @@ impl Error {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Artifact(error) => error.code(),
+            Self::Script(error) => error.code(),
             Self::OrbitUnavailable => "orbit_unavailable",
             Self::OrbitOutcomeUnknown => "orbit_outcome_unknown",
             Self::OrbitRefused { .. } => "orbit_refused",
@@ -270,6 +274,7 @@ impl Error {
         match self {
             Self::Model { retryable, .. } => *retryable,
             Self::Artifact(_) => false,
+            Self::Script(_) => false,
             Self::OrbitUnavailable => false,
             Self::OrbitOutcomeUnknown => false,
             Self::OrbitRefused { .. } => false,

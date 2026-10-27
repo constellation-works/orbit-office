@@ -67,8 +67,9 @@ from the caller:
    `input_outside_library`) and nothing is created.
 2. **Run directory.** Creates `plugin_state/runs/<run-id>/` with `in/`
    (inputs copied in and made read-only), `out/`, `tmp/` and `run.log`.
-   `<run-id>` comes from `ORBIT_RUN_ID` when Orbit supplies it, with a
-   random suffix otherwise.
+   `<run-id>` comes from `ORBIT_RUN_ID` when Orbit supplies it, with
+   an exclusively allocated random suffix; an absent or unsafe host id uses
+   `run-script-<12 alphanumeric characters>`. Repeated steps never overwrite an earlier run.
 3. **Runs the script** with the install's `uv` and pinned Python
    ([install.md](./install.md)):
    `uv run --offline --python <pinned> --script script.py <args>`, with the
@@ -80,7 +81,7 @@ from the caller:
 4. **Bounds** (Library settings under `scripts`, validated on read):
    a wall-clock timeout (default 5 minutes, at most 30), after which the
    whole process group is killed; stdout and stderr captured to `run.log`,
-   capped at 1 MiB; at most 8 output files of at most 1 MiB each, the task
+   capped at 1 MiB (the retained prefix is truncated and overflow fails the run); at most 8 output files of at most 1 MiB each, the task
    artifact limit. Exceeding any bound fails the run and names the bound.
 5. **Outputs wait for review.** When `out/` holds files, the tool files one
    Orbit task tagged `script-output`, with the files as task artifacts plus
@@ -119,3 +120,57 @@ are fixed at approval with no downloads afterwards, that the environment
 carries no secrets, and that the bounds above stop runaway runs. The demo's
 scripts do not use the network. A tighter sandbox for scripts depends on
 Orbit offering one to plugin children, and this spec does not claim it.
+
+## Implementation contracts
+
+- `ScriptRunner::prepare` is exposed through `office_tools::prepare_script`
+  for proposal acceptance. It verifies the script artifact kind and bytes,
+  runs `uv lock --script` followed by `uv sync --locked --script`, and
+  publishes an immutable snapshot under `uv-cache/prepared/<sha256>/`.
+  Subsequent acceptance of the same bytes reuses that snapshot. Runs copy
+  its lock and script, and use `uv run --offline --locked --no-config
+  --no-project --python 3.12 --script script.py ...`. No configuration is
+  discovered from parent directories. The Python minor must track `install.sh`.
+- Until the proposal writer is built, its integration contract is explicit:
+  a `done` task tagged `proposal` and `proposal:routine` or
+  `proposal:auto_task` carries `proposal.json`, an object with `kind` and
+  `definition`. The definition must contain an actual `plugin.tool_call`
+  step for `office.script-run` whose complete input matches the call
+  (including args, inputs and output metadata). Missing or truncated
+  approval evidence fails closed. Text that merely mentions a pin does
+  not approve execution. Acceptance must prepare dependencies before closing
+  that proposal as done.
+- Input files appear under `in/<input-index>/<basename>`; directories retain
+  their descendants, including empty directories. Nested symlinks and special
+  files are refused before a run directory is created. Top-level symlinks
+  must physically resolve inside the Library. Copies use `0400` files and
+  `0500` directories. This is an accident guard: the approved process holds
+  the same user's plugin grants and can change those permissions.
+- Only regular output files are filed; symlinks, special files, reserved
+  manifest names and Orbit's reserved `review-` namespace are refused.
+  `artifact-manifest.json` is promotion-compatible; `script-run.json` records
+  the script pin, inputs and host run id. Outputs with inputs conservatively
+  receive private sensitivity, including files with no document metadata.
+  Output tasks start as `proposed`
+  with `script-output`, so no executor picks them up. Explicit user approval
+  via `artifact-promote` accepts this tagged proposed state in addition to
+  ordinary `review`/`done` outputs.
+- Orbit confines attachment sources to the workspace, while the plugin's
+  workspace write grant covers the Library only. As with `office.attach`,
+  output transfer uses the ignored `.office/attach/` staging area. This is
+  an exception to the scratch location rule above: run state and original
+  outputs remain exclusively under plugin state, and staging is removed after the transfer attempt and is never
+  Library content or committed. Failed callback transfers retain their
+  original run outputs for recovery.
+- Owned pruning names are `run-script-<12 alphanumeric characters>` or
+  `(jrun|run)-<8 date digits>-<4 time digits>-<3..16 alphanumeric id>` with
+  an optional `-<12 alphanumeric characters>` suffix. Only direct real
+  directories older than seven days match; links, files and other names
+  remain untouched.
+
+The closed `scripts` settings block has `timeout_seconds` (default 300,
+maximum 1800), `log_bytes` (default/maximum 1048576), `output_files`
+(default/maximum 8), and `output_file_bytes` (default/maximum 1048576).
+Every value must be a positive integer. `config-set` can lower or restore
+these individual leaves; unknown keys and values over the caps are refused
+at settings load and at the runner boundary.

@@ -231,7 +231,7 @@ values):
 
 `office.config-set` takes exactly `{"key":"retention.meeting","value":30}`.
 The value is typed JSON, not a YAML string. Supported keys are
-`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `packs`,
+`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>`, `packs`,
 `open_weights.<endpoint|model|kind|label>` and the whole `open_weights` block
 (a mapping of those four keys, or null), using the kinds, threshold names and
 bounds above. A leaf needs the block to exist. Changing the endpoint or model
@@ -274,3 +274,5 @@ bytes, plus the reply envelope. Its stderr stays at 512 KiB. The shared
 supervisor still bounds both streams and reaps the whole process group.
 Promotion separately enforces the decoded 1 MiB per-file limit before a
 Library write; increasing the transport allowance does not raise that limit.
+
+Script execution bounds are validated Library settings under `scripts`; defaults, caps and approval/preparation contracts are specified in [scripts.md](./scripts.md#implementation-contracts).

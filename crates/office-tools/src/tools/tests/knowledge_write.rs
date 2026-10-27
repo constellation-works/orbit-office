@@ -18,6 +18,7 @@ fn ports(library: FakeLibrary) -> Ports<'static> {
         )
         .expect("seed source");
     Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
         library: Box::new(library),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),

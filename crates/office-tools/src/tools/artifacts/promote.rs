@@ -48,7 +48,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         }
     };
     let shown = match call.ports.orbit.task_show(
-        &json!({"id":task,"fields":["id","status","artifacts","crew","updated_at"]})
+        &json!({"id":task,"fields":["id","status","tags","artifacts","crew","updated_at"]})
             .as_object()
             .cloned()
             .ok_or(ArtifactError::Payload)?,
@@ -60,10 +60,17 @@ fn run(call: &Call<'_>) -> Result<Value> {
         Err(error) => return Err(error),
     };
     let record = shown.get("task").unwrap_or(&shown);
-    if !matches!(
-        record.get("status").and_then(Value::as_str),
-        Some("review" | "done")
-    ) {
+    let script_output = record.get("status").and_then(Value::as_str) == Some("proposed")
+        && record
+            .get("tags")
+            .and_then(Value::as_array)
+            .is_some_and(|tags| tags.iter().any(|tag| tag.as_str() == Some("script-output")));
+    if !script_output
+        && !matches!(
+            record.get("status").and_then(Value::as_str),
+            Some("review" | "done")
+        )
+    {
         return Err(ArtifactError::NotReviewable.into());
     }
     let artifacts = record

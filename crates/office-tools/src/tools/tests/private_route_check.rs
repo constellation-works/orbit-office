@@ -62,6 +62,7 @@ impl Run {
         models.route_check = route_check;
         Self {
             ports: Ports {
+                scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
                 library: Box::new(library),
                 models: Box::new(models),
                 orbit: Box::new(FakeOrbit::default()),

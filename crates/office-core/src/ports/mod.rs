@@ -4,6 +4,7 @@ mod clock;
 mod library;
 mod models;
 mod orbit;
+mod scripts;
 
 pub use clock::Clock;
 pub use library::{
@@ -15,9 +16,12 @@ pub use models::{
     TranscribeRequest, Transcript, TranscriptChunk, TranscriptSegment,
 };
 pub use orbit::Orbit;
+pub use scripts::ScriptRunner;
 
 /// The services available to a single tool call.
 pub struct Ports<'a> {
+    /// Script dependency preparation and execution.
+    pub scripts: Box<dyn ScriptRunner + 'a>,
     /// Library access, opened only when needed.
     pub library: Box<dyn Library + 'a>,
     /// Model access.

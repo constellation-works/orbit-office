@@ -4,11 +4,13 @@ mod clock;
 mod library;
 mod models;
 mod orbit;
+mod scripts;
 
 pub use clock::FakeClock;
 pub use library::{FakeLibrary, FakeStaging};
 pub use models::FakeModels;
 pub use orbit::{FakeOrbit, OrbitCall};
+pub use scripts::FakeScripts;
 
 /// Builder for a complete set of fake services.
 pub struct PortsBuilder {
@@ -35,6 +37,7 @@ impl PortsBuilder {
     #[must_use]
     pub fn build(self) -> office_core::ports::Ports<'static> {
         office_core::ports::Ports {
+            scripts: Box::new(FakeScripts::default()),
             library: Box::new(FakeLibrary::initialized()),
             models: Box::new(FakeModels::new()),
             orbit: Box::new(FakeOrbit::default()),

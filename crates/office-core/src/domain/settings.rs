@@ -29,6 +29,8 @@ const KINDS: &[&str] = &[
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Value")]
 pub struct Settings {
+    /// Bounds for approved offline scripts.
+    pub scripts: super::script::ScriptBounds,
     /// Days to retain each kind's original; `None` means keep indefinitely.
     pub retention: BTreeMap<String, Option<u32>>,
     /// Default sensitivity for each source kind.
@@ -126,6 +128,7 @@ impl Default for Settings {
                 unused_days: 30,
             },
             open_weights: None,
+            scripts: Default::default(),
         }
     }
 }
@@ -162,6 +165,7 @@ impl Settings {
             defaults.thresholds.unused_days
         ));
         out.push_str("open_weights: null\n");
+        out.push_str(&format!("scripts:\n  timeout_seconds: {}\n  log_bytes: {}\n  output_files: {}\n  output_file_bytes: {}\n", defaults.scripts.timeout_seconds, defaults.scripts.log_bytes, defaults.scripts.output_files, defaults.scripts.output_file_bytes));
         out
     }
 
@@ -187,7 +191,7 @@ impl Settings {
         }
         let target = match key.split_once('.') {
             Some((section, name))
-                if ["retention", "sensitivity", "thresholds"].contains(&section) =>
+                if ["retention", "sensitivity", "thresholds", "scripts"].contains(&section) =>
             {
                 encoded
                     .get_mut(section)
@@ -334,6 +338,12 @@ impl TryFrom<Value> for Settings {
                             _ => return Err(invalid(&dotted, "unknown threshold")),
                         }
                     }
+                }
+                "scripts" => {
+                    settings.scripts = serde_json::from_value(value.clone()).map_err(|_| {
+                        invalid("scripts", "expected a closed mapping of integer bounds")
+                    })?;
+                    settings.scripts.validate()?;
                 }
                 "open_weights" => settings.open_weights = open_weights(value)?,
                 _ => return Err(invalid(key, "unknown setting")),

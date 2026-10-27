@@ -9,7 +9,7 @@ pub mod endpoint;
 pub mod knowledge;
 mod metrics;
 mod proposal;
-mod script;
+pub mod script;
 mod selection;
 mod session;
 pub mod settings;
