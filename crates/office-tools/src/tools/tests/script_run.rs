@@ -253,3 +253,31 @@ fn conformance_golden_replays_success_and_refusal_offline() {
     }
     assert_eq!(cases, 2);
 }
+
+#[test]
+fn changed_proposal_artifact_cannot_extend_a_digest_bound_approval() {
+    for matches in [false, true] {
+        let (ports, orbit, scripts) = fixture(office_core::domain::artifact::ArtifactKind::Script);
+        let payload=json!({"kind":"auto_task","definition":{"steps":[{"kind":"plugin.tool_call","tool":"office.script-run","input":input()}]}}).to_string();
+        let digest = if matches {
+            office_core::domain::source::sha256_hex(payload.as_bytes())
+        } else {
+            "0".repeat(64)
+        };
+        orbit.push_response(Ok(json!({"tasks":[{"id":"proposal","status":"done","tags":["proposal","proposal:auto_task"],"execution_summary":format!("Office proposal payload sha256: {digest}\nUser accepted")}],"truncated":false})));
+        orbit.push_response(Ok(json!({"content":payload})));
+        scripts.push_response(Ok((
+            office_core::domain::script::ScriptResult {
+                exit_code: Some(0),
+                ..Default::default()
+            },
+            vec![],
+        )));
+        let response = call(&ports, input());
+        assert_eq!(response["ok"], matches, "{response}");
+        if !matches {
+            assert_eq!(response["error"]["code"], "script_not_approved");
+        }
+        assert_eq!(scripts.executions.borrow().len(), usize::from(matches));
+    }
+}

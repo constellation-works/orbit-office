@@ -1,4 +1,5 @@
 mod knowledge;
+mod proposal;
 mod protocol;
 mod selection;
 mod settings;

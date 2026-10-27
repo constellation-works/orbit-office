@@ -209,6 +209,41 @@ impl FakeLibrary {
 }
 
 impl Library for FakeLibrary {
+    fn write_reviewed_page(
+        &self,
+        relative: &Path,
+        text: &str,
+        expected: Option<&str>,
+    ) -> Result<DocumentRecord> {
+        self.ready()?;
+        let current = self
+            .texts
+            .borrow()
+            .get(&relative.to_string_lossy().to_string())
+            .cloned();
+        let matches = match (current.as_deref(), expected) {
+            (None, None) => true,
+            (Some(current), Some(hash)) => sha256_hex(current.as_bytes()) == hash,
+            (None, Some(_)) | (Some(_), None) => false,
+        };
+        if !matches {
+            return Err(office_core::domain::proposal::refused(
+                "proposal_revision_changed",
+                "reviewed page destination changed before publication",
+            ));
+        }
+        self.write_document(relative, text)
+    }
+    fn write_proposal(&self, relative: &Path, text: &str) -> Result<()> {
+        self.ready()?;
+        office_core::domain::proposal::validate_record_path(relative)?;
+        self.texts
+            .borrow_mut()
+            .insert(relative.to_string_lossy().into_owned(), text.into());
+        self.record_commit();
+        Ok(())
+    }
+
     fn bootstrap_snapshot(&self) -> Result<office_core::domain::bootstrap::Snapshot> {
         use office_core::domain::bootstrap::{Snapshot, Source};
         self.ready()?;

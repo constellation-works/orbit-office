@@ -102,7 +102,7 @@ from the caller:
 ### Dependencies are fetched once, at approval
 
 A script declares its dependencies inline (PEP 723). When
-`office.proposal-accept` applies a routine or auto-task that runs a script,
+`office.proposal-accept` applies an auto-task that runs a script,
 it first resolves and downloads those dependencies into the plugin's cache
 (`plugin_state/uv-cache`) with the pinned Python. A dependency that cannot
 be resolved refuses the acceptance, and nothing is enabled. Every later run
@@ -131,15 +131,17 @@ Orbit offering one to plugin children, and this spec does not claim it.
   its lock and script, and use `uv run --offline --locked --no-config
   --no-project --python 3.12 --script script.py ...`. No configuration is
   discovered from parent directories. The Python minor must track `install.sh`.
-- Until the proposal writer is built, its integration contract is explicit:
-  a `done` task tagged `proposal` and `proposal:routine` or
-  `proposal:auto_task` carries `proposal.json`, an object with `kind` and
+- The proposal writer’s integration contract is explicit:
+  a `done` task tagged `proposal` and `proposal:auto_task` carries `proposal.json`, an object with `kind` and
   `definition`. The definition must contain an actual `plugin.tool_call`
   step for `office.script-run` whose complete input matches the call
   (including args, inputs and output metadata). Missing or truncated
   approval evidence fails closed. Text that merely mentions a pin does
   not approve execution. Acceptance must prepare dependencies before closing
-  that proposal as done.
+  that proposal as done. Legacy `routine` artifacts remain readable for prior
+  approvals; new proposals refuse that kind. New acceptance summaries also bind
+  the complete proposal artifact digest; script execution refuses a changed
+  artifact even if it now names a matching script pin.
 - Input files appear under `in/<input-index>/<basename>`; directories retain
   their descendants, including empty directories. Nested symlinks and special
   files are refused before a run directory is created. Top-level symlinks

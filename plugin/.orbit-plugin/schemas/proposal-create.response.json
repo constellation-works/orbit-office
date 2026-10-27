@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.proposal-create.response",
+  "type": "object",
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "boolean"
+    },
+    "evidence_page": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "payload_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Digest to bind acceptance to this reviewed payload; null for a suppressed proposal."
+    }
+  },
+  "required": [
+    "created",
+    "id",
+    "suppressed",
+    "evidence_page",
+    "payload_sha256"
+  ],
+  "additionalProperties": false
+}

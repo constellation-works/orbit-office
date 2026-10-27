@@ -41,7 +41,7 @@ fn repetition_fires_at_threshold_and_not_below() {
     let found = scan(&facts, &thresholds());
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].signal, "repetition");
-    assert_eq!(found[0].kind, ProposalKind::Routine);
+    assert_eq!(found[0].kind, ProposalKind::AutoTask);
     assert_eq!(found[0].evidence, vec!["t1", "t2", "t3"]);
     facts.tasks.pop();
     assert!(scan(&facts, &thresholds()).is_empty());

@@ -145,7 +145,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
 
 fn approved(call: &Call<'_>, request: &ScriptRequest) -> Result<()> {
     let listed = call.ports.orbit.task_list(&object(
-        json!({"tag":"proposal","status":"done","limit":1000,"fields":["id","status","tags"]}),
+        json!({"tag":"proposal","status":"done","limit":1000,"fields":["id","status","tags","execution_summary"]}),
     )?)?;
     if listed.get("truncated").and_then(Value::as_bool) != Some(false) {
         return Err(ScriptError::NotApproved.into());
@@ -171,8 +171,20 @@ fn approved(call: &Call<'_>, request: &ScriptRequest) -> Result<()> {
             .ports
             .orbit
             .task_artifact_get(&object(json!({"id":id,"path":"proposal.json"}))?)?;
-        let payload: Value = serde_json::from_slice(&decode_payload(&payload)?)
-            .map_err(|_| ScriptError::NotApproved)?;
+        let bytes = decode_payload(&payload)?;
+        if let Some(digest) = task
+            .get("execution_summary")
+            .and_then(Value::as_str)
+            .and_then(|summary| {
+                summary.strip_prefix(office_core::domain::proposal::APPROVAL_DIGEST_PREFIX)
+            })
+            .and_then(|rest| rest.lines().next())
+            && office_core::domain::source::sha256_hex(&bytes) != digest
+        {
+            continue;
+        }
+        let payload: Value =
+            serde_json::from_slice(&bytes).map_err(|_| ScriptError::NotApproved)?;
         let kind = payload.get("kind").and_then(Value::as_str);
         if !matches!(kind, Some("routine" | "auto_task")) {
             continue;

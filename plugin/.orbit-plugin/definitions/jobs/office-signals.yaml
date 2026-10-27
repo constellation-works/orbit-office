@@ -1,0 +1,17 @@
+schemaVersion: 2
+kind: Job
+metadata:
+  name: office-signals
+spec:
+  state: enabled
+  kind: workflow
+  max_active_runs: 1
+  steps:
+    - id: signals
+      timeout_seconds: 300
+      spec:
+        type: deterministic
+        action: plugin.tool_call
+        config:
+          tool: office.signals-scan
+          input: {}

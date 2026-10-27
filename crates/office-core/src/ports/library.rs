@@ -84,6 +84,21 @@ pub fn not_initialized_error() -> Error {
 /// An adapter must override all operations; defaults support contexts that have
 /// no Library (for example the status-only dispatch scaffold).
 pub trait Library {
+    /// Commit a non-indexed proposal record under `proposals/`. Other paths
+    /// are refused. This does not change knowledge or source enumeration.
+    fn write_proposal(&self, _relative: &Path, _text: &str) -> Result<()> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Write reviewed knowledge under the writer lock only if the current
+    /// Markdown hash matches. `None` requires an absent destination.
+    fn write_reviewed_page(
+        &self,
+        _relative: &Path,
+        _text: &str,
+        _expected_sha256: Option<&str>,
+    ) -> Result<DocumentRecord> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Read a contained video or meeting original, checking its recorded digest.
     fn read_media(&self, id: &str) -> Result<crate::domain::source::video::VideoSource> {
         self.read_video(id)

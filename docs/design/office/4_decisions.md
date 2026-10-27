@@ -1111,3 +1111,40 @@ ARCHITECTURE.md integrator ownership rule for this feature. The one-step job
 inlines the deterministic `plugin.tool_call` activity, avoiding another shared
 activity registration. The routine uses the accepted routine schema without
 `required_tools`; `config.tool: office.digest` is its explicit tool reference.
+
+
+## Proposal acceptance and Orbit auto-tasks
+
+On 2026-10-27 Daniel selected auto-tasks for recurring proposals: Orbit has
+no routine-create tool. Shipped daily signals use a separately registered
+one-step job and disabled routine; weekly knowledge maintenance is a disabled
+auto-task. These three registrations and the two tool blocks are the narrow
+manifest ownership exception for this feature.
+
+Office reserves acceptance with Orbit's atomic start transition after
+validating the pinned payload and preparing script dependencies. It uses the
+existing task, artifact and auto-task callbacks; it never grants authority
+through payload fields or exposes acceptance over agent MCP. Closed or
+already-started proposals refuse all further mutations. Auto-tasks mint tasks,
+so pinned tool steps become task instructions and required tools; they are
+not a new scheduler `steps` field. Host-hidden script execution still needs
+an authorized deterministic caller.
+
+**Deviation: STD-03@2 §R8 and §R9.** The existing Orbit callbacks and Library
+port cannot commit across the two independent stores as one transaction.
+Proposal creation and acceptance therefore use explicit sequential writes.
+Acceptance's task start and pinned artifact form the durable decision, but
+there is no automatic replay of partially applied Orbit effects. An uncertain
+callback is never retried; the task remains in progress or review and further
+acceptance refuses pending operator inspection. A successfully created
+auto-task can remain enabled if recording or closing subsequently fails.
+Creation likewise can leave a proposed task with only some attachments;
+missing payloads cannot be accepted. Stage contents survive a failed copy.
+This bounded limitation avoids duplicate enable/create callbacks but is not
+an all-or-nothing publication guarantee. Atomic cross-store recovery needs an
+Orbit transaction/idempotency API beyond the current callback contract.
+Acceptance requires the exact reviewed artifact digest (STD-05@1 §R21),
+returns it on creation, and records it in completion evidence. Script execution
+checks that binding for new approvals; legacy undigested approvals stay readable.
+Knowledge revisions are separately protected by compare-and-write under the
+Library writer lock, and proposal records have a version-8 Library journal.

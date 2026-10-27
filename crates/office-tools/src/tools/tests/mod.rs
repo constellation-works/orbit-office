@@ -10,6 +10,7 @@ mod insights;
 mod knowledge_show;
 mod knowledge_write;
 mod private_route_check;
+mod proposal;
 mod reindex;
 mod script_run;
 mod search;

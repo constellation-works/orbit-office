@@ -8,7 +8,7 @@ pub mod bootstrap;
 pub mod endpoint;
 pub mod knowledge;
 pub mod metrics;
-mod proposal;
+pub mod proposal;
 pub mod script;
 pub mod selection;
 pub mod session;
