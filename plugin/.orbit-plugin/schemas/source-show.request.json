@@ -5,7 +5,8 @@
   "properties": {
     "id": { "type": "string", "description": "Source id, for example src-20261027-title." },
     "source_id": { "type": "string", "description": "Alias for id." },
-    "anchor": { "type": "string", "description": "Optional anchor: #t=hh:mm:ss, #L<start>[-<end>], #slide=<n> or #page=<n>." }
+    "anchor": { "type": "string", "description": "Optional anchor: #t=hh:mm:ss, #L<start>[-<end>], #slide=<n> or #page=<n>." },
+    "history": { "type": "boolean", "default": false, "description": "Include up to 50 newest-first document revisions with total and truncation status. Omitted or false leaves the response unchanged." }
   },
   "additionalProperties": false
 }

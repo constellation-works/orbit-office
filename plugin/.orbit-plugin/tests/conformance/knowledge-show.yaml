@@ -55,3 +55,13 @@ tests:
     input: {id: dom-user, raw: true}
     expect:
       error: {code: invalid_argument}
+  - name: knowledge_list_returns_the_fixture_user_group
+    tool: knowledge-list
+    input: {"template":"user"}
+    expect:
+      output: {"pages":[{"id":"dom-user","template":"user","title":"Dee","summary":"","status":"current","sensitivity":"normal"}],"missing_templates":[]}
+  - name: knowledge_show_refuses_non_boolean_history
+    tool: knowledge-show
+    input: {"id":"dom-user","history":"true"}
+    expect:
+      error: {"code":"invalid_argument"}

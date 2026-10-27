@@ -199,6 +199,43 @@ status: current                # current | stale | retired
   3. **Base rules:** the id prefix matches the type; `refs` only on domain pages, and `performable` (`agent` | `you`) and `submission` (`system`, `via: draft | gateway`, and `connection` for a gateway) only on runbooks; each ref has a `label`, exactly one target, and optionally `authoritative: true` and `as_of` (`account` is `system:key`, `artifact` an `art-` id, a `url` carries no credentials); no email address or phone number in the body (`contact_in_body`); at most 1,200 words of body (`page_too_long`); and a page tagged `policy`, or with a section whose `##` heading ends in `[policy]`, needs an `authoritative` ref and an `as_of` on that ref or the page (`policy_without_source`; [library-bootstrap.md](./library-bootstrap.md#page-rules)).
   4. **Citations** (`unresolved_cite`): every frontmatter `cites` entry and every inline `[id#anchor]` (several may share brackets, separated by `;` or `,`) names an indexed document of the kind its prefix says (`src-`, `dom-`, `rb-`, `art-`), never the page itself. A source cite needs an anchor present in that source's body: `t=hh:mm:ss` from the first speaker turn's timestamp to the last's, `L<n>` or `L<n>-<m>` within the body's lines (counted after the frontmatter, surrounding blank lines trimmed), or `slide=<n>`/`page=<n>` naming a `Slide <n>`/`Page <n>` heading. `frame=` and `chapter=` anchors are refused until `frames.md` and `chapters.md` are readable through the Library port. Other documents are cited without an anchor. Refs are pointers and are never resolved.
 - **Reads:** `office.knowledge-show` (`{"id": "<page id>"}`, `page_not_found` otherwise) returns the page's model view, since it is visible to agents ([knowledge-templates.md](./knowledge-templates.md#contact-details)), and its back-links: the indexed sources, pages and artifacts whose frontmatter `cites` (bare or anchored) or `related` name it, each with `via: [cites, related]`. The model view is `office_core::domain::knowledge::Page::model_view`; `PageView::to_markdown` renders it for task attachments.
+- **Listing:** `office.knowledge-list` takes `{}` or `{"template":"<template name>"}`.
+  It returns every matching page in `pages`, sorted by id, with `id`, nullable
+  `template`, `title`, `summary`, `status` and `sensitivity`. It has no search
+  query, default status filter or result cap; retired and untemplated pages
+  are included. `missing_templates`, sorted by template name, contains
+  `template`, fixed `id` and suggested `title` for installed bundled
+  one-per-Library templates with no page. Presence is computed from all pages
+  before the exact template filter is applied to both arrays. A template
+  filter is a lowercase kebab-case name; an unknown name yields empty arrays.
+  The read is all-or-nothing: an unreadable or invalid page or installed
+  bundled template refuses the request, so an incomplete corpus cannot imply
+  that a page is absent. The tool reads through Library ports and writes
+  nothing. Contact refs and page bodies are not included.
+
+### Document history
+
+`office.knowledge-show`, `office.artifact-show` and `office.source-show` accept
+an optional boolean `history`. Omitted or `false`, their responses are
+unchanged and no history read is made. With `history: true`, they add:
+
+```json
+{"history":{"revisions":[{"commit":"<commit>","time":"<RFC 3339 timestamp>","summary":"<commit subject>"}],"total":1,"truncated":false}}
+```
+
+The Library port supplies newest-first commits for the resolved document path:
+the knowledge page, source's `source.md`, or artifact's `artifact.md`.
+At most 50 revisions are returned; `total` counts all document revisions and
+`truncated` says whether more exist. An untracked document has an empty
+revision list, total zero and no truncation. Author names and email addresses
+are withheld. A history read failure fails the request instead of reporting an
+empty history. Source anchors still select only the body span; history covers
+the whole document. Artifact document history is separate from its existing
+`series_history` and body `truncated` flag.
+
+The list conformance golden replays through public dispatch with
+`cargo test -p office-tools --test library_reads --locked`; the same suite checks
+history at zero, one, 50 and 51 revisions for all three show tools.
 
 ## Artifacts
 

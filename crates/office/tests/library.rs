@@ -13,6 +13,9 @@ const BIN: &str = env!("CARGO_BIN_EXE_office");
 #[path = "document_capture/mod.rs"]
 mod document_capture;
 
+#[path = "library_reads/mod.rs"]
+mod library_reads;
+
 #[cfg(unix)]
 #[path = "video_pipeline/mod.rs"]
 mod video_pipeline;

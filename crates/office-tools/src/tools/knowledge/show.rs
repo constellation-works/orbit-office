@@ -20,11 +20,12 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::ReadOnly,
         mcp_scope: McpScope::Workspace,
     },
-    &["id"],
+    &["id", "history"],
     run,
 );
 
 fn run(call: &Call<'_>) -> Result<Value> {
+    let history = crate::history::requested(call.input)?;
     let id = call
         .input
         .get("id")
@@ -46,8 +47,12 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let mut view = Page::from_markdown(markdown)?.model_view();
     view.path = path.to_string();
     let backlinks = library.backlinks(id)?;
-    Ok(json!({
+    let mut output = json!({
         "page": view,
         "backlinks": backlinks,
-    }))
+    });
+    if history {
+        crate::history::append(library.as_ref(), Path::new(path), &mut output)?;
+    }
+    Ok(output)
 }

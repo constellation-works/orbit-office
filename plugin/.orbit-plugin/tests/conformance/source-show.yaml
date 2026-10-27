@@ -18,3 +18,8 @@ tests:
     expect:
       error:
         code: invalid_argument
+  - name: source_show_refuses_non_boolean_history
+    tool: source-show
+    input: {"id":"src-00000000-missing","history":"true"}
+    expect:
+      error: {"code":"invalid_argument"}

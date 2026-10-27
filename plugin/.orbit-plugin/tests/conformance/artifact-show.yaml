@@ -24,3 +24,8 @@ tests:
     input: {"id": "art-19700101-absent"}
     expect:
       error: {"code": "artifact_not_found"}
+  - name: artifact_show_refuses_non_boolean_history
+    tool: artifact-show
+    input: {"id":"art-19700101-absent","history":"true"}
+    expect:
+      error: {"code":"invalid_argument"}

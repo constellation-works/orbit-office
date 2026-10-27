@@ -1,0 +1,30 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  # After 00-init.yaml and before knowledge-show.yaml: no knowledge pages
+  # exist yet. Replayed offline by office-tools/tests/library_reads.rs too.
+  - name: knowledge_list_empty_person_group
+    tool: knowledge-list
+    input: {"template":"person"}
+    expect:
+      output: {"pages":[],"missing_templates":[]}
+  - name: knowledge_list_missing_singleton
+    tool: knowledge-list
+    input: {"template":"systems"}
+    expect:
+      output: {"pages":[],"missing_templates":[{"template":"systems","id":"dom-systems","title":"Tools and locations"}]}
+  - name: knowledge_list_unknown_template
+    tool: knowledge-list
+    input: {"template":"unknown"}
+    expect:
+      output: {"pages":[],"missing_templates":[]}
+  - name: knowledge_list_refuses_empty_template
+    tool: knowledge-list
+    input: {"template":""}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: knowledge_list_refuses_unknown_input
+    tool: knowledge-list
+    input: {"extra":true}
+    expect:
+      error: {"code":"invalid_argument"}

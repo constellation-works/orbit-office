@@ -127,7 +127,7 @@ spec:
 
     - name: source-show
       description: >-
-        Return a source, optionally at an anchor.
+        Return a source, optionally at an anchor and with bounded document history.
       execution_kind: read_only
       mcp_scope: workspace
       input_schema: { $ref: schemas/source-show.request.json }
@@ -135,9 +135,18 @@ spec:
 
     # ---- knowledge ----
 
+    - name: knowledge-list
+      description: >-
+        List page summaries and unfilled bundled singleton templates,
+        optionally filtered by template.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/knowledge-list.request.json }
+      output_schema: { $ref: schemas/knowledge-list.response.json }
+
     - name: knowledge-show
       description: >-
-        Read a page and its back-links.
+        Read a page and its back-links, optionally with bounded document history.
       execution_kind: read_only
       mcp_scope: workspace
       input_schema: { $ref: schemas/knowledge-show.request.json }
@@ -156,7 +165,7 @@ spec:
     - name: artifact-show
       description: >-
         Read an artifact, its files, its series history and what cites
-        it.
+        it, optionally with bounded document history.
       execution_kind: read_only
       mcp_scope: workspace
       input_schema: { $ref: schemas/artifact-show.request.json }

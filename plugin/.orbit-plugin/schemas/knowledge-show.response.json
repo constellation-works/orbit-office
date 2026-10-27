@@ -69,6 +69,30 @@
         "required": ["id", "kind", "title", "path", "via"],
         "additionalProperties": false
       }
+    },
+    "history": {
+      "type": "object",
+      "description": "Present only for history: true. Up to 50 newest-first document commits; author identity is withheld.",
+      "properties": {
+        "revisions": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "commit": { "type": "string" },
+              "time": { "type": "string", "format": "date-time" },
+              "summary": { "type": "string" }
+            },
+            "required": ["commit", "time", "summary"],
+            "additionalProperties": false
+          }
+        },
+        "total": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" }
+      },
+      "required": ["revisions", "total", "truncated"],
+      "additionalProperties": false
     }
   },
   "required": ["page", "backlinks"],

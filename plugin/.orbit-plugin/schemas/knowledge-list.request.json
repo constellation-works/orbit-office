@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.knowledge-list request",
+  "type": "object",
+  "properties": {
+    "template": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Optional exact template name. Omit to list every page, including pages without a template."
+    }
+  },
+  "additionalProperties": false
+}
