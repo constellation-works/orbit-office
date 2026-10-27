@@ -91,7 +91,7 @@ sys.exit(response.get('exit', 0))
 
 type Method = fn(&dyn Orbit, &Map<String, Value>) -> office_core::Result<Value>;
 
-fn callbacks() -> [(&'static str, Method, Value, Value); 8] {
+fn callbacks() -> [(&'static str, Method, Value, Value); 11] {
     [
         (
             "orbit.task.add",
@@ -141,11 +141,31 @@ fn callbacks() -> [(&'static str, Method, Value, Value); 8] {
             json!({"query":"office", "kind":"task"}),
             json!({"results":[],"total":0,"truncated":false}),
         ),
+        (
+            "orbit.auto_task.add",
+            |p, i| p.auto_task_add(i),
+            json!({"name":"weekly-report","schedule":{"cron":"0 9 * * 1"},
+                   "template":{"title":"Weekly report","tags":["office"]},
+                   "unknown_future_key": true}),
+            json!({"name":"weekly-report","enabled":true}),
+        ),
+        (
+            "orbit.auto_task.update",
+            |p, i| p.auto_task_update(i),
+            json!({"name":"weekly-report","enabled":true,"unknown_future_key":"kept"}),
+            json!({"name":"weekly-report","enabled":true}),
+        ),
+        (
+            "orbit.auto_task.list",
+            |p, i| p.auto_task_list(i),
+            json!({"view":"bounded","limit":1,"unknown_future_key":null}),
+            json!({"auto_tasks":[{"name":"weekly-report"}],"total":2,"truncated":true}),
+        ),
     ]
 }
 
 #[test]
-fn all_eight_port_methods_use_the_callback_channel_and_preserve_payloads() {
+fn every_port_method_uses_the_callback_channel_and_preserves_payloads() {
     let stub = Stub::new();
     let adapter = stub.adapter();
     for (name, method, input, output) in callbacks() {
@@ -176,6 +196,9 @@ fn every_unlisted_name_is_refused_before_starting_the_channel() {
     for name in [
         "orbit.task.reject",
         "orbit.task.add.extra",
+        "orbit.auto_task.mint",
+        "orbit.auto_task.*",
+        "orbit.routine.control",
         "orbit.*",
         "office.status",
         "",
@@ -253,6 +276,8 @@ fn lost_write_replies_are_outcome_unknown_and_are_never_retried() {
                 "orbit.task.update",
                 "orbit.task.artifact.put",
                 "orbit.friction.add",
+                "orbit.auto_task.add",
+                "orbit.auto_task.update",
             ]
             .contains(&name)
             {

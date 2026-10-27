@@ -8,7 +8,7 @@ use office_core::ports::Orbit;
 use office_core::{Error, Result};
 use serde_json::{Map, Value};
 
-/// A call made through one of the eight Orbit port methods.
+/// A call made through one of the eleven Orbit port methods.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OrbitCall {
     /// Canonical callback tool name.
@@ -79,5 +79,14 @@ impl Orbit for FakeOrbit {
     }
     fn search(&self, input: &Map<String, Value>) -> Result<Value> {
         self.record("orbit.search", input)
+    }
+    fn auto_task_add(&self, input: &Map<String, Value>) -> Result<Value> {
+        self.record("orbit.auto_task.add", input)
+    }
+    fn auto_task_update(&self, input: &Map<String, Value>) -> Result<Value> {
+        self.record("orbit.auto_task.update", input)
+    }
+    fn auto_task_list(&self, input: &Map<String, Value>) -> Result<Value> {
+        self.record("orbit.auto_task.list", input)
     }
 }

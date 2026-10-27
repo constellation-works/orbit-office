@@ -456,7 +456,7 @@ check_workspace_adoptable() {
 # printing the grants, so a piped install never hangs on a question.
 consent_enable_plugin() {
     say "The plugins $INSTALL_PLUGINS request these grants:"
-    say "  office: fs {{workspace}}, {{plugin_state}}; network unscoped; orbit_tools task, friction and search"
+    say "  office: fs {{workspace}}, {{plugin_state}}; network unscoped; orbit_tools task, friction, search and auto-task"
     say "  gateway: fs {{workspace}}/.orbit-gateway, {{plugin_state}}; network unscoped; orbit_tools task add/artifact/show/update"
     if [ "$WITH_CLOUDCLI" -eq 1 ]; then
         say "  cloudcli: fs {{plugin_state}}; network unscoped; programs python3, aws, gcloud"

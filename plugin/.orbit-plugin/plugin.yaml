@@ -48,6 +48,9 @@ spec:
       - orbit.task.artifact.put
       - orbit.friction.add
       - orbit.search
+      - orbit.auto_task.add
+      - orbit.auto_task.update
+      - orbit.auto_task.list
 
   secrets:
     - name: meta_api_key
