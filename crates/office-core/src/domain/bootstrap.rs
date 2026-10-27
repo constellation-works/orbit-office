@@ -481,7 +481,17 @@ fn input_digest(snapshot: &Snapshot, plan: &Plan, settings: &Settings) -> Result
             }
         }
     }
-    hash(&json!({"sources":inputs,"settings":settings,"ids":plan.sources}))
+    // Keep an unset optional demo fact out of the fingerprint. Adding this
+    // field to Settings must not invalidate existing bootstrap plans when no
+    // simulated history date has been configured.
+    let mut settings_value = serde_json::to_value(settings)
+        .map_err(|_| video::refusal("invalid_bootstrap_data", "cannot encode settings"))?;
+    if settings.demo.simulated_until.is_none()
+        && let Some(settings) = settings_value.as_object_mut()
+    {
+        settings.remove("demo");
+    }
+    hash(&json!({"sources":inputs,"settings":settings_value,"ids":plan.sources}))
 }
 fn evidence_digest(snapshot: &Snapshot) -> Result<String> {
     hash(
