@@ -23,11 +23,6 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
   const fallback = createHandler();
   const server = createServer((request, response) => {
     if (!checkLoopbackRequest(request).ok) { response.writeHead(403); response.end(); return; }
-    if (request.url === "/settings-preview") {
-      response.setHeader("content-type", "text/html");
-      response.end(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Office Settings</title><link rel="stylesheet" href="/style.css"><header class="site-header"><div class="header-inner"><a class="brand" href="/settings-preview">Office</a><nav id="nav" aria-label="Main navigation"><a href="/settings-preview" aria-current="page">Settings</a></nav></div></header><main id="app"></main><script type="module">import {screen} from '/screens/settings/index.js'; await screen.render(document.getElementById('app'));</script></html>`);
-      return;
-    }
     if (request.url === "/api/settings") {
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify({ agentCli: { cli: "Muse Code", connected: true } })); return;
@@ -41,11 +36,15 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE);
   const browser = await chromium.launch({ headless: true });
   t.after(() => browser.close());
-  const page = await browser.newPage();
+  const page = await browser.newPage({ colorScheme: "light" });
   page.setDefaultTimeout(5000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${server.address().port}/settings-preview`);
+  await page.goto(`http://127.0.0.1:${server.address().port}/#settings`);
+  const settingsLink = page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Settings", exact: true });
+  await settingsLink.waitFor();
+  assert.equal(await settingsLink.getAttribute("href"), "#settings");
+  assert.equal(await settingsLink.getAttribute("aria-current"), "page");
   const region = page.getByRole("region", { name: "Connections", exact: true });
   await region.getByRole("heading", { name: "acme-crm" }).waitFor();
   const shots = process.env.SETTINGS_SCREENSHOTS_DIR;
