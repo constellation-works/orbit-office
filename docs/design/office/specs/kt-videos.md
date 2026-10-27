@@ -101,10 +101,12 @@ Mutating, `mcp_scope: none`; called by the app after an upload.
   **Process** calls `office.video-plan` with `confirm: true` and the digest
   the user saw. A plan whose inputs changed since then is refused
   (`plan_changed`; STD-05@1 §R21).
-- A `private` video whose media the open-weights route cannot take (audio or
-  images) is refused at planning with `private_media_unsupported`, naming
-  what is missing ([models-and-privacy.md](./models-and-privacy.md)). It is
-  never quietly sent elsewhere.
+- A video can be marked private at its preview, and then every call goes to
+  the private route ([models-and-privacy.md](./models-and-privacy.md#the-private-route)).
+  Muse Spark Open takes audio and images, so a private video is refused at
+  planning only when the configured endpoint failed that capability check
+  (`private_media_unsupported`, naming what is missing). It is never quietly
+  sent elsewhere.
 
 ### 3. Process: the `office-kt-inbox` routine
 
@@ -185,6 +187,6 @@ These gate the plan above:
   120 frame readings is roughly 25k tokens; if that doesn't fit, use the
   15-minute windows.
 - **Images:** the request shape and size limit for image input.
-- **Private route:** whether Muse Spark Open accepts audio and images.
+- **Private route:** the model takes audio and images. What still needs checking is that the serving stack the demo uses (Baseten's model API) accepts `input_audio` and image parts in chat completions.
 - **Prices:** the published per-call prices, to set the default `costs` the
   demo shows.

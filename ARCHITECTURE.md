@@ -78,7 +78,7 @@ crates/office-tools/src/
     sources/             capture  transcribe  video_plan  frames  extract  show   (specs/library.md, specs/kt-videos.md)
     knowledge/           show  write                                  (specs/library.md)
     artifacts/           show  promote                                (specs/library.md)
-    library/             init  reindex  config_set  search  attach    (specs/library.md, plugin-surface.md)
+    library/             init  reindex  config_set  search  attach  private_route_check   (specs/library.md, plugin-surface.md, models-and-privacy.md)
     proposals/           signals_scan  create  accept                 (specs/proposals.md)
     selection/           get  put                                     (specs/selection-sharing.md)
     sessions/            brief  digest                                (specs/sessions.md)

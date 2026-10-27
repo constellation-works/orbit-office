@@ -1,13 +1,15 @@
 ---
 type: design
-summary: "Spec: models and privacy routing — which model does what, and how private sources stay on open weights"
+summary: "Spec: models and privacy routing — which model does what, and the private route: Meta's open-weights Muse Spark Open on an endpoint the user chooses"
 last_validated: 2026-10-26
 ---
 
 # Spec: Models and privacy routing
 
 Only inference leaves the user's machine. Which model it goes to depends
-on what the input contains.
+on what the input contains: the hosted Meta Model API by default, or the
+**private route**, Meta's open-weights Muse Spark Open on an endpoint the
+user chooses ([below](#the-private-route)).
 
 Source: spec §9.
 
@@ -22,27 +24,104 @@ Source: spec §9.
 | Summaries, decisions, to-do extraction | Muse Spark | Structured output validated against a JSON Schema |
 | Daily digest | Muse Spark, one call a day | Through the same routing; private items go to open weights or are listed by reference ([sessions.md](./sessions.md#daily-digest)) |
 | Receipt and bill field extraction | Muse Spark with image input | Confirm the request shape in the API reference on day 1. Fallback: local OCR, then Muse Spark on the text |
-| Sources marked `private` | Muse Spark Open (`meta-models/muse-spark-open-1026` on Baseten, or local loopback) | Candidate for the open-weights bonus prize |
+| Anything `private`, every use above | Muse Spark Open on the private route ([below](#the-private-route)) | One model for every tier and modality: text, image and audio in, text out. Candidate for the open-weights bonus prize |
 | Implementing agents | Orbit's existing crews, including its Muse crews | Pre-existing: not counted as new Meta-tooling work |
 
 ## Routing rules
 
 - **Sensitivity.** Set per source (default by kind, for example `email` → `private`) or by the user. Any model call whose input includes a `private` source goes to the open-weight model. The routing decision is logged in the source's `derived_by` and in the task.
-- **Open-weights hosts.** A configured open-weights endpoint is a Baseten HTTPS URL (`inference.baseten.co`, or a host ending in `.api.baseten.co`) or a loopback HTTP(S) URL (`localhost`, `127.0.0.1`, `::1`). That is the open-weights subset of the model host allowlist. Hosted calls may also use `api.meta.ai`; that host is not an open-weights endpoint. Any other host is refused when Library settings load, and again before a socket opens. Non-loopback endpoints must use HTTPS.
+- **Model hosts.** Hosted calls go only to `api.meta.ai`. Private calls go only to the one open-weights endpoint the user configured ([below](#the-private-route)): its exact host, over HTTPS unless it is loopback. Any other host is refused when Library settings load, and again before a socket opens.
 - **Redirects.** The model HTTP client does not follow redirects. Each request therefore stays on the host checked by the model endpoint allowlist before the socket opens.
 - **Artifacts inherit sensitivity:** an artifact's `sensitivity` is the strictest of what it cites ([library.md](./library.md)).
 - **Selections from private objects carry no quote** ([selection-sharing.md](./selection-sharing.md)); the agent re-reads through the tools so the routing applies.
-- **Secrets.** The Meta API key and Baseten token are stored with `orbit plugin secret set office <name>`, never in config or the Library. Knowledge pages never hold secrets; `refs` name files, links, contacts, accounts and artifacts only.
+- **Secrets.** The Meta API key and the private route's token (`open_weights_token`) are stored with `orbit plugin secret set office <name>`, never in config or the Library. Knowledge pages never hold secrets; `refs` name files, links, contacts, accounts and artifacts only.
 - **Contact details never reach a model.** Model inputs and task attachments carry a page's model view, in which each `contact` ref keeps its label and loses its value; page bodies may not contain email addresses or phone numbers ([knowledge-templates.md](./knowledge-templates.md#contact-details)).
 - **Other people's words.** Pasted chats contain third parties' messages. They stay local, and the demo uses synthetic content only.
 
 The plugin's network grant is `any` (the only setting that reaches remote
-hosts), but the code calls only `api.meta.ai` (hosted), a Baseten host
-(`inference.baseten.co` or `*.api.baseten.co`), or loopback
-(`localhost`, `127.0.0.1`, `::1`) for a configured local open-weights
-server. An open-weights endpoint is the Baseten or loopback subset; the
-hosted Meta host is not one. Any other host is refused before a socket
+hosts), but the code calls only `api.meta.ai` (hosted) and the one
+configured private endpoint. Any other host is refused before a socket
 opens. That restriction is a code rule, reviewed, not a sandbox setting.
+
+## The private route
+
+Muse Spark Open is Meta's open-weights model: 816B parameters with 42B
+active per token, text, image, video and audio in, text out, a 1M-token
+context, and BF16 and NVFP4 weights. It needs at least about 700 GB of GPU
+memory, so it **does not run on a laptop**. The private route is therefore
+an endpoint the user chooses, never "on your computer" by default
+([decision](../4_decisions.md#the-private-route-is-muse-spark-open-on-an-endpoint-the-user-chooses)).
+
+### Endpoint choices
+
+Set up once in Settings. Each choice is labelled with where data goes, and
+that label is shown wherever the route is used:
+
+| Choice | Label in the app | Where private material goes |
+|---|---|---|
+| **Your company's deployment** (vLLM or SGLang on its own GPUs, or in its cloud account) | "Private: Acme's server" | Your employer's infrastructure. The strongest option for work material. |
+| **A hosted provider** (for example Baseten's model API) | "Private: Baseten (third party)" | That provider, under its terms. Not Meta's hosted API, but not your company either. |
+| **Your own hardware** (for example two M5 Ultra Mac Studios with MLX, on loopback or your LAN) | "Private: your hardware" | Machines you own. |
+
+Settings keys (`library/.office/config.yaml`, validated on every read):
+
+```yaml
+open_weights:
+  endpoint: https://muse.internal.acme.example/v1   # OpenAI-compatible base URL
+  model: meta-models/Muse-Spark-Open-816B-A42B       # as the server names it
+  kind: company            # company | provider | own_hardware
+  label: Acme's server     # shown in the app
+  capabilities: [text, image, audio]   # written by the check below, never typed in
+  verified_at: 2026-10-27T10:02:00-04:00
+```
+
+The endpoint's token, when it needs one, is the declared secret
+`open_weights_token`. The token replaces `baseten_token`; there are no
+installs to migrate before the event.
+
+### Honest wording
+
+- **"Private" means "not sent to Meta's hosted API; sent only to the
+  endpoint you chose".** It never means "never leaves your machine". The
+  Settings screen, the README and the pitch all say exactly that.
+- Every model call records its route in `derived_by` (`hosted` or
+  `private:<kind>`), and the source view shows the badge with the endpoint's
+  label.
+
+### Checking an endpoint: `office.private-route-check`
+
+Mutating, `mcp_scope: none`; the app calls it when the user saves the
+endpoint. It sends three tiny requests (a sentence, a 1×1 image and a
+1-second silent WAV) and records which ones work as `capabilities`, with
+`verified_at`. It reports the endpoint's model name and the time each
+request took. Nothing is routed to an endpoint that has not passed the text
+check. A failed modality is shown in plain words ("this server doesn't take
+audio, so private videos can't be transcribed").
+
+### What private changes
+
+- **Sources, batches and videos.** Each source can be marked private in the
+  source view, and a whole bootstrap batch or video plan can be marked
+  private at its preview. That sets every source in it.
+  ([library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation),
+  [kt-videos.md](./kt-videos.md#2-plan-and-confirm-officevideo-plan)).
+- **Every tier and modality** goes to the one private model: digest,
+  careful consolidation, frame reading and transcription. A private KT video
+  is refused at planning only when the endpoint lacks a capability it needs
+  (`private_media_unsupported`, naming which).
+- **The preview shows the route per call group**: for example "112 calls,
+  all on Private: Acme's server".
+- **No endpoint configured:** private material is refused, never sent to
+  the hosted API. The digest lists private items by reference.
+
+### Attribution
+
+The Muse Model License asks products built with the model to show "Built
+with Muse Spark Open" prominently. The app shows it in its footer and in
+Settings whenever a private endpoint is configured, and the README says it.
+The commercial terms of the license (an agreement with Meta for a
+hosted-model service with over $20M in yearly revenue) do not apply to a
+user's own use.
 
 ## Structured extraction
 

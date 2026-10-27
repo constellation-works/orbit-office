@@ -101,6 +101,7 @@ static TOOLS: &[Tool] = &[
     library::init::TOOL,
     library::reindex::TOOL,
     library::config_set::TOOL,
+    library::private_route_check::TOOL,
     library::search::TOOL,
     library::attach::TOOL,
     // proposals (specs/proposals.md)

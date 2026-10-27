@@ -43,7 +43,7 @@ skills — not code paths, so new verticals need no plugin change:
    or keep them as `owner:you` to-dos? The to-dos are simpler for the
    event. Decision records may be the better long-term fit.
 2. **Business model** for the startup-track pitch: a free local runtime
-   with paid role-based routine packs (consultant, student, small office)
+   with paid role-based routine packs (engineer, consultant, student, small office)
    and optional encrypted sync between devices.
 3. **Relationship to a team knowledgebase:** the Library's ingest,
    provenance and freshness machinery could later be shared with a
@@ -56,15 +56,21 @@ skills — not code paths, so new verticals need no plugin change:
 
 ## Sequencing after the event
 
-Each remaining spec capability lands as a tool-table entry with schemas
+Each capability that is still open lands as a tool-table entry with schemas
 and goldens before the web app calls it, in the build-plan order of
-[specs/delivery.md](./specs/delivery.md#build-plan-oct-27--nov-4): Library
-and `reindex`; the KT loop; knowledge, attach and promotion;
-proposals; metrics, reviews and selections; then open-weight routing and
-the receipts pack.
+[specs/delivery.md](./specs/delivery.md#build-plan-oct-27--nov-4): the KT
+loop; knowledge, attach and promotion; proposal create and accept;
+metrics, reviews and selections; then the receipts pack. Library
+persistence and `reindex` ([ORB-18709], [ORB-18710]), open-weight routing
+([ORB-18712]) and signals scan ([ORB-18721]) have landed, so they are not
+remaining work.
 
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
+- [ORB-18709] — built the Library store adapter with the writer lock, git and settings.
+- [ORB-18710] — built `office.init`, `office.reindex` and Library health.
+- [ORB-18712] — built the Meta and Baseten model adapters with privacy routing.
+- [ORB-18721] — built `office.signals-scan`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
