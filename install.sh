@@ -834,13 +834,21 @@ step_plugin() {
                 fi
             elif [ -n "${ORBIT_OFFICE_PLUGIN_SOURCE:-}" ]; then
                 _source="$ORBIT_OFFICE_PLUGIN_SOURCE"
-            elif [ "$FROM_SOURCE" -eq 1 ] || [ -z "$PLUGIN_SRC" ]; then
+            elif [ "$FROM_SOURCE" -eq 1 ] || [ -z "$PLUGIN_SRC" ] \
+                || [ ! -x "$PLUGIN_SRC/.orbit-plugin/bin/office-bin" ]; then
                 _ref=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null) \
                     || die "--from-source needs a clone; otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE"
                 _source="git+$REPO_GIT_URL#$_ref"
                 _allow_build=1
             else
                 _source="$PLUGIN_SRC"
+            fi
+            if [ "$_plugin" = office ]; then
+                case "$_source" in
+                    git+*) ;;
+                    *) [ -x "$_source/.orbit-plugin/bin/office-bin" ] \
+                        || die "office plugin export lacks executable bin/office-bin: $_source" ;;
+                esac
             fi
             if [ "$_allow_build" -eq 1 ]; then
                 orbit plugin add "$_source" --allow-build
