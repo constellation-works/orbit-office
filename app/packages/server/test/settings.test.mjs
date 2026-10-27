@@ -302,6 +302,107 @@ test("a secret command failure cannot leak its echoed stdout or stderr", { timeo
   for (const response of server.responses) assert.ok(!JSON.stringify(response).includes("fixture-secret"));
 });
 
+const deviceConnection = {
+  name: "outlook", base_url: "https://graph.microsoft.com/v1.0/",
+  auth: { scheme: "oauth2_device", token_url: "https://login.example/token", device_url: "https://login.example/devicecode",
+    client_id: "client-fixture", scopes: ["Calendars.Read", "offline_access"] },
+  methods: ["GET"], drafts: [], timeout_seconds: 20, max_response_bytes: 1048576, disabled: false,
+};
+
+test("the sign-in routes start and poll the device-code flow and pass on only what the user needs", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  const fixtures = (extra) => writeFile(join(server.fake.state, "gateway.json"), JSON.stringify({ ...gatewayFixtures, ...extra }));
+  // A start answer carrying more than the projection allows (a device code) never reaches HTTP.
+  await fixtures({ "gateway.oauth-device-start": { connection: "outlook", state: "pending", user_code: "WDJB-MJHT",
+    verification_uri: "https://microsoft.example/devicelogin", expires_in: 900, interval: 5, device_code: "fixture-device-code" } });
+  const started = await server.call("/api/settings/connections/sign-in", { name: "outlook" });
+  assert.equal(started.status, 200);
+  assert.deepEqual(JSON.parse(started.body), { connection: "outlook", user_code: "WDJB-MJHT",
+    verification_uri: "https://microsoft.example/devicelogin", expires_in: 900, interval: 5 });
+  for (const [answer, status, body] of [
+    [{ connection: "outlook", state: "pending", interval: 10 }, 200, { connection: "outlook", state: "pending", interval: 10 }],
+    [{ connection: "outlook", state: "connected" }, 200, { connection: "outlook", state: "connected" }],
+    [{ connection: "outlook", state: "denied" }, 200, { connection: "outlook", state: "denied" }],
+    [{ ok: false, error: { code: "device_flow_missing", message: "private diagnostic" } }, 409, { error: "sign_in_not_started" }],
+    [{ ok: false, error: { code: "auth_failed", message: "private diagnostic" } }, 502, { error: "sign_in_failed" }],
+    [{ connection: "another", state: "connected" }, 502, { error: "invalid_gateway_data" }],
+    [{ connection: "outlook", state: "connected", refresh_token: "x" }, 200, { connection: "outlook", state: "connected" }],
+  ]) {
+    await fixtures({ "gateway.oauth-device-poll": answer });
+    const res = await server.call("/api/settings/connections/sign-in/poll", { name: "outlook" });
+    assert.equal(res.status, status, res.body);
+    assert.deepEqual(JSON.parse(res.body), body);
+  }
+  const invocations = (await readFile(join(server.fake.state, "invocations.log"), "utf8")).trim().split("\n").map(JSON.parse);
+  const calls = invocations.filter((args) => args[2]?.startsWith("gateway.oauth-device-")).map((args) => [args[2], JSON.parse(args.at(-1))]);
+  assert.deepEqual(calls[0], ["gateway.oauth-device-start", { connection: "outlook" }]);
+  assert.ok(calls.slice(1).every(([tool, input]) => tool === "gateway.oauth-device-poll" && input.connection === "outlook"));
+  for (const response of server.responses) {
+    assert.ok(!response.body.includes("fixture-device-code") && !response.body.includes("private diagnostic"));
+  }
+});
+
+test("the sign-in routes refuse anything but a connection name before any tool call", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  for (const body of [{}, { name: "Outlook" }, { name: "outlook", device_code: "x" }, { name: 42 }, []]) {
+    assert.equal((await server.call("/api/settings/connections/sign-in", body)).status, 400);
+    assert.equal((await server.call("/api/settings/connections/sign-in/poll", body)).status, 400);
+  }
+  assert.equal((await server.call("/api/settings/connections/sign-in", { name: "outlook" }, { origin: "https://other.example" })).status, 403);
+  await assert.rejects(readFile(join(server.fake.state, "invocations.log")), { code: "ENOENT" });
+});
+
+test("device-code and secret address connections round-trip through the real gateway, and a refresh token is never accepted", { timeout: 15000 }, async (t) => {
+  const root = await fixtureHome(t, {});
+  const source = resolve(import.meta.dirname, "../../../../gateway/src");
+  const python = `import json, sys
+from orbit_gateway.connections import tool_list, tool_put
+from orbit_gateway.envelope import Call, GatewayError
+request = json.load(sys.stdin)
+call = Call(request["tool"], request["input"], {"plugin_state": sys.argv[1]})
+try:
+    print(json.dumps(tool_put(call) if request["tool"] == "gateway.connection-put" else tool_list(call)))
+except GatewayError as error:
+    print(json.dumps({"ok": False, "error": error.to_json()}))`;
+  const client = { async callTool(tool, input) {
+    const result = spawnSync("python3", ["-c", python, root], {
+      input: JSON.stringify({ tool, input }), encoding: "utf8",
+      env: { ...process.env, HOME: root, OFFICE_DATA_ROOT: root, OFFICE_CONFIG_ROOT: root, PYTHONPATH: source },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  } };
+  const feature = createSettingsFeature(client);
+  const server = createServer((req, res) => {
+    if (!checkLoopbackRequest(req).ok) { res.writeHead(403); res.end(); return; }
+    const route = feature.routes.find((item) => item.method === req.method && item.path === req.url);
+    if (route) void route.handle(req, res); else { res.writeHead(404); res.end(); }
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => { server.closeAllConnections(); server.close(done); }));
+  const { port } = server.address();
+  const headers = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}` };
+  const put = (body) => request(port, { method: "POST", path: "/api/settings/connections/put", headers, body: JSON.stringify(body) });
+  const refused = await put({ ...deviceConnection, secret: "rt-fixture-refresh-token" });
+  assert.equal(refused.status, 400);
+  const saved = await put(deviceConnection);
+  assert.equal(saved.status, 200, saved.body);
+  assert.deepEqual(JSON.parse(saved.body).connection, { ...deviceConnection, slot_state: "unset", auth_state: "signed_out" });
+  const feed = { name: "team-calendar", base_url: "https://outlook.office365.com/", auth: { scheme: "secret_path" },
+    methods: ["GET"], drafts: [], timeout_seconds: 20, max_response_bytes: 1048576, disabled: false };
+  // The gateway refuses a path in a secret address connection's base URL.
+  assert.equal((await put({ ...feed, base_url: "https://outlook.office365.com/owa/" })).status, 400);
+  assert.equal((await put(feed)).status, 200);
+  const listed = JSON.parse((await request(port, { path: "/api/settings/connections", headers })).body).connections;
+  assert.deepEqual(listed.map((item) => [item.name, item.auth.scheme, item.auth_state]), [["outlook", "oauth2_device", "signed_out"], ["team-calendar", "secret_path", undefined]]);
+  // Saving what was listed back (as Edit and Disable do, without auth_state) keeps every OAuth field.
+  const { slot_state: _slot, auth_state: _auth, ...config } = listed[0];
+  const toggled = await put({ ...config, disabled: true });
+  assert.equal(toggled.status, 200, toggled.body);
+  assert.deepEqual(JSON.parse(toggled.body).connection.auth, deviceConnection.auth);
+  assert.ok(!(await readFile(join(root, "connections.json"), "utf8")).includes("rt-fixture"));
+});
+
 test("Codex TOML counts an Orbit server section, nothing else", () => {
   assert.equal(tomlHasOrbitMcp('[mcp_servers.orbit]\ncommand = "orbit"\n'), true);
   assert.equal(tomlHasOrbitMcp('[mcp_servers.helper]\ncommand = "orbit"\n'), true);

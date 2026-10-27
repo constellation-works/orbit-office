@@ -1,7 +1,7 @@
 ---
 title: office — Decisions
 owner: daniel
-last_updated: 2026-10-26
+last_updated: 2026-10-27
 last_validated: 2026-10-26
 status: Draft
 feature: office
@@ -1234,3 +1234,31 @@ not a transaction across those stores. Successful steps remain after a later
 failure and the next invocation checks and repairs them. Run one installer or
 initializer per user at a time; the receipt file has atomic replacement but
 no cross-process writer lock. Concurrent setup is not supported.
+
+## An oauth2_device refresh token reaches its slot through Orbit's secret_updates
+
+**Recorded:** 2026-10-27
+**Code anchors:** `gateway/src/orbit_gateway/oauth.py` (`_poll`, `access_token`), `envelope.emit`; [specs/gateway.md](./specs/gateway.md#oauth2_device)
+
+The calendar spec first had the device-code sign-in's refresh token reach its
+slot through `orbit plugin secret set gateway <slot>` on stdin, like every
+other secret. Nobody holding the token can run that command. Orbit refuses a
+plugin backend every `secret` verb (`policy_denied`). The app could run it
+only if the poll returned the token, which would put it in a tool result.
+Orbit's answer to this is the `secret_updates` field of the `exec` answer. It
+writes a declared `rotatable` secret with compare-and-swap before the call
+returns, and masks the value in the result.
+
+So the poll answers `connected` with a `secret_updates` entry for the
+connection's slot, and each call writes back a rotated refresh token the same
+way. All sixteen slots are declared `rotatable`, because any of them may
+belong to an `oauth2_device` connection. The backend writes updates only for
+that kind of connection's own slot. Rejected: a dedicated `oauth_NN` slot
+family (sixteen more names, and free-slot logic over two pools), and keeping
+the token in plugin state (a secret outside the slots, which Orbit's host
+would not mask).
+
+Cost: the other schemes' slots are rotatable too, so a backend bug could
+overwrite a bearer token. Compare-and-swap means two overlapping calls
+rotating from one version store only one token; the other call's refusal is
+`auth_stale`, which is retryable, not `auth_expired`.

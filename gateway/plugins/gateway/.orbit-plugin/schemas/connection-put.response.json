@@ -40,7 +40,9 @@
                 "bearer",
                 "basic",
                 "header",
-                "none"
+                "none",
+                "secret_path",
+                "oauth2_device"
               ]
             },
             "header": {
@@ -48,6 +50,21 @@
             },
             "username": {
               "type": "string"
+            },
+            "token_url": {
+              "type": "string"
+            },
+            "device_url": {
+              "type": "string"
+            },
+            "client_id": {
+              "type": "string"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "additionalProperties": false
@@ -98,6 +115,14 @@
         },
         "idempotency_header": {
           "type": "string"
+        },
+        "auth_state": {
+          "enum": [
+            "signed_in",
+            "signed_out",
+            "expired"
+          ],
+          "description": "oauth2_device only: whether the slot holds a refresh token, and `expired` once the token endpoint refused it (sign in again)."
         }
       },
       "additionalProperties": false

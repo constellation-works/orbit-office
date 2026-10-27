@@ -6,7 +6,13 @@ same-origin redirects within the base path, and return the status, a fixed
 header set and the body (JSON parsed, text as text, anything else as size and SHA-256), cut at
 `max_response_bytes`. Every call, refused or not, appends one audit record.
 
-With `drafts.py`, the only module that opens network connections.
+A `secret_path` connection takes no `path`: its slot holds the path and
+query, appended to the origin at send time, and the URL, the audit and the
+redirect it reports read `<secret_path>` instead. An `oauth2_device`
+connection's auth is an access token exchanged for the slot's refresh token
+on each call (`oauth.py`).
+
+With `drafts.py` and `oauth.py`, the only modules that open network connections.
 """
 
 from __future__ import annotations
@@ -25,8 +31,8 @@ from email.message import Message
 from pathlib import Path
 from typing import Any
 
-from . import audit, connections
-from .connections import AGENT_HEADERS, CREDENTIAL_HEADERS, Connection
+from . import audit, connections, oauth
+from .connections import AGENT_HEADERS, CREDENTIAL_HEADERS, SECRET_PATH, Connection
 from .envelope import Call, GatewayError, closed, redactor_for, required, typed
 from .redact import Redactor
 
@@ -92,13 +98,16 @@ def _get(call: Call, root: Path, record: audit.Record, redactor: Redactor) -> di
             "method_not_allowed",
             f"connection {name!r} runs {', '.join(connection.methods)} directly; {method} is not one of them",
         )
-    url = resolve(connection.base_url, path, query)
-    record.path = urllib.parse.urlsplit(url).path
+    if connection.scheme == "secret_path":
+        record.path = SECRET_PATH
+        url = secret_url(connection, path, query, call.secrets())
+    else:
+        url = resolve(connection.base_url, path, query)
+        record.path = urllib.parse.urlsplit(url).path
     # 2. Headers.
     request_headers = agent_headers(connection, headers)
     # 3. Send.
-    secrets = call.secrets()
-    auth = auth_header(connection, secrets)
+    auth = credentials(call, root, connection, redactor)
     if auth is not None:
         request_headers[auth[0]] = auth[1]
     request_headers["User-Agent"] = USER_AGENT
@@ -156,6 +165,50 @@ def resolve(base_url: str, path: str, query: dict[str, Any]) -> str:
     return urllib.parse.urlunsplit((base.scheme, base.netloc, final_path, encoded, ""))
 
 
+def secret_url(connection: Connection, path: str, query: dict[str, Any], secrets: dict[str, str]) -> str:
+    """A `secret_path` connection's URL: its origin, then the slot's path and query."""
+    if path:
+        raise GatewayError(
+            "path_not_allowed",
+            f"connection {connection.name!r} names one resource and its path is its secret ({SECRET_PATH}); "
+            "leave `path` empty",
+        )
+    value = secrets.get(str(connection.slot))
+    if not value:
+        raise GatewayError(
+            "secret_unset",
+            f"connection {connection.name!r} has no secret in slot {connection.slot}; ask the user to set it in Settings",
+        )
+    base = urllib.parse.urlsplit(connection.base_url)
+    url = f"{base.scheme}://{base.netloc}{value}"
+    if (
+        not value.startswith("/")
+        or value.startswith("//")
+        or "#" in value
+        or "\\" in value
+        or not value.isascii()
+        or any(ord(char) <= 0x20 or ord(char) == 0x7F for char in value)
+        or urllib.parse.urlsplit(url).netloc != base.netloc
+    ):
+        raise GatewayError(
+            "secret_invalid",
+            f"the secret in slot {connection.slot} is not a path and query starting with '/' ({SECRET_PATH}); "
+            "ask the user to set it again in Settings",
+        )
+    encoded = encode_query(query)
+    if encoded:
+        url += ("&" if "?" in value else "?") + encoded
+    return url
+
+
+def shown_url(connection: Connection, url: str) -> str:
+    """The URL as returned: a `secret_path` connection's path and query read `<secret_path>`."""
+    if connection.scheme != "secret_path":
+        return url
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{SECRET_PATH}"
+
+
 def encode_query(query: dict[str, Any]) -> str:
     pairs: list[tuple[str, str]] = []
     for key, value in query.items():
@@ -209,10 +262,19 @@ def agent_headers(
     return out
 
 
+def credentials(call: Call, root: Path, connection: Connection, redactor: Redactor) -> tuple[str, str] | None:
+    """The auth header for one request through the connection."""
+    if connection.scheme == "oauth2_device":
+        return "Authorization", f"Bearer {oauth.access_token(call, root, connection, redactor)}"
+    return auth_header(connection, call.secrets())
+
+
 def auth_header(connection: Connection, secrets: dict[str, str]) -> tuple[str, str] | None:
-    """The auth header for the connection, from its slot."""
-    if connection.scheme == "none" or connection.slot is None:
+    """The auth header for a connection whose slot holds the credential itself."""
+    if connection.scheme in ("none", "secret_path") or connection.slot is None:
         return None
+    if connection.scheme == "oauth2_device":
+        raise GatewayError("backend_error", "an oauth2_device connection's header comes from credentials()")
     value = secrets.get(connection.slot)
     if not value:
         raise GatewayError(
@@ -291,11 +353,11 @@ def _send(
         if status in REDIRECT_STATUSES and location:
             target = urllib.parse.urldefrag(urllib.parse.urljoin(url, location))[0]
             if origin(target) != home:
-                unfollowed = {"location": target, "reason": "other_origin"}
+                unfollowed = {"location": shown_url(connection, target), "reason": "other_origin"}
             elif (safe_target := _redirect_within_base(connection.base_url, target)) is None:
-                unfollowed = {"location": target, "reason": "outside_base"}
+                unfollowed = {"location": shown_url(connection, target), "reason": "outside_base"}
             elif redirects >= MAX_REDIRECTS:
-                unfollowed = {"location": target, "reason": "limit"}
+                unfollowed = {"location": shown_url(connection, target), "reason": "limit"}
             else:
                 response.close()
                 redirects += 1
@@ -304,7 +366,7 @@ def _send(
         break
     record.status = status
     record.redirects = redirects
-    record.path = urllib.parse.urlsplit(url).path
+    record.path = SECRET_PATH if connection.scheme == "secret_path" else urllib.parse.urlsplit(url).path
     try:
         data = b"" if method == "HEAD" else read_limited(response, connection.max_response_bytes + 1, deadline, connection.timeout_seconds)
         remaining = getattr(response, "length", None)
@@ -320,7 +382,7 @@ def _send(
     output: dict[str, Any] = {
         "connection": connection.name,
         "method": method,
-        "url": url,
+        "url": shown_url(connection, url),
         "status": status,
         "content_type": content_type,
         "headers": returned_headers(response.headers),

@@ -7,7 +7,11 @@ the package source and drives each writer with a secret.
 Two kinds of match, both replaced with `[secret]`:
 
 - **Values.** Every slot value delivered for the call, its URL-encoded and
-  base64 forms, and for `basic` auth the base64 of `user:password`.
+  base64 forms, and for `basic` auth the base64 of `user:password`. A
+  `secret_path` slot (and its path, its query and each long segment of them)
+  reads `<secret_path>` instead. Tokens learned during a call (an
+  `oauth2_device` access token, a rotated refresh token, a device code) are
+  added as they arrive.
 - **Credential shapes** with high confidence only: `Bearer` and `Basic`
   header values, AWS access key ids, PEM private-key blocks and the provider
   key prefixes `ghp_`, `github_pat_`, `xox[abprs]-` and `sk-`. Field names
@@ -29,7 +33,10 @@ MASK = "[secret]"
 # `<module>.<function>`. Each one redacts before it writes. The inventory test
 # (tests/test_redaction_writers.py) fails if a write happens anywhere else.
 WRITERS: dict[str, str] = {
-    "envelope.emit": "results and errors on stdout",
+    "envelope.emit": (
+        "results and errors on stdout, plus the `secret_updates` beside them: a rotated or newly "
+        "signed-in refresh token for Orbit to store in its slot, the one value written unredacted"
+    ),
     "state.store_text": (
         "state files (connections.json, drafts/<id>.json) and the draft artifact staged for orbit.task.artifact.put"
     ),
@@ -95,23 +102,50 @@ def value_forms(value: str) -> set[str]:
 
 
 class Redactor:
-    """Masks known secret values and high-confidence credential shapes."""
+    """Masks known secret values and high-confidence credential shapes.
 
-    def __init__(self, values: Iterable[str] = (), basic_pairs: Iterable[tuple[str, str]] = ()):
-        forms: set[str] = set()
+    `labels` maps a value to the text that replaces it instead of `[secret]`
+    (a `secret_path` slot reads `<secret_path>`). `add` takes values learned
+    during the call, such as an access token exchanged for a refresh token.
+    """
+
+    def __init__(
+        self,
+        values: Iterable[str] = (),
+        basic_pairs: Iterable[tuple[str, str]] = (),
+        labels: dict[str, str] | None = None,
+    ):
+        self._masks: dict[str, str] = {}
         for value in values:
-            forms |= value_forms(value)
+            self._learn(value_forms(value), MASK)
         for user, password in basic_pairs:
             if password:
-                forms |= _b64_forms(f"{user}:{password}".encode("utf-8"))
+                self._learn(_b64_forms(f"{user}:{password}".encode("utf-8")), MASK)
+        for value, label in (labels or {}).items():
+            # A label wins over the plain mask for the same value.
+            for form in value_forms(value):
+                self._masks[form] = label
+        self._compile()
+
+    def _learn(self, forms: set[str], mask: str) -> None:
+        for form in forms:
+            self._masks.setdefault(form, mask)
+
+    def _compile(self) -> None:
         # Longest first, so a value inside a longer form never splits it.
-        ordered = sorted(forms, key=len, reverse=True)
+        ordered = sorted(self._masks, key=len, reverse=True)
         self._values = re.compile("|".join(re.escape(form) for form in ordered)) if ordered else None
+
+    def add(self, values: Iterable[str]) -> None:
+        """Mask more values from now on."""
+        for value in values:
+            self._learn(value_forms(value), MASK)
+        self._compile()
 
     def text(self, text: str) -> str:
         """Redact one string."""
         if self._values is not None:
-            text = self._values.sub(MASK, text)
+            text = self._values.sub(lambda match: self._masks[match.group(0)], text)
         text = _BEARER.sub(_mask_bearer, text)
         text = _BASIC.sub(_mask_basic, text)
         for shape in _SHAPES:

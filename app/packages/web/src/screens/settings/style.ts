@@ -29,6 +29,9 @@ export const style = `
 .settings .api-call header { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .settings .api-call h3 { font-size:14px; font-family:var(--font-mono); overflow-wrap:anywhere; margin:12px 0; }
 .settings .api-call p { margin:6px 0 0; }
+.settings .settings-code { font-family:var(--font-mono); font-size:22px; font-weight:600; letter-spacing:.08em; margin:12px 0; overflow-wrap:anywhere; }
+.settings .settings-signin p { margin:8px 0; }
+.settings .settings-attention { color:var(--fg); font-weight:600; }
 .settings .settings-cli { margin-top:40px; padding-top:20px; border-top:1px solid var(--border); }
 .settings .settings-honest, .settings .settings-destination, .settings .settings-preview { margin:12px 0; }
 .settings .capability-notes { margin:16px 0; padding-left:1.2rem; }

@@ -12,12 +12,13 @@ import { createOrbitClient } from "../../server/dist/orbit/client.js";
 import { installFakeOrbit } from "../../server/test/fake-orbit.mjs";
 import { gatewayFixtures } from "../../server/test/settings-fixture.mjs";
 
-test("Settings browser: add, edit, disable, write-only secret, newest-first audit and responsive views", { timeout: 45000 }, async (t) => {
+/** The Settings feature over a fake Orbit, a fixture server and a headless page at `#settings`. */
+async function openSettings(t, fixtures) {
   assert.ok(process.env.PLAYWRIGHT_MODULE, "source ORBIT_BROWSER_KIT_ENV first");
   const fake = await installFakeOrbit();
   t.after(() => rm(fake.root, { recursive: true, force: true }));
   const fixturePath = resolve(fake.state, "gateway.json");
-  await writeFile(fixturePath, JSON.stringify(gatewayFixtures));
+  await writeFile(fixturePath, JSON.stringify(fixtures));
   const env = fake.env({ HOME: fake.root, OFFICE_DATA_ROOT: fake.root, OFFICE_CONFIG_ROOT: fake.root });
   const settings = createSettingsFeature(createOrbitClient({ env }), { env });
   const fallback = createHandler();
@@ -26,6 +27,11 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
     if (request.url === "/api/settings") {
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify({ agentCli: { cli: "Muse Code", connected: true } })); return;
+    }
+    // Screens other than Today render only once the Library is ready.
+    if (request.url === "/api/setup") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ state: "ready" })); return;
     }
     const route = settings.routes.find((route) => route.path === request.url && route.method === request.method);
     if (route) void route.handle(request, response);
@@ -41,21 +47,26 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/#settings`);
-  const settingsLink = page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Settings", exact: true });
-  await settingsLink.waitFor();
-  assert.equal(await settingsLink.getAttribute("href"), "#settings");
-  assert.equal(await settingsLink.getAttribute("aria-current"), "page");
-  const region = page.getByRole("region", { name: "Connections", exact: true });
-  await region.getByRole("heading", { name: "acme-crm" }).waitFor();
   const shots = process.env.SETTINGS_SCREENSHOTS_DIR;
   if (shots) await mkdir(shots, { recursive: true });
   async function capture(name) {
     for (const width of [1440, 375]) {
       await page.setViewportSize({ width, height: 1100 });
-      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no overflow at ${width}px`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no overflow at ${width}px (${name})`);
       if (shots) await page.screenshot({ path: resolve(shots, `${name}-light-${width}.png`), fullPage: true });
     }
   }
+  const region = page.getByRole("region", { name: "Connections", exact: true });
+  return { fake, fixturePath, page, errors, capture, region };
+}
+
+test("Settings browser: add, edit, disable, write-only secret, newest-first audit and responsive views", { timeout: 45000 }, async (t) => {
+  const { fake, fixturePath, page, errors, capture, region } = await openSettings(t, gatewayFixtures);
+  const settingsLink = page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Settings", exact: true });
+  await settingsLink.waitFor();
+  assert.equal(await settingsLink.getAttribute("href"), "#settings");
+  assert.equal(await settingsLink.getAttribute("aria-current"), "page");
+  await region.getByRole("heading", { name: "acme-crm" }).waitFor();
   await capture("settings-connections");
   await region.getByRole("button", { name: "Edit", exact: true }).click();
   assert.equal(await page.getByLabel("Secret", { exact: true }).inputValue(), "");
@@ -161,5 +172,118 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
   const routeStdin = JSON.parse((await readFile(resolve(fake.state, "secret-stdin.log"), "utf8")).trim().split("\n").at(-1));
   assert.equal(routeStdin.value, routeToken);
   assert.ok(!(await readFile(resolve(fake.state, "invocations.log"), "utf8")).includes(routeToken));
+  assert.deepEqual(errors, []);
+});
+
+test("Settings browser: secret address and device-code connections, the sign-in view and Sign in again", { timeout: 45000 }, async (t) => {
+  const outlook = {
+    name: "outlook", base_url: "https://graph.microsoft.com/v1.0/",
+    auth: { scheme: "oauth2_device", token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      device_url: "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode", client_id: "client-fixture",
+      scopes: ["Calendars.Read", "offline_access"] },
+    methods: ["GET"], drafts: [], timeout_seconds: 20, max_response_bytes: 1048576, disabled: false,
+    slot: "conn_04", slot_state: "set", auth_state: "expired",
+  };
+  const feed = {
+    name: "team-calendar", base_url: "https://outlook.office365.com/", auth: { scheme: "secret_path" },
+    methods: ["GET"], drafts: [], timeout_seconds: 20, max_response_bytes: 1048576, disabled: false, slot: "conn_05", slot_state: "set",
+  };
+  const started = (connection) => ({ connection, state: "pending", user_code: "WDJB-MJHT",
+    verification_uri: "https://microsoft.example/devicelogin", expires_in: 900, interval: 1 });
+  const fixtures = {
+    ...gatewayFixtures,
+    "gateway.connection-list": { connections: [gatewayFixtures["gateway.connection-list"].connections[0], outlook, feed], free_slots: 13 },
+    "gateway.oauth-device-start": started("outlook"),
+    "gateway.oauth-device-poll": { connection: "outlook", state: "pending", interval: 1 },
+  };
+  const { fake, fixturePath, page, errors, capture, region } = await openSettings(t, fixtures);
+  const card = (name) => region.locator("article").filter({ has: page.getByRole("heading", { name, exact: true }) });
+  await card("outlook").getByText("Sign-in expired", { exact: true }).waitFor();
+  await card("team-calendar").getByText("Secret address set", { exact: true }).waitFor();
+  assert.equal(await card("acme-crm").getByRole("button", { name: /Sign in/ }).count(), 0);
+  await capture("settings-connections-sign-in-expired");
+
+  // Sign in again: the code and where to enter it, then the connected state.
+  await card("outlook").getByRole("button", { name: "Sign in again", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Sign in to outlook", exact: true });
+  assert.equal((await panel.getByLabel("Sign-in code", { exact: true }).innerText()).trim(), "WDJB-MJHT");
+  const address = panel.getByRole("link", { name: "https://microsoft.example/devicelogin", exact: true });
+  assert.equal(await address.getAttribute("href"), "https://microsoft.example/devicelogin");
+  assert.equal(await address.getAttribute("rel"), "noopener noreferrer");
+  await panel.getByRole("status").filter({ hasText: "Waiting for you to approve the sign-in…" }).waitFor();
+  await capture("settings-device-code");
+  const invoked = async () => (await readFile(resolve(fake.state, "invocations.log"), "utf8")).trim().split("\n").map(JSON.parse);
+  for (let tries = 0; !(await invoked()).some((args) => args[2] === "gateway.oauth-device-poll"); tries += 1) {
+    assert.ok(tries < 50, "the panel polls at the interval the service gave");
+    await page.waitForTimeout(100);
+  }
+  await writeFile(fixturePath, JSON.stringify({ ...fixtures,
+    "gateway.connection-list": { ...fixtures["gateway.connection-list"],
+      connections: fixtures["gateway.connection-list"].connections.map((item) => item.name === "outlook" ? { ...item, auth_state: "signed_in" } : item) },
+    "gateway.oauth-device-poll": { connection: "outlook", state: "connected" } }));
+  await page.getByRole("status").filter({ hasText: "Signed in to outlook." }).waitFor();
+  await card("outlook").getByText("Signed in", { exact: true }).waitFor();
+  assert.equal(await card("outlook").getByRole("button", { name: /Sign in/ }).count(), 0);
+  const starts = (await invoked()).filter((args) => args[2] === "gateway.oauth-device-start").map((args) => JSON.parse(args.at(-1)));
+  assert.deepEqual(starts, [{ connection: "outlook" }]);
+  // Disable saves the listed fields back: every OAuth field, never the listing's sign-in state.
+  const postedToggle = page.waitForRequest((request) => request.url().endsWith("/api/settings/connections/put"));
+  await card("outlook").getByRole("button", { name: "Disable", exact: true }).click();
+  const toggle = JSON.parse((await postedToggle).postData());
+  assert.equal(toggle.disabled, true);
+  assert.equal("auth_state" in toggle, false);
+  assert.deepEqual(toggle.auth, outlook.auth);
+  await card("outlook").getByText("Disabled", { exact: true }).waitFor();
+
+  // A pasted feed address: the origin becomes the base URL, the path and query the secret.
+  await page.getByRole("button", { name: "Add connection", exact: true }).click();
+  await page.getByLabel("Connection name", { exact: true }).fill("ics-feed");
+  await page.getByLabel("Authentication", { exact: true }).selectOption("secret_path");
+  assert.equal(await page.getByRole("checkbox", { name: "POST", exact: true }).isVisible(), false);
+  const feedPath = "/owa/calendar/abc123/feedtoken987/calendar.ics?key=xyz";
+  await page.getByLabel("Secret address", { exact: true }).fill(`https://calendar.example${feedPath}`);
+  const postedFeed = page.waitForRequest((request) => request.url().endsWith("/api/settings/connections/put"));
+  await page.getByRole("button", { name: "Save connection", exact: true }).click();
+  const feedBody = JSON.parse((await postedFeed).postData());
+  assert.deepEqual({ ...feedBody, secret: undefined }, { name: "ics-feed", base_url: "https://calendar.example/", auth: { scheme: "secret_path" },
+    methods: ["GET"], drafts: [], timeout_seconds: 20, max_response_bytes: 1048576, disabled: false, secret: undefined });
+  assert.equal(feedBody.secret, feedPath);
+  await page.getByRole("status").filter({ hasText: "Connection saved." }).waitFor();
+  const stdin = (await readFile(resolve(fake.state, "secret-stdin.log"), "utf8")).trim().split("\n").map(JSON.parse);
+  assert.equal(stdin.at(-1).value, feedPath);
+  assert.ok(!(await page.content()).includes("feedtoken987"));
+  assert.ok(!(await readFile(resolve(fake.state, "invocations.log"), "utf8")).includes("feedtoken987"));
+
+  // A device-code connection: no secret field, Microsoft's endpoints offered, then Sign in.
+  await page.getByRole("button", { name: "Add connection", exact: true }).click();
+  await page.getByLabel("Connection name", { exact: true }).fill("graph");
+  await page.getByLabel("Base URL", { exact: true }).fill("https://graph.microsoft.com/v1.0/");
+  await page.getByLabel("Authentication", { exact: true }).selectOption("oauth2_device");
+  assert.equal(await page.getByLabel("Secret", { exact: true }).isVisible(), false);
+  assert.equal(await page.getByLabel("Token URL", { exact: true }).inputValue(), "https://login.microsoftonline.com/common/oauth2/v2.0/token");
+  await page.getByLabel("Client ID", { exact: true }).fill("client-abc");
+  await capture("settings-device-code-editor");
+  const postedGraph = page.waitForRequest((request) => request.url().endsWith("/api/settings/connections/put"));
+  await page.getByRole("button", { name: "Save connection", exact: true }).click();
+  assert.deepEqual(JSON.parse((await postedGraph).postData()), {
+    name: "graph", base_url: "https://graph.microsoft.com/v1.0/",
+    auth: { scheme: "oauth2_device", token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      device_url: "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode", client_id: "client-abc", scopes: ["Calendars.Read", "offline_access"] },
+    methods: ["GET"], drafts: [], timeout_seconds: 20, max_response_bytes: 1048576, disabled: false,
+  });
+  await page.getByRole("status").filter({ hasText: "Connection saved." }).waitFor();
+  await card("graph").getByText("Not signed in", { exact: true }).waitFor();
+
+  // A declined sign-in says so and offers to try again.
+  const current = JSON.parse(await readFile(fixturePath, "utf8"));
+  await writeFile(fixturePath, JSON.stringify({ ...current, "gateway.oauth-device-start": started("graph"),
+    "gateway.oauth-device-poll": { connection: "graph", state: "denied" } }));
+  await card("graph").getByRole("button", { name: "Sign in", exact: true }).click();
+  const graphPanel = page.getByRole("region", { name: "Sign in to graph", exact: true });
+  await graphPanel.getByRole("alert").filter({ hasText: "The sign-in was declined." }).waitFor();
+  await graphPanel.getByRole("button", { name: "Try again", exact: true }).waitFor();
+  await capture("settings-device-code-declined");
+  await graphPanel.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.equal(await graphPanel.count(), 0);
   assert.deepEqual(errors, []);
 });

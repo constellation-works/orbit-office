@@ -16,7 +16,7 @@
     "base_url": {
       "type": "string",
       "maxLength": 2048,
-      "description": "https, or plain http to a loopback address."
+      "description": "https, or plain http to a loopback address. For secret_path, the origin only (https://host/)."
     },
     "auth": {
       "type": "object",
@@ -27,7 +27,7 @@
         "scheme": {
           "type": "string",
           "maxLength": 16,
-          "description": "bearer, basic, header or none."
+          "description": "bearer, basic, header, none, secret_path (the slot holds the path and query) or oauth2_device (the slot holds a refresh token)."
         },
         "header": {
           "type": "string",
@@ -38,6 +38,30 @@
           "type": "string",
           "maxLength": 256,
           "description": "The user name (scheme basic); the slot holds the password."
+        },
+        "token_url": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "oauth2_device: the token endpoint (https)."
+        },
+        "device_url": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "oauth2_device: the device authorization endpoint (https)."
+        },
+        "client_id": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "oauth2_device: the public client id."
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "maxItems": 32,
+          "description": "oauth2_device: the scopes to request (at least one)."
         }
       },
       "additionalProperties": false

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.oauth-device-start request",
+  "type": "object",
+  "description": "Start the device-code sign-in for an oauth2_device connection.",
+  "required": [
+    "connection"
+  ],
+  "properties": {
+    "connection": {
+      "type": "string",
+      "maxLength": 48
+    }
+  },
+  "additionalProperties": false
+}
