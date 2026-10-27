@@ -12,3 +12,4 @@ mod session;
 pub mod settings;
 mod signals;
 mod source;
+pub mod template;

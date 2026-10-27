@@ -11,6 +11,48 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// A template file has invalid or incomplete rules.
+    #[error("invalid template {file}, field {field}: {reason}")]
+    TemplateInvalid {
+        /// The caller-supplied template file name.
+        file: String,
+        /// The refused or missing rule field.
+        field: String,
+        /// Safe diagnostic, never the raw rule value.
+        reason: &'static str,
+    },
+    /// A page does not use its template's fixed id or id pattern.
+    #[error("page {id} does not match template {template}'s id rule {pattern}")]
+    PageIdMismatch {
+        /// Page id being checked.
+        id: String,
+        /// Template name.
+        template: String,
+        /// Expected fixed id or pattern.
+        pattern: String,
+    },
+    /// A page is in the wrong knowledge layer for its template.
+    #[error("page {id} has type {actual}; template {template} requires {expected}")]
+    TemplateTypeMismatch {
+        /// Page id being checked.
+        id: String,
+        /// Template name.
+        template: String,
+        /// Required page type.
+        expected: &'static str,
+        /// Supplied page type.
+        actual: &'static str,
+    },
+    /// A required level-two section is absent or has no content.
+    #[error("page {id} needs a nonempty ## {section} section for template {template}")]
+    MissingSection {
+        /// Page id being checked.
+        id: String,
+        /// Template name.
+        template: String,
+        /// Required heading text.
+        section: String,
+    },
     /// No adapter was supplied for Library operations.
     #[error("Library access is unavailable in this call context")]
     LibraryUnavailable,
@@ -63,6 +105,10 @@ impl Error {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
+            Self::TemplateInvalid { .. } => "template_invalid",
+            Self::PageIdMismatch { .. } => "page_id_mismatch",
+            Self::TemplateTypeMismatch { .. } => "template_type_mismatch",
+            Self::MissingSection { .. } => "missing_section",
             Self::LibraryUnavailable => "library_unavailable",
             Self::Library { code, .. } => code,
             Self::Model { code, .. } => code,

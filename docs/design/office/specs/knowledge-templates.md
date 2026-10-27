@@ -51,6 +51,24 @@ What they do, for whom, and what they decide.
 - **Not pages.** Templates are not indexed, searched, attached or counted
   by any metric.
 
+The pure Rust API is `office_core::domain::template`: parse with
+`Template::from_markdown(filename, markdown)` and check resolved page fields
+with `validate_page(id, DocumentKind, body)`. `BUNDLED` exposes each template's
+`filename` and complete `markdown`, ready for init to copy. The parser does
+no I/O. All nine rule fields shown above are required; unknown and duplicate
+keys are refused. Frontmatter supports a flat YAML mapping with plain or
+quoted scalar values, comments, and inline or indented block lists of heading
+names. Other YAML constructs are refused with `template_invalid`; diagnostics
+name the file and field without echoing rule values.
+
+Ids use lowercase letters, digits and single hyphens between nonempty
+components. A pattern may contain one `<slug>` placeholder, matching one or
+more such components. A one-per-Library template must use a fixed id.
+`type` is `domain` or `runbook`; `sensitivity` is `normal` or `private`.
+Required headings must also occur in `sections`. Page headings match the
+declared names exactly; headings inside fenced or indented code do not
+create sections. A section ends at the next level-one or level-two heading.
+
 ## The template field on pages
 
 Knowledge page frontmatter ([library.md](./library.md#knowledge-pages))
@@ -93,6 +111,29 @@ meet the current template.
 | `goals` | `dom-goals` (one) | This period's priorities or objectives | `never`; read by signals and reviews |
 | `rhythm` | `dom-rhythm` (one) | Recurring meetings and deadlines ("status update every Friday") | `never`; read by signals |
 | `runbook` | `rb-<slug>` | Inputs, steps, done when (all required) | named by the task, as today |
+
+The bundled files use these concrete heading names and minimum requirements.
+All default to `sensitivity: normal`; all except `runbook` have `type: domain`.
+Runbooks use `attach: never` for automatic policy selection and can still be
+explicitly named by a task.
+
+| Template | Sections | Required |
+|---|---|---|
+| `user` | Name, Role, Team, Duties, Working preferences | Name, Role |
+| `standing-directions` | Directions | Directions |
+| `systems` | Tools, Locations | Tools |
+| `person` | Role, Works with, What they care about, History | Role |
+| `client` | Overview, People, Contract, History, Open issues | Overview |
+| `project` | Status, Background, Stakeholders, Decisions, Timeline, Artifacts | Status, Background |
+| `topic` | Overview, How it works here, Key numbers, Open questions | Overview |
+| `glossary` | Terms (one `###` heading per term) | Terms |
+| `goals` | Priorities, Objectives | Priorities |
+| `rhythm` | Recurring meetings, Deadlines | Recurring meetings |
+| `runbook` | Inputs, Steps, Done when | Inputs, Steps, Done when |
+
+Skeleton prose prompts for evidence; it is not a populated Library page.
+The onboarding and knowledge-write consumers replace it with supported claims
+and citations before proposing a page.
 
 - **One page per person.** A meeting links its participants to their own
   pages, so a person's back-links show every meeting and task they appear
