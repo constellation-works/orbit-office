@@ -708,7 +708,16 @@ pub(crate) fn frontmatter_scalar(text: &str, field: &str) -> Option<String> {
         if key.trim() != field {
             continue;
         }
-        let value = unquote_scalar(value.trim());
+        let value = value.trim();
+        let value = match uncomment("", field, value) {
+            Ok(value) => value.trim(),
+            Err(_) => value,
+        };
+        let value = match scalar("", field, value) {
+            Ok(Value::String(value)) => value,
+            Ok(value) => value.to_string(),
+            Err(_) => unquote_scalar(value),
+        };
         if value.is_empty() {
             return None;
         }
