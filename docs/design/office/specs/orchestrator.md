@@ -47,6 +47,7 @@ from that surface, not from instructions.
   part of it. The skill tells the agent which tools to use: `task.add`,
   `task.update`, `task.list`, `task.show`, `task.artifact.get`,
   `friction.add`, `friction.update`, `search`, `auto_task.list`.
+- **`gateway.*`** for API requests through the user's connections, and **`cloudcli.run`** for read-only cloud queries when it is enabled ([gateway.md](./gateway.md)). The skill tells the agent to use them instead of `curl` or a cloud CLI in its shell. Writes are drafts the user approves.
 - **Not in the surface at all:** workflow dispatch (the app's dispatch
   pass owns it), crew, pool or host management, release, experiments,
   leases, `command.exec`.
@@ -67,6 +68,6 @@ behaviour is reviewable) requires:
 
 ## Guardrails
 
-- **Outward-facing actions** (sending email or messages, purchases, submissions, anything leaving the machine apart from model inference) are never executed directly. The agent's draft lands in `review`. Approving it promotes a `draft` artifact with a Send action, and Send records `sent_at`. In the hackathon build, Send copies the draft to the clipboard. Nothing is sent.
+- **Outward-facing actions** (sending email or messages, purchases, submissions, API writes, anything leaving the machine apart from model inference and audited gateway reads) are never executed directly. The agent's draft lands in `review`. Approving it promotes a `draft` artifact with a Send action, and Send records `sent_at`. In the hackathon build, Send copies the draft to the clipboard. Nothing is sent.
 - **Standing automation** and **knowledge writes** go through proposals, with no exceptions. When the user asks for a page change in conversation, the agent files a proposal that cites the conversation source, and the user accepts it in the app with one click. The write tools are hidden from MCP, so this is enforced by the tool surface.
 - **Residual risk, stated honestly.** An interactive agent CLI with shell access runs commands as the user, so it could call `orbit tool run` directly. The backstops are the agent CLI's own approval prompt for shell commands, and the audit trail, which shows every write and who made it. The demo keeps Muse Code's shell approvals on.

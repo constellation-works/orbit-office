@@ -7,9 +7,9 @@ boundaries are checked by `make structure`. A lower layer never imports a higher
 `scripts/check-dependency-direction.sh` in the same commit. Why this shape:
 [docs/design/office/4_decisions.md](docs/design/office/4_decisions.md#a-crate-per-enforceable-edge-a-folder-per-tool-and-every-shared-list-written-once).
 
-Three pieces live in this repo: the Rust workspace (the plugin's exec backend), `plugin/`
-(the installable Orbit plugin tree) and `app/` (the TypeScript web app, which reaches the
-backend only through Orbit's tools).
+Four pieces live in this repo: the Rust workspace (the plugin's exec backend), `plugin/`
+(the installable Orbit plugin tree), `app/` (the TypeScript web app, which reaches the
+backend only through Orbit's tools) and `gateway/` (two small Python plugins, see below).
 
 ## Rust layers
 
@@ -147,6 +147,28 @@ Boundaries, checked by `scripts/check-app-boundaries.py`:
 - `web` never imports `node:*` or the server; the server never imports `web`.
 - `contracts` imports nothing outside itself. Web imports it with `import type` only, so
   the browser never needs to resolve it.
+
+## Gateway plugins
+
+`gateway` and `cloudcli` (docs/design/office/specs/gateway.md) are Python 3.12 plugins with
+no third-party packages. They share one package, and neither depends on the Rust crates or
+the app:
+
+```
+gateway/
+  src/orbit_gateway/     shared: envelope, redact, audit, state (owner-only files)
+    connections.py  http.py  drafts.py      used by the gateway plugin only
+    cloud.py                                used by the cloudcli plugin only
+  plugins/gateway/.orbit-plugin/    plugin.yaml, bin/backend.py, schemas/, skills/, tests/conformance/
+  plugins/cloudcli/.orbit-plugin/   the same shape
+  tests/                 unittest, standard library only
+  Makefile               test, check, export (copies src/orbit_gateway into each export's lib/)
+```
+
+- Only `http.py` and `drafts.py` open network connections, and only `cloud.py` spawns a
+  process. The gateway backend never imports `cloud.py`, and the cloudcli backend never
+  imports `http.py` or `drafts.py`. `make -C gateway check` enforces this with an import scan.
+- Every writer that persists text goes through `redact.py`. Its inventory is a test.
 
 ## Integrator-owned files
 

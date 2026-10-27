@@ -68,21 +68,28 @@ spaces, so script shebangs that name the interpreter keep working.
    release (a local directory install, so no Rust toolchain is needed); `--from-source`
    uses the pinned `git+` source and needs `cargo`. Then `orbit plugin enable office` with
    the grants the manifest requests (`fs`, `network`), after printing them and asking once
-   (`--yes` skips the question).
+   (`--yes` skips the question). The `gateway` plugin is added and enabled the same way, in
+   the same consent prompt, and `cloudcli` only with `--with-cloudcli`
+   ([gateway.md](./gateway.md)). Both come from the same release export, and neither has a
+   build step.
 6. **Secrets.** Prompts for the Meta API key, and optionally the Baseten token, with hidden
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set.
 7. **Scaffold.** `orbit tool run office.init`: the Library's layout, git repository, config,
    `.gitignore` and index, then the first Library commit.
 8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Muse Code's
-   `settings.json`, keeping a backup of the old file, and installs the office skills. With
-   `--agent claude|codex` it registers the other CLI instead.
+   `settings.json`, keeping a backup of the old file, and installs the office skills. It
+   also adds deny rules for direct shell use of `curl`, `wget`, `http`, `aws` and `gcloud`,
+   so API and cloud calls go through the gateway ([gateway.md](./gateway.md#agent-cli-deny-rules)),
+   and lists them in the summary. Rules the user already has are kept, and uninstall
+   removes only the ones it added. With `--agent claude|codex` it registers the other CLI
+   instead. A CLI with no per-command deny rules is reported as such.
 9. **App.** Builds the app and installs it as a login service (a launchd agent on macOS, a
    systemd user unit on Linux), then opens `http://localhost:<port>`, where the browser
    offers to install it as a PWA.
 
 The summary lists what was created, where, and the uninstall command
-(`install.sh --uninstall`). Uninstall removes the service, the MCP entry, the plugin and the
+(`install.sh --uninstall`). Uninstall removes the service, the MCP entry and its deny rules, the plugins and the
 `tools` folder (`uv` and its Python, which nothing else uses). It keeps `~/orbit` and the
 Library unless `--purge` is given.
 

@@ -737,6 +737,62 @@ Library or the workspace repository. The alternatives considered:
   than claiming isolation. Accepting a scripted routine needs the network
   once.
 
+## API and cloud CLI calls go through gateway plugins
+
+**Recorded:** 2026-10-26
+**Code anchors:** `gateway/`; [specs/gateway.md](./specs/gateway.md)
+
+### Context
+
+Office workers keep API requests, with their keys, in Postman. An agent
+with a shell would make the same calls with `curl`, the key in its command
+line, and no record of what it sent or got back. Cloud CLIs are worse: the
+agent would run with the user's own logins and could change things. The
+alternatives considered:
+
+- **A standalone Python CLI** that the agent shells out to. It would need
+  its own secret store, grant flow and audit, and the agent would have to
+  learn its flags. An Orbit plugin gets `orbit plugin enable` consent,
+  `orbit plugin secret set` storage under `~/.orbit`, host-side masking of
+  secret values, Orbit's tool-call audit and typed MCP tools.
+- **Tools in the `office` plugin.** These calls are not office-specific.
+  The Rust backend would gain an HTTP client outside `office-models`, which
+  the crate policy bans. And the CLI proxy's programs would be bound to
+  every agent that calls any office tool.
+- **One gateway plugin with both.** Orbit lets an agent call a plugin only
+  when every program the plugin declares is on its activity's allowlist.
+  Agents would therefore need `aws` and `gcloud` allowlisted, which would let
+  them run those CLIs directly.
+- **Proving a CLI command read-only by parsing its arguments.** The verbs
+  are not a reliable signal, and several "get" commands read secrets.
+- **Naming the tools `orbit.request.*`.** The `orbit.` namespace is
+  reserved for Orbit's own tools.
+
+### Decision
+
+- Two Python plugins, standard library only, sharing one package:
+  - **`gateway`** for HTTP through user-granted connections. Its secrets live
+    in sixteen declared slots, because Orbit plugin secrets are names fixed in
+    the manifest. GET and HEAD run directly. Writes are drafts that the user
+    approves, sent once and bound to the digest the user saw.
+  - **`cloudcli`** for read-only `aws` and `gcloud`, orchestrator only. Its
+    own read-only identities are the guarantee; a command allowlist and a
+    denylist for secret-reading commands are a second layer.
+- **One value-based redactor** at the durability boundary, plus high-confidence
+  credential shapes, and an append-only audit with no bodies.
+- **Deny rules** for direct `curl`, `wget`, `http`, `aws` and `gcloud` in the
+  agent CLI, documented as an accident guard.
+- GET and drafts are must-have for the event; `cloudcli` is should-have.
+
+### Consequences
+
+- A secret given to a connection never reaches an agent or a log. Every API
+  read is on record, and no API write leaves without the user's approval.
+- Cost: a second language in the repo, with its own test job. A limit of
+  sixteen connections per install until Orbit supports dynamic secret
+  names. The deny rules do not stop an agent that opens sockets itself, and
+  the spec says so.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.
