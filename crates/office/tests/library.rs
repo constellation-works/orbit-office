@@ -1512,6 +1512,49 @@ fn private_capture_metadata_cannot_inject_frontmatter() {
     }
 }
 
+#[test]
+fn private_upload_extension_cannot_inject_frontmatter() {
+    let env = Env::new();
+    let init = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(init["ok"], true, "{init}");
+
+    let upload = env.workspace.join("private.txt\nsensitivity: normal");
+    std::fs::write(&upload, "private uploaded body\n").expect("upload");
+    let captured = env.tool(
+        "office.capture",
+        serde_json::json!({
+            "upload_path": upload.to_string_lossy(),
+            "title": "Private upload",
+            "sensitivity": "private"
+        }),
+    );
+    assert_eq!(captured["ok"], true, "{captured}");
+    assert_eq!(captured["output"]["sensitivity"], "private", "{captured}");
+    let id = captured["output"]["id"].as_str().expect("source id");
+
+    let shown = env.tool("office.source-show", serde_json::json!({"id": id}));
+    assert_eq!(shown["ok"], true, "{shown}");
+    assert_eq!(shown["output"]["sensitivity"], "private", "{shown}");
+    assert_eq!(shown["output"]["body"], "private uploaded body", "{shown}");
+
+    let source_path = captured["output"]["path"].as_str().expect("source path");
+    let original_path = env
+        .library()
+        .join(source_path)
+        .parent()
+        .expect("source directory")
+        .join("original.txt");
+    assert_eq!(
+        std::fs::read(original_path).expect("stored original"),
+        b"private uploaded body\n"
+    );
+
+    let store = office_store::LibraryStore::open(&env.library(), &env.state).expect("store");
+    let indexed = store.get(id).expect("indexed source").expect("source");
+    assert_eq!(indexed.sensitivity, "private", "{indexed:?}");
+    assert_eq!(indexed.body, "private uploaded body", "{indexed:?}");
+}
+
 /// Tools that open the store. Dispatch reaches the grant check before the handler.
 fn store_openers() -> Vec<(&'static str, serde_json::Value)> {
     vec![
