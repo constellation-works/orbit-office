@@ -56,6 +56,7 @@ Options:
                    the tools folder (uv and its Python); keeps the
                    workspace and the Library
   --purge          Like --uninstall, and also removes the workspace
+                   when this installer owns it; otherwise refuses
   -h, --help       Show this help
 
 Environment:
@@ -266,31 +267,29 @@ dir_is_empty() {
     [ -z "$(ls -A "$1" 2>/dev/null)" ]
 }
 
-# Is $WORKSPACE already an office workspace (or a partial install of one)?
+# Does this installer own $WORKSPACE?
+# STD-03@2 §R29: ownership is recorded provenance, never a location, a
+# name, or the absence of another claim. Proof is the install-state line
+# this script writes (workspace_path=<path>), or the partial tree step 4
+# writes before that line: only .git, the .gitignore it writes, and
+# .orbit. A library entry, a bare .orbit directory, or a path that merely
+# appears in `orbit workspace list` is not proof. Adoption and purge both
+# use this check.
 is_office_workspace() {
-    [ -d "$WORKSPACE/.orbit" ] && return 0
-    [ -e "$WORKSPACE/library" ] && return 0
     if state_has "workspace_path=$WORKSPACE"; then
         return 0
     fi
-    # A partial install of ours: only git plus a .gitignore we wrote.
     if [ -d "$WORKSPACE/.git" ] && [ -f "$WORKSPACE/.gitignore" ] \
         && grep -qx '/library/' "$WORKSPACE/.gitignore" 2>/dev/null; then
         _extra=0
-        for _entry in "$WORKSPACE"/* "$WORKSPACE"/.[!.]*; do
+        for _entry in "$WORKSPACE"/* "$WORKSPACE"/.[!.]* "$WORKSPACE"/..?*; do
             [ -e "$_entry" ] || continue
             case "$_entry" in
-                "$WORKSPACE/.git"|"$WORKSPACE/.gitignore") ;;
+                "$WORKSPACE/.git"|"$WORKSPACE/.gitignore"|"$WORKSPACE/.orbit") ;;
                 *) _extra=1 ;;
             esac
         done
         [ "$_extra" -eq 0 ] && return 0
-    fi
-    # Ask Orbit, when it is here and already knows the folder.
-    if command -v orbit >/dev/null 2>&1; then
-        if orbit workspace list 2>/dev/null | grep -Fq "$WORKSPACE"; then
-            return 0
-        fi
     fi
     return 1
 }
@@ -1059,6 +1058,17 @@ EOF
 
 do_uninstall() {
     _purge="$1"
+    # Prove ownership before any teardown. A refusal must leave the
+    # service, plugin, tools, workspace and data folder in place.
+    if [ "$_purge" -eq 1 ]; then
+        case "$WORKSPACE" in
+            "$HOME"|"/"|"") die "refusing to purge $WORKSPACE" ;;
+            *) ;;
+        esac
+        if ! is_office_workspace; then
+            die "refusing to purge $WORKSPACE: it is not an office workspace this installer owns"
+        fi
+    fi
     step "uninstall"
     # Service first.
     if [ "$OS" = "macos" ]; then
@@ -1138,6 +1148,9 @@ do_uninstall() {
     state_clear "app_built"
     state_clear "agent_registered"
     if [ "$_purge" -eq 1 ]; then
+        # The check above already ran. Repeat the protected-path guard
+        # immediately before the delete so HOME, / and an empty path
+        # cannot be removed even if that earlier check is bypassed.
         case "$WORKSPACE" in
             "$HOME"|"/"|"") die "refusing to purge $WORKSPACE" ;;
             *) ;;
