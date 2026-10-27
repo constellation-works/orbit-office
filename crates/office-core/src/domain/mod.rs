@@ -5,6 +5,7 @@
 
 pub mod artifact;
 pub mod bootstrap;
+pub mod calendar;
 pub mod endpoint;
 pub mod knowledge;
 pub mod metrics;

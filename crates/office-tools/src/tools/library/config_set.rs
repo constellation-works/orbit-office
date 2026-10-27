@@ -28,7 +28,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .ok_or_else(|| Error::InvalidArgument("config-set key must be a string".into()))?;
     let value = call.input.get("value").ok_or_else(|| {
         Error::InvalidArgument(
-            "config-set requires value (null is allowed for retention, open_weights and demo.simulated_until)".into(),
+            "config-set requires value (null is allowed for retention, open_weights, calendar.connection and demo.simulated_until)".into(),
         )
     })?;
     call.ports.library.set_setting(key, value.clone())?;

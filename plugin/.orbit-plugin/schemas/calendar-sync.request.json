@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ics_file": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Workspace-relative regular .ics file, at most 1 MiB; symlinks and traversal refused."
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

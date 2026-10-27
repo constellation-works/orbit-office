@@ -35,6 +35,9 @@ office-testkit = { path = "crates/office-testkit" }
 # No `color` or `wrap_help`: both make clap query the terminal itself, and the
 # output sink is the only place allowed to do that (STD-01 R17). Help is plain
 # text everywhere, which also keeps the help goldens byte-stable.
+chrono = { version = "0.4.43", default-features = false, features = ["std"] }
+chrono-tz = "0.10.4"
+url = "2.5.8"
 base64 = "0.22"
 html5ever = "0.38"
 quick-xml = "0.41.0"

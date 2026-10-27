@@ -3,6 +3,7 @@
 
 pub(crate) mod artifacts;
 pub(crate) mod bootstrap;
+pub(crate) mod calendar;
 pub(crate) mod insights;
 pub(crate) mod knowledge;
 pub(crate) mod library;

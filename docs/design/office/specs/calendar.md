@@ -311,10 +311,10 @@ calls `office.capture` with `event_key`.
 
 ## Demo
 
-The demo uses `ics_file` with a synthetic `demo/calendar.ics`: a week of
+The demo uses `ics_file` with a synthetic `demo/synthetic/calendar.ics`: a week of
 invented meetings with invented people that match the seeded person pages,
-one weekly series with two earlier captured meetings, and one cancelled
-instance. It is never a real calendar.
+one weekly series spanning the two earlier meetings, one cancelled
+instance, and one moved instance retaining its original-start key. It is never a real calendar.
 
 ## Not built
 
@@ -326,13 +326,62 @@ instance. It is never a real calendar.
 - Email sync. When it arrives, it can reuse the Graph connection with a
   `Mail.Read` scope.
 
-## Open questions
+## Callback and snapshot implementation
 
-- Whether an Orbit plugin's callback descriptor may call another plugin's
-  tool (`gateway.http-get`). If it may not, `office-calendar-sync` becomes
-  a two-step job: a `plugin.tool_call` of `gateway.http-get` that writes the
-  response to the job's scratch space, then `office.calendar-sync` reading
-  that file.
+The one-step `office-calendar-sync` job inlines `plugin.tool_call` of
+`office.calendar-sync`. Its routine is registered, every 15 minutes, disabled
+on seed. Orbit's descriptor callback guard checks exact granted tool names
+without restricting their namespace, so the two-step fallback is unnecessary.
+Office requests exactly two additional callback grants: `gateway.connection-list`
+(to select the named connection's auth scheme, base and byte bound) and
+`gateway.http-get` (all feed and Graph reads). `oauth2_device` selects Graph;
+other supported connection schemes select an ICS feed. Each callback has the
+existing 30-second deadline, capped capture and no retry. The backend's existing
+60-second process deadline remains a whole-sync ceiling; a killed fetch cannot
+publish partial events. A killed process may leave no failure receipt.
+
+`events` in sync output is the number of normalized instances written, and
+`skipped` counts records/instances with unknown or unresolved zones. Imports
+are regular workspace-relative `.ics` files, at most 1 MiB; symlinks and traversal
+are refused. Feed/pages also have a 1 MiB Office cap in addition to the
+connection's lower `max_response_bytes`. Graph next links must remain inside
+the HTTPS base origin and path prefix; credentials, fragments, duplicate query
+keys and encoded path separators are refused. At most ten pages, 10,000 events
+a 16 MiB normalized snapshot, at most 1,024 properties per event,
+and 1,000,000 recurrence candidate days are processed. Reaching a bound refuses
+the whole sync and keeps the last good snapshot.
+
+Recurrences preserve wall-clock time through IANA DST transitions. The Windows
+mapping uses CLDR release-46 territory `001` defaults. Floating datetimes and
+nonexistent DST local times are unresolved and counted; ambiguous local times
+use the earlier occurrence. All-day dates use UTC midnight. BYDAY accepts bare
+weekdays and monthly ordinals (±1 through ±5); BYMONTHDAY accepts ±1 through ±31.
+Unknown RRULE parts or invalid combinations are unsupported, retaining DTSTART
+only with the unsupported flag. EXDATE removes instances; a cancelled
+RECURRENCE-ID stays as a cancelled event. Overrides inherit unspecified master
+metadata and duration. Ranges overlap events and are half-open; cancellation
+is excluded by default and included with `include_cancelled: true`.
+
+Snapshot files are private and versioned. A failed attempt writes only a safe
+code to owner-only `calendar/last_error.json`, bound to the prior snapshot's
+hash. `events.json` is byte-identical on failure. Successful publication changes
+the generation and invalidates older failure metadata in one atomic snapshot
+write. Reads never create state. The Calendar port and its fake share this
+success/failure contract; a future snapshot version refuses reads and writes.
+Library person pages match attendee addresses case-insensitively against `contact`
+refs (plain addresses or `mailto:`). Only person id/title and attendee name/response
+are returned, with attendee addresses also withheld if repeated in invite text.
+Prep matches report series `meeting-prep` with `event_key` or `event.key`;
+capture matches source `event.key`, with `summary.md` determining `summarized`.
+Those producers are separate features. Invite markup, URLs and passcode/dial-in
+lines are removed before persistence; agenda remains untrusted plain text,
+limited to 8 KiB and quoted as data by downstream consumers.
+
+Calendar settings may be absent for ICS-file use, receiving the defaults above.
+`calendar.connection` is null or 1–48 ASCII letters, digits, `_` or `-`;
+null clears the connection. The other four keys are integers with the bounds
+above; unknown leaves and other types refuse the update.
+
 
 ## Task References
 

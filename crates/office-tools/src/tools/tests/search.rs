@@ -49,6 +49,7 @@ fn ports() -> Ports<'static> {
         models: Box::new(FakeModels::new()),
         orbit: Box::new(FakeOrbit::default()),
         clock: Box::new(FakeClock(std::time::SystemTime::UNIX_EPOCH)),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     }
 }

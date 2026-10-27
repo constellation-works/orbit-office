@@ -64,6 +64,7 @@ fn status_reports_off_template_pages_and_names_a_broken_template() {
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     };
     let output = run(&Call {
@@ -94,6 +95,7 @@ fn status_reports_an_uninitialized_library_without_refusing() {
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     };
     let output = run(&Call {
@@ -133,6 +135,7 @@ fn status_returns_a_pending_write_as_its_typed_error_not_as_uninitialized() {
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     };
     let error = run(&Call {
@@ -161,6 +164,7 @@ fn status_reports_an_unavailable_library_adapter_as_uninitialized_without_refusi
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     };
     let output = run(&Call {
@@ -249,6 +253,7 @@ fn status_reports_a_configured_private_endpoint_and_never_its_token() {
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     };
     let output = run(&Call {
@@ -303,6 +308,7 @@ fn status_returns_a_settings_refusal_instead_of_a_missing_endpoint() {
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     };
     let error = run(&Call {

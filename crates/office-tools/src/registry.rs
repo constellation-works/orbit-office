@@ -10,8 +10,8 @@ use office_core::tool::ToolSpec;
 use serde_json::{Map, Value};
 
 use crate::tools::{
-    artifacts, bootstrap, insights, knowledge, library, proposals, scripts, selection, sessions,
-    sources, status,
+    artifacts, bootstrap, calendar, insights, knowledge, library, proposals, scripts, selection,
+    sessions, sources, status,
 };
 
 /// What a handler receives: the tool's validated input and Orbit's call context.
@@ -84,6 +84,8 @@ impl Tool {
 /// Every tool, in manifest order.
 static TOOLS: &[Tool] = &[
     status::TOOL,
+    calendar::sync::TOOL,
+    calendar::list::TOOL,
     // sources (specs/library.md)
     sources::capture::TOOL,
     sources::transcribe::TOOL,

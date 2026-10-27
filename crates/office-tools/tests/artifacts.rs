@@ -20,6 +20,7 @@ fn ports(orbit: FakeOrbit) -> Ports<'static> {
         models: Box::new(FakeModels::new()),
         orbit: Box::new(orbit),
         clock: Box::new(FakeClock(std::time::SystemTime::UNIX_EPOCH)),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     }
 }
@@ -273,6 +274,7 @@ fn list_ports(library: FakeLibrary) -> Ports<'static> {
         models: Box::new(FakeModels::new()),
         orbit: Box::new(FakeOrbit::default()),
         clock: Box::new(FakeClock(std::time::SystemTime::UNIX_EPOCH)),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     }
 }

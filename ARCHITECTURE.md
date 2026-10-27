@@ -17,7 +17,7 @@ backend only through Orbit's tools) and `gateway/` (two small Python plugins, se
 |------|-------|------|--------------------------|
 | 0. Foundation | `office-common` | The common error, fs mechanisms (path safety, atomic writes, SHA-256), SQLite connection defaults (`sqlite` feature), bounded subprocess supervision shared by adapters and fixtures, small shared types. | — |
 | 1. Domain | `office-core` | **Pure.** The exec envelope (`protocol`), tool contract types (`tool`), declared secret names, the domain model and its rules (`domain/`, including Library records and validated settings), the bundled knowledge templates (`templates/*.md`, compiled in with `include_str!`), and the port traits the application calls (`ports/`). No I/O. | `office-common` |
-| 2. Adapters | `office-store` | Implements the Library port: Markdown files (the source of truth), the rebuildable SQLite index, the Library's own git repository and its writer lock. Also owns plugin state, including the selection tray in `selections.sqlite`, and implements the selections and script-runner ports: run directories under `plugin_state/runs/` and the supervised `uv` child (specs/scripts.md). Structured after `orbit-store`. | `office-common`, `office-core` |
+| 2. Adapters | `office-store` | Implements the Library port: Markdown files (the source of truth), the rebuildable SQLite index, the Library's own git repository and its writer lock. Also owns plugin state, including the calendar snapshot in `calendar/events.json` and the selection tray in `selections.sqlite`, and implements the selections and script-runner ports: run directories under `plugin_state/runs/` and the supervised `uv` child (specs/scripts.md). Structured after `orbit-store`. | `office-common`, `office-core` |
 | 2. Adapters | `office-models` | Implements the model ports: Meta Model API (Muse Spark, Muse Voice Transcribe), the private route (Muse Spark Open on the one endpoint the user chose), privacy routing, the private-endpoint check and local JSON Schema validation of extraction replies. The only crate that may speak HTTP. | `office-common`, `office-core` |
 | 2. Adapters | `office-orbit` | Implements the Orbit port: the manifest's `orbit_tools` callbacks (`task.add`, `task.artifact.put`, …). | `office-common`, `office-core` |
 | 3. Application | `office-tools` | One module per tool, the tool registry and dispatch. Talks to adapters **only through `office-core` ports**, so every tool runs against fakes. | `office-common`, `office-core` |
@@ -35,7 +35,7 @@ Document uploads cross the existing `Library::capture_source` port. The store's
 read upload. Conversion and structural validation finish before the writer lock
 or source persistence. These external dependencies add no internal crate edge.
 
-`office-orbit` uses its `office-core` edge for the eleven Orbit port methods and its
+`office-orbit` uses its `office-core` edge for the thirteen exact-name callback port methods (eleven Orbit and two gateway reads) and its
 `office-common` edge for bounded CLI callback supervision. The composing `office` binary
 constructs this adapter from the host call context and inherited callback environment.
 The testkit's recording Orbit fake shares observations across clones.
@@ -91,6 +91,7 @@ crates/office-tools/src/
     sessions/            brief  digest                                (specs/sessions.md)
     scripts/             run                                          (specs/scripts.md)
     bootstrap/           batch_plan  consolidate  status              (specs/library-bootstrap.md)
+    calendar/            sync  list                                  (specs/calendar.md)
     insights/            metrics  review_inputs                       (specs/analytics-and-reviews.md)
 ```
 
@@ -227,3 +228,13 @@ process.
 - Orbit callbacks in the exec backend are synchronous and bounded to 30 seconds and
   512 KiB per output stream by `office-common::process`. The inherited callback descriptor
   stays open across the CLI child; Orbit owns authentication and live grant checks.
+
+Calendar normalization uses external `chrono` (with clock/default features disabled),
+`chrono-tz` and `url` in the pure core. They add no internal crate edge or HTTP client.
+The CLDR release-46 global Windows-zone mapping is vendored with its Unicode license.
+The calendar port reads contained offline files and private snapshots; the store adapter
+publishes owner-only snapshots under a bounded advisory writer lock. `last_error.json`
+is bound to the exact snapshot hash, so a failed attempt cannot replace events and a
+successful generation makes old failure metadata inapplicable. Reads create no state.
+Gateway metadata and HTTP reads use the existing descriptor-authenticated Orbit adapter,
+with exact `gateway.connection-list` and `gateway.http-get` grants.

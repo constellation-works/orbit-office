@@ -1,5 +1,6 @@
 //! Fake services for tool tests.
 
+mod calendar;
 mod clock;
 mod library;
 mod models;
@@ -7,6 +8,7 @@ mod orbit;
 mod scripts;
 mod selection;
 
+pub use calendar::FakeCalendar;
 pub use clock::FakeClock;
 pub use library::{FakeLibrary, FakeStaging};
 pub use models::FakeModels;
@@ -39,6 +41,7 @@ impl PortsBuilder {
     #[must_use]
     pub fn build(self) -> office_core::ports::Ports<'static> {
         office_core::ports::Ports {
+            calendar: Box::new(FakeCalendar::default()),
             scripts: Box::new(FakeScripts::default()),
             library: Box::new(FakeLibrary::initialized()),
             models: Box::new(FakeModels::new()),

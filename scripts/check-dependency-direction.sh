@@ -35,6 +35,7 @@ policy() {
       BANNED="$SURFACE $HTTP"
       ;;
     office-core)
+      # Calendar uses chrono without a clock, chrono-tz and url: pure parsing, no I/O edge.
       ALLOWED="office-common"
       BANNED="$SURFACE $HTTP"
       ;;

@@ -71,6 +71,7 @@ fn fixture(
         scripts: Box::new(scripts.clone()),
         models: Box::new(FakeModels::new()),
         clock: Box::new(FakeClock(std::time::UNIX_EPOCH)),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     };
     (ports, orbit, scripts)

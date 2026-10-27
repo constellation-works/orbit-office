@@ -120,6 +120,7 @@ def seed(root, binary, video=None, provider_config=None):
                           'Team': 'Works with [[dom-person-mira-vale]].', 'Duties': 'Owns [[dom-project-lantern]] for [[dom-client-acme-paper-kites]].',
                           'Working preferences': f'SIMULATED: concise cited drafts; manual submission. ({cite})'}},
             {'id': 'dom-person-mira-vale', 'title': 'Mira Vale (simulated)', 'template': 'person',
+             'refs': [{'label': 'Invented calendar contact', 'contact': 'mira@acme.example'}],
              'sections': {'Role': f'SIMULATED: Lantern spool owner. ({facts}#L2)', 'Works with': 'Works with Jules Reed (simulated).'}},
             {'id': 'dom-client-acme-paper-kites', 'title': 'Acme Paper Kites (simulated)', 'template': 'client',
              'sections': {'Overview': f'SIMULATED: invented customer running the Lantern pilot. ({facts}#L4)',

@@ -212,6 +212,41 @@ fn context_state_dir(context: &Context) -> Option<PathBuf> {
 }
 
 /// Selection tray at `plugin_state/selections.sqlite`, separate from the index.
+struct RealCalendar<'a> {
+    context: &'a Context,
+}
+impl RealCalendar<'_> {
+    fn store(&self) -> office_core::Result<office_store::CalendarStore> {
+        let state = context_state_dir(self.context)
+            .ok_or(office_core::domain::calendar::CalendarError::Storage)?;
+        let workspace = context_path(
+            self.context,
+            &["workspace_root", "workspace", "workspace_dir"],
+        )
+        .ok_or(office_core::domain::calendar::CalendarError::Storage)?;
+        Ok(office_store::CalendarStore::new(state, workspace))
+    }
+}
+impl office_core::ports::Calendar for RealCalendar<'_> {
+    fn load(
+        &self,
+    ) -> office_core::Result<(office_core::domain::calendar::Snapshot, Option<String>)> {
+        self.store()?.load()
+    }
+    fn replace(
+        &self,
+        snapshot: &office_core::domain::calendar::Snapshot,
+    ) -> office_core::Result<()> {
+        self.store()?.replace(snapshot)
+    }
+    fn record_error(&self, code: &str) -> office_core::Result<()> {
+        self.store()?.record_error(code)
+    }
+    fn read_ics(&self, path: &str) -> office_core::Result<String> {
+        self.store()?.read_ics(path)
+    }
+}
+
 struct RealSelections<'a> {
     context: &'a Context,
 }
@@ -548,6 +583,7 @@ fn ports(context: &Context, bootstrap_read_only: bool) -> Ports<'_> {
         orbit,
         clock: Box::new(SystemClock),
         selections: Box::new(RealSelections { context }),
+        calendar: Box::new(RealCalendar { context }),
     }
 }
 

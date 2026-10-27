@@ -30,6 +30,8 @@ const KINDS: &[&str] = &[
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Value")]
 pub struct Settings {
+    /// Read-only calendar policy; no credentials.
+    pub calendar: super::calendar::CalendarSettings,
     /// Bounds for approved offline scripts.
     pub scripts: super::script::ScriptBounds,
     /// Days to retain each kind's original; `None` means keep indefinitely.
@@ -172,6 +174,7 @@ pub struct SignalThresholds {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            calendar: Default::default(),
             retention: KINDS
                 .iter()
                 .map(|kind| {
@@ -279,6 +282,7 @@ impl Settings {
                     "costs",
                     "models",
                     "demo",
+                    "calendar",
                 ]
                 .contains(&section) =>
             {
@@ -499,6 +503,9 @@ impl TryFrom<Value> for Settings {
                             _ => return Err(invalid(&key, "unknown cost setting")),
                         }
                     }
+                }
+                "calendar" => {
+                    settings.calendar = super::calendar::CalendarSettings::parse(value)?;
                 }
                 "demo" => {
                     let items = value

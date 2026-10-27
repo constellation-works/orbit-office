@@ -17,6 +17,7 @@ fn uninitialized_ports() -> office_core::ports::Ports<'static> {
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     }
 }

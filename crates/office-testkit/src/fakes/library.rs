@@ -428,12 +428,7 @@ impl Library for FakeLibrary {
         let source = self.get(id)?.ok_or_else(|| {
             office_core::domain::source::video::refusal("source_not_found", "source was not found")
         })?;
-        if !["frames.md", "chapters.md", "digest.json"].contains(&name) {
-            return Err(office_core::domain::source::video::refusal(
-                "unsafe_path",
-                "unsupported source sidecar",
-            ));
-        }
+        office_core::domain::source::access::validate_sidecar(name)?;
         Ok(self
             .texts
             .borrow()
