@@ -1,15 +1,15 @@
-//! Baseten client shapes for Muse Spark Open, the open-weights model
-//! used for `private` sources (specs/models-and-privacy.md).
+//! Request shapes for Muse Spark Open on the private route, the
+//! open-weights model used for `private` sources, on whichever
+//! OpenAI-compatible endpoint the user chose (specs/models-and-privacy.md).
 //!
-//! Confirmed against Baseten's published Model APIs docs on 2026-10-27
-//! (see `lib.rs`): Chat Completions at
-//! `https://inference.baseten.co/v1/chat/completions` (a dedicated
-//! deployment answers under `https://model-<id>.api.baseten.co/...`),
-//! Bearer credential, same `choices[0].message.content` reply. One
-//! documented divergence matters here: Muse Spark Open accepts
-//! `json_schema` but does not enforce it, so extraction through this
-//! module never trusts the reply shape: the caller parses the reply as
-//! JSON and validates it locally against the requested schema, refusing
+//! Every endpoint kind (a company's vLLM or SGLang deployment, a hosted
+//! provider such as Baseten, or the user's own MLX hardware) serves Chat
+//! Completions at `<endpoint>/chat/completions` with an optional Bearer
+//! credential and the same `choices[0].message.content` reply (see
+//! `lib.rs`). One documented divergence matters here: Muse Spark Open
+//! accepts `json_schema` but does not enforce it, so extraction through
+//! this module never trusts the reply shape: the caller parses the reply
+//! as JSON and validates it locally against the requested schema, refusing
 //! non-JSON and schema-violating replies (see `lib.rs`).
 
 use serde_json::{Value, json};

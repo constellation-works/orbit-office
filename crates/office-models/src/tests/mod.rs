@@ -2,10 +2,11 @@
 //! touches the live network: every endpoint points at loopback, `127.0.0.1`
 //! or `[::1]` for the IPv6 case.
 
-mod baseten;
 mod http;
 mod media;
 mod meta;
+mod open_weights;
+mod route_check;
 mod routing;
 mod transcribe;
 
@@ -14,9 +15,14 @@ use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use office_core::domain::endpoint::{Capability, EndpointKind};
+use office_core::domain::settings::OpenWeights;
 use serde_json::json;
 
 use crate::{ModelConfig, RoutedClient};
+
+/// The model the fake private endpoint is configured with.
+pub const PRIVATE_MODEL: &str = "meta-models/Muse-Spark-Open-816B-A42B";
 
 /// One request the fake server received.
 #[derive(Clone, Debug)]
@@ -216,10 +222,28 @@ pub fn chat_reply(content: &str) -> String {
 pub fn hosted_config(hosted_base: &str) -> ModelConfig {
     let mut config = ModelConfig::new(
         Some("test-meta-key".into()),
-        Some("test-baseten-token".into()),
+        Some("test-open-weights-token".into()),
     );
     config.meta_base_url = hosted_base.to_string();
     config
+}
+
+/// A company private route at `endpoint`, checked for every capability.
+pub fn open_weights(endpoint: &str) -> OpenWeights {
+    open_weights_with(endpoint, Some(&Capability::ALL))
+}
+
+/// A company private route at `endpoint` whose last check found
+/// `capabilities` (`None`: never checked).
+pub fn open_weights_with(endpoint: &str, capabilities: Option<&[Capability]>) -> OpenWeights {
+    OpenWeights {
+        endpoint: endpoint.to_string(),
+        model: PRIVATE_MODEL.to_string(),
+        kind: EndpointKind::Company,
+        label: "Acme's server".to_string(),
+        capabilities: capabilities.map(<[Capability]>::to_vec),
+        verified_at: capabilities.map(|_| "2026-10-27T10:02:00-04:00".to_string()),
+    }
 }
 
 /// Build the routed client for `config`.
@@ -263,7 +287,7 @@ fn assert_extraction_refuses_schema_violations(sensitivity: office_common::Sensi
     ] {
         let server = FakeServer::start(200, chat_reply(&reply.to_string()));
         let mut config = hosted_config(&server.base_url);
-        config.open_weights_endpoint = Some(server.base_url.clone());
+        config.open_weights = Some(open_weights(&server.base_url));
         let adapter = client(config);
         let models: &dyn Models = &adapter;
         let error = models

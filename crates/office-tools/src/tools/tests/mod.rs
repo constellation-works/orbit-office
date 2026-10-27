@@ -3,6 +3,7 @@ mod capture;
 mod init;
 mod knowledge_show;
 mod knowledge_write;
+mod private_route_check;
 mod reindex;
 mod search;
 mod show;

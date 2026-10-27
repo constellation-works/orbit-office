@@ -1,6 +1,27 @@
 //! Settings through the public, pure parsing/deserialization boundary.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
+use office_core::domain::endpoint::{Capability, EndpointKind};
 use office_core::{Error, domain::settings::Settings};
+use serde_json::json;
+
+const BLOCK: &str = "open_weights:\n  endpoint: https://muse.internal.acme.example/v1\n  model: meta-models/Muse-Spark-Open-816B-A42B\n  kind: company\n  label: Acme's server\n";
+
+fn block_value() -> serde_json::Value {
+    json!({
+        "endpoint": "https://muse.internal.acme.example/v1",
+        "model": "meta-models/Muse-Spark-Open-816B-A42B",
+        "kind": "company",
+        "label": "Acme's server",
+    })
+}
+
+fn refused_key(result: office_core::Result<Settings>) -> String {
+    let error = result.expect_err("refused");
+    let Error::InvalidSetting { key, .. } = error else {
+        panic!("wrong error: {error:?}")
+    };
+    key
+}
 
 #[test]
 fn single_setting_updates_roundtrip_and_preserve_other_settings() {
@@ -16,18 +37,25 @@ fn single_setting_updates_roundtrip_and_preserve_other_settings() {
         ("thresholds.friction_count", serde_json::json!(10)),
         ("thresholds.new_subject_count", serde_json::json!(5)),
         ("thresholds.unused_days", serde_json::json!(20)),
+        ("open_weights", block_value()),
         (
-            "open_weights_endpoint",
-            serde_json::json!("http://localhost:9/v1?model=\"a\"#fragment"),
+            "open_weights.endpoint",
+            serde_json::json!("http://localhost:9/v1"),
         ),
-        ("open_weights_endpoint", serde_json::json!(null)),
+        ("open_weights.kind", serde_json::json!("own_hardware")),
+        ("open_weights.label", serde_json::json!("Your hardware")),
+        ("open_weights", serde_json::json!(null)),
         ("packs", serde_json::json!([])),
     ] {
         let before = serde_json::to_value(&settings).unwrap();
         let updated = settings.with_setting(key, value.clone()).unwrap();
         let mut expected = before;
-        if let Some((section, name)) = key.split_once('.') {
+        if let Some((section, name)) = key.split_once('.')
+            && section != "open_weights"
+        {
             expected[section][name] = value;
+        } else if let Some(("open_weights", name)) = key.split_once('.') {
+            expected["open_weights"][name] = value;
         } else {
             expected[key] = value;
         }
@@ -52,6 +80,9 @@ fn single_setting_refuses_unknown_leaves_and_bad_values_without_mutation() {
         "retention.meeting.extra",
         "meta_api_key",
         "baseten_token",
+        "open_weights_token",
+        "open_weights_endpoint",
+        "open_weights.token",
         "secrets.meta_api_key",
         "",
     ] {
@@ -76,9 +107,10 @@ fn single_setting_refuses_unknown_leaves_and_bad_values_without_mutation() {
         ("thresholds.unused_days", serde_json::json!(36501)),
         ("thresholds.window_days", serde_json::json!(false)),
         (
-            "open_weights_endpoint",
-            serde_json::json!("https://secret-value@example.test"),
+            "open_weights",
+            serde_json::json!({"endpoint": "https://secret-value@example.test", "model": "m", "kind": "company", "label": "x"}),
         ),
+        ("open_weights", serde_json::json!("secret-value")),
     ] {
         let error = settings.with_setting(key, value).unwrap_err();
         assert_eq!(error.code(), "invalid_library_setting");
@@ -94,7 +126,7 @@ fn partial_yaml_merges_policy_defaults_without_creating_observations() {
         Settings::from_yaml("{}").expect("empty mapping"),
         Settings::default()
     );
-    let settings = Settings::from_yaml("retention:\n  meeting: null\nsensitivity:\n  note: private\npacks:\n  - meetings\n  - receipts\nthresholds:\n  repetition_count: 4\nopen_weights_endpoint: 'https://inference.baseten.co/v1#model'\n").expect("settings");
+    let settings = Settings::from_yaml("retention:\n  meeting: null\nsensitivity:\n  note: private\npacks:\n  - meetings\n  - receipts\nthresholds:\n  repetition_count: 4\nopen_weights:\n  endpoint: https://muse.internal.acme.example/v1   # OpenAI-compatible base URL\n  model: meta-models/Muse-Spark-Open-816B-A42B       # as the server names it\n  kind: company            # company | provider | own_hardware\n  label: Acme's server     # shown in the app\n  capabilities: [text, image, audio]   # written by the check below, never typed in\n  verified_at: 2026-10-27T10:02:00-04:00\n").expect("settings");
     assert_eq!(settings.retention["meeting"], None);
     assert_eq!(settings.retention["note"], None);
     assert_eq!(settings.sensitivity["note"].as_str(), "private");
@@ -102,9 +134,15 @@ fn partial_yaml_merges_policy_defaults_without_creating_observations() {
     assert_eq!(settings.thresholds.repetition_count, 4);
     assert_eq!(settings.thresholds.window_days, 30);
     assert_eq!(settings.packs, ["meetings", "receipts"]);
+    let route = settings.open_weights.as_ref().expect("open_weights block");
+    assert_eq!(route.endpoint, "https://muse.internal.acme.example/v1");
+    assert_eq!(route.model, "meta-models/Muse-Spark-Open-816B-A42B");
+    assert_eq!(route.kind, EndpointKind::Company);
+    assert_eq!(route.label, "Acme's server");
+    assert_eq!(route.capabilities, Some(Capability::ALL.to_vec()));
     assert_eq!(
-        settings.open_weights_endpoint.as_deref(),
-        Some("https://inference.baseten.co/v1#model")
+        route.verified_at.as_deref(),
+        Some("2026-10-27T10:02:00-04:00")
     );
     let encoded = serde_json::to_value(&settings).expect("serialize");
     assert_eq!(
@@ -131,7 +169,11 @@ fn invalid_values_name_the_exact_key_and_never_echo_the_value() {
         ("packs: [unrecognized]", "packs"),
         ("retention:\n  typo: 2", "retention.typo"),
         (
-            "open_weights_endpoint: https://secret-token@example.test",
+            "open_weights:\n  endpoint: https://secret-token@example.test\n  model: m\n  kind: company\n  label: x",
+            "open_weights.endpoint",
+        ),
+        (
+            "open_weights_endpoint: https://example.test",
             "open_weights_endpoint",
         ),
         ("unknown: secret-token", "unknown"),
@@ -152,55 +194,194 @@ fn invalid_values_name_the_exact_key_and_never_echo_the_value() {
 }
 
 #[test]
-fn accepts_baseten_and_loopback_open_weights_endpoints() {
+fn accepts_any_https_host_or_loopback_as_the_private_endpoint() {
     for endpoint in [
+        "https://muse.internal.acme.example/v1",
         "https://inference.baseten.co/v1",
         "https://model-abc.api.baseten.co/v1",
+        "https://10.0.0.7:8443/v1",
         "http://127.0.0.1:9/v1",
         "http://localhost:9/v1",
         "http://[::1]:9/v1",
         "https://[::1]/v1",
     ] {
-        let settings = Settings::from_yaml(&format!("open_weights_endpoint: '{endpoint}'"))
-            .unwrap_or_else(|error| panic!("{endpoint}: {error}"));
-        assert_eq!(settings.open_weights_endpoint.as_deref(), Some(endpoint));
+        let yaml = BLOCK.replace("https://muse.internal.acme.example/v1", endpoint);
+        let settings =
+            Settings::from_yaml(&yaml).unwrap_or_else(|error| panic!("{endpoint}: {error}"));
+        assert_eq!(settings.open_weights.expect("block").endpoint, endpoint);
     }
 }
 
-/// Open-weights hosts are the Baseten-or-loopback subset of the model
-/// transport allowlist. A LAN host is not on that list, so load refuses
-/// it instead of accepting a URL the HTTP guard will later reject.
 #[test]
-fn refuses_a_non_allowlisted_open_weights_host_at_load() {
-    let endpoint = "https://lan-inference.example:8080/v1";
-    let error = Settings::from_yaml(&format!("open_weights_endpoint: '{endpoint}'"))
-        .expect_err("a non-allowlisted open-weights host is refused at load");
-    assert!(
-        !error.to_string().contains(endpoint),
-        "refused endpoint was echoed: {error}"
-    );
-    let Error::InvalidSetting { key, reason } = error else {
-        panic!("wrong error: {error:?}")
-    };
-    assert_eq!(key, "open_weights_endpoint");
-    assert_eq!(
-        reason, "expected a Baseten HTTPS endpoint or a loopback HTTP(S) endpoint",
-        "a non-allowlisted open-weights host must be refused at load"
-    );
-
-    // The same boundary refuses the hosted Meta API and plain HTTP on
-    // Baseten: both are outside the open-weights subset of the allowlist.
-    for endpoint in ["https://api.meta.ai/v1", "http://inference.baseten.co/v1"] {
-        let error = Settings::from_yaml(&format!("open_weights_endpoint: '{endpoint}'"))
-            .expect_err("outside the open-weights subset");
-        assert!(!error.to_string().contains(endpoint));
-        let Error::InvalidSetting { key, reason } = error else {
+fn refuses_plain_http_off_loopback_meta_and_credentials_at_load_naming_the_key() {
+    for endpoint in [
+        "http://muse.internal.acme.example/v1",
+        "http://10.0.0.7:8000/v1",
+        "https://api.meta.ai/v1",
+        "https://secret-token@muse.internal.acme.example/v1",
+        "https://muse.internal.acme.example/v1?key=secret-token",
+        "ftp://muse.internal.acme.example/v1",
+    ] {
+        let yaml = BLOCK.replace("https://muse.internal.acme.example/v1", endpoint);
+        let error = Settings::from_yaml(&yaml).expect_err(endpoint);
+        assert!(!error.to_string().contains(endpoint), "echoed: {error}");
+        assert!(!error.to_string().contains("secret-token"));
+        let Error::InvalidSetting { key, .. } = error else {
             panic!("wrong error: {error:?}")
         };
-        assert_eq!(key, "open_weights_endpoint");
-        assert_eq!(
-            reason,
-            "expected a Baseten HTTPS endpoint or a loopback HTTP(S) endpoint"
-        );
+        assert_eq!(key, "open_weights.endpoint", "{endpoint}");
     }
+}
+
+#[test]
+fn refuses_an_unknown_kind_and_incomplete_or_unknown_block_keys() {
+    assert_eq!(
+        refused_key(Settings::from_yaml(
+            &BLOCK.replace("kind: company", "kind: laptop")
+        )),
+        "open_weights.kind"
+    );
+    assert_eq!(
+        refused_key(Settings::from_yaml(
+            &BLOCK.replace("  label: Acme's server\n", "")
+        )),
+        "open_weights.label"
+    );
+    assert_eq!(
+        refused_key(Settings::from_yaml(&format!("{BLOCK}  token: abc\n"))),
+        "open_weights.token"
+    );
+    assert_eq!(
+        refused_key(Settings::from_yaml(&BLOCK.replace(
+            "model: meta-models/Muse-Spark-Open-816B-A42B",
+            "model: 'two words'"
+        ))),
+        "open_weights.model"
+    );
+}
+
+/// The check writes `capabilities` and `verified_at` together; either alone
+/// was typed in by hand, and config-set never writes them.
+#[test]
+fn refuses_hand_written_capabilities_naming_the_key() {
+    assert_eq!(
+        refused_key(Settings::from_yaml(&format!(
+            "{BLOCK}  capabilities: [text]\n"
+        ))),
+        "open_weights.capabilities"
+    );
+    assert_eq!(
+        refused_key(Settings::from_yaml(&format!(
+            "{BLOCK}  verified_at: 2026-10-27T10:02:00Z\n"
+        ))),
+        "open_weights.verified_at"
+    );
+    assert_eq!(
+        refused_key(Settings::from_yaml(&format!(
+            "{BLOCK}  capabilities: [text, video]\n  verified_at: 2026-10-27T10:02:00Z\n"
+        ))),
+        "open_weights.capabilities"
+    );
+    assert_eq!(
+        refused_key(Settings::from_yaml(&format!(
+            "{BLOCK}  capabilities: [text]\n  verified_at: yesterday\n"
+        ))),
+        "open_weights.verified_at"
+    );
+
+    let settings = Settings::default()
+        .with_setting("open_weights", block_value())
+        .expect("block");
+    assert_eq!(
+        refused_key(settings.with_setting("open_weights.capabilities", json!(["text"]))),
+        "open_weights.capabilities"
+    );
+    assert_eq!(
+        refused_key(
+            settings.with_setting("open_weights.verified_at", json!("2026-10-27T10:02:00Z"))
+        ),
+        "open_weights.verified_at"
+    );
+    let mut with_caps = block_value();
+    with_caps["capabilities"] = json!(["text"]);
+    assert_eq!(
+        refused_key(settings.with_setting("open_weights", with_caps)),
+        "open_weights.capabilities"
+    );
+    assert_eq!(
+        refused_key(Settings::default().with_setting("open_weights.label", json!("x"))),
+        "open_weights"
+    );
+}
+
+#[test]
+fn the_check_records_capabilities_and_a_new_endpoint_or_model_clears_them() {
+    let configured = Settings::default()
+        .with_setting("open_weights", block_value())
+        .expect("block");
+    let checked = configured
+        .with_route_check(
+            "https://muse.internal.acme.example/v1/",
+            "meta-models/Muse-Spark-Open-816B-A42B",
+            &[Capability::Image, Capability::Text],
+            "2026-10-27T14:02:00+00:00",
+        )
+        .expect("record");
+    let route = checked.open_weights.clone().expect("block");
+    assert_eq!(
+        route.capabilities,
+        Some(vec![Capability::Text, Capability::Image])
+    );
+    assert!(route.accepts(Capability::Text) && !route.accepts(Capability::Audio));
+    assert_eq!(
+        Settings::from_yaml(&checked.to_yaml().unwrap()).unwrap(),
+        checked
+    );
+
+    let relabelled = checked
+        .with_setting("open_weights.label", json!("Acme GPU cluster"))
+        .expect("label");
+    assert!(
+        relabelled
+            .open_weights
+            .expect("block")
+            .accepts(Capability::Text)
+    );
+    for (key, value) in [
+        (
+            "open_weights.endpoint",
+            json!("https://muse2.internal.acme.example/v1"),
+        ),
+        ("open_weights.model", json!("another-model")),
+    ] {
+        let moved = checked
+            .with_setting(key, value)
+            .expect(key)
+            .open_weights
+            .expect("block");
+        assert_eq!(moved.capabilities, None, "{key}");
+        assert_eq!(moved.verified_at, None, "{key}");
+    }
+
+    let error = configured
+        .with_route_check(
+            "https://other.acme.example/v1",
+            "meta-models/Muse-Spark-Open-816B-A42B",
+            &[Capability::Text],
+            "2026-10-27T14:02:00+00:00",
+        )
+        .expect_err("checked another endpoint");
+    assert_eq!(error.code(), "private_route_changed");
+    assert_eq!(
+        Settings::default()
+            .with_route_check(
+                "https://x.example/v1",
+                "m",
+                &[],
+                "2026-10-27T14:02:00+00:00"
+            )
+            .expect_err("no block")
+            .code(),
+        "private_route_changed"
+    );
 }

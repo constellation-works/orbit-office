@@ -12,7 +12,7 @@ tests:
         version: 0.1.0
         secrets:
           meta_api_key: unset
-          baseten_token: unset
+          open_weights_token: unset
         library:
           initialized: true
           documents: 3

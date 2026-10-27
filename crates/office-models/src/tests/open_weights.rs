@@ -1,4 +1,4 @@
-//! Open-weights (Baseten) calls against the loopback fake server.
+//! Private-route (Muse Spark Open) calls against the loopback fake server.
 
 use office_common::Sensitivity;
 use office_core::ports::{ExtractRequest, Models, TranscribeRequest};
@@ -10,7 +10,7 @@ use super::{FakeServer, chat_reply, client, hosted_config};
 fn extracts_through_the_open_weights_endpoint() {
     let open = FakeServer::start(200, chat_reply(r#"{"total":"9.99"}"#));
     let mut config = hosted_config("http://127.0.0.1:1/v1");
-    config.open_weights_endpoint = Some(open.base_url.clone());
+    config.open_weights = Some(super::open_weights(&open.base_url));
     let models = client(config);
 
     let value = models
@@ -19,15 +19,12 @@ fn extracts_through_the_open_weights_endpoint() {
             schema: super::receipt_schema(),
             sensitivity: Sensitivity::Private,
         })
-        .expect("extract");
+        .expect("extract")
+        .value;
     assert_eq!(value, json!({"total": "9.99"}));
     let requests = open.requests();
     assert_eq!(requests.len(), 1);
-    assert!(
-        requests[0]
-            .body
-            .contains("meta-models/muse-spark-open-1026")
-    );
+    assert!(requests[0].body.contains(super::PRIVATE_MODEL));
 }
 
 #[test]
@@ -39,7 +36,7 @@ fn refuses_schema_violations_on_the_open_weights_endpoint() {
 fn transcribes_private_audio_through_the_open_weights_endpoint() {
     let open = FakeServer::start(200, chat_reply("private transcript"));
     let mut config = hosted_config("http://127.0.0.1:1/v1");
-    config.open_weights_endpoint = Some(open.base_url.clone());
+    config.open_weights = Some(super::open_weights(&open.base_url));
     let models = client(config);
 
     let transcript = models
@@ -50,7 +47,8 @@ fn transcribes_private_audio_through_the_open_weights_endpoint() {
             sensitivity: Sensitivity::Private,
             language: None,
         })
-        .expect("transcribe");
+        .expect("transcribe")
+        .value;
     assert_eq!(transcript.text, "private transcript");
     assert!(transcript.segments.is_empty());
     let body = &open.requests()[0].body;
@@ -67,7 +65,7 @@ fn refuses_a_non_json_extraction_reply_from_the_open_weights_endpoint() {
     // must be refused rather than trusted as structured output.
     let open = FakeServer::start(200, chat_reply("the total is 9.99, probably"));
     let mut config = hosted_config("http://127.0.0.1:1/v1");
-    config.open_weights_endpoint = Some(open.base_url.clone());
+    config.open_weights = Some(super::open_weights(&open.base_url));
     let models = client(config);
 
     let error = models

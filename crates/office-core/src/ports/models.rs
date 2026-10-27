@@ -3,14 +3,65 @@
 //! Three operations (specs/models-and-privacy.md): transcribe audio,
 //! extract structured JSON from text, and read an image. Every request
 //! carries its [`Sensitivity`]; the adapter's one routing function sends
-//! `private` material only to the open-weights endpoint (STD-02 R24).
+//! `private` material only to the configured private endpoint (STD-02 R24),
+//! and every result says where it went ([`Routed::derived_by`]), for the
+//! caller to record in `derived_by`. A fourth operation checks the private
+//! endpoint for `office.private-route-check`.
 //! Secrets never cross this port: an adapter is constructed with them
 //! from the call context by the composition root.
 
 use office_common::Sensitivity;
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::Result;
+use crate::domain::endpoint::{Capability, ModelRoute};
+
+/// How a model result was produced: the `derived_by` fields a caller records.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DerivedBy {
+    /// `hosted` or `private:<kind>`.
+    pub route: ModelRoute,
+    /// The model named in the request.
+    pub model: String,
+}
+
+/// A model result with the route that produced it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Routed<T> {
+    /// The result itself.
+    pub value: T,
+    /// Where the call went and which model answered.
+    pub derived_by: DerivedBy,
+}
+
+/// One tiny request of the private-endpoint check.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouteProbe {
+    /// The modality this request exercised.
+    pub capability: Capability,
+    /// Whether the endpoint answered it with a usable reply.
+    pub accepted: bool,
+    /// Wall time an accepted request took, in milliseconds; `None` when the
+    /// request failed (its `error` says why).
+    pub elapsed_ms: Option<u64>,
+    /// The failure code when it was not accepted (for example
+    /// `model_request_rejected`); never a response body.
+    pub error: Option<String>,
+}
+
+/// What the private-endpoint check measured, and on which endpoint.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouteCheck {
+    /// The endpoint the requests went to (the configured base URL).
+    pub endpoint: String,
+    /// The model named in the requests (the configured model).
+    pub model: String,
+    /// The model name the endpoint reported in its first usable reply.
+    pub reported_model: Option<String>,
+    /// One probe per capability, in check order (text, image, audio).
+    pub probes: Vec<RouteProbe>,
+}
 
 /// Audio to transcribe, with the sensitivity of its source.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,12 +136,18 @@ pub struct ImageReading {
     pub fields: Value,
 }
 
-/// Model access: transcription, structured extraction and image reading.
+/// Model access: transcription, structured extraction and image reading,
+/// each with its route, plus the private-endpoint check.
 pub trait Models {
     /// Transcribe audio into text with speaker turns and timestamps.
-    fn transcribe(&self, request: &TranscribeRequest) -> Result<Transcript>;
+    fn transcribe(&self, request: &TranscribeRequest) -> Result<Routed<Transcript>>;
     /// Extract structured JSON, validated against `request.schema`, from text.
-    fn extract(&self, request: &ExtractRequest) -> Result<Value>;
+    fn extract(&self, request: &ExtractRequest) -> Result<Routed<Value>>;
     /// Read an image (receipt and bill fields) as text plus structured fields.
-    fn read_image(&self, request: &ImageRequest) -> Result<ImageReading>;
+    fn read_image(&self, request: &ImageRequest) -> Result<Routed<ImageReading>>;
+    /// Send one tiny text, image and audio request to the configured private
+    /// endpoint, whatever it was last found to accept, and report each
+    /// outcome. Refused when no private endpoint is configured. Records
+    /// nothing; the caller stores the result through the Library port.
+    fn check_private_route(&self) -> Result<RouteCheck>;
 }

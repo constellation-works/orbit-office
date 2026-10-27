@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.private-route-check request",
+  "description": "No input: the endpoint, model and kind come from the Library's open_weights settings block.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use office_core::domain::knowledge::{Backlink, DocumentRecord, Revision, SearchFilter, SearchHit};
 use office_core::domain::settings::Settings;
 use office_core::ports::{
-    Clock, InitOutcome, Library, LibraryHealth, LibraryText, Models, Orbit, Ports,
+    Clock, InitOutcome, Library, LibraryHealth, LibraryText, Models, Orbit, Ports, Routed,
 };
 use office_core::protocol::{self, Context};
 use office_orbit::{CALLBACK_ENV_NAMES, OrbitCallbacks};
@@ -25,7 +25,7 @@ impl Orbit for ContextHandle<'_> {}
 
 /// The real model adapter for one call. Construction does no I/O: the
 /// routed client is built per operation from the context's secrets and
-/// the Library's open-weights endpoint, so a call without a Library or
+/// the Library's `open_weights` block, so a call without a Library or
 /// secrets still constructs and only the operation itself can refuse.
 struct ContextModels<'a> {
     context: &'a Context,
@@ -43,12 +43,14 @@ impl ContextModels<'_> {
                 .map(str::to_string)
         };
         let mut config =
-            office_models::ModelConfig::new(secret("meta_api_key"), secret("baseten_token"));
-        config.open_weights_endpoint = self
+            office_models::ModelConfig::new(secret("meta_api_key"), secret("open_weights_token"));
+        // No Library, or settings that fail validation, mean no private
+        // route, which refuses private material rather than sending it hosted.
+        config.open_weights = self
             .library
             .settings()
             .ok()
-            .and_then(|settings| settings.open_weights_endpoint);
+            .and_then(|settings| settings.open_weights);
         office_models::RoutedClient::new(config)
     }
 }
@@ -57,20 +59,23 @@ impl Models for ContextModels<'_> {
     fn transcribe(
         &self,
         request: &office_core::ports::TranscribeRequest,
-    ) -> office_core::Result<office_core::ports::Transcript> {
+    ) -> office_core::Result<Routed<office_core::ports::Transcript>> {
         self.client().transcribe(request)
     }
     fn extract(
         &self,
         request: &office_core::ports::ExtractRequest,
-    ) -> office_core::Result<serde_json::Value> {
+    ) -> office_core::Result<Routed<Value>> {
         self.client().extract(request)
     }
     fn read_image(
         &self,
         request: &office_core::ports::ImageRequest,
-    ) -> office_core::Result<office_core::ports::ImageReading> {
+    ) -> office_core::Result<Routed<office_core::ports::ImageReading>> {
         self.client().read_image(request)
+    }
+    fn check_private_route(&self) -> office_core::Result<office_core::ports::RouteCheck> {
+        self.client().check_private_route()
     }
 }
 struct SystemClock;
@@ -197,6 +202,21 @@ impl Library for RealLibrary {
     }
     fn set_setting(&self, key: &str, value: Value) -> office_core::Result<()> {
         Ok(LibraryStore::set_setting(&self.store()?, key, value)?)
+    }
+    fn record_route_check(
+        &self,
+        endpoint: &str,
+        model: &str,
+        capabilities: &[office_core::domain::endpoint::Capability],
+        verified_at: &str,
+    ) -> office_core::Result<()> {
+        Ok(LibraryStore::record_route_check(
+            &self.store()?,
+            endpoint,
+            model,
+            capabilities,
+            verified_at,
+        )?)
     }
     fn capture_source(
         &self,

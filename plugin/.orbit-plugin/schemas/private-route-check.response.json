@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.private-route-check response",
+  "description": "What the configured private endpoint accepted. capabilities, with the check time as verified_at, were recorded in .office/config.yaml and committed. Nothing private routes to an endpoint whose capabilities lack text.",
+  "type": "object",
+  "properties": {
+    "path": { "type": "string", "const": ".office/config.yaml", "description": "Updated path relative to the Library." },
+    "label": { "type": "string", "description": "The endpoint's label from settings, shown wherever the route is used." },
+    "kind": { "type": "string", "enum": ["company", "provider", "own_hardware"], "description": "Where the endpoint runs." },
+    "route": { "type": "string", "enum": ["private:company", "private:provider", "private:own_hardware"], "description": "The derived_by.route private calls to this endpoint record." },
+    "model": { "type": "string", "description": "The model named in the requests (open_weights.model)." },
+    "reported_model": { "type": ["string", "null"], "description": "The model name the endpoint reported in its first usable reply, or null." },
+    "capabilities": {
+      "type": "array",
+      "description": "Capabilities recorded: the requests the endpoint answered, in check order.",
+      "items": { "$ref": "#/$defs/capability" },
+      "uniqueItems": true
+    },
+    "routable": { "type": "boolean", "description": "Whether private material can now route here (the text request passed)." },
+    "checks": {
+      "type": "array",
+      "description": "One entry per request, in order: text (a sentence), image (a 1x1 PNG), audio (a 1-second silent WAV).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "capability": { "$ref": "#/$defs/capability" },
+          "accepted": { "type": "boolean" },
+          "elapsed_ms": { "type": ["integer", "null"], "minimum": 0, "description": "How long an accepted request took; null when it failed." },
+          "error": { "type": ["string", "null"], "description": "The failure code when not accepted (for example model_request_rejected or model_unavailable); never a response body." },
+          "note": { "type": ["string", "null"], "description": "What a failed request means, in plain words; null when accepted." }
+        },
+        "required": ["capability", "accepted", "elapsed_ms", "error", "note"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["path", "label", "kind", "route", "model", "reported_model", "capabilities", "routable", "checks"],
+  "additionalProperties": false,
+  "$defs": {
+    "capability": { "type": "string", "enum": ["text", "image", "audio"] }
+  }
+}

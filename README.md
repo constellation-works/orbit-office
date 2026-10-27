@@ -32,7 +32,7 @@ loop, capture, knowledge, proposals, metrics and review) land in the slices list
 | `crates/office-common/` | Shared foundation, after Orbit's `orbit-common`: common error type, fs mechanisms, SQLite connection defaults, small shared types. |
 | `crates/office-core/` | Pure domain (no I/O, no clap, no terminal): the exec envelope, tool contract types, domain model and port traits. |
 | `crates/office-store/` | Library persistence, structured after Orbit's `orbit-store`: file driver for sources/knowledge/artifacts, rebuildable SQLite FTS index, atomic writes, schema migrations. |
-| `crates/office-models/`, `crates/office-orbit/` | Adapters behind `office-core` ports: the Meta and Baseten model APIs (the only crate that speaks HTTP), and the Orbit callbacks. |
+| `crates/office-models/`, `crates/office-orbit/` | Adapters behind `office-core` ports: the Meta Model API and the private route's chosen endpoint (the only crate that speaks HTTP), and the Orbit callbacks. |
 | `crates/office-tools/` | The application: the tool registry, dispatch, and one module per tool, grouped by spec area. |
 | `crates/office-testkit/` | Test support (dev-dependency only): fake ports, Library fixtures, envelope helpers. |
 | `crates/office/` | The binary: `office orbit-tool` serves one Orbit exec call (JSON envelope on stdin, one on stdout). The plugin launcher execs this binary. |

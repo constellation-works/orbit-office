@@ -19,7 +19,8 @@ fn status_reports_set_and_unset_secrets_without_values() {
     })
     .expect("status succeeds");
     assert_eq!(output["secrets"]["meta_api_key"], json!("set"));
-    assert_eq!(output["secrets"]["baseten_token"], json!("unset"));
+    assert_eq!(output["secrets"]["open_weights_token"], json!("unset"));
+    assert!(output["secrets"].get("baseten_token").is_none());
     assert!(
         !output.to_string().contains("do-not-echo-this"),
         "a secret value must never appear in output"
@@ -75,7 +76,7 @@ fn status_reports_off_template_pages_and_names_a_broken_template() {
         output["library"]["template_invalid"],
         json!([".office/templates/notes.md"])
     );
-    assert_eq!(output["secrets"]["baseten_token"], json!("unset"));
+    assert_eq!(output["secrets"]["open_weights_token"], json!("unset"));
 }
 
 #[test]
@@ -161,4 +162,25 @@ fn status_reports_an_unavailable_library_adapter_as_uninitialized_without_refusi
     assert_eq!(output["library"]["initialized"], json!(false));
     assert_eq!(output["library"]["documents"], json!(0));
     assert_eq!(output["library"]["template_invalid"], json!([]));
+}
+
+#[test]
+fn status_reports_the_private_route_token_and_never_the_retired_name() {
+    let input = Map::new();
+    let mut context = Map::new();
+    context.insert(
+        "secrets".to_string(),
+        json!({ "open_weights_token": "do-not-echo-this", "baseten_token": "retired" }),
+    );
+    let output = run(&Call {
+        ports: &office_testkit::fakes::PortsBuilder::default().build(),
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(
+        output["secrets"],
+        json!({"meta_api_key": "unset", "open_weights_token": "set"})
+    );
+    assert!(!output.to_string().contains("do-not-echo-this"));
 }

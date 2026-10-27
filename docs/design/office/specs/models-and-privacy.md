@@ -98,6 +98,15 @@ request took. Nothing is routed to an endpoint that has not passed the text
 check. A failed modality is shown in plain words ("this server doesn't take
 audio, so private videos can't be transcribed").
 
+Refusals on the private route: `private_endpoint_unconfigured` (no
+`open_weights` block), `private_endpoint_unverified` (no check has passed the
+text request), `private_media_unsupported` (the call needs image or audio and
+the check did not record it; the message names which) and, from the check
+itself, `private_route_changed` (the endpoint or model changed while it ran, so
+nothing was recorded). The Models port returns each result with its
+`derived_by` (`route` and `model`), which the calling tool writes to the
+source's `derived_by`.
+
 ### What private changes
 
 - **Sources, batches and videos.** Each source can be marked private in the

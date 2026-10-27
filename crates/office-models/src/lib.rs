@@ -24,27 +24,32 @@
 //!   that is not that JSON is kept as the transcript text and its
 //!   segments stay empty. The live model's compliance with the requested
 //!   JSON is still unverified.
-//! - **Baseten Model APIs** (<https://docs.baseten.co/inference/model-apis/overview>,
-//!   fetched 2026-10-27): Chat Completions at
-//!   `https://inference.baseten.co/v1/chat/completions`, Responses at
-//!   `/v1/responses`, Bearer credential, deployment endpoints under
-//!   `https://model-<id>.api.baseten.co/...`. Muse Spark Open
-//!   (`meta-models/muse-spark-open-1026`) accepts `json_schema` but does
-//!   not enforce it. Extraction on both routes parses the reply as JSON
-//!   and validates it locally against the requested schema. Non-JSON or
+//! - **The private route** (Muse Spark Open on the endpoint the user
+//!   chose: a company's vLLM or SGLang deployment, a hosted provider such
+//!   as Baseten's Model APIs, <https://docs.baseten.co/inference/model-apis/overview>,
+//!   fetched 2026-10-27, or the user's own hardware): OpenAI-compatible
+//!   Chat Completions at `<endpoint>/chat/completions`, optional Bearer
+//!   credential (`open_weights_token`), and the model named as the server
+//!   names it (`open_weights.model`). Muse Spark Open accepts `json_schema`
+//!   but does not enforce it. Extraction on both routes parses the reply as
+//!   JSON and validates it locally against the requested schema. Non-JSON or
 //!   schema-violating replies fail with non-retryable `model_invalid_response`.
 //!   Invalid schemas or external references fail before inference with
 //!   non-retryable `model_invalid_schema`; local references are supported,
 //!   and schema validation never retrieves URLs or files.
 //!
-//! [`http::check_url`] allows `api.meta.ai` (hosted calls), a Baseten
-//! host (`inference.baseten.co` or `*.api.baseten.co`), or loopback, and
-//! refuses every other host before a socket opens. An open-weights
-//! endpoint is the Baseten or loopback subset (HTTPS for Baseten; HTTP
-//! or HTTPS for loopback), never the hosted Meta API. Every call crosses
-//! the one routing function ([`routing::route`]): `private` material goes
-//! only to that endpoint from Library settings and is refused when none
-//! is configured or the endpoint is outside that subset.
+//! [`http::check_url`] allows `api.meta.ai` for hosted calls and, for
+//! private calls, only the configured endpoint's exact origin (HTTPS unless
+//! loopback, never `api.meta.ai`), refusing every other host before a
+//! socket opens. Every call crosses the one routing function
+//! ([`routing::route`]): `private` material, at every tier and modality,
+//! goes only to the configured model, and is refused when no endpoint is
+//! configured, when the endpoint has not passed
+//! `office.private-route-check`'s text request, or when it lacks the
+//! call's modality (`private_media_unsupported`). Every result carries
+//! its `derived_by` route (`hosted` or `private:<kind>`).
+//! [`Models::check_private_route`] sends the check's three tiny requests
+//! to the configured endpoint regardless of its recorded capabilities.
 //!
 //! Transcription takes its duration from `TranscribeRequest::duration_seconds`
 //! (caller-supplied metadata, rounded up); this adapter never probes media.
@@ -69,10 +74,11 @@
 // Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
-mod baseten;
 mod http;
 pub mod media;
 mod meta;
+mod open_weights;
+mod route_check;
 mod routing;
 mod transcribe;
 
@@ -80,59 +86,59 @@ use std::time::Duration;
 
 use office_core::Error;
 use office_core::Result;
+use office_core::domain::endpoint::Capability;
+use office_core::domain::settings::OpenWeights;
 use office_core::ports::{
-    ExtractRequest, ImageReading, ImageRequest, Models, TranscribeRequest, Transcript,
+    DerivedBy, ExtractRequest, ImageReading, ImageRequest, Models, RouteCheck, Routed,
+    TranscribeRequest, Transcript,
 };
 use serde_json::Value;
 
 /// Default hosted model (Muse Spark).
 pub const DEFAULT_HOSTED_MODEL: &str = "muse-spark-1.3";
-/// Default open-weights model (Muse Spark Open on Baseten).
-pub const DEFAULT_OPEN_WEIGHTS_MODEL: &str = "meta-models/muse-spark-open-1026";
 /// Default Meta Model API base URL.
 pub const DEFAULT_META_BASE_URL: &str = "https://api.meta.ai/v1";
 
 /// Endpoints, credentials and limits for [`RoutedClient`].
 ///
 /// Credentials come from the call context (`meta_api_key`,
-/// `baseten_token`); the open-weights endpoint comes from Library
-/// settings. No field's value is ever logged or put in an error.
+/// `open_weights_token`); the private endpoint comes from Library
+/// settings. No credential is ever logged or put in an error.
 #[derive(Clone, Debug, Default)]
 pub struct ModelConfig {
     /// Meta Model API key (hosted calls). Required for `normal` material.
     pub meta_api_key: Option<String>,
-    /// Baseten token (open-weights calls), when the endpoint needs one.
-    pub baseten_token: Option<String>,
+    /// The private endpoint's token, when it needs one.
+    pub open_weights_token: Option<String>,
     /// Hosted Meta base URL.
     pub meta_base_url: String,
-    /// Open-weights base URL from Library settings; `None` refuses `private`.
-    pub open_weights_endpoint: Option<String>,
+    /// The private route from Library settings; `None` refuses `private`.
+    pub open_weights: Option<OpenWeights>,
     /// Hosted model slug.
     pub hosted_model: String,
-    /// Open-weights model slug.
-    pub open_weights_model: String,
     /// Executable, split threshold and maximum chunk length for transcription.
     pub audio_splitter: media::AudioSplitter,
 }
 
 impl ModelConfig {
-    /// Configuration with the published default endpoints and models.
+    /// Configuration with the published hosted endpoint and model, and no
+    /// private route.
     #[must_use]
-    pub fn new(meta_api_key: Option<String>, baseten_token: Option<String>) -> Self {
+    pub fn new(meta_api_key: Option<String>, open_weights_token: Option<String>) -> Self {
         Self {
             meta_api_key,
-            baseten_token,
+            open_weights_token,
             meta_base_url: DEFAULT_META_BASE_URL.to_string(),
-            open_weights_endpoint: None,
+            open_weights: None,
             hosted_model: DEFAULT_HOSTED_MODEL.to_string(),
-            open_weights_model: DEFAULT_OPEN_WEIGHTS_MODEL.to_string(),
             audio_splitter: media::AudioSplitter::default(),
         }
     }
 }
 
 /// The routed model client: implements the `office-core` model port over
-/// the Meta and Baseten endpoints, routing every call by sensitivity.
+/// the hosted Meta API and the private endpoint, routing every call by
+/// sensitivity.
 pub struct RoutedClient {
     config: ModelConfig,
     agent: ureq::Agent,
@@ -152,23 +158,30 @@ impl RoutedClient {
         Self { config, agent }
     }
 
-    /// Route one call and post its JSON body. Every hosted operation crosses
-    /// this function, so endpoint selection stays in [`routing::route`].
+    /// Route one call needing `needs` and post its JSON body. Every model
+    /// operation crosses this function, so endpoint selection stays in
+    /// [`routing::route`]. Returns the host, the response and the route.
     fn post(
         &self,
         sensitivity: office_common::Sensitivity,
+        needs: Capability,
         body_for: impl FnOnce(&routing::ResolvedCall) -> Value,
-    ) -> Result<(String, Value)> {
-        let resolved = routing::route(sensitivity, &self.config)?;
+    ) -> Result<(String, Value, DerivedBy)> {
+        let resolved = routing::route(sensitivity, needs, &self.config)?;
+        let (host, response) = self.send(&resolved, &body_for(&resolved))?;
+        Ok((host, response, resolved.derived_by()))
+    }
+
+    /// Post `body` to a resolved endpoint, allowlist-checked first.
+    fn send(&self, resolved: &routing::ResolvedCall, body: &Value) -> Result<(String, Value)> {
         let url = meta::chat_url(&resolved.base_url);
         let host = http::host_of(&url).unwrap_or_default();
-        let body = body_for(&resolved);
         let response = http::post_json(
             &self.agent,
             &url,
             resolved.api_key.as_deref(),
-            &body,
-            resolved.open_weights,
+            body,
+            resolved.destination(),
         )?;
         Ok((host, response))
     }
@@ -177,22 +190,27 @@ impl RoutedClient {
         &self,
         sensitivity: office_common::Sensitivity,
         operation: Operation<'_>,
-    ) -> Result<String> {
-        let (host, response) = self.post(sensitivity, |resolved| match operation {
-            Operation::Extract { text, schema } => {
-                if resolved.open_weights {
-                    baseten::extract_body(&resolved.model, text, schema)
-                } else {
-                    meta::extract_body(&resolved.model, text, schema)
+    ) -> Result<(String, DerivedBy)> {
+        let needs = match operation {
+            Operation::Extract { .. } => Capability::Text,
+            Operation::Image { .. } => Capability::Image,
+        };
+        let (host, response, derived_by) =
+            self.post(sensitivity, needs, |resolved| match operation {
+                Operation::Extract { text, schema } => {
+                    if resolved.is_private() {
+                        open_weights::extract_body(&resolved.model, text, schema)
+                    } else {
+                        meta::extract_body(&resolved.model, text, schema)
+                    }
                 }
-            }
-            Operation::Image {
-                mime,
-                image,
-                prompt,
-            } => meta::image_body(&resolved.model, mime, image, prompt),
-        })?;
-        meta::reply_text(&host, &response)
+                Operation::Image {
+                    mime,
+                    image,
+                    prompt,
+                } => meta::image_body(&resolved.model, mime, image, prompt),
+            })?;
+        Ok((meta::reply_text(&host, &response)?, derived_by))
     }
 
     /// Transcribe one audio chunk in `format` (`wav` or `mp3`). Segment
@@ -205,7 +223,7 @@ impl RoutedClient {
         audio: &[u8],
         language: Option<&str>,
     ) -> Result<meta::ParsedTranscript> {
-        let (host, response) = self.post(sensitivity, |resolved| {
+        let (host, response, _) = self.post(sensitivity, Capability::Audio, |resolved| {
             meta::transcribe_body(&resolved.model, format, audio, language)
         })?;
         meta::parse_transcript(&host, &response)
@@ -225,11 +243,11 @@ enum Operation<'a> {
 }
 
 impl Models for RoutedClient {
-    fn transcribe(&self, request: &TranscribeRequest) -> Result<Transcript> {
+    fn transcribe(&self, request: &TranscribeRequest) -> Result<Routed<Transcript>> {
         transcribe::transcribe(self, request)
     }
 
-    fn extract(&self, request: &ExtractRequest) -> Result<Value> {
+    fn extract(&self, request: &ExtractRequest) -> Result<Routed<Value>> {
         // Compile before inference, failing closed without retrieving external
         // resources (jsonschema's HTTP and file features are disabled).
         // Schema errors and validation errors may contain private input, so
@@ -240,7 +258,7 @@ impl Models for RoutedClient {
                 .to_string(),
             retryable: false,
         })?;
-        let text = self.call(
+        let (text, derived_by) = self.call(
             request.sensitivity,
             Operation::Extract {
                 text: &request.text,
@@ -259,11 +277,11 @@ impl Models for RoutedClient {
                 retryable: false,
             });
         }
-        Ok(value)
+        Ok(Routed { value, derived_by })
     }
 
-    fn read_image(&self, request: &ImageRequest) -> Result<ImageReading> {
-        let text = self.call(
+    fn read_image(&self, request: &ImageRequest) -> Result<Routed<ImageReading>> {
+        let (text, derived_by) = self.call(
             request.sensitivity,
             Operation::Image {
                 mime: &request.mime,
@@ -272,7 +290,14 @@ impl Models for RoutedClient {
             },
         )?;
         let fields = serde_json::from_str(&text).unwrap_or(Value::Null);
-        Ok(ImageReading { text, fields })
+        Ok(Routed {
+            value: ImageReading { text, fields },
+            derived_by,
+        })
+    }
+
+    fn check_private_route(&self) -> Result<RouteCheck> {
+        route_check::check(self)
     }
 }
 

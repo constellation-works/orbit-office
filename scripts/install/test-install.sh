@@ -152,7 +152,7 @@ case "${1:-} ${2:-}" in
     "plugin secret")
         case "${3:-}" in
             list)
-                for n in meta_api_key baseten_token; do
+                for n in meta_api_key open_weights_token; do
                     if [ -f "$state/secret.$n" ]; then
                         printf '%s set\n' "$n"
                     else

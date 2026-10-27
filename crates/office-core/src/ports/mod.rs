@@ -11,8 +11,8 @@ pub use library::{
     SourceOutcome, SourceView, not_initialized_error,
 };
 pub use models::{
-    ExtractRequest, ImageReading, ImageRequest, Models, TranscribeRequest, Transcript,
-    TranscriptSegment,
+    DerivedBy, ExtractRequest, ImageReading, ImageRequest, Models, RouteCheck, RouteProbe, Routed,
+    TranscribeRequest, Transcript, TranscriptSegment,
 };
 pub use orbit::Orbit;
 

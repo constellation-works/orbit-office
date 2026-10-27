@@ -40,9 +40,9 @@ observe -> propose -> approve -> automate -> measure
 | Orchestrator (the user's agent CLI) | Muse Code |
 | Summaries, extraction, receipts (vision) | Muse Spark (Meta Model API) |
 | Meeting transcription | Muse Voice Transcribe |
-| Sources marked `private` | Muse Spark Open (open weights) |
+| Sources marked `private` | Muse Spark Open (open weights) on the endpoint the user chose |
 
-API keys are Orbit plugin secrets (`meta_api_key`, `baseten_token`), never
+API keys are Orbit plugin secrets (`meta_api_key`, `open_weights_token`), never
 config or Library content.
 
 ## Build slices

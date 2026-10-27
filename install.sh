@@ -64,7 +64,8 @@ Environment:
   ORBIT_OFFICE_DATA_DIR      Per-user data folder override
   ORBIT_OFFICE_PLUGIN_SOURCE Plugin source for `orbit plugin add`
   ORBIT_OFFICE_META_API_KEY  Meta API key (used instead of prompting)
-  ORBIT_OFFICE_BASETEN_TOKEN Baseten token (used instead of prompting)
+  ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN  Private-route endpoint token (used
+                             instead of prompting; optional)
   ORBIT_OFFICE_OS            Platform override (macos or linux)
   ORBIT_OFFICE_ARCH          Architecture override (x86_64 or arm64)
   ORBIT_OFFICE_UV_URL        Fetch this uv archive instead of the
@@ -754,7 +755,7 @@ step_plugin() {
 step_secrets() {
     step "6 secrets"
     set_secret "meta_api_key" "${ORBIT_OFFICE_META_API_KEY:-${META_API_KEY:-}}" 0
-    set_secret "baseten_token" "${ORBIT_OFFICE_BASETEN_TOKEN:-${BASETEN_TOKEN:-}}" 1
+    set_secret "open_weights_token" "${ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN:-${OPEN_WEIGHTS_TOKEN:-}}" 1
 }
 
 # Prints "ok" when office.init succeeded, otherwise the office code, or
