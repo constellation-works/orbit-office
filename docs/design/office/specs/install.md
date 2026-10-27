@@ -72,11 +72,13 @@ spaces, so script shebangs that name the interpreter keep working.
 5. **Plugin.** `orbit plugin add` from the prebuilt export attached to the orbit-office
    release (a local directory install, so no Rust toolchain is needed); `--from-source`
    uses the pinned `git+` source and needs `cargo`. Then `orbit plugin enable office` with
-   the grants the manifest requests (`fs`, `network`), after printing them and asking once
-   (`--yes` skips the question). The `gateway` plugin is added and enabled the same way, in
-   the same consent prompt, and `cloudcli` only with `--with-cloudcli`
-   ([gateway.md](./gateway.md)). Both come from the same release export, and neither has a
-   build step.
+   the grants the manifest requests (`fs`, `network`), after printing them and asking once.
+   The question needs a terminal on stdin. A run without one (the `curl ... | sh` line at the
+   top of this page, for example) prints the grants and enables the plugin without asking,
+   and its output says so. `--yes` skips the question in either case. The `gateway` plugin is
+   added and enabled the same way, in the same consent prompt, and `cloudcli` only with
+   `--with-cloudcli` ([gateway.md](./gateway.md)). Both come from the same release export, and
+   neither has a build step.
 6. **Secrets.** Prompts for the Meta API key, and optionally the Baseten token, with hidden
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set.
