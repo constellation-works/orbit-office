@@ -7,14 +7,21 @@ status: Draft
 feature: office
 doc_role: overview
 type: design
-summary: A personal agentic work-management system on Orbit — sources, a cited Library, proposals and metrics that move manual work to agents under approval.
-tags: [office, plugin, orbit, library]
+summary: An Orbit distribution for personal work management — sources, a cited Library, proposals and metrics that move manual work to agents under approval.
+tags: [office, distribution, orbit, library]
 paths: ["crates/**", "plugin/**", "app/**"]
 related_features: [office]
 related_artifacts: [ORB-16585]
 ---
 
 # office — Overview
+
+Orbit Office is a distribution of Orbit: an app built on Orbit as its engine.
+The product combines the standalone app, the `office` and `gateway` component
+plugins, optional `cloudcli`, and a planned office workspace preset. Orbit supplies
+the runtime; plugins supply capabilities; the preset selects the workspace's
+configuration and initial automation. Preset integration awaits Orbit support
+([install spec](./specs/install.md#office-workspace-preset-pending-orbit-support)).
 
 Office work is a generic, easy-to-use, personal agentic work-management
 system for anyone whose work is knowledge work: analysts, consultants,
@@ -69,7 +76,7 @@ by-product: complete, cited, and written by an auto-task.
 2. **Propose, don't impose.** The orchestrator proposes. It does not create standing automation, edit knowledge pages or take outward-facing actions without approval.
 3. **Provenance everywhere.** Every knowledge claim, summary and agent output links back to the source or task it came from, down to a timestamp or line.
 4. **Plain words.** The user sees To-dos, Routines, Library, Needs you and Insights. They never see ids, crews, runs, workflows or raw statuses.
-5. **Generic core, packs for verticals.** The plugin knows sources, knowledge, proposals and metrics. KT videos, meetings, receipts and bills are **routine packs**: data (routine and auto-task definitions, runbooks, skills), not code paths.
+5. **Generic core, packs for verticals.** The `office` component plugin knows sources, knowledge, proposals and metrics. KT videos, meetings, receipts and bills are **routine packs**: data (routine and auto-task definitions, runbooks, skills), not code paths.
 6. **Honest numbers.** Analytics count what happened. Seeded demo history is labelled simulated.
 
 ## 2. Core Concepts
