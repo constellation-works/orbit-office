@@ -10,7 +10,8 @@
     "profile": {
       "enum": [
         "kt",
-        "meeting"
+        "meeting",
+        "digest"
       ]
     },
     "task": {

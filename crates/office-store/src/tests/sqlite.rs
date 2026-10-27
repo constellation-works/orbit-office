@@ -210,6 +210,47 @@ fn bootstrap_store() -> (
 }
 
 #[test]
+fn source_digest_is_indexed_under_source_id_on_processing_and_rebuild() {
+    use office_core::domain::{endpoint::ModelRoute, source::sha256_hex};
+    use office_core::ports::{DerivedBy, Library};
+    let (_temp, store, root, _state) = bootstrap_store();
+    let path = std::path::Path::new("sources/1970/01/src-doc/source.md");
+    let text = "---\nid: src-doc\nkind: doc\ntitle: Design\nsensitivity: normal\n---\nOriginal evidence.\n";
+    store.write_document(path, text).unwrap();
+    let value = serde_json::json!({"summary":"Digest","kind_hint":"doc","as_of":null,
+        "subjects":[{"name":"SidecarSubject","template":"topic","aliases":[]}],
+        "claims":[],"procedures":[],"terms":[],"refs":[]});
+    Library::write_source_processing(
+        &store,
+        "src-doc",
+        &sha256_hex(text.as_bytes()),
+        None,
+        &DerivedBy {
+            route: ModelRoute::Hosted,
+            model: "offline".into(),
+        },
+        &[("digest.json".into(), value.to_string().into_bytes())],
+    )
+    .unwrap();
+    for rebuilt in [false, true] {
+        if rebuilt {
+            store.reindex().unwrap();
+        }
+        let hits = store
+            .search("SidecarSubject", &SearchFilter::default())
+            .unwrap();
+        assert_eq!(hits.len(), 1, "rebuilt={rebuilt}");
+        assert_eq!(hits[0].id, "src-doc");
+        assert_eq!(hits[0].path, path.to_string_lossy());
+        assert!(
+            !std::fs::read_to_string(root.join(path))
+                .unwrap()
+                .contains("SidecarSubject")
+        );
+    }
+}
+
+#[test]
 fn bootstrap_public_port_persists_private_plan_confirms_once_and_rejects_stale_snapshots() {
     use office_core::{
         domain::bootstrap::{self, Mutation},

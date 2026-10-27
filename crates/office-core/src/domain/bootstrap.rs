@@ -10,6 +10,7 @@ use super::settings::Settings;
 use super::source::{parse_source_meta, sha256_hex, source_body, video};
 use crate::{Error, Result};
 
+pub mod extraction;
 pub mod status;
 
 /// Bootstrap order; only these phase names are accepted.
@@ -115,7 +116,7 @@ impl Snapshot {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Counts {
-    /// One standard call per document without a digest.
+    /// Standard document digest windows and merges for sources without a digest.
     pub digest: usize,
     /// Video audio chunks.
     pub audio: usize,
@@ -467,7 +468,17 @@ fn input_digest(snapshot: &Snapshot, plan: &Plan, settings: &Settings) -> Result
             } else {
                 source.markdown.clone()
             };
-            inputs.push(json!({"path":source.path,"markdown":markdown}));
+            // Extraction provenance is an output. Publishing one digest must
+            // not revoke the approved allowance for the remaining documents.
+            let mut fields = metadata(&markdown)?;
+            if let Some(provenance) = fields.get_mut("derived_by").and_then(Value::as_object_mut) {
+                provenance.remove("extraction");
+                if provenance.is_empty() {
+                    fields.remove("derived_by");
+                }
+            }
+            inputs
+                .push(json!({"path":source.path,"metadata":fields,"body":source_body(&markdown)}));
         } else if source.in_phase(&plan.phase)? && source.digest.is_none() && !source.needs_ocr()? {
             // A newly captured pending source invalidates the whole-phase approval.
             inputs.push(json!({"new_pending":id}));
@@ -639,15 +650,23 @@ pub fn plan(
                 }
             }
         } else {
-            plan.counts.digest += 1;
-            text_tokens += u64::try_from(source_body(&source.markdown).chars().count())
-                .unwrap_or(0)
-                .div_ceil(4)
-                + 1024;
+            let windows = extraction::windows(&source_body(&source.markdown));
+            let calls = extraction::calls(windows.len());
+            plan.counts.digest += calls;
+            text_tokens += windows
+                .iter()
+                .map(|text| u64::try_from(text.chars().count()).unwrap_or(0).div_ceil(4))
+                .sum::<u64>()
+                + u64::try_from(calls).unwrap_or(0) * 1024
+                + if windows.len() > 1 {
+                    u64::try_from(windows.len()).unwrap_or(0) * 1024
+                } else {
+                    0
+                };
             plan.groups.push(CallGroup {
                 kind: "digest".into(),
                 source: Some(meta.id),
-                calls: 1,
+                calls,
                 route: group_route,
             });
         }

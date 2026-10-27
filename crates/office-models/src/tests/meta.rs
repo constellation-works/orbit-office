@@ -6,6 +6,34 @@ use serde_json::json;
 
 use super::{FakeServer, chat_reply, client, hosted_config};
 
+#[test]
+fn digest_schema_accepts_the_shared_shape_and_refuses_wrong_claim_types() {
+    let valid = json!({"summary":"Fixture","kind_hint":"design-doc","as_of":null,
+        "subjects":[{"name":"Ingest","template":"topic","aliases":[],"role":"owner"}],
+        "claims":[{"subject":"Ingest","text":"Grounded","cites":["#L1"],"volatile":false},
+                  {"subject":"Ingest","text":"To be dropped by extraction","volatile":true}],
+        "procedures":[{"title":"Run","inputs":[],"steps":[{"text":"Do it","cites":[]}],"done_when":"Done"}],
+        "terms":[],"refs":[]});
+    let mut invalid = valid.clone();
+    invalid["claims"][0]["volatile"] = json!("wrong type");
+    let server = FakeServer::start_replies(vec![
+        (200, chat_reply(&valid.to_string())),
+        (200, chat_reply(&invalid.to_string())),
+    ]);
+    let models = client(hosted_config(&server.base_url));
+    let request = ExtractRequest {
+        text: "#L1 Evidence".into(),
+        schema: office_core::domain::bootstrap::extraction::schema(),
+        sensitivity: Sensitivity::Normal,
+    };
+    assert_eq!(models.extract(&request).unwrap().value, valid);
+    assert_eq!(
+        models.extract(&request).unwrap_err().code(),
+        "model_invalid_response"
+    );
+    assert_eq!(server.requests().len(), 2);
+}
+
 fn transcribe_request() -> TranscribeRequest {
     TranscribeRequest {
         audio: b"fake-audio".to_vec(),
