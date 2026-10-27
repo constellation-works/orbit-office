@@ -84,6 +84,21 @@ pub fn not_initialized_error() -> Error {
 /// An adapter must override all operations; defaults support contexts that have
 /// no Library (for example the status-only dispatch scaffold).
 pub trait Library {
+    /// Read every bootstrap source/digest, knowledge page and durable phase ledger.
+    /// This is a read-only file scan, never a bounded index search.
+    fn bootstrap_snapshot(&self) -> Result<crate::domain::bootstrap::Snapshot> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Compare the full snapshot/settings revision under the writer lock, then
+    /// journal the ledger and all source privacy updates as one recoverable write.
+    fn mutate_batch(
+        &self,
+        _revision: &str,
+        _mutation: crate::domain::bootstrap::Mutation,
+    ) -> Result<crate::domain::bootstrap::Batch> {
+        Err(Error::LibraryUnavailable)
+    }
+
     /// Read a contained video's original and Markdown; verify original SHA-256.
     fn read_video(&self, _id: &str) -> Result<crate::domain::source::video::VideoSource> {
         Err(Error::LibraryUnavailable)

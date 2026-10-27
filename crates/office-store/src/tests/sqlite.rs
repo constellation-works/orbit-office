@@ -192,3 +192,195 @@ fn an_empty_query_lists_the_filtered_documents_by_id() {
         .collect();
     assert_eq!(ids, ["art-20260721-deck", "art-20261021-deck"]);
 }
+
+fn bootstrap_store() -> (
+    tempfile::TempDir,
+    crate::LibraryStore,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    let root = workspace.join("library");
+    let state = dir.path().join("state");
+    crate::LibraryStore::initialize_at(&root, &state, None, &workspace).unwrap();
+    let store = crate::LibraryStore::open(&root, &state).unwrap();
+    (dir, store, root, state)
+}
+
+#[test]
+fn bootstrap_public_port_persists_private_plan_confirms_once_and_rejects_stale_snapshots() {
+    use office_core::{
+        domain::bootstrap::{self, Mutation},
+        ports::Library,
+    };
+    use serde_json::json;
+    let (_dir, store, root, state) = bootstrap_store();
+    store.set_setting("open_weights",json!({"endpoint":"https://private.example/v1","model":"fixture-private","kind":"company","label":"Fixture server"})).unwrap();
+    store
+        .record_route_check(
+            "https://private.example/v1",
+            "fixture-private",
+            &[office_core::domain::endpoint::Capability::Text],
+            "1970-01-01T00:00:00Z",
+        )
+        .unwrap();
+    for id in ["one", "two"] {
+        store.write_document(std::path::Path::new(&format!("sources/1970/01/{id}/source.md")),&format!("---\nid: {id}\nkind: doc\ntags: [bootstrap:docs]\nsensitivity: normal\n---\n# Ingest\nContent.\n")).unwrap();
+    }
+    let snapshot = store.bootstrap_snapshot().unwrap();
+    let settings = store.settings().unwrap();
+    let revision = snapshot.revision(&settings).unwrap();
+    let plan = bootstrap::plan(&snapshot, &settings, "docs", true, vec![]).unwrap();
+    let preview = Mutation::Plan {
+        plan: Box::new(plan.clone()),
+        confirm: None,
+        at: "1970-01-01T00:00:00Z".into(),
+    };
+    let saved = store.mutate_batch(&revision, preview.clone()).unwrap();
+    assert_eq!(saved.plan, plan);
+    assert_eq!(
+        store.mutate_batch(&revision, preview).unwrap_err().code(),
+        "plan_changed"
+    );
+    for id in ["one", "two"] {
+        assert_eq!(store.get(id).unwrap().unwrap().sensitivity, "private");
+    }
+    drop(store);
+    let store = crate::LibraryStore::open(&root, &state).unwrap();
+    let snapshot = store.bootstrap_snapshot().unwrap();
+    assert_eq!(snapshot.batches["docs"], saved);
+    let confirm = Mutation::Plan {
+        plan: Box::new(plan.clone()),
+        confirm: Some(plan.digest),
+        at: "1970-01-01T00:00:00Z".into(),
+    };
+    let confirmed = store
+        .mutate_batch(&snapshot.revision(&settings).unwrap(), confirm.clone())
+        .unwrap();
+    let head = store.head_commit().unwrap();
+    let snapshot = store.bootstrap_snapshot().unwrap();
+    assert_eq!(
+        store
+            .mutate_batch(&snapshot.revision(&settings).unwrap(), confirm)
+            .unwrap(),
+        confirmed
+    );
+    assert_eq!(store.head_commit().unwrap(), head);
+    store.reindex().unwrap();
+    assert_eq!(store.get("one").unwrap().unwrap().sensitivity, "private");
+}
+
+#[test]
+fn bootstrap_snapshot_reads_complete_digest_corpus_and_refuses_invalid_sidecars() {
+    use office_core::ports::Library;
+    let (_dir, store, root, _state) = bootstrap_store();
+    let directory = root.join("sources/1970/01/one");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("source.md"),
+        "---\nid: one\nkind: doc\ntags: [bootstrap:docs]\n---\nMaterial.\n",
+    )
+    .unwrap();
+    let value = serde_json::json!({"summary":"Digest","subjects":[],"claims":[],"procedures":[],"terms":[],"refs":[]});
+    std::fs::write(directory.join("digest.json"), value.to_string()).unwrap();
+    let before = store.head_commit().unwrap();
+    assert_eq!(
+        store.bootstrap_snapshot().unwrap().sources[0].digest,
+        Some(value)
+    );
+    assert_eq!(store.head_commit().unwrap(), before);
+    assert!(!root.join(".office/bootstrap.json").exists());
+    std::fs::write(directory.join("digest.json"), "{bad").unwrap();
+    assert_eq!(
+        store.bootstrap_snapshot().unwrap_err().code(),
+        "invalid_bootstrap_data"
+    );
+    std::fs::write(directory.join("digest.json"), [0xff]).unwrap();
+    assert_eq!(store.bootstrap_snapshot().unwrap_err().code(), "io_error");
+}
+
+#[cfg(unix)]
+#[test]
+fn bootstrap_snapshot_refuses_digest_and_ledger_symlinks() {
+    use office_core::ports::Library;
+    use std::os::unix::fs::symlink;
+    let (dir, store, root, _state) = bootstrap_store();
+    let directory = root.join("sources/one");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("source.md"),
+        "---\nid: one\nkind: doc\n---\nMaterial.\n",
+    )
+    .unwrap();
+    let outside = dir.path().join("outside.json");
+    std::fs::write(&outside, "{}").unwrap();
+    symlink(&outside, directory.join("digest.json")).unwrap();
+    assert_eq!(
+        store.bootstrap_snapshot().unwrap_err().code(),
+        "unsafe_path"
+    );
+    // Rename the fixture link out of the source tree; don't follow or remove it.
+    std::fs::rename(
+        directory.join("digest.json"),
+        dir.path().join("digest-link"),
+    )
+    .unwrap();
+    symlink(&outside, root.join(".office/bootstrap.json")).unwrap();
+    assert_eq!(
+        store.bootstrap_snapshot().unwrap_err().code(),
+        "unsafe_path"
+    );
+}
+
+#[test]
+fn bootstrap_journal_recovery_finishes_privacy_and_ledger_together() {
+    use office_core::{
+        domain::bootstrap::{self, Mutation},
+        ports::Library,
+    };
+    use serde_json::json;
+    let (_dir, store, root, state) = bootstrap_store();
+    let relative = "sources/one/source.md";
+    store
+        .write_document(
+            std::path::Path::new(relative),
+            "---\nid: one\nkind: doc\ntags: [bootstrap:docs]\n---\n# Ingest\nContent.\n",
+        )
+        .unwrap();
+    store.set_setting("open_weights",json!({"endpoint":"https://private.example/v1","model":"fixture-private","kind":"company","label":"Fixture server"})).unwrap();
+    store
+        .record_route_check(
+            "https://private.example/v1",
+            "fixture-private",
+            &[office_core::domain::endpoint::Capability::Text],
+            "1970-01-01T00:00:00Z",
+        )
+        .unwrap();
+    let snapshot = store.bootstrap_snapshot().unwrap();
+    let settings = store.settings().unwrap();
+    let plan = bootstrap::plan(&snapshot, &settings, "docs", true, vec![]).unwrap();
+    let write = bootstrap::apply(
+        &snapshot,
+        &settings,
+        Mutation::Plan {
+            plan: Box::new(plan),
+            confirm: None,
+            at: "1970-01-01T00:00:00Z".into(),
+        },
+    )
+    .unwrap();
+    let text = serde_json::to_string(&write.batches).unwrap();
+    let private_source = write.sources[relative].clone();
+    std::fs::write(state.join("library.pending-write.json"),json!({"version":6,"kind":"bootstrap","root":root,"relative":".office/bootstrap.json","text":text,"token":"123-456","bundle":[{"path":relative,"bytes":private_source.as_bytes()}]}).to_string()).unwrap();
+    drop(store);
+    let store = crate::LibraryStore::open(&root, &state).unwrap();
+    assert_eq!(store.bootstrap_snapshot().unwrap().batches, write.batches);
+    assert_eq!(store.get("one").unwrap().unwrap().sensitivity, "private");
+    assert!(!state.join("library.pending-write.json").exists());
+    let head = store.head_commit().unwrap();
+    drop(store);
+    let store = crate::LibraryStore::open(&root, &state).unwrap();
+    assert_eq!(store.head_commit().unwrap(), head);
+}

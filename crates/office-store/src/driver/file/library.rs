@@ -127,6 +127,46 @@ impl LibraryFs {
         )?)
     }
 
+    /// Read a digest sidecar or the fixed bootstrap ledger without following links.
+    /// Missing is distinct from unreadable or invalid JSON.
+    pub(crate) fn optional_bootstrap_json(&self, relative: &Path) -> Result<Option<String>> {
+        if relative == Path::new(".office/bootstrap.json") {
+            refuse_symlink(&self.root.join(".office"))?;
+            refuse_symlink(&self.root.join(relative))?;
+        } else {
+            self.validate_relative_path(relative)?;
+            if !relative.starts_with("sources")
+                || relative.file_name().is_none_or(|n| n != "digest.json")
+            {
+                return Err(Error::UnsafePath {
+                    kind: "bootstrap JSON",
+                    value: relative.display().to_string(),
+                });
+            }
+        }
+        let path = self.root.join(relative);
+        match std::fs::read_to_string(&path) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(Error::io("read bootstrap JSON", &path, error)),
+        }
+    }
+
+    /// Validate the fixed internal ledger path before the durable write decision.
+    pub(crate) fn validate_bootstrap_path(&self) -> Result<()> {
+        refuse_symlink(&self.root.join(".office"))?;
+        refuse_symlink(&self.root.join(".office/bootstrap.json"))
+    }
+
+    /// Atomically replace only the fixed internal bootstrap ledger.
+    pub(crate) fn write_bootstrap(&self, text: &str) -> Result<()> {
+        self.validate_bootstrap_path()?;
+        Ok(write_atomic(
+            &self.root.join(".office/bootstrap.json"),
+            text.as_bytes(),
+        )?)
+    }
+
     /// Read one Library file as text, with relative-path containment.
     pub(crate) fn read_text(&self, relative: &Path) -> Result<String> {
         self.validate_relative_path(relative)?;

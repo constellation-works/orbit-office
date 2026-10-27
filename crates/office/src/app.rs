@@ -191,6 +191,7 @@ fn context_library_dir(context: &Context) -> Option<String> {
 /// store is opened lazily by operations that need it, and health checks
 /// that find no Library create nothing (so `office.status` writes nothing).
 struct RealLibrary {
+    bootstrap_read_only: bool,
     workspace: Option<PathBuf>,
     library: Option<PathBuf>,
     state: Option<PathBuf>,
@@ -205,6 +206,7 @@ impl RealLibrary {
         let state = context_path(context, &["plugin_state", "plugin_state_dir", "state_dir"])
             .or_else(|| library.as_ref().map(|root| root.join(".office/state")));
         Self {
+            bootstrap_read_only: false,
             workspace,
             library,
             state,
@@ -230,7 +232,11 @@ impl RealLibrary {
             return Err(office_core::Error::LibraryUnavailable);
         };
         self.ensure_grant()?;
-        let store = LibraryStore::open(library, state)?;
+        let store = if self.bootstrap_read_only {
+            LibraryStore::open_for_bootstrap_read(library, state)?
+        } else {
+            LibraryStore::open(library, state)?
+        };
         // Uploads live under the workspace (the plugin's read grant); the
         // Library root itself is also an allowed upload root.
         let mut roots = vec![library.clone()];
@@ -248,6 +254,16 @@ impl RealLibrary {
 }
 
 impl Library for RealLibrary {
+    fn bootstrap_snapshot(&self) -> office_core::Result<office_core::domain::bootstrap::Snapshot> {
+        <LibraryStore as Library>::bootstrap_snapshot(&self.store()?)
+    }
+    fn mutate_batch(
+        &self,
+        revision: &str,
+        mutation: office_core::domain::bootstrap::Mutation,
+    ) -> office_core::Result<office_core::domain::bootstrap::Batch> {
+        <LibraryStore as Library>::mutate_batch(&self.store()?, revision, mutation)
+    }
     fn read_video(
         &self,
         id: &str,
@@ -388,7 +404,7 @@ impl Library for RealLibrary {
     }
 }
 
-fn ports(context: &Context) -> Ports<'_> {
+fn ports(context: &Context, bootstrap_read_only: bool) -> Ports<'_> {
     let orbit: Box<dyn Orbit> = if let Some(workspace) =
         context_path(context, &["workspace_root", "workspace", "workspace_dir"])
     {
@@ -400,9 +416,11 @@ fn ports(context: &Context) -> Ports<'_> {
     } else {
         Box::new(ContextHandle { context })
     };
+    let mut library = RealLibrary::from_context(context);
+    library.bootstrap_read_only = bootstrap_read_only;
     Ports {
         scripts: Box::new(ContextScripts { context }),
-        library: Box::new(RealLibrary::from_context(context)),
+        library: Box::new(library),
         models: Box::new(ContextModels {
             context,
             library: RealLibrary::from_context(context),
@@ -417,7 +435,10 @@ pub(crate) fn serve_exec() -> Result<String> {
     let mut raw = String::new();
     let _ = std::io::stdin().read_to_string(&mut raw);
     Ok(match protocol::parse(&raw) {
-        Ok(request) => office_tools::serve(&request, &ports(&request.context)),
+        Ok(request) => office_tools::serve(
+            &request,
+            &ports(&request.context, request.tool == "office.bootstrap-status"),
+        ),
         Err(error) => protocol::respond(Err(error)),
     })
 }

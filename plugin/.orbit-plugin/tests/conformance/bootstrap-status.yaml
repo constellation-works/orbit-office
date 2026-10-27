@@ -1,0 +1,14 @@
+# Offline bootstrap source fixture and fixed epoch clock from the public dispatch runner.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: fixture_success
+    tool: bootstrap-status
+    input: {}
+    expect:
+      output: {"phases":[{"accepted":0,"captured":1,"consolidating":0,"digested":0,"dismissed":0,"gaps":[],"overflow_waiting":0,"phase":"docs","proposed":0},{"accepted":0,"captured":0,"consolidating":0,"digested":0,"dismissed":0,"gaps":[],"overflow_waiting":0,"phase":"kt","proposed":0},{"accepted":0,"captured":0,"consolidating":0,"digested":0,"dismissed":0,"gaps":[],"overflow_waiting":0,"phase":"team","proposed":0},{"accepted":0,"captured":0,"consolidating":0,"digested":0,"dismissed":0,"gaps":[],"overflow_waiting":0,"phase":"process","proposed":0}]}
+  - name: refuses_unknown_input
+    tool: bootstrap-status
+    input: {"extra":true}
+    expect:
+      error: {"code":"invalid_argument"}

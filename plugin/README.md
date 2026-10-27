@@ -5,11 +5,10 @@ The plugin tree lives in `.orbit-plugin/`; `orbit plugin validate` /
 `orbit plugin test` run against a fresh export of this directory (see
 `make export`).
 
-**Status: scaffold.** The manifest enables `status`, `init`, `reindex`, `config-set`
-and `signals-scan`. Every other tool is planned: it has a registry row in
-`../crates/office-tools/src/registry.rs` and a commented block in its slot in
-`plugin.yaml`, and is not advertised until built. Building one means
-uncommenting its block and adding its schemas and golden
+The manifest advertises built tools, including `batch-plan` and
+`bootstrap-status` for Library setup previews and progress. Reserved tools
+keep a registry row and a commented block in their slot in `plugin.yaml`.
+Building one means uncommenting its block and adding its schemas and golden
 (`../ARCHITECTURE.md`, "Tools").
 
 ## Layout
