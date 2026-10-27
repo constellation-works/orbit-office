@@ -1004,6 +1004,28 @@ series: renewal-research
 artifacttoken keptafterreindex
 ";
 
+#[cfg(unix)]
+#[test]
+fn init_rejects_symlinked_destinations_outside_the_grant_before_writing() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    let library = workspace.join("library");
+    let outside = dir.path().join("outside");
+    let state = dir.path().join("state");
+    std::fs::create_dir_all(&library).expect("library grant");
+    std::fs::create_dir_all(&outside).expect("outside");
+    symlink(&outside, library.join("escape")).expect("symlink");
+
+    for requested in ["library/escape/new", "library/escape"] {
+        let result = LibraryStore::initialize_at(&library, &state, Some(requested), &workspace);
+        assert!(result.is_err(), "accepted {requested}");
+        assert_eq!(std::fs::read_dir(&outside).expect("outside").count(), 0);
+        assert!(!state.join("index.sqlite").exists());
+    }
+}
+
 #[test]
 fn init_copies_missing_templates_and_health_reports_template_drift() {
     let dir = tempfile::tempdir().expect("tempdir");

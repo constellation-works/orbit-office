@@ -188,6 +188,24 @@ impl LibraryStore {
                 allowed,
             });
         }
+        // Resolve the grant and destination before creating the lock, index or
+        // Library. A missing suffix is appended to its canonical ancestor.
+        let allowed = resolve_existing_ancestor(&allowed)?;
+        if std::fs::symlink_metadata(&candidate)
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        {
+            return Err(Error::UnsafePath {
+                kind: "symlink",
+                value: candidate.display().to_string(),
+            });
+        }
+        let candidate = resolve_existing_ancestor(&candidate)?;
+        if !candidate.starts_with(&allowed) {
+            return Err(Error::LibraryDirOutside {
+                requested: candidate,
+                allowed,
+            });
+        }
         // Refuse a missing git before creating anything.
         let probe_cwd = if workspace_root.exists() {
             workspace_root.to_path_buf()
@@ -201,6 +219,27 @@ impl LibraryStore {
         std::fs::create_dir_all(state_dir)
             .map_err(|e| Error::io("create writer state", state_dir, e))?;
         let lock = WriterLock::acquire(state_dir)?;
+        // Create and verify the same resolved destination before using it.
+        // Do not follow a final symlink, including one introduced since the
+        // initial resolution.
+        if std::fs::symlink_metadata(&candidate)
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        {
+            return Err(Error::UnsafePath {
+                kind: "symlink",
+                value: candidate.display().to_string(),
+            });
+        }
+        LibraryFs::create_private_dirs(&candidate)?;
+        let resolved = candidate
+            .canonicalize()
+            .map_err(|e| Error::io("resolve Library", &candidate, e))?;
+        if resolved != candidate {
+            return Err(Error::LibraryDirOutside {
+                requested: resolved,
+                allowed,
+            });
+        }
         let files = LibraryFs::new(candidate.clone());
         let git = Git::new(&candidate, state_dir);
         // Completeness is checked without creating layout or index.
@@ -1181,6 +1220,39 @@ fn normalize_path(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// Resolve an existing ancestor without treating dangling links as missing.
+fn resolve_existing_ancestor(path: &Path) -> Result<PathBuf> {
+    let mut ancestor = path;
+    let mut missing = Vec::new();
+    loop {
+        match std::fs::symlink_metadata(ancestor) {
+            Ok(_) => {
+                let mut resolved = ancestor
+                    .canonicalize()
+                    .map_err(|e| Error::io("resolve Library path", ancestor, e))?;
+                for name in missing.into_iter().rev() {
+                    resolved.push(name);
+                }
+                return Ok(resolved);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let name = ancestor
+                    .file_name()
+                    .ok_or_else(|| Error::io("resolve Library path", ancestor, e))?;
+                missing.push(name);
+                ancestor = ancestor.parent().ok_or_else(|| {
+                    Error::io(
+                        "resolve Library path",
+                        ancestor,
+                        std::io::Error::other("no existing ancestor"),
+                    )
+                })?;
+            }
+            Err(e) => return Err(Error::io("inspect Library path", ancestor, e)),
+        }
+    }
 }
 
 fn dir_is_empty(path: &Path) -> bool {
