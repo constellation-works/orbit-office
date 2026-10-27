@@ -155,8 +155,11 @@ skill are kept in place and named in the output with their path, and a repeated 
 is a safe no-op for them. It keeps `~/orbit` and the
 Library unless `--purge` is given. `--purge` deletes that workspace only after the same
 ownership check as adoption, and otherwise refuses with a message that names the path and
-removes nothing, including the per-user data folder. A data folder that is the home folder or
-`/` (set with `ORBIT_OFFICE_DATA_DIR`) is refused the same way, before any teardown.
+removes nothing, including the per-user data folder. A workspace or data folder (set with
+`--home` or `ORBIT_OFFICE_DATA_DIR`) that is the home folder or `/` is refused the same way,
+before any teardown and again just before the deletes. The check compares the folder the
+path names, not its spelling: a trailing or repeated slash, `.` and `..` segments and a
+symlink to either are refused too.
 
 Plugin-authored commits in the Library use a fixed author (`orbit-office
 <office@orbit.local>`) passed per commit, so they need no git identity and are easy to tell
