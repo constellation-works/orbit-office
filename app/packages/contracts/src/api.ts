@@ -318,3 +318,13 @@ export interface SourcePlan {
   estimate: { amount: number; currency: string } | null;
 }
 export interface SourceCitation { title: string; text: string }
+
+/** A source span shared with the agent. */
+export interface SelectionInput {
+  object: string;
+  anchor: string;
+  quote: string;
+  view: "source";
+  sensitivity: "normal" | "private";
+}
+export interface SelectionCount { count: number }

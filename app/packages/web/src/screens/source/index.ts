@@ -1,7 +1,7 @@
 /** Capture originals, review processing costs, and open citations at their span. */
 import type { BootstrapPhase, CapturedSource, SourcePlan, SourceView } from "@orbit-office/contracts";
 import type { Screen } from "../../screen.js";
-import { ApiError, capturePaste, getSource, getSourceCitation, markSourcePrivate, sourcePlan, uploadSource } from "../../api/client.js";
+import { ApiError, capturePaste, getSource, getSourceCitation, markSourcePrivate, sourcePlan, uploadSource, getSelectionCount, putSelection, clearSelections } from "../../api/client.js";
 import { sourceHref } from "../../api/source-location.js";
 import { anchorTarget, clock, droppedFiles, seconds, supportedFile } from "./model.js";
 import { styles } from "./style.js";
@@ -118,13 +118,24 @@ async function render(root: HTMLElement): Promise<void> {
 
 function drawSource(source: SourceView, root: HTMLElement): void {
   const section = el("section"); root.replaceChildren(section);
+  const tray = el("div"); tray.className = "source-actions";
+  const count = el("span", "Shared with agent: unavailable"); count.className = "pill"; count.setAttribute("role", "status");
+  let generation = 0;
+  async function refresh(): Promise<void> {
+    const current = ++generation;
+    try { const data = await getSelectionCount(); if (section.isConnected && current === generation) count.textContent = `Shared with agent: ${data.count}`; }
+    catch { if (section.isConnected && current === generation) count.textContent = "Shared with agent: unavailable"; }
+  }
+  const clear = button("Clear", () => { clear.disabled = true; void clearSelections().then(refresh).catch(() => { count.textContent = "Shared with agent: unavailable"; }).finally(() => { clear.disabled = false; }); });
+  tray.append(count, clear); section.append(tray); void refresh();
+  const timer = window.setInterval(() => { if (!section.isConnected) window.clearInterval(timer); else void refresh(); }, 5000);
   for (const label of source.route_labels) { const badge = el("span", label); badge.className = "pill"; section.append(badge); }
   if (!source.route_labels.length) section.append(el("p", "No model processing recorded."));
   if (source.sensitivity === "private") section.append(el("p", "Marked private"));
   else {
     const status = el("p"); const mark = button("Mark private", () => {
       mark.disabled = true;
-      void markSourcePrivate(source.id).then(() => { if (section.isConnected) { mark.textContent = "Marked private"; status.textContent = "Future processing uses only your chosen endpoint."; } }).catch(error => { if (section.isConnected) { status.textContent = message(error); mark.disabled = false; } });
+      void markSourcePrivate(source.id).then(() => { if (section.isConnected) { source.sensitivity = "private"; mark.textContent = "Marked private"; status.textContent = "Future processing uses only your chosen endpoint."; } }).catch(error => { if (section.isConnected) { status.textContent = message(error); mark.disabled = false; } });
     }); section.append(mark, status);
   }
   const columns = el("div"); columns.className = "source-columns";
@@ -146,6 +157,19 @@ function drawSource(source: SourceView, root: HTMLElement): void {
     const link = el("a", stamp?.[0] ?? String(index + 1)); link.href = sourceHref(source.id, stamp ? `#t=${stamp[1]}` : `#L${index + 1}`); link.setAttribute("aria-label", `Open ${stamp?.[1] ?? `line ${index + 1}`}`);
     node.append(link, document.createTextNode(stamp ? line.slice(stamp[0].length) : ` ${line}`)); lines.append(node); return node;
   });
+  const shareSelection = (): void => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (!lines.contains(range.startContainer) || !lines.contains(range.endContainer)) return;
+    const lineFor = (node: Node): number => lineNodes.findIndex(line => line.contains(node));
+    const start = lineFor(range.startContainer); const end = lineFor(range.endContainer); const quote = selection.toString().trim();
+    if (start < 0 || end < 0 || !quote) return;
+    const anchor = `#L${start + 1}${end === start ? "" : `-${end + 1}`}`;
+    void putSelection({ object: source.id, anchor, quote, view: "source", sensitivity: source.sensitivity }).then(refresh).catch(() => { count.textContent = "Shared with agent: unavailable"; });
+  };
+  lines.addEventListener("mouseup", shareSelection);
+  lines.addEventListener("keyup", event => { if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") shareSelection(); });
   transcript.append(lines); columns.append(original, transcript); section.append(columns);
   const chapterNodes = new Map<number, HTMLElement>();
   const shownGotchas = new Set<SourceView["gotchas"][number]>();
