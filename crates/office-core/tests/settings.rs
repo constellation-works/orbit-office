@@ -213,6 +213,81 @@ fn accepts_any_https_host_or_loopback_as_the_private_endpoint() {
 }
 
 #[test]
+fn refuses_malformed_endpoint_authorities_at_every_settings_boundary() {
+    for endpoint in [
+        "http://localhost:invalid/v1",
+        "http://localhost:65536/v1",
+        "http://localhost:/v1",
+        "http://localhost:80:80/v1",
+        "https://inference.baseten.co:secret-value/v1",
+        "https://inference.baseten.co:99999/v1",
+        "http://[::1]garbage/v1",
+        "http://[::1]:invalid/v1",
+        "http://[::1]:65536/v1",
+        "http://[::1]:/v1",
+        "http://[::1]9/v1",
+    ] {
+        // Load (from_yaml).
+        let yaml = BLOCK.replace("https://muse.internal.acme.example/v1", endpoint);
+        let error = Settings::from_yaml(&yaml).expect_err(endpoint);
+        assert_eq!(error.code(), "invalid_library_setting", "{endpoint}");
+        assert!(!error.to_string().contains(endpoint), "echoed: {error}");
+        assert!(!error.to_string().contains("secret-value"));
+        assert_eq!(refused_key(Err(error)), "open_weights.endpoint");
+
+        // Deserialization.
+        let json = serde_json::to_string(&serde_json::json!({
+            "open_weights": {
+                "endpoint": endpoint,
+                "model": "m",
+                "kind": "company",
+                "label": "x",
+            }
+        }))
+        .unwrap();
+        assert!(
+            serde_json::from_str::<Settings>(&json).is_err(),
+            "deserialization accepted {endpoint}"
+        );
+
+        // with_setting: whole block and endpoint leaf.
+        let mut block = block_value();
+        block["endpoint"] = json!(endpoint);
+        let error = Settings::default()
+            .with_setting("open_weights", block)
+            .expect_err(endpoint);
+        assert_eq!(error.code(), "invalid_library_setting", "{endpoint}");
+        assert!(!error.to_string().contains("secret-value"));
+
+        let configured = Settings::default()
+            .with_setting("open_weights", block_value())
+            .expect("valid block");
+        let error = configured
+            .with_setting("open_weights.endpoint", json!(endpoint))
+            .expect_err(endpoint);
+        assert_eq!(error.code(), "invalid_library_setting", "{endpoint}");
+        let Error::InvalidSetting { key, .. } = error else {
+            panic!("wrong error: {error:?}")
+        };
+        assert_eq!(key, "open_weights.endpoint", "{endpoint}");
+    }
+    // Valid authorities with explicit ports remain accepted.
+    for endpoint in [
+        "https://inference.baseten.co/v1",
+        "https://inference.baseten.co:443/v1",
+        "https://model-abc.api.baseten.co:8443/v1",
+        "http://localhost:8080/v1",
+        "http://127.0.0.1:65535/v1",
+        "http://[::1]:8080/v1",
+        "https://[::1]:443/v1",
+    ] {
+        let yaml = BLOCK.replace("https://muse.internal.acme.example/v1", endpoint);
+        Settings::from_yaml(&yaml)
+            .unwrap_or_else(|error| panic!("{endpoint} should be accepted: {error}"));
+    }
+}
+
+#[test]
 fn refuses_plain_http_off_loopback_meta_and_credentials_at_load_naming_the_key() {
     for endpoint in [
         "http://muse.internal.acme.example/v1",

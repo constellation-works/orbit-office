@@ -226,6 +226,7 @@ pub(crate) fn allow_private_endpoint(url: &str) -> Result<(), &'static str> {
     if url.chars().any(|c| c.is_whitespace() || c.is_control())
         || url.contains(['?', '#'])
         || authority_has_userinfo(url)
+        || !has_valid_authority(url)
     {
         return Err(MALFORMED_ENDPOINT);
     }
@@ -237,6 +238,47 @@ pub(crate) fn allow_private_endpoint(url: &str) -> Result<(), &'static str> {
         return Err(HTTPS_REQUIRED);
     }
     Ok(())
+}
+
+/// A port is usable only as non-empty ASCII digits fitting a `u16`.
+fn is_valid_port(port: &str) -> bool {
+    !port.is_empty()
+        && port.bytes().all(|byte| byte.is_ascii_digit())
+        && port.parse::<u16>().is_ok()
+}
+
+/// The authority is syntactically usable: a bracketed literal may be
+/// followed only by nothing or a valid port, and any other host may carry
+/// at most one valid port. Extracting an allowlisted host does not prove
+/// the remaining authority is valid, so it is checked in full here.
+fn has_valid_authority(url: &str) -> bool {
+    let Some(rest) = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host_and_port = authority.rsplit('@').next().unwrap_or_default();
+    if let Some(literal) = host_and_port.strip_prefix('[') {
+        let Some((host, after)) = literal.split_once(']') else {
+            return false;
+        };
+        if host.is_empty() {
+            return false;
+        }
+        return match after {
+            "" => true,
+            _ => after.strip_prefix(':').is_some_and(is_valid_port),
+        };
+    }
+    if host_and_port.contains(['[', ']']) {
+        return false;
+    }
+    match host_and_port.split_once(':') {
+        None => !host_and_port.is_empty(),
+        Some((host, port)) => !host.is_empty() && is_valid_port(port),
+    }
 }
 
 /// `userinfo@host` in the authority. Credentials do not belong in settings.
