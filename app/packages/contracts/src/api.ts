@@ -189,3 +189,15 @@ export interface TodoList {
   /** True when Orbit had more matching to-dos than this list includes. */
   more: boolean;
 }
+
+/** Generated review bodies returned by GET /api/review. */
+export interface ReviewItem {
+  title: string;
+  date: string;
+  body: string | null;
+  truncated: boolean;
+}
+export interface ReviewList {
+  reviews: ReviewItem[];
+  latest_100: boolean;
+}

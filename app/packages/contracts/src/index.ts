@@ -21,6 +21,8 @@ export type {
   PrivateRouteStatus,
   PrivateRouteWrite,
   RouteCapability,
+  ReviewItem,
+  ReviewList,
   ScreenId,
   SettingsStatus,
   SettingsConnection,
