@@ -131,3 +131,155 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   assert.equal(await page.evaluate(() => window.todayLoadCount), 1);
   assert.deepEqual(errors, []);
 });
+
+/** Orbit behind both Today and Approvals: accepted, dismissed and approved tasks leave Needs you. */
+function approvalOrbit(fake) {
+  const proposal = (title) => JSON.stringify({ kind: "knowledge_add", markdown: `# ${title}\n\nWhat the team agreed, with the sources it came from.` });
+  const draft = JSON.stringify({
+    schema_version: 1, id: "gd-0123456789abcdef", connection: "acme-crm",
+    request: { method: "POST", url: "https://api.acme.example/v2/accounts/acme/notes", headers: {}, body: "{\"note\":\"Following up on Tuesday's call.\"}" },
+    sha256: "b".repeat(64), created_at: "2026-10-27T00:00:00.000Z",
+  });
+  const files = { review: ["brief.md", "artifact-manifest.json"], script: ["receipts.csv", "summary.md", "artifact-manifest.json", "script-run.json"] };
+  const state = { calls: [], refuse: {}, replies: {} };
+  const find = (id) => fake.state.tasks.find((row) => row.id === id);
+  state.client = {
+    async callTool(name, input) {
+      state.calls.push({ name, input });
+      const refusal = state.refuse[`${name} ${input.id ?? input.task}`] ?? state.refuse[name];
+      if (refusal) return { ok: false, error: { code: refusal, message: "fixture", retryable: false } };
+      const task = find(input.id ?? input.task);
+      switch (name) {
+        case "orbit.task.show":
+          return { ...task, artifacts: (files[task.id] ?? (task.tags.includes("gateway-draft") ? ["gateway-draft.json"] : ["proposal.json"])).map((path) => ({ path })) };
+        case "orbit.task.update":
+          if (input.status) task.status = input.status;
+          return task;
+        case "orbit.task.artifact.get":
+          return { content: input.path === "gateway-draft.json" ? draft : proposal(task.title) };
+        case "office.artifact-promote":
+          return { ok: true, output: { id: "art", path: "p", files: [], series: "s", version: 1, supersedes: null } };
+        case "office.proposal-accept":
+          task.status = "done";
+          return { ok: true, output: { id: task.id, accepted: true, change: { page: "p", path: "p" } } };
+        case "gateway.http-send":
+          return state.replies[name] ?? { outcome: "sent", status: 201, task_closed: true };
+        default:
+          throw new Error(`unexpected ${name}`);
+      }
+    },
+  };
+  return state;
+}
+
+test("Needs you approves, sends back, accepts and dismisses at desktop and phone widths", { timeout: 60_000 }, async (t) => {
+  assert.ok(process.env.PLAYWRIGHT_MODULE, "source the verified ORBIT_BROWSER_KIT_ENV first");
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE);
+  const { createApprovalsFeature } = await import("../../server/dist/features/approvals/index.js");
+  const { approvalTasks } = await import("../../server/test/today-fixture.mjs");
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  const fake = fakeTodayClient(approvalTasks());
+  const orbit = approvalOrbit(fake);
+  const today = createTodayFeature({ client: fake.client, now: () => now });
+  const approvals = createApprovalsFeature({ client: orbit.client, approver: () => "Dana" });
+  const fallback = createHandler();
+  const server = createServer((request, response) => {
+    const path = (request.url ?? "/").split("?")[0];
+    const route = [...today.routes, ...approvals.routes].find((item) => item.method === request.method && item.path === path);
+    if (route) void route.handle(request, response);
+    else fallback(request, response);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const page = await browser.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.clock.install();
+  await page.goto(`http://127.0.0.1:${server.address().port}`);
+  const needs = page.getByRole("region", { name: "Needs you", exact: true });
+  await needs.getByRole("heading", { name: "Set up your Library" }).waitFor();
+  const cardOf = (title) => needs.locator("article.card").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+
+  // One card per group; each page is reviewable on its own.
+  const onboarding = cardOf("Set up your Library");
+  assert.equal(await onboarding.locator(".approval-page").count(), 2);
+  assert.equal(await cardOf("Ingest service").locator(".approval-page").count(), 2);
+  assert.equal(await cardOf("Pages about your processes and policies").locator(".approval-page").count(), 1);
+  assert.equal(await needs.locator("article.card").count(), 8);
+  await onboarding.getByText("Review this page").first().click();
+  await onboarding.getByText("What the team agreed").first().waitFor();
+
+  // The draft shows exactly what would be sent; script and review cards list their files.
+  const draft = cardOf("Add a follow-up note to the Acme account");
+  await draft.getByText("https://api.acme.example/v2/accounts/acme/notes").waitFor();
+  assert.match(await draft.innerText(), /POST/);
+  assert.match(await draft.innerText(), /Following up on Tuesday's call\./);
+  await cardOf("Receipt catalog for October").getByText("receipts.csv").waitFor();
+  assert.equal(await cardOf("Receipt catalog for October").getByText("script-run.json").count(), 0);
+  await cardOf("The project brief is ready to read").getByText("brief.md").waitFor();
+  assert.equal(await cardOf("Send your feedback on the plan").getByRole("button").count(), 0);
+
+  const visible = async () => page.locator("main").innerText();
+  for (const internal of ["onboard-1", "boot-1", "bootstrap:", "subject:", "gd-0123", "script-output", "gateway-draft", "proposal:", "bbbbbbbb"]) {
+    assert.ok(!(await visible()).includes(internal), `internal value ${internal} is not shown`);
+  }
+  const screenshotDir = process.env.TODAY_SCREENSHOTS_DIR;
+  if (screenshotDir) await mkdir(screenshotDir, { recursive: true });
+  const shoot = async (name) => {
+    for (const width of [1440, 375]) {
+      await page.setViewportSize({ width, height: 1100 });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal overflow at ${width}px`);
+      if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `${name}-light-${width}.png`), fullPage: true });
+    }
+  };
+  await shoot("today-needs-you");
+
+  // A refused promote leaves the work in review and says so.
+  const review = cardOf("The project brief is ready to read");
+  orbit.refuse["office.artifact-promote"] = "task_has_no_artifacts";
+  await review.getByRole("button", { name: "Approve" }).click();
+  await review.getByRole("alert").waitFor();
+  assert.match(await review.getByRole("alert").innerText(), /still waiting for your review\. There is no output to add yet\./);
+  assert.equal(fake.state.tasks.find((row) => row.id === "review").status, "review");
+  await shoot("today-approve-refused");
+
+  // Send back needs a comment and carries it.
+  await review.getByRole("button", { name: "Send back" }).click();
+  await review.getByLabel("What should change?").fill("Add the budget table.");
+  await review.getByRole("button", { name: "Send back" }).click();
+  await page.getByText("Sent “The project brief is ready to read” back with your comment.").waitFor();
+  const sentBack = orbit.calls.find(({ name, input }) => name === "orbit.task.update" && input.status === "backlog");
+  assert.match(sentBack.input.comment, /Add the budget table\./);
+
+  // Accept all: one refused page stays, the other is accepted and the card names the refused one.
+  orbit.refuse["office.proposal-accept onboard-2"] = "proposal_closed";
+  await onboarding.getByRole("button", { name: "Accept all" }).click();
+  await onboarding.getByText(/Accepted 1 of 2 pages\. “Your goals this quarter” couldn’t be accepted/).waitFor();
+  assert.deepEqual(orbit.calls.filter(({ name }) => name === "office.proposal-accept").map(({ input }) => input.id), ["onboard-1", "onboard-2"]);
+  await shoot("today-accept-all-partial");
+  await page.clock.fastForward(5_000);
+  await page.waitForFunction(() => document.querySelectorAll('[data-group="onboarding"] .approval-page').length === 1);
+
+  // A lost gateway reply is reported as unknown, not as a failure.
+  orbit.replies["gateway.http-send"] = { outcome: "outcome_unknown", status: null, task_closed: false };
+  await draft.getByRole("button", { name: "Approve and send" }).click();
+  await draft.getByText(/no reply came back/).first().waitFor();
+  assert.equal(await draft.getByRole("alert").count(), 0);
+  const sends = orbit.calls.filter(({ name }) => name === "gateway.http-send");
+  assert.deepEqual(sends.map(({ input }) => input), [{ draft: "gd-0123456789abcdef", sha256: "b".repeat(64) }]);
+  await shoot("today-send-outcome-unknown");
+
+  // Script output: Approve promotes and closes; a single proposal can be dismissed.
+  delete orbit.refuse["office.artifact-promote"];
+  const script = cardOf("Receipt catalog for October");
+  await script.getByRole("button", { name: "Approve" }).click();
+  await page.getByText("Added the files from “Receipt catalog for October” to your Library.").waitFor();
+  assert.equal(fake.state.tasks.find((row) => row.id === "script").status, "done");
+  await cardOf("Turn meeting notes into a weekly brief").getByRole("button", { name: "Dismiss" }).click();
+  await page.getByText("Dismissed “Turn meeting notes into a weekly brief”.").waitFor();
+  assert.equal(fake.state.tasks.find((row) => row.id === "suggestion").status, "rejected");
+  await page.clock.fastForward(5_000);
+  await page.waitForFunction(() => !document.body.innerText.includes("Receipt catalog for October"));
+  assert.deepEqual(errors, []);
+});

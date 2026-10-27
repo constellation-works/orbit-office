@@ -62,9 +62,12 @@ The browser polls the endpoint five seconds after the preceding read settles.
 Navigating away stops polling and prevents a late response replacing the new
 screen. Open results, background panels and keyboard focus survive refreshes.
 
-- Needs you selects `proposed` tasks tagged `proposal`, all `review` tasks,
-  then unfinished `owner:you` tasks. This order also determines the label
-  when a task matches more than one kind.
+- Needs you selects `proposed` tasks tagged `gateway-draft`, then
+  `script-output`, then `proposal`; all `review` tasks; then unfinished
+  `owner:you` tasks. This order also determines the label when a task
+  matches more than one kind. Proposals tagged `onboarding` share one
+  "Set up your Library" card; proposals tagged `bootstrap:<phase>` share a
+  card per `subject:<name>` tag, or per phase without one.
 - Agents working on selects `in-progress` tasks tagged `owner:agent`,
   excluding `owner:you`, and shows one line per task.
 - Done today selects `done` tasks whose latest transition to `done` falls
@@ -80,8 +83,36 @@ data when available. A capped listing and completed work without a usable
 completion date are explicitly reported. Limits may omit older unfinished
 work or a result whose record was subsequently edited; this is a bounded
 snapshot, not a complete history. The view supports the shared light theme.
-Empty `drop-zone` and per-item `approval-actions` slots reserve integration
-points; uploading and approval mutations remain separate features.
+An empty `drop-zone` slot reserves the upload integration point; uploading
+remains a separate feature. Each Needs-you card except the user's own to-dos
+carries its `approval-actions` (below).
+
+### Approvals implementation
+
+Approvals are built ([ORB-18733]). The server feature calls Orbit as the
+user; the Today screen shows the controls and says every outcome in plain
+words (tool codes are never shown). `GET /api/approvals/detail?key=` returns
+what a card shows before the user acts: a proposal's text and the SHA-256 of
+its exact `proposal.json`, the output file names of reviewed work or script
+output, or a gateway draft's connection, method, URL, body and digest.
+
+- **Approve** reviewed work or script output calls `office.artifact-promote`,
+  then walks the task to `done` with a comment naming who approved. There is
+  no `verdict` object or `complete` flag: the installed app holds no operator
+  authority. A refused promote changes nothing, so the task stays waiting
+  for review and the card says why.
+- **Send back** moves reviewed work to `backlog` with the user's comment.
+- **Accept** calls `office.proposal-accept` once with the digest shown.
+  **Accept all** on a grouped card accepts each page in turn; a refused page
+  leaves the others accepted, and the card names it.
+- **Dismiss** rejects a proposal, script output or gateway draft, with an
+  optional reason.
+- **Approve and send** on a gateway draft calls `gateway.http-send` with the
+  draft id and the digest shown ([gateway.md](./gateway.md)). A lost reply
+  is shown as `outcome_unknown`, never as a failure, and is never retried.
+  Dismiss rejects the task and nothing is sent. No other approval sends
+  anything: a Library `draft` for someone else is copied, never sent
+  ([orchestrator.md](./orchestrator.md#guardrails)).
 
 ### To-dos implementation
 
@@ -138,6 +169,7 @@ Spark Open" only when a block is configured.
 - [ORB-18711] — builds `office.config-set` for Library settings.
 - [ORB-18727] — built the Today screen and `GET /api/today`.
 - [ORB-18728] — built the To-dos screen and `GET /api/todos`.
+- [ORB-18733] — built the Needs-you approval actions and `/api/approvals/*`.
 - [ORB-18735] — built the PWA shell and the settings feature's agent-CLI read.
 - [ORB-18798] — builds the Settings connections and API calls views.
 - [ORB-18841] — builds the Settings private route and the Muse Spark Open attribution.

@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 
 import { createTodayFeature } from "../dist/features/today/index.js";
-import { fakeTodayClient, now, todayTasks } from "./today-fixture.mjs";
+import { approvalTasks, fakeTodayClient, now, todayTasks } from "./today-fixture.mjs";
 
 async function endpoint(t, client) {
   const feature = createTodayFeature({ client, now: () => now });
@@ -99,4 +99,32 @@ test("failed and malformed Orbit reads are errors, never empty successful sectio
     assert.equal(response.status, status);
     assert.deepEqual(await response.json(), { error: code });
   }
+});
+
+test("Needs you classifies drafts, script output and grouped proposals, in a stable order", async (t) => {
+  const get = await endpoint(t, fakeTodayClient(approvalTasks()).client);
+  const body = await (await get()).json();
+  assert.deepEqual(body.needs_you.map(({ key, kind, group }) => [key, kind, group]), [
+    ["suggestion", "proposal", null],
+    ["boot-2", "proposal", { key: "bootstrap:docs:ingest-service", title: "Ingest service" }],
+    ["boot-1", "proposal", { key: "bootstrap:docs:ingest-service", title: "Ingest service" }],
+    ["boot-3", "proposal", { key: "bootstrap:process", title: "Pages about your processes and policies" }],
+    ["onboard-1", "proposal", { key: "onboarding", title: "Set up your Library" }],
+    ["onboard-2", "proposal", { key: "onboarding", title: "Set up your Library" }],
+    ["draft", "gateway_draft", null],
+    ["script", "script_output", null],
+    ["review", "approval", null],
+    ["personal", "todo", null],
+  ]);
+});
+
+test("a dismissed or accepted proposal leaves Needs you", async (t) => {
+  const rows = approvalTasks();
+  rows[0].status = "rejected";
+  rows[1].status = "done";
+  rows[6].status = "rejected";
+  rows[7].status = "rejected";
+  const get = await endpoint(t, fakeTodayClient(rows).client);
+  const keys = (await (await get()).json()).needs_you.map(({ key }) => key);
+  for (const key of ["onboard-1", "onboard-2", "draft", "script"]) assert.ok(!keys.includes(key), key);
 });

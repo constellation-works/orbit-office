@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { ApiError, getApiCalls, getConnections, getHealth, getJson, getPrivateRoute, putConnection, savePrivateRoute } from "../dist/api/client.js";
+import { acceptProposal, acceptProposals, ApiError, approveOutput, dismissNeed, getApiCalls, getApprovalDetail, sendBack, sendDraft, getConnections, getHealth, getJson, getPrivateRoute, putConnection, savePrivateRoute } from "../dist/api/client.js";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -57,4 +57,34 @@ test("HTTP, network and invalid JSON failures use ApiError", async () => {
     globalThis.fetch = fetcher;
     await assert.rejects(getJson("/example"), (error) => error instanceof ApiError && error.status === status && error.code === code);
   }
+});
+
+test("approval helpers post closed bodies and carry a refusal reason", async () => {
+  const calls = [];
+  globalThis.fetch = async (path, options) => {
+    calls.push({ path, method: options.method ?? "GET", body: options.body === undefined ? undefined : JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }));
+  };
+  const sha = "c".repeat(64);
+  await getApprovalDetail("ORB-1 x");
+  await approveOutput("ORB-1");
+  await sendBack("ORB-1", "More detail");
+  await dismissNeed("ORB-2");
+  await dismissNeed("ORB-2", "Not now");
+  await acceptProposal("ORB-3", sha);
+  await acceptProposals([{ key: "ORB-3", sha256: sha }]);
+  await sendDraft("ORB-4", sha);
+  assert.deepEqual(calls, [
+    { path: "/api/approvals/detail?key=ORB-1%20x", method: "GET", body: undefined },
+    { path: "/api/approvals/approve", method: "POST", body: { key: "ORB-1" } },
+    { path: "/api/approvals/send-back", method: "POST", body: { key: "ORB-1", comment: "More detail" } },
+    { path: "/api/approvals/dismiss", method: "POST", body: { key: "ORB-2" } },
+    { path: "/api/approvals/dismiss", method: "POST", body: { key: "ORB-2", reason: "Not now" } },
+    { path: "/api/approvals/accept", method: "POST", body: { key: "ORB-3", sha256: sha } },
+    { path: "/api/approvals/accept-all", method: "POST", body: { proposals: [{ key: "ORB-3", sha256: sha }] } },
+    { path: "/api/approvals/send", method: "POST", body: { key: "ORB-4", sha256: sha } },
+  ]);
+  globalThis.fetch = async () => new Response('{"error":"promote_refused","reason":"task_has_no_artifacts"}', { status: 409 });
+  await assert.rejects(approveOutput("ORB-1"), (error) =>
+    error instanceof ApiError && error.status === 409 && error.code === "promote_refused" && error.reason === "task_has_no_artifacts");
 });

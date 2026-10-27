@@ -1,5 +1,5 @@
-/** Read-only Today snapshot. Uploads and approval writes have their own features. */
-import type { Today, TodayItem, TodayNeed } from "@orbit-office/contracts";
+/** Read-only Today snapshot. Uploads and approval writes (features/approvals) have their own features. */
+import type { Today, TodayItem, TodayNeed, TodayNeedGroup } from "@orbit-office/contracts";
 
 import type { Feature } from "../../http/types.js";
 import { createOrbitClient } from "../../orbit/client.js";
@@ -47,10 +47,42 @@ function item(task: Task): TodayItem {
 }
 
 function needKind(task: Task): TodayNeed["kind"] | undefined {
+  // Gateway drafts and script outputs follow the proposal record path, so they are matched first.
+  if (task.status === "proposed" && task.tags.includes("gateway-draft")) return "gateway_draft";
+  if (task.status === "proposed" && task.tags.includes("script-output")) return "script_output";
   if (task.status === "proposed" && task.tags.includes("proposal")) return "proposal";
   if (task.status === "review") return "approval";
   if (task.tags.includes("owner:you")) return "todo";
   return undefined;
+}
+
+const BOOTSTRAP_PHASES: Record<string, string> = {
+  docs: "Pages from your documents",
+  kt: "Pages from your recorded walkthroughs",
+  team: "Pages about your team",
+  process: "Pages about your processes and policies",
+};
+
+/** A tag value in plain words: `ingest-service` becomes "Ingest service". */
+function words(value: string): string {
+  const text = value.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * Onboarding proposals share one card. Bootstrap proposals are grouped by
+ * their `subject:<name>` tag within a phase, or by the phase without one.
+ */
+function needGroup(task: Task, kind: TodayNeed["kind"]): TodayNeedGroup | null {
+  if (kind !== "proposal") return null;
+  if (task.tags.includes("onboarding")) return { key: "onboarding", title: "Set up your Library" };
+  const phase = task.tags.find((tag) => tag.startsWith("bootstrap:"))?.slice("bootstrap:".length);
+  if (phase === undefined || phase === "") return null;
+  const subject = task.tags.find((tag) => tag.startsWith("subject:"))?.slice("subject:".length).trim();
+  if (subject !== undefined && subject !== "") {
+    return { key: `bootstrap:${phase}:${subject.toLowerCase()}`, title: words(subject) };
+  }
+  return { key: `bootstrap:${phase}`, title: BOOTSTRAP_PHASES[phase] ?? "New Library pages" };
 }
 
 function completedAt(task: Task): Date | undefined {
@@ -94,7 +126,7 @@ export function createTodayFeature({ client, now = () => new Date() }: TodayOpti
           for (const task of active.tasks) {
             if (!["proposed", "backlog", "in-progress", "review", "blocked", "someday"].includes(task.status)) continue;
             const kind = needKind(task);
-            if (kind !== undefined) snapshot.needs_you.push({ ...item(task), kind });
+            if (kind !== undefined) snapshot.needs_you.push({ ...item(task), kind, group: needGroup(task, kind) });
             if (task.status === "in-progress" && task.tags.includes("owner:agent") && !task.tags.includes("owner:you")) {
               snapshot.agents_working_on.push(item(task));
             }
@@ -105,8 +137,9 @@ export function createTodayFeature({ client, now = () => new Date() }: TodayOpti
             .filter(({ at }) => at !== undefined && at >= start && at <= current)
             .sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0))
             .map(({ task }) => ({ ...item(task), result: task.execution_summary?.trim() || null }));
-          const order = { proposal: 0, approval: 1, todo: 2 };
-          snapshot.needs_you.sort((a, b) => order[a.kind] - order[b.kind] || a.title.localeCompare(b.title));
+          const order = { proposal: 0, gateway_draft: 1, script_output: 2, approval: 3, todo: 4 };
+          snapshot.needs_you.sort((a, b) => order[a.kind] - order[b.kind] ||
+            (a.group?.title ?? "").localeCompare(b.group?.title ?? "") || a.title.localeCompare(b.title));
           snapshot.agents_working_on.sort((a, b) => a.title.localeCompare(b.title));
           response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
           response.end(JSON.stringify(snapshot));

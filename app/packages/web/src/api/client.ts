@@ -1,11 +1,17 @@
 /** Typed access to the app server, with one error path. */
-import type { ConnectionSaved, ConnectionWrite, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls, SettingsConnections, SettingsStatus } from "@orbit-office/contracts";
+import type {
+  AcceptAllResult, AcceptRequest, ApprovalDetail, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
+  GatewaySendResult, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
+  SettingsConnections, SettingsStatus,
+} from "@orbit-office/contracts";
 
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     readonly routeSaved = false,
+    /** A tool's refusal code the server passed on, for a plain-words message. */
+    readonly reason?: string,
   ) {
     super(`app server answered ${status} (${code})`);
     this.name = "ApiError";
@@ -31,7 +37,9 @@ async function requestJson<T>(path: string, body?: unknown): Promise<T> {
     const code = typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
       ? body.error : "unknown";
     const routeSaved = typeof body === "object" && body !== null && "route_saved" in body && body.route_saved === true;
-    throw new ApiError(response.status, code, routeSaved);
+    const reason = typeof body === "object" && body !== null && "reason" in body && typeof body.reason === "string"
+      ? body.reason : undefined;
+    throw new ApiError(response.status, code, routeSaved, reason);
   }
   try {
     return (await response.json()) as T;
@@ -70,4 +78,40 @@ export function getPrivateRoute(): Promise<PrivateRouteStatus> {
 /** Save the endpoint block, then read the check. Omit `token` to leave it. */
 export function savePrivateRoute(input: PrivateRouteWrite): Promise<PrivateRouteSaved> {
   return requestJson<PrivateRouteSaved>("/api/settings/private-route", input);
+}
+
+/** POST JSON and read the JSON answer, with the same error path as {@link getJson}. */
+export function postJson<T>(path: string, body: unknown): Promise<T> {
+  return requestJson<T>(path, body);
+}
+
+/** What a Needs-you card shows before the user acts on it. */
+export function getApprovalDetail(key: string): Promise<ApprovalDetail> {
+  return getJson<ApprovalDetail>(`/api/approvals/detail?key=${encodeURIComponent(key)}`);
+}
+
+/** Add a reviewed output to the Library, then close its task. */
+export function approveOutput(key: string): Promise<ApproveResult> {
+  return postJson<ApproveResult>("/api/approvals/approve", { key });
+}
+
+export function sendBack(key: string, comment: string): Promise<ApprovalOk> {
+  return postJson<ApprovalOk>("/api/approvals/send-back", { key, comment });
+}
+
+export function dismissNeed(key: string, reason?: string): Promise<ApprovalOk> {
+  return postJson<ApprovalOk>("/api/approvals/dismiss", reason === undefined ? { key } : { key, reason });
+}
+
+export function acceptProposal(key: string, sha256: string): Promise<ApprovalOk> {
+  return postJson<ApprovalOk>("/api/approvals/accept", { key, sha256 });
+}
+
+export function acceptProposals(proposals: AcceptRequest[]): Promise<AcceptAllResult> {
+  return postJson<AcceptAllResult>("/api/approvals/accept-all", { proposals });
+}
+
+/** Approve a gateway draft: the server sends it once, bound to `sha256`. */
+export function sendDraft(key: string, sha256: string): Promise<GatewaySendResult> {
+  return postJson<GatewaySendResult>("/api/approvals/send", { key, sha256 });
 }
