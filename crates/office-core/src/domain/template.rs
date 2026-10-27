@@ -51,6 +51,58 @@ pub enum AttachPolicy {
     Never,
 }
 
+/// Who may carry a runbook out, from its `performable` rule.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Performable {
+    /// The agent may follow the runbook up to submission.
+    Agent,
+    /// Only the user performs it (the default when the rule is absent).
+    #[default]
+    You,
+}
+
+impl Performable {
+    /// Canonical frontmatter token.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Agent => "agent",
+            Self::You => "you",
+        }
+    }
+}
+
+/// How a performed runbook's result is submitted, from its `submission.via`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SubmissionVia {
+    /// Produce a draft artifact; the user submits it.
+    Draft,
+    /// Produce a gateway draft for the named connection; approval sends it.
+    Gateway,
+}
+
+impl SubmissionVia {
+    /// Canonical frontmatter token.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Gateway => "gateway",
+        }
+    }
+}
+
+/// Where a performed runbook's result goes, from its `submission` block.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Submission {
+    /// Target system name, for example a ticketing system.
+    pub system: String,
+    /// Submission channel.
+    pub via: SubmissionVia,
+    /// Gateway connection name; required when `via` is `gateway`.
+    pub connection: Option<String>,
+}
+
 /// A fixed id, or an id containing exactly one `<slug>` placeholder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdPattern(String);
@@ -96,6 +148,10 @@ pub struct Template {
     pub sections: Vec<String>,
     /// Headings that must have content on a page.
     pub required: Vec<String>,
+    /// Who may carry the page's procedure out; `you` when the rule is absent.
+    pub performable: Performable,
+    /// Submission target for a performed runbook, when declared.
+    pub submission: Option<Submission>,
     /// Markdown after the closing frontmatter delimiter, preserved verbatim.
     pub body: String,
 }
@@ -166,6 +222,56 @@ impl Template {
                 "required headings must appear in sections",
             ));
         }
+        let performable = match rules.get("performable") {
+            None => Performable::You,
+            Some(value) => match value.as_str() {
+                Some("agent") => Performable::Agent,
+                Some("you") => Performable::You,
+                _ => {
+                    return Err(invalid(file, "performable", "expected agent or you"));
+                }
+            },
+        };
+        let submission = match rules.get("submission") {
+            None => None,
+            Some(value) => {
+                let block = value
+                    .as_object()
+                    .ok_or_else(|| invalid(file, "submission", "expected a nested mapping"))?;
+                let sub = |field: &str| -> Result<Option<String>> {
+                    match block.get(field) {
+                        None => Ok(None),
+                        Some(v) => v
+                            .as_str()
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|s| Some(s.to_owned()))
+                            .ok_or_else(|| invalid(file, field, "expected a nonempty string rule")),
+                    }
+                };
+                let system = sub("system")?
+                    .ok_or_else(|| invalid(file, "system", "expected a nonempty string rule"))?;
+                let via_raw =
+                    sub("via")?.ok_or_else(|| invalid(file, "via", "expected draft or gateway"))?;
+                let via = match via_raw.as_str() {
+                    "draft" => SubmissionVia::Draft,
+                    "gateway" => SubmissionVia::Gateway,
+                    _ => return Err(invalid(file, "via", "expected draft or gateway")),
+                };
+                let connection = sub("connection")?;
+                if via == SubmissionVia::Gateway && connection.is_none() {
+                    return Err(invalid(
+                        file,
+                        "connection",
+                        "via gateway requires a connection",
+                    ));
+                }
+                Some(Submission {
+                    system,
+                    via,
+                    connection,
+                })
+            }
+        };
         Ok(Self {
             template,
             kind,
@@ -176,6 +282,8 @@ impl Template {
             sensitivity,
             sections,
             required,
+            performable,
+            submission,
             body: body.into(),
         })
     }
@@ -248,9 +356,16 @@ fn split_frontmatter<'a>(file: &str, text: &'a str) -> Result<(&'a str, &'a str)
 fn parse_rules<'a>(file: &str, text: &'a str) -> Result<BTreeMap<&'a str, Value>> {
     let mut rules = BTreeMap::new();
     let mut active_list = None;
+    let mut active_block = false;
     for raw in text.lines() {
         let diagnostic_field = if raw.starts_with(char::is_whitespace) {
-            active_list.unwrap_or("frontmatter")
+            if active_block {
+                raw.trim_start()
+                    .split_once(':')
+                    .map_or("submission", |(field, _)| field.trim())
+            } else {
+                active_list.unwrap_or("frontmatter")
+            }
         } else {
             raw.split_once(':')
                 .map_or("frontmatter", |(field, _)| field.trim())
@@ -260,6 +375,33 @@ fn parse_rules<'a>(file: &str, text: &'a str) -> Result<BTreeMap<&'a str, Value>
             continue;
         }
         if line.starts_with(char::is_whitespace) {
+            if active_block {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("- ") {
+                    return Err(invalid(file, "submission", "expected a nested mapping"));
+                }
+                let (subfield, subvalue) = trimmed
+                    .split_once(':')
+                    .ok_or_else(|| invalid(file, "submission", "expected field: value"))?;
+                let subfield = subfield.trim();
+                if !["system", "via", "connection"].contains(&subfield) {
+                    return Err(invalid(file, subfield, "unknown rule"));
+                }
+                let block = rules
+                    .get_mut("submission")
+                    .and_then(Value::as_object_mut)
+                    .ok_or_else(|| invalid(file, "submission", "expected a nested mapping"))?;
+                if block.contains_key(subfield) {
+                    return Err(invalid(file, subfield, "duplicate rule"));
+                }
+                let subvalue = subvalue.trim();
+                if subvalue.is_empty() {
+                    return Err(invalid(file, subfield, "expected a nonempty string rule"));
+                }
+                let value = scalar(file, subfield, subvalue)?;
+                block.insert(subfield.to_owned(), value);
+                continue;
+            }
             let field = active_list
                 .ok_or_else(|| invalid(file, "frontmatter", "unexpected indentation"))?;
             let item = line
@@ -288,6 +430,8 @@ fn parse_rules<'a>(file: &str, text: &'a str) -> Result<BTreeMap<&'a str, Value>
             "sensitivity",
             "sections",
             "required",
+            "performable",
+            "submission",
         ]
         .contains(&field)
         {
@@ -298,7 +442,11 @@ fn parse_rules<'a>(file: &str, text: &'a str) -> Result<BTreeMap<&'a str, Value>
         }
         let raw_value = raw_value.trim();
         active_list = None;
-        let value = if raw_value.is_empty() && ["sections", "required"].contains(&field) {
+        active_block = false;
+        let value = if raw_value.is_empty() && field == "submission" {
+            active_block = true;
+            Value::Object(serde_json::Map::new())
+        } else if raw_value.is_empty() && ["sections", "required"].contains(&field) {
             active_list = Some(field);
             Value::Array(Vec::new())
         } else if raw_value.starts_with('[') {

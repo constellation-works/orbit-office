@@ -5,7 +5,7 @@ seeded `enabled: false`; auto-tasks use `dedupe: skip_if_open`. Activities use
 Orbit's schemaVersion 2 Activity envelope and have no schedule switch or dedupe key.
 
 - Routines: `office-kt-inbox` (every 15 minutes), `office-signals` (daily),
-  `office-daily-digest` (daily).
+  `office-daily-digest` (daily), `office-bootstrap` (every 15 minutes).
 - Auto-tasks: `office-knowledge-maintenance` (weekly), `office-review` (period end).
 - Activities: `office-agent-todo`.
 
@@ -37,6 +37,20 @@ itself. Extraction files one `owner:you` to-do per question, tagged
 `kt-question`. The job creates no agent loop, crew or task, calls no
 outward-facing action, and uses only the routine fields Orbit accepts
 (routines carry no `required_tools`).
+
+`office-bootstrap` is registered under `spec.definitions.routines` and its
+job under `spec.definitions.jobs`. The disabled routine (`*/15 * * * *`)
+targets `job:office-bootstrap`; the job lists confirmed, unconsolidated
+batches with `office.batch-plan` in list mode and confirmed video plans
+with `office.video-plan` in list mode, fans out over them with
+deterministic `plugin.tool_call` steps (`office.transcribe`,
+`office.frames` and `office.extract` with `profile: kt` for videos, and
+`office.extract` with `profile: digest` for a batch's documents), then
+fans out `office.consolidate` over the batches instead of filing proposals
+itself. Consolidation files one knowledge proposal per page. The job
+creates no agent loop, crew or task, calls no outward-facing action, and
+uses only the routine fields Orbit accepts (routines carry no
+`required_tools`).
 
 `office-daily-digest` is registered under `spec.definitions.routines` and
 its single-step job under `spec.definitions.jobs`. The job contains an inline
