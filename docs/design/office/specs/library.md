@@ -213,6 +213,11 @@ status: current                # current | stale | retired
   that a page is absent. The tool reads through Library ports and writes
   nothing. Contact refs and page bodies are not included.
 
+The app browses the newest 100 matching outputs, grouped by kind and series.
+A truncated listing is labeled “Showing the latest 100”; exact series and kind
+filters narrow the read. Older outputs and series outside that window may not
+appear in the unfiltered view.
+
 ### Document history
 
 `office.knowledge-show`, `office.artifact-show` and `office.source-show` accept

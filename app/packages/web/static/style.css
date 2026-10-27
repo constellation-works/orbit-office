@@ -48,3 +48,16 @@ h2, h3 { line-height: 1.25; margin: 0; }
 .site-footer p { margin: 0; }
 .site-footer:empty { display: none; }
 @media (max-width: 600px) { .header-inner { gap: 12px; } main { padding-top: 32px; } .card, .state { padding: 20px; } }
+
+/* Library browsing and setup */
+.library { max-width: 72rem; }
+.library h2 { margin-top: 2rem; }
+.library h3 { margin: 1.2rem 0 .5rem; text-transform: capitalize; }
+.library form { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+.library input, .library select { min-width: 0; max-width: 100%; padding: .6rem; border: 1px solid #9aaba8; border-radius: .35rem; font: inherit; }
+.library button { margin: .2rem .35rem .2rem 0; padding: .5rem .75rem; border: 1px solid #638b83; border-radius: .35rem; background: white; color: #125c51; font: inherit; cursor: pointer; }
+.library button:hover { background: #e4f1ed; }
+.library button:focus-visible { outline: 3px solid #267b6d; outline-offset: 2px; }
+.library section { border-left: 3px solid #b9d5ce; padding-left: 1rem; }
+.library section p { margin: .35rem 0; }
+.library-body { white-space: pre-wrap; overflow-wrap: anywhere; }
