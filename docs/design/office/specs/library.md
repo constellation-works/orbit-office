@@ -68,6 +68,15 @@ workspace and enabled the plugin. The user never runs it by hand.
 6. Creates or migrates `plugin_state/index.sqlite`, then reindexes.
 7. Commits whatever it created ("Initialize the Library").
 
+After validating the requested path and git availability, init prepares the
+plugin state directory and acquires `plugin_state/library.writer.lock` before
+checking completeness or writing Library files. It holds that one lock through
+scaffolding, any pending-write recovery, index creation/rebuild and the commit;
+recovery and reindex reuse the guard rather than acquiring it again. If another
+process holds the lock past its five-second deadline, init returns
+`library_lock_timeout` without creating the Library layout, config, `.gitignore`,
+repository or index.
+
 It is idempotent: it creates only what is missing and never overwrites an
 existing config, `.gitignore`, template or page. A Library is complete only
 when its layout, repository, config, `.gitignore`, index and every bundled
