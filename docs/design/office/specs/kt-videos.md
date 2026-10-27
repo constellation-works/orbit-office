@@ -116,8 +116,11 @@ confirmed plans. Each is a `plugin.tool_call` step:
 1. **`office.transcribe`** extracts the audio with `ffmpeg` as WAV or MP3 (the
    only containers transcription accepts, see
    [models-and-privacy.md](./models-and-privacy.md#long-recordings)) and
-   transcribes it in chunks, adding each chunk's offset so timestamps hold even
-   when the model returns none. With a VTT it does nothing.
+   transcribes it in chunks, adding each chunk's offset to the turns the
+   model returned so those timestamps line up with the recording.
+   Timestamps exist only where the model returns turns: a chunk whose
+   reply returns none contributes text with no timestamps. With a VTT
+   it does nothing.
 2. **`office.frames`** (mutating, `mcp_scope: none`) extracts the planned
    frames to `frames/` and reads each with Muse Spark image input: what is on
    screen (slide, code, terminal, dashboard, diagram, a face) and the visible
