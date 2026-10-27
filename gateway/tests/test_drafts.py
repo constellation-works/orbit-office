@@ -22,6 +22,49 @@ def request_sha256(request: dict) -> str:
     return hashlib.sha256(json.dumps(exact, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+# The standard library has no JSON Schema validator, so this checks the keywords
+# the plugin's published schemas use. A schema that adds a keyword it does not
+# check is refused, never passed through unchecked.
+CHECKED_KEYWORDS = {"type", "required", "properties", "additionalProperties", "items", "minimum"}
+ANNOTATIONS = {"$schema", "title", "description"}
+JSON_TYPES = {
+    "array": lambda value: isinstance(value, list),
+    "boolean": lambda value: isinstance(value, bool),
+    "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
+    "null": lambda value: value is None,
+    "object": lambda value: isinstance(value, dict),
+    "string": lambda value: isinstance(value, str),
+}
+
+
+def schema_errors(value: object, schema: dict, where: str = "output") -> list[str]:
+    """Why `value` does not conform to `schema`; empty when it does."""
+    unknown = set(schema) - CHECKED_KEYWORDS - ANNOTATIONS
+    if unknown or not isinstance(schema.get("additionalProperties", True), bool):
+        raise ValueError(f"{where}: schema uses a keyword or value this checker does not implement: {sorted(unknown)}")
+    if "type" in schema:
+        kinds = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
+        if not any(JSON_TYPES[kind](value) for kind in kinds):
+            return [f"{where}: expected {' or '.join(kinds)}, got {value!r}"]
+    errors: list[str] = []
+    if "minimum" in schema and isinstance(value, int) and value < schema["minimum"]:
+        errors.append(f"{where}: {value} is below {schema['minimum']}")
+    if isinstance(value, dict):
+        properties = schema.get("properties", {})
+        for name in schema.get("required", []):
+            if name not in value:
+                errors.append(f"{where}: missing {name!r}")
+        for name, item in value.items():
+            if name in properties:
+                errors += schema_errors(item, properties[name], f"{where}.{name}")
+            elif schema.get("additionalProperties", True) is False:
+                errors.append(f"{where}: unexpected {name!r}")
+    if isinstance(value, list) and "items" in schema:
+        for index, item in enumerate(value):
+            errors += schema_errors(item, schema["items"], f"{where}[{index}]")
+    return errors
+
+
 class DraftCase(GatewayCase):
     def setUp(self) -> None:
         super().setUp()
@@ -308,6 +351,8 @@ class Send(DraftCase):
         self.assertEqual(listed["skipped"], 0)
         [row] = [row for row in listed["records"] if row["tool"] == "gateway.http-send" and row["outcome"] == "sent"]
         self.assertIs(row["truncated"], True)
+        published = json.loads((self.plugin / "schemas" / "audit-list.response.json").read_text())
+        self.assertEqual(schema_errors(listed, published), [], "the published schema accepts the listing")
 
         self.assertEqual(self.stored(out["draft"])["state"], "sent")
         self.assertEqual(len(cutoff.requests), 1)

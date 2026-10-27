@@ -125,6 +125,10 @@
           "draft": {
             "type": "string",
             "description": "The draft, on http-draft and http-send records."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True on a send whose reply body was not fully received. Absent means the recorded body is complete."
           }
         },
         "additionalProperties": false
