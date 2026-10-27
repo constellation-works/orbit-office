@@ -30,6 +30,19 @@ pub enum Error {
         /// Expected type, range or supported syntax; never the raw value.
         reason: &'static str,
     },
+    /// A model call failed; `retryable` follows the HTTP failure class.
+    ///
+    /// The message names only the endpoint host, status and operation:
+    /// never a secret, request body or response body (STD-05).
+    #[error("model operation ({code}) failed: {message}")]
+    Model {
+        /// Stable adapter error code.
+        code: &'static str,
+        /// Safe diagnostic, without secrets or model payloads.
+        message: String,
+        /// Whether retrying the same request could succeed.
+        retryable: bool,
+    },
     /// The request envelope is not JSON, or is not a JSON object.
     #[error("request is not valid: {0}")]
     InvalidRequest(String),
@@ -52,6 +65,7 @@ impl Error {
         match self {
             Self::LibraryUnavailable => "library_unavailable",
             Self::Library { code, .. } => code,
+            Self::Model { code, .. } => code,
             Self::InvalidSetting { .. } => "invalid_library_setting",
             Self::InvalidRequest(_) => "invalid_request",
             Self::UnsupportedVersion(_) => "unsupported_schema_version",
@@ -61,10 +75,20 @@ impl Error {
     }
 
     /// Whether retrying the same request could succeed. Protocol refusals
-    /// are deterministic, so none of them are retryable.
+    /// are deterministic; only a model failure carries its own verdict
+    /// (a rate-limit or server failure may succeed on retry).
     #[must_use]
     pub fn retryable(&self) -> bool {
-        false
+        match self {
+            Self::Model { retryable, .. } => *retryable,
+            Self::LibraryUnavailable => false,
+            Self::Library { .. } => false,
+            Self::InvalidSetting { .. } => false,
+            Self::InvalidRequest(_) => false,
+            Self::UnsupportedVersion(_) => false,
+            Self::UnknownTool(_) => false,
+            Self::InvalidArgument(_) => false,
+        }
     }
 }
 

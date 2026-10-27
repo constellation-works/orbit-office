@@ -7,7 +7,10 @@ mod orbit;
 
 pub use clock::Clock;
 pub use library::{InitOutcome, Library, LibraryHealth, not_initialized_error};
-pub use models::Models;
+pub use models::{
+    ExtractRequest, ImageReading, ImageRequest, Models, TranscribeRequest, Transcript,
+    TranscriptSegment,
+};
 pub use orbit::Orbit;
 
 /// The services available to a single tool call.

@@ -14,6 +14,7 @@ path = "src/lib.rs"
 # Dependencies are added with the fakes that need them, within the policy in
 # scripts/check-dependency-direction.sh.
 [dependencies]
+office-common = { workspace = true }
 office-core = { workspace = true }
 serde_json = { workspace = true }
 

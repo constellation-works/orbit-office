@@ -11,9 +11,17 @@ repository.workspace = true
 name = "office_models"
 path = "src/lib.rs"
 
-# Dependencies arrive with the first task that needs them, within the policy
-# in scripts/check-dependency-direction.sh.
 [dependencies]
+base64 = { workspace = true }
+office-common = { workspace = true }
+office-core = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+ureq = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 
 [lints]
 workspace = true

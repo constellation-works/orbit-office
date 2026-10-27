@@ -52,7 +52,7 @@ Checked by grep over non-test sources:
 
 - `office-core` (every module): no `std::fs`, `std::net`, `std::process`, `tempfile` or `rustix`, and no environment or path discovery (`std::env::`, `home_dir`, `current_dir`).
 - `office-tools`: the same bans. A tool reaches files, models and Orbit only through ports.
-- `office-models`: no `std::process`.
+- `office-models`: no `std::process` except `src/media.rs`, the one `ffmpeg` audio-splitting subprocess, run under the bounded supervisor in `office-common` (STD-03 R11–R15).
 - `office-store/src/contracts.rs`: no `std::fs`, `std::net` or `std::process` (record shapes only).
 - `office/src/app.rs` imports no `cli` or `output`; `office/src/output/` imports no `app` or `cli`.
 - Only `office/src/output/` touches stdout, stderr, TTY state or the color/format variables (`scripts/check-terminal-guard.sh`).
