@@ -9,7 +9,7 @@
  */
 import { spawn } from "node:child_process";
 
-import type { OrbitToolClient } from "../orbit/client.js";
+import { OrbitError, type OrbitToolClient } from "../orbit/client.js";
 
 /** How often the pass runs. */
 export const DISPATCH_INTERVAL_MS = 30_000;
@@ -60,23 +60,36 @@ export function selectDispatchIds(tasks: readonly DispatchTask[]): string[] {
     .map((task) => task.id);
 }
 
-/** Extract the task rows from an `orbit.task.list` envelope (or a bare array). */
+/**
+ * Extract the task rows from an `orbit.task.list` envelope (or a bare array).
+ * A listing the pass cannot read is an `invalid_output` failure, never an
+ * empty pass: a scheduled pass reports it through `onError`, and nothing is
+ * submitted (STD-02 §R29). A valid empty listing is still `[]`.
+ */
 export function tasksFromListResult(result: unknown): DispatchTask[] {
   const rows: unknown = Array.isArray(result)
     ? result
     : (result as { tasks?: unknown } | null)?.tasks;
-  if (!Array.isArray(rows)) return [];
-  const tasks: DispatchTask[] = [];
-  for (const row of rows) {
-    if (row === null || typeof row !== "object") continue;
-    const record = row as Record<string, unknown>;
-    if (typeof record.id !== "string" || typeof record.status !== "string") continue;
-    const tags = Array.isArray(record.tags)
-      ? record.tags.filter((tag): tag is string => typeof tag === "string")
-      : undefined;
-    tasks.push(tags === undefined ? { id: record.id, status: record.status } : { id: record.id, status: record.status, tags });
+  if (!Array.isArray(rows)) throw invalidListing("a listing without a tasks array");
+  return rows.map((row: unknown, index) => taskFromRow(row, index));
+}
+
+/** One listing row. `id` and `status` are required strings; `tags`, when present, is an array of strings. */
+function taskFromRow(row: unknown, index: number): DispatchTask {
+  const record = row !== null && typeof row === "object" ? (row as Record<string, unknown>) : undefined;
+  if (record === undefined || typeof record.id !== "string" || typeof record.status !== "string") {
+    throw invalidListing(`row ${index} without a string id and status`);
   }
-  return tasks;
+  const tags = record.tags;
+  if (tags === undefined) return { id: record.id, status: record.status };
+  if (!Array.isArray(tags) || !tags.every((tag): tag is string => typeof tag === "string")) {
+    throw invalidListing(`row ${index} with tags that are not an array of strings`);
+  }
+  return { id: record.id, status: record.status, tags };
+}
+
+function invalidListing(detail: string): OrbitError {
+  return new OrbitError("invalid_output", `orbit.task.list returned ${detail}`);
 }
 
 /** List `backlog` tasks tagged `owner:agent` through the Orbit client. */

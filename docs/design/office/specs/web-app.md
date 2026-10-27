@@ -26,7 +26,9 @@ Source: spec §13.1–§13.2 and §13.4.
 - It owns the **dispatch pass**: every 30 seconds it lists `backlog` tasks
   tagged `owner:agent` and submits them by id with `orbit run ship <ids>`
   (review-only). It runs as a login service (launchd or a systemd user
-  unit), so dispatch continues while the browser is closed.
+  unit), so dispatch continues while the browser is closed. A listing Orbit
+  does not return in the expected shape fails the pass and submits nothing;
+  it never reads as an empty queue.
 - Live status comes from polling Orbit every few seconds. There is no event bus.
 
 ## Screens

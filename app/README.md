@@ -78,7 +78,8 @@ layout is in `../ARCHITECTURE.md` ("Web app").
   seconds, single-flight, it lists `backlog` tasks tagged `owner:agent`
   and submits them by id with `orbit run ship <ids>` (review-only). The
   office workspace never runs an auto drain, so `owner:you` and
-  `proposed` tasks are never submitted.
+  `proposed` tasks are never submitted. A malformed listing fails the pass
+  and submits nothing; it never reads as an empty queue.
 - Live status comes from polling Orbit every few seconds; there is no event bus.
 
 The shared UI pieces and responsive styles can be viewed at `/demo.html`
