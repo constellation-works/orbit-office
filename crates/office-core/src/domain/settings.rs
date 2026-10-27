@@ -574,9 +574,21 @@ fn parse_yaml(text: &str) -> Result<Value> {
     for raw in text.lines() {
         // Comments outside quotes only. Quoted hashes and endpoint fragments survive.
         let mut quote = None;
+        let mut escaped = false;
         let line = raw.split_once('\r').map_or(raw, |(line, _)| line);
         let mut end = line.len();
         for (i, c) in line.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            // In double quotes `\` escapes the next character; in single quotes `''`
+            // is one quote. The escaped character stays inside the value.
+            escaped = (quote == Some('"') && c == '\\')
+                || (quote == Some('\'') && c == '\'' && line[i + 1..].starts_with('\''));
+            if escaped {
+                continue;
+            }
             // A quote opens only at the start of a value or list item, so an
             // apostrophe inside a word (`Acme's server`) does not hide a comment.
             if (c == '\'' || c == '"')
