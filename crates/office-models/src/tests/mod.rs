@@ -193,3 +193,59 @@ pub fn hosted_config(hosted_base: &str) -> ModelConfig {
 pub fn client(config: ModelConfig) -> RoutedClient {
     RoutedClient::new(config)
 }
+
+/// A schema exercising required fields, constraints and local references.
+fn receipt_schema() -> serde_json::Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+            "item": {
+                "type": "object",
+                "required": ["category"],
+                "properties": {"category": {"enum": ["food", "travel"]}},
+                "additionalProperties": false
+            }
+        },
+        "type": "object",
+        "required": ["total"],
+        "properties": {
+            "total": {"type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$"},
+            "items": {"type": "array", "items": {"$ref": "#/$defs/item"}}
+        },
+        "additionalProperties": false
+    })
+}
+
+fn assert_extraction_refuses_schema_violations(sensitivity: office_common::Sensitivity) {
+    use office_core::ports::{ExtractRequest, Models};
+
+    for reply in [
+        json!([]),
+        json!({}),
+        json!({"total": 9.99}),
+        json!({"total": "sensitive-invalid-total"}),
+        json!({"total": "9.99", "unexpected": true}),
+        json!({"total": "9.99", "items": [{"category": "other"}]}),
+        json!({"total": "9.99", "items": [{}]}),
+    ] {
+        let server = FakeServer::start(200, chat_reply(&reply.to_string()));
+        let mut config = hosted_config(&server.base_url);
+        config.open_weights_endpoint = Some(server.base_url.clone());
+        let adapter = client(config);
+        let models: &dyn Models = &adapter;
+        let error = models
+            .extract(&ExtractRequest {
+                text: "receipt".into(),
+                schema: receipt_schema(),
+                sensitivity,
+            })
+            .expect_err("schema-violating JSON must be refused");
+        assert_eq!(error.code(), "model_invalid_response");
+        assert!(!error.retryable());
+        assert!(
+            !format!("{error:?}").contains("sensitive-invalid-total"),
+            "validation diagnostics must not expose the reply"
+        );
+        assert_eq!(server.requests().len(), 1);
+    }
+}

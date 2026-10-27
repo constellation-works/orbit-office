@@ -41,6 +41,19 @@ server. An open-weights endpoint is the Baseten or loopback subset; the
 hosted Meta host is not one. Any other host is refused before a socket
 opens. That restriction is a code rule, reviewed, not a sandbox setting.
 
+## Structured extraction
+
+`Models::extract` compiles `request.schema` before inference and validates the
+parsed JSON reply locally on both the hosted and open-weights routes. Non-JSON
+or schema-violating replies return non-retryable `model_invalid_response`.
+The schema sent to the endpoint guides generation; local validation enforces
+the contract even when the endpoint does not enforce `response_format`.
+
+Schemas must be self-contained: local references such as `#/$defs/item` work,
+but validation never retrieves HTTP URLs or files. An invalid schema or an
+unresolvable reference returns non-retryable `model_invalid_schema` before
+inference. Validation diagnostics contain neither schema nor reply contents.
+
 ## Long recordings
 
 The Models port's `TranscribeRequest.duration_seconds` carries duration from

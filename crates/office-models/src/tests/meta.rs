@@ -126,17 +126,60 @@ fn transcribes_audio_on_the_hosted_endpoint() {
 
 #[test]
 fn extracts_structured_json_on_the_hosted_endpoint() {
-    let server = FakeServer::start(200, chat_reply(r#"{"total":"12.50"}"#));
+    let reply = json!({"total": "12.50", "items": [{"category": "food"}]});
+    let server = FakeServer::start(200, chat_reply(&reply.to_string()));
     let models = client(hosted_config(&server.base_url));
     let value = models
         .extract(&ExtractRequest {
             text: "receipt total 12.50".into(),
-            schema: json!({"type": "object"}),
+            schema: super::receipt_schema(),
             sensitivity: Sensitivity::Normal,
         })
         .expect("extract");
-    assert_eq!(value, json!({"total": "12.50"}));
+    assert_eq!(value, reply);
     assert_eq!(server.requests().len(), 1);
+}
+
+#[test]
+fn refuses_schema_violations_on_the_hosted_endpoint() {
+    super::assert_extraction_refuses_schema_violations(Sensitivity::Normal);
+}
+
+#[test]
+fn refuses_invalid_or_external_extraction_schemas_before_inference() {
+    let directory = tempfile::tempdir().expect("temporary schema directory");
+    let schema_file = directory.path().join("schema.json");
+    std::fs::write(&schema_file, r#"{"type":"object"}"#).expect("write schema fixture");
+    let server = FakeServer::start(200, chat_reply(r#"{"total":"12.50"}"#));
+    let mut config = hosted_config(&server.base_url);
+    config.open_weights_endpoint = Some(server.base_url.clone());
+    let adapter = client(config);
+    let models: &dyn Models = &adapter;
+
+    for sensitivity in [Sensitivity::Normal, Sensitivity::Private] {
+        for schema in [
+            json!({"type": "sensitive-invalid-type"}),
+            json!({"$ref": "#/$defs/missing"}),
+            json!({"$ref": format!("{}/schema", server.base_url)}),
+            json!({"$ref": format!("file://{}", schema_file.display())}),
+            json!(17),
+        ] {
+            let error = models
+                .extract(&ExtractRequest {
+                    text: "receipt".into(),
+                    schema,
+                    sensitivity,
+                })
+                .expect_err("invalid or external schema must be refused before inference");
+            assert_eq!(error.code(), "model_invalid_schema");
+            assert!(!error.retryable());
+            assert!(
+                !format!("{error:?}").contains("sensitive-invalid-type"),
+                "schema diagnostics must not expose the schema"
+            );
+        }
+    }
+    assert!(server.requests().is_empty());
 }
 
 #[test]

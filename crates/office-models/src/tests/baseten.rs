@@ -16,7 +16,7 @@ fn extracts_through_the_open_weights_endpoint() {
     let value = models
         .extract(&ExtractRequest {
             text: "private receipt total 9.99".into(),
-            schema: json!({"type": "object"}),
+            schema: super::receipt_schema(),
             sensitivity: Sensitivity::Private,
         })
         .expect("extract");
@@ -28,6 +28,11 @@ fn extracts_through_the_open_weights_endpoint() {
             .body
             .contains("meta-models/muse-spark-open-1026")
     );
+}
+
+#[test]
+fn refuses_schema_violations_on_the_open_weights_endpoint() {
+    super::assert_extraction_refuses_schema_violations(Sensitivity::Private);
 }
 
 #[test]

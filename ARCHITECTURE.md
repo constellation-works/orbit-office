@@ -18,7 +18,7 @@ backend only through Orbit's tools) and `gateway/` (two small Python plugins, se
 | 0. Foundation | `office-common` | The common error, fs mechanisms (path safety, atomic writes, SHA-256), SQLite connection defaults (`sqlite` feature), bounded subprocess supervision shared by adapters and fixtures, small shared types. | — |
 | 1. Domain | `office-core` | **Pure.** The exec envelope (`protocol`), tool contract types (`tool`), declared secret names, the domain model and its rules (`domain/`, including Library records and validated settings), the bundled knowledge templates (`templates/*.md`, compiled in with `include_str!`), and the port traits the application calls (`ports/`). No I/O. | `office-common` |
 | 2. Adapters | `office-store` | Implements the Library port: Markdown files (the source of truth), the rebuildable SQLite index, the Library's own git repository and its writer lock. Also owns plugin state, so it implements the script-runner port: run directories under `plugin_state/runs/` and the supervised `uv` child (specs/scripts.md). Structured after `orbit-store`. | `office-common`, `office-core` |
-| 2. Adapters | `office-models` | Implements the model ports: Meta Model API (Muse Spark, Muse Voice Transcribe), Baseten (Muse Spark Open), privacy routing. The only crate that may speak HTTP. | `office-common`, `office-core` |
+| 2. Adapters | `office-models` | Implements the model ports: Meta Model API (Muse Spark, Muse Voice Transcribe), Baseten (Muse Spark Open), privacy routing and local JSON Schema validation of extraction replies. The only crate that may speak HTTP. | `office-common`, `office-core` |
 | 2. Adapters | `office-orbit` | Implements the Orbit port: the manifest's `orbit_tools` callbacks (`task.add`, `task.artifact.put`, …). | `office-common`, `office-core` |
 | 3. Application | `office-tools` | One module per tool, the tool registry and dispatch. Talks to adapters **only through `office-core` ports**, so every tool runs against fakes. | `office-common`, `office-core` |
 | 4. Composition + surface | `office` (binary) | `app`: builds the adapters, hands them to `office-tools`, serves one exec call. `cli`, `output`: argv, the one stdout envelope, exit codes. | every crate above |
@@ -41,6 +41,11 @@ The testkit depends on core for those fakes; tools use the testkit only as a dev
 
 The plugin backend is one process per call, so it is synchronous: no async runtime. HTTP
 goes through a blocking client inside `office-models`.
+
+`office-models` uses the external `jsonschema` crate with default features disabled.
+Schema compilation and reply validation run in memory; HTTP and file retrieval are
+disabled so schema references cannot add I/O outside the model routing boundary.
+This dependency adds no internal crate edge.
 
 ## Crate policies
 
