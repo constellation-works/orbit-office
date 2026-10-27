@@ -288,7 +288,12 @@ The shared domain refuses routine approval with
 `office.artifact-show` takes `{"id":"art-YYYYMMDD-<slug>"}` and returns the
 complete artifact metadata, its Library-relative `path`, file `name`/`path`
 pairs, `series_history` newest version first, and indexed `backlinks` with
-the same shape as knowledge-show. A missing artifact returns
+the same shape as knowledge-show. For a `report` or `review`, it also
+returns `body`: the text of the first Markdown companion, as written with
+citations inline, bounded at 16,384 bytes and cut on a character boundary,
+with `truncated: true` when it was cut (`false` otherwise). A companion
+that is not valid UTF-8 (a binary artifact), another kind, or no Markdown
+companion returns no `body`. A missing artifact returns
 `artifact_not_found`. Companion files are listed, never executed or sent to
 a model. Series enumeration is not limited by the search result cap.
 

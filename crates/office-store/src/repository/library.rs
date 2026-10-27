@@ -689,6 +689,12 @@ impl LibraryStore {
         Ok(artifact)
     }
 
+    /// One artifact companion file's exact bytes, by Library-relative path.
+    pub fn read_artifact_file(&self, relative: &Path) -> Result<Vec<u8>> {
+        self.read_ready()?;
+        self.files.read_bytes(relative)
+    }
+
     /// Read every artifact frontmatter file, without truncating series history.
     pub fn artifact_documents(&self) -> Result<Vec<LibraryText>> {
         self.read_ready()?;
@@ -1983,6 +1989,9 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn artifact_documents(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::artifact_documents(self)?)
+    }
+    fn read_artifact_file(&self, relative: &Path) -> office_core::Result<Vec<u8>> {
+        Ok(Self::read_artifact_file(self, relative)?)
     }
 
     fn read_document(&self, relative: &Path) -> office_core::Result<DocumentRecord> {

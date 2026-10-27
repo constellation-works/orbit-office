@@ -2,13 +2,18 @@
 
 use std::path::Path;
 
-use office_core::domain::artifact::{Artifact, ArtifactError, valid_id};
+use office_core::domain::artifact::{Artifact, ArtifactError, ArtifactKind, valid_id};
 use office_core::domain::knowledge::DocumentRecord;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Value, json};
 
 use crate::registry::{Call, Tool};
+
+/// Maximum artifact body bytes returned by `artifact-show`. A longer text
+/// body is cut at this many bytes (backed off to a character boundary) and
+/// reported with `truncated: true`.
+pub(crate) const BODY_LIMIT_BYTES: usize = 16_384;
 
 pub(crate) const TOOL: Tool = Tool::built(
     ToolSpec {
@@ -66,7 +71,32 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .iter()
         .map(|name| json!({"name":name,"path":format!("{dir}/{name}")}))
         .collect();
-    Ok(
-        json!({"artifact":artifact,"path":path,"files":files,"series_history":series_history,"backlinks":library.backlinks(id)?}),
-    )
+    // The body is the first Markdown companion of a report or review, as
+    // written (citations stay inline). Other kinds, a companion that is
+    // not valid UTF-8 (a binary artifact), or no Markdown companion
+    // return no body.
+    let mut body: Option<String> = None;
+    let mut truncated = false;
+    if matches!(artifact.kind, ArtifactKind::Report | ArtifactKind::Review)
+        && let Some(name) = artifact.files.iter().find(|name| name.ends_with(".md"))
+    {
+        let bytes = library.read_artifact_file(Path::new(&format!("{dir}/{name}")))?;
+        if let Ok(text) = String::from_utf8(bytes) {
+            if text.len() > BODY_LIMIT_BYTES {
+                let mut end = BODY_LIMIT_BYTES;
+                while !text.is_char_boundary(end) {
+                    end -= 1;
+                }
+                body = Some(text[..end].to_string());
+                truncated = true;
+            } else {
+                body = Some(text);
+            }
+        }
+    }
+    let mut output = json!({"artifact":artifact,"path":path,"files":files,"series_history":series_history,"backlinks":library.backlinks(id)?,"truncated":truncated});
+    if let Some(body) = body {
+        output["body"] = json!(body);
+    }
+    Ok(output)
 }
