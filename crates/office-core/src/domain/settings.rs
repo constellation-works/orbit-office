@@ -367,6 +367,24 @@ fn set_open_weights(encoded: &mut Value, key: &str, value: Value) -> Result<()> 
         {
             return Err(invalid(&format!("open_weights.{checked}"), CHECK_ONLY));
         }
+        let mut value = value;
+        if let (Some(previous), Some(replacement)) = (
+            encoded.get("open_weights").and_then(Value::as_object),
+            value.as_object_mut(),
+        ) {
+            let same_route = ["endpoint", "model"].into_iter().all(|name| {
+                previous
+                    .get(name)
+                    .is_some_and(|old| replacement.get(name) == Some(old))
+            });
+            if same_route {
+                for checked in OPEN_WEIGHTS_CHECKED {
+                    if let Some(value) = previous.get(checked) {
+                        replacement.insert(checked.into(), value.clone());
+                    }
+                }
+            }
+        }
         encoded["open_weights"] = value;
         return Ok(());
     };

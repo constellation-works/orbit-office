@@ -514,3 +514,56 @@ fn the_check_records_capabilities_and_a_new_endpoint_or_model_clears_them() {
         "private_route_changed"
     );
 }
+
+#[test]
+fn whole_block_updates_preserve_checks_only_when_endpoint_and_model_are_unchanged() {
+    let configured = Settings::default()
+        .with_setting("open_weights", block_value())
+        .expect("block");
+    let checked = configured
+        .with_route_check(
+            "https://muse.internal.acme.example/v1",
+            "meta-models/Muse-Spark-Open-816B-A42B",
+            &[Capability::Image, Capability::Text],
+            "2026-10-27T14:02:00+00:00",
+        )
+        .expect("record");
+
+    let mut relabelled_block = block_value();
+    relabelled_block["label"] = json!("Acme GPU cluster");
+    let relabelled = checked
+        .with_setting("open_weights", relabelled_block)
+        .expect("whole-block relabel");
+    let route = relabelled.open_weights.expect("block");
+    assert_eq!(
+        route.capabilities,
+        Some(vec![Capability::Text, Capability::Image])
+    );
+    assert_eq!(
+        route.verified_at.as_deref(),
+        Some("2026-10-27T14:02:00+00:00")
+    );
+
+    for (field, value) in [
+        ("endpoint", json!("https://muse2.internal.acme.example/v1")),
+        ("model", json!("another-model")),
+    ] {
+        let mut changed_block = block_value();
+        changed_block[field] = value;
+        let changed = checked
+            .with_setting("open_weights", changed_block)
+            .expect("whole-block route change")
+            .open_weights
+            .expect("block");
+        assert_eq!(changed.capabilities, None, "{field}");
+        assert_eq!(changed.verified_at, None, "{field}");
+    }
+
+    let unchecked = configured
+        .with_setting("open_weights", block_value())
+        .expect("unchanged unchecked block")
+        .open_weights
+        .expect("block");
+    assert_eq!(unchecked.capabilities, None);
+    assert_eq!(unchecked.verified_at, None);
+}
