@@ -947,6 +947,7 @@ dependencies = [
  "office-common",
  "office-core",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
