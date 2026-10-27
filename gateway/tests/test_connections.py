@@ -45,6 +45,14 @@ class Put(GatewayCase):
         self.assertEqual((out["connection"]["methods"], out["connection"]["drafts"]), (["GET", "HEAD"], ["POST", "PATCH"]))
         self.refused("invalid_connection", "connection-put", put_input(drafts=["GET"]))
 
+    def test_empty_methods_survive_reload_and_omitted_methods_default_to_get(self) -> None:
+        self.ok("connection-put", put_input(name="empty", methods=[]))
+        self.ok("connection-put", put_input(name="default"))
+
+        listed = {item["name"]: item["methods"] for item in self.ok("connection-list", {})["connections"]}
+        self.assertEqual(listed["empty"], [])
+        self.assertEqual(listed["default"], ["GET"])
+
     def test_a_secret_value_is_never_accepted(self) -> None:
         for payload in (
             put_input(secret=TOKEN),
