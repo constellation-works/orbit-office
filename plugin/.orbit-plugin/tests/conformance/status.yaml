@@ -2,7 +2,8 @@ schemaVersion: 1
 kind: PluginTest
 tests:
   # `orbit plugin test` never opens the secret store, so every declared
-  # secret reads as unset here.
+  # secret reads as unset here. The knowledge goldens wrote two domain
+  # pages and one runbook, each meeting its template.
   - name: status_with_no_secrets_set
     tool: status
     input: {}
@@ -14,11 +15,11 @@ tests:
           baseten_token: unset
         library:
           initialized: true
-          documents: 0
+          documents: 3
           documents_by_kind:
             source: 0
-            domain: 0
-            runbook: 0
+            domain: 2
+            runbook: 1
             artifact: 0
           pages_off_template: 0
           template_invalid: []

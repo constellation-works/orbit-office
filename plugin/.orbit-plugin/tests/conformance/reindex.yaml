@@ -1,14 +1,14 @@
 schemaVersion: 1
 kind: PluginTest
 tests:
-  # Runs after init.yaml in the shared conformance workspace, on the
-  # Library `office.init` just scaffolded (still empty, so zero indexed).
+  # Runs after init.yaml and the knowledge goldens in the shared
+  # conformance workspace: the three pages they wrote are indexed.
   - name: reindex_rebuilds_the_index
     tool: reindex
     input: {}
     expect:
       output:
-        indexed_documents: 0
+        indexed_documents: 3
   - name: reindex_refuses_unknown_input
     tool: reindex
     input: {"verbose": true}

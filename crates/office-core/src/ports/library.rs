@@ -2,7 +2,9 @@
 
 use std::path::Path;
 
-use crate::domain::knowledge::{DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit};
+use crate::domain::knowledge::{
+    Backlink, DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit,
+};
 use crate::domain::settings::Settings;
 use crate::{Error, Result};
 
@@ -13,6 +15,16 @@ pub struct InitOutcome {
     pub already_initialized: bool,
     /// Library-relative (or state-relative) paths this call created, sorted.
     pub created: Vec<String>,
+}
+
+/// One Markdown file read from the Library, by its Library-relative path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LibraryText {
+    /// Library-relative path, forward slashes.
+    pub path: String,
+    /// The file's Markdown. `None` when it could not be read (a symlink or
+    /// an unreadable template), so a caller can name it rather than skip it.
+    pub markdown: Option<String>,
 }
 
 /// Library and index health for `office.status`. Counts come from the index.
@@ -76,6 +88,24 @@ pub trait Library {
     }
     /// Write a document, update its index and commit under one writer lock.
     fn write_document(&self, _relative: &Path, _text: &str) -> Result<DocumentRecord> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// One indexed document by id (with its body, cites and related), if
+    /// present. Does not wait for the writer lock.
+    fn get(&self, _id: &str) -> Result<Option<DocumentRecord>> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Indexed documents whose frontmatter `cites` (`<id>` or
+    /// `<id>#<anchor>`) or `related` names `id`, sorted by id.
+    fn backlinks(&self, _id: &str) -> Result<Vec<Backlink>> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Every knowledge page file (`knowledge/**/*.md`), in path order.
+    fn knowledge_pages(&self) -> Result<Vec<LibraryText>> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Every template file in `.office/templates/`, in path order.
+    fn templates(&self) -> Result<Vec<LibraryText>> {
         Err(Error::LibraryUnavailable)
     }
     /// Search the index, applying filters before the limit.

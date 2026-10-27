@@ -176,8 +176,10 @@ models that do the work. The contact details on them never do:
   email address or phone number, with `contact_in_body`.
 - Every model input and every task attachment carries the page's
   **model view**: each `contact` ref keeps its label and loses its value.
-  This covers `office.attach`, `office.extract`, `office.digest` and any
-  later model call.
+  This covers `office.attach`, `office.extract`, `office.digest`,
+  `office.knowledge-show` and any later model call. The one function is
+  `office_core::domain::knowledge::Page::model_view`; it also withholds any
+  email address or phone number a hand edit left in the body.
 - A draft names the people it addresses. When the user sends it, the app
   fills in the addresses from the person pages, on the user's machine.
 
