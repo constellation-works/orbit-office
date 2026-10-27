@@ -1,0 +1,2 @@
+2026-10-27T02:14:05.409156Z  WARN orbit_runtime::plugin::broker::client: plugin tool 'office.init' failed
+{"code":"library_dir_outside_workspace","message":"Library operation (library_dir_outside_workspace) failed: library_dir /tmp/outside is outside the granted Library root /tmp/ws/library","retryable":false}
