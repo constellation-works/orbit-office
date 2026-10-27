@@ -237,6 +237,17 @@ class Redirects(GatewayCase):
         # The credential goes to its own origin on every hop.
         self.assertTrue(all(seen.headers["authorization"] == f"Bearer {TOKEN}" for seen in self.server.seen))
 
+    def test_same_origin_redirect_outside_base_is_returned_without_following(self) -> None:
+        for location in ("/admin", "/v2x/admin", "/v2/%2e%2e/admin", "/v2/..%2fadmin"):
+            with self.subTest(location=location):
+                self.server.seen.clear()
+                self.server.routes["/v2/a"] = Reply(302, headers={"Location": location})
+                self.server.routes["/admin"] = json_reply({"stolen": True})
+                out = self.get("a")
+                self.assertEqual((out["status"], out["redirects"]), (302, 0))
+                self.assertEqual(out["redirect"]["reason"], "outside_base")
+                self.assertEqual([seen.path for seen in self.server.seen], ["/v2/a"])
+
     def test_a_fourth_redirect_is_returned_not_followed(self) -> None:
         self.server.routes["/v2/a"] = Reply(302, headers={"Location": "/v2/b"})
         self.server.routes["/v2/b"] = Reply(302, headers={"Location": "/v2/c"})
