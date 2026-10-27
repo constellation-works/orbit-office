@@ -197,14 +197,14 @@ spec:
 
     # ---- proposals ----
 
-    # - name: signals.scan
-    #   description: >-
-    #     Run the proposal signals and return candidate proposals with
-    #     evidence.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/signals.scan.request.json }
-    #   output_schema: { $ref: schemas/signals.scan.response.json }
+    - name: signals.scan
+      description: >-
+        Run the proposal signals and return candidate proposals with
+        evidence.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/signals.scan.request.json }
+      output_schema: { $ref: schemas/signals.scan.response.json }
 
     # - name: proposal.create
     #   description: >-

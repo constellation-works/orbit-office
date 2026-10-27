@@ -48,6 +48,12 @@ pub struct SignalThresholds {
     pub window_days: u32,
     /// Age in days at which knowledge needs verification.
     pub stale_days: u32,
+    /// Recordings of the same friction needed for a recurrence signal.
+    pub friction_count: u32,
+    /// Sources mentioning a new subject needed for a new-subject signal.
+    pub new_subject_count: u32,
+    /// Days without an opened output before automation is unused.
+    pub unused_days: u32,
 }
 
 impl Default for Settings {
@@ -71,6 +77,9 @@ impl Default for Settings {
                 repetition_count: 3,
                 window_days: 30,
                 stale_days: 90,
+                friction_count: 2,
+                new_subject_count: 2,
+                unused_days: 30,
             },
             open_weights_endpoint: None,
         }
@@ -100,10 +109,13 @@ impl Settings {
         out.push_str(&format!("packs: [{}]\n", defaults.packs.join(", ")));
         out.push_str("thresholds:\n");
         out.push_str(&format!(
-            "  repetition_count: {}\n  window_days: {}\n  stale_days: {}\n",
+            "  repetition_count: {}\n  window_days: {}\n  stale_days: {}\n  friction_count: {}\n  new_subject_count: {}\n  unused_days: {}\n",
             defaults.thresholds.repetition_count,
             defaults.thresholds.window_days,
-            defaults.thresholds.stale_days
+            defaults.thresholds.stale_days,
+            defaults.thresholds.friction_count,
+            defaults.thresholds.new_subject_count,
+            defaults.thresholds.unused_days
         ));
         out.push_str("open_weights_endpoint: null\n");
         out
@@ -192,6 +204,17 @@ impl TryFrom<Value> for Settings {
                             }
                             "stale_days" => {
                                 settings.thresholds.stale_days = positive(value, &dotted, 36500)?
+                            }
+                            "friction_count" => {
+                                settings.thresholds.friction_count =
+                                    positive(value, &dotted, 10000)?
+                            }
+                            "new_subject_count" => {
+                                settings.thresholds.new_subject_count =
+                                    positive(value, &dotted, 10000)?
+                            }
+                            "unused_days" => {
+                                settings.thresholds.unused_days = positive(value, &dotted, 36500)?
                             }
                             _ => return Err(invalid(&dotted, "unknown threshold")),
                         }

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.signals.scan response",
+  "type": "object",
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "description": "One candidate per fired signal, with its evidence ids.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "signal": { "type": "string", "enum": ["repetition", "friction_recurrence", "staleness", "gap", "unused_automation", "new_subject", "unrecorded_direction", "declared_cadence"] },
+          "kind": { "type": "string", "enum": ["auto_task", "routine", "knowledge_add", "knowledge_update", "runbook_from_friction", "retire"] },
+          "summary": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["signal", "kind", "summary", "evidence"],
+        "additionalProperties": false
+      }
+    },
+    "count": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["candidates", "count"],
+  "additionalProperties": false
+}

@@ -1,0 +1,16 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: signals_scan_with_no_history_proposes_nothing
+    tool: signals.scan
+    input: {}
+    expect:
+      output:
+        candidates: []
+        count: 0
+  - name: signals_scan_refuses_unknown_input
+    tool: signals.scan
+    input: {"verbose": true}
+    expect:
+      error:
+        code: invalid_argument

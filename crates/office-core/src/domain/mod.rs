@@ -11,6 +11,6 @@ mod script;
 mod selection;
 mod session;
 pub mod settings;
-mod signals;
+pub mod signals;
 mod source;
 pub mod template;
