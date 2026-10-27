@@ -179,6 +179,7 @@ listing them, and the knowledge compounds locally.
 | Contract | Spec |
 |---|---|
 | Library files, frontmatter, lifecycles | [specs/library.md](./specs/library.md) |
+| About templates, attach policies, contact privacy, onboarding interview | [specs/knowledge-templates.md](./specs/knowledge-templates.md) |
 | Tool list, kinds, `mcp_scope`, definitions, config, permissions | [specs/plugin-surface.md](./specs/plugin-surface.md) |
 | One exec call, end to end | [specs/output-contract.md](./specs/output-contract.md) |
 | Orchestrator behaviours and guardrails | [specs/orchestrator.md](./specs/orchestrator.md) |

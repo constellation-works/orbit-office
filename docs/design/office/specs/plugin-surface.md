@@ -22,12 +22,12 @@ Source: spec §12. The one-call envelope is
 | `office.transcribe` | mutating | workspace | Transcribe a meeting source's original into its body (Muse Voice Transcribe) |
 | `office.extract` | mutating | workspace | From a source, produce a summary, decisions and to-dos as structured JSON plus a task artifact |
 | `office.source.show` | read_only | workspace | Return a source, optionally at an anchor |
-| `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, tag, series and date |
+| `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, template, tag, series and date |
 | `office.knowledge.show` | read_only | workspace | Read a page and its back-links |
-| `office.knowledge.write` | mutating | **none** | Create or update a page; validate frontmatter and cites; commit |
+| `office.knowledge.write` | mutating | **none** | Create or update a page; validate frontmatter, cites and its template ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)); commit |
 | `office.artifact.show` | read_only | workspace | Read an artifact, its files, its series history and what cites it |
 | `office.artifact.promote` | mutating | **none** | Copy an approved task's output into the Library as an artifact; write provenance; commit |
-| `office.attach` | mutating | workspace | Pick the knowledge, source and example artifact files for a task and copy them into it as task artifacts under `context/` |
+| `office.attach` | mutating | workspace | Pick the knowledge, source and example artifact files for a task, by template attach policy first ([knowledge-templates.md](./knowledge-templates.md#attach-policies)), and copy their model views into it as task artifacts under `context/` |
 | `office.signals.scan` | read_only | workspace | Run the proposal signals and return candidate proposals with evidence |
 | `office.proposal.create` | mutating | workspace | File a proposal task, its artifact and its evidence page |
 | `office.proposal.accept` | mutating | **none** | Apply a proposal's payload; close the task |
@@ -37,7 +37,7 @@ Source: spec §12. The one-call envelope is
 | `office.session.brief` | read_only | workspace | Assemble the session-start brief from Orbit and the Library, with no model call ([sessions.md](./sessions.md#session-brief)) |
 | `office.digest` | mutating | **none** | Write the day's digest artifact with one Muse Spark call; run only by the `office-daily-digest` routine ([sessions.md](./sessions.md#daily-digest)) |
 | `office.review.inputs` | read_only | workspace | Gather a period's completed work, conversions, metrics, decisions and knowledge changes for a review |
-| `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
+| `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, page templates (no pages), index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
 | `office.config.set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
 | `office.reindex` | mutating | **none** | Rebuild the SQLite index from the Library |
 | `office.status` | read_only | workspace | Library and index health (also a panel) |

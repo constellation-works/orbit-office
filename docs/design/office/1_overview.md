@@ -74,7 +74,7 @@ by-product: complete, cited, and written by an auto-task.
 | User sees | Internal name | Is | Lives in |
 |---|---|---|---|
 | Sources | `source` | An immutable record of something that happened: meeting, pasted chat or email, document, receipt photo, orchestrator conversation | `library/sources/` |
-| About | `domain` | Facts about people, clients, projects and the user's preferences, plus pointers to related files, links, contacts and templates (never secrets) | `library/knowledge/domain/` |
+| About | `domain` | Facts about the user, people, clients, projects and topics, each page following a template, plus pointers to related files, links, contacts and accounts (never secrets) | `library/knowledge/domain/` |
 | How-to | `runbook` | Steps for a repeatable piece of work | `library/knowledge/runbooks/` |
 | Outputs | `artifact` | Agent-generated work the user approved: reports, docs, drafts, scripts, data, reviews | `library/artifacts/` |
 | Snags | `friction` | Something that went wrong or slowed work | Orbit frictions (`orbit.friction.*`) |

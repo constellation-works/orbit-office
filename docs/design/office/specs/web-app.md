@@ -33,11 +33,11 @@ Source: spec §13.1–§13.2 and §13.4.
 
 | Screen | Content |
 |---|---|
-| **Today** | Needs you (proposals, approvals, the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
+| **Today** | Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
 | **Source view** | The original (audio player or image) beside the anchorable text; links to the tasks and pages that cite it |
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge |
 | **Routines** | Plain-sentence cards ("Every 15 minutes: process new meeting recordings") with an on/off switch, last run, what it produced, and retention settings |
-| **Library** | Search; pages grouped by About and How-to; Outputs by kind and series; a page view with citations, refs and back-links; history for every page and artifact |
+| **Library** | Search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meetings and tasks); history for every page and artifact |
 | **Insights** | Automation ratio line, metric tiles, "what got automated" |
 | **Review** | Generated reviews with their citations, and a regenerate button |
 

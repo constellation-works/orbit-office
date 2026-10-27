@@ -28,6 +28,7 @@ library/
     <files>              # report.md, draft.eml.md, script.py, data.csv, deck.pdf …
   proposals/<proposal-id>.md   # rendered evidence for each proposal (the record is the Orbit task)
   .office/config.yaml          # Library settings: retention, sensitivity, packs, thresholds
+  .office/templates/<name>.md  # About and How-to page templates (knowledge-templates.md)
   .gitignore                   # original.* (binaries are pinned by sha256, not tracked)
 ```
 
@@ -60,11 +61,15 @@ workspace and enabled the plugin. The user never runs it by hand.
 3. Runs `git init` in `library/` if it is not already a repository.
 4. Writes `.office/config.yaml` from the plugin's bundled default, and the
    `.gitignore`.
-5. Creates or migrates `plugin_state/index.sqlite`, then reindexes.
-6. Commits whatever it created ("Initialize the Library").
+5. Copies each bundled page template that is missing into
+   `.office/templates/` ([knowledge-templates.md](./knowledge-templates.md#templates)).
+   It writes no pages: About pages come from the onboarding interview and
+   later sources, each citing its evidence.
+6. Creates or migrates `plugin_state/index.sqlite`, then reindexes.
+7. Commits whatever it created ("Initialize the Library").
 
 It is idempotent: it creates only what is missing and never overwrites an
-existing config, `.gitignore` or page. A second run on a complete Library
+existing config, `.gitignore`, template or page. A second run on a complete Library
 changes nothing and reports `already_initialized`. The result lists what
 was created.
 
@@ -107,7 +112,7 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 - **Chat:** one line per message, `[timestamp] Author: text`. The anchor is `#L14-20`.
 - **Email, doc:** paragraphs. The anchor is `#L…`.
 - **Receipt, bill:** extracted fields as a YAML block plus the raw OCR text.
-- **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), action, open question, resolution or handoff, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The agent CLI's own transcript belongs to that CLI, so the skill has the agent write this log itself ([sessions.md](./sessions.md#decision-log)).
+- **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), fact the user stated, action, open question, resolution or handoff, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The agent CLI's own transcript belongs to that CLI, so the skill has the agent write this log itself ([sessions.md](./sessions.md#decision-log)).
 
 **Rules:**
 
@@ -120,19 +125,21 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 ## Knowledge pages
 
 ```yaml
-id: dom-acme-renewal           # dom- | rb-
+id: dom-project-acme-renewal   # dom- | rb-
 type: domain                   # domain | runbook
+template: project              # optional; see knowledge-templates.md
 title: Acme renewal
+aliases: [Acme renewal, the renewal]
 summary: Acme's contract renews in March; Jane Park decides; price sensitivity high.
-tags: [client:acme]
+tags: [project:acme-renewal, client:acme]
 cites:
   - src-20261028-acme-qbr#t=00:12:31
   - src-20261024-slack-pricing#L14-20
 refs:                          # pointers, domain pages only
   - { label: Master services agreement, path: ~/Documents/Acme/MSA-2025.pdf }
-  - { label: Jane Park, contact: "jane.park@acme.example" }
+  - { label: Renewal tickets, account: "jira:ACME" }
   - { label: QBR deck template, artifact: art-20261021-qbr-template }
-related: [rb-client-qbr-prep, dom-acme]
+related: [rb-client-qbr-prep, dom-client-acme, dom-person-jane-park]
 updated_at: 2026-10-28T15:10:00-04:00
 last_verified: 2026-10-28
 status: current                # current | stale | retired
@@ -140,7 +147,8 @@ status: current                # current | stale | retired
 
 - Claims in the body carry inline citations, for example `[src-…#t=00:12:31]`. The app renders them as links that open the source at the anchor.
 - **Runbooks** add `inputs`, `steps` and `done_when` sections. These are what an implementing agent follows.
-- **Pointers** (files, links, contacts, templates, account names) live in a domain page's `refs`, on the page about their subject, for example Acme's contacts on `dom-acme`. Each ref has one `path`, `url`, `contact` or `artifact` target. Never secrets.
+- **Templates.** A page may name the template it follows (`template: person`). Templates fix its id pattern and required sections, and decide when `office.attach` includes it. The bundled set and the onboarding interview that writes the first pages are in [knowledge-templates.md](./knowledge-templates.md).
+- **Pointers** (files, links, contacts, templates, accounts) live in a domain page's `refs`, on the page about their subject, for example Jane Park's email on `dom-person-jane-park`. Each ref has one `path`, `url`, `contact`, `account` (`system:key`, such as `jira:ACME`) or `artifact` target. Never secrets. Contact values never reach a model ([knowledge-templates.md](./knowledge-templates.md#contact-details)).
 - Knowledge may cite artifacts as well as sources, for example a research report's findings folded into a domain page. The artifact's own `cites` keep the chain back to evidence.
 - **Writes** go through `office.knowledge.*` tools, which validate frontmatter, refuse a claim without `cites` (except user-authored pages), and commit. The write tool is hidden from MCP; see [plugin-surface.md](./plugin-surface.md).
 
@@ -161,7 +169,7 @@ files: [report.md]       # one or more, beside artifact.md
 task: <orbit-task-id>    # the task that produced it
 produced_by: { crew: muse-wonder, runbook: rb-pricing-research, at: 2026-10-29T10:41:00-04:00 }
 approved: { by: user, at: 2026-10-29T11:05:00-04:00, edited: false }   # edited = user changed it before approving; by: routine only for the daily digest
-cites: [src-20261028-acme-qbr#t=00:12:31, dom-acme-renewal]
+cites: [src-20261028-acme-qbr#t=00:12:31, dom-project-acme-renewal]
 series: acme-renewal-research   # groups versions of the same deliverable
 version: 1
 supersedes: null

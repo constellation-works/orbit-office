@@ -13,9 +13,12 @@ stdout, exit code) is excluded.
 |------|---------|
 | **Source** | An immutable record of something that happened (meeting, chat, email, doc, receipt, conversation), with anchorable text. See [specs/library.md](../specs/library.md). |
 | **Knowledge page** | A derived, citable Library page: `domain` (About) or `runbook` (How-to). Rewritten freely; every claim cites a source anchor. |
+| **Template** | A page template in `library/.office/templates/`: id pattern, required sections, attach policy and skeleton. `office.init` installs the bundled ones; pages name theirs with `template:`. See [specs/knowledge-templates.md](../specs/knowledge-templates.md). |
+| **Onboarding interview** | The first session's short set of questions whose answers become `fact` entries and one `knowledge_add` proposal per About page. |
+| **Model view** | A page as sent to a model or attached to a task: every `contact` ref keeps its label and loses its value. |
 | **Artifact** | Agent output the user approved, promoted from a task into the Library, versioned by `series`, never edited in place. The daily digest is the one artifact promoted by a routine without review. |
 | **Friction** | An Orbit record of something that went wrong or slowed work; the plugin adds `cites` and `runbook` conventions, never a second store. |
-| **Decision log** | The append-only `conversation` source of one orchestrator session: decisions, verbatim directions, actions, open questions. See [specs/sessions.md](../specs/sessions.md). |
+| **Decision log** | The append-only `conversation` source of one orchestrator session: decisions, verbatim directions and facts, actions, open questions. See [specs/sessions.md](../specs/sessions.md). |
 | **Handoff** | The agent's note to its next session: the newest `handoff` entry in the decision log, refreshed whenever the plan changes, and the first thing the session brief shows. |
 | **Session brief** | What `office.session.brief` returns at session start: waiting on you, agents working on, open questions, the last session's decisions. Computed, never stored. |
 | **Daily digest** | The day's cited summary, a `report` artifact in the series `digest-daily`, written by a routine with one Muse Spark call. |

@@ -566,6 +566,60 @@ where the last one stopped. The alternatives considered:
   exception that every metric must respect. A day's private items are only
   listed by reference when no open-weights endpoint is configured.
 
+## About pages start from templates and an onboarding interview, never from stubs
+
+**Recorded:** 2026-10-26
+**Code anchors:** `crates/office-core/templates/`; [specs/knowledge-templates.md](./specs/knowledge-templates.md)
+
+### Context
+
+A new Library is empty, so the first agent tasks know nothing about the
+user, their people or their projects. The user proposed default About pages
+(contacts, user, `project_<name>`, `artifact_locations`, `domain_<name>`,
+glossary). The alternatives considered:
+
+- **Empty pages seeded by `office.init`.** A stub would be attached to tasks
+  while it says nothing. It would count toward coverage and break the rule
+  that every claim cites a source.
+- **One contacts page.** Every meeting capture would edit it, so proposals
+  would collide on one page. One page also gives no back-links per person.
+- **An `artifact_locations` page.** Paths filed apart from their subject
+  are not attached when the subject is.
+- **`domain_<name>`.** "Domain" is already the page type (`dom-` ids), so
+  the ids would read `dom-domain-…`.
+
+### Decision
+
+- `office.init` installs **templates** in `.office/templates/`, compiled into
+  the binary. It writes no pages. A page names its template in frontmatter,
+  and `office.knowledge.write` checks it against that template.
+- The bundled set: `user`, `standing-directions`, `systems`, `person` (one
+  page each), `client`, `project`, `topic` (renamed from `domain_<name>`),
+  `glossary`, `goals`, `rhythm` and `runbook`. Locations go in the subject's
+  `refs`. The `systems` page holds what no single subject owns.
+- Each template carries an **attach policy** (`always`, `participants`,
+  `tagged`, `matched`, `never`). `office.attach` selects pages by template,
+  never by a hard-coded name.
+- The first pages come from an **onboarding interview** in the first
+  session: answers become `fact` entries in the decision log, then one
+  `knowledge_add` proposal per page, accepted together in the app.
+- **Contact details stay on the machine.** Person pages stay `normal`, but
+  email addresses and phone numbers live only in `contact` refs. Every
+  model input and attachment carries the page's model view, which drops
+  those values. Making person pages `private` by default was rejected:
+  every meeting that names a person would route to the open-weights model,
+  which is slower and costs more per call, to protect a few fields the model
+  never needs.
+
+### Consequences
+
+- Every About page is cited from its first write, and an agent's first task
+  already has the user, their directions and its participants attached.
+- Templates are data, so a pack or the user can add one without code.
+- Cost: a seventh decision-log entry kind (`fact`), a template check on every
+  knowledge write, three more signals, and a model-view rule that every
+  model call site must use.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.

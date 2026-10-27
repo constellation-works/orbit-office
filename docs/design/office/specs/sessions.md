@@ -39,6 +39,7 @@ One `conversation` source per orchestrator session ([library.md](./library.md#so
   ```
   [2026-10-28T15:04:11-04:00] decision: Renewal deck goes to Jane by Friday.
   [2026-10-28T15:05:02-04:00] direction: "Always draft client emails, never send." (verbatim)
+[2026-10-28T15:05:40-04:00] fact: "Jane Park runs procurement at Acme." (verbatim)
   [2026-10-28T15:06:40-04:00] action: Filed agent to-do <task-id> with the client-follow-up runbook.
   [2026-10-28T15:09:13-04:00] open: Which pricing tier does Acme get?
   [2026-10-28T16:20:55-04:00] resolved: #L4 — Acme stays on Pro.
@@ -46,7 +47,8 @@ One `conversation` source per orchestrator session ([library.md](./library.md#so
   ```
 
   The kinds are `decision`, `direction` (the user's words, verbatim),
-  `action` (one per thing the agent did), `open` (a question left
+  `fact` (something the user stated about themselves, their people or
+  their work, verbatim; what onboarding pages cite), `action` (one per thing the agent did), `open` (a question left
   unanswered), `resolved` (closes an earlier `open` by its anchor) and
   `handoff`.
 - **What goes in:** the user's decisions and standing directions, and one
@@ -90,6 +92,9 @@ always current and cannot invent anything:
 - **Last session:** that source's id and its last few `decision` and
   `direction` entries.
 - **Latest digest:** a link to the newest `digest-daily` artifact, when one exists.
+- **Onboarding:** each one-per-Library template with no page yet
+  ([knowledge-templates.md](./knowledge-templates.md#onboarding-interview)).
+  Absent once they all exist.
 
 Every item carries its id and a link, so the agent cites rather than
 restates. The brief is returned as data. Quoted entries are never treated
