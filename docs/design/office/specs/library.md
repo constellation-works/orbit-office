@@ -149,7 +149,7 @@ last_verified: 2026-10-28
 status: current                # current | stale | retired
 ```
 
-- Claims in the body carry inline citations, for example `[src-…#t=00:12:31]`. The app renders them as links that open the source at the anchor.
+- Claims in the body carry inline citations, for example `[src-…#t=00:12:31]`. Once the planned source screen ships, the app will render them as links that open the source at the anchor; until then the anchors are a recorded URL contract with no landing behaviour.
 - **Runbooks** add `inputs`, `steps` and `done_when` sections. These are what an implementing agent follows.
 - **Templates.** A page may name the template it follows (`template: person`). Templates fix its id pattern and required sections, and decide when `office.attach` includes it. The bundled set and the onboarding interview that writes the first pages are in [knowledge-templates.md](./knowledge-templates.md).
 - **Pointers** (files, links, contacts, templates, accounts) live in a domain page's `refs`, on the page about their subject, for example Jane Park's email on `dom-person-jane-park`. Each ref has one `path`, `url`, `contact`, `account` (`system:key`, such as `jira:ACME`) or `artifact` target. Never secrets. Contact values never reach a model ([knowledge-templates.md](./knowledge-templates.md#contact-details)).

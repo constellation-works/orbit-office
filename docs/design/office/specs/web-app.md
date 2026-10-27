@@ -43,8 +43,9 @@ Source: spec §13.1–§13.2 and §13.4.
 | **Review** | Generated reviews with their citations, and a regenerate button |
 
 There is no Chat screen: conversation happens in the user's agent CLI.
-Citations the agent prints are `http://localhost` links that open the
-app's source or page view.
+Citations the agent prints are `http://localhost` links carrying the
+source anchor; they will open the app's source or page view once the
+planned source screen ships.
 
 ### Today implementation
 
