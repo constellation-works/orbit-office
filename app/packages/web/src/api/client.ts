@@ -2,7 +2,7 @@
 import type {
   AcceptAllResult, AcceptRequest, ApprovalDetail, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
-  SettingsConnections, SettingsStatus, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount,
+  SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount,
 } from "@orbit-office/contracts";
 
 export class ApiError extends Error {
@@ -66,6 +66,16 @@ export function getConnections(): Promise<SettingsConnections> {
 
 export function putConnection(input: ConnectionWrite): Promise<ConnectionSaved> {
   return requestJson<ConnectionSaved>("/api/settings/connections/put", input);
+}
+
+/** Start an oauth2_device connection's device-code sign-in: the code and where to enter it. */
+export function startSignIn(name: string): Promise<SignInStarted> {
+  return requestJson<SignInStarted>("/api/settings/connections/sign-in", { name });
+}
+
+/** Check once whether the user approved the sign-in. */
+export function pollSignIn(name: string): Promise<SignInPoll> {
+  return requestJson<SignInPoll>("/api/settings/connections/sign-in/poll", { name });
 }
 
 export function getApiCalls(): Promise<SettingsApiCalls> {

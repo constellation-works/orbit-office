@@ -1,5 +1,6 @@
 /**
- * Settings: agent CLI, the private route, gateway connections and redacted API call history.
+ * Settings: agent CLI, the private route, gateway connections (with the
+ * device-code sign-in for oauth2_device ones) and redacted API call history.
  *
  * Built: reports whether the install script has registered Orbit MCP with
  * the user's agent CLI (docs/design/office/specs/web-app.md#delivery).
@@ -12,7 +13,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Feature } from "../../http/types.js";
 import { agentCliStatus } from "./agent-cli.js";
 import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
-import { auditRow, connection, connectionInput, count, object, SettingsError, toolData } from "./gateway.js";
+import { auditRow, connection, connectionInput, count, object, SettingsError, signInInput, signInPoll, signInStarted, toolData } from "./gateway.js";
 import { privateRouteInput, readPrivateRoute, savePrivateRoute } from "./private-route.js";
 import { isSlot, SecretError, writeSecret, type SecretOptions } from "./secret.js";
 
@@ -87,6 +88,16 @@ export function createSettingsFeature(client: OrbitToolClient, secretOptions: Se
         }
         return { connection: saved, created: data.created };
       } finally { writing = false; }
+    }),
+    // The device-code sign-in. The refresh token reaches the slot through
+    // Orbit inside the gateway call; no response here ever carries it.
+    route("POST", "/api/settings/connections/sign-in", async (request) => {
+      const name = signInInput(await readBody(request));
+      return signInStarted(toolData(await client.callTool("gateway.oauth-device-start", { connection: name })), name);
+    }),
+    route("POST", "/api/settings/connections/sign-in/poll", async (request) => {
+      const name = signInInput(await readBody(request));
+      return signInPoll(toolData(await client.callTool("gateway.oauth-device-poll", { connection: name })), name);
     }),
     route("GET", "/api/settings/private-route", async () => readPrivateRoute(client)),
     route("POST", "/api/settings/private-route", async (request) => {

@@ -21,12 +21,14 @@ approved by the user and sent at most once (docs/design/office/specs/gateway.md,
   A reply that does arrive, but whose body is cut off, is `sent` with
   `truncated` true: the write went out once, and the body is not reported
   as complete. The connection's idempotency header, when it names one,
-  carries the draft id. Redirects are returned, never followed. A
+  carries the draft id. Redirects are returned, never followed. An
+  `oauth2_device` connection's access token is exchanged before the draft
+  is marked `sending`, so a refused sign-in (`auth_expired`) sends nothing. A
   successful send then closes the approval task as `done` by the legal
   lifecycle steps: `done` is accepted only from `review`, and that step
   carries an execution summary.
 
-With `http.py`, the only module that opens network connections.
+With `http.py` and `oauth.py`, the only modules that open network connections.
 """
 
 from __future__ import annotations
@@ -48,7 +50,7 @@ from typing import Any
 from . import audit, callbacks, connections, state
 from .connections import DRAFT_HEADERS, Connection
 from .envelope import Call, GatewayError, closed, redactor_for, required, typed
-from .http import USER_AGENT, agent_headers, auth_header, origin, read_limited, resolve, returned_headers, shape_body
+from .http import USER_AGENT, agent_headers, credentials, origin, read_limited, resolve, returned_headers, shape_body
 from .redact import Redactor
 
 FILE_VERSION = 1
@@ -480,7 +482,9 @@ def _send(call: Call, root: Path, record: audit.Record, redactor: Redactor) -> d
             pass
     _refuse_secrets(request, body_value, redactor)
     headers = dict(request["headers"])
-    auth = auth_header(connection, call.secrets())
+    # An oauth2_device connection exchanges its refresh token here, before the
+    # draft is marked sending: a refused sign-in leaves it pending.
+    auth = credentials(call, root, connection, redactor)
     if auth is not None:
         headers[auth[0]] = auth[1]
     if connection.idempotency_header:

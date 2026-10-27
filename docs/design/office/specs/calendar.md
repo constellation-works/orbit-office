@@ -58,14 +58,16 @@ Two schemes are added to `gateway`'s connection `auth`, beside `bearer`,
 - **`oauth2_device`.** For APIs that issue short-lived tokens. The connection
   names `token_url`, `device_url`, `client_id` and `scopes`, all of them
   `https`. Settings starts the device-code flow and shows the user the code
-  and verification address. The resulting refresh token goes into the slot,
-  through `orbit plugin secret set` on stdin like every other secret. Each
-  call exchanges it for an access token held only in memory. A rotated
-  refresh token is written back to the slot before the response is returned.
-  A revoked one is refused as `auth_expired`, and Settings offers to sign in
-  again.
+  and verification address. The resulting refresh token goes into the slot
+  through Orbit's `secret_updates`, never through a tool result: a plugin
+  backend is refused `orbit plugin secret set`, and relaying the token to the
+  app would put it in the poll's output. Each call exchanges it for an
+  access token held only in memory. A rotated refresh token is written back
+  to the slot the same way, before the response is returned. A revoked one
+  is refused as `auth_expired`, and Settings offers to sign in again.
 
-Both stay generic: neither knows about calendars.
+Both stay generic: neither knows about calendars. Both are built
+([gateway.md](./gateway.md#secret_path)).
 
 ## `office.calendar-sync`
 

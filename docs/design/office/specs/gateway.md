@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: gateway plugins — audited, redacted API requests through named connections, and read-only cloud CLI calls, instead of raw curl and cloud CLIs"
-last_validated: 2026-10-26
+last_validated: 2026-10-27
 ---
 
 # Spec: Gateway plugins
@@ -17,7 +17,7 @@ Two plugins share one Python package:
 
 | Plugin | Tools | Who may call | Priority |
 |---|---|---|---|
-| `gateway` | `gateway.http-get`, `gateway.http-draft`, `gateway.http-send`, `gateway.connection-list`, `gateway.connection-put`, `gateway.audit-list` | the orchestrator and implementing agents | must-have (GET and drafts) |
+| `gateway` | `gateway.http-get`, `gateway.http-draft`, `gateway.http-send`, `gateway.connection-list`, `gateway.connection-put`, `gateway.oauth-device-start`, `gateway.oauth-device-poll`, `gateway.audit-list` | the orchestrator and implementing agents (`http-send`, `connection-put` and the two `oauth-device-*` tools: the app only) | must-have (GET and drafts) |
 | `cloudcli` | `cloudcli.run` | the orchestrator only | should-have |
 
 Tool verbs are hyphenated (`http-get`, not `http.get`): Orbit accepts only
@@ -47,7 +47,8 @@ workspace can enable them.
   naming the install's fix. `python3` is in `spec.requires.programs`, so
   enabling records the install's interpreter.
 - State lives in `{{plugin_state}}` with owner-only modes (STD-05@1 §R8):
-  `connections.json`, `drafts/`, `audit/`.
+  `connections.json`, `drafts/`, `audit/`, and `oauth/` (a sign-in in
+  progress and each `oauth2_device` connection's slot versions).
 - Orbit callbacks (`orbit.task.add`, `orbit.task.artifact.put`,
   `orbit.task.show`, `orbit.task.update`, the manifest's `orbit_tools`) run
   `orbit tool run` with the host's callback descriptor, a cleared
@@ -78,9 +79,10 @@ never by an agent:
 - **`base_url`** must be `https`, except plain `http` to a loopback address
   (the demo's mock API).
 - **`auth.scheme`** is `bearer`, `basic`, `header` (with a header name in
-  `auth.header`) or `none`. `secret_path` and `oauth2_device` are specified
-  for the calendar and not built yet ([calendar.md](./calendar.md#gateway-auth-schemes-this-needs)). For `basic`, `auth.username` holds the user name
-  and the slot holds the password.
+  `auth.header`), `none`, `secret_path` or `oauth2_device` (both below; the
+  calendar needs them, [calendar.md](./calendar.md#gateway-auth-schemes-this-needs),
+  but neither knows about calendars). For `basic`, `auth.username` holds the
+  user name and the slot holds the password.
 - **`disabled: true`** keeps a connection but refuses calls through it as
   `unknown_connection`.
 - A refused connection (`base_url`, scheme, method lists, bounds) is
@@ -99,14 +101,82 @@ never by an agent:
   `orbit plugin secret set gateway conn_03` with the value on stdin, so it
   never appears in argv, a tool input, a log or the audit. Because each value
   sits in its own declared slot, Orbit's host masks it in every result as
-  well. A free slot is one no connection uses and that holds no value, so a
+  well. The slots are declared `rotatable`, because any of them may belong
+  to an `oauth2_device` connection, whose refresh token reaches the slot
+  through Orbit's `secret_updates` instead (below). A free slot is one no connection uses and that holds no value, so a
   stale secret is never handed to a new connection; with none left the put is
   refused (`no_free_slot`). A connection keeps its slot while its origin is
   unchanged; a new origin gets a new slot, and the put names the old one in
-  `released_slot` so the app can remove its value.
+  `released_slot` so the app can remove its value. So does a change of what
+  the value is: moving into or out of `secret_path` or `oauth2_device`, or a
+  new token endpoint origin or `client_id`.
 - `gateway.connection-list` (read_only, `workspace`) returns names, base
-  URLs, methods and whether each slot is set, never a value. An agent that
-  needs a connection that does not exist asks the user; it cannot create one.
+  URLs, methods and whether each slot is set, never a value. An
+  `oauth2_device` connection also has `auth_state`: `signed_out`,
+  `signed_in` or `expired`. An agent that needs a connection that does not
+  exist asks the user; it cannot create one.
+
+### `secret_path`
+
+For a resource whose URL is the credential, such as a calendar's published
+ICS feed:
+
+- **`base_url` is the origin only** (`https://outlook.office365.com/`), and the
+  slot holds the path and query (`/owa/calendar/…/calendar.ics?…`), appended
+  at send time. A slot value that does not start with one `/`, or holds a
+  fragment, a space, a control or non-ASCII character, is refused as
+  `secret_invalid`.
+- **A request `path` must be empty** (`path_not_allowed`): the connection
+  names exactly one resource. An agent's `query` is appended after the
+  slot's. A `secret_path` connection drafts no writes.
+- **Nothing shows the path.** The returned `url`, a redirect's `location`
+  and the audit's `path` read `<secret_path>`, a same-origin redirect's
+  target included. Redaction replaces the slot value, its path, its query
+  and each of their parts of 16 characters or more with `<secret_path>` in
+  every response and error.
+
+### `oauth2_device`
+
+For an API that issues short-lived access tokens, such as Microsoft Graph:
+
+- **The connection names** `token_url`, `device_url`, `client_id` and
+  `scopes` in `auth`. Both URLs are `https` (or plain `http` to a loopback
+  address, as for `base_url`); the scopes are OAuth scope tokens, at least
+  one. The slot holds the refresh token.
+- **Sign-in** is the OAuth device-code flow (RFC 8628), run by two tools,
+  both mutating, `mcp_scope: none` and app only.
+  `gateway.oauth-device-start` posts the client id and scopes to
+  `device_url` and returns `user_code`, `verification_uri`, `expires_in`
+  and `interval`; the device code stays in `{{plugin_state}}/oauth/<name>.device.json`
+  and is never returned. `gateway.oauth-device-poll` asks `token_url` once
+  per call and answers `pending` (with the interval to wait, raised on
+  `slow_down`), `connected`, `denied` or `expired`; a poll with no sign-in
+  in progress is `device_flow_missing`. A sign-in that brings no refresh
+  token is `auth_failed` (Microsoft needs the `offline_access` scope).
+- **The refresh token reaches the slot only through Orbit.** A plugin
+  backend is refused `orbit plugin secret set`, and handing the token to
+  the app would put it in a tool result. So on `connected` the poll answers
+  with `secret_updates` for the connection's slot, which Orbit stores with
+  compare-and-swap (only while the slot is unset, or only over the version
+  that call was delivered) before it returns. The token is never in the
+  output, argv, a log, the audit or plugin state.
+- **Each call** (`http-get`, and `http-send` before the draft is marked
+  `sending`) exchanges the refresh token at `token_url` for an access token
+  held only in memory and sent as `Authorization: Bearer`. A rotated refresh
+  token goes back to the slot through `secret_updates` in the same answer, so
+  Orbit has stored it before the response is returned, whether the request
+  then succeeds or not. Token endpoint replies are not followed through a
+  redirect and are read up to 64 KiB.
+- **A revoked or expired refresh token** (`invalid_grant`) is refused as
+  `auth_expired`, and the slot version it came from is recorded in
+  `{{plugin_state}}/oauth/<name>.json` (versions only, never values) so
+  `connection-list` reads `expired` until the user signs in again. If a call
+  that overlapped this one has just rotated that same version, the refusal is
+  `auth_stale` (retryable) instead. Any other refusal is `auth_failed`, with
+  the endpoint's OAuth error code in `detail`, never its description.
+- Settings › Connections starts the flow, shows the user code and the
+  verification address, polls until the connection is connected, and offers
+  "Sign in again" on a connection that reads `expired`.
 
 ## `gateway.http-get`
 
@@ -118,12 +188,14 @@ default `GET`).
    (`unknown_connection`), as is a method the connection does not list
    (`method_not_allowed`). The path is joined to `base_url` and normalized,
    and the result must stay under `base_url`: a scheme, a host or a `..`
-   that climbs out is refused (`path_outside_connection`).
+   that climbs out is refused (`path_outside_connection`). A `secret_path`
+   connection takes no path; its slot supplies it (above).
 2. **Headers.** The agent may set only `Accept`, `Accept-Language`,
    `If-None-Match`, `If-Modified-Since` and `Range`. `Authorization`,
    `Cookie`, the connection's own auth header and anything else are refused
    (`header_not_allowed`).
-3. **Send.** The gateway adds the auth from the slot. TLS verification is
+3. **Send.** The gateway adds the auth from the slot (for `oauth2_device`,
+   an access token exchanged for it). TLS verification is
    always on. Redirects are followed at most 3 times and only to the same
    origin. A redirect to another origin is returned as the response, not
    followed, so a secret is never sent to a host other than its own.
@@ -186,7 +258,14 @@ function handles every returned result, every audit record, every draft file
 and every error message, and a test checks that list of writers.
 
 - **Values.** Every slot value, plus its URL-encoded and base64 forms and the
-  base64 of `user:password` for `basic` auth, becomes `[secret]`.
+  base64 of `user:password` for `basic` auth, becomes `[secret]`. A
+  `secret_path` slot, its path, its query and their parts of 16 characters
+  or more become `<secret_path>`. What a call learns as it runs (an
+  `oauth2_device` access token, a rotated refresh token, a device code) is
+  masked from then on, in the answer and the audit alike.
+- **The one unredacted write** is `secret_updates`, beside the answer on
+  stdout: it carries a refresh token to Orbit, which stores it in the slot
+  and masks it in what it returns.
 - **Credential shapes** with high confidence only (STD-05@1 §R14): `Bearer`
   and `Basic` header values, AWS access key ids (`AKIA…`/`ASIA…`), PEM
   private-key blocks, and provider key prefixes (`ghp_`, `github_pat_`,
@@ -199,7 +278,11 @@ and every error message, and a test checks that list of writers.
 `{{plugin_state}}/audit/<yyyy-mm>.jsonl`, append-only, one line per call:
 time, caller (agent kind, model, task and session from the call context),
 tool, connection, method, path, redacted query, status, bytes, duration,
-SHA-256 of the redacted body, and outcome. A send whose reply body was
+SHA-256 of the redacted body, and outcome. A `secret_path` connection's path
+is recorded as `<secret_path>`. The sign-in tools record the endpoint's
+path and the outcome (`pending` for a started flow, `connected`, `denied`,
+`expired` or the error code); a poll that is still pending is not recorded,
+so a sign-in the user takes minutes over does not flood the view. A send whose reply body was
 not fully received also has `truncated: true`; the field is absent when
 the recorded body is complete. Bodies themselves are never
 logged. `gateway.audit-list` (read_only, `workspace`) feeds an "API calls"

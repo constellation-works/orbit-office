@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.oauth-device-start response",
+  "type": "object",
+  "description": "What the user needs to approve the sign-in. The device code is never returned.",
+  "required": [
+    "connection",
+    "state",
+    "user_code",
+    "verification_uri",
+    "expires_in",
+    "interval"
+  ],
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "pending"
+      ]
+    },
+    "user_code": {
+      "type": "string",
+      "description": "The code the user enters at verification_uri."
+    },
+    "verification_uri": {
+      "type": "string",
+      "description": "Where the user enters the code."
+    },
+    "verification_uri_complete": {
+      "type": "string",
+      "description": "The address with the code filled in, when the endpoint gives one."
+    },
+    "expires_in": {
+      "type": "integer",
+      "description": "Seconds until the code expires."
+    },
+    "interval": {
+      "type": "integer",
+      "description": "Seconds to wait between polls."
+    }
+  },
+  "additionalProperties": false
+}

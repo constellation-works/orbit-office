@@ -139,6 +139,7 @@ const SHELL = [
   "/screens/settings/editor.js",
   "/screens/settings/style.js",
   "/screens/settings/private.js",
+  "/screens/settings/signin.js",
   "/screens/source/index.js",
   "/screens/source/model.js",
   "/screens/source/style.js",

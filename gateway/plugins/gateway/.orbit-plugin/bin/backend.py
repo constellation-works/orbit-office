@@ -47,7 +47,7 @@ def main():
     if tuple(sys.version_info[:2]) < REQUIRED:
         return _refuse_old_python()
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
-    from orbit_gateway import audit, connections, drafts, envelope, http
+    from orbit_gateway import audit, connections, drafts, envelope, http, oauth
 
     handlers = {
         "http-get": http.tool_get,
@@ -55,6 +55,8 @@ def main():
         "http-send": drafts.tool_send,
         "connection-list": connections.tool_list,
         "connection-put": connections.tool_put,
+        "oauth-device-start": oauth.tool_start,
+        "oauth-device-poll": oauth.tool_poll,
         "audit-list": audit.tool_list,
     }
     envelope.serve(sys.stdin.read(), os.environ, handlers, sys.stdout)

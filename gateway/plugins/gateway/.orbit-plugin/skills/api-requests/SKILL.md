@@ -25,7 +25,9 @@ other tool in your shell, and never ask the user to paste an API key. Use:
   ```
 
   `path` is relative to the connection's `base_url`; a full URL, another host
-  or a `..` that climbs out is refused. You may set only the `Accept`,
+  or a `..` that climbs out is refused. A connection whose auth scheme is
+  `secret_path` (a calendar feed, say) names exactly one resource: leave
+  `path` out. Its address is its secret, so the URL reads `<secret_path>`. You may set only the `Accept`,
   `Accept-Language`, `If-None-Match`, `If-Modified-Since` and `Range`
   headers; the gateway adds the authentication itself.
 - `gateway.http-draft` — a write (`POST`, `PUT`, `PATCH` or `DELETE`, if the
@@ -62,8 +64,12 @@ other_origin`). Do not fetch that location yourself; tell the user.
 
 - `unknown_connection` — no such connection, or it is disabled. You cannot
   create one: ask the user to add it in Settings.
-- `secret_unset` — the connection exists but its secret is not set yet; ask
-  the user to set it in Settings.
+- `secret_unset` — the connection exists but its secret is not set yet (or
+  it is not signed in); ask the user to set it in Settings.
+- `auth_expired` — the connection's sign-in was revoked or has expired; ask
+  the user to sign in again in Settings › Connections. `auth_stale` means a
+  call running at the same time renewed it: try once more.
+- `path_not_allowed` — a `secret_path` connection takes no `path`.
 - `method_not_allowed` — only `GET` and `HEAD` run directly. A write (`POST`,
   `PATCH`, …) must be drafted with `gateway.http-draft`, never sent another
   way. A draft is refused too when the connection does not list that method
