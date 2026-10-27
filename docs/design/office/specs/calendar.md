@@ -1,13 +1,14 @@
 ---
 type: design
-summary: "Spec: calendar — a read-only snapshot of the user's Outlook or ICS calendar beside the routines' schedule, a cited prep brief before each meeting, and notes or a transcript captured from the event after it"
+summary: "Spec: calendar — a read-only snapshot of the user's Outlook or ICS calendar beside the routines' schedule and the tasks scheduled for a date, a cited prep brief before each meeting, and notes or a transcript captured from the event after it"
 last_validated: 2026-10-27
 ---
 
 # Spec: Calendar
 
 The Calendar screen shows the user's day the way the agents see it: their
-meetings, read from Outlook or any ICS feed, and the routines that will run.
+meetings, read from Outlook or any ICS feed, the routines that will run, and
+the to-dos scheduled for a date.
 The agents keep it current. Before a meeting they write a prep brief from
 the Library. After it, the user drops in notes or a transcript, and the
 meeting becomes a source with a cited summary, decisions and to-dos
@@ -220,6 +221,30 @@ job that inlines a deterministic `plugin.tool_call`
   correction is a new version (`v2.md`), as for every source
   ([library.md](./library.md#sources)).
 
+## Scheduled tasks
+
+A to-do can wait for a date: "send the weekly numbers on Friday at 9". It is
+an ordinary Orbit task that already exists, with a `not_before` time. Orbit
+holds it out of every dispatcher until that time, then lets it go on the next
+pass ([Orbit scope: scheduled tasks](https://github.com/constellation-works/orbit/blob/agent-main/docs/design/scheduled-tasks/1_scope.md)).
+Office adds no scheduler of its own.
+
+- **Setting the time:**
+  - To-dos has a **Schedule…** action with a date-time picker in the
+    computer's time zone, and **Clear schedule**. The app writes `not_before`
+    with `orbit.task.update`, acting as the user.
+  - The orchestrator sets it when the user says "on Friday at 9", and reads
+    the time back in words.
+- **The dispatch pass** skips `owner:agent` backlog tasks whose `not_before`
+  is still in the future, and ships them on its first pass after the time.
+  Orbit refuses an early ship as `task_scheduled` anyway; skipping keeps the
+  pass from logging that refusal every 30 seconds.
+- **It runs at or after the time, not at it.** The start depends on the next
+  pass, and on the computer being on. The calendar shows the actual start
+  beside the scheduled time ("Scheduled 09:00, started 09:42").
+- **Your own to-dos** (`owner:you`) can carry a time too. They only appear on
+  the calendar; nothing dispatches them.
+
 ## Settings
 
 In `.office/config.yaml`, written with `office.config-set`:
@@ -255,6 +280,11 @@ both show on the Routines screen.
   schedule reading as the Routines screen, hollow when paused. They are
   shown, not edited: a mark opens Routines. The schedule reader moves from
   `screens/routines/schedule.ts` into `ui/` so both screens share it.
+- **Scheduled tasks** are blocks at their `not_before` time, read with
+  `orbit.task.list`'s date-range filter. Their state is in words:
+  "Scheduled", "Not approved" (still proposed), "Running", "Done", or
+  "Started 09:42" when they started late. Opening one shows the task, with
+  **Reschedule** and **Clear schedule**.
 - **Opening a meeting** shows a panel:
   - when, where, and whether the meeting is online;
   - attendees, each linked to their person page where one matched;
@@ -274,8 +304,8 @@ both show on the Routines screen.
     the latest sync failed";
   - a week with no meetings, said in words.
 
-Server: `GET /api/calendar?from&until` calls `office.calendar-list` and
-`orbit.auto_task.list`. `POST /api/calendar/sync` calls
+Server: `GET /api/calendar?from&until` calls `office.calendar-list`,
+`orbit.auto_task.list` and `orbit.task.list` with the `not_before` range. `POST /api/calendar/sync` calls
 `office.calendar-sync`. `POST /api/calendar/capture` stages the upload and
 calls `office.capture` with `event_key`.
 
@@ -311,3 +341,6 @@ instance. It is never a real calendar.
 - [ORB-19193] — builds `office.meeting-prep` and its routine.
 - [ORB-19194] — builds capture from an event and the `office-meeting-inbox` routine.
 - [ORB-19195] — builds the Calendar screen, its server feature and Today's card.
+- [ORB-19216] — builds the Schedule… picker, scheduled tasks on the calendar and the dispatch pass's wait; needs an Orbit release with ws_orbit [ORB-19214] and [ORB-19215].
+- [ORB-19214] — builds Orbit's `not_before` field and its admission hold (ws_orbit).
+- [ORB-19215] — builds Orbit's date-range list filter and surfaces (ws_orbit).
