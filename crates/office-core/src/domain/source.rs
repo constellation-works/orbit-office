@@ -584,11 +584,10 @@ pub fn vtt_to_body(vtt: &str) -> String {
             cue_start_ms = line.split("-->").next().and_then(parse_vtt_time);
         } else if line.is_empty() {
             flush(&mut turns, &mut cue_start_ms, &mut cue_lines);
-        } else if cue_start_ms.is_some()
-            && !line.starts_with("WEBVTT")
-            && !line.starts_with("NOTE")
-            && !line.chars().all(|c| c.is_ascii_digit())
-        {
+        } else if cue_start_ms.is_some() {
+            // Cue state alone separates payload from the header, cue identifiers
+            // and NOTE/STYLE blocks: those sit before a timing line or after a
+            // blank line. Content checks here would drop real speech ("1234").
             cue_lines.push(line.to_string());
         }
     }
