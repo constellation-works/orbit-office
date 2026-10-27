@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from . import audit, connections
-from .connections import AGENT_HEADERS, Connection
+from .connections import AGENT_HEADERS, CREDENTIAL_HEADERS, Connection
 from .envelope import Call, GatewayError, closed, redactor_for, required, typed
 from .redact import Redactor
 
@@ -50,8 +50,6 @@ RETURNED_HEADERS = (
     "x-ratelimit-remaining",
     "x-ratelimit-reset",
 )
-# Never settable by an agent, whatever the connection.
-CREDENTIAL_HEADERS = ("authorization", "proxy-authorization", "cookie")
 TEXT_TYPES = ("application/xml", "application/javascript", "application/x-www-form-urlencoded", "application/x-ndjson")
 USER_AGENT = "orbit-gateway/0.1"
 INPUT_KEYS = {"connection", "path", "query", "headers", "method"}
@@ -177,8 +175,13 @@ def encode_query(query: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def agent_headers(connection: Connection, headers: dict[str, Any]) -> dict[str, str]:
-    """The agent's headers, refused unless every one is on the allowlist."""
+def agent_headers(
+    connection: Connection, headers: dict[str, Any], allowed: tuple[str, ...] = AGENT_HEADERS
+) -> dict[str, str]:
+    """The agent's headers, refused unless every one is on the allowlist.
+
+    Credential headers and the connection's own auth header are never allowed.
+    """
     own = (connection.auth_header_name() or "").lower()
     out: dict[str, str] = {}
     for name, value in headers.items():
@@ -188,10 +191,10 @@ def agent_headers(connection: Connection, headers: dict[str, Any]) -> dict[str, 
                 "header_not_allowed",
                 f"{name!r} carries credentials; the gateway adds the connection's auth itself",
             )
-        if lower not in AGENT_HEADERS:
+        if lower not in allowed:
             raise GatewayError(
                 "header_not_allowed",
-                f"{name!r} is not allowed; an agent may set only {', '.join(AGENT_HEADERS)}",
+                f"{name!r} is not allowed; an agent may set only {', '.join(allowed)}",
             )
         if not isinstance(value, str) or "\r" in value or "\n" in value:
             raise GatewayError("invalid_argument", f"header {name!r} must be a single-line string")
@@ -283,7 +286,7 @@ def _send(
     record.redirects = redirects
     record.path = urllib.parse.urlsplit(url).path
     try:
-        data = b"" if method == "HEAD" else _read(response, connection.max_response_bytes + 1, deadline, connection.timeout_seconds)
+        data = b"" if method == "HEAD" else read_limited(response, connection.max_response_bytes + 1, deadline, connection.timeout_seconds)
     finally:
         response.close()
     truncated = len(data) > connection.max_response_bytes
@@ -332,7 +335,7 @@ def _open(opener: urllib.request.OpenerDirector, request: urllib.request.Request
         raise GatewayError("upstream_unreachable", f"could not reach {request.host}: {error!r}", retryable=True) from None
 
 
-def _read(response: Any, limit: int, deadline: float, timeout: int) -> bytes:
+def read_limited(response: Any, limit: int, deadline: float, timeout: int) -> bytes:
     """Read up to `limit` bytes, giving up at the call's deadline."""
     chunks: list[bytes] = []
     size = 0

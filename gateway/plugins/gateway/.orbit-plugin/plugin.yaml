@@ -13,7 +13,8 @@ metadata:
   description: >-
     API requests through named connections the user grants: the secret stays
     in a declared slot and never reaches the agent, GET and HEAD run directly,
-    every response is redacted and every call is audited.
+    writes are drafted for the user's approval and sent once, every response
+    is redacted and every call is audited.
   homepage: https://github.com/constellation-works/orbit-office
 spec:
   requires:
@@ -31,12 +32,22 @@ spec:
     sandbox: default
 
   permissions:
+    # `{{workspace}}/.orbit-gateway` only stages a draft's task artifact for
+    # orbit.task.artifact.put, which reads files inside the workspace; the
+    # file is removed once the put returns.
     fs:
-      read: ["{{plugin_state}}"]
-      write: ["{{plugin_state}}"]
+      read: ["{{plugin_state}}", "{{workspace}}/.orbit-gateway"]
+      write: ["{{plugin_state}}", "{{workspace}}/.orbit-gateway"]
     # Connections name arbitrary hosts; each request stays under its
     # connection's base_url (enforced in code).
     network: any
+    # http-draft files its approval task and artifact; http-send checks the
+    # task is still open and closes it. Never retried automatically.
+    orbit_tools:
+      - orbit.task.add
+      - orbit.task.artifact.put
+      - orbit.task.show
+      - orbit.task.update
 
   # Orbit plugin secrets are names fixed in the manifest, so connections take
   # one of sixteen slots. `gateway.connection-put` assigns a free slot and
@@ -104,6 +115,30 @@ spec:
       mcp_scope: workspace
       input_schema: { $ref: schemas/http-get.request.json }
       output_schema: { $ref: schemas/http-get.response.json }
+
+    - name: http-draft
+      description: >-
+        Draft a write (POST, PUT, PATCH or DELETE, as the connection's drafts
+        allow) for the user's approval. Nothing is sent: the request is stored
+        with its SHA-256 and filed as one task tagged gateway-draft, which the
+        user approves or dismisses. A body holding a secret is refused. Takes
+        the same input as http-get plus `body`; Content-Type, If-Match and
+        If-Unmodified-Since may also be set.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/http-draft.request.json }
+      output_schema: { $ref: schemas/http-draft.response.json }
+
+    - name: http-send
+      description: >-
+        Send an approved draft, once. Takes the draft id and the SHA-256 the
+        user approved; a changed, dismissed or already-sent draft is refused.
+        A lost reply after sending is outcome_unknown and never retried.
+        Called by the app's Approve, never by an agent.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/http-send.request.json }
+      output_schema: { $ref: schemas/http-send.response.json }
 
     - name: connection-list
       description: >-

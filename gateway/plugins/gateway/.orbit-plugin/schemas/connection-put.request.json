@@ -72,6 +72,11 @@
     },
     "disabled": {
       "type": "boolean"
+    },
+    "idempotency_header": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "A header the API reads an idempotency key from; a sent draft carries its draft id in it."
     }
   },
   "additionalProperties": false

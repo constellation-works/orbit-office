@@ -47,10 +47,12 @@ def main():
     if tuple(sys.version_info[:2]) < REQUIRED:
         return _refuse_old_python()
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
-    from orbit_gateway import audit, connections, envelope, http
+    from orbit_gateway import audit, connections, drafts, envelope, http
 
     handlers = {
         "http-get": http.tool_get,
+        "http-draft": drafts.tool_draft,
+        "http-send": drafts.tool_send,
         "connection-list": connections.tool_list,
         "connection-put": connections.tool_put,
         "audit-list": audit.tool_list,

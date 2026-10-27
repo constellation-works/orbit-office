@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.http-draft response",
+  "type": "object",
+  "required": [
+    "draft",
+    "task_id",
+    "state",
+    "sha256",
+    "connection",
+    "request",
+    "artifact"
+  ],
+  "properties": {
+    "draft": {
+      "type": "string",
+      "description": "The draft id."
+    },
+    "task_id": {
+      "type": "string",
+      "description": "The gateway-draft task the user approves or dismisses."
+    },
+    "state": {
+      "const": "pending"
+    },
+    "sha256": {
+      "type": "string",
+      "description": "SHA-256 of the exact request; the send must name it."
+    },
+    "connection": {
+      "type": "string"
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "method",
+        "url",
+        "headers",
+        "body"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "The exact request the SHA-256 covers; the connection's authentication is added at send."
+    },
+    "artifact": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The task artifact holding the request, or null when storing it failed."
+    },
+    "artifact_error": {
+      "type": "string",
+      "description": "Why the artifact was not stored; the task is filed regardless."
+    }
+  },
+  "additionalProperties": false
+}

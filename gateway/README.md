@@ -9,8 +9,9 @@ at run time.
 
 - `src/orbit_gateway/` — the shared package: `envelope` (the Orbit `exec`
   envelope), `redact` (the one redactor and its writer inventory), `state`
-  (owner-only files under `{{plugin_state}}`), `audit`, and for the gateway
-  plugin only `connections` and `http`.
+  (owner-only files under `{{plugin_state}}`), `audit`, `callbacks` (Orbit's
+  `orbit tool run` callbacks, supervised and never retried), and for the
+  gateway plugin only `connections`, `http` and `drafts`.
 - `plugins/gateway/.orbit-plugin/` — the `gateway` plugin: `plugin.yaml`,
   `bin/backend.py` (version check, then dispatch), `schemas/`, the `gateway`
   skill and `tests/conformance/` goldens. Exports carry the package in `lib/`.
@@ -19,9 +20,19 @@ at run time.
 - `scripts/` — `export.py` (used by `make export` and the tests) and
   `check_imports.py` (the import-direction scan `make check` runs).
 
-Tools: `gateway.http-get`, `gateway.connection-list`, `gateway.connection-put`
-(app only) and `gateway.audit-list`. The draft and send tools are not built
-yet.
+Tools: `gateway.http-get`, `gateway.http-draft`, `gateway.http-send` (app
+only), `gateway.connection-list`, `gateway.connection-put` (app only) and
+`gateway.audit-list`.
+
+A write is drafted, approved and sent once. `http-draft` stores the request
+in `{{plugin_state}}/drafts/<id>.json` with its SHA-256 and files one
+`proposed` task tagged `gateway-draft` (through the `orbit.task.add` and
+`orbit.task.artifact.put` callbacks; the artifact is staged in
+`{{workspace}}/.orbit-gateway/` and removed after the put). The app's Approve
+calls `http-send` with the draft id and that digest; Dismiss rejects the task
+and the draft is never sent. A draft moves `filing` → `pending` → `sending` →
+`sent` or `outcome_unknown` (or `unfiled`, `dismissed`), and only `pending` is
+ever sent.
 
 ## Develop
 
@@ -30,7 +41,7 @@ make -C gateway test                 # the unittest suite
 make -C gateway check                # Python >= 3.12, import scan, schema JSON
 out=$(make -s -C gateway export)     # a fresh export of the working tree
 orbit plugin validate "$out"
-orbit plugin test "$out" --grant fs,network
+orbit plugin test "$out" --grant fs,network,orbit_tools
 ```
 
 CI runs `make -C gateway check test` on Python 3.12 (the `gateway` job).
@@ -39,7 +50,7 @@ CI runs `make -C gateway check test` on Python 3.12 (the `gateway` job).
 
 ```bash
 orbit plugin add "$out"
-orbit plugin enable gateway --grant 'fs={{plugin_state}}' --grant network
+orbit plugin enable gateway --grant 'fs={{plugin_state}},{{workspace}}/.orbit-gateway' --grant network --grant orbit_tools
 ```
 
 Connections are added from the app's Settings (`gateway.connection-put`),

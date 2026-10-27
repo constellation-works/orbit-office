@@ -6,7 +6,8 @@ Fails (exit 1, one line per violation) when:
 - a module imports anything outside the Python standard library and
   `orbit_gateway`;
 - a module other than `http.py` or `drafts.py` imports a network module, or a
-  module other than `cloud.py` imports `subprocess`;
+  module other than `cloud.py` (the cloud CLIs) or `callbacks.py` (Orbit's own
+  `orbit tool run` callbacks) imports `subprocess`;
 - the gateway backend reaches `orbit_gateway.cloud`, or the cloudcli backend
   reaches `orbit_gateway.http` or `orbit_gateway.drafts`, directly or through
   another module of the package.
@@ -23,7 +24,7 @@ PACKAGE = "orbit_gateway"
 NETWORK = {"socket", "ssl", "http", "urllib.request", "ftplib", "smtplib", "imaplib", "poplib", "asyncio"}
 NETWORK_MODULES = {"http", "drafts"}
 PROCESS = {"subprocess", "multiprocessing", "pty"}
-PROCESS_MODULES = {"cloud"}
+PROCESS_MODULES = {"cloud", "callbacks"}
 FORBIDDEN = {"gateway": {"cloud"}, "cloudcli": {"http", "drafts"}}
 
 

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.http-send request",
+  "type": "object",
+  "description": "Send an approved draft once. Called by the app's Approve, never by an agent.",
+  "required": [
+    "draft",
+    "sha256"
+  ],
+  "properties": {
+    "draft": {
+      "type": "string",
+      "maxLength": 32,
+      "description": "The draft id from gateway.http-draft."
+    },
+    "sha256": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "The SHA-256 the user saw and approved."
+    }
+  },
+  "additionalProperties": false
+}

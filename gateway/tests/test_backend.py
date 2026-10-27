@@ -82,7 +82,7 @@ class Envelope(GatewayCase):
         self.assertEqual(self.raw('{"schema_version": 2, "tool": "gateway.connection-list"}')["error"]["code"], "invalid_request")
 
     def test_an_unknown_tool_is_refused(self) -> None:
-        answer = self.raw('{"schema_version": 1, "tool": "gateway.http-send", "input": {}, "context": {}}')
+        answer = self.raw('{"schema_version": 1, "tool": "gateway.http-post", "input": {}, "context": {}}')
         self.assertEqual(answer["error"]["code"], "unknown_tool")
 
     def test_missing_plugin_state_is_refused(self) -> None:

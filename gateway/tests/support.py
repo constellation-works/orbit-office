@@ -1,5 +1,6 @@
-"""Test support: an exported plugin, the real backend as a subprocess, and
-loopback HTTP servers that record what they receive.
+"""Test support: an exported plugin, the real backend as a subprocess, a fake
+`orbit` that records the backend's callbacks, and loopback HTTP servers that
+record what they receive.
 
 Tests never touch host state: each one gets a temp root for HOME and
 `{{plugin_state}}`, set on the child's environment only.
@@ -9,6 +10,8 @@ from __future__ import annotations
 
 import json
 import os
+import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -43,6 +46,7 @@ class GatewayCase(unittest.TestCase):
         self.state = self.root / "state"
         self.home = self.root / "home"
         self.home.mkdir()
+        self.orbit = FakeOrbit(self.root / "fake-orbit")
 
     def call(
         self,
@@ -73,6 +77,10 @@ class GatewayCase(unittest.TestCase):
             "ORBIT_PLUGIN_STATE": str(self.state),
             "ORBIT_PLUGIN_ROOT": str(self.plugin),
             "ORBIT_TOOL_NAME": f"gateway.{tool}",
+            "ORBIT_BIN": str(self.orbit.program),
+            "ORBIT_PLUGIN": "gateway",
+            # Not forwarded to a callback: outside its environment allowlist.
+            "GATEWAY_TEST_AMBIENT": "ambient",
         }
         argv = [sys.executable, str(self.backend)]
         if umask is not None:
@@ -131,11 +139,91 @@ class GatewayCase(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# A fake `orbit` for the backend's callbacks
+# ---------------------------------------------------------------------------
+
+FAKE_ORBIT = """#!{python} -I
+import json, os, sys, time
+LOG, REPLIES = {log!r}, {replies!r}
+argv = sys.argv[1:]
+tool = argv[2]
+payload = json.loads(argv[argv.index("--input") + 1])
+entry = {{"argv": argv[:6], "tool": tool, "input": payload, "cwd": os.getcwd(), "env": dict(os.environ)}}
+if tool == "orbit.task.artifact.put":
+    with open(payload["source_path"], encoding="utf-8") as handle:
+        entry["artifact"] = handle.read()
+    entry["artifact_mode"] = os.stat(payload["source_path"]).st_mode & 0o777
+with open(LOG, "a", encoding="utf-8") as handle:
+    handle.write(json.dumps(entry) + "\\n")
+with open(REPLIES, encoding="utf-8") as handle:
+    reply = json.load(handle).get(tool, {{}})
+if reply.get("orphan"):
+    import subprocess
+    sleeper = subprocess.Popen(["sleep", "60"])  # keeps stdout open, left behind
+    with open(reply["orphan"], "w", encoding="utf-8") as handle:
+        handle.write(str(sleeper.pid))
+if reply.get("mark"):
+    # Another sender got there first: rewrite a draft file's state.
+    with open(reply["mark"]["path"], encoding="utf-8") as handle:
+        draft = json.load(handle)
+    draft["state"] = reply["mark"]["state"]
+    with open(reply["mark"]["path"], "w", encoding="utf-8") as handle:
+        json.dump(draft, handle)
+if reply.get("flood"):
+    sys.stdout.write("x" * reply["flood"])
+    sys.exit(0)
+if reply.get("sleep"):
+    time.sleep(reply["sleep"])
+if "stderr" in reply:
+    sys.stderr.write(json.dumps(reply["stderr"]))
+    sys.exit(reply.get("exit", 1))
+sys.stdout.write(json.dumps(reply.get("stdout", {{}})))
+"""
+
+
+class FakeOrbit:
+    """An `orbit` executable (ORBIT_BIN) that logs each callback and answers
+    from `replies`: per tool, `stdout` (a JSON result), or `stderr` and `exit`
+    (a structured refusal), optionally after `sleep` seconds; `flood` writes
+    that many bytes, `orphan` leaves a `sleep` behind, its pid in a file, and
+    `mark` rewrites a draft file's state as a concurrent sender would."""
+
+    def __init__(self, directory: Path):
+        directory.mkdir()
+        self.log = directory / "calls.jsonl"
+        self.replies_file = directory / "replies.json"
+        self.program = directory / "orbit"
+        self.program.write_text(FAKE_ORBIT.format(python=sys.executable, log=str(self.log), replies=str(self.replies_file)))
+        self.program.chmod(self.program.stat().st_mode | stat.S_IXUSR)
+        self.replies: dict[str, dict[str, Any]] = {
+            "orbit.task.add": {"stdout": {"id": "T-100", "status": "proposed"}},
+            "orbit.task.artifact.put": {"stdout": {"id": "T-100"}},
+            "orbit.task.show": {"stdout": {"id": "T-100", "status": "proposed", "terminal": False}},
+            "orbit.task.update": {"stdout": {"id": "T-100", "status": "done"}},
+        }
+        self.save()
+
+    def save(self) -> None:
+        self.replies_file.write_text(json.dumps(self.replies))
+
+    def reply(self, tool: str, **reply: Any) -> None:
+        self.replies[tool] = reply
+        self.save()
+
+    def calls(self, tool: str | None = None) -> list[dict[str, Any]]:
+        if not self.log.exists():
+            return []
+        entries = [json.loads(line) for line in self.log.read_text().splitlines() if line.strip()]
+        return [entry for entry in entries if tool is None or entry["tool"] == tool]
+
+
 @dataclass
 class Seen:
     method: str
     path: str
     headers: dict[str, str]
+    body: bytes = b""
 
 
 @dataclass
@@ -160,7 +248,9 @@ class Server:
             protocol_version = "HTTP/1.1"
 
             def _serve(self) -> None:
-                seen = Seen(self.command, self.path, {key.lower(): value for key, value in self.headers.items()})
+                length = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(length) if length else b""
+                seen = Seen(self.command, self.path, {key.lower(): value for key, value in self.headers.items()}, body)
                 owner.seen.append(seen)
                 route = owner.routes.get(self.path.split("?", 1)[0], Reply(404, b"not found", {"Content-Type": "text/plain"}))
                 reply = route(seen) if callable(route) else route
@@ -195,3 +285,47 @@ class Server:
 
 def json_reply(value: Any, status: int = 200, **headers: str) -> Reply:
     return Reply(status, json.dumps(value).encode(), {"Content-Type": "application/json", **headers})
+
+
+class SilentServer:
+    """A loopback server that accepts each request, reads it and never answers."""
+
+    def __init__(self, case: unittest.TestCase):
+        self.listener = socket.create_server(("127.0.0.1", 0))
+        self.listener.settimeout(0.05)
+        self.requests: list[bytes] = []
+        self.held: list[socket.socket] = []
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+        case.addCleanup(self.close)
+
+    def _serve(self) -> None:
+        while not self.stop.is_set():
+            try:
+                conn, _ = self.listener.accept()
+            except (TimeoutError, OSError):
+                continue
+            conn.settimeout(2)
+            data = b""
+            try:
+                while b"\r\n\r\n" not in data:
+                    chunk = conn.recv(65536)
+                    if not chunk:
+                        break
+                    data += chunk
+            except OSError:
+                pass
+            self.requests.append(data)
+            self.held.append(conn)  # held open, never answered
+
+    @property
+    def origin(self) -> str:
+        return f"http://127.0.0.1:{self.listener.getsockname()[1]}"
+
+    def close(self) -> None:
+        self.stop.set()
+        self.thread.join(timeout=5)
+        for conn in self.held:
+            conn.close()
+        self.listener.close()

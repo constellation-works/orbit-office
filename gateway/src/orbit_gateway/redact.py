@@ -30,9 +30,14 @@ MASK = "[secret]"
 # (tests/test_redaction_writers.py) fails if a write happens anywhere else.
 WRITERS: dict[str, str] = {
     "envelope.emit": "results and errors on stdout",
-    "state.store_text": "state files (connections.json)",
+    "state.store_text": (
+        "state files (connections.json, drafts/<id>.json) and the draft artifact staged for orbit.task.artifact.put"
+    ),
     "state.append_line": "append-only state files (audit/<yyyy-mm>.jsonl)",
 }
+
+# Orbit callbacks (`callbacks.Orbit.call`) pass their input to `orbit tool run`
+# as an argument, not through a write call; they redact it the same way.
 
 # Writers that never see input or a secret, so there is nothing to redact.
 UNREDACTED_WRITERS: dict[str, str] = {
