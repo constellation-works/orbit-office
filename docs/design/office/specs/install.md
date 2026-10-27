@@ -73,8 +73,12 @@ spaces, so script shebangs that name the interpreter keep working.
    appears in `orbit workspace list`, is not ownership.
 5. **Plugin.** `orbit plugin add` from the prebuilt export attached to the orbit-office
    release (a local directory install, so no Rust toolchain is needed); `--from-source`
-   uses the pinned `git+` source and needs `cargo`. Then `orbit plugin enable office` with
-   the grants the manifest requests (`fs`, `network`, `orbit_tools`), after printing them and
+   uses the pinned `git+` source and needs `cargo`. A clone whose local plugin lacks an
+   executable backend also uses `git+` at the clone HEAD with `--allow-build`; the commit
+   must be available from the repository remote and `cargo` is required. An explicit local
+   office source or bundle must already contain an executable `bin/office-bin`; a missing
+   backend or failed build stops before office is recorded as added or enabled. Then
+   `orbit plugin enable office` with the grants the manifest requests (`fs`, `network`, `orbit_tools`), after printing them and
    asking once. A grant left out leaves the plugin inactive, and `office.init` is then refused.
    The question needs a terminal on stdin. A run without one (the `curl ... | sh` line at the
    top of this page, for example) prints the grants and enables the plugin without asking,

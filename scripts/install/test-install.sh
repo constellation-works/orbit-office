@@ -142,6 +142,7 @@ case "${1:-} ${2:-}" in
         case "$_source" in
             git+*)
                 case " $* " in *" --allow-build "*) ;; *) exit 1 ;; esac
+                [ "${STUB_BUILD_FAIL:-0}" != 1 ] || { printf "stub: build failed\n" >&2; exit 1; }
                 _plugin=office ;;
             *)
                 if [ ! -f "$_source/.orbit-plugin/plugin.yaml" ]; then
@@ -149,6 +150,12 @@ case "${1:-} ${2:-}" in
                 fi
                 _plugin=$(awk '/^  name:/ {print $2; exit}' "$_source/.orbit-plugin/plugin.yaml") ;;
         esac
+        if [ "$_plugin" = office ]; then
+            case "$_source" in
+                git+*) ;;
+                *) [ -x "$_source/.orbit-plugin/bin/office-bin" ] || { printf "stub: office backend missing\n" >&2; exit 1; } ;;
+            esac
+        fi
         _suffix=".$_plugin"
         [ "$_plugin" != office ] || _suffix=""
         if [ "$_plugin" != office ] && [ ! -f "$_source/.orbit-plugin/lib/orbit_gateway/envelope.py" ]; then
@@ -1149,6 +1156,8 @@ check "uninstall removes owned exports" test ! -e "$HOME14/.local/share/orbit-of
 # A supplied release bundle is used directly and survives uninstall.
 BUNDLE="$ROOT/bundle"; mkdir -p "$BUNDLE"
 cp -R "$SCRIPT_DIR/../../plugin" "$BUNDLE/office"
+printf '#!/bin/sh\nexit 0\n' > "$BUNDLE/office/.orbit-plugin/bin/office-bin"
+chmod +x "$BUNDLE/office/.orbit-plugin/bin/office-bin"
 python3 -I "$SCRIPT_DIR/../../gateway/scripts/export.py" gateway "$BUNDLE/gateway" > /dev/null
 python3 -I "$SCRIPT_DIR/../../gateway/scripts/export.py" cloudcli "$BUNDLE/cloudcli" > /dev/null
 BUNDLE_HOME="$ROOT/bundle-home"; mkdir -p "$BUNDLE_HOME"
@@ -1156,14 +1165,70 @@ run_install "$BUNDLE_HOME" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" -- --with-cloudc
     || { cat "$ROOT/bundle-out" >&2; fail "release bundle install exits 0"; }
 check "release bundle enables all three plugins" test -f "$STUB_STATE/plugin-active.cloudcli"
 check "release bundle creates no local export" test ! -e "$BUNDLE_HOME/.local/share/orbit-office/plugins"
+snapshot "$BUNDLE_HOME" > "$ROOT/bundle-snapshot"
+run_install "$BUNDLE_HOME" "ORBIT_OFFICE_PLUGIN_BUNDLE=$BUNDLE" -- --with-cloudcli > "$ROOT/bundle-out2" 2>&1 \
+    || { cat "$ROOT/bundle-out2" >&2; fail "release bundle repeat exits 0"; }
+snapshot "$BUNDLE_HOME" > "$ROOT/bundle-snapshot2"
+check "release bundle repeat changes nothing" cmp -s "$ROOT/bundle-snapshot" "$ROOT/bundle-snapshot2"
 run_install "$BUNDLE_HOME" -- --uninstall > "$ROOT/bundle-un" 2>&1 \
     || { cat "$ROOT/bundle-un" >&2; fail "bundle uninstall exits 0"; }
 check "uninstall preserves the supplied bundle" test -f "$BUNDLE/cloudcli/.orbit-plugin/lib/orbit_gateway/envelope.py"
+# Exercise the installer from a fresh clone with no generated backend. Copy
+# the candidate installer into the clone while retaining its pinned HEAD.
+CLONE="$ROOT/fresh-clone"
+env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git clone --quiet --no-hardlinks --no-checkout "$SCRIPT_DIR/../.." "$CLONE"
+env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git -C "$CLONE" checkout --quiet --detach "$(git -C "$SCRIPT_DIR/../.." rev-parse HEAD)"
+cp "$INSTALL_SH" "$CLONE/install.sh"
+check "fresh clone has no backend" test ! -e "$CLONE/plugin/.orbit-plugin/bin/office-bin"
+CLONE_HOME="$ROOT/clone-home"; mkdir -p "$CLONE_HOME"
+: > "$STUB_STATE/orbit.log"
+SAVED_INSTALL_SH="$INSTALL_SH"; INSTALL_SH="$CLONE/install.sh"
+run_install "$CLONE_HOME" -- > "$ROOT/clone-out" 2>&1 \
+    || { cat "$ROOT/clone-out" >&2; fail "fresh clone install exits 0"; }
+INSTALL_SH="$SAVED_INSTALL_SH"
+check "fresh clone uses pinned build path" grep -F "plugin add git+https://github.com/constellation-works/orbit-office.git#$(git -C "$CLONE" rev-parse HEAD) --allow-build" "$STUB_STATE/orbit.log"
+check "fresh clone reaches scaffold" test -f "$CLONE_HOME/orbit/library/.office/config.yaml"
+
+# An explicitly supplied local source must be a prepared export, and remains
+# usable on a repeated run. A missing backend must stop before any markers.
+MISSING_HOME="$ROOT/missing-backend-home"; mkdir -p "$MISSING_HOME"
+if run_install "$MISSING_HOME" "ORBIT_OFFICE_PLUGIN_SOURCE=$CLONE/plugin" -- > "$ROOT/missing-backend-out" 2>&1; then
+    fail "missing backend stops install"
+fi
+check "missing backend leaves office unadded" test ! -e "$STUB_STATE/plugin-added"
+check "missing backend leaves office unenabled" test ! -e "$STUB_STATE/plugin-enabled"
+check "missing backend leaves no scaffold" sh -c '! grep -Eq "^(plugin_added|plugin_enabled|scaffolded)$" "$1"' sh "$MISSING_HOME/.local/share/orbit-office/install-state"
+EXPLICIT_HOME="$ROOT/explicit-home"; mkdir -p "$EXPLICIT_HOME"
+run_install "$EXPLICIT_HOME" "ORBIT_OFFICE_PLUGIN_SOURCE=$BUNDLE/office" -- > "$ROOT/explicit-out" 2>&1 \
+    || { cat "$ROOT/explicit-out" >&2; fail "explicit export install exits 0"; }
+check "explicit export selected" grep -F "plugin add $BUNDLE/office" "$STUB_STATE/orbit.log"
+snapshot "$EXPLICIT_HOME" > "$ROOT/explicit-snapshot"
+run_install "$EXPLICIT_HOME" "ORBIT_OFFICE_PLUGIN_SOURCE=$BUNDLE/office" -- > "$ROOT/explicit-out2" 2>&1 \
+    || { cat "$ROOT/explicit-out2" >&2; fail "explicit export repeat exits 0"; }
+snapshot "$EXPLICIT_HOME" > "$ROOT/explicit-snapshot2"
+check "explicit export repeat changes nothing" cmp -s "$ROOT/explicit-snapshot" "$ROOT/explicit-snapshot2"
+FAIL_HOME="$ROOT/build-fail-home"; mkdir -p "$FAIL_HOME"
+INSTALL_SH="$CLONE/install.sh"
+if run_install "$FAIL_HOME" STUB_BUILD_FAIL=1 -- > "$ROOT/build-fail-out" 2>&1; then
+    fail "failed build stops install"
+fi
+INSTALL_SH="$SAVED_INSTALL_SH"
+check "failed build leaves office unadded" test ! -e "$STUB_STATE/plugin-added"
+check "failed build leaves office unenabled" test ! -e "$STUB_STATE/plugin-enabled"
+check "failed build leaves no scaffold" sh -c '! grep -Eq "^(plugin_added|plugin_enabled|scaffolded)$" "$1"' sh "$FAIL_HOME/.local/share/orbit-office/install-state"
 SOURCE_HOME="$ROOT/source-home"; mkdir -p "$SOURCE_HOME"
 run_install "$SOURCE_HOME" -- --from-source > "$ROOT/source-out" 2>&1 \
     || { cat "$ROOT/source-out" >&2; fail "from-source install exits 0"; }
 check "source office install binds the actual worktree commit" \
     grep -F "git+https://github.com/constellation-works/orbit-office.git#$(git -C "$SCRIPT_DIR/../.." rev-parse HEAD) --allow-build" "$STUB_STATE/orbit.log"
+
+snapshot "$SOURCE_HOME" > "$ROOT/source-snapshot"
+run_install "$SOURCE_HOME" -- --from-source > "$ROOT/source-out2" 2>&1 \
+    || { cat "$ROOT/source-out2" >&2; fail "from-source repeat exits 0"; }
+snapshot "$SOURCE_HOME" > "$ROOT/source-snapshot2"
+check "from-source repeat changes nothing" cmp -s "$ROOT/source-snapshot" "$ROOT/source-snapshot2"
 
 # Non-canonical JSON: preserve every byte outside inserted entries. The
 # pre-existing curl deny belongs to the user and must survive uninstall.
