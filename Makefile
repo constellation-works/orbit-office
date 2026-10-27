@@ -34,6 +34,7 @@ help:
 	@echo "  make goldens UPDATE=1 Regenerate goldens after an intended surface change"
 	@echo "  make standards-check  Run the vendored standards check (docs/standards/check.sh)"
 	@echo "  make ci               Everything above; what CI runs"
+	@echo "  make baseline         Every stack's gate: ci-lint + gateway + app typecheck/tests"
 	@echo "  make build | fmt | install | clean"
 
 build:
@@ -117,6 +118,20 @@ ci-lint: clippy deny
 # Full pass. Keep aligned with .github/workflows/ci.yml.
 ci: ci-fast ci-lint test goldens
 
+# Every stack's gate, as one command: the local prediction of the three
+# required CI checks on main (ci, app, gateway). This is the list recorded
+# as baseline_commands for the workspace.
+baseline: ci-lint gateway-check app-typecheck app-test
+
+gateway-check:
+	$(MAKE) -C gateway check test
+
+app-typecheck:
+	npm --prefix app run check
+
+app-test:
+	npm --prefix app test
+
 # ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
@@ -130,7 +145,7 @@ clean:
 	$(CARGO) clean
 
 # ---------------------------------------------------------------------------
-# Web app (JavaScript) and plugin export — not part of the Rust CI gate.
+# Web app (TypeScript) and plugin export — not part of the Rust CI gate.
 # ---------------------------------------------------------------------------
 
 app-check:
