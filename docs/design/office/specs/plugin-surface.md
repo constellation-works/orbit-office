@@ -106,7 +106,9 @@ unconfigured reply also refuses rather than inventing a successful write.
 
 ## Definitions shipped
 
-Seeded disabled, enabled during onboarding:
+Seeded disabled, enabled during onboarding. The scaffold README still names
+`office-meeting-inbox`; [ORB-18838] tracks that divergence from
+`office-kt-inbox`.
 
 - **Routines:**
   - `office-kt-inbox`: every 15 minutes, process confirmed video plans: transcribe, frames, extract (`kt`), then file knowledge proposals and question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
@@ -235,3 +237,9 @@ secrets are needed. Secrets remain managed by Orbit's plugin secret surface.
 The KT pack adds the `video` kind, the `kt` pack, and the `video` and `costs` keys
 ([kt-videos.md](./kt-videos.md#settings)). They land with the KT task, and the
 default pack list then becomes `[kt, meetings]`.
+
+## Task References
+
+- [ORB-18838] — tracks the scaffold README still naming `office-meeting-inbox` instead of `office-kt-inbox`.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
