@@ -49,7 +49,7 @@ observe ─▶ propose ─▶ approve ─▶ automate ─▶ measure
    └──────────── knowledge compounds ◀──────────┘
 ```
 
-1. **Observe:** capture what happens (meetings, pasted chats, finished tasks, frictions).
+1. **Observe:** capture what happens (KT videos, pasted chats, meeting notes, finished tasks, frictions).
 2. **Propose:** the orchestrator suggests auto-tasks, routines and knowledge changes, each citing its evidence.
 3. **Approve:** the user decides. Nothing becomes standing automation or leaves the machine without approval.
 4. **Automate:** approved routines and auto-tasks do the work, with agents using attached knowledge.
@@ -66,14 +66,14 @@ by-product: complete, cited, and written by an auto-task.
 2. **Propose, don't impose.** The orchestrator proposes. It does not create standing automation, edit knowledge pages or take outward-facing actions without approval.
 3. **Provenance everywhere.** Every knowledge claim, summary and agent output links back to the source or task it came from, down to a timestamp or line.
 4. **Plain words.** The user sees To-dos, Routines, Library, Needs you and Insights. They never see ids, crews, runs, workflows or raw statuses.
-5. **Generic core, packs for verticals.** The plugin knows sources, knowledge, proposals and metrics. Meetings, receipts and bills are **routine packs**: data (routine and auto-task definitions, runbooks, skills), not code paths.
+5. **Generic core, packs for verticals.** The plugin knows sources, knowledge, proposals and metrics. KT videos, meetings, receipts and bills are **routine packs**: data (routine and auto-task definitions, runbooks, skills), not code paths.
 6. **Honest numbers.** Analytics count what happened. Seeded demo history is labelled simulated.
 
 ## 2. Core Concepts
 
 | User sees | Internal name | Is | Lives in |
 |---|---|---|---|
-| Sources | `source` | An immutable record of something that happened: meeting, pasted chat or email, document, receipt photo, orchestrator conversation | `library/sources/` |
+| Sources | `source` | An immutable record of something that happened: KT video, meeting, pasted chat or email, document, receipt photo, orchestrator conversation | `library/sources/` |
 | About | `domain` | Facts about the user, people, clients, projects and topics, each page following a template, plus pointers to related files, links, contacts and accounts (never secrets) | `library/knowledge/domain/` |
 | How-to | `runbook` | Steps for a repeatable piece of work | `library/knowledge/runbooks/` |
 | Outputs | `artifact` | Agent-generated work the user approved: reports, docs, drafts, scripts, data, reviews | `library/artifacts/` |
@@ -114,14 +114,16 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 ### Hackathon scope (spec §3)
 
 **Must:** orchestrator setup (Muse Code wired to Orbit MCP with the office
-skill); sources store with paste capture and meeting upload; knowledge
-store (domain, runbook; frictions in Orbit); artifacts store; meeting pack
-(transcribe → summary, decisions → to-dos You/Agents → Library updates);
+skill); sources store with paste capture and video upload; knowledge
+store (domain, runbook; frictions in Orbit); artifacts store; KT pack
+(cost preview → transcribe and read keyframes → chaptered index with
+tangents folded → cited knowledge proposals, a runbook and questions for the
+presenter; [specs/kt-videos.md](./specs/kt-videos.md));
 knowledge attached to agent tasks; proposals from three signals
 (repetition, friction, staleness); Needs you; Insights (automation ratio);
 review generation over seeded history.
 
-**Should:** receipts pack; daily digest (session brief and decision log are Must, with the orchestrator); open-weight routing for
+**Should:** meetings from `.vtt` transcripts and pasted notes; receipts pack; daily digest (session brief and decision log are Must, with the orchestrator); open-weight routing for
 `private` sources; selection sharing; proposal dismissal memory.
 
 **Pitch slide only:** bills pack; email triage, social content, groceries,

@@ -14,7 +14,9 @@ Source: spec §9.
 | Use | Model | Notes |
 |---|---|---|
 | Orchestrator | Muse Code (default) running Muse Spark or Muse Wonder | Any MCP-capable agent CLI works. The orchestrator plus agents loop is the candidate for the agentic bonus prize |
-| Meeting transcription | Muse Voice Transcribe | Speaker turns and timestamps feed the anchors |
+| Video and meeting transcription | Muse Voice Transcribe | In chunks with our own offsets, so anchors hold without model timestamps; skipped when a `.vtt` exists |
+| KT keyframe reading | Muse Spark with image input | One call per deduplicated keyframe, capped per hour ([kt-videos.md](./kt-videos.md)) |
+| KT chapters, knowledge candidates, questions | Muse Spark | One call over the merged timeline, or 15-minute windows and a merge |
 | Summaries, decisions, to-do extraction | Muse Spark | Structured output validated against a JSON Schema |
 | Daily digest | Muse Spark, one call a day | Through the same routing; private items go to open weights or are listed by reference ([sessions.md](./sessions.md#daily-digest)) |
 | Receipt and bill field extraction | Muse Spark with image input | Confirm the request shape in the API reference on day 1. Fallback: local OCR, then Muse Spark on the text |

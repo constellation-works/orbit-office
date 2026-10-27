@@ -9,7 +9,7 @@ last_validated: 2026-10-26
 A new Library starts with **templates, not pages**. Templates say what a
 good About page looks like (the user, a person, a client, a project). Pages
 are written from evidence: first from a short onboarding interview in the
-user's first session, then from meetings and chats as they arrive. Every
+user's first session, then from KT videos, meetings and chats as they arrive. Every
 claim cites a source from day one
 ([decision](../4_decisions.md#about-pages-start-from-templates-and-an-onboarding-interview-never-from-stubs)).
 

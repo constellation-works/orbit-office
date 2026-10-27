@@ -19,8 +19,10 @@ Source: spec §12. The one-call envelope is
 | Tool | Kind | MCP | Purpose |
 |---|---|---|---|
 | `office.capture` | mutating | workspace | Create a source from an upload path or pasted text; dedupe; return the id |
-| `office.transcribe` | mutating | workspace | Transcribe a meeting source's original into its body (Muse Voice Transcribe) |
-| `office.extract` | mutating | workspace | From a source, produce a summary, decisions and to-dos as structured JSON plus a task artifact |
+| `office.transcribe` | mutating | workspace | Transcribe a video or meeting source's audio into its body in chunks (Muse Voice Transcribe); a no-op when a `.vtt` was imported |
+| `office.video.plan` | mutating | **none** | Plan a video: duration, deduplicated keyframes, model-call counts, cost estimate; `confirm` with the digest the user saw ([kt-videos.md](./kt-videos.md)) |
+| `office.frames` | mutating | **none** | Extract a confirmed video's keyframes and read them with Muse Spark image input into `frames.md` |
+| `office.extract` | mutating | workspace | From a source, produce structured JSON plus a task artifact: `profile: kt` gives chapters, gotchas, knowledge candidates, runbook steps and questions; `profile: meeting` gives a summary, decisions and to-dos |
 | `office.source.show` | read_only | workspace | Return a source, optionally at an anchor |
 | `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, template, tag, series and date |
 | `office.knowledge.show` | read_only | workspace | Read a page and its back-links |
@@ -103,14 +105,14 @@ unconfigured reply also refuses rather than inventing a successful write.
 Seeded disabled, enabled during onboarding:
 
 - **Routines:**
-  - `office-meeting-inbox`: every 15 minutes, process new meeting uploads, then capture, transcribe, extract, file to-dos and propose knowledge updates.
+  - `office-kt-inbox`: every 15 minutes, process confirmed video plans: transcribe, frames, extract (`kt`), then file knowledge proposals and question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
   - `office-signals`: daily.
   - `office-daily-digest`: daily. One deterministic `plugin.tool_call` step running `office.digest`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).
 - **Auto-tasks:**
   - `office-knowledge-maintenance`: weekly. Re-verifies stale pages against newer sources and frictions, and files `knowledge_update` proposals.
   - `office-review`: on period end.
 - **Activities:** `office-agent-todo`, an agent loop that executes an `owner:agent` to-do with its attached runbook and example artifacts, and writes its output as task artifacts with the manifest. Its `proc.spawn` allowlist has `python3` and no cloud CLI, so its agents can use the `gateway` plugin and Orbit refuses them `cloudcli` ([gateway.md](./gateway.md)).
-- **Skills:** `orchestrator`, `library-conventions` (how to cite, write pages and package outputs), and one skill per pack (`meetings`, later `receipts`).
+- **Skills:** `orchestrator`, `library-conventions` (how to cite, write pages and package outputs), and one skill per pack (`kt`, `meetings`, later `receipts`).
 
 A definition lands only with the tools it calls. Every definition's
 `required_tools` lists every plugin tool its steps call, and no definition
@@ -131,15 +133,15 @@ requires an outward-facing action.
   - network `any`, the only setting that reaches remote hosts. The plugin calls only the Meta and Baseten endpoints.
   - `orbit_tools`: the callbacks listed above.
   - Secrets: `meta_api_key` and `baseten_token` (`spec.secrets`).
-- **Required programs:** `spec.requires.programs: [git, ffmpeg, uv]`, plus
+- **Required programs:** `spec.requires.programs: [git, ffmpeg, ffprobe, uv]`, plus
   `cargo` under `spec.build` for source-built installs. Programs are
   resolved against the operator's `PATH` when the plugin is enabled, and
   that path is the one granted. `ffmpeg` splits long audio for
   transcription; `uv` runs approved scripts ([scripts.md](./scripts.md)) and is the
   install's own copy, on the `PATH` the install enables the plugin with.
 - Transcription runs as a deterministic `plugin.tool_call` job step from
-  the meeting routine. That step is bounded by the operator's grant, so it
-  can spawn `ffmpeg`. An agent calling `office.transcribe` would also need
+  the KT routine. That step is bounded by the operator's grant, so it
+  can spawn `ffmpeg` and `ffprobe`. An agent calling `office.transcribe` would also need
   `ffmpeg` on its activity's `proc.spawn` allowlist, so agents don't call
   it.
 
@@ -201,3 +203,6 @@ host is refused at load with `invalid_library_setting` on
 `open_weights_endpoint`; the raw URL is not echoed. No timestamp is
 synthesized by defaults.
 These are Library policy settings, independent of plugin installation config.
+The KT pack adds the `video` kind, the `kt` pack, and the `video` and `costs` keys
+([kt-videos.md](./kt-videos.md#settings)). They land with the KT task, and the
+default pack list then becomes `[kt, meetings]`.

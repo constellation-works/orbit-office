@@ -29,7 +29,7 @@ library/
   proposals/<proposal-id>.md   # rendered evidence for each proposal (the record is the Orbit task)
   .office/config.yaml          # Library settings: retention, sensitivity, packs, thresholds
   .office/templates/<name>.md  # About and How-to page templates (knowledge-templates.md)
-  .gitignore                   # original.* (binaries are pinned by sha256, not tracked)
+  .gitignore                   # original.* and frames/ (binaries are pinned by sha256, not tracked)
 ```
 
 - The index in `plugin_state/index.sqlite` (FTS5 plus link tables) is
@@ -94,7 +94,7 @@ real commits, a real index and real provenance.
 
 ```yaml
 id: src-20261028-acme-qbr
-kind: meeting            # meeting | chat | email | doc | receipt | bill | conversation | note
+kind: meeting            # video | meeting | chat | email | doc | receipt | bill | conversation | note
 title: Acme QBR
 occurred_at: 2026-10-28T14:00:00-04:00
 captured_at: 2026-10-28T15:02:11-04:00
@@ -111,6 +111,7 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 
 **Body: anchorable text.**
 
+- **Video:** the transcript as for a meeting, plus `frames.md` (frame readings, `#frame=00:12:31`) and `chapters.md` (`#chapter=3`) beside it ([kt-videos.md](./kt-videos.md#library-shape)).
 - **Meeting:** one paragraph per speaker turn, prefixed with `[hh:mm:ss] Speaker:`. The anchor is `#t=00:12:31`.
 - **Chat:** one line per message, `[timestamp] Author: text`. The anchor is `#L14-20`.
 - **Email, doc:** paragraphs. The anchor is `#L…`.

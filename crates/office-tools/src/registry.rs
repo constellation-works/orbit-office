@@ -87,6 +87,8 @@ static TOOLS: &[Tool] = &[
     // sources (specs/library.md)
     sources::capture::TOOL,
     sources::transcribe::TOOL,
+    sources::video_plan::TOOL,
+    sources::frames::TOOL,
     sources::extract::TOOL,
     sources::show::TOOL,
     // knowledge (specs/library.md)

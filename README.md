@@ -2,7 +2,8 @@
 
 Local-first office work on [Orbit](https://github.com/constellation-works/orbit): an
 Orbit plugin (`office`, Rust) plus a standalone web app (TypeScript) that together turn
-meetings, pasted chats and other sources into to-dos for you and for agents, a compounding
+hour-long knowledge-transfer videos, pasted chats and other sources into a chaptered index
+with the tangents folded away, to-dos for you and for agents, a compounding
 Library of sources / knowledge / artifacts, evidence-backed proposals, and generated
 reviews.
 
@@ -15,7 +16,7 @@ reviews.
 > else in this repository — the `office` plugin surface, the orchestrator, the
 > Library and the web app — is new work.
 
-**Status: scaffold.** The only working plugin tool is `office.status`. The meeting
+**Status: scaffold.** The only working plugin tool is `office.status`. The KT video
 loop, capture, knowledge, proposals, metrics and review tools land in the slices
 listed in [docs/architecture.md](docs/architecture.md).
 

@@ -20,6 +20,10 @@ stdout, exit code) is excluded.
 | **Script run** | One `office.script.run` call from a routine step: an approved script run offline in its own directory, its outputs filed as a `script-output` task for review. |
 | **Connection** | A user-granted API endpoint in the `gateway` plugin: base URL, auth scheme, secret slot, allowed methods. Agents use it by name and never see its secret. See [specs/gateway.md](../specs/gateway.md). |
 | **Gateway draft** | An API write an agent prepared, waiting under Needs you; approving sends it once, bound to the digest the user saw. |
+| **KT video** | A knowledge-transfer recording, captured as a `video` source; the hero pack turns it into chapters, cited knowledge proposals and questions. See [specs/kt-videos.md](../specs/kt-videos.md). |
+| **Chapter** | A timed topic segment of a video, labelled `core` or `tangent`; tangents are folded in the app, and their gotchas lifted out. |
+| **Gotcha** | A warning said in passing, kept as cited knowledge even when its chapter is a tangent. |
+| **Video plan** | The cost preview for a video: duration, keyframes, model calls and estimate. Processing waits until the user confirms its digest. |
 | **Artifact** | Agent output the user approved, promoted from a task into the Library, versioned by `series`, never edited in place. The daily digest is the one artifact promoted by a routine without review. |
 | **Friction** | An Orbit record of something that went wrong or slowed work; the plugin adds `cites` and `runbook` conventions, never a second store. |
 | **Decision log** | The append-only `conversation` source of one orchestrator session: decisions, verbatim directions and facts, actions, open questions. See [specs/sessions.md](../specs/sessions.md). |

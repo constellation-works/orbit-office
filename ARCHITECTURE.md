@@ -70,7 +70,7 @@ crates/office-tools/src/
   dispatch.rs            envelope → tool → envelope
   tools/
     status.rs
-    sources/             capture  transcribe  extract  show          (specs/library.md)
+    sources/             capture  transcribe  video_plan  frames  extract  show   (specs/library.md, specs/kt-videos.md)
     knowledge/           show  write                                  (specs/library.md)
     artifacts/           show  promote                                (specs/library.md)
     library/             init  reindex  config_set  search  attach    (specs/library.md, plugin-surface.md)

@@ -159,20 +159,28 @@ Three actors, three authorities:
   conversation, the agent files a proposal that cites the conversation
   source, and the user accepts it in the app with one click.
 
-## 4. The meeting loop (hero loop)
+## 4. The KT loop (hero loop)
 
-1. A meeting recording lands in a watched folder or is uploaded.
-2. A routine transcribes it (Muse Voice Transcribe), and Muse Spark
-   produces a summary and the decisions.
-3. Actionable to-dos are split into "yours" and "agents'".
-4. Agents carry out theirs, for example drafting the follow-up email or
-   researching an open question. Anything outward-facing waits for the
-   user's approval.
-5. The Library is updated, every page citing its source meeting and
+1. An hour-long knowledge-transfer video is uploaded. The app shows what
+   processing it will cost (minutes, keyframes, model calls) and spends
+   nothing until the user presses **Process**.
+2. A routine transcribes the audio (Muse Voice Transcribe, or the meeting
+   service's `.vtt`) and reads the deduplicated keyframes with Muse Spark
+   image input, because a KT is mostly a screen share.
+3. One Muse Spark call over the merged timeline produces a chaptered index
+   with tangents folded away and gotchas lifted out, knowledge candidates,
+   runbook steps and questions for the presenter, every claim citing a
    timestamp.
+4. The candidates become proposals from the About templates, and the
+   questions become the user's to-dos. Accepted pages and runbooks are
+   attached to later agent tasks.
+5. The video can be asked questions, answered with links that open it at
+   the cited second.
 
-What sets it apart from meeting tools: agents act on the to-dos instead of
-listing them, and the knowledge compounds locally.
+What sets it apart: the user never sits through the hour, and what it
+taught becomes knowledge agents use. Spec:
+[specs/kt-videos.md](./specs/kt-videos.md). Meetings remain a smaller pack,
+from `.vtt` transcripts and pasted notes.
 
 ## 5. Contracts
 
@@ -186,6 +194,7 @@ listing them, and the knowledge compounds locally.
 | Session continuity: decision log, session brief, daily digest | [specs/sessions.md](./specs/sessions.md) |
 | Scratch space; running approved scripts from routines | [specs/scripts.md](./specs/scripts.md) |
 | Gateway plugins: connections, audited API requests, read-only cloud CLIs | [specs/gateway.md](./specs/gateway.md) |
+| KT videos: plan and cost preview, frames, chapters, knowledge proposals | [specs/kt-videos.md](./specs/kt-videos.md) |
 | Install script: Orbit, git, workspace, plugin, scaffold, app | [specs/install.md](./specs/install.md) |
 | Proposal kinds, signals, lifecycle | [specs/proposals.md](./specs/proposals.md) |
 | Metrics definitions and review production | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) |

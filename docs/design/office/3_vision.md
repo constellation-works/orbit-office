@@ -59,7 +59,7 @@ skills — not code paths, so new verticals need no plugin change:
 Each remaining spec capability lands as a tool-table entry with schemas
 and goldens before the web app calls it, in the build-plan order of
 [specs/delivery.md](./specs/delivery.md#build-plan-oct-27--nov-4): Library
-and `reindex`; the meeting loop; knowledge, attach and promotion;
+and `reindex`; the KT loop; knowledge, attach and promotion;
 proposals; metrics, reviews and selections; then open-weight routing and
 the receipts pack.
 

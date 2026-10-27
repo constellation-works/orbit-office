@@ -824,6 +824,51 @@ The verbs are `http-get`, `http-draft`, `http-send`, `connection-list`,
 - Cost: the tool names differ from the dotted `office.*` style until Orbit
   accepts dotted verbs.
 
+## The hero pack is KT videos, not meeting recordings
+
+**Recorded:** 2026-10-26
+**Code anchors:** `crates/office-tools/src/tools/sources/`; [specs/kt-videos.md](./specs/kt-videos.md)
+
+### Context
+
+The demo's hero loop was a meeting recording becoming to-dos. Most meetings
+that lead to work are short and never recorded, and their actions are
+cheaper to tell the agent than to transcribe. Capturing unrecorded calls
+locally needs system-audio capture and the consent of everyone in the call,
+which Daniel judged not worth building now. Hour-long knowledge-transfer
+videos are the opposite case. They are recorded, they are painful to watch
+(half tangents), and what they teach lasts. So the cost of processing them
+is worth paying.
+
+### Decision
+
+- The hero pack is **KT videos**:
+  - a `video` source kind;
+  - a **cost preview the user confirms** before anything is spent, bound to
+    the plan's digest;
+  - a fixed routine that transcribes the audio and reads deduplicated
+    keyframes, since a KT is mostly a screen share;
+  - one cited extraction into chapters (tangents folded, gotchas lifted
+    out), knowledge proposals from the About templates, runbooks and
+    questions for the presenter.
+- Every claim cites a timestamp. Uncited claims are dropped. Tangent content
+  becomes knowledge only as a gotcha. No step makes more calls than the
+  confirmed plan counted.
+- **Meetings** stay a smaller pack: `.vtt` transcripts and pasted notes,
+  through `office.extract`'s meeting profile, with no routine of their own.
+  **Capturing unrecorded calls** is out of scope.
+
+### Consequences
+
+- The demo shows the cost that's avoided (an hour not watched) and the gain
+  that lasts (pages and runbooks agents use). That connects the hero loop to
+  the Library and the proposals, rather than to a list of to-dos.
+- Cost: frame extraction and reading (`office.frames`, keyframe
+  deduplication without an image library), a planning tool, and a synthetic
+  KT video to produce for the demo. Image calls per video are capped and
+  shown in advance. Day-1 checks on Muse audio limits, context window, image
+  input and the private route gate the plan.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.
