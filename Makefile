@@ -1,4 +1,4 @@
-.PHONY: help build test goldens fmt fmt-check clippy deny structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-check plugin-export install clean
+.PHONY: help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-check plugin-export install clean
 
 CARGO ?= cargo
 # Every build uses the committed Cargo.lock as is; a stale lock fails instead
@@ -69,6 +69,17 @@ deny:
 		$(CARGO) deny check; \
 	else \
 		$(call missing_tool,cargo-deny,the supply-chain check); \
+	fi
+
+# The supply-chain policy without advisories: licenses, bans and sources only
+# change with Cargo.toml or Cargo.lock, so the result is a function of the
+# tree. Advisories are published outside the repo and can turn an unchanged
+# base red; CI (make ci) still checks them on every PR and on main.
+deny-policy:
+	@if $(CARGO) deny --version >/dev/null 2>&1; then \
+		$(CARGO) deny check bans licenses sources; \
+	else \
+		$(call missing_tool,cargo-deny,the supply-chain policy check); \
 	fi
 
 # nextest enforces per-test timeouts (.config/nextest.toml, STD-03 R21/R22)
