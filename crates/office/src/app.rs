@@ -126,10 +126,25 @@ impl RealLibrary {
         }
     }
 
+    /// The grant `initialize_at` enforces, applied before any open.
+    ///
+    /// `office.init` is not the only caller that can create a Library root:
+    /// `LibraryStore::open` creates the layout. Dispatch treats
+    /// `is_initialized == false` as `library_not_initialized` and never
+    /// reaches the handler, so this also runs before that short-circuit.
+    fn ensure_grant(&self) -> office_core::Result<()> {
+        let (Some(library), Some(workspace)) = (&self.library, &self.workspace) else {
+            return Err(office_core::Error::LibraryUnavailable);
+        };
+        LibraryStore::confine_to_grant(library, workspace)?;
+        Ok(())
+    }
+
     fn store(&self) -> office_core::Result<LibraryStore> {
         let (Some(library), Some(state)) = (&self.library, &self.state) else {
             return Err(office_core::Error::LibraryUnavailable);
         };
+        self.ensure_grant()?;
         let store = LibraryStore::open(library, state)?;
         // Uploads live under the workspace (the plugin's read grant); the
         // Library root itself is also an allowed upload root.
@@ -192,6 +207,7 @@ impl Library for RealLibrary {
         if self.library.is_none() {
             return Err(office_core::Error::LibraryUnavailable);
         }
+        self.ensure_grant()?;
         if !self.looks_initialized() {
             return Ok(false);
         }
@@ -245,6 +261,12 @@ impl Library for RealLibrary {
         <LibraryStore as Library>::reindex(&store)
     }
     fn health(&self) -> office_core::Result<LibraryHealth> {
+        // No Library in context stays uninitialized. A configured root
+        // outside the grant is the typed refusal, including when the
+        // escaped tree is absent, so status does not report it as healthy.
+        if self.library.is_some() {
+            self.ensure_grant()?;
+        }
         if !self.looks_initialized() {
             return Ok(LibraryHealth::uninitialized());
         }
