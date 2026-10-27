@@ -90,15 +90,26 @@ nothing and reports `already_initialized`. Copying a missing bundled
 template lists that file in `created` and does not report
 `already_initialized`. The result lists what was created.
 
-Other tools open the store, which still creates the layout directories
-(`LibraryStore::open`, a safety net), but they never write the config,
-run `git init` or commit outside their own change. A tool that finds the
-Library uninitialized (no repository or no config) refuses with
-`library_not_initialized` and names `office.init`. `office.status` does not
-refuse: an absent Library reads as `initialized: false` with zero counts, but
-an invalid config or a pending write is returned as its typed error
-(`invalid_library_setting`, `library_write_pending`,
-`library_journal_invalid`), never as an uninitialized Library.
+Other tools open the store only after the same grant decision `office.init`
+uses. A `library_dir` from plugin config (`context.config.library_dir`) or
+the call context (`context.library_dir`) that is absolute, or relative and
+resolves outside `{{workspace}}/library`, is refused with
+`library_dir_outside_workspace` before any layout directory, index or lock
+is created. The check is the physical path against that root, shared with
+init, and it runs before the uninitialized-Library check. An escaped root
+is therefore not created and is not reported as `library_not_initialized`.
+`office.status` returns that error too, rather than `initialized: false`.
+
+A root inside the grant still opens the store, which creates the layout
+directories (`LibraryStore::open`, a safety net), but those tools never
+write the config, run `git init` or commit outside their own change. A tool
+that finds the Library uninitialized (no repository or no config) refuses
+with `library_not_initialized` and names `office.init`. `office.status` does
+not refuse a root inside the grant: an absent Library reads as
+`initialized: false` with zero counts, but an invalid config or a pending
+write is returned as its typed error (`invalid_library_setting`,
+`library_write_pending`, `library_journal_invalid`), never as an
+uninitialized Library.
 
 Demo history goes in after `office.init`, through `office.capture` and
 the other tools rather than by copying files, so the seeded Library has

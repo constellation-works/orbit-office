@@ -111,9 +111,25 @@ enum WriteKind {
 }
 
 impl LibraryStore {
+    /// Refuse `library_root` unless it is inside `{{workspace}}/library` on
+    /// the physical path. Creates nothing.
+    ///
+    /// `initialize_at` and `RealLibrary` share this decision (STD-02 R24,
+    /// STD-05 R6). `open` does not know the workspace, so the product
+    /// adapter calls this before it. Roots a test created for itself still
+    /// use `open` directly.
+    pub fn confine_to_grant(library_root: &Path, workspace_root: &Path) -> Result<()> {
+        resolve_within_grant(library_root, workspace_root)?;
+        Ok(())
+    }
+
     /// Open the Library and `<state_dir>/index.sqlite`, creating the layout
     /// and index as needed. Does not initialize git or create settings.
     /// An interrupted decided write is recovered before this returns.
+    ///
+    /// Does not apply the workspace grant. Product calls go through
+    /// [`Self::confine_to_grant`] first; a root outside
+    /// `{{workspace}}/library` must not reach this function.
     pub fn open(library_root: &Path, state_dir: &Path) -> Result<Self> {
         let files = LibraryFs::new(library_root.to_path_buf());
         files.ensure_layout()?;
@@ -184,42 +200,22 @@ impl LibraryStore {
         requested: Option<&str>,
         workspace_root: &Path,
     ) -> Result<InitOutcome> {
-        let allowed = normalize_path(&workspace_root.join("library"));
+        // The requested string, when set, replaces the context root. The
+        // grant decision itself is shared with every later open.
         let candidate = match requested {
             Some(dir) if !dir.trim().is_empty() => {
                 let path = Path::new(dir);
-                normalize_path(&if path.is_absolute() {
+                if path.is_absolute() {
                     path.to_path_buf()
                 } else {
                     workspace_root.join(path)
-                })
+                }
             }
-            _ => normalize_path(library_root),
+            _ => library_root.to_path_buf(),
         };
-        if candidate != allowed && !candidate.starts_with(&allowed) {
-            return Err(Error::LibraryDirOutside {
-                requested: candidate,
-                allowed,
-            });
-        }
-        // Resolve the grant and destination before creating the lock, index or
-        // Library. A missing suffix is appended to its canonical ancestor.
-        let allowed = resolve_existing_ancestor(&allowed)?;
-        if std::fs::symlink_metadata(&candidate)
-            .is_ok_and(|metadata| metadata.file_type().is_symlink())
-        {
-            return Err(Error::UnsafePath {
-                kind: "symlink",
-                value: candidate.display().to_string(),
-            });
-        }
-        let candidate = resolve_existing_ancestor(&candidate)?;
-        if !candidate.starts_with(&allowed) {
-            return Err(Error::LibraryDirOutside {
-                requested: candidate,
-                allowed,
-            });
-        }
+        let granted = resolve_within_grant(&candidate, workspace_root)?;
+        let candidate = granted.candidate;
+        let allowed = granted.allowed;
         // Refuse a missing git before creating anything.
         let probe_cwd = if workspace_root.exists() {
             workspace_root.to_path_buf()
@@ -1284,6 +1280,46 @@ impl LibraryStore {
 
 /// Library-relative staging root for `office.attach` copies (never indexed).
 const STAGING_DIR: &str = ".office/attach";
+
+/// A Library root that resolved inside `{{workspace}}/library`.
+struct GrantedRoot {
+    candidate: PathBuf,
+    allowed: PathBuf,
+}
+
+/// Decide containment on the physical path before any create (STD-05 R6).
+///
+/// Lexical `..` and absolute paths are normalized first so a join cannot
+/// spell a different root. A missing suffix is appended to its canonical
+/// ancestor; the spelled path alone is never the decision.
+fn resolve_within_grant(candidate: &Path, workspace_root: &Path) -> Result<GrantedRoot> {
+    let allowed = normalize_path(&workspace_root.join("library"));
+    let candidate = normalize_path(candidate);
+    if candidate != allowed && !candidate.starts_with(&allowed) {
+        return Err(Error::LibraryDirOutside {
+            requested: candidate,
+            allowed,
+        });
+    }
+    // Resolve the grant and destination before creating the lock, index or
+    // Library. A missing suffix is appended to its canonical ancestor.
+    let allowed = resolve_existing_ancestor(&allowed)?;
+    if std::fs::symlink_metadata(&candidate).is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err(Error::UnsafePath {
+            kind: "symlink",
+            value: candidate.display().to_string(),
+        });
+    }
+    let candidate = resolve_existing_ancestor(&candidate)?;
+    if !candidate.starts_with(&allowed) {
+        return Err(Error::LibraryDirOutside {
+            requested: candidate,
+            allowed,
+        });
+    }
+    Ok(GrantedRoot { candidate, allowed })
+}
 
 /// Lexically resolve `.` and `..` without requiring the path to exist.
 fn normalize_path(path: &Path) -> PathBuf {
