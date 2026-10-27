@@ -931,7 +931,9 @@ fn contains_iso_date(run: &str) -> bool {
     })
 }
 
-fn withhold_contacts(body: &str) -> String {
+/// Remove contact values before unstructured evidence reaches a model.
+#[must_use]
+pub(crate) fn withhold_contacts(body: &str) -> String {
     let mut out = String::with_capacity(body.len());
     let mut at = 0;
     for (range, _) in find_contacts(body) {

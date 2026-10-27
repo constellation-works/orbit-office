@@ -10,7 +10,7 @@
 use office_common::Sensitivity;
 use office_core::Error;
 use office_core::domain::endpoint::{Capability, ModelRoute};
-use office_core::ports::DerivedBy;
+use office_core::ports::{DerivedBy, ModelTier};
 
 use crate::http::Destination;
 
@@ -61,6 +61,7 @@ impl ResolvedCall {
 pub(crate) fn route(
     sensitivity: Sensitivity,
     needs: Capability,
+    tier: ModelTier,
     config: &crate::ModelConfig,
 ) -> Result<ResolvedCall, Error> {
     match sensitivity {
@@ -73,7 +74,10 @@ pub(crate) fn route(
             Ok(ResolvedCall {
                 base_url: config.meta_base_url.trim_end_matches('/').to_string(),
                 api_key: Some(api_key),
-                model: config.hosted_model.clone(),
+                model: match tier {
+                    ModelTier::Standard => config.hosted_model.clone(),
+                    ModelTier::Careful => config.careful_model.clone(),
+                },
                 route: ModelRoute::Hosted,
             })
         }

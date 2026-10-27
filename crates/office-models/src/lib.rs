@@ -91,7 +91,7 @@ use office_core::Result;
 use office_core::domain::endpoint::Capability;
 use office_core::domain::settings::OpenWeights;
 use office_core::ports::{
-    DerivedBy, ExtractRequest, ImageReading, ImageRequest, Models, RouteCheck, Routed,
+    DerivedBy, ExtractRequest, ImageReading, ImageRequest, ModelTier, Models, RouteCheck, Routed,
     TranscribeRequest, Transcript,
 };
 use serde_json::Value;
@@ -118,6 +118,8 @@ pub struct ModelConfig {
     pub open_weights: Option<OpenWeights>,
     /// Hosted model slug.
     pub hosted_model: String,
+    /// Hosted model for careful synthesis; defaults to Muse Wonder.
+    pub careful_model: String,
     /// Executable, split threshold and maximum chunk length for transcription.
     pub audio_splitter: media::AudioSplitter,
 }
@@ -133,6 +135,7 @@ impl ModelConfig {
             meta_base_url: DEFAULT_META_BASE_URL.to_string(),
             open_weights: None,
             hosted_model: DEFAULT_HOSTED_MODEL.to_string(),
+            careful_model: office_core::domain::settings::ModelSettings::default().careful,
             audio_splitter: media::AudioSplitter::default(),
         }
     }
@@ -167,9 +170,10 @@ impl RoutedClient {
         &self,
         sensitivity: office_common::Sensitivity,
         needs: Capability,
+        tier: ModelTier,
         body_for: impl FnOnce(&routing::ResolvedCall) -> Value,
     ) -> Result<(String, Value, DerivedBy)> {
-        let resolved = routing::route(sensitivity, needs, &self.config)?;
+        let resolved = routing::route(sensitivity, needs, tier, &self.config)?;
         let (host, response) = self.send(&resolved, &body_for(&resolved))?;
         Ok((host, response, resolved.derived_by()))
     }
@@ -204,13 +208,17 @@ impl RoutedClient {
         sensitivity: office_common::Sensitivity,
         operation: Operation<'_>,
     ) -> Result<(String, DerivedBy)> {
+        let tier = match operation {
+            Operation::Extract { tier, .. } => tier,
+            Operation::Image { .. } => ModelTier::Standard,
+        };
         let needs = match operation {
             Operation::Extract { .. } => Capability::Text,
             Operation::Image { .. } => Capability::Image,
         };
         let (host, response, derived_by) =
-            self.post(sensitivity, needs, |resolved| match operation {
-                Operation::Extract { text, schema } => {
+            self.post(sensitivity, needs, tier, |resolved| match operation {
+                Operation::Extract { text, schema, .. } => {
                     if resolved.is_private() {
                         open_weights::extract_body(&resolved.model, text, schema)
                     } else {
@@ -236,15 +244,19 @@ impl RoutedClient {
         audio: &[u8],
         language: Option<&str>,
     ) -> Result<meta::ParsedTranscript> {
-        let (host, response, _) = self.post(sensitivity, Capability::Audio, |resolved| {
-            meta::transcribe_body(&resolved.model, format, audio, language)
-        })?;
+        let (host, response, _) = self.post(
+            sensitivity,
+            Capability::Audio,
+            ModelTier::Standard,
+            |resolved| meta::transcribe_body(&resolved.model, format, audio, language),
+        )?;
         meta::parse_transcript(&host, &response)
     }
 }
 
 enum Operation<'a> {
     Extract {
+        tier: ModelTier,
         text: &'a str,
         schema: &'a Value,
     },
@@ -288,6 +300,7 @@ impl Models for RoutedClient {
         let (text, derived_by) = self.call(
             request.sensitivity,
             Operation::Extract {
+                tier: request.tier,
                 text: &request.text,
                 schema: &request.schema,
             },

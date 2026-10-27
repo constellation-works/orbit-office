@@ -1,0 +1,14 @@
+# Replayed with one confirmed source and digest, no network or secrets.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: fixture_success_below_bar
+    tool: consolidate
+    input: {"batch_id":"docs"}
+    expect:
+      output: {"batch_id":"docs","new_page_budget":1,"proposed":[],"merged":[],"below_bar":["ingest"],"deferred":[],"conflicts":[],"failed":[],"suppressed":[]}
+  - name: refuses_unknown_input
+    tool: consolidate
+    input: {"batch_id":"docs","force":true}
+    expect:
+      error: {"code":"invalid_argument"}

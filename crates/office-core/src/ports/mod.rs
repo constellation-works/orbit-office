@@ -13,9 +13,10 @@ pub use library::{
     SourceOutcome, SourceView, not_initialized_error,
 };
 pub use models::{
-    DerivedBy, ExtractRequest, ImageReading, ImageRequest, Models, RouteCheck, RouteProbe, Routed,
-    TranscribeRequest, Transcript, TranscriptChunk, TranscriptSegment,
+    DerivedBy, ExtractRequest, ImageReading, ImageRequest, ModelTier, Models, RouteCheck,
+    RouteProbe, Routed, TranscribeRequest, Transcript, TranscriptChunk, TranscriptSegment,
 };
+pub use office_common::Sensitivity;
 pub use orbit::Orbit;
 pub use scripts::ScriptRunner;
 pub use selection::{Selections, UnavailableSelections};

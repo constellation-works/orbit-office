@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.consolidate request",
+  "type": "object",
+  "properties": {
+    "batch_id": {
+      "enum": [
+        "docs",
+        "kt",
+        "team",
+        "process"
+      ]
+    },
+    "requested": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "maxItems": 256
+    }
+  },
+  "required": [
+    "batch_id"
+  ],
+  "additionalProperties": false
+}

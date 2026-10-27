@@ -40,6 +40,8 @@ pub struct Settings {
     pub packs: Vec<String>,
     /// Video keyframe selection bounds.
     pub video: VideoSettings,
+    /// Hosted quality-tier choices; private material uses `open_weights.model`.
+    pub models: ModelSettings,
     /// Optional preview rates; absent rates never become a fabricated price.
     pub costs: Costs,
     /// Signal policy thresholds.
@@ -75,6 +77,20 @@ impl Default for VideoSettings {
         }
     }
 }
+/// Hosted synthesis model selection. No endpoint or credential is accepted here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ModelSettings {
+    /// Model slug for careful cross-source synthesis.
+    pub careful: String,
+}
+impl Default for ModelSettings {
+    fn default() -> Self {
+        Self {
+            careful: "muse-wonder".into(),
+        }
+    }
+}
+
 /// Optional per-unit rates for the cost preview.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Costs {
@@ -176,6 +192,7 @@ impl Default for Settings {
             packs: vec!["kt".into(), "meetings".into()],
             video: VideoSettings::default(),
             costs: Costs::default(),
+            models: ModelSettings::default(),
             thresholds: SignalThresholds {
                 repetition_count: 3,
                 window_days: 30,
@@ -222,6 +239,10 @@ impl Settings {
             defaults.thresholds.new_subject_count,
             defaults.thresholds.unused_days
         ));
+        out.push_str(&format!(
+            "models:\n  careful: {}\n",
+            defaults.models.careful
+        ));
         out.push_str("video:\n  max_frames_per_hour: 120\n  scene_threshold: 0.3\ncosts:\n  currency: null\n  audio_minute: null\n  image: null\n  text_1k_tokens: null\nopen_weights: null\n");
         out.push_str(&format!("scripts:\n  timeout_seconds: {}\n  log_bytes: {}\n  output_files: {}\n  output_file_bytes: {}\n", defaults.scripts.timeout_seconds, defaults.scripts.log_bytes, defaults.scripts.output_files, defaults.scripts.output_file_bytes));
         out
@@ -256,6 +277,7 @@ impl Settings {
                     "scripts",
                     "video",
                     "costs",
+                    "models",
                     "demo",
                 ]
                 .contains(&section) =>
@@ -421,6 +443,29 @@ impl TryFrom<Value> for Settings {
                             }
                             _ => return Err(invalid(&key, "unknown video setting")),
                         }
+                    }
+                }
+                "models" => {
+                    let items = value
+                        .as_object()
+                        .ok_or_else(|| invalid(key, "expected a mapping"))?;
+                    for (name, value) in items {
+                        let key = format!("models.{name}");
+                        if name != "careful" {
+                            return Err(invalid(&key, "unknown model tier"));
+                        }
+                        settings.models.careful = value
+                            .as_str()
+                            .filter(|v| {
+                                !v.is_empty()
+                                    && v.len() <= 128
+                                    && v.bytes()
+                                        .all(|c| c.is_ascii_alphanumeric() || b"-._/:".contains(&c))
+                            })
+                            .ok_or_else(|| {
+                                invalid(&key, "expected a model slug of at most 128 ASCII bytes")
+                            })?
+                            .into();
                     }
                 }
                 "costs" => {

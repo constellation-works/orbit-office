@@ -339,14 +339,14 @@ spec:
       input_schema: { $ref: schemas/batch-plan.request.json }
       output_schema: { $ref: schemas/batch-plan.response.json }
 
-    # - name: consolidate
-    #   description: >-
-    #     Group a confirmed batch's digests by subject, apply the page
-    #     rules, and file one knowledge proposal per page.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/consolidate.request.json }
-    #   output_schema: { $ref: schemas/consolidate.response.json }
+    - name: consolidate
+      description: >-
+        Group a confirmed batch's digests by subject, apply the page
+        rules, and file one knowledge proposal per page.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/consolidate.request.json }
+      output_schema: { $ref: schemas/consolidate.response.json }
 
     - name: bootstrap-status
       description: >-

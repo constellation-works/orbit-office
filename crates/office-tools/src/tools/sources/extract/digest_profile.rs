@@ -148,6 +148,7 @@ pub(super) fn run(call: &Call<'_>, id: &str) -> Result<Value> {
         }
         call.ports.models.extract_planned(
             &ExtractRequest {
+                tier: office_core::ports::ModelTier::Standard,
                 text,
                 schema: extraction::schema(),
                 sensitivity,

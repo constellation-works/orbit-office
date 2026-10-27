@@ -391,6 +391,12 @@
               "items": {
                 "type": "string"
               }
+            },
+            "deferred_subjects": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "required": [

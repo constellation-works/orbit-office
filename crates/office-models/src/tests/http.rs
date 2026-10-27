@@ -19,6 +19,7 @@ fn does_not_follow_redirect_to_an_unlisted_host() {
     let adapter = client(hosted_config(&redirect.base_url));
     let models: &dyn Models = &adapter;
     let result = models.extract(&ExtractRequest {
+        tier: office_core::ports::ModelTier::Standard,
         text: "receipt".into(),
         schema: receipt_schema(),
         sensitivity: Sensitivity::Normal,
@@ -45,6 +46,7 @@ fn a_private_endpoint_redirect_never_reaches_its_target() {
     let models = client(config);
 
     let result = models.extract(&ExtractRequest {
+        tier: office_core::ports::ModelTier::Standard,
         text: "private receipt".into(),
         schema: receipt_schema(),
         sensitivity: Sensitivity::Private,

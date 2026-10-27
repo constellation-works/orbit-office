@@ -2,6 +2,7 @@ mod attach;
 mod batch_plan;
 mod bootstrap_status;
 mod capture;
+mod consolidate;
 mod digest;
 mod extract;
 mod frames;
