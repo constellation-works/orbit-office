@@ -16,9 +16,8 @@ planned features mount no routes, and planned screens stay out of navigation.
 serving with loopback Host/Origin guards, and the dispatch pass — is
 built (below).
 
-Settings has a built screen with Connections and API calls sections. Its navigation
-registration in `web/src/router.ts` remains a separate integrator change; it is
-not reachable from the main navigation yet. The screen's browser suite mounts
+Settings has a built screen with Connections, Private route and API calls
+sections, and it is in the main navigation. The screen's browser suite mounts
 the production renderer directly for validation.
 
 Connections lists API access and secret presence, with add, edit, disable and
@@ -35,8 +34,13 @@ first, with time, connection, method, path, HTTP status, size, duration and call
 labels. It omits response bodies and internal caller identifiers. Both sections
 show failures and empty states separately, and support the shared light theme
 at desktop and phone widths. The Settings endpoints are
-`GET /api/settings/connections`, `POST /api/settings/connections/put` and
+`GET /api/settings/connections`, `POST /api/settings/connections/put`,
+`GET /api/settings/private-route`, `POST /api/settings/private-route` and
 `GET /api/settings/api-calls`; `GET /api/settings` still reports the agent CLI.
+Private route saves the `open_weights` block with `office.config-set`, then runs
+`office.private-route-check` once. Its token goes only to
+`orbit plugin secret set office open_weights_token` on stdin. The footer and the
+section show "Built with Muse Spark Open" only when an endpoint is configured.
 Connection reads and full writes carry the optional `idempotency_header` gateway
 field; the Settings editor and enable/disable controls preserve existing values.
 An HTTP client can change it by supplying a new header name or remove it by
@@ -116,8 +120,9 @@ SETTINGS_SCREENSHOTS_DIR="$PWD/.orbit/tmp/screenshots" node --test app/packages/
 ```
 
 Run this from the repository root after the app build. It captures Connections,
-the connection editor and API calls at 1440px and 375px. A before screenshot is
-not applicable because the base has no Settings screen.
+the connection editor, API calls, and the private route (empty and configured)
+at 1440px and 375px in the light theme. The app has no dark theme. A before
+shot of the private route was not captured: the base revision has no such section.
 
 ## Develop
 

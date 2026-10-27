@@ -1,5 +1,5 @@
 /**
- * Settings: agent CLI, gateway connections and redacted API call history.
+ * Settings: agent CLI, the private route, gateway connections and redacted API call history.
  *
  * Built: reports whether the install script has registered Orbit MCP with
  * the user's agent CLI (docs/design/office/specs/web-app.md#delivery).
@@ -13,6 +13,7 @@ import type { Feature } from "../../http/types.js";
 import { agentCliStatus } from "./agent-cli.js";
 import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
 import { auditRow, connection, connectionInput, count, object, SettingsError, toolData } from "./gateway.js";
+import { privateRouteInput, readPrivateRoute, savePrivateRoute } from "./private-route.js";
 import { isSlot, SecretError, writeSecret, type SecretOptions } from "./secret.js";
 
 function sendSettings(_request: IncomingMessage, response: ServerResponse): void {
@@ -55,7 +56,7 @@ export function createSettingsFeature(client: OrbitToolClient, secretOptions: Se
       try { send(response, 200, await action(request)); }
       catch (error) {
         // No error messages, child streams, request bodies or tool output are logged.
-        if (error instanceof SettingsError) send(response, error.status, { error: error.code });
+        if (error instanceof SettingsError) send(response, error.status, { error: error.code, ...error.details });
         else if (error instanceof SecretError) send(response, 502, { error: error.code, connection_saved: true });
         else send(response, 502, { error: "gateway_unavailable" });
       }
@@ -86,6 +87,14 @@ export function createSettingsFeature(client: OrbitToolClient, secretOptions: Se
         }
         return { connection: saved, created: data.created };
       } finally { writing = false; }
+    }),
+    route("GET", "/api/settings/private-route", async () => readPrivateRoute(client)),
+    route("POST", "/api/settings/private-route", async (request) => {
+      const input = privateRouteInput(await readBody(request));
+      if (writing) throw new SettingsError(503, "settings_busy");
+      writing = true;
+      try { return await savePrivateRoute(client, input, secretOptions); }
+      finally { writing = false; }
     }),
     route("GET", "/api/settings/api-calls", async () => {
       const data = toolData(await client.callTool("gateway.audit-list", { limit: 100 }));

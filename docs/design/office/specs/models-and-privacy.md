@@ -128,6 +128,8 @@ source's `derived_by`.
 The Muse Model License asks products built with the model to show "Built
 with Muse Spark Open" prominently. The app shows it in its footer and in
 Settings whenever a private endpoint is configured, and the README says it.
+The app learns that from `office.status`: `open_weights` is the public block,
+or null when nothing is configured, and the attribution is shown only then.
 The commercial terms of the license (an agreement with Meta for a
 hosted-model service with over $20M in yearly revenue) do not apply to a
 user's own use.

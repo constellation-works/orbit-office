@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { ApiError, getApiCalls, getConnections, getHealth, getJson, putConnection } from "../dist/api/client.js";
+import { ApiError, getApiCalls, getConnections, getHealth, getJson, getPrivateRoute, putConnection, savePrivateRoute } from "../dist/api/client.js";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -29,6 +29,23 @@ test("Settings helpers read connections and audit and post entered fields", asyn
   assert.deepEqual(JSON.parse(calls[2].options.body), input);
   globalThis.fetch = async () => new Response('{"error":"secret_not_saved"}', { status: 502 });
   await assert.rejects(putConnection(input), (error) => error instanceof ApiError && error.code === "secret_not_saved" && !error.message.includes(input.secret));
+});
+
+test("private route helpers read status and post the block without putting the token in an error", async () => {
+  const calls = [];
+  const input = { endpoint: "https://muse.example/v1", model: "muse", kind: "company", label: "Acme", token: "route-token" };
+  globalThis.fetch = async (path, options) => {
+    calls.push({ path, options });
+    if (options?.method === "POST") return new Response(JSON.stringify({ route: { label: "Acme" }, check: { routable: true, checks: [] } }));
+    return new Response(JSON.stringify({ route: null, token: "unset" }));
+  };
+  assert.deepEqual(await getPrivateRoute(), { route: null, token: "unset" });
+  assert.equal((await savePrivateRoute(input)).check.routable, true);
+  assert.deepEqual(calls.map((call) => call.path), ["/api/settings/private-route", "/api/settings/private-route"]);
+  assert.equal(calls[1].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[1].options.body), input);
+  globalThis.fetch = async () => new Response('{"error":"secret_not_saved","route_saved":true}', { status: 502 });
+  await assert.rejects(savePrivateRoute(input), (error) => error instanceof ApiError && error.code === "secret_not_saved" && error.routeSaved === true && !error.message.includes(input.token));
 });
 
 test("HTTP, network and invalid JSON failures use ApiError", async () => {

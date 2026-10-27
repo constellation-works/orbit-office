@@ -79,6 +79,66 @@ export interface ApiCall {
 }
 export interface SettingsApiCalls { records: ApiCall[]; skipped: number }
 
+/** Where the one private endpoint runs. */
+export type EndpointKind = "company" | "provider" | "own_hardware";
+
+/** A modality `office.private-route-check` probes. */
+export type RouteCapability = "text" | "image" | "audio";
+
+/**
+ * The public private-route block from `office.status`. The token is never
+ * a field here; presence is `PrivateRouteStatus.token`.
+ */
+export interface PrivateRouteBlock {
+  endpoint: string;
+  model: string;
+  kind: EndpointKind;
+  label: string;
+  /** Null until a check has recorded what the endpoint accepted. */
+  capabilities: RouteCapability[] | null;
+  /** RFC 3339 time of the last check, or null until then. */
+  verified_at: string | null;
+}
+
+/** `GET /api/settings/private-route`. */
+export interface PrivateRouteStatus {
+  route: PrivateRouteBlock | null;
+  token: "set" | "unset";
+}
+
+/** `POST /api/settings/private-route`. Omit `token` to leave the saved one. */
+export interface PrivateRouteWrite {
+  endpoint: string;
+  model: string;
+  kind: EndpointKind;
+  label: string;
+  token?: string;
+}
+
+/** One probe, in plain words. Tool error codes are not part of this contract. */
+export interface PrivateRouteCheckLine {
+  capability: RouteCapability;
+  accepted: boolean;
+  elapsed_ms: number | null;
+  note: string | null;
+}
+
+/** The check the save just ran. Paths and probe error codes are omitted. */
+export interface PrivateRouteCheck {
+  label: string;
+  kind: EndpointKind;
+  model: string;
+  routable: boolean;
+  capabilities: RouteCapability[];
+  checks: PrivateRouteCheckLine[];
+}
+
+/** `POST /api/settings/private-route` success. No token value. */
+export interface PrivateRouteSaved {
+  route: Pick<PrivateRouteBlock, "endpoint" | "model" | "kind" | "label">;
+  check: PrivateRouteCheck;
+}
+
 /** Work shown on Today. Keys identify items for the UI, never display labels. */
 export interface TodayItem {
   key: string;

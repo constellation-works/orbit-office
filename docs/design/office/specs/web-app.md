@@ -112,7 +112,22 @@ For the event the app ships as a local web app, not a desktop app
 
 The installable shell (manifest and service worker) and the agent-CLI
 settings read have landed ([ORB-18735]). Connections and the API calls
-view are the rest of Settings ([ORB-18798]).
+view are built ([ORB-18798]).
+
+### Private route
+
+The Private route section is built ([ORB-18841]). It asks for the endpoint
+kind (your company's server, a hosted provider, or your own hardware), the
+URL, the model and the label, and shows where that material goes. The section
+always says "Private means not sent to Meta's hosted API, sent only to the
+endpoint you chose". Saving writes the whole `open_weights` block with
+`office.config-set`, then runs `office.private-route-check` once. A token, when
+one was typed, goes only to `orbit plugin secret set office open_weights_token`
+on stdin and is never shown again. The check's capabilities are shown in plain
+words (a refused audio probe says that private videos can't be transcribed).
+`GET /api/settings/private-route` reads the block from `office.status`
+(`open_weights`, or null). The footer and the section show "Built with Muse
+Spark Open" only when a block is configured.
 
 ## Task References
 
@@ -121,5 +136,6 @@ view are the rest of Settings ([ORB-18798]).
 - [ORB-18728] — built the To-dos screen and `GET /api/todos`.
 - [ORB-18735] — built the PWA shell and the settings feature's agent-CLI read.
 - [ORB-18798] — builds the Settings connections and API calls views.
+- [ORB-18841] — builds the Settings private route and the Muse Spark Open attribution.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

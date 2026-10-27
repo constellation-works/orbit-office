@@ -2,7 +2,11 @@
 import type { ApiCall, ConnectionInput, ConnectionWrite, SettingsConnection } from "@orbit-office/contracts";
 
 export class SettingsError extends Error {
-  constructor(readonly status: number, readonly code: string) { super(code); }
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    readonly details: { route_saved?: true } = {},
+  ) { super(code); }
 }
 
 export function object(value: unknown): value is Record<string, unknown> {

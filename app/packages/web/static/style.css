@@ -44,4 +44,7 @@ h2, h3 { line-height: 1.25; margin: 0; }
 .today-background { margin-bottom: 0; }
 .today [role="alert"] { margin-bottom: 24px; }
 @media (max-width: 600px) { .today-working-line { flex-direction: column; gap: 8px; } .today-working .card-grid { padding: 0 20px; } }
+.site-footer { width: min(100% - 32px, 1120px); margin: 0 auto; padding: 0 0 48px; color: #526660; font-size: .95rem; }
+.site-footer p { margin: 0; }
+.site-footer:empty { display: none; }
 @media (max-width: 600px) { .header-inner { gap: 12px; } main { padding-top: 32px; } .card, .state { padding: 20px; } }

@@ -1,7 +1,10 @@
 //! `office.status`: the plugin version, which declared secrets are set
-//! (never a secret value; STD-05), and Library and index health.
-//! Reading health creates no Library state.
+//! (never a secret value; STD-05), Library and index health, and the
+//! configured private endpoint (`open_weights`, or null). The token is
+//! only `set` or `unset` under `secrets`. Reading creates no Library state.
 
+use office_core::domain::endpoint::Capability;
+use office_core::domain::settings::OpenWeights;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Result, SECRET_NAMES, VERSION};
 use serde_json::{Map, Value, json};
@@ -47,6 +50,17 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         }
         Err(error) => return Err(error),
     };
+    // An uninitialized Library has no settings file. A configured one is
+    // read afresh; a refusal (invalid config, pending write) stays an error
+    // rather than looking like "no endpoint".
+    let open_weights = if health.initialized {
+        match call.ports.library.settings() {
+            Ok(settings) => project_open_weights(settings.open_weights.as_ref()),
+            Err(error) => return Err(error),
+        }
+    } else {
+        Value::Null
+    };
     Ok(json!({
         "version": VERSION,
         "secrets": secrets,
@@ -62,5 +76,28 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
             "pages_off_template": health.pages_off_template,
             "template_invalid": health.template_invalid,
         },
+        "open_weights": open_weights,
     }))
+}
+
+/// Public endpoint fields only. Capabilities and `verified_at` are null
+/// until a check has recorded them. The token is never copied here.
+fn project_open_weights(block: Option<&OpenWeights>) -> Value {
+    let Some(block) = block else {
+        return Value::Null;
+    };
+    let capabilities = block.capabilities.as_ref().map(|caps| {
+        caps.iter()
+            .copied()
+            .map(Capability::as_str)
+            .collect::<Vec<&str>>()
+    });
+    json!({
+        "endpoint": &block.endpoint,
+        "model": &block.model,
+        "kind": block.kind.as_str(),
+        "label": &block.label,
+        "capabilities": capabilities,
+        "verified_at": &block.verified_at,
+    })
 }

@@ -18,14 +18,32 @@ export function isSlot(slot: unknown): slot is string {
   return typeof slot === "string" && /^conn_(0[1-9]|1[0-6])$/.test(slot);
 }
 
+/** The private-route token. The name is fixed; the value travels on stdin only. */
+export function writeOpenWeightsToken(value: string, options: SecretOptions = {}): Promise<void> {
+  if (value.length === 0) return Promise.reject(new SecretError("secret_not_saved"));
+  return runSecret("set", "office", "open_weights_token", value, "secret_not_saved", options);
+}
+
 export async function writeSecret(
   verb: "set" | "rm", slot: string, value: string | undefined, options: SecretOptions = {},
 ): Promise<void> {
   const failure = verb === "set" ? "secret_not_saved" : "secret_cleanup_failed";
+  if (!isSlot(slot)) throw new SecretError(failure);
+  await runSecret(verb, "gateway", slot, value, failure, options);
+}
+
+async function runSecret(
+  verb: "set" | "rm",
+  scope: string,
+  name: string,
+  value: string | undefined,
+  failure: SecretError["code"],
+  options: SecretOptions,
+): Promise<void> {
   const timeoutMs = options.timeoutMs ?? 10_000;
-  if (!isSlot(slot) || !Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new SecretError(failure);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new SecretError(failure);
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(options.command ?? "orbit", ["plugin", "secret", verb, "gateway", slot], {
+    const child = spawn(options.command ?? "orbit", ["plugin", "secret", verb, scope, name], {
       env: options.env ?? process.env,
       // Discard output at the OS boundary, even if Orbit echoes a credential.
       stdio: ["pipe", "ignore", "ignore"],
