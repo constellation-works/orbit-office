@@ -160,6 +160,88 @@ test("a fresh poll result is reused inside the cache window", async (t) => {
   assert.equal(invocations.length, 1);
 });
 
+/** Parse the `--input` JSON of every logged fake-orbit invocation. */
+async function invocationInputs(state) {
+  const lines = await readLines(join(state, "invocations.log"));
+  return lines.map((line) => {
+    const args = JSON.parse(line);
+    const index = args.indexOf("--input");
+    return { tool: args[2], input: JSON.parse(args[index + 1]) };
+  });
+}
+
+test("a bound client sends the workspace selector for orbit.routine.control", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const client = createOrbitClient({
+    timeoutMs: 5_000,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+  });
+  const result = await client.callTool("orbit.routine.control", { action: "list" });
+  assert.equal(result.input.workspace, "/installed/workspace");
+  const invocations = await invocationInputs(fake.state);
+  assert.equal(invocations.length, 1);
+  assert.equal(invocations[0].tool, "orbit.routine.control");
+  assert.deepEqual(invocations[0].input, { action: "list", workspace: "/installed/workspace" });
+});
+
+test("an explicit workspace option overrides the environment binding", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const client = createOrbitClient({
+    timeoutMs: 5_000,
+    workspace: "/explicit/workspace",
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/env/workspace" }),
+  });
+  await client.callTool("orbit.routine.control", { action: "list" });
+  const invocations = await invocationInputs(fake.state);
+  assert.equal(invocations[0].input.workspace, "/explicit/workspace");
+});
+
+test("workspace-less and non-requiring calls send input unchanged", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const unboundEnv = fake.env();
+  delete unboundEnv.ORBIT_OFFICE_WORKSPACE;
+  const unbound = createOrbitClient({ timeoutMs: 5_000, env: unboundEnv });
+  await unbound.callTool("orbit.routine.control", { action: "list" });
+  const bound = createOrbitClient({
+    timeoutMs: 5_000,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+  });
+  await bound.callTool("orbit.task.list", { status: "backlog" });
+  const invocations = await invocationInputs(fake.state);
+  assert.deepEqual(invocations[0].input, { action: "list" });
+  assert.deepEqual(invocations[1].input, { status: "backlog" });
+});
+
+test("a caller-supplied workspace is not overwritten, including via pollTool", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const client = createOrbitClient({
+    timeoutMs: 5_000,
+    pollCacheTtlMs: 0,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+  });
+  await client.callTool("orbit.routine.control", { action: "list", workspace: "/caller/workspace" });
+  await client.pollTool("orbit.routine.control", { action: "list" });
+  const invocations = await invocationInputs(fake.state);
+  assert.equal(invocations[0].input.workspace, "/caller/workspace");
+  assert.equal(invocations[1].input.workspace, "/installed/workspace");
+});
+
 const SUPERVISION_CLIENT = {
   timeoutMs: 100,
   command: "orbit-supervision-double",

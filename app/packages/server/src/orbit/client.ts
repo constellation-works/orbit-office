@@ -16,6 +16,25 @@
  * are typed errors, never bare strings. `pollTool` adds a single-flight
  * cache so many browser tabs polling the same tool share one subprocess,
  * and a short-lived result is reused inside `pollCacheTtlMs`.
+ *
+ * Workspace binding: the installed app receives its workspace as the
+ * `ORBIT_OFFICE_WORKSPACE` environment variable (install.sh service
+ * templates; the absolute path recorded as `workspace_path`). Tools that
+ * require an explicit workspace selector (see
+ * {@link WORKSPACE_REQUIRING_TOOLS}, initially `orbit.routine.control`)
+ * get `workspace: <binding>` injected into their input when the caller
+ * did not supply one. All other tools are sent unchanged, so callers
+ * that rely on cwd discovery (for example to-dos calling
+ * `orbit.task.list`) keep working. No code here reads `.orbit/`.
+ *
+ * Authority: the binding names the workspace and grants no operator
+ * capability. No `ORBIT_OPERATOR` or other authority variable is put in
+ * the service templates, because that would be a standing operator grant
+ * to a login service. Until an Orbit-side decision delivers the operator
+ * capability to the installed app by another mechanism,
+ * `orbit.routine.control` returns `capability_denied` to the app; the
+ * precise Orbit-side follow-up is filed in ws_orbit (see the ORB-18898
+ * handoff) and ORB-18731 stays blocked on it.
  */
 import { spawn } from "node:child_process";
 
@@ -140,6 +159,14 @@ export interface OrbitClientOptions {
   pollCacheTtlMs?: number;
   /** Environment for the child. Default `process.env` (the call runs as the user). */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Installed-workspace binding: the absolute workspace path delivered as
+   * `ORBIT_OFFICE_WORKSPACE` by install.sh. Default: that variable from
+   * `env` (or `process.env`). An explicit value overrides the environment;
+   * an empty value is treated as unset. Used only for
+   * {@link WORKSPACE_REQUIRING_TOOLS}; see the module docstring.
+   */
+  workspace?: string;
   /** Captured-output byte ceiling per stream. Default 10 MiB. */
   maxOutputBytes?: number;
 }
@@ -164,6 +191,16 @@ const DEFAULT_MAX_QUEUED = 32;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_CACHE_TTL_MS = 2_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+
+/** Environment variable carrying the installed-workspace binding. */
+export const WORKSPACE_ENV = "ORBIT_OFFICE_WORKSPACE";
+
+/**
+ * Tools that require an explicit `workspace` selector in their input.
+ * Only these receive the installed-workspace binding; every other tool
+ * is sent exactly as the caller wrote it.
+ */
+export const WORKSPACE_REQUIRING_TOOLS: ReadonlySet<string> = new Set(["orbit.routine.control"]);
 
 /** Stable cache key: tool name plus JSON with recursively sorted keys. */
 function cacheKey(name: string, input: Record<string, unknown>): string {
@@ -197,6 +234,8 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
   const queueWaitMs = options.queueWaitMs ?? timeoutMs;
   const pollCacheTtlMs = options.pollCacheTtlMs ?? DEFAULT_POLL_CACHE_TTL_MS;
   const env = options.env ?? process.env;
+  const rawWorkspace = options.workspace ?? env[WORKSPACE_ENV];
+  const workspaceBinding = rawWorkspace !== undefined && rawWorkspace.trim() !== "" ? rawWorkspace : undefined;
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
     throw new RangeError("maxConcurrent must be a positive integer");
@@ -453,19 +492,28 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
     });
   }
 
+  /** Inject the binding before any cache key is built from the input. */
+  function withWorkspace(name: string, input: Record<string, unknown>): Record<string, unknown> {
+    if (!WORKSPACE_REQUIRING_TOOLS.has(name)) return input;
+    if (workspaceBinding === undefined) return input;
+    if (input.workspace !== undefined) return input;
+    return { ...input, workspace: workspaceBinding };
+  }
+
   return {
     callTool(name, input) {
-      return runSubprocess(name, input);
+      return runSubprocess(name, withWorkspace(name, input));
     },
     pollTool(name, input) {
-      const key = cacheKey(name, input);
+      const effective = withWorkspace(name, input);
+      const key = cacheKey(name, effective);
       const cached = pollCache.get(key);
       if (cached !== undefined && cached.expiresAt > Date.now()) {
         return Promise.resolve(cached.value);
       }
       const inflight = inflightPolls.get(key);
       if (inflight !== undefined) return inflight;
-      const promise = runSubprocess(name, input).then(
+      const promise = runSubprocess(name, effective).then(
         (value) => {
           inflightPolls.delete(key);
           if (pollCacheTtlMs > 0) {
