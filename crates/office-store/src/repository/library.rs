@@ -61,6 +61,17 @@ struct PendingOriginal {
     bytes: Vec<u8>,
 }
 
+/// Keep upload extensions safe for conversion and inline source frontmatter.
+/// A non-alphanumeric suffix starts an untrusted tail, so retain only the
+/// leading ASCII alphanumeric extension and normalize it to lowercase.
+fn normalize_upload_extension(extension: &str) -> String {
+    extension
+        .chars()
+        .take_while(|character| character.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
 /// A journal as read from disk, before its version gate is applied.
 /// Version-1 journals predate `kind` and are always documents; version-2
 /// journals must carry `kind` explicitly. Defaulting a missing `kind` on
@@ -974,7 +985,8 @@ impl LibraryStore {
         if Path::new(raw)
             .extension()
             .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| convert::is_document(&ext.to_ascii_lowercase()))
+            .map(normalize_upload_extension)
+            .is_some_and(|ext| convert::is_document(&ext))
         {
             use std::io::Read;
             let file = std::fs::File::open(&canonical)
@@ -1025,11 +1037,8 @@ impl LibraryStore {
         if let Some(raw) = &request.upload_path {
             let bytes = self.read_contained(raw)?;
             let path = Path::new(raw);
-            upload_ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
+            upload_ext =
+                normalize_upload_extension(path.extension().and_then(|e| e.to_str()).unwrap_or(""));
             upload_stem = path
                 .file_stem()
                 .and_then(|e| e.to_str())
