@@ -331,6 +331,7 @@ fn assert_extraction_refuses_schema_violations(sensitivity: office_common::Sensi
         let models: &dyn Models = &adapter;
         let error = models
             .extract(&ExtractRequest {
+                tier: office_core::ports::ModelTier::Standard,
                 text: "receipt".into(),
                 schema: receipt_schema(),
                 sensitivity,

@@ -325,3 +325,58 @@ use the `policy` tag. A current `as_of` is a valid date or timestamp, no later
 than now, no older than `thresholds.stale_days`, and (for pages) at least as new
 as the latest cited digest's date. Status never creates a ledger, index or
 layout, and refuses an abandoned write pending recovery by a mutating operation.
+
+`office.consolidate` accepts `{batch_id: "docs"}` (the phase ledger key from
+`office.batch-plan` list mode). Optional `requested: ["Subject name"]` explicitly
+requests those subjects and bypasses the new About page's source-count bar. It
+reads stored digests; caller-supplied digests or page targets are not accepted.
+Every source in the confirmed plan must have a digest. Earlier phases enrich
+matching subjects, but never create an unrelated candidate in this batch.
+
+Names use lowercase alphanumeric tokens with punctuation replaced by spaces.
+Aliases merge transitively. Existing page titles and aliases bridge groups;
+exact matches take precedence over Jaccard token overlap (intersection divided
+by union, at least 0.6). Page ids break ties deterministically. Runbooks and
+About pages have separate identities. An ambiguous alias component spanning two
+existing pages refuses with `ambiguous_subject`. One-per-Library templates
+combine their subjects and update their existing singleton when present.
+
+A complete digest procedure is treated as repeatable: nonempty inputs, at least
+two steps with resolvable source citations, and a nonempty `done_when`. It forms
+a separate runbook candidate. An incomplete procedure belongs to its matching
+About subject, otherwise the digest's first topic in normalized order (a topic
+candidate is introduced if none exists, still subject to the source bar). An
+incomplete procedure labeled as a runbook subject is folded the same way. Terms
+belong to a glossary subject when present, otherwise the first topic. The digest
+format has no explicit subject field for procedures or terms. Uncited or dangling
+claims, steps and terms are excluded again before inference. Volatile claims are
+excluded entirely. Current pages use their contact-withholding model view.
+
+The closed careful reply is `{body, conflicts: [{current: {text, cites},
+superseded: {text, cites}}]}`. Each conflict must identify exact supplied claims
+from different sources with valid dates; current must be strictly newer. Both
+claims and citations are materialized in a conflict section. Invalid replies,
+pages missing required template sections, invalid citations and pages exceeding
+the word cap are reported as failed subjects without filing their proposals.
+The model never selects page ids, templates or update revisions.
+
+The report contains `batch_id`, `new_page_budget`, `proposed`, `merged`,
+`below_bar`, `deferred`, `conflicts`, `failed` and `suppressed`. Proposal entries
+are `{subject, page, proposal}`; `merged` is the subset updating an existing
+page. `below_bar` and `deferred` list normalized subject keys. Failures contain
+`{subject, code}`. A recently dismissed equivalent proposal is `suppressed` by
+`office.proposal-create`. Proposals retain `bootstrap:<phase>` tags and require
+normal proposal acceptance; consolidation never writes an accepted page.
+
+Consolidation claims the batch with a compare-and-swap progress write, reserves
+each careful call before inference, and makes no automatic retries. All needed
+original/additional allowances must already be confirmed. A started batch
+refuses another invocation with `batch_started`, including after an uncertain
+failure; inspect its proposals and failure progress before planning again.
+Successful subjects leave `consolidating`; failures remain visible, while
+page-cap overflow stays in `overflow`. An additional phase preview carries
+`plan.deferred_subjects` (omitted for ordinary plans) and reuses the phase's
+stored digests without spending digest calls. After its fresh confirmation it
+considers the deferred subjects and any newly captured sources, so earlier
+proposals are not filed again. Each separately confirmed batch has its own
+new-page budget. Changed carried digests invalidate that new approval.

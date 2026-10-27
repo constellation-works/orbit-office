@@ -21,7 +21,12 @@ pub(crate) fn planned(
         ));
     }
     let format = audio_format(&request.mime)?;
-    let resolved = routing::route(request.sensitivity, Capability::Audio, &client.config)?;
+    let resolved = routing::route(
+        request.sensitivity,
+        Capability::Audio,
+        office_core::ports::ModelTier::Standard,
+        &client.config,
+    )?;
     let parsed = client.transcribe_chunk(
         request.sensitivity,
         format,
@@ -42,7 +47,12 @@ pub(crate) fn transcribe(
     let format = audio_format(&request.mime)?;
     // Refuse an unusable route before staging private media or starting
     // ffmpeg. Every chunk resolves the same route, so this is its record.
-    let resolved = routing::route(request.sensitivity, Capability::Audio, &client.config)?;
+    let resolved = routing::route(
+        request.sensitivity,
+        Capability::Audio,
+        office_core::ports::ModelTier::Standard,
+        &client.config,
+    )?;
     http::check_url(&meta::chat_url(&resolved.base_url), resolved.destination())?;
     let derived_by = resolved.derived_by();
     let call = |audio: &[u8], offset_ms: u64| {

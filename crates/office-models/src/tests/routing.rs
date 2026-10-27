@@ -12,6 +12,7 @@ use super::{
 
 fn extract(sensitivity: Sensitivity) -> ExtractRequest {
     ExtractRequest {
+        tier: office_core::ports::ModelTier::Standard,
         text: "sensitive minutes".into(),
         schema: json!({"type": "object"}),
         sensitivity,
@@ -249,4 +250,80 @@ fn refuses_a_plain_http_private_endpoint_off_loopback() {
         .extract(&extract(Sensitivity::Private))
         .expect_err("plain http off loopback");
     assert_eq!(error.code(), "model_host_not_allowed");
+}
+
+#[test]
+fn careful_tier_routes_to_default_or_configured_hosted_model_and_never_overrides_private() {
+    use office_core::ports::ModelTier;
+    for model in ["muse-wonder", "custom-careful-model"] {
+        let meta = FakeServer::start(200, chat_reply("{}"));
+        let company = FakeServer::start(200, chat_reply("{}"));
+        let mut config = hosted_config(&meta.base_url);
+        if model != "muse-wonder" {
+            config.careful_model = model.into();
+        }
+        config.open_weights = Some(open_weights(&company.base_url));
+        let normal = crate::routing::route(
+            Sensitivity::Normal,
+            Capability::Text,
+            ModelTier::Careful,
+            &config,
+        )
+        .unwrap();
+        assert_eq!(normal.model, model);
+        let private = crate::routing::route(
+            Sensitivity::Private,
+            Capability::Text,
+            ModelTier::Careful,
+            &config,
+        )
+        .unwrap();
+        assert_eq!(private.model, PRIVATE_MODEL);
+        let adapter = client(config);
+        for sensitivity in [Sensitivity::Normal, Sensitivity::Private] {
+            let mut request = extract(sensitivity);
+            request.tier = ModelTier::Careful;
+            let reply = adapter.extract(&request).unwrap();
+            assert_eq!(
+                reply.derived_by.model,
+                if sensitivity == Sensitivity::Normal {
+                    model
+                } else {
+                    PRIVATE_MODEL
+                }
+            );
+        }
+        let hosted: serde_json::Value = serde_json::from_str(&meta.requests()[0].body).unwrap();
+        assert_eq!(hosted["model"], model);
+        assert_eq!(meta.requests().len(), 1);
+        let private: serde_json::Value = serde_json::from_str(&company.requests()[0].body).unwrap();
+        assert_eq!(private["model"], PRIVATE_MODEL);
+        assert_eq!(company.requests().len(), 1);
+    }
+}
+
+#[test]
+fn careful_private_calls_refuse_missing_or_unverified_routes_without_hosted_fallback() {
+    use office_core::ports::ModelTier;
+    for configured in [false, true] {
+        let meta = FakeServer::start(200, chat_reply("{}"));
+        let private = FakeServer::start(200, chat_reply("{}"));
+        let mut config = hosted_config(&meta.base_url);
+        if configured {
+            config.open_weights = Some(open_weights_with(&private.base_url, None));
+        }
+        let mut request = extract(Sensitivity::Private);
+        request.tier = ModelTier::Careful;
+        let error = client(config).extract(&request).unwrap_err();
+        assert_eq!(
+            error.code(),
+            if configured {
+                "private_endpoint_unverified"
+            } else {
+                "private_endpoint_unconfigured"
+            }
+        );
+        assert!(meta.requests().is_empty());
+        assert!(private.requests().is_empty());
+    }
 }

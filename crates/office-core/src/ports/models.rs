@@ -122,9 +122,21 @@ pub struct Transcript {
     pub chunks: Vec<TranscriptChunk>,
 }
 
+/// Extraction quality tier. Privacy routing takes precedence over this choice.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ModelTier {
+    /// Routine extraction (Muse Spark on the hosted route).
+    #[default]
+    Standard,
+    /// Cross-source synthesis (the Library's `models.careful` hosted model).
+    Careful,
+}
+
 /// Text to extract structured JSON from, with its source's sensitivity.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExtractRequest {
+    /// Quality tier; private calls always use the configured private model.
+    pub tier: ModelTier,
     /// Source text (the source's model view, never raw contact details).
     pub text: String,
     /// JSON Schema the returned value must satisfy.

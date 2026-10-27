@@ -22,6 +22,7 @@ fn digest_schema_accepts_the_shared_shape_and_refuses_wrong_claim_types() {
     ]);
     let models = client(hosted_config(&server.base_url));
     let request = ExtractRequest {
+        tier: office_core::ports::ModelTier::Standard,
         text: "#L1 Evidence".into(),
         schema: office_core::domain::bootstrap::extraction::schema(),
         sensitivity: Sensitivity::Normal,
@@ -164,6 +165,7 @@ fn extracts_structured_json_on_the_hosted_endpoint() {
     let models = client(hosted_config(&server.base_url));
     let value = models
         .extract(&ExtractRequest {
+            tier: office_core::ports::ModelTier::Standard,
             text: "receipt total 12.50".into(),
             schema: super::receipt_schema(),
             sensitivity: Sensitivity::Normal,
@@ -200,6 +202,7 @@ fn refuses_invalid_or_external_extraction_schemas_before_inference() {
         ] {
             let error = models
                 .extract(&ExtractRequest {
+                    tier: office_core::ports::ModelTier::Standard,
                     text: "receipt".into(),
                     schema,
                     sensitivity,

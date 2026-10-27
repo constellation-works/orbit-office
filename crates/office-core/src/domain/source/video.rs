@@ -309,7 +309,12 @@ pub(super) fn with_transcript(markdown: &str, body: &str) -> Result<Option<Strin
 }
 /// Policy identity excludes unrelated Library settings and includes private capabilities.
 pub fn settings_digest(settings: &Settings) -> Result<String> {
-    let bytes = serde_json::to_vec(&json!({"video":settings.video,"costs":settings.costs,"open_weights":settings.open_weights}))
+    let mut policy =
+        json!({"video":settings.video,"costs":settings.costs,"open_weights":settings.open_weights});
+    if settings.models != crate::domain::settings::ModelSettings::default() {
+        policy["models"] = json!(settings.models);
+    }
+    let bytes = serde_json::to_vec(&policy)
         .map_err(|_| refusal("invalid_video_plan", "cannot encode video settings"))?;
     Ok(sha256_hex(&bytes))
 }

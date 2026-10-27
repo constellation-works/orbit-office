@@ -69,3 +69,51 @@ fn script_bounds_default_roundtrip_update_and_refuse_unknown_or_excessive_values
         Settings::default()
     );
 }
+
+#[test]
+fn careful_model_settings_default_roundtrip_update_and_closed_validation() {
+    use serde_json::json;
+    let defaults = Settings::from_yaml("").unwrap();
+    assert_eq!(defaults.models.careful, "muse-wonder");
+    assert_eq!(
+        Settings::from_yaml(&Settings::default_yaml()).unwrap(),
+        defaults
+    );
+    let changed = defaults
+        .with_setting("models.careful", json!("custom/careful-v2"))
+        .unwrap();
+    assert_eq!(changed.models.careful, "custom/careful-v2");
+    assert_eq!(
+        serde_json::from_value::<Settings>(serde_json::to_value(&changed).unwrap()).unwrap(),
+        changed
+    );
+    for value in [
+        json!(""),
+        json!("invalid slug"),
+        json!(42),
+        json!(null),
+        json!("x".repeat(129)),
+    ] {
+        assert_eq!(
+            defaults
+                .with_setting("models.careful", value)
+                .unwrap_err()
+                .code(),
+            "invalid_library_setting"
+        );
+    }
+    assert!(Settings::from_yaml("models:\n  unknown: something\n").is_err());
+    assert_eq!(
+        defaults
+            .with_setting("models.unknown", json!("model"))
+            .unwrap_err()
+            .code(),
+        "unknown_library_setting"
+    );
+    // Changing this tier invalidates both confirmed bootstrap approval and the
+    // per-call model settings snapshot. Defaults preserve existing video plans.
+    assert_ne!(
+        crate::domain::source::video::settings_digest(&defaults).unwrap(),
+        crate::domain::source::video::settings_digest(&changed).unwrap()
+    );
+}

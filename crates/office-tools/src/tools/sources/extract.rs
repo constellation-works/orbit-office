@@ -100,6 +100,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let execute =
         |text: String, index: usize| -> Result<(office_core::ports::Routed<Value>, String)> {
             let request = ExtractRequest {
+                tier: office_core::ports::ModelTier::Standard,
                 text,
                 schema: schema.clone(),
                 sensitivity,

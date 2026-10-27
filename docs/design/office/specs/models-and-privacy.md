@@ -181,3 +181,14 @@ chunk stays between its neighbors instead of being dropped when any other
 chunk reported turns. A single reply is one chunk. Any split or model failure
 fails the transcription instead of returning a partial success. Temporary
 audio is cleaned up on success and failure.
+
+`ExtractRequest::tier` distinguishes `Standard` extraction from `Careful`
+synthesis. Existing extraction callers select `Standard`. Hosted careful calls
+use the Library setting `models.careful`, default `muse-wonder`; it accepts a
+nonempty ASCII model slug up to 128 bytes (letters, digits and `-._/:`). Set it
+with `office.config-set`. This setting changes the model, never the endpoint or
+credentials. Private calls at both tiers still use only `open_weights.model`
+and require its verified text capability. Changed careful settings invalidate
+confirmed batch and per-call routing snapshots. The default setting preserves
+existing plan fingerprints. Offline tests verify the selected slug; live Muse
+Wonder availability and context capacity remain the Day-1 check above.

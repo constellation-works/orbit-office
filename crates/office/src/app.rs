@@ -68,6 +68,7 @@ impl ContextModels<'_> {
         // the verified cause as `private_endpoint_unconfigured`. A load that
         // succeeds with no block still refuses private material rather than
         // sending it hosted.
+        config.careful_model = settings.models.careful;
         config.open_weights = settings.open_weights;
         Ok(office_models::RoutedClient::new(config))
     }

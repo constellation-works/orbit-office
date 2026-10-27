@@ -134,6 +134,7 @@ fn an_endpoint_failing_the_text_request_is_never_routed_to_afterwards() {
     config.open_weights = Some(open_weights_with(&company.base_url, Some(&found)));
     let error = client(config)
         .extract(&ExtractRequest {
+            tier: office_core::ports::ModelTier::Standard,
             text: "private minutes".into(),
             schema: json!({"type": "object"}),
             sensitivity: Sensitivity::Private,

@@ -15,6 +15,7 @@ fn extracts_through_the_open_weights_endpoint() {
 
     let value = models
         .extract(&ExtractRequest {
+            tier: office_core::ports::ModelTier::Standard,
             text: "private receipt total 9.99".into(),
             schema: super::receipt_schema(),
             sensitivity: Sensitivity::Private,
@@ -70,6 +71,7 @@ fn refuses_a_non_json_extraction_reply_from_the_open_weights_endpoint() {
 
     let error = models
         .extract(&ExtractRequest {
+            tier: office_core::ports::ModelTier::Standard,
             text: "private receipt".into(),
             schema: json!({"type": "object"}),
             sensitivity: Sensitivity::Private,

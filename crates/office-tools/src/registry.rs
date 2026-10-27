@@ -52,9 +52,9 @@ impl Tool {
         handler: Handler,
     ) -> Self {
         Self {
-            spec,
             accepts,
             handler: Some(handler),
+            ..Self::planned(spec)
         }
     }
 

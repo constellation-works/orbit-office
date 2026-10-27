@@ -10,6 +10,7 @@ use super::settings::Settings;
 use super::source::{parse_source_meta, sha256_hex, source_body, video};
 use crate::{Error, Result};
 
+pub mod consolidation;
 pub mod extraction;
 pub mod status;
 
@@ -174,8 +175,11 @@ pub struct Plan {
     pub digest: String,
     /// Bootstrap phase.
     pub phase: String,
-    /// Pending source ids included at preview.
+    /// Source ids included at preview, including digest inputs carried for overflow.
     pub sources: Vec<String>,
+    /// Deferred subjects carried into this preview; omitted on original plans.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deferred_subjects: Vec<String>,
     /// All sources in this preview are marked private when true.
     pub private: bool,
     /// Source/policy snapshot; excludes subsequently written stage-one digests.
@@ -476,7 +480,7 @@ fn route(settings: &Settings, private: bool, careful: bool) -> Result<Route> {
             route: "hosted".into(),
             label: "Meta hosted API".into(),
             model: if careful {
-                "muse-wonder"
+                &settings.models.careful
             } else {
                 "muse-spark-1.3"
             }
@@ -530,6 +534,15 @@ fn input_digest(snapshot: &Snapshot, plan: &Plan, settings: &Settings) -> Result
             }
             inputs
                 .push(json!({"path":source.path,"metadata":fields,"body":source_body(&markdown)}));
+            if !plan.deferred_subjects.is_empty()
+                && !plan
+                    .groups
+                    .iter()
+                    .any(|group| group.source.as_deref() == Some(id))
+                && source.digest.is_some()
+            {
+                inputs.push(json!({"carried_digest":source.path,"digest":source.digest}));
+            }
         } else if source.in_phase(&plan.phase)? && source.digest.is_none() && !source.needs_ocr()? {
             // A newly captured pending source invalidates the whole-phase approval.
             inputs.push(json!({"new_pending":id}));
@@ -552,6 +565,11 @@ fn input_digest(snapshot: &Snapshot, plan: &Plan, settings: &Settings) -> Result
         && let Some(settings) = settings_value.as_object_mut()
     {
         settings.remove("demo");
+    }
+    if settings.models == super::settings::ModelSettings::default()
+        && let Some(map) = settings_value.as_object_mut()
+    {
+        map.remove("models");
     }
     hash(&json!({"sources":inputs,"settings":settings_value,"ids":plan.sources}))
 }
@@ -628,6 +646,18 @@ pub fn plan(
         digest: String::new(),
         phase: phase_name.into(),
         sources: Vec::new(),
+        deferred_subjects: snapshot
+            .batches
+            .get(phase_name)
+            .map_or_else(Vec::new, |batch| {
+                if !batch.overflow.is_empty() {
+                    batch.overflow.clone()
+                } else if batch.used.iter().all(|used| *used == 0) && batch.extra_used == 0 {
+                    batch.plan.deferred_subjects.clone()
+                } else {
+                    Vec::new()
+                }
+            }),
         private,
         inputs_digest: String::new(),
         evidence_digest: evidence_digest(snapshot)?,
@@ -637,7 +667,11 @@ pub fn plan(
         estimate: None,
         rates_unset: Vec::new(),
     };
-    let mut expected = Vec::new();
+    let mut expected = plan
+        .deferred_subjects
+        .iter()
+        .map(|name| json!({"name":name}))
+        .collect::<Vec<_>>();
     let mut text_tokens = 0_u64;
     let mut audio_seconds = 0_u64;
     let mut all_private = private;
@@ -645,7 +679,10 @@ pub fn plan(
         if let Some(value) = &source.digest {
             digest(value)?;
         }
-        if !source.in_phase(phase_name)? || source.digest.is_some() || source.needs_ocr()? {
+        if !source.in_phase(phase_name)?
+            || (source.digest.is_some() && plan.deferred_subjects.is_empty())
+            || source.needs_ocr()?
+        {
             continue;
         }
         let fields = source.fields()?;
@@ -653,6 +690,9 @@ pub fn plan(
         let is_private = private || meta.sensitivity == "private";
         all_private |= is_private;
         plan.sources.push(meta.id.clone());
+        if source.digest.is_some() {
+            continue;
+        } // Carry-over needs synthesis only.
         let group_route = route(settings, is_private, false)?;
         if fields["kind"] == "video" {
             let preview = plan
@@ -772,7 +812,8 @@ pub fn plan(
     Ok(plan)
 }
 
-fn verify(snapshot: &Snapshot, settings: &Settings, plan: &Plan) -> Result<()> {
+/// Validate a confirmed plan against the current source and settings snapshot.
+pub fn verify_plan(snapshot: &Snapshot, settings: &Settings, plan: &Plan) -> Result<()> {
     if plan.digest != signed(plan)? || plan.inputs_digest != input_digest(snapshot, plan, settings)?
     {
         return Err(video::refusal(
@@ -785,6 +826,7 @@ fn verify(snapshot: &Snapshot, settings: &Settings, plan: &Plan) -> Result<()> {
 
 fn extra(snapshot: &Snapshot, settings: &Settings, batch: &Batch) -> Result<Extra> {
     let mut values = Vec::new();
+    let mut runbooks = Vec::new();
     let mut private = batch.plan.private
         || batch
             .plan
@@ -800,12 +842,33 @@ fn extra(snapshot: &Snapshot, settings: &Settings, batch: &Batch) -> Result<Extr
                 )
             })?;
             digest(value)?;
-            values.extend(value["subjects"].as_array().into_iter().flatten().cloned());
+            let meta = source.fields()?;
+            let procedures = value["procedures"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|raw| {
+                    consolidation::procedure(
+                        raw,
+                        source,
+                        meta["id"].as_str().unwrap_or_default(),
+                        &value["as_of"],
+                    )
+                })
+                .collect::<Vec<_>>();
+            for subject in consolidation::candidate_subjects(value, &procedures) {
+                if subject["template"] == "runbook" {
+                    runbooks.push(subject);
+                } else {
+                    values.push(subject);
+                }
+            }
             private |= parse_source_meta(&source.markdown).sensitivity == "private";
         }
     }
     let groups = subjects(values.into_iter());
-    let calls = groups.len().saturating_sub(batch.plan.counts.careful);
+    let runbooks = subjects(runbooks.into_iter());
+    let calls = (groups.len() + runbooks.len()).saturating_sub(batch.plan.counts.careful);
     let route = route(settings, private, true)?;
     let (estimate, rates_unset) = price(
         settings,
@@ -815,7 +878,7 @@ fn extra(snapshot: &Snapshot, settings: &Settings, batch: &Batch) -> Result<Extr
         calls > 0,
     )?;
     let digest = hash(
-        &json!({"plan":batch.plan.digest,"evidence":evidence_digest(snapshot)?,"groups":groups,"route":route,"estimate":estimate,"rates_unset":rates_unset}),
+        &json!({"plan":batch.plan.digest,"evidence":evidence_digest(snapshot)?,"groups":groups,"runbooks":runbooks,"route":route,"estimate":estimate,"rates_unset":rates_unset}),
     )?;
     Ok(Extra {
         digest,
@@ -834,7 +897,7 @@ pub fn apply(snapshot: &Snapshot, settings: &Settings, mutation: Mutation) -> Re
     match mutation {
         Mutation::Plan { plan, confirm, at } => {
             phase_name = phase(&plan.phase)?.to_string();
-            verify(snapshot, settings, &plan)?;
+            verify_plan(snapshot, settings, &plan)?;
             if plan.evidence_digest != evidence_digest(snapshot)? {
                 return Err(video::refusal(
                     "plan_changed",
@@ -896,7 +959,7 @@ pub fn apply(snapshot: &Snapshot, settings: &Settings, mutation: Mutation) -> Re
             let batch = batches.get_mut(&phase_name).ok_or_else(|| {
                 video::refusal("plan_unconfirmed", "preview and confirm the batch first")
             })?;
-            verify(snapshot, settings, &batch.plan)?;
+            verify_plan(snapshot, settings, &batch.plan)?;
             if batch.confirmed_at.is_none() {
                 return Err(video::refusal(
                     "plan_unconfirmed",
@@ -937,7 +1000,7 @@ pub fn apply(snapshot: &Snapshot, settings: &Settings, mutation: Mutation) -> Re
             let batch = batches.get_mut(&phase_name).ok_or_else(|| {
                 video::refusal("plan_unconfirmed", "preview and confirm the batch first")
             })?;
-            verify(snapshot, settings, &batch.plan)?;
+            verify_plan(snapshot, settings, &batch.plan)?;
             if batch.confirmed_at.is_none() {
                 return Err(video::refusal(
                     "plan_unconfirmed",

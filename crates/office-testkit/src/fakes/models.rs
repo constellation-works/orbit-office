@@ -143,7 +143,12 @@ impl Models for FakeModels {
             .borrow_mut()
             .pop_front()
             .unwrap_or_else(|| self.extracted.clone());
-        let reply = self.routed(request.sensitivity, value);
+        let mut reply = self.routed(request.sensitivity, value);
+        if request.sensitivity == Sensitivity::Normal
+            && request.tier == office_core::ports::ModelTier::Careful
+        {
+            reply.derived_by.model = "fake-careful".into();
+        }
         if self.extract_failure == Some(self.extract_requests.borrow().len() - 1) {
             return Err(Error::Model {
                 code: "model_unavailable",
