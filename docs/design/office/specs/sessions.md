@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: session continuity — the deterministic session brief, the append-only decision log, and the daily digest routine"
-last_validated: 2026-10-26
+last_validated: 2026-10-27
 ---
 
 # Spec: Session continuity
@@ -135,10 +135,16 @@ assembly, refuses the call so an unknown state cannot appear empty.
 ## Daily digest
 
 The `office-daily-digest` routine (daily, seeded disabled) runs one
-deterministic `plugin.tool_call` step: `office.digest` (mutating,
-`mcp_scope: none`). No agent loop, no crew and no Orbit task is involved.
+job (`job:office-daily-digest`) containing one inline deterministic
+`plugin.tool_call` activity: `office.digest` (mutating, `mcp_scope: none`).
+The routine and job are registered in `spec.definitions`; the activity names
+its tool in `config.tool`, without a routine `required_tools` field. The daily
+cron is `5 0 * * *`; an omitted `day` selects the previous complete UTC day
+from the Clock port. An explicit `day` must be a real `YYYY-MM-DD` UTC date.
+No agent loop, no crew and no Orbit task is involved.
 
-- **Input:** the day's conversation sources, tasks completed, proposals
+- **Input:** the day's timestamped conversation entries (including entries
+  appended to older sessions), Office tasks completed, proposals
   accepted or dismissed, and knowledge and artifacts changed.
 - **One model call:** Muse Spark through the Models port, with a JSON
   Schema for the output. The call goes through the privacy routing
@@ -148,13 +154,25 @@ deterministic `plugin.tool_call` step: `office.digest` (mutating,
   only.
 - **Output:** a `report` artifact in the series `digest-daily`, one per day,
   every line citing a task, source or proposal. A line the material does not
-  support is omitted, never invented. A day with no activity writes nothing.
+  support is omitted, never invented. The model selects single-line verbatim
+  complete entries by evidence index; deterministic validation drops unknown
+  evidence and partial excerpts that could remove negation or context.
+  Knowledge pages cross only as model views, with contact values withheld. A day with no activity writes nothing.
+- **Idempotency:** the artifact records `day:<YYYY-MM-DD>` and the provenance
+  key `routine:office-daily-digest/<YYYY-MM-DD>` in its `task` field; that key
+  references the routine, without creating an Orbit task. A rerun returns
+  `already_exists` without a model call or write. The Library also refuses
+  duplicate provenance keys under its writer lock. The report is `digest.md`
+  beside `artifact.md`; its nonempty lines carry the evidence citations.
+  The response names the artifact id and Library-relative path, or a no-write
+  reason (`no_activity`, `already_exists`, `no_supported_lines`).
 - **Promotion without review.** The digest is promoted directly, with
   `approved: { by: routine, at, edited: false }`. It is the one artifact that
   skips the approval step: it is internal, never leaves the machine, and
   asking the user to approve a diary entry every day would be friction for
   nothing. `by: routine` keeps it out of first-pass acceptance and out of
   the automation ratio ([analytics-and-reviews.md](./analytics-and-reviews.md)).
-- **Compounding:** reviews draw on the digests of their period, so a
-  quarterly review starts from about ninety cited summaries rather than raw
-  records.
+- **Compounding:** reviews select these reports by their `day:` tag, so a
+  digest published just after midnight belongs to the day it summarizes.
+  Older digests without the tag retain approval-date selection. A quarterly
+  review starts from about ninety cited summaries rather than raw records.

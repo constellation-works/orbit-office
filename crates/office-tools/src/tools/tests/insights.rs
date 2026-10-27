@@ -599,3 +599,30 @@ fn insights_a_cluster_is_converted_only_at_its_first_accepted_automation() {
     assert_eq!(output["totals"]["conversions"], json!([]));
     assert_eq!(output["totals"]["proposal_acceptance"]["accepted"], 1);
 }
+
+#[test]
+fn review_inputs_select_daily_digests_by_reported_day_across_midnight() {
+    let library = FakeLibrary::initialized();
+    artifact(
+        &library,
+        "art-20261027-yesterday",
+        "routine:office-daily-digest/2026-10-26",
+        "digest-daily",
+        "2026-10-27T00:05:00Z",
+        ("routine", false),
+        &["day:2026-10-26"],
+    );
+    let response = serve(
+        "review-inputs",
+        json!({"since":"2026-10-26","until":"2026-10-27"}),
+        &fixture(json!([]), library),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        response["output"]["daily_digests"]
+            .as_array()
+            .expect("digests")
+            .len(),
+        1
+    );
+}

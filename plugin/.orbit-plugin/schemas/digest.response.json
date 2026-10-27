@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.digest response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["day", "written", "reason", "artifact", "path"],
+  "properties": {
+    "day": { "type": "string" },
+    "written": { "type": "boolean" },
+    "reason": { "enum": [null, "no_activity", "already_exists", "no_supported_lines"] },
+    "artifact": { "type": ["string", "null"] },
+    "path": { "type": ["string", "null"] }
+  }
+}

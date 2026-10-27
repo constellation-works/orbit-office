@@ -118,12 +118,15 @@ Activities have no schedule switch. Definitions load only when listed in
   - `office-kt-inbox`: every 15 minutes, process confirmed video plans: transcribe, frames, extract (`kt`), then file knowledge proposals and question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
   - `office-bootstrap`: every 15 minutes, run a confirmed bootstrap batch: digests (and the KT steps for videos), then `office.consolidate` ([library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation)).
   - `office-signals`: daily.
-  - `office-daily-digest`: daily. One deterministic `plugin.tool_call` step running `office.digest`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).
+  - `office-daily-digest`: daily at `5 0 * * *`, seeded disabled. Targets `job:office-daily-digest`, whose sole step inlines a deterministic `plugin.tool_call` activity (`config.tool: office.digest`). The routine and job are registered in `spec.definitions`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).
 - **Auto-tasks:**
   - `office-knowledge-maintenance`: weekly. Re-verifies stale pages against newer sources and frictions, and files `knowledge_update` proposals.
   - `office-review`: on period end.
 - **Activities:** `office-agent-todo`, an agent loop that executes an `owner:agent` to-do with its attached runbook and example artifacts, and writes its output as task artifacts with the manifest. Its `proc.spawn` allowlist has `python3` and no cloud CLI, so its agents can use the `gateway` plugin and Orbit refuses them `cloudcli` ([gateway.md](./gateway.md)).
 - **Skills:** `orchestrator`, `library-conventions` (how to cite, write pages and package outputs), and one skill per pack (`kt`, `meetings`, later `receipts`).
+
+The digest activity names its tool in `config.tool`; the routine uses only
+Orbit's accepted routine fields and has no `required_tools` key.
 
 A definition lands only with the tools it calls. An activity lists its
 callable tools in `spec.tools`; `required_tools` belongs to task records.

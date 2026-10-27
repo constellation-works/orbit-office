@@ -1100,3 +1100,14 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-18719] — built `office.search` and `office.attach`, and decided where attach stages its copies.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
+
+
+### Daily digest definitions ownership
+
+The daily digest adds only its job and routine entries beside the existing
+`spec.definitions` registrations, in addition to enabling its reserved tool
+block. This is the operator-authorized narrow exception to the
+ARCHITECTURE.md integrator ownership rule for this feature. The one-step job
+inlines the deterministic `plugin.tool_call` activity, avoiding another shared
+activity registration. The routine uses the accepted routine schema without
+`required_tools`; `config.tool: office.digest` is its explicit tool reference.

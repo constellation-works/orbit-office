@@ -306,14 +306,14 @@ spec:
       input_schema: { $ref: schemas/session-brief.request.json }
       output_schema: { $ref: schemas/session-brief.response.json }
 
-    # - name: digest
-    #   description: >-
-    #     Write the day's digest artifact with one Muse Spark call; run only
-    #     by the office-daily-digest routine.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/digest.request.json }
-    #   output_schema: { $ref: schemas/digest.response.json }
+    - name: digest
+      description: >-
+        Write the day's digest artifact with one Muse Spark call; run only
+        by the office-daily-digest routine.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/digest.request.json }
+      output_schema: { $ref: schemas/digest.response.json }
 
     # ---- scripts ----
 
@@ -379,6 +379,8 @@ spec:
   definitions:
     auto_tasks: [definitions/auto_tasks/office-review.yaml]
     activities: [definitions/activities/office-agent-todo.yaml]
+    jobs: [definitions/jobs/office-daily-digest.yaml]
+    routines: [definitions/routines/office-daily-digest.yaml]
 
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings]
 
