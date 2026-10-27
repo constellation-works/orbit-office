@@ -1,5 +1,6 @@
 //! Analytics through the public exec dispatch, with recorded Orbit and Library facts.
 
+use office_core::domain::settings::Settings;
 use office_core::ports::Ports;
 use office_testkit::fakes::{FakeLibrary, FakeOrbit, PortsBuilder};
 use serde_json::{Value, json};
@@ -8,6 +9,15 @@ fn serve(verb: &str, input: Value, ports: &Ports<'_>) -> Value {
     let raw = office_testkit::envelope::request(&format!("office.{verb}"), input, json!({}));
     let request = office_core::protocol::parse(&raw).expect("request");
     serde_json::from_str(&crate::serve(&request, ports)).expect("response")
+}
+
+/// The Library a golden case runs on: policy defaults unless the case names settings.
+fn case_library(settings: Option<Value>) -> FakeLibrary {
+    let mut library = FakeLibrary::initialized();
+    if let Some(settings) = settings {
+        library.settings = Settings::try_from(settings).expect("golden settings");
+    }
+    library
 }
 
 fn fixture(tasks: Value, library: FakeLibrary) -> Ports<'static> {
@@ -486,11 +496,15 @@ fn insights_conformance_goldens_replay_success_and_refusal_offline() {
         ));
         let golden = std::fs::read_to_string(path).expect("golden");
         let mut input = None;
+        let mut library = None;
         let mut successes = 0;
         let mut refusals = 0;
         for line in golden.lines() {
             if let Some(value) = line.strip_prefix("    input: ") {
                 input = Some(serde_json::from_str::<Value>(value).expect("input"));
+            }
+            if let Some(value) = line.strip_prefix("    library: ") {
+                library = Some(serde_json::from_str::<Value>(value).expect("library settings"));
             }
             for (prefix, success) in [("      output: ", true), ("      error: ", false)] {
                 if let Some(value) = line.strip_prefix(prefix) {
@@ -498,7 +512,7 @@ fn insights_conformance_goldens_replay_success_and_refusal_offline() {
                     let response = serve(
                         verb,
                         input.take().expect("case input"),
-                        &fixture(json!([]), FakeLibrary::initialized()),
+                        &fixture(json!([]), case_library(library.take())),
                     );
                     assert_eq!(response["ok"], success, "{response}");
                     if success {

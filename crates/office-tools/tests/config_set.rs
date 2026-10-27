@@ -46,3 +46,60 @@ fn updates_persist_through_the_library_port_and_refusals_preserve_them() {
     assert_eq!(updated.retention["meeting"], Some(30));
     assert_eq!(updated.sensitivity["note"].as_str(), "private");
 }
+
+#[test]
+fn demo_simulated_until_writes_a_date_and_refuses_anything_else_naming_the_field() {
+    let ports = PortsBuilder::default().build();
+    let response = call(
+        &ports,
+        json!({"key": "demo.simulated_until", "value": "2026-10-12"}),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        ports
+            .library
+            .settings()
+            .unwrap()
+            .demo
+            .simulated_until
+            .as_deref(),
+        Some("2026-10-12")
+    );
+    for value in [json!("2026-02-30"), json!(20261012)] {
+        let response = call(
+            &ports,
+            json!({"key": "demo.simulated_until", "value": value}),
+        );
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(
+            response["error"]["code"], "invalid_library_setting",
+            "{response}"
+        );
+        assert!(
+            response.to_string().contains("demo.simulated_until"),
+            "{response}"
+        );
+        assert_eq!(
+            ports
+                .library
+                .settings()
+                .unwrap()
+                .demo
+                .simulated_until
+                .as_deref(),
+            Some("2026-10-12")
+        );
+    }
+    let response = call(
+        &ports,
+        json!({"key": "demo.unknown", "value": "2026-10-12"}),
+    );
+    assert_eq!(
+        response["error"]["code"], "unknown_library_setting",
+        "{response}"
+    );
+    assert!(
+        response.to_string().contains("demo.simulated_until"),
+        "{response}"
+    );
+}

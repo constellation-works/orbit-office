@@ -188,7 +188,7 @@ pub enum Error {
     },
     /// A single-setting update named no supported policy leaf (including secrets).
     #[error(
-        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, packs, open_weights or open_weights.<endpoint|model|kind|label>"
+        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, packs, demo.simulated_until, open_weights or open_weights.<endpoint|model|kind|label>"
     )]
     UnknownSetting {
         /// Refused key, never the supplied value.

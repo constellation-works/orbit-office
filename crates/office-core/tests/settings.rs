@@ -120,6 +120,48 @@ fn single_setting_refuses_unknown_leaves_and_bad_values_without_mutation() {
 }
 
 #[test]
+fn demo_simulated_until_takes_a_date_or_null_and_names_the_field_when_refused() {
+    let settings = Settings::default();
+    assert_eq!(settings.demo.simulated_until, None);
+    let dated = settings
+        .with_setting("demo.simulated_until", serde_json::json!("2026-10-12"))
+        .unwrap();
+    assert_eq!(dated.demo.simulated_until.as_deref(), Some("2026-10-12"));
+    assert_eq!(
+        Settings::from_yaml(&dated.to_yaml().unwrap()).unwrap(),
+        dated
+    );
+    assert_eq!(
+        dated
+            .with_setting("demo.simulated_until", serde_json::json!(null))
+            .unwrap(),
+        settings
+    );
+    for value in [
+        serde_json::json!("2026-02-30"),
+        serde_json::json!("2026-10-12T00:00:00Z"),
+        serde_json::json!("10/12/2026"),
+        serde_json::json!(20261012),
+        serde_json::json!(true),
+    ] {
+        assert_eq!(
+            refused_key(settings.with_setting("demo.simulated_until", value)),
+            "demo.simulated_until"
+        );
+    }
+    assert_eq!(
+        refused_key(Settings::from_yaml(
+            "demo:\n  simulated_until: 2026-02-30\n"
+        )),
+        "demo.simulated_until"
+    );
+    assert_eq!(
+        refused_key(Settings::from_yaml("demo:\n  unknown: 2026-10-12\n")),
+        "demo.unknown"
+    );
+}
+
+#[test]
 fn pre_batch_default_config_loads() {
     // Exact default emitted by office.init before the private-route change.
     let yaml = "retention:
