@@ -947,8 +947,16 @@ impl LibraryStore {
         let raw: RawPendingWrite =
             serde_json::from_slice(&bytes).map_err(|_| Error::Journal { path: path.clone() })?;
         let pending = raw.into_pending(&path)?;
+        // The store root is canonical, so compare the journal root by its
+        // physical path: a root spelled through a symlinked ancestor (macOS
+        // `/var` -> `/private/var`) is the same Library. A root that no
+        // longer resolves cannot be this Library and is refused.
+        let same_root = pending
+            .root
+            .canonicalize()
+            .is_ok_and(|root| root == self.library_root());
         if !(1..=6).contains(&pending.version)
-            || pending.root != self.library_root()
+            || !same_root
             || pending.token.is_empty()
             || !pending
                 .token
