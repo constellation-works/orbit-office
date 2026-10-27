@@ -80,8 +80,8 @@ spaces, so script shebangs that name the interpreter keep working.
    backend or failed build stops before office is recorded as added or enabled. Then
    `orbit plugin enable office` with the grants the manifest requests (`fs`, `network`, `orbit_tools`), after printing them and
    asking once. A grant left out leaves the plugin inactive, and `office.init` is then refused.
-   The question needs a terminal on stdin. A run without one (the `curl ... | sh` line at the
-   top of this page, for example) prints the grants and enables the plugin without asking,
+   The question needs a terminal on stdin. A piped install without one (piped stdin is
+   the script itself, for example) prints the grants and enables the plugin without asking,
    and its output says so. `--yes` skips the question in either case. The `gateway` plugin is
    added and enabled the same way, in the same consent prompt, and `cloudcli` only with
    `--with-cloudcli` ([gateway.md](./gateway.md)). Both come from the same release export, and
@@ -94,8 +94,8 @@ spaces, so script shebangs that name the interpreter keep working.
 6. **Secrets.** Prompts for the Meta API key, and optionally the private route's token (`open_weights_token`), with hidden
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set. The prompt needs a terminal
-   on stdin: a run without one (the `curl ... | sh` line, whose stdin is the script
-   itself) never reads stdin for a secret, skips each unset secret and prints the
+   on stdin: a piped install without one (piped stdin is the script itself)
+   never reads stdin for a secret, skips each unset secret and prints the
    `orbit plugin secret set office <name>` command to set it later. Values supplied
    through the environment are still stored in either case.
 7. **Scaffold.** `orbit tool run office.init --json --full`: the Library's layout, git
