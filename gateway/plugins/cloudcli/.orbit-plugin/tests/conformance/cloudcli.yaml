@@ -1,0 +1,86 @@
+# Request/response goldens for `orbit plugin test` (no network, no stored
+# secrets). Every case is refused before a process starts: denylisted
+# commands, commands outside the allowlist, refused flags and input, and an
+# allowed command whose identity is not set. Runs of stub `aws` and `gcloud`
+# (credentials, environment, timeout, output cap, redaction, audit) are
+# covered by gateway/tests/test_cloud.py.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: aws_secret_value_is_denied
+    tool: run
+    input: {program: aws, args: [secretsmanager, get-secret-value, --secret-id, prod/db]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: aws_ssm_decryption_is_denied
+    tool: run
+    input: {program: aws, args: [ssm, get-parameter, --name, /prod/db, --with-decryption]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: aws_s3_object_is_denied
+    tool: run
+    input: {program: aws, args: [s3api, get-object, --bucket, b, --key, k, out.bin]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: aws_write_operation_is_refused
+    tool: run
+    input: {program: aws, args: [ec2, terminate-instances, --instance-ids, i-0123456789abcdef0]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: aws_endpoint_override_is_refused
+    tool: run
+    input: {program: aws, args: [ec2, describe-instances, --endpoint-url, "https://attacker.example"]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: aws_parameter_file_is_refused
+    tool: run
+    input: {program: aws, args: [ec2, describe-instances, --filters, "file:///etc/passwd"]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: gcloud_secret_access_is_denied
+    tool: run
+    input: {program: gcloud, args: [secrets, versions, access, latest, --secret, db-password]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: gcloud_access_token_is_denied
+    tool: run
+    input: {program: gcloud, args: [auth, print-access-token]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: gcloud_delete_is_refused
+    tool: run
+    input: {program: gcloud, args: [compute, instances, delete, list]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: gcloud_format_is_refused
+    tool: run
+    input: {program: gcloud, args: [compute, instances, list, --format, yaml]}
+    expect:
+      error: {code: command_not_allowed}
+
+  - name: aws_without_identity_is_refused
+    tool: run
+    input: {program: aws, args: [sts, get-caller-identity]}
+    expect:
+      error: {code: secret_unset}
+
+  - name: an_unknown_program_is_refused
+    tool: run
+    input: {program: kubectl, args: [get, pods]}
+    expect:
+      error: {code: invalid_argument}
+
+  - name: unknown_input_is_refused
+    tool: run
+    input: {program: aws, args: [ec2, describe-instances], shell: true}
+    expect:
+      error: {code: invalid_argument}

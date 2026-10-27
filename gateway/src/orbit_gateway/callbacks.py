@@ -109,7 +109,7 @@ class Orbit:
                 f"could not run {self.program!r} for {tool}: {error.strerror or error}",
                 retryable=True,
             ) from None
-        status, stdout, stderr, overflow = _supervise(child, self.deadline)
+        status, stdout, stderr, overflow = supervise(child, self.deadline)
         if status is None:
             return self._indeterminate(tool, f"{tool} did not answer in {self.deadline:.0f}s")
         if overflow:
@@ -154,34 +154,40 @@ def _descriptor(environ: Mapping[str, str]) -> int | None:
     return fd
 
 
-def _drain(stream: IO[bytes], sink: list[bytes], overflow: list[bool]) -> None:
+def _drain(stream: IO[bytes], sink: list[bytes], overflow: set[str], limit: int, name: str) -> None:
     size = 0
     while True:
         chunk = stream.read(65536)
         if not chunk:
             return
-        if size < STREAM_LIMIT:
-            sink.append(chunk[: STREAM_LIMIT - size])
+        if size < limit:
+            sink.append(chunk[: limit - size])
         size += len(chunk)
-        if size > STREAM_LIMIT:
-            overflow.append(True)
+        if size > limit:
+            overflow.add(name)
 
 
-def _supervise(child: subprocess.Popen[bytes], deadline: float) -> tuple[int | None, bytes, bytes, bool]:
+def supervise(
+    child: subprocess.Popen[bytes], deadline: float, limit: int = STREAM_LIMIT
+) -> tuple[int | None, bytes, bytes, frozenset[str]]:
     """Wait for the child within `deadline`, draining both streams; sweep its group and reap it.
+
+    Each stream keeps its first `limit` bytes. `cloud` supervises the cloud
+    CLIs with this too.
 
     The group is signalled only while its leader is unreaped, so its id cannot
     have been reused. Where `os.waitid` exists the exited leader is observed
     with WNOWAIT and the group swept before the reap; without it the group is
     signalled only on a timeout.
-    Returns (exit status or None on timeout, stdout, stderr, overflowed).
+    Returns (exit status or None on timeout, stdout, stderr, the names of the
+    streams that passed `limit`: "stdout", "stderr").
     """
     out: list[bytes] = []
     err: list[bytes] = []
-    overflow: list[bool] = []
+    overflow: set[str] = set()
     readers = [
-        threading.Thread(target=_drain, args=(child.stdout, out, overflow), daemon=True),
-        threading.Thread(target=_drain, args=(child.stderr, err, overflow), daemon=True),
+        threading.Thread(target=_drain, args=(child.stdout, out, overflow, limit, "stdout"), daemon=True),
+        threading.Thread(target=_drain, args=(child.stderr, err, overflow, limit, "stderr"), daemon=True),
     ]
     for reader in readers:
         reader.start()
@@ -203,7 +209,7 @@ def _supervise(child: subprocess.Popen[bytes], deadline: float) -> tuple[int | N
     for stream in (child.stdout, child.stderr):
         if stream is not None:
             stream.close()
-    return (None if timed_out else status), b"".join(out), b"".join(err), bool(overflow)
+    return (None if timed_out else status), b"".join(out), b"".join(err), frozenset(overflow)
 
 
 def _wait_reaping(child: subprocess.Popen[bytes], deadline: float) -> tuple[bool, int]:

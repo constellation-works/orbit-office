@@ -14,7 +14,8 @@ help:
 	@echo ""
 	@echo "  make test             unittest suite (standard library only)"
 	@echo "  make check            version check, import-direction scan, schema JSON"
-	@echo "  make export [OUT=dir] export plugins/$(PLUGIN) with src/orbit_gateway in lib/"
+	@echo "  make export [PLUGIN=gateway|cloudcli] [OUT=dir]"
+	@echo "                        export plugins/$(PLUGIN) with src/orbit_gateway in lib/"
 
 test:
 	$(PYTHON) -I -m unittest discover -s tests -t . -v

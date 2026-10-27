@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cloudcli.run response",
+  "type": "object",
+  "required": [
+    "program",
+    "command",
+    "output",
+    "text",
+    "bytes",
+    "truncated",
+    "stderr"
+  ],
+  "properties": {
+    "program": {
+      "type": "string",
+      "enum": [
+        "aws",
+        "gcloud"
+      ]
+    },
+    "command": {
+      "type": "string",
+      "description": "The command words that were checked, such as `ec2 describe-instances`."
+    },
+    "output": {
+      "description": "The command's JSON output, parsed and redacted; null when it was empty, not JSON or truncated."
+    },
+    "text": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The output as text, redacted, when it is not parsed JSON (for example when truncated)."
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Bytes of stdout kept, at most 1 MiB (1048576)."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when stdout passed 1 MiB and was cut."
+    },
+    "stderr": {
+      "type": "string",
+      "description": "The command's stderr, redacted and cut at 64 KiB."
+    }
+  },
+  "additionalProperties": false
+}

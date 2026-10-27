@@ -52,7 +52,7 @@ class Scan(GatewayCase):
     def test_the_cloudcli_backend_never_reaches_http(self) -> None:
         tree = self.copy()
         backend = tree / "plugins/cloudcli/.orbit-plugin/bin/backend.py"
-        backend.parent.mkdir(parents=True)
+        backend.parent.mkdir(parents=True, exist_ok=True)
         backend.write_text("from orbit_gateway import envelope, redact\n")
         self.assertEqual(check_imports.scan(tree), [])
         backend.write_text("from orbit_gateway import envelope, connections\n")
@@ -61,6 +61,15 @@ class Scan(GatewayCase):
         backend.write_text("from orbit_gateway import http\n")
         errors = check_imports.scan(tree)
         self.assertIn("plugins/cloudcli/.orbit-plugin/bin/backend.py: the cloudcli backend reaches orbit_gateway.http", errors)
+
+    def test_the_cloudcli_backend_never_reaches_http_through_cloud(self) -> None:
+        tree = self.copy()
+        self.assertEqual(check_imports.scan(tree), [])
+        self.plant(tree / "src/orbit_gateway/cloud.py", "from . import drafts")
+        errors = check_imports.scan(tree)
+        backend = "plugins/cloudcli/.orbit-plugin/bin/backend.py"
+        self.assertIn(f"{backend}: the cloudcli backend reaches orbit_gateway.drafts", errors)
+        self.assertIn(f"{backend}: the cloudcli backend reaches orbit_gateway.http", errors)
 
 
 if __name__ == "__main__":

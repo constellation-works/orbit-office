@@ -39,6 +39,13 @@ WRITERS: dict[str, str] = {
 # Orbit callbacks (`callbacks.Orbit.call`) pass their input to `orbit tool run`
 # as an argument, not through a write call; they redact it the same way.
 
+# The one writer whose job is the secret itself: the cloud CLIs' credential
+# files, owner-only, created in a fresh 0700 directory per call and deleted
+# after it (STD-05@1 §R12: a private file, never argv or the environment).
+CREDENTIAL_WRITERS: dict[str, str] = {
+    "cloud._write_private": "the per-call credential and config files under {{plugin_state}}/calls/<call>/",
+}
+
 # Writers that never see input or a secret, so there is nothing to redact.
 UNREDACTED_WRITERS: dict[str, str] = {
     "backend._refuse_old_python": (
