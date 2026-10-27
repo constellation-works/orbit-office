@@ -50,7 +50,7 @@ orbit plugin test "$out" --grant fs,network
 
 ```bash
 orbit plugin add /tmp/office-plugin-<sha>
-orbit plugin enable office --grant 'fs={{workspace}},{{plugin_state}}' --grant network
+orbit plugin enable office --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools
 orbit plugin secret set office meta_api_key
 orbit plugin secret set office baseten_token
 ```

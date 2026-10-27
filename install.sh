@@ -314,6 +314,7 @@ consent_enable_plugin() {
     say "The $PLUGIN_NAME plugin requests these grants:"
     say "  fs      {{workspace}}, {{plugin_state}}"
     say "  network unscoped (the code calls only the Meta Model API and the open-weights endpoint)"
+    say "  orbit_tools the Orbit task, friction and search tools the plugin calls"
     if [ "$ASSUME_YES" -eq 1 ]; then
         say "Consent: --yes given, enabling $PLUGIN_NAME."
         return 0
@@ -744,7 +745,8 @@ step_plugin() {
         return 0
     fi
     consent_enable_plugin
-    orbit plugin enable "$PLUGIN_NAME" --grant 'fs={{workspace}},{{plugin_state}}' --grant network
+    # Every permission plugin.yaml requests: a grant left out leaves the plugin inactive.
+    orbit plugin enable "$PLUGIN_NAME" --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools
     state_mark "plugin_enabled"
     say "plugin: enabled ($PLUGIN_NAME)"
 }
