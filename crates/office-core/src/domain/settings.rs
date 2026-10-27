@@ -420,7 +420,7 @@ fn open_weights(value: &Value) -> Result<Option<OpenWeights>> {
             .ok_or_else(|| {
                 invalid(
                     &dotted,
-                    "expected a nonempty single-line string within the documented length",
+                    "expected a nonempty single-line string within the limits in docs/design/office/specs/plugin-surface.md#private-route-field-limits",
                 )
             })
     };
@@ -431,7 +431,7 @@ fn open_weights(value: &Value) -> Result<Option<OpenWeights>> {
     if model.chars().any(char::is_whitespace) {
         return Err(invalid(
             "open_weights.model",
-            "expected the model name as the server names it, without spaces",
+            "expected the model name as the server names it, without whitespace (see docs/design/office/specs/plugin-surface.md#private-route-field-limits)",
         ));
     }
     let kind = EndpointKind::parse(&text("kind", 32)?).ok_or_else(|| {
