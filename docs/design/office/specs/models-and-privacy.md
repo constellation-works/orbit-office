@@ -170,6 +170,10 @@ start of that chunk). When the reply is that object, those turns are kept
 and each chunk's timestamps are shifted by the chunk's start so they stay
 offsets into the original recording. A reply that is not that JSON is kept
 as transcript text with no turns. Chunk texts are joined with newlines in
-recording order. Any split or model failure fails the transcription instead
-of returning a partial success. Temporary audio is cleaned up on success
-and failure.
+recording order. The transcript also keeps each chunk in that order: a chunk
+that reported turns contributes those turns, and a chunk that reported none
+contributes its text. The meeting body follows that order, so a text-only
+chunk stays between its neighbors instead of being dropped when any other
+chunk reported turns. A single reply is one chunk. Any split or model failure
+fails the transcription instead of returning a partial success. Temporary
+audio is cleaned up on success and failure.

@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use office_common::Sensitivity;
 
-use crate::ports::Transcript;
+use crate::ports::{Transcript, TranscriptChunk, TranscriptSegment};
 use crate::{Error, Result};
 
 /// Meeting source body from a transcript (specs/library.md, Sources).
@@ -17,25 +17,70 @@ use crate::{Error, Result};
 /// start, truncated to whole seconds. A turn with no speaker is labeled
 /// `Speaker`. When the transcript reports no turns, the body is the
 /// transcript text, unchanged.
+///
+/// A split recording carries [`TranscriptChunk`]s in order. A chunk that
+/// reported no turns keeps its text, unchanged, in the position it occupies,
+/// as its own paragraph between the surrounding turns. Adjacent text-only
+/// chunks are still separate paragraphs. When no chunk reported turns, the
+/// body stays the transcript text (chunks joined with newlines), not a
+/// blank-line join. A transcript with no chunk list uses `segments`, or
+/// `text` when that is empty.
 #[must_use]
 pub fn meeting_body(transcript: &Transcript) -> String {
-    if transcript.segments.is_empty() {
-        return transcript.text.clone();
+    if !has_ordered_turns(transcript) {
+        return turns_or_text(transcript);
     }
+    let mut blocks = Vec::new();
+    for chunk in &transcript.chunks {
+        match chunk {
+            TranscriptChunk::Text(text) => {
+                if !text.is_empty() {
+                    blocks.push(text.clone());
+                }
+            }
+            TranscriptChunk::Turns(segments) => {
+                for segment in segments {
+                    blocks.push(format_turn(segment));
+                }
+            }
+        }
+    }
+    blocks.join("\n\n")
+}
+
+fn has_ordered_turns(transcript: &Transcript) -> bool {
+    transcript
+        .chunks
+        .iter()
+        .any(|chunk| matches!(chunk, TranscriptChunk::Turns(segments) if !segments.is_empty()))
+}
+
+fn turns_or_text(transcript: &Transcript) -> String {
+    if transcript.segments.is_empty() {
+        transcript.text.clone()
+    } else {
+        format_turns(&transcript.segments)
+    }
+}
+
+fn format_turns(segments: &[TranscriptSegment]) -> String {
     let mut body = String::new();
-    for (index, segment) in transcript.segments.iter().enumerate() {
+    for (index, segment) in segments.iter().enumerate() {
         if index > 0 {
             body.push_str("\n\n");
         }
-        let speaker = segment.speaker.as_deref().unwrap_or("Speaker");
-        body.push('[');
-        body.push_str(&clock_time(segment.start_ms));
-        body.push_str("] ");
-        body.push_str(speaker);
-        body.push_str(": ");
-        body.push_str(&segment.text);
+        body.push_str(&format_turn(segment));
     }
     body
+}
+
+fn format_turn(segment: &TranscriptSegment) -> String {
+    let speaker = segment.speaker.as_deref().unwrap_or("Speaker");
+    format!(
+        "[{}] {speaker}: {}",
+        clock_time(segment.start_ms),
+        segment.text
+    )
 }
 
 /// Seconds from an `hh:mm:ss` stamp, in the form `clock_time` writes and
