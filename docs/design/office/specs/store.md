@@ -20,7 +20,7 @@ and machinery are reused, the code is this project's.
 | `fs/` (path_safety, lock, yaml) | `office-common::fs` (`path_safety`, `atomic`, `hash`) | Single-safe-component id validation, atomic owner-only writes (temp + fsync + publication + dir fsync; rename for replacement, hard link for exclusive creation), SHA-256 pinning/dedupe. Shared machinery lives in the foundation crate, as orbit's does in `orbit-common`. |
 | `driver/file/` | `src/driver/file/library.rs` | The Library as plain Markdown: layout, frontmatter parsing, full scan for reindex |
 | `driver/sqlite/` (connection, migration registry) | `src/driver/sqlite/` (`connection.rs`, `migration.rs`) | One writer connection behind a mutex; owner-only database file; the same pragmas on every connection (WAL, `busy_timeout` 5000, `foreign_keys=ON`, `synchronous=NORMAL`); ordered migrations with `user_version`, refusing a newer schema |
-| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `read_text`, `get`, `backlinks`, `knowledge_pages`, `templates`, `search`, `head_commit`, `stage_attachment`/`remove_staged`, `file_sha256` |
+| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `read_text`, `get`, `backlinks`, `knowledge_pages`, `source_documents`, `templates`, `search`, `head_commit`, `stage_attachment`/`remove_staged`, `file_sha256` |
 
 What is deliberately not carried over: orbit-store's read pool, forward-
 compatible read-only open, failure-class SQL functions, task reservations
@@ -49,7 +49,7 @@ tool needs them, as new migration steps — never as edits to step 1.
   versions such as `v2.md`, artifact companions and `proposals/` are
   not documents of this call. `original.*` stays refused on every
   path, including under `knowledge/`.
-- **Scans do not follow symlinks.** `reindex` and knowledge-page reads
+- **Scans do not follow symlinks.** `reindex`, knowledge-page reads and source-document reads
   skip a symlink file or directory instead of opening it, including a
   symlinked layer directory (`sources`, `knowledge`, `artifacts`).
   Content reached only through a link is neither indexed nor returned,
@@ -63,7 +63,11 @@ tool needs them, as new migration steps — never as edits to step 1.
   belongs — returns `io_error` before the index transaction. Previously
   indexed rows stay searchable. Knowledge-page reads use the same walk:
   a missing or symlinked `knowledge` directory is an empty page list,
-  and any other enumeration error fails the read.
+  and any other enumeration error fails the read. `source_documents` reads
+  every `sources/**/source.md` with complete frontmatter and body, in path
+  order with no search cap. It uses the same missing-layer and symlink rules;
+  originals, `v2.md` sidecars and other Library layers are excluded. An
+  enumeration or file-read failure refuses the entire document listing.
 - **Preconditions before side effects:** path components are validated
   before any write; unknown document kinds and newer index schemas are
   refused, never guessed or rewritten.

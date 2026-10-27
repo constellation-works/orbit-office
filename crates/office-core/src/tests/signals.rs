@@ -201,7 +201,7 @@ fn unrecorded_direction_fires_only_when_standing_page_does_not_cite_source() {
     let mut facts = SignalFacts::default();
     facts.sources.push(SourceFact {
         id: "src-1".into(),
-        body: "direction: always cite sources\nrhythm: weekly report".into(),
+        body: "[2026-10-27T10:00:00Z] direction: always cite sources\n[2026-10-27T10:00:00Z] rhythm: weekly report".into(),
         ..SourceFact::default()
     });
     let found = scan(&facts, &thresholds());
@@ -209,11 +209,22 @@ fn unrecorded_direction_fires_only_when_standing_page_does_not_cite_source() {
     assert_eq!(signals, vec!["declared_cadence", "unrecorded_direction"]);
     assert_eq!(found[1].kind, ProposalKind::KnowledgeUpdate);
     assert_eq!(found[1].evidence, vec!["src-1"]);
+    facts.pages.push(PageFact {
+        id: "dom-standing-directions".into(),
+        cited_by: vec!["src-1".into()],
+        ..PageFact::default()
+    });
+    assert_eq!(
+        scan(&facts, &thresholds()),
+        found,
+        "an incoming citation does not record a direction"
+    );
+    facts.pages.clear();
     // Once the standing-directions page cites the source, it is recorded.
     facts.pages.push(PageFact {
         id: "dom-standing-directions".into(),
         title: "Standing directions".into(),
-        cited_by: vec!["src-1".into()],
+        cites: vec!["src-1#L1".into()],
         ..PageFact::default()
     });
     let found = scan(&facts, &thresholds());

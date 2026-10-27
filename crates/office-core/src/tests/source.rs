@@ -3,6 +3,30 @@
 use crate::domain::source::meeting_body;
 use crate::ports::{Transcript, TranscriptChunk, TranscriptSegment};
 
+#[test]
+fn source_participants_preserve_quoted_punctuation_and_block_lists() {
+    use crate::domain::source::parse_source_participants;
+
+    for metadata in [
+        "participants: [\"Nair, Priya\", 'O''Brien', \"C:\\\\Team\"]",
+        "participants:\n  - \"Nair, Priya\"\n  - 'O''Brien'\n  - \"C:\\\\Team\"",
+    ] {
+        assert_eq!(
+            parse_source_participants(&format!("---\nid: src-people\n{metadata}\n---\nBody"))
+                .expect("participants"),
+            ["Nair, Priya", "O'Brien", "C:\\Team"]
+        );
+    }
+    assert!(
+        parse_source_participants("---\nid: src-empty\n---\nBody")
+            .expect("optional participants")
+            .is_empty()
+    );
+    let error = parse_source_participants("---\nparticipants: [true]\n---\nBody")
+        .expect_err("non-string participant refused");
+    assert_eq!(error.code(), "invalid_frontmatter");
+}
+
 fn turn(speaker: Option<&str>, start_ms: u64, text: &str) -> TranscriptSegment {
     TranscriptSegment {
         speaker: speaker.map(str::to_string),

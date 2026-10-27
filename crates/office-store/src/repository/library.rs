@@ -896,6 +896,21 @@ impl LibraryStore {
             .collect())
     }
 
+    /// Every current source file, in path order, without a search limit.
+    /// Reads full Markdown from disk without waiting for the writer lock.
+    pub fn source_documents(&self) -> Result<Vec<LibraryText>> {
+        self.read_ready()?;
+        Ok(self
+            .files
+            .read_source_markdown()?
+            .into_iter()
+            .map(|(path, markdown)| LibraryText {
+                path,
+                markdown: Some(markdown),
+            })
+            .collect())
+    }
+
     /// Every template file, in path order. A symlinked or unreadable file
     /// is listed with no Markdown so a caller can name it.
     pub fn templates(&self) -> Result<Vec<LibraryText>> {
@@ -1614,6 +1629,9 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::knowledge_pages(self)?)
+    }
+    fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(Self::source_documents(self)?)
     }
     fn templates(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::templates(self)?)

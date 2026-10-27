@@ -734,6 +734,40 @@ pub fn source_body(text: &str) -> String {
     }
 }
 
+/// Read source participants using the Library's YAML subset, including
+/// quoted names and block lists. Malformed metadata is refused rather than
+/// silently treated as a source with no participants.
+pub fn parse_source_participants(text: &str) -> Result<Vec<String>> {
+    use crate::domain::knowledge::frontmatter;
+
+    let (header, _) = frontmatter::split(text)?;
+    let fields = frontmatter::parse(header)?;
+    let Some((_, value)) = fields.iter().find(|(key, _)| key == "participants") else {
+        return Ok(Vec::new());
+    };
+    match value {
+        serde_json::Value::Null => Ok(Vec::new()),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| Error::InvalidFrontmatter {
+                        field: "participants".into(),
+                        reason: "expected a list of strings",
+                    })
+            })
+            .collect(),
+        serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_)
+        | serde_json::Value::Object(_) => Err(Error::InvalidFrontmatter {
+            field: "participants".into(),
+            reason: "expected a list of strings",
+        }),
+    }
+}
+
 /// Parse the source frontmatter subset capture writes.
 #[must_use]
 pub fn parse_source_meta(text: &str) -> SourceMeta {

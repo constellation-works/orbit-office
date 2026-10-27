@@ -119,6 +119,12 @@ pub trait Library {
     fn knowledge_pages(&self) -> Result<Vec<LibraryText>> {
         Err(Error::LibraryUnavailable)
     }
+    /// Every source document (`sources/**/source.md`), with full frontmatter
+    /// and body, without a result limit, in path order. Originals and version
+    /// sidecars are excluded; symlinks are never followed.
+    fn source_documents(&self) -> Result<Vec<LibraryText>> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Every template file in `.office/templates/`, in path order.
     fn templates(&self) -> Result<Vec<LibraryText>> {
         Err(Error::LibraryUnavailable)

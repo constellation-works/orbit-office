@@ -193,6 +193,9 @@ impl Library for RealLibrary {
     fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::knowledge_pages(&self.store()?)?)
     }
+    fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(LibraryStore::source_documents(&self.store()?)?)
+    }
     fn templates(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::templates(&self.store()?)?)
     }

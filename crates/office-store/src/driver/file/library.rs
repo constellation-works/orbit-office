@@ -544,21 +544,30 @@ impl LibraryFs {
     /// that still reaches this read is refused. A missing `knowledge`
     /// directory is an empty list. Any other enumeration failure is an error.
     pub(crate) fn read_knowledge_markdown(&self) -> Result<Vec<(String, String)>> {
+        self.read_layer_markdown("knowledge", &[])
+    }
+
+    /// Every current source's complete Markdown; no search cap or excerpts.
+    pub(crate) fn read_source_markdown(&self) -> Result<Vec<(String, String)>> {
+        self.read_layer_markdown("sources", &["source"])
+    }
+
+    fn read_layer_markdown(&self, layer: &str, stems: &[&str]) -> Result<Vec<(String, String)>> {
         let mut files = Vec::new();
-        collect_optional_layer(&self.root.join("knowledge"), &mut files, &[])?;
+        collect_optional_layer(&self.root.join(layer), &mut files, stems)?;
         files.sort();
         let mut pages = Vec::new();
         for path in files {
             refuse_symlink(&path)?;
             let relative = path.strip_prefix(&self.root).map_err(|_| {
                 Error::io(
-                    "relativize knowledge page",
+                    "relativize Library document",
                     &path,
                     std::io::Error::other("path escaped the Library"),
                 )
             })?;
             let text = std::fs::read_to_string(&path)
-                .map_err(|error| Error::io("read knowledge page", &path, error))?;
+                .map_err(|error| Error::io("read Library document", &path, error))?;
             pages.push((relative.to_string_lossy().replace('\\', "/"), text));
         }
         Ok(pages)

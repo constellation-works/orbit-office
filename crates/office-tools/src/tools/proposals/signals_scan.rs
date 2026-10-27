@@ -7,10 +7,15 @@
 //! read or a truncated task list is refused by name; it is not reported
 //! as an empty or partial candidate set.
 
-use office_core::domain::knowledge::SearchFilter;
+use std::collections::BTreeMap;
+use std::path::Path;
+
+use office_core::domain::knowledge::{DocumentRecord, LinkKind, Page};
 use office_core::domain::signals::{
     FrictionFact, PageFact, SignalFacts, SourceFact, TaskFact, scan,
 };
+use office_core::domain::source::parse_source_participants;
+use office_core::ports::LibraryText;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Map, Value, json};
@@ -79,45 +84,98 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         .map_err(|error| refuse_read("orbit.search", "friction search failed", &error))?;
     facts.frictions = parse_frictions(&frictions);
 
-    // Library pages and sources through the Library port.
-    let hits = call
-        .ports
-        .library
-        .search(
-            "",
-            &SearchFilter {
-                limit: Some(1000),
-                ..SearchFilter::default()
-            },
-        )
-        .map_err(|error| refuse_read("library.search", "failed", &error))?;
-    for hit in hits {
-        match hit.kind {
-            office_core::domain::knowledge::DocumentKind::Source => {
-                facts.sources.push(SourceFact {
-                    id: hit.id,
-                    tags: Vec::new(),
-                    participants: Vec::new(),
-                    body: hit.snippet,
-                });
-            }
-            office_core::domain::knowledge::DocumentKind::Domain
-            | office_core::domain::knowledge::DocumentKind::Runbook => {
-                facts.pages.push(PageFact {
-                    id: hit.id,
-                    title: hit.title,
-                    ..PageFact::default()
-                });
-            }
-            office_core::domain::knowledge::DocumentKind::Artifact => {}
-        }
-    }
+    load_library_facts(call, now_days, &mut facts)?;
 
     let candidates = scan(&facts, &settings.thresholds);
     Ok(json!({
         "candidates": candidates,
         "count": candidates.len(),
     }))
+}
+
+/// Enumeration returns complete Markdown, independent of search's limits and
+/// excerpts. These reads are integrity checks: refuse an unreadable document
+/// or backlink lookup rather than presenting a partial scan as complete.
+fn load_library_facts(call: &Call<'_>, now_days: i64, facts: &mut SignalFacts) -> Result<()> {
+    let sources = call
+        .ports
+        .library
+        .source_documents()
+        .map_err(|error| refuse_read("library.source_documents", "failed", &error))?;
+    let mut source_dates = BTreeMap::new();
+    for file in sources {
+        let markdown = markdown(&file, "library.source_documents")?;
+        let record = DocumentRecord::from_markdown(Path::new(&file.path), markdown);
+        let participants = parse_source_participants(markdown)
+            .map_err(|error| refuse_read("library.source_documents", &file.path, &error))?;
+        source_dates.insert(
+            record.id.clone(),
+            record.date.as_deref().and_then(date_days),
+        );
+        facts.sources.push(SourceFact {
+            id: record.id,
+            participants,
+            tags: record.tags,
+            body: record.body,
+        });
+    }
+    let pages = call
+        .ports
+        .library
+        .knowledge_pages()
+        .map_err(|error| refuse_read("library.knowledge_pages", "failed", &error))?;
+    for file in pages {
+        let page = Page::from_markdown(markdown(&file, "library.knowledge_pages")?)
+            .map_err(|error| refuse_read("library.knowledge_pages", &file.path, &error))?;
+        let cites = page
+            .citations()
+            .map_err(|error| refuse_read("library.knowledge_pages", &file.path, &error))?
+            .into_iter()
+            .map(|citation| citation.id)
+            .collect();
+        let verified = page.last_verified.as_deref().and_then(date_days);
+        let backlinks = call
+            .ports
+            .library
+            .backlinks(&page.id)
+            .map_err(|error| refuse_read("library.backlinks", &page.id, &error))?;
+        let mut cited_by: Vec<String> = backlinks
+            .into_iter()
+            .filter(|link| link.via.contains(&LinkKind::Cites))
+            .filter(|link| {
+                verified
+                    .zip(source_dates.get(&link.id).copied().flatten())
+                    .is_some_and(|(verified, source)| source > verified)
+            })
+            .map(|link| link.id)
+            .collect();
+        cited_by.sort();
+        cited_by.dedup();
+        facts.pages.push(PageFact {
+            id: page.id,
+            title: page.title,
+            aliases: page.aliases,
+            tags: page.tags,
+            last_verified_days_ago: verified
+                .map(|date| u32::try_from((now_days - date).max(0)).unwrap_or(u32::MAX)),
+            // This is a mechanical review candidate; a proposal still needs
+            // quoted evidence of the contradiction or extension (spec).
+            has_newer_evidence: !cited_by.is_empty(),
+            cited_by,
+            cites,
+        });
+    }
+    Ok(())
+}
+
+fn markdown<'a>(file: &'a LibraryText, read: &'static str) -> Result<&'a str> {
+    file.markdown
+        .as_deref()
+        .ok_or_else(|| Error::SignalsScanRefused {
+            read,
+            code: "library_document_unreadable",
+            detail: format!("cannot read {}", file.path),
+        })
 }
 
 /// Records array under any of the envelope keys Orbit uses.

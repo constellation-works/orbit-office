@@ -367,6 +367,20 @@ impl Library for FakeLibrary {
             .collect())
     }
 
+    fn source_documents(&self) -> Result<Vec<LibraryText>> {
+        self.ready()?;
+        Ok(self
+            .texts
+            .borrow()
+            .iter()
+            .filter(|(path, _)| path.starts_with("sources/") && path.ends_with("/source.md"))
+            .map(|(path, markdown)| LibraryText {
+                path: path.clone(),
+                markdown: Some(markdown.clone()),
+            })
+            .collect())
+    }
+
     fn templates(&self) -> Result<Vec<LibraryText>> {
         self.ready()?;
         Ok(self.templates.clone())
