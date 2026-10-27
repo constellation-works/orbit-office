@@ -162,6 +162,9 @@ impl Library for RealLibrary {
     fn settings(&self) -> office_core::Result<Settings> {
         Ok(LibraryStore::settings(&self.store()?)?)
     }
+    fn set_setting(&self, key: &str, value: Value) -> office_core::Result<()> {
+        Ok(LibraryStore::set_setting(&self.store()?, key, value)?)
+    }
     fn initialize(&self, library_dir: Option<&str>) -> office_core::Result<InitOutcome> {
         let (Some(workspace), Some(library), Some(state)) =
             (&self.workspace, &self.library, &self.state)

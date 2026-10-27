@@ -17,6 +17,7 @@ pub struct FakeLibrary {
     documents: RefCell<BTreeMap<String, DocumentRecord>>,
     revisions: RefCell<BTreeMap<String, Vec<Revision>>>,
     now_initialized: RefCell<Option<bool>>,
+    current_settings: RefCell<Option<Settings>>,
     /// Whether the fixture represents an initialized Library.
     pub initialized: bool,
     /// Settings returned by the fake (validated on every load).
@@ -45,7 +46,11 @@ impl FakeLibrary {
         if !self.is_now_initialized() {
             return Err(not_initialized_error());
         }
-        self.settings.validate()
+        self.current_settings
+            .borrow()
+            .as_ref()
+            .unwrap_or(&self.settings)
+            .validate()
     }
 }
 
@@ -130,13 +135,23 @@ impl Library for FakeLibrary {
     }
     fn is_initialized(&self) -> Result<bool> {
         if self.is_now_initialized() {
-            self.settings.validate()?;
+            self.ready()?;
         }
         Ok(self.is_now_initialized())
     }
     fn settings(&self) -> Result<Settings> {
         self.ready()?;
-        Ok(self.settings.clone())
+        Ok(self
+            .current_settings
+            .borrow()
+            .as_ref()
+            .unwrap_or(&self.settings)
+            .clone())
+    }
+    fn set_setting(&self, key: &str, value: serde_json::Value) -> Result<()> {
+        let settings = self.settings()?.with_setting(key, value)?;
+        *self.current_settings.borrow_mut() = Some(settings);
+        Ok(())
     }
     fn initialize(&self, library_dir: Option<&str>) -> Result<InitOutcome> {
         if let Some(dir) = library_dir {
@@ -186,7 +201,7 @@ impl Library for FakeLibrary {
         if !self.is_now_initialized() {
             return Ok(LibraryHealth::uninitialized());
         }
-        self.settings.validate()?;
+        self.ready()?;
         let mut health = LibraryHealth {
             initialized: true,
             pages_off_template: self.pages_off_template,

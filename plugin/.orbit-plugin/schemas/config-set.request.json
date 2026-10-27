@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.config-set request",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "One policy leaf: retention.<kind>, sensitivity.<kind>, thresholds.<name>, packs or open_weights_endpoint. Secrets and whole mappings are refused."
+    },
+    "value": {
+      "type": ["integer", "string", "array", "null"],
+      "items": { "type": "string" },
+      "description": "Typed JSON value, validated for the selected key. Retention is 1–36500 days or null; sensitivity is normal/private; packs is a distinct list of meetings/receipts; thresholds are bounded positive integers; endpoint is Baseten HTTPS or loopback HTTP(S), or null."
+    }
+  },
+  "required": ["key", "value"],
+  "additionalProperties": false
+}

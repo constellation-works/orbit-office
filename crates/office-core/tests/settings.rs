@@ -3,6 +3,91 @@
 use office_core::{Error, domain::settings::Settings};
 
 #[test]
+fn single_setting_updates_roundtrip_and_preserve_other_settings() {
+    let mut settings = Settings::default();
+    for (key, value) in [
+        ("retention.meeting", serde_json::json!(36500)),
+        ("retention.note", serde_json::json!(null)),
+        ("sensitivity.email", serde_json::json!("private")),
+        ("packs", serde_json::json!(["receipts", "meetings"])),
+        ("thresholds.repetition_count", serde_json::json!(10000)),
+        ("thresholds.window_days", serde_json::json!(36500)),
+        ("thresholds.stale_days", serde_json::json!(1)),
+        ("thresholds.friction_count", serde_json::json!(10)),
+        ("thresholds.new_subject_count", serde_json::json!(5)),
+        ("thresholds.unused_days", serde_json::json!(20)),
+        (
+            "open_weights_endpoint",
+            serde_json::json!("http://localhost:9/v1?model=\"a\"#fragment"),
+        ),
+        ("open_weights_endpoint", serde_json::json!(null)),
+        ("packs", serde_json::json!([])),
+    ] {
+        let before = serde_json::to_value(&settings).unwrap();
+        let updated = settings.with_setting(key, value.clone()).unwrap();
+        let mut expected = before;
+        if let Some((section, name)) = key.split_once('.') {
+            expected[section][name] = value;
+        } else {
+            expected[key] = value;
+        }
+        assert_eq!(serde_json::to_value(&updated).unwrap(), expected);
+        assert_eq!(
+            Settings::from_yaml(&updated.to_yaml().unwrap()).unwrap(),
+            updated
+        );
+        settings = updated;
+    }
+}
+
+#[test]
+fn single_setting_refuses_unknown_leaves_and_bad_values_without_mutation() {
+    let settings = Settings::default();
+    for key in [
+        "retention",
+        "sensitivity",
+        "thresholds",
+        "retention.unknown",
+        "thresholds.unknown",
+        "retention.meeting.extra",
+        "meta_api_key",
+        "baseten_token",
+        "secrets.meta_api_key",
+        "",
+    ] {
+        assert!(
+            matches!(
+                settings.with_setting(key, serde_json::json!(10)),
+                Err(Error::UnknownSetting { .. })
+            ),
+            "{key}"
+        );
+    }
+    for (key, value) in [
+        ("retention.meeting", serde_json::json!(0)),
+        ("retention.meeting", serde_json::json!(36501)),
+        ("retention.meeting", serde_json::json!("30")),
+        ("retention.meeting", serde_json::json!(1.5)),
+        ("sensitivity.note", serde_json::json!(null)),
+        ("sensitivity.note", serde_json::json!("secret-value")),
+        ("packs", serde_json::json!(["meetings", "meetings"])),
+        ("packs", serde_json::json!(["unknown"])),
+        ("thresholds.friction_count", serde_json::json!(10001)),
+        ("thresholds.unused_days", serde_json::json!(36501)),
+        ("thresholds.window_days", serde_json::json!(false)),
+        (
+            "open_weights_endpoint",
+            serde_json::json!("https://secret-value@example.test"),
+        ),
+    ] {
+        let error = settings.with_setting(key, value).unwrap_err();
+        assert_eq!(error.code(), "invalid_library_setting");
+        assert!(!error.to_string().contains("secret-value"));
+        assert_eq!(settings, Settings::default());
+    }
+}
+
+#[test]
 fn partial_yaml_merges_policy_defaults_without_creating_observations() {
     assert_eq!(Settings::from_yaml("").expect("empty"), Settings::default());
     assert_eq!(

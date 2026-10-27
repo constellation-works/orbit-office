@@ -126,6 +126,43 @@ impl Settings {
         Self::try_from(parse_yaml(text)?)
     }
 
+    /// Return one validated policy update, preserving every other setting.
+    /// Only leaves are settable; whole per-kind/threshold maps and secret
+    /// names are refused separately from invalid values. No mutation on error.
+    pub fn with_setting(&self, key: &str, value: Value) -> Result<Self> {
+        let encode = |settings: &Self| {
+            serde_json::to_value(settings).map_err(|_| invalid("config", "cannot encode settings"))
+        };
+        // Normalize public, caller-constructed settings through the disk boundary
+        // first, including policy defaults for missing per-kind entries.
+        let mut encoded = encode(&Self::try_from(encode(self)?)?)?;
+        let target = match key.split_once('.') {
+            Some((section, name))
+                if ["retention", "sensitivity", "thresholds"].contains(&section) =>
+            {
+                encoded
+                    .get_mut(section)
+                    .and_then(Value::as_object_mut)
+                    .and_then(|map| map.get_mut(name))
+            }
+            None if ["packs", "open_weights_endpoint"].contains(&key) => encoded.get_mut(key),
+            _ => None,
+        }
+        .ok_or_else(|| Error::UnknownSetting { key: key.into() })?;
+        *target = value;
+        Self::try_from(encoded)
+    }
+
+    /// Canonical config text: a JSON mapping, which is also valid YAML and
+    /// round-trips without losing escaped strings. Formatting/comments from
+    /// hand-edited YAML are not retained. Validate before persisting it.
+    pub fn to_yaml(&self) -> Result<String> {
+        self.validate()?;
+        serde_json::to_string_pretty(self)
+            .map(|text| format!("{text}\n"))
+            .map_err(|_| invalid("config", "cannot encode settings"))
+    }
+
     /// Validate values constructed or modified by a caller through the same
     /// boundary as disk/deserialization. Call this before using a modified value.
     pub fn validate(&self) -> Result<()> {

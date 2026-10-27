@@ -56,7 +56,8 @@ tool needs them, as new migration steps — never as edits to step 1.
 ## Library port and writes
 
 `office_core::ports::Library` exposes current document reads, document writes,
-filtered search, newest-first path history, readiness and settings. `LibraryStore`
+filtered search, newest-first path history, readiness, settings and single-key
+`set_setting` updates. `LibraryStore`
 implements it; `office-testkit::fakes::FakeLibrary` implements the same operations
 in memory. The store's existing record exports are re-exports of
 `office_core::domain::knowledge`, so callers keep the same types. The shared
@@ -85,7 +86,14 @@ Production calls to one Library must use the same plugin state directory.
 it is for tests/scans, not concurrent production indexing.
 
 A versioned, atomically written `library.pending-write.json` is the durable
-commit decision for the operation. Its document text and write token are replayed
+commit decision for the operation. New decisions use version 2 with a `kind`
+of `document` or `settings`; version-1 document journals without a kind remain
+readable. Unknown kinds and newer versions are refused. Settings decisions
+accept only `.office/config.yaml`, validate the decided settings, replace the
+config and commit it without indexing it as a document. Recovery can finish a
+settings replacement even when the old config is missing or invalid, provided
+the Library's own git repository remains present. Document decisions retain
+the indexed-path and document-identity checks. The text and write token are replayed
 idempotently under the writer lock before an interrupted store opens. A failure
 after that decision leaves the journal intact. With no active writer, read
 operations refuse with `library_write_pending` until recovery completes;
@@ -96,7 +104,13 @@ fsyncs its removal. During a live write, reads return the available file, indexe
 record/search hits or committed history, which may reflect the old or new
 document. These calls do not promise a snapshot across files, index and git.
 
-Each write stages only its Markdown path and commits with `--only --allow-empty`,
+`set_setting` holds the writer lock from before reading the latest config
+through the typed `Settings::with_setting` update, config replacement and commit,
+so updates to different keys do not overwrite one another. Unknown setting keys
+and invalid values are refused before the write decision. Settings use the same
+symlink refusal and atomic owner-only writer as documents.
+
+Each write stages only its document or config path and commits with `--only --allow-empty`,
 using the per-commit author and committer `orbit-office <office@orbit.local>`.
 Unrelated staged files remain staged and do not enter that commit. `original.*`
 paths are refused, including `original.md`; originals are never staged by this

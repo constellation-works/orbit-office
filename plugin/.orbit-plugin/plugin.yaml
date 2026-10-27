@@ -188,14 +188,14 @@ spec:
       input_schema: { $ref: schemas/reindex.request.json }
       output_schema: { $ref: schemas/reindex.response.json }
 
-    # - name: config-set
-    #   description: >-
-    #     Validate and write one Library setting in .office/config.yaml;
-    #     commit.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/config-set.request.json }
-    #   output_schema: { $ref: schemas/config-set.response.json }
+    - name: config-set
+      description: >-
+        Validate and write one Library setting in .office/config.yaml;
+        commit.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/config-set.request.json }
+      output_schema: { $ref: schemas/config-set.response.json }
 
     # - name: search
     #   description: >-

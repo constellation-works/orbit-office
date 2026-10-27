@@ -94,6 +94,11 @@ pub trait Library {
     fn settings(&self) -> Result<Settings> {
         Err(Error::LibraryUnavailable)
     }
+    /// Apply one typed setting to the latest config and commit under one
+    /// writer lock. Unknown keys and invalid values leave it unchanged.
+    fn set_setting(&self, _key: &str, _value: serde_json::Value) -> Result<()> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Scaffold the Library (layout, git, config, `.gitignore`, index, one
     /// commit). `library_dir`, when given, is the requested Library location
     /// (workspace-relative or absolute); an adapter refuses one outside its
