@@ -21,17 +21,18 @@ checked by `scripts/check-app-boundaries.py` (`make structure`); the full
 layout is in `../ARCHITECTURE.md` ("Web app").
 
 - `packages/contracts/` — types shared by server and web.
-- `packages/server/` — `main.ts` (composition), `http/` (router, feature
-  contract), `orbit/` (the `orbit tool run --json` client), `dispatch/`
-  (the 30-second pass), `features/<f>/`.
+- `packages/server/` — `main.ts` (composition), `http/` (`router.ts`,
+  `guard.ts`, `static.ts`, `types.ts`), `orbit/` (the `orbit tool run
+  --json` client), `dispatch/` (the 30-second pass), `features/<f>/`.
 - `packages/web/` — `static/index.html`, `src/router.ts`, `src/screen.ts`,
   `src/api/`, `src/ui/`, `src/screens/<s>/`.
 
 ## Wiring
 
-- The server is the only process the browser talks to. It binds loopback
-  only and refuses non-loopback `Host` headers and cross-site `Origin`s
-  on every route (STD-05 loopback HTTP); `/` serves the UI from
+- The server is the only process the browser talks to. It binds to
+  `127.0.0.1` by default (`HOST` overrides the bind address) and refuses
+  non-loopback `Host` headers and cross-site `Origin`s on every route
+  (STD-05 loopback HTTP); `/` serves the UI from
   `packages/web/static` and `packages/web/dist`.
 - It acts as the user: `packages/server/src/orbit/` calls Orbit with
   `orbit tool run <name> --json` for both `orbit.*` and `office.*`

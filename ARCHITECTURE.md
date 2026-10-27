@@ -111,13 +111,13 @@ app/packages/
   contracts/   types shared by server and web: the app's HTTP API, feature and screen names
   server/src/
     main.ts          composition only
-    http/            router.ts (every feature, integrator-owned), types.ts
+    http/            router.ts (every feature, integrator-owned), guard.ts, static.ts, types.ts
     orbit/           the `orbit tool run --json` client
     dispatch/        the 30-second dispatch pass
     features/<f>/    one folder per feature: today, sources, todos, approvals, routines,
                      library, insights, review, selection, settings
   web/
-    static/          index.html (and, later, the PWA manifest)
+    static/          index.html, demo.html, manifest.webmanifest, icons/, style.css
     src/
       main.ts        mounts the router
       router.ts      every screen (integrator-owned)
@@ -174,5 +174,6 @@ process.
   holder record. Lock order is writer file lock, then the short-lived index mutex.
   Reads take no writer lock. A pending write journal refuses reads until recovery
   completes; see [store.md](docs/design/office/specs/store.md).
-- Planned, with the Orbit client: the app server caps concurrent `orbit` subprocesses,
-  shares one in-flight poll between browser tabs, and runs the dispatch pass single-flight.
+- The app server's Orbit client caps concurrent `orbit` subprocesses at four by default
+  (configurable), queues calls FIFO, times out every call, and shares one in-flight poll
+  between browser tabs. Its dispatch pass is single-flight.
