@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.selection-put request",
+  "type": "object",
+  "properties": {
+    "clear": {
+      "type": "boolean",
+      "description": "When true, empty the tray before recording a selection. With no other fields, this only empties the tray."
+    },
+    "object": {
+      "type": "string",
+      "description": "Source, page, artifact or task id the user pointed at."
+    },
+    "anchor": {
+      "type": ["string", "null"],
+      "description": "Anchor inside the object, such as #L14-20 or #t=00:12:31-00:13:05. Null selects the whole object."
+    },
+    "quote": {
+      "type": ["string", "null"],
+      "description": "Quoted text. Stored and returned only when sensitivity is normal; a private object stores no quote."
+    },
+    "quote_sha256": {
+      "type": ["string", "null"],
+      "description": "Hash of the object at selection time. Omitted on a normal quote, the quote's SHA-256 is stored. Never stored for a private object."
+    },
+    "view": {
+      "type": "string",
+      "enum": ["source", "page", "artifact", "task"],
+      "description": "The view the user was looking at. Required when object is set."
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["normal", "private"],
+      "description": "How far the quote may travel. Defaults to normal. private stores the reference only."
+    }
+  },
+  "additionalProperties": false
+}

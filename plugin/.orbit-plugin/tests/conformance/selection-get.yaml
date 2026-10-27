@@ -1,0 +1,13 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: selection_get_returns_an_empty_tray
+    tool: selection-get
+    input: {}
+    expect:
+      output: {"selections":[]}
+  - name: selection_get_refuses_unknown_input
+    tool: selection-get
+    input: {"verbose":true}
+    expect:
+      error: {"code":"invalid_argument"}

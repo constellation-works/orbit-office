@@ -17,7 +17,7 @@ backend only through Orbit's tools) and `gateway/` (two small Python plugins, se
 |------|-------|------|--------------------------|
 | 0. Foundation | `office-common` | The common error, fs mechanisms (path safety, atomic writes, SHA-256), SQLite connection defaults (`sqlite` feature), bounded subprocess supervision shared by adapters and fixtures, small shared types. | — |
 | 1. Domain | `office-core` | **Pure.** The exec envelope (`protocol`), tool contract types (`tool`), declared secret names, the domain model and its rules (`domain/`, including Library records and validated settings), the bundled knowledge templates (`templates/*.md`, compiled in with `include_str!`), and the port traits the application calls (`ports/`). No I/O. | `office-common` |
-| 2. Adapters | `office-store` | Implements the Library port: Markdown files (the source of truth), the rebuildable SQLite index, the Library's own git repository and its writer lock. Also owns plugin state, so it implements the script-runner port: run directories under `plugin_state/runs/` and the supervised `uv` child (specs/scripts.md). Structured after `orbit-store`. | `office-common`, `office-core` |
+| 2. Adapters | `office-store` | Implements the Library port: Markdown files (the source of truth), the rebuildable SQLite index, the Library's own git repository and its writer lock. Also owns plugin state, including the selection tray in `selections.sqlite`, and implements the selections and script-runner ports: run directories under `plugin_state/runs/` and the supervised `uv` child (specs/scripts.md). Structured after `orbit-store`. | `office-common`, `office-core` |
 | 2. Adapters | `office-models` | Implements the model ports: Meta Model API (Muse Spark, Muse Voice Transcribe), the private route (Muse Spark Open on the one endpoint the user chose), privacy routing, the private-endpoint check and local JSON Schema validation of extraction replies. The only crate that may speak HTTP. | `office-common`, `office-core` |
 | 2. Adapters | `office-orbit` | Implements the Orbit port: the manifest's `orbit_tools` callbacks (`task.add`, `task.artifact.put`, …). | `office-common`, `office-core` |
 | 3. Application | `office-tools` | One module per tool, the tool registry and dispatch. Talks to adapters **only through `office-core` ports**, so every tool runs against fakes. | `office-common`, `office-core` |
@@ -42,7 +42,7 @@ The testkit's recording Orbit fake shares observations across clones.
 
 Port traits are declared in `office-core` because an adapter crate must depend on the crate
 that defines the trait it implements (Rust's orphan rule). A trait declaration does no I/O,
-so the domain stays pure. The four port interfaces and fakes are established together for dispatch; adapter
+so the domain stays pure. Port interfaces and fakes are established together for dispatch; adapter
 operations arrive with the first task that needs them. Each port has its own file.
 The testkit depends on core for those fakes; tools use the testkit only as a dev-dependency.
 

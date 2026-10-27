@@ -266,22 +266,22 @@ spec:
 
     # ---- selection ----
 
-    # - name: selection-get
-    #   description: >-
-    #     Return the user's fresh, unused selections from the app and mark
-    #     them consumed.
-    #   execution_kind: mutating
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/selection-get.request.json }
-    #   output_schema: { $ref: schemas/selection-get.response.json }
+    - name: selection-get
+      description: >-
+        Return the user's fresh, unused selections from the app and mark
+        them consumed.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/selection-get.request.json }
+      output_schema: { $ref: schemas/selection-get.response.json }
 
-    # - name: selection-put
-    #   description: >-
-    #     Record a selection from the app; clear: true empties the tray.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/selection-put.request.json }
-    #   output_schema: { $ref: schemas/selection-put.response.json }
+    - name: selection-put
+      description: >-
+        Record a selection from the app; clear: true empties the tray.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/selection-put.request.json }
+      output_schema: { $ref: schemas/selection-put.response.json }
 
     # ---- sessions ----
 

@@ -20,6 +20,7 @@ fn ports(orbit: FakeOrbit) -> Ports<'static> {
         models: Box::new(FakeModels::new()),
         orbit: Box::new(orbit),
         clock: Box::new(FakeClock(std::time::SystemTime::UNIX_EPOCH)),
+        selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     }
 }
 

@@ -31,6 +31,9 @@ pub use contracts::{DocumentKind, DocumentRecord, Revision, SearchFilter, Search
 pub use driver::script::ScriptStore;
 pub use error::{Error, Result};
 pub use repository::LibraryStore;
+pub use selection::SelectionStore;
+
+mod selection;
 
 #[cfg(test)]
 mod tests;

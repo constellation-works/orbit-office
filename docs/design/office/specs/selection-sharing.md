@@ -35,7 +35,7 @@ consumed_at: null
 
 - Selections live in their own table, `plugin_state/selections.sqlite`, written through `office.selection-put`.
 - They are short-lived UI state, so they are kept apart from the rebuildable Library index and never committed to the Library.
-- A selection expires after 15 minutes or once the agent has used it.
+- A selection expires at 15 minutes or once the agent has used it. `selection-get` atomically consumes fresh selections; `selection-put` can clear the tray before optionally recording a selection.
 - The **tray** holds up to five fresh selections, so "compare these two" and "merge these into the Acme page" work.
 - The app shows the tray as a "Shared with agent" pill, with a one-click clear, so the user always knows what the agent can see.
 
@@ -54,6 +54,6 @@ Only the app writes selections: `office.selection-put` is
 
 ## Safety
 
-- **Private objects.** A selection from a `private` object carries only the reference and anchor, never the quote. Otherwise an orchestrator running on a hosted model would send private text off the machine, bypassing the routing in [models-and-privacy.md](./models-and-privacy.md). To use the content, the agent goes through the office tools, which route private material to the open-weight model.
+- **Private objects.** The app supplies the object sensitivity on `selection-put`; a selection marked `private` carries only the reference and anchor, never the quote or its hash. Otherwise an orchestrator running on a hosted model would send private text off the machine, bypassing the routing in [models-and-privacy.md](./models-and-privacy.md). To use the content, the agent goes through the office tools, which route private material to the open-weight model.
 - **Quoted text is data.** Selections, whether injected or pulled, are wrapped as quoted Library data with their object id. Instruction-like text inside a highlighted chat or email is never treated as instructions.
 - **Staleness.** `quote_sha256` detects that the object changed since it was selected; the agent re-reads through the tools rather than trusting the quote.

@@ -1,0 +1,13 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: selection_put_clears_the_tray
+    tool: selection-put
+    input: {"clear":true}
+    expect:
+      output: {"cleared":true,"evicted":[],"selection":null}
+  - name: selection_put_refuses_an_object_without_a_view
+    tool: selection-put
+    input: {"object":"src-20261028-acme-qbr"}
+    expect:
+      error: {"code":"invalid_argument"}
