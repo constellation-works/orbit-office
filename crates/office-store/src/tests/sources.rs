@@ -85,6 +85,25 @@ fn capture_same_upload_twice_dedupes_in_the_real_store() {
 }
 
 #[test]
+fn capture_read_and_dedupe_preserve_title_with_quotes_and_backslashes() {
+    let (_dir, store, workspace) = setup();
+    let upload = workspace.join("note.txt");
+    std::fs::write(&upload, "same text").expect("upload");
+    let title = r#"Say "Hello" from C:\docs"#;
+    let mut req = request();
+    req.upload_path = Some(upload.to_string_lossy().to_string());
+    req.title = Some(title.to_string());
+    let first = store.capture_source(&req).expect("first");
+    assert_eq!(first.title, title);
+    let read = store.read_source(&first.id).expect("read");
+    assert_eq!(read.title, title);
+    let second = store.capture_source(&req).expect("second");
+    assert!(second.deduplicated);
+    assert_eq!(second.id, first.id);
+    assert_eq!(second.title, title);
+}
+
+#[test]
 fn capture_vtt_transcript_keeps_numeric_and_keyword_prefixed_cue_text() {
     let (_dir, store, workspace) = setup();
     let transcript = workspace.join("talk.vtt");
