@@ -30,6 +30,11 @@ pub struct LibraryHealth {
     pub runbook: u32,
     /// Indexed `artifact` documents.
     pub artifact: u32,
+    /// Knowledge pages that name a template and no longer meet its current rules.
+    pub pages_off_template: u32,
+    /// Template files that do not parse, as Library-relative paths, sorted.
+    /// Empty when every template file is valid.
+    pub template_invalid: Vec<String>,
 }
 
 impl LibraryHealth {

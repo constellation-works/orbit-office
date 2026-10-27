@@ -20,6 +20,8 @@ tests:
             domain: 0
             runbook: 0
             artifact: 0
+          pages_off_template: 0
+          template_invalid: []
   - name: status_refuses_unknown_input
     tool: status
     input: {"verbose": true}
