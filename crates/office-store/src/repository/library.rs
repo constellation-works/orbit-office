@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use office_core::domain::knowledge::DocumentKind;
 use office_core::domain::template::{KnowledgePage, TemplateFile, assess_templates};
-use office_core::ports::{InitOutcome, LibraryHealth};
+use office_core::ports::{InitOutcome, LibraryHealth, LibraryText};
 
-use crate::contracts::{DocumentRecord, Revision, SearchFilter, SearchHit};
+use crate::contracts::{Backlink, DocumentRecord, Revision, SearchFilter, SearchHit};
 use crate::driver::file::library::LAYOUT_DIRS;
 use crate::driver::file::{library::LibraryFs, lock::WriterLock};
 use crate::driver::git::Git;
@@ -572,6 +572,42 @@ impl LibraryStore {
         self.index.get(id)
     }
 
+    /// Indexed documents that cite or relate to `id`. No writer-lock wait.
+    pub fn backlinks(&self, id: &str) -> Result<Vec<Backlink>> {
+        self.read_ready()?;
+        self.index.backlinks(id)
+    }
+
+    /// Every knowledge page file, in path order, read from disk (the
+    /// source of truth) without waiting for the writer lock.
+    pub fn knowledge_pages(&self) -> Result<Vec<LibraryText>> {
+        self.read_ready()?;
+        Ok(self
+            .files
+            .read_knowledge_markdown()?
+            .into_iter()
+            .map(|(path, markdown)| LibraryText {
+                path,
+                markdown: Some(markdown),
+            })
+            .collect())
+    }
+
+    /// Every template file, in path order. A symlinked or unreadable file
+    /// is listed with no Markdown so a caller can name it.
+    pub fn templates(&self) -> Result<Vec<LibraryText>> {
+        self.read_ready()?;
+        Ok(self
+            .files
+            .read_templates()?
+            .into_iter()
+            .map(|template| LibraryText {
+                path: template.relative,
+                markdown: template.markdown,
+            })
+            .collect())
+    }
+
     /// Number of indexed documents. Does not wait for the writer lock.
     pub fn document_count(&self) -> Result<u32> {
         self.read_ready()?;
@@ -632,6 +668,18 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn write_document(&self, relative: &Path, text: &str) -> office_core::Result<DocumentRecord> {
         Ok(Self::write_document(self, relative, text)?)
+    }
+    fn get(&self, id: &str) -> office_core::Result<Option<DocumentRecord>> {
+        Ok(Self::get(self, id)?)
+    }
+    fn backlinks(&self, id: &str) -> office_core::Result<Vec<Backlink>> {
+        Ok(Self::backlinks(self, id)?)
+    }
+    fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(Self::knowledge_pages(self)?)
+    }
+    fn templates(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(Self::templates(self)?)
     }
     fn search(&self, query: &str, filter: &SearchFilter) -> office_core::Result<Vec<SearchHit>> {
         Ok(Self::search(self, query, filter)?)

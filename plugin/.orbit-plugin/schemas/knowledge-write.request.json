@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.knowledge-write request",
+  "type": "object",
+  "properties": {
+    "markdown": {
+      "type": "string",
+      "description": "The whole page: --- frontmatter (id, type, template, title, aliases, summary, tags, cites, refs, related, updated_at, last_verified, status, sensitivity, as_of, performable, submission) --- then the body. The id (dom-<slug> or rb-<slug>) and type place it at knowledge/domain/<id>.md or knowledge/runbooks/<id>.md; an existing page with that id is replaced."
+    }
+  },
+  "required": ["markdown"],
+  "additionalProperties": false
+}

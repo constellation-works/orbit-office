@@ -1,6 +1,7 @@
 //! Through the built binary: `office.init` scaffolds a Library idempotently,
-//! `office.reindex` rebuilds a deleted index, and `office.status` reports
-//! Library health (STD-04: temp roots, no real host state).
+//! `office.reindex` rebuilds a deleted index, `office.status` reports
+//! Library health, and `office.knowledge-write`/`office.knowledge-show`
+//! validate, commit and read pages (STD-04: temp roots, no real host state).
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::io::Write;
@@ -858,5 +859,165 @@ fn status_reports_an_unreplayable_write_journal_as_its_typed_error_and_keeps_it(
     assert_eq!(
         std::fs::read_to_string(&journal).expect("kept journal"),
         text
+    );
+}
+
+/// An initialized Library holding one meeting source, indexed.
+fn library_with_source(env: &Env) -> PathBuf {
+    let init = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(init["ok"], serde_json::json!(true), "{init}");
+    let library = env.library();
+    let source = library.join("sources/2026/10/src-20261028-acme-qbr/source.md");
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    std::fs::write(
+        &source,
+        "---\nid: src-20261028-acme-qbr\nkind: meeting\ntitle: Acme QBR\nrelated: [dom-project-acme-renewal]\n---\n\n[00:10:00] Jane: Renewal is in March.\n\n[00:12:31] Jane: Price matters most.\n",
+    )
+    .unwrap();
+    let reindex = env.tool("office.reindex", serde_json::json!({}));
+    assert_eq!(reindex["output"]["indexed_documents"], serde_json::json!(1));
+    library
+}
+
+const RENEWAL_PAGE: &str = "---\nid: dom-project-acme-renewal\ntype: domain\ntemplate: project\ntitle: Acme renewal\naliases: [the renewal]\ncites:\n  - src-20261028-acme-qbr#t=00:12:31\nrefs:\n  - { label: Renewal tickets, account: \"jira:ACME\" }\n  - { label: Jane Park, contact: jane@acme.example }\n---\n## Status\nRenewal is due in March [src-20261028-acme-qbr#t=00:10:00].\n\n## Background\nPrice sensitivity is high [src-20261028-acme-qbr#t=00:12:31].\n";
+
+#[test]
+fn knowledge_write_refuses_unresolved_cites_without_writing_and_commits_a_valid_page_once() {
+    let env = Env::new();
+    let library = library_with_source(&env);
+    let head = git(&library, &["rev-parse", "HEAD"]);
+    let page = library.join("knowledge/domain/dom-project-acme-renewal.md");
+
+    for (missing, cite) in [
+        ("source", "src-20261028-missing#t=00:12:31"),
+        ("anchor", "src-20261028-acme-qbr#t=01:00:00"),
+        ("anchor", "src-20261028-acme-qbr#L99"),
+    ] {
+        let markdown = RENEWAL_PAGE.replace(
+            "src-20261028-acme-qbr#t=00:12:31\nrefs",
+            &format!("{cite}\nrefs"),
+        );
+        let refused = env.tool(
+            "office.knowledge-write",
+            serde_json::json!({ "markdown": markdown }),
+        );
+        assert_eq!(
+            refused["ok"],
+            serde_json::json!(false),
+            "{missing}: {refused}"
+        );
+        assert_eq!(
+            refused["error"]["code"],
+            serde_json::json!("unresolved_cite"),
+            "{missing}: {refused}"
+        );
+        assert!(!page.exists(), "a refused write leaves no page ({missing})");
+        assert_eq!(
+            git(&library, &["rev-parse", "HEAD"]),
+            head,
+            "no commit ({missing})"
+        );
+    }
+
+    let written = env.tool(
+        "office.knowledge-write",
+        serde_json::json!({ "markdown": RENEWAL_PAGE }),
+    );
+    assert_eq!(written["ok"], serde_json::json!(true), "{written}");
+    assert_eq!(
+        written["output"],
+        serde_json::json!({
+            "id": "dom-project-acme-renewal",
+            "type": "domain",
+            "path": "knowledge/domain/dom-project-acme-renewal.md",
+            "created": true,
+        })
+    );
+    assert_eq!(std::fs::read_to_string(&page).unwrap(), RENEWAL_PAGE);
+    let commits = git(
+        &library,
+        &["rev-list", "--count", &format!("{}..HEAD", head.trim())],
+    );
+    assert_eq!(commits.trim(), "1", "a valid write commits once");
+    assert_eq!(
+        git(&library, &["show", "--name-only", "--format=", "HEAD"]).trim(),
+        "knowledge/domain/dom-project-acme-renewal.md"
+    );
+    let status = env.tool("office.status", serde_json::json!({}));
+    assert_eq!(
+        status["output"]["library"]["documents_by_kind"]["domain"],
+        serde_json::json!(1)
+    );
+    assert_eq!(
+        status["output"]["library"]["pages_off_template"],
+        serde_json::json!(0)
+    );
+}
+
+#[test]
+fn knowledge_show_returns_the_model_view_and_the_sources_and_pages_linking_to_it() {
+    let env = Env::new();
+    let _library = library_with_source(&env);
+    let written = env.tool(
+        "office.knowledge-write",
+        serde_json::json!({ "markdown": RENEWAL_PAGE }),
+    );
+    assert_eq!(written["ok"], serde_json::json!(true), "{written}");
+    let prep = "---\nid: rb-client-qbr-prep\ntitle: QBR prep\ncites: [dom-project-acme-renewal]\nrelated: [dom-project-acme-renewal]\nperformable: agent\nsubmission:\n  system: ServiceNow\n  via: draft\n---\n## Inputs\nThe renewal page.\n";
+    let runbook = env.tool(
+        "office.knowledge-write",
+        serde_json::json!({ "markdown": prep }),
+    );
+    assert_eq!(runbook["ok"], serde_json::json!(true), "{runbook}");
+    assert_eq!(
+        runbook["output"]["path"],
+        serde_json::json!("knowledge/runbooks/rb-client-qbr-prep.md")
+    );
+
+    let shown = env.tool(
+        "office.knowledge-show",
+        serde_json::json!({ "id": "dom-project-acme-renewal" }),
+    );
+    assert_eq!(shown["ok"], serde_json::json!(true), "{shown}");
+    let output = &shown["output"];
+    assert_eq!(
+        output["backlinks"],
+        serde_json::json!([
+            {
+                "id": "rb-client-qbr-prep",
+                "kind": "runbook",
+                "title": "QBR prep",
+                "path": "knowledge/runbooks/rb-client-qbr-prep.md",
+                "via": ["cites", "related"],
+            },
+            {
+                "id": "src-20261028-acme-qbr",
+                "kind": "source",
+                "title": "Acme QBR",
+                "path": "sources/2026/10/src-20261028-acme-qbr/source.md",
+                "via": ["related"],
+            },
+        ])
+    );
+    assert_eq!(output["page"]["template"], serde_json::json!("project"));
+    assert_eq!(
+        output["page"]["refs"],
+        serde_json::json!([
+            {"label": "Renewal tickets", "target": "account", "value": "jira:ACME", "authoritative": false, "as_of": null},
+            {"label": "Jane Park", "target": "contact", "value": null, "authoritative": false, "as_of": null},
+        ])
+    );
+    assert!(
+        !shown.to_string().contains("jane@acme.example"),
+        "the contact value never leaves through show: {shown}"
+    );
+
+    let missing = env.tool(
+        "office.knowledge-show",
+        serde_json::json!({ "id": "dom-absent" }),
+    );
+    assert_eq!(
+        missing["error"]["code"],
+        serde_json::json!("page_not_found")
     );
 }

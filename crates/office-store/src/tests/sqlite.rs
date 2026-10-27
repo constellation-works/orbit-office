@@ -1,6 +1,6 @@
 //! The SQLite driver: open/migrate, rebuild, upsert, search, get.
 
-use crate::contracts::{DocumentKind, DocumentRecord, SearchFilter};
+use crate::contracts::{DocumentKind, DocumentRecord, LinkKind, SearchFilter};
 use crate::driver::sqlite::connection::IndexStore;
 
 fn document(id: &str, title: &str, body: &str) -> DocumentRecord {
@@ -67,4 +67,34 @@ fn upsert_replaces_without_duplicating() {
         .search("second", &SearchFilter::default())
         .expect("search");
     assert_eq!(hits.len(), 1);
+}
+
+#[test]
+fn backlinks_come_from_cites_with_or_without_anchor_and_related() {
+    let index = IndexStore::open_in_memory().expect("open");
+    let mut page = document("dom-acme", "Acme", "Acme.");
+    page.cites = vec![];
+    page.related = vec![];
+    let mut citing = document("dom-renewal", "Renewal", "Renewal.");
+    citing.cites = vec!["dom-acme".into()];
+    citing.related = vec!["dom-acme".into()];
+    let mut source = document("src-20261028-acme-qbr", "QBR", "Meeting.");
+    source.kind = DocumentKind::Source;
+    source.path = "sources/2026/10/src-20261028-acme-qbr/source.md".into();
+    source.cites = vec!["dom-acme#Overview".into()];
+    source.related = vec![];
+    let mut prefix_only = document("dom-other", "Other", "Other.");
+    prefix_only.cites = vec!["dom-acme-two".into()];
+    prefix_only.related = vec!["dom-acmex".into()];
+    index
+        .rebuild(&[page, citing, source, prefix_only])
+        .expect("rebuild");
+
+    let links = index.backlinks("dom-acme").expect("backlinks");
+    let ids: Vec<&str> = links.iter().map(|link| link.id.as_str()).collect();
+    assert_eq!(ids, ["dom-renewal", "src-20261028-acme-qbr"]);
+    assert_eq!(links[0].via, [LinkKind::Cites, LinkKind::Related]);
+    assert_eq!(links[1].via, [LinkKind::Cites]);
+    assert_eq!(links[1].kind, DocumentKind::Source);
+    assert!(index.backlinks("dom-absent").expect("none").is_empty());
 }

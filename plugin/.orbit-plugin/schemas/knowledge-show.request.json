@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.knowledge-show request",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^(dom|rb)-[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "The page id: dom-<slug> (About) or rb-<slug> (How-to)."
+    }
+  },
+  "required": ["id"],
+  "additionalProperties": false
+}
