@@ -89,7 +89,11 @@ Other tools open the store, which still creates the layout directories
 (`LibraryStore::open`, a safety net), but they never write the config,
 run `git init` or commit outside their own change. A tool that finds the
 Library uninitialized (no repository or no config) refuses with
-`library_not_initialized` and names `office.init`.
+`library_not_initialized` and names `office.init`. `office.status` does not
+refuse: an absent Library reads as `initialized: false` with zero counts, but
+an invalid config or a pending write is returned as its typed error
+(`invalid_library_setting`, `library_write_pending`,
+`library_journal_invalid`), never as an uninitialized Library.
 
 Demo history goes in after `office.init`, through `office.capture` and
 the other tools rather than by copying files, so the seeded Library has
