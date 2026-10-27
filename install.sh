@@ -140,6 +140,13 @@ case "$WORKSPACE" in
     */) WORKSPACE=${WORKSPACE%/} ;;
     *) ;;
 esac
+# A relative workspace must be made absolute before any comparison or
+# recorded state (workspace_path, is_office_workspace) uses it, and before
+# it is delivered to the app as ORBIT_OFFICE_WORKSPACE.
+case "$WORKSPACE" in
+    /*) ;;
+    *) WORKSPACE="$PWD/$WORKSPACE" ;;
+esac
 [ -n "$WORKSPACE" ] || die "--home must not be empty"
 
 # ---------------------------------------------------------------------------
@@ -1726,6 +1733,15 @@ step_app() {
     app_entrypoint_ok "$_app_home" \
         || die "app: missing or unrunnable entrypoint at $_app_home/packages/server/dist/main.js; provision the app (clone build or ORBIT_OFFICE_APP_BUNDLE) before installing the service, then re-run"
     _server_js="$_app_home/packages/server/dist/main.js"
+    # Workspace binding for the app (ORBIT_OFFICE_WORKSPACE): the absolute
+    # workspace path recorded as workspace_path. It names the workspace
+    # only; it grants no operator capability (see client.ts authority note).
+    # The value expands inside unquoted heredocs, so escape it for the
+    # target format: XML for the plist, and for systemd a double-quoted
+    # Environment= assignment with backslash, quote and percent escaped
+    # (percent is doubled to escape systemd specifiers).
+    _workspace_xml=$(printf '%s' "$WORKSPACE" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+    _workspace_systemd=$(printf '%s' "$WORKSPACE" | sed -e 's/\\/\\\\/g' -e 's/%/%%/g' -e 's/"/\\"/g')
     if [ "$OS" = "macos" ]; then
         if write_if_changed "$LAUNCHD_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1736,7 +1752,7 @@ step_app() {
   <key>ProgramArguments</key>
   <array><string>$_node_bin</string><string>$_server_js</string></array>
   <key>EnvironmentVariables</key>
-  <dict><key>PORT</key><string>$PORT</string><key>HOST</key><string>127.0.0.1</string><key>PATH</key><string>$AGENT_PATH</string></dict>
+  <dict><key>PORT</key><string>$PORT</string><key>HOST</key><string>127.0.0.1</string><key>PATH</key><string>$AGENT_PATH</string><key>ORBIT_OFFICE_WORKSPACE</key><string>$_workspace_xml</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
 </dict>
@@ -1798,6 +1814,7 @@ ExecStart=$_node_bin $_server_js
 Environment=PORT=$PORT
 Environment=HOST=127.0.0.1
 Environment=PATH=$AGENT_PATH
+Environment="ORBIT_OFFICE_WORKSPACE=$_workspace_systemd"
 Restart=on-failure
 
 [Install]
