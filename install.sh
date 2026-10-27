@@ -66,6 +66,10 @@ Environment:
   ORBIT_OFFICE_PLUGIN_SOURCE Office source for `orbit plugin add`
   ORBIT_OFFICE_PLUGIN_BUNDLE Directory of office, gateway and optional
                              cloudcli exports from one release
+  ORBIT_OFFICE_APP_BUNDLE    Unpacked app bundle containing
+                             packages/server/dist/main.js and its runtime
+                             files; required when install.sh has no
+                             adjacent app tree (standalone install)
   ORBIT_OFFICE_META_API_KEY  Meta API key (used instead of prompting)
   ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN  Private-route endpoint token (used
                              instead of prompting; optional)
@@ -1467,24 +1471,71 @@ step_agent() {
     state_mark "agent_registered"
 }
 
+# A provisioned app is only usable when the service's entrypoint exists,
+# is non-empty and parses under node. The login service is never written
+# or enabled for an app that fails this check.
+app_entrypoint_ok() {
+    _entry="$1/packages/server/dist/main.js"
+    [ -f "$_entry" ] && [ -s "$_entry" ] || return 1
+    command -v node >/dev/null 2>&1 || return 1
+    node --check "$_entry" >/dev/null 2>&1
+}
+
 step_app() {
     step "9 app"
     compute_agent_path
     validate_agent_path
     _node_bin=$(command -v node 2>/dev/null || printf 'node')
     if [ -n "$APP_SRC" ]; then
-        if [ -f "$APP_SRC/packages/server/dist/main.js" ] || state_has "app_built"; then
+        _app_home="$APP_SRC"
+        if app_entrypoint_ok "$APP_SRC"; then
             say "app: build already done"
         else
             npm --prefix "$APP_SRC" run build >/dev/null
+            app_entrypoint_ok "$APP_SRC" \
+                || die "app: build did not produce a runnable entrypoint at $APP_SRC/packages/server/dist/main.js; run 'npm --prefix $APP_SRC run build' to see the failure, then re-run"
             state_mark "app_built"
             say "app: built ($APP_SRC)"
         fi
-        _app_home="$APP_SRC"
+    elif [ -n "${ORBIT_OFFICE_APP_BUNDLE:-}" ]; then
+        _bundle="${ORBIT_OFFICE_APP_BUNDLE%/}"
+        [ -d "$_bundle" ] \
+            || die "app: ORBIT_OFFICE_APP_BUNDLE is not a directory: ${ORBIT_OFFICE_APP_BUNDLE}; supply an unpacked app bundle containing packages/server/dist/main.js, or run install.sh from a clone beside app/package.json, then re-run"
+        # The bundle is the app root itself; a bundle that wraps it in a
+        # single app/ folder is accepted as the same layout.
+        if ! app_entrypoint_ok "$_bundle" && app_entrypoint_ok "$_bundle/app"; then
+            _bundle="$_bundle/app"
+        fi
+        app_entrypoint_ok "$_bundle" \
+            || die "app: ORBIT_OFFICE_APP_BUNDLE (${ORBIT_OFFICE_APP_BUNDLE}) has no runnable packages/server/dist/main.js; supply an unpacked app bundle containing packages/server/dist/main.js and its runtime files, or run install.sh from a clone beside app/package.json, then re-run"
+        _app_home="$DATA_DIR/app"
+        if app_entrypoint_ok "$_app_home"; then
+            _app_already=1
+        else
+            _app_already=0
+        fi
+        if [ "$_bundle" != "$_app_home" ]; then
+            mkdir -p "$_app_home"
+            cp -R "$_bundle/." "$_app_home/" \
+                || die "app: could not copy the app bundle from $_bundle to $_app_home"
+        fi
+        app_entrypoint_ok "$_app_home" \
+            || die "app: the app bundle did not provision a runnable entrypoint at $_app_home/packages/server/dist/main.js; supply a complete app bundle, then re-run"
+        if [ "$_app_already" -eq 1 ]; then
+            say "app: build already done (app at $_app_home)"
+        else
+            say "app: installed from ORBIT_OFFICE_APP_BUNDLE ($_bundle -> $_app_home)"
+        fi
     else
         _app_home="$DATA_DIR/app"
-        say "app: build already done (no local app tree; service points at $_app_home)"
+        if app_entrypoint_ok "$_app_home"; then
+            say "app: build already done (app at $_app_home)"
+        else
+            die "app: no local app tree and no app bundle: missing $_app_home/packages/server/dist/main.js; run install.sh from a clone (beside app/package.json) or set ORBIT_OFFICE_APP_BUNDLE to an unpacked app bundle containing packages/server/dist/main.js, then re-run"
+        fi
     fi
+    app_entrypoint_ok "$_app_home" \
+        || die "app: missing or unrunnable entrypoint at $_app_home/packages/server/dist/main.js; provision the app (clone build or ORBIT_OFFICE_APP_BUNDLE) before installing the service, then re-run"
     _server_js="$_app_home/packages/server/dist/main.js"
     if [ "$OS" = "macos" ]; then
         if write_if_changed "$LAUNCHD_PLIST" <<EOF
