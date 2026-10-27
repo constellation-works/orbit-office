@@ -6,8 +6,18 @@ import { navigableScreens, SCREENS, screenForHash } from "../dist/router.js";
 test("every scaffolded screen is present, in navigation order", () => {
   assert.deepEqual(
     SCREENS.map((screen) => screen.id),
-    ["today", "todos", "routines", "library", "insights", "review", "source"],
+    ["today", "todos", "routines", "library", "insights", "review", "source", "settings"],
   );
+});
+
+test("every built screen is navigable and routable by its hash", () => {
+  const built = SCREENS.filter((screen) => screen.status === "built");
+  assert.ok(built.some((screen) => screen.id === "settings"));
+  assert.deepEqual(navigableScreens(), built);
+  for (const screen of built) {
+    assert.equal(navigableScreens().includes(screen), true, `${screen.id} is navigable`);
+    assert.equal(screenForHash(`#${screen.id}`), screen, `${screen.id} is routable by hash`);
+  }
 });
 
 test("planned screens stay out of navigation and cannot be routed to", () => {
