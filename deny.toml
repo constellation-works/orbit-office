@@ -16,6 +16,8 @@ allow = [
     # tempfile, rustix and their transitive dependencies.
     "MIT",
     "Apache-2.0",
+    # MIT-0: borrow-or-share, pulled in by fluent-uri -> referencing -> jsonschema (office-models).
+    "MIT-0",
     # Unicode-3.0: unicode-ident.
     "Unicode-3.0",
     # Zlib: foldhash, pulled in by hashbrown -> hashlink -> rusqlite (office-store).

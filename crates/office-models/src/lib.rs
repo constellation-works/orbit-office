@@ -30,8 +30,12 @@
 //!   `/v1/responses`, Bearer credential, deployment endpoints under
 //!   `https://model-<id>.api.baseten.co/...`. Muse Spark Open
 //!   (`meta-models/muse-spark-open-1026`) accepts `json_schema` but does
-//!   not enforce it, so open-weights extraction parses and refuses
-//!   non-JSON replies instead of trusting the shape.
+//!   not enforce it. Extraction on both routes parses the reply as JSON
+//!   and validates it locally against the requested schema. Non-JSON or
+//!   schema-violating replies fail with non-retryable `model_invalid_response`.
+//!   Invalid schemas or external references fail before inference with
+//!   non-retryable `model_invalid_schema`; local references are supported,
+//!   and schema validation never retrieves URLs or files.
 //!
 //! [`http::check_url`] allows `api.meta.ai` (hosted calls), a Baseten
 //! host (`inference.baseten.co` or `*.api.baseten.co`), or loopback, and
@@ -224,6 +228,16 @@ impl Models for RoutedClient {
     }
 
     fn extract(&self, request: &ExtractRequest) -> Result<Value> {
+        // Compile before inference, failing closed without retrieving external
+        // resources (jsonschema's HTTP and file features are disabled).
+        // Schema errors and validation errors may contain private input, so
+        // neither is included in diagnostics.
+        let validator = jsonschema::validator_for(&request.schema).map_err(|_| Error::Model {
+            code: "model_invalid_schema",
+            message: "request.schema could not be compiled as a self-contained JSON Schema"
+                .to_string(),
+            retryable: false,
+        })?;
         let text = self.call(
             request.sensitivity,
             Operation::Extract {
@@ -231,11 +245,19 @@ impl Models for RoutedClient {
                 schema: &request.schema,
             },
         )?;
-        serde_json::from_str(&text).map_err(|_| Error::Model {
+        let value = serde_json::from_str(&text).map_err(|_| Error::Model {
             code: "model_invalid_response",
             message: "model extraction reply was not JSON".to_string(),
             retryable: false,
-        })
+        })?;
+        if !validator.is_valid(&value) {
+            return Err(Error::Model {
+                code: "model_invalid_response",
+                message: "model extraction reply did not satisfy request.schema".to_string(),
+                retryable: false,
+            });
+        }
+        Ok(value)
     }
 
     fn read_image(&self, request: &ImageRequest) -> Result<ImageReading> {

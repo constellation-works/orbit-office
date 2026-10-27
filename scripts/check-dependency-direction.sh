@@ -49,6 +49,8 @@ policy() {
       BANNED="$SURFACE $HTTP"
       ;;
     office-models)
+      # The external jsonschema validator adds no internal edge. Its HTTP/file
+      # retrieval features are disabled in the workspace manifest (ARCHITECTURE.md).
       ALLOWED="office-common office-core"
       BANNED="$SURFACE"
       ;;

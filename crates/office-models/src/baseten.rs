@@ -8,8 +8,9 @@
 //! Bearer credential, same `choices[0].message.content` reply. One
 //! documented divergence matters here: Muse Spark Open accepts
 //! `json_schema` but does not enforce it, so extraction through this
-//! module never trusts the reply shape — the caller parses the reply as
-//! JSON and refuses anything else (see `lib.rs`).
+//! module never trusts the reply shape: the caller parses the reply as
+//! JSON and validates it locally against the requested schema, refusing
+//! non-JSON and schema-violating replies (see `lib.rs`).
 
 use serde_json::{Value, json};
 
