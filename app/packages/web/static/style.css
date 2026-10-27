@@ -43,6 +43,28 @@ h2, h3 { line-height: 1.25; margin: 0; }
 .today-result, .today-background { white-space: pre-wrap; }
 .today-background { margin-bottom: 0; }
 .today [role="alert"] { margin-bottom: 24px; }
+.secondary-action { border: 1px solid #638b83; border-radius: 8px; background: #fff; color: #225e55; font: inherit; font-weight: 650; padding: 9px 16px; cursor: pointer; }
+.secondary-action:disabled { opacity: .65; cursor: default; }
+.approval-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.approval-actions .primary-action { align-self: auto; }
+.approval-detail, .approval-preview, .approval-send-back { width: 100%; min-width: 0; }
+.approval-detail p { margin: 0 0 8px; }
+.approval-files { margin: 0; padding-left: 20px; }
+.approval-request { overflow-wrap: anywhere; }
+.approval-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 18rem; overflow: auto; margin: 8px 0 0; padding: 12px; background: #f6f8f7; border: 1px solid #dce5df; border-radius: 8px; font-size: .9rem; }
+.approval-loading { color: #526660; font-style: italic; }
+.approval-send-back { display: flex; flex-direction: column; gap: 10px; }
+.approval-send-back label { display: flex; flex-direction: column; gap: 6px; font-weight: 650; }
+.approval-send-back textarea { font: inherit; padding: 8px; border: 1px solid #9aaba8; border-radius: 8px; min-width: 0; }
+.approval-message { margin: 0; }
+.approval-message[data-tone="error"] { color: #8a2f1d; }
+.approval-message[data-tone="info"] { color: #6b4a12; }
+.approval-pages { list-style: none; margin: 0; padding: 0; width: 100%; }
+.approval-page { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; border-top: 1px solid #dce5df; }
+.approval-page h4 { margin: 0; font-size: 1rem; }
+.card--group { grid-column: 1 / -1; }
+.today-outcome { margin: 0 0 24px; padding: 12px 16px; border-radius: 10px; background: #e4f1e9; color: #203035; }
+.today-outcome[data-tone="info"] { background: #fdf3e1; }
 @media (max-width: 600px) { .today-working-line { flex-direction: column; gap: 8px; } .today-working .card-grid { padding: 0 20px; } }
 .site-footer { width: min(100% - 32px, 1120px); margin: 0 auto; padding: 0 0 48px; color: #526660; font-size: .95rem; }
 .site-footer p { margin: 0; }

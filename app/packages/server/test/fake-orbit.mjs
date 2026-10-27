@@ -4,7 +4,9 @@
  * The fake logs every invocation (one JSON line per call) to
  * `<state>/invocations.log`, brackets tool calls with `S`/`E` events in
  * `<state>/events.log` so tests can replay concurrency, answers
- * `orbit.task.list` from `<state>/tasks.json`, and records `orbit run
+ * `orbit.task.list`, `orbit.task.show` and `orbit.task.update` from
+ * `<state>/tasks.json` when present (updates are written back), artifacts from
+ * `<state>/artifacts.json` (`{task: {path: text}}`), and records `orbit run
  * ship` ids in `<state>/ship.log`. Behaviour knobs arrive through the
  * environment the client is given: `FAKE_ORBIT_STATE`, plus per-call
  * `delayMs` / `hang` / `fail` fields in the tool input.
@@ -95,6 +97,40 @@ async function main() {
         }) + "\\n");
         return;
       }
+      let stored = null;
+      if (tool === "orbit.task.show" || tool === "orbit.task.update") {
+        try { stored = JSON.parse(readFileSync(join(state, "tasks.json"), "utf8")); } catch {}
+      }
+      // Without a tasks.json these fall through to the generic echo other tests rely on.
+      if (Array.isArray(stored)) {
+        const tasks = stored;
+        const task = tasks.find((row) => row.id === input.id);
+        if (task === undefined) {
+          process.stderr.write(JSON.stringify({ error: "task not found", code: "task_not_found" }) + "\\n");
+          process.exitCode = 1;
+          return;
+        }
+        if (tool === "orbit.task.update") {
+          if (typeof input.status === "string") task.status = input.status;
+          if (typeof input.execution_summary === "string") task.execution_summary = input.execution_summary;
+          if (typeof input.comment === "string") task.comments = [...(task.comments ?? []), input.comment];
+          writeFileSync(join(state, "tasks.json"), JSON.stringify(tasks));
+        }
+        process.stdout.write(JSON.stringify(task) + "\\n");
+        return;
+      }
+      if (tool === "orbit.task.artifact.get") {
+        let artifacts = {};
+        try { artifacts = JSON.parse(readFileSync(join(state, "artifacts.json"), "utf8")); } catch {}
+        const content = artifacts[input.id] && artifacts[input.id][input.path];
+        if (typeof content !== "string") {
+          process.stderr.write(JSON.stringify({ error: "artifact not found", code: "artifact_not_found" }) + "\\n");
+          process.exitCode = 1;
+          return;
+        }
+        process.stdout.write(JSON.stringify({ id: input.id, path: input.path, encoding: "utf8", content }) + "\\n");
+        return;
+      }
       if (tool === "orbit.task.list") {
         let tasks = [];
         try {
@@ -125,6 +161,12 @@ async function main() {
             if (tool.startsWith("office.")) {
         let office = {};
         try { office = JSON.parse(readFileSync(join(state, "office.json"), "utf8")); } catch {}
+        const refused = office.refuse && typeof office.refuse[tool] === "string" ? office.refuse[tool] : "";
+        if (refused) {
+          process.stderr.write(JSON.stringify({ error: "refused by fixture", code: refused }) + "\\n");
+          process.exitCode = 1;
+          return;
+        }
         const failed = office.fail && typeof office.fail[tool] === "string" ? office.fail[tool] : "";
         if (failed) {
           process.stdout.write(JSON.stringify({ ok: false, error: { code: "fixture_failed", message: failed, retryable: false } }));

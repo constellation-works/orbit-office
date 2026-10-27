@@ -270,3 +270,79 @@ test("guard treats explicit and implicit HTTP default ports as equivalent", () =
     false,
   );
 });
+
+function postJson(port, { path, host, body }) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const req = httpRequest(
+      { host: "127.0.0.1", port, method: "POST", path, headers: { host, origin: `http://${host}`, "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
+      (res) => {
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) }));
+      },
+    );
+    req.on("error", reject);
+    req.end(payload);
+  });
+}
+
+/** Point the router's Orbit clients at a fake `orbit` for one test; they read the live environment. */
+async function withFakeOrbit(t) {
+  const { installFakeOrbit } = await import("./fake-orbit.mjs");
+  const { readFile } = await import("node:fs/promises");
+  const fake = await installFakeOrbit();
+  const saved = { PATH: process.env.PATH, FAKE_ORBIT_STATE: process.env.FAKE_ORBIT_STATE, HOME: process.env.HOME };
+  Object.assign(process.env, { PATH: fake.env().PATH, FAKE_ORBIT_STATE: fake.state, HOME: fake.root });
+  t.after(async () => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const tools = async () => (await readFile(join(fake.state, "invocations.log"), "utf8")).trim().split("\n")
+    .map((line) => JSON.parse(line)).filter((args) => args[0] === "tool").map((args) => [args[2], JSON.parse(args[args.indexOf("--input") + 1])]);
+  const tasks = async () => JSON.parse(await readFile(join(fake.state, "tasks.json"), "utf8"));
+  return { fake, tools, tasks };
+}
+
+const REVIEWED = { id: "ORB-1", title: "Weekly brief", status: "review", tags: ["owner:agent"], execution_summary: "Drafted.", artifacts: [{ path: "brief.md" }] };
+
+test("approving through the app router promotes before moving the task to done", async (t) => {
+  const { fake, tools, tasks } = await withFakeOrbit(t);
+  await writeFile(join(fake.state, "tasks.json"), JSON.stringify([REVIEWED]));
+  const { port, host } = await startTestServer(t);
+  const health = JSON.parse((await request(port, { path: "/healthz", headers: { host } })).body);
+  assert.ok(health.features.includes("approvals"));
+  const result = await postJson(port, { path: "/api/approvals/approve", host, body: { key: "ORB-1" } });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, { approved: true, closed: true });
+  const calls = await tools();
+  assert.deepEqual(calls.map(([name]) => name), ["orbit.task.show", "office.artifact-promote", "orbit.task.update"]);
+  assert.deepEqual(calls[1][1], { task: "ORB-1" });
+  assert.equal(calls[2][1].status, "done");
+  assert.equal(calls[2][1].verdict, undefined);
+  assert.equal(calls[2][1].complete, undefined);
+  assert.match(calls[2][1].comment, /^Approved by .+ in the office app/);
+  assert.equal((await tasks())[0].status, "done");
+});
+
+test("a refused promote through the app router leaves the task in review and returns the error", async (t) => {
+  const { fake, tools, tasks } = await withFakeOrbit(t);
+  await writeFile(join(fake.state, "tasks.json"), JSON.stringify([REVIEWED]));
+  await writeFile(join(fake.state, "office.json"), JSON.stringify({ refuse: { "office.artifact-promote": "task_has_no_artifacts" } }));
+  const { port, host } = await startTestServer(t);
+  const result = await postJson(port, { path: "/api/approvals/approve", host, body: { key: "ORB-1" } });
+  assert.equal(result.status, 409);
+  assert.deepEqual(result.body, { error: "promote_refused", reason: "task_has_no_artifacts" });
+  assert.deepEqual((await tools()).map(([name]) => name), ["orbit.task.show", "office.artifact-promote"]);
+  assert.equal((await tasks())[0].status, "review");
+
+  // An exec-envelope failure is handled the same way.
+  await writeFile(join(fake.state, "office.json"), JSON.stringify({ fail: { "office.artifact-promote": "no" } }));
+  const enveloped = await postJson(port, { path: "/api/approvals/approve", host, body: { key: "ORB-1" } });
+  assert.equal(enveloped.status, 409);
+  assert.equal(enveloped.body.error, "promote_refused");
+  assert.equal((await tasks())[0].status, "review");
+});

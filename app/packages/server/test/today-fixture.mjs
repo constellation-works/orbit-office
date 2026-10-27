@@ -42,3 +42,20 @@ export function fakeTodayClient(initial = todayTasks()) {
     },
   };
 }
+
+/** Every Needs-you card the approval actions cover, for classification and the browser. */
+export function approvalTasks() {
+  const page = (id, title, tags) => task(id, title, "proposed", ["proposal", "proposal:knowledge_add", ...tags]);
+  return [
+    page("onboard-1", "How your team works", ["onboarding"]),
+    page("onboard-2", "Your goals this quarter", ["onboarding"]),
+    page("boot-1", "Ingest service: overview", ["bootstrap:docs", "subject:ingest-service"]),
+    page("boot-2", "Ingest service: on-call runbook", ["bootstrap:docs", "subject:ingest-service"]),
+    page("boot-3", "Expense policy", ["bootstrap:process"]),
+    task("suggestion", "Turn meeting notes into a weekly brief", "proposed", ["proposal", "proposal:auto_task"]),
+    task("draft", "Add a follow-up note to the Acme account", "proposed", ["gateway-draft", "proposal", "proposal:gateway_draft"]),
+    task("script", "Receipt catalog for October", "proposed", ["script-output"]),
+    task("review", "The project brief is ready to read", "review", ["owner:agent"]),
+    task("personal", "Send your feedback on the plan", "backlog", ["owner:you"]),
+  ];
+}

@@ -146,8 +146,28 @@ export interface TodayItem {
   background: string;
 }
 
+/**
+ * What the user is asked to do. `proposal`: accept or dismiss a suggested
+ * change. `approval`: approve or send back an agent's finished work.
+ * `script_output`: keep or dismiss files a script produced. `gateway_draft`:
+ * approve sending, or dismiss, a request to another system.
+ */
+export type TodayNeedKind = "proposal" | "approval" | "todo" | "script_output" | "gateway_draft";
+
+/**
+ * Proposals the app shows together on one card: the onboarding set
+ * ("Set up your Library") or one subject of a Library bootstrap phase.
+ * `key` identifies the group for the UI; `title` is plain words.
+ */
+export interface TodayNeedGroup {
+  key: string;
+  title: string;
+}
+
 export interface TodayNeed extends TodayItem {
-  kind: "proposal" | "approval" | "todo";
+  kind: TodayNeedKind;
+  /** The card this proposal belongs to, or null when it stands alone. */
+  group: TodayNeedGroup | null;
 }
 
 export interface TodayResult extends TodayItem {
@@ -201,3 +221,68 @@ export interface ReviewList {
   reviews: ReviewItem[];
   latest_100: boolean;
 }
+
+/**
+ * `GET /api/approvals/detail?key=<key>`: what the user reviews before acting
+ * on a Needs-you item. Plain words and file names only; no ids or paths.
+ */
+export type ApprovalDetail =
+  | {
+    kind: "proposal";
+    key: string;
+    /** The page or change the proposal makes, as reviewable text. */
+    preview: string;
+    /** SHA-256 of the exact proposal the preview shows; accept binds to it. */
+    sha256: string;
+  }
+  | {
+    kind: "approval" | "script_output";
+    key: string;
+    /** Output file names, without folders. */
+    files: string[];
+  }
+  | {
+    kind: "gateway_draft";
+    key: string;
+    /** Name of the saved connection the request goes to. */
+    connection: string;
+    method: string;
+    url: string;
+    /** The request body as text, or null when it has none. */
+    body: string | null;
+    /** The digest Approve sends with; the send refuses a changed draft. */
+    sha256: string;
+  };
+
+/** `POST /api/approvals/approve`: promote the output, then close the task. */
+export interface ApproveRequest { key: string }
+export interface ApproveResult { approved: true; closed: boolean }
+
+/** `POST /api/approvals/send-back`: return reviewed work with a comment. */
+export interface SendBackRequest { key: string; comment: string }
+
+/** `POST /api/approvals/dismiss`: reject a proposal, script output or draft. */
+export interface DismissRequest { key: string; reason?: string }
+
+/** `POST /api/approvals/accept`: `office.proposal-accept`, called once. */
+export interface AcceptRequest { key: string; sha256: string }
+
+/** `POST /api/approvals/accept-all`: accept each proposal in turn. */
+export interface AcceptAllRequest { proposals: AcceptRequest[] }
+export interface AcceptAllResult {
+  /** One entry per requested proposal, in request order. */
+  results: Array<{ key: string; accepted: true } | { key: string; accepted: false; error: string }>;
+}
+
+/** `POST /api/approvals/send`: `gateway.http-send` with the shown digest. */
+export interface GatewaySendRequest { key: string; sha256: string }
+export interface GatewaySendResult {
+  /** `outcome_unknown`: the request went out and no reply came back. Never a failure. */
+  outcome: "sent" | "outcome_unknown";
+  /** HTTP status the other system answered, or null. */
+  status: number | null;
+  task_closed: boolean;
+}
+
+/** Every approval mutation that has no other result. */
+export interface ApprovalOk { ok: true }
