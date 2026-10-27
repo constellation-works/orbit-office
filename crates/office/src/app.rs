@@ -171,6 +171,18 @@ impl Library for RealLibrary {
     fn history(&self, relative: &Path) -> office_core::Result<Vec<Revision>> {
         Ok(LibraryStore::history(&self.store()?, relative)?)
     }
+    fn read_text(&self, relative: &Path) -> office_core::Result<String> {
+        Ok(LibraryStore::read_text(&self.store()?, relative)?)
+    }
+    fn head_commit(&self) -> office_core::Result<Option<String>> {
+        Ok(LibraryStore::head_commit(&self.store()?)?)
+    }
+    fn stage_attachment(&self, name: &str, text: &str) -> office_core::Result<String> {
+        <LibraryStore as Library>::stage_attachment(&self.store()?, name, text)
+    }
+    fn remove_staged(&self, staged: &str) -> office_core::Result<()> {
+        <LibraryStore as Library>::remove_staged(&self.store()?, staged)
+    }
     fn is_initialized(&self) -> office_core::Result<bool> {
         if self.library.is_none() {
             return Err(office_core::Error::LibraryUnavailable);

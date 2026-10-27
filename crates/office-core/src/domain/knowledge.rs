@@ -78,6 +78,12 @@ pub struct DocumentRecord {
     pub cites: Vec<String>,
     /// Frontmatter `related` page ids.
     pub related: Vec<String>,
+    /// Frontmatter `template` (knowledge pages that follow one).
+    pub template: Option<String>,
+    /// The document's date, `YYYY-MM-DD`: the first of `occurred_at`,
+    /// `captured_at`, `updated_at` and `last_verified`, else the date in a
+    /// dated id (`src-YYYYMMDD-…`, `art-YYYYMMDD-…`). `None` when it has none.
+    pub date: Option<String>,
 }
 
 /// Filters for Library search. An absent field filters
@@ -90,6 +96,12 @@ pub struct SearchFilter {
     pub tag: Option<String>,
     /// Only documents in this artifact series.
     pub series: Option<String>,
+    /// Only knowledge pages that name this template.
+    pub template: Option<String>,
+    /// Only documents dated on or after this `YYYY-MM-DD` (undated ones are excluded).
+    pub since: Option<String>,
+    /// Only documents dated on or before this `YYYY-MM-DD` (undated ones are excluded).
+    pub until: Option<String>,
     /// Maximum hits to return.
     pub limit: Option<usize>,
 }
@@ -175,7 +187,11 @@ fn parse_document(text: &str, relative: &Path) -> DocumentRecord {
         body: body.trim().to_string(),
         cites: Vec::new(),
         related: Vec::new(),
+        template: None,
+        date: None,
     };
+    // Date candidates in precedence order (see `DocumentRecord::date`).
+    let mut dates: [Option<String>; 4] = [None, None, None, None];
 
     let mut list_key: Option<&str> = None;
     for line in frontmatter.lines() {
@@ -206,6 +222,13 @@ fn parse_document(text: &str, relative: &Path) -> DocumentRecord {
                 record.series = Some(unquote(value));
             }
             "sensitivity" if !value.is_empty() => record.sensitivity = unquote(value),
+            "template" => {
+                record.template = Some(scalar(value)).filter(|v| !v.is_empty() && v != "null");
+            }
+            "occurred_at" => dates[0] = date_prefix(&scalar(value)),
+            "captured_at" => dates[1] = date_prefix(&scalar(value)),
+            "updated_at" => dates[2] = date_prefix(&scalar(value)),
+            "last_verified" => dates[3] = date_prefix(&scalar(value)),
             "cites" => {
                 record.cites = inline_list(value);
                 list_key = Some("cites");
@@ -228,7 +251,40 @@ fn parse_document(text: &str, relative: &Path) -> DocumentRecord {
     if record.title.is_empty() {
         record.title = record.id.clone();
     }
+    record.date = dates
+        .into_iter()
+        .flatten()
+        .next()
+        .or_else(|| id_date(&record.id));
     record
+}
+
+/// The leading `YYYY-MM-DD` of a date or timestamp, if it has one.
+fn date_prefix(value: &str) -> Option<String> {
+    let head = value.get(..10)?;
+    let bytes = head.as_bytes();
+    let shaped = bytes.iter().enumerate().all(|(i, b)| match i {
+        4 | 7 => *b == b'-',
+        _ => b.is_ascii_digit(),
+    });
+    shaped.then(|| head.to_string())
+}
+
+/// The date in a dated id (`src-20261028-…`, `art-20261029-…`).
+fn id_date(id: &str) -> Option<String> {
+    let digits = id
+        .strip_prefix("src-")
+        .or_else(|| id.strip_prefix("art-"))?
+        .get(..8)?;
+    if !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    date_prefix(&format!(
+        "{}-{}-{}",
+        &digits[..4],
+        &digits[4..6],
+        &digits[6..]
+    ))
 }
 
 /// Library layer from a document's relative path.
@@ -276,6 +332,18 @@ fn inline_list(value: &str) -> Vec<String> {
         return Vec::new();
     }
     inner.split(',').map(|item| unquote(item.trim())).collect()
+}
+
+/// A scalar value without quotes, or without a trailing ` # comment` when unquoted.
+fn scalar(value: &str) -> String {
+    if value.starts_with('"') || value.starts_with('\'') {
+        return unquote(value);
+    }
+    value
+        .split_once(" #")
+        .map_or(value, |(head, _)| head)
+        .trim()
+        .to_string()
 }
 
 fn unquote(value: &str) -> String {

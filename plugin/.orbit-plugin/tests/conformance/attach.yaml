@@ -1,0 +1,38 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  # The success case is a dry run: the conformance workspace has no Orbit
+  # task to copy into, and a dry run reads none and copies nothing. The
+  # first two cases need the Library (and dom-user) that config-set.yaml and
+  # knowledge-show.yaml create, which sort after this file; like
+  # capture.yaml, they pass only when the harness has initialized the shared
+  # workspace first. The input refusals pass in any order.
+  # `library_commit` is the Library's git commit hash, which no golden can
+  # pin, so this case lists the other fields (as source-show.yaml does).
+  - name: attach_dry_run_picks_always_pages_without_copying
+    tool: attach
+    input: {dry_run: true, text: "Acme review"}
+    expect:
+      output:
+        task: null
+        dry_run: true
+        attached:
+          - {id: dom-user, kind: domain, library_path: knowledge/domain/dom-user.md, artifact_path: context/knowledge/domain/dom-user.md, reason: always}
+        omitted: []
+        skipped: []
+        manifest: null
+  - name: attach_refuses_an_unknown_task_before_any_copy
+    tool: attach
+    input: {task: ORB-00000000}
+    expect:
+      error: {code: task_not_found}
+  - name: attach_refuses_a_copy_without_a_task
+    tool: attach
+    input: {text: "Acme review"}
+    expect:
+      error: {code: invalid_argument}
+  - name: attach_refuses_unknown_input
+    tool: attach
+    input: {task: ORB-00000000, limit: 3}
+    expect:
+      error: {code: invalid_argument}

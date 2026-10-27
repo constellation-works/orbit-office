@@ -189,6 +189,16 @@ impl Git {
         Ok(())
     }
 
+    /// The current commit, or `None` before the first commit.
+    pub(crate) fn head(&self) -> Result<Option<String>> {
+        let (has_head, text) = self.run(&["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])?;
+        let commit = text.trim();
+        if !has_head || commit.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(commit.to_string()))
+    }
+
     pub(crate) fn history(&self, relative: &str) -> Result<Vec<Revision>> {
         let (has_head, _) = self.run(&["rev-parse", "--verify", "--quiet", "HEAD"])?;
         if !has_head {

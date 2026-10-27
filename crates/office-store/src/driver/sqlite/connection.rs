@@ -115,7 +115,8 @@ impl IndexStore {
         let conn = self.lock()?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, title, summary, tags, series, sensitivity, path, body
+                "SELECT id, kind, title, summary, tags, series, sensitivity, path, body,
+                        template, date
                  FROM documents WHERE id = ?1",
             )
             .map_err(|e| Error::sqlite(&self.path, "prepare get", e))?;
@@ -172,32 +173,51 @@ impl IndexStore {
     }
 
     /// Full-text search over title, summary, body and tags. Filters apply
-    /// before the limit.
+    /// before the limit. An empty query lists the filtered documents by id.
     pub(crate) fn search(&self, query: &str, filter: &SearchFilter) -> Result<Vec<SearchHit>> {
         let conn = self.lock()?;
         let limit = i64::try_from(filter.limit.unwrap_or(20).min(100)).unwrap_or(20);
-        let mut stmt = conn
-            .prepare(
+        const FILTERS: &str = "(?2 IS NULL OR d.kind = ?2)
+                   AND (?3 IS NULL OR EXISTS (
+                       SELECT 1 FROM json_each(d.tags) WHERE json_each.value = ?3))
+                   AND (?4 IS NULL OR d.series = ?4)
+                   AND (?5 IS NULL OR d.template = ?5)
+                   AND (?6 IS NULL OR (d.date IS NOT NULL AND d.date >= ?6))
+                   AND (?7 IS NULL OR (d.date IS NOT NULL AND d.date <= ?7))";
+        let listing = query.split_whitespace().next().is_none();
+        let sql = if listing {
+            format!(
+                "SELECT d.id, d.kind, d.title, d.path, substr(d.body, 1, 120)
+                 FROM documents d
+                 WHERE ?1 IS NULL AND {FILTERS}
+                 ORDER BY d.id
+                 LIMIT ?8"
+            )
+        } else {
+            format!(
                 "SELECT d.id, d.kind, d.title, d.path,
                         snippet(documents_fts, 3, '<b>', '</b>', '…', 12)
                  FROM documents_fts
                  JOIN documents d ON d.id = documents_fts.id
                  WHERE documents_fts MATCH ?1
-                   AND (?2 IS NULL OR d.kind = ?2)
-                   AND (?3 IS NULL OR EXISTS (
-                       SELECT 1 FROM json_each(d.tags) WHERE json_each.value = ?3))
-                   AND (?4 IS NULL OR d.series = ?4)
+                   AND {FILTERS}
                  ORDER BY rank
-                 LIMIT ?5",
+                 LIMIT ?8"
             )
+        };
+        let mut stmt = conn
+            .prepare(&sql)
             .map_err(|e| Error::sqlite(&self.path, "prepare search", e))?;
         let hits = stmt
             .query_map(
                 params![
-                    fts_match_expr(query),
+                    (!listing).then(|| fts_match_expr(query)),
                     filter.kind.map(|kind| kind.as_str()),
                     filter.tag,
                     filter.series,
+                    filter.template,
+                    filter.since,
+                    filter.until,
                     limit,
                 ],
                 |row| {
@@ -316,8 +336,9 @@ fn insert_document(conn: &Connection, document: &DocumentRecord, path: &Path) ->
         )
     })?;
     conn.execute(
-        "INSERT INTO documents (id, kind, title, summary, tags, series, sensitivity, path, body)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO documents
+             (id, kind, title, summary, tags, series, sensitivity, path, body, template, date)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             document.id,
             document.kind.as_str(),
@@ -328,6 +349,8 @@ fn insert_document(conn: &Connection, document: &DocumentRecord, path: &Path) ->
             document.sensitivity,
             document.path,
             document.body,
+            document.template,
+            document.date,
         ],
     )
     .map_err(|e| Error::sqlite(path, "insert document", e))?;
@@ -407,6 +430,12 @@ fn record_from_row(row: &rusqlite::Row<'_>, path: &Path) -> Result<DocumentRecor
             .map_err(|e| Error::sqlite(path, "read body", e))?,
         cites: Vec::new(),
         related: Vec::new(),
+        template: row
+            .get(9)
+            .map_err(|e| Error::sqlite(path, "read template", e))?,
+        date: row
+            .get(10)
+            .map_err(|e| Error::sqlite(path, "read date", e))?,
     })
 }
 

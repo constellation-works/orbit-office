@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.attach response",
+  "description": "What was attached (or, for a dry run, would be), in selection order, and the Library commit every copy was read at.",
+  "type": "object",
+  "properties": {
+    "task": { "type": ["string", "null"] },
+    "dry_run": { "type": "boolean" },
+    "library_commit": { "type": ["string", "null"], "description": "The Library repository commit the files were read at; null before its first commit." },
+    "attached": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["source", "domain", "runbook", "artifact"] },
+          "library_path": { "type": "string", "description": "Relative to the Library." },
+          "artifact_path": { "type": "string", "pattern": "^context/", "description": "The task artifact path: context/<library path>." },
+          "reason": {
+            "type": "string",
+            "enum": ["always", "participants", "tagged", "matched", "runbook", "source", "example", "search", "related"],
+            "description": "Why it was picked: a template attach policy, a runbook the task names, the task's source, an example in its series, an index search hit, or a page related to another pick."
+          }
+        },
+        "required": ["id", "kind", "library_path", "artifact_path", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "omitted": {
+      "type": "array",
+      "description": "Candidates not attached: private documents, and those past the limit of 8.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "reason": { "type": "string", "enum": ["private", "limit"] }
+        },
+        "required": ["id", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "description": "Knowledge page files that could not be read or parsed, so were not considered.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "code": { "type": "string" }
+        },
+        "required": ["path", "code"],
+        "additionalProperties": false
+      }
+    },
+    "manifest": { "type": ["string", "null"], "description": "The task artifact recording the task, the Library commit and the attached files; null for a dry run." }
+  },
+  "required": ["task", "dry_run", "library_commit", "attached", "omitted", "skipped", "manifest"],
+  "additionalProperties": false
+}

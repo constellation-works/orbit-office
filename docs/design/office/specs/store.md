@@ -20,18 +20,20 @@ and machinery are reused, the code is this project's.
 | `fs/` (path_safety, lock, yaml) | `office-common::fs` (`path_safety`, `atomic`, `hash`) | Single-safe-component id validation, atomic owner-only writes (temp + fsync + rename + dir fsync), SHA-256 pinning/dedupe. Shared machinery lives in the foundation crate, as orbit's does in `orbit-common`. |
 | `driver/file/` | `src/driver/file/library.rs` | The Library as plain Markdown: layout, frontmatter parsing, full scan for reindex |
 | `driver/sqlite/` (connection, migration registry) | `src/driver/sqlite/` (`connection.rs`, `migration.rs`) | One writer connection behind a mutex; owner-only database file; the same pragmas on every connection (WAL, `busy_timeout` 5000, `foreign_keys=ON`, `synchronous=NORMAL`); ordered migrations with `user_version`, refusing a newer schema |
-| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `get`, `backlinks`, `knowledge_pages`, `templates`, `search`, `file_sha256` |
+| `repository/` | `src/repository/library.rs` | `LibraryStore`: the one facade — open, `reindex`, `write_document` (write + index + commit under the writer lock), `read_document`, `read_text`, `get`, `backlinks`, `knowledge_pages`, `templates`, `search`, `head_commit`, `stage_attachment`/`remove_staged`, `file_sha256` |
 
 What is deliberately not carried over: orbit-store's read pool, forward-
 compatible read-only open, failure-class SQL functions, task reservations
 and claims, and its per-feature migration files. They return only when a
 tool needs them, as new migration steps — never as edits to step 1.
 
-## Index schema (migration 1)
+## Index schema (migrations 1 and 2)
 
 - `documents(id, kind, title, summary, tags JSON, series, sensitivity, path UNIQUE, body)` with kind/series indexes.
 - `cites(doc_id → documents, target)` and `links(from_id → documents, to_id)`, cascading on replace.
 - `documents_fts` FTS5 over `(id UNINDEXED, title, summary, body, tags)`; search builds a quoted prefix MATCH per term — caller text is never interpolated unquoted.
+- Migration 2 adds `documents.template` (a page's frontmatter `template`) and `documents.date` (`YYYY-MM-DD`: the first of `occurred_at`, `captured_at`, `updated_at` and `last_verified`, else the date in a dated `src-`/`art-` id), each indexed, for the `office.search` template and date filters. Rows indexed before it read `NULL` until the next reindex, which `office.init` runs on every upgrade.
+- Search applies every filter (kind, tag, series, template, `since`/`until` on `date`, inclusive, excluding undated rows) before its limit. An empty query lists the filtered documents in id order instead of matching; `office.search` refuses one, and `office.attach` uses it to list a series.
 
 ## Invariants
 
@@ -58,8 +60,16 @@ tool needs them, as new migration steps — never as edits to step 1.
 `office_core::ports::Library` exposes current document reads, document writes,
 lookup by id, back-links (documents whose `cites` or `related` name an id, from
 the `cites` and `links` tables), the knowledge page and template files as
-Markdown, filtered search, newest-first path history, readiness, settings and
-single-key `set_setting` updates. `LibraryStore`
+Markdown, filtered search, newest-first path history, a document's raw
+Markdown (`read_text`), the repository's current commit (`head_commit`),
+attachment staging, readiness, settings and single-key `set_setting` updates.
+`stage_attachment` writes one `office.attach` copy under
+`.office/attach/<call>/<library path>` and returns its absolute path for
+`orbit.task.artifact.put`; `remove_staged` deletes only such a file and its
+emptied directories. The staging tree is outside the indexed layout, and
+document commits use `--only`, so a staged file is never indexed or committed
+([decision](../4_decisions.md#office-attach-stages-its-copies-inside-the-library)).
+`LibraryStore`
 implements it; `office-testkit::fakes::FakeLibrary` implements the same operations
 in memory. The store's existing record exports are re-exports of
 `office_core::domain::knowledge`, so callers keep the same types. The shared

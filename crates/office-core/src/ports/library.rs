@@ -116,6 +116,26 @@ pub trait Library {
     fn history(&self, _relative: &Path) -> Result<Vec<Revision>> {
         Err(Error::LibraryUnavailable)
     }
+    /// A document's current Markdown, frontmatter included, by its
+    /// Library-relative path, without a writer lock.
+    fn read_text(&self, _relative: &Path) -> Result<String> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// The Library repository's current commit (`None` before the first commit).
+    fn head_commit(&self) -> Result<Option<String>> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Write `text` to a staging file for one Orbit artifact copy and return
+    /// the path to hand `orbit.task.artifact.put` as its `source_path`.
+    /// `name` is the Library-relative path the copy stands for. Staging files
+    /// are outside the indexed layout and never committed.
+    fn stage_attachment(&self, _name: &str, _text: &str) -> Result<String> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Remove a staging file returned by [`Library::stage_attachment`].
+    fn remove_staged(&self, _staged: &str) -> Result<()> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Check for the Library's own repository and settings file, without creating them.
     fn is_initialized(&self) -> Result<bool> {
         Err(Error::LibraryUnavailable)

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.search request",
+  "description": "Full-text search over indexed sources, knowledge pages and artifacts. Every filter narrows the results before the limit.",
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Search terms; each must match (as a prefix) in the title, summary, body or tags. An empty or blank query is refused with invalid_argument."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["source", "domain", "runbook", "artifact"],
+      "description": "Only documents of this Library layer."
+    },
+    "template": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Only knowledge pages whose frontmatter names this template (for example person)."
+    },
+    "tag": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Only documents carrying this tag exactly (for example client:acme)."
+    },
+    "series": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Only artifacts in this series."
+    },
+    "since": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Only documents dated on or after this day. A document's date is its occurred_at, else captured_at, else updated_at, else last_verified, else the date in a dated id (src-YYYYMMDD-…, art-YYYYMMDD-…); undated documents are excluded."
+    },
+    "until": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Only documents dated on or before this day (see since). Must not be before since."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Most hits to return (default 20)."
+    }
+  },
+  "required": ["query"],
+  "additionalProperties": false
+}

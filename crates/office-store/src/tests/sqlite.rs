@@ -16,6 +16,8 @@ fn document(id: &str, title: &str, body: &str) -> DocumentRecord {
         body: body.to_string(),
         cites: vec!["src-20261028-acme-qbr#t=00:12:31".to_string()],
         related: vec!["rb-client-qbr-prep".to_string()],
+        template: None,
+        date: None,
     }
 }
 
@@ -97,4 +99,96 @@ fn backlinks_come_from_cites_with_or_without_anchor_and_related() {
     assert_eq!(links[1].via, [LinkKind::Cites]);
     assert_eq!(links[1].kind, DocumentKind::Source);
     assert!(index.backlinks("dom-absent").expect("none").is_empty());
+}
+
+#[test]
+fn template_and_date_filters_narrow_before_the_limit() {
+    let index = IndexStore::open_in_memory().expect("open");
+    let mut person = document("dom-person-jane", "Jane", "Renewal owner.");
+    person.template = Some("person".into());
+    person.date = Some("2026-10-20".into());
+    let mut client = document("dom-client-acme", "Acme", "Renewal account.");
+    client.template = Some("client".into());
+    let mut source = document("src-20260915-call", "Call", "Renewal call.");
+    source.kind = DocumentKind::Source;
+    source.path = "sources/2026/09/src-20260915-call/source.md".into();
+    source.date = Some("2026-09-15".into());
+    index.rebuild(&[person, client, source]).expect("rebuild");
+
+    let ids = |filter: SearchFilter| {
+        let mut ids: Vec<String> = index
+            .search("renewal", &filter)
+            .expect("search")
+            .into_iter()
+            .map(|hit| hit.id)
+            .collect();
+        ids.sort();
+        ids
+    };
+    assert_eq!(ids(SearchFilter::default()).len(), 3);
+    assert_eq!(
+        ids(SearchFilter {
+            template: Some("person".into()),
+            ..SearchFilter::default()
+        }),
+        ["dom-person-jane"]
+    );
+    assert_eq!(
+        ids(SearchFilter {
+            since: Some("2026-10-01".into()),
+            ..SearchFilter::default()
+        }),
+        ["dom-person-jane"]
+    );
+    assert_eq!(
+        ids(SearchFilter {
+            until: Some("2026-09-30".into()),
+            ..SearchFilter::default()
+        }),
+        ["src-20260915-call"]
+    );
+    assert_eq!(
+        ids(SearchFilter {
+            template: Some("person".into()),
+            limit: Some(1),
+            ..SearchFilter::default()
+        }),
+        ["dom-person-jane"]
+    );
+    let got = index.get("dom-person-jane").expect("get").expect("present");
+    assert_eq!(got.template.as_deref(), Some("person"));
+    assert_eq!(got.date.as_deref(), Some("2026-10-20"));
+}
+
+#[test]
+fn an_empty_query_lists_the_filtered_documents_by_id() {
+    let index = IndexStore::open_in_memory().expect("open");
+    let mut older = document("art-20260721-deck", "Deck", "Older.");
+    older.kind = DocumentKind::Artifact;
+    older.path = "artifacts/2026/07/art-20260721-deck/artifact.md".into();
+    older.series = Some("deck".into());
+    let mut newer = older.clone();
+    newer.id = "art-20261021-deck".into();
+    newer.path = "artifacts/2026/10/art-20261021-deck/artifact.md".into();
+    let mut other = older.clone();
+    other.id = "art-20261022-memo".into();
+    other.path = "artifacts/2026/10/art-20261022-memo/artifact.md".into();
+    other.series = Some("memo".into());
+    index
+        .rebuild(&[document("dom-acme", "Acme", "Acme."), newer, older, other])
+        .expect("rebuild");
+    let ids: Vec<String> = index
+        .search(
+            " ",
+            &SearchFilter {
+                kind: Some(DocumentKind::Artifact),
+                series: Some("deck".into()),
+                ..SearchFilter::default()
+            },
+        )
+        .expect("list")
+        .into_iter()
+        .map(|hit| hit.id)
+        .collect();
+    assert_eq!(ids, ["art-20260721-deck", "art-20261021-deck"]);
 }

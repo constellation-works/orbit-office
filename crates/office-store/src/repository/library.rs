@@ -1031,6 +1031,110 @@ impl LibraryStore {
         })
     }
 
+    /// A document's current Markdown, frontmatter included. No writer-lock wait.
+    pub fn read_text(&self, relative: &Path) -> Result<String> {
+        self.read_ready()?;
+        self.files.validate_document_path(relative)?;
+        self.files.read_text(relative)
+    }
+
+    /// The Library repository's current commit, `None` before the first.
+    pub fn head_commit(&self) -> Result<Option<String>> {
+        self.read_ready()?;
+        self.git.head()
+    }
+
+    /// Write one attachment copy under `.office/attach/<call>/<name>`, outside
+    /// the indexed layout, and return its absolute path. `name` is the
+    /// Library-relative path the copy stands for. The staging tree lives in
+    /// the Library because the plugin's only workspace write grant is
+    /// `{{workspace}}/library` and `orbit.task.artifact.put` reads only files
+    /// inside the workspace. Writes go through `--only` commits, so staged
+    /// files never enter a Library commit.
+    pub fn stage_attachment(&self, name: &str, text: &str) -> Result<PathBuf> {
+        self.read_ready()?;
+        self.files.validate_relative_path(Path::new(name))?;
+        let staging = self.staging_root()?;
+        let time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        let path = staging
+            .join(format!("{}-{}", std::process::id(), time.as_nanos()))
+            .join(name);
+        if let Some(parent) = path.parent() {
+            LibraryFs::create_private_dirs(parent)?;
+        }
+        write_atomic(&path, text.as_bytes())?;
+        Ok(path)
+    }
+
+    /// `.office/attach`, created if needed; a symlink on the way is refused.
+    fn staging_root(&self) -> Result<PathBuf> {
+        let mut physical = self.library_root().to_path_buf();
+        for part in Path::new(STAGING_DIR).components() {
+            physical.push(part);
+            match std::fs::symlink_metadata(&physical) {
+                Ok(metadata) if !metadata.is_dir() => {
+                    return Err(Error::UnsafePath {
+                        kind: "staging directory",
+                        value: STAGING_DIR.to_string(),
+                    });
+                }
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    LibraryFs::create_private_dirs(&physical)?;
+                }
+                Err(e) => return Err(Error::io("inspect staging directory", &physical, e)),
+            }
+        }
+        Ok(physical)
+    }
+
+    /// Remove a file [`Self::stage_attachment`] wrote, and its emptied
+    /// staging directories. Any other path is refused.
+    pub fn remove_staged(&self, staged: &Path) -> Result<()> {
+        let staging = self.library_root().join(STAGING_DIR);
+        let inside = staged.starts_with(&staging)
+            && staged != staging
+            && staged.components().all(|part| {
+                matches!(
+                    part,
+                    std::path::Component::Normal(_)
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            });
+        if !inside {
+            return Err(Error::UnsafePath {
+                kind: "staged attachment",
+                value: staged.display().to_string(),
+            });
+        }
+        match std::fs::symlink_metadata(staged) {
+            Ok(metadata) if metadata.is_file() => std::fs::remove_file(staged)
+                .map_err(|e| Error::io("remove staged attachment", staged, e))?,
+            Ok(_) => {
+                return Err(Error::UnsafePath {
+                    kind: "staged attachment",
+                    value: staged.display().to_string(),
+                });
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(Error::io("inspect staged attachment", staged, e)),
+        }
+        let mut dir = staged.parent();
+        while let Some(current) = dir {
+            if current == staging || !current.starts_with(&staging) || !dir_is_empty(current) {
+                break;
+            }
+            if std::fs::remove_dir(current).is_err() {
+                break;
+            }
+            dir = current.parent();
+        }
+        Ok(())
+    }
+
     /// SHA-256 of a Library file, including an `original.*` upload.
     pub fn file_sha256(&self, relative: &Path) -> Result<String> {
         self.read_ready()?;
@@ -1038,6 +1142,9 @@ impl LibraryStore {
         Ok(sha256_file(&self.library_root().join(relative))?)
     }
 }
+
+/// Library-relative staging root for `office.attach` copies (never indexed).
+const STAGING_DIR: &str = ".office/attach";
 
 /// Lexically resolve `.` and `..` without requiring the path to exist.
 fn normalize_path(path: &Path) -> PathBuf {
@@ -1086,6 +1193,25 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn history(&self, relative: &Path) -> office_core::Result<Vec<Revision>> {
         Ok(Self::history(self, relative)?)
+    }
+    fn read_text(&self, relative: &Path) -> office_core::Result<String> {
+        Ok(Self::read_text(self, relative)?)
+    }
+    fn head_commit(&self) -> office_core::Result<Option<String>> {
+        Ok(Self::head_commit(self)?)
+    }
+    fn stage_attachment(&self, name: &str, text: &str) -> office_core::Result<String> {
+        let staged = Self::stage_attachment(self, name, text)?;
+        staged
+            .to_str()
+            .map(str::to_string)
+            .ok_or(office_core::Error::Library {
+                code: "unsafe_path",
+                message: "staged attachment path is not UTF-8".to_string(),
+            })
+    }
+    fn remove_staged(&self, staged: &str) -> office_core::Result<()> {
+        Ok(Self::remove_staged(self, Path::new(staged))?)
     }
     fn is_initialized(&self) -> office_core::Result<bool> {
         Ok(Self::is_initialized(self)?)

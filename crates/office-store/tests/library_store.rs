@@ -1167,3 +1167,97 @@ fn markdown_under(root: &Path) -> Vec<String> {
     found.sort();
     found
 }
+
+#[test]
+fn attach_reads_the_head_commit_and_stages_copies_outside_the_index() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    initialize(&library);
+    let store = LibraryStore::open(&library, &dir.path().join("state")).expect("store");
+    assert_eq!(store.head_commit().expect("head"), None);
+    let path = Path::new("knowledge/domain/dom-acme.md");
+    store.write_document(path, DOMAIN).expect("write");
+    let head = store.head_commit().expect("head").expect("a commit");
+    assert_eq!(head, git(&library, &["rev-parse", "HEAD"]).trim());
+    assert_eq!(store.read_text(path).expect("text"), DOMAIN);
+
+    let staged = store
+        .stage_attachment("knowledge/domain/dom-acme.md", "model view")
+        .expect("stage");
+    assert!(staged.starts_with(library.canonicalize().expect("root").join(".office/attach")));
+    assert_eq!(
+        std::fs::read_to_string(&staged).expect("staged"),
+        "model view"
+    );
+    // A staged copy is neither indexed nor committed by the next write.
+    assert_eq!(store.reindex().expect("reindex"), 1);
+    store.write_document(path, DOMAIN).expect("rewrite");
+    assert_eq!(
+        git(&library, &["ls-tree", "--name-only", "-r", "HEAD"]).trim(),
+        "knowledge/domain/dom-acme.md"
+    );
+    store.remove_staged(&staged).expect("remove");
+    assert!(!staged.exists());
+    let attach_dir = library.join(".office/attach");
+    assert_eq!(std::fs::read_dir(&attach_dir).expect("dir").count(), 0);
+
+    // Only staged files may be removed, and names stay inside the Library.
+    let config = library
+        .canonicalize()
+        .expect("root")
+        .join(".office/config.yaml");
+    assert!(store.remove_staged(&config).is_err());
+    assert!(config.exists());
+    assert!(store.stage_attachment("../escape.md", "x").is_err());
+}
+
+#[test]
+fn a_version_one_index_migrates_and_reindex_fills_template_and_date() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    write(&library, "knowledge/domain/dom-acme-renewal.md", DOMAIN);
+    write(
+        &library,
+        "knowledge/domain/dom-person-jane.md",
+        "---\nid: dom-person-jane\ntemplate: person\ntitle: Jane\nupdated_at: 2026-10-20T10:00:00Z\n---\nRenewal owner.\n",
+    );
+    std::fs::create_dir_all(&state).expect("state");
+    {
+        let conn = rusqlite::Connection::open(state.join("index.sqlite")).expect("v1 index");
+        conn.execute_batch(
+            "CREATE TABLE documents (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL,
+                 summary TEXT NOT NULL, tags TEXT NOT NULL, series TEXT, sensitivity TEXT NOT NULL,
+                 path TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
+             CREATE INDEX documents_kind ON documents(kind);
+             CREATE INDEX documents_series ON documents(series);
+             CREATE TABLE cites (doc_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                 target TEXT NOT NULL, PRIMARY KEY (doc_id, target));
+             CREATE TABLE links (from_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                 to_id TEXT NOT NULL, PRIMARY KEY (from_id, to_id));
+             CREATE VIRTUAL TABLE documents_fts USING fts5(id UNINDEXED, title, summary, body, tags);
+             PRAGMA user_version = 1;",
+        )
+        .expect("v1 schema");
+    }
+    let store = LibraryStore::open(&library, &state).expect("migrates");
+    assert_eq!(store.reindex().expect("reindex"), 2);
+    let hits = store
+        .search(
+            "renewal",
+            &SearchFilter {
+                template: Some("person".into()),
+                since: Some("2026-10-01".into()),
+                ..SearchFilter::default()
+            },
+        )
+        .expect("search");
+    let ids: Vec<&str> = hits.iter().map(|hit| hit.id.as_str()).collect();
+    assert_eq!(ids, ["dom-person-jane"]);
+    let version: u32 = rusqlite::Connection::open(state.join("index.sqlite"))
+        .expect("reopen")
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("version");
+    assert_eq!(version, 2);
+}
