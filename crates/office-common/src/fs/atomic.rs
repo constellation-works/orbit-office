@@ -25,9 +25,32 @@ static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// generous while keeping a wedged directory from spinning forever.
 const MAX_TMP_ATTEMPTS: u32 = 100;
 
+/// The temp path for `seq` in `dir`: process id, sequence and target stem.
+///
+/// Production mints each candidate through here; crate tests plant entries
+/// at the names this produces for the next few sequence numbers.
+pub(crate) fn temp_path(dir: &Path, stem: &str, seq: u64) -> PathBuf {
+    dir.join(format!(
+        ".office-store-{}-{}-{stem}.tmp",
+        std::process::id(),
+        seq
+    ))
+}
+
 /// Write `bytes` to `path` atomically, with owner-only permissions.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    write_atomic_with(path, bytes, Publication::Replace)
+    write_atomic_with_counter(path, bytes, &TMP_COUNTER)
+}
+
+/// Like [`write_atomic`], minting temp names from `counter` instead of the
+/// process-wide counter. Production passes [`TMP_COUNTER`]; crate tests pass
+/// their own counter so the next sequence numbers are known in advance.
+pub(crate) fn write_atomic_with_counter(
+    path: &Path,
+    bytes: &[u8],
+    counter: &AtomicU64,
+) -> Result<()> {
+    write_atomic_with(path, bytes, Publication::Replace, counter)
 }
 
 /// Atomically create an owner-only file, refusing any existing target.
@@ -35,7 +58,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 /// cannot leave a partial target and publication never replaces an entry.
 /// Filesystems without hard-link support return an error without a target.
 pub fn write_atomic_new(path: &Path, bytes: &[u8]) -> Result<()> {
-    write_atomic_with(path, bytes, Publication::Create)
+    write_atomic_with(path, bytes, Publication::Create, &TMP_COUNTER)
 }
 
 enum Publication {
@@ -52,7 +75,12 @@ impl Drop for TempFile {
     }
 }
 
-fn write_atomic_with(path: &Path, bytes: &[u8], publication: Publication) -> Result<()> {
+fn write_atomic_with(
+    path: &Path,
+    bytes: &[u8],
+    publication: Publication,
+    counter: &AtomicU64,
+) -> Result<()> {
     let dir = path.parent().ok_or_else(|| Error::Io {
         action: "resolve parent directory of",
         path: path.to_path_buf(),
@@ -67,12 +95,8 @@ fn write_atomic_with(path: &Path, bytes: &[u8], publication: Publication) -> Res
         .to_owned();
 
     for _ in 0..MAX_TMP_ATTEMPTS {
-        let seq = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp = dir.join(format!(
-            ".office-store-{}-{}-{stem}.tmp",
-            std::process::id(),
-            seq
-        ));
+        let seq = counter.fetch_add(1, Ordering::Relaxed);
+        let tmp = temp_path(dir, &stem, seq);
         let mut file = match open_exclusive(&tmp) {
             Ok(file) => file,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
