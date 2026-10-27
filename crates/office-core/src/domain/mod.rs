@@ -11,7 +11,7 @@ pub mod metrics;
 mod proposal;
 pub mod script;
 pub mod selection;
-mod session;
+pub mod session;
 pub mod settings;
 pub mod signals;
 pub mod source;

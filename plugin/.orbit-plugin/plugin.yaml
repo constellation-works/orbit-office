@@ -296,15 +296,15 @@ spec:
 
     # ---- sessions ----
 
-    # - name: session-brief
-    #   description: >-
-    #     Assemble the session-start brief from Orbit and the Library:
-    #     waiting on you, agents working on, open questions, the last
-    #     session's decisions. Makes no model call. Writes nothing.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/session-brief.request.json }
-    #   output_schema: { $ref: schemas/session-brief.response.json }
+    - name: session-brief
+      description: >-
+        Assemble the session-start brief from Orbit and the Library:
+        waiting on you, agents working on, open questions, the last
+        session's decisions. Makes no model call. Writes nothing.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/session-brief.request.json }
+      output_schema: { $ref: schemas/session-brief.response.json }
 
     # - name: digest
     #   description: >-

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.session-brief request",
+  "description": "Assemble the deterministic brief for the current workspace. Call before opening a new conversation source. No input, inference or writes.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

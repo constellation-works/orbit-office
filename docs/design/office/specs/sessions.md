@@ -100,6 +100,38 @@ Every item carries its id and a link, so the agent cites rather than
 restates. The brief is returned as data. Quoted entries are never treated
 as instructions.
 
+The built tool accepts `{}` and returns `sections` in the order above, with
+stable `kind` tokens (`handoff`, `since`, `waiting_on_you`,
+`agents_working_on`, `open_questions`, `last_session`, `latest_digest`,
+`onboarding`). Each section has `items`, `total` and `truncated`. Handoff,
+Latest digest and Onboarding are omitted when empty; the other sections are
+always present. Each item carries `id`, `link`, `text`, `time`, `entry_kind`,
+`status` and `template`; fields that do not apply are null. Entry text and
+timestamps keep their original spelling. Library links are relative paths
+with body-relative `#L<n>` anchors; task links are `orbit://task/<id>`
+references resolved through `orbit.task.show`.
+
+Call the brief before creating the current session's conversation source.
+The previous session is the conversation source with the latest recorded
+entry time (or `captured_at` for an empty log). Timestamp comparisons use
+instants, including offsets and fractional seconds. Open questions cover
+the ten most recently appended conversation sources, newest source first;
+resolutions close earlier local anchors only. Last session includes the
+source reference followed by its last five decisions/directions in log
+order, with `total` counting the source and all matching entries and
+`truncated` indicating an excerpt. The newest daily digest is selected by
+approval time. Onboarding items name each missing singleton's template and
+page id and link to the installed template.
+
+The task read projects ownership tags, history and run identity explicitly
+and refuses a truncated inventory. Finished work uses its transition to
+`done`; failed work uses its associated run's typed delivery state and
+finish time, not task update times or error prose. In-progress work is
+always included. With no previous session, all recorded completions and
+failures are eligible. The brief is an all-or-nothing read: malformed,
+unreadable or unavailable evidence, or a Library commit changing during
+assembly, refuses the call so an unknown state cannot appear empty.
+
 ## Daily digest
 
 The `office-daily-digest` routine (daily, seeded disabled) runs one
