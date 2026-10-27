@@ -310,6 +310,8 @@ impl LibraryStore {
     }
 
     /// Decide, write, index and commit a document under one OS writer lock.
+    /// Only a path `reindex` scans is accepted. Any other Markdown path is
+    /// refused before the journal, the file, the index or the commit.
     /// A failure after the durable journal is written leaves a recoverable
     /// obligation; opening the store or the next write completes it.
     pub fn write_document(&self, relative: &Path, text: &str) -> Result<DocumentRecord> {

@@ -2,7 +2,7 @@
 //! and searched — the flow `office.reindex` and `office.search` will use.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use office_store::{DocumentKind, LibraryStore, SearchFilter};
+use office_store::{DocumentKind, LibraryStore, SearchFilter, SearchHit};
 use std::path::Path;
 
 const MEETING: &str = "\
@@ -634,3 +634,192 @@ fn writer_waits_for_the_state_lock_before_document_index_and_commit() {
     assert_eq!(store.document_count().expect("index"), 1);
     assert_eq!(store.history(relative).expect("commit").len(), 1);
 }
+
+#[test]
+fn written_documents_survive_reindex_and_unscanned_paths_are_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    let store = LibraryStore::open(&library, &state).expect("open store");
+
+    // Paths `scan_documents` skips. On the base commit write_document indexes
+    // them and the next reindex deletes those rows.
+    let refused = [
+        ("proposals/p.md", "prop-1"),
+        ("notes.md", "note-1"),
+        ("sources/src-1/v2.md", "src-v2"),
+        ("artifacts/2026/10/art-1/report.md", "art-report"),
+    ];
+    for (relative, id) in refused {
+        let path = Path::new(relative);
+        let error = store
+            .write_document(path, &format!("---\nid: {id}\n---\ndroppedtoken"))
+            .unwrap_err();
+        assert_eq!(error.code(), "unsafe_path", "{relative}");
+        assert!(!library.join(path).exists(), "{relative} was written");
+        assert!(store.get(id).expect("get").is_none(), "{id}");
+    }
+    assert!(!state.join("library.pending-write.json").exists());
+    assert_eq!(store.document_count().expect("count"), 0);
+    assert!(
+        store
+            .search("droppedtoken", &SearchFilter::default())
+            .expect("search")
+            .is_empty()
+    );
+
+    let accepted = [
+        (
+            "sources/2026/10/src-1/source.md",
+            "src-1",
+            DocumentKind::Source,
+            "sourcetoken",
+            SOURCE_ONE,
+        ),
+        (
+            "knowledge/domain/dom-a.md",
+            "dom-a",
+            DocumentKind::Domain,
+            "domaintoken",
+            DOMAIN_ONE,
+        ),
+        (
+            "knowledge/runbooks/rb-a.md",
+            "rb-a",
+            DocumentKind::Runbook,
+            "runbooktoken",
+            RUNBOOK_ONE,
+        ),
+        (
+            "artifacts/2026/10/art-1/artifact.md",
+            "art-1",
+            DocumentKind::Artifact,
+            "artifacttoken",
+            ARTIFACT_ONE,
+        ),
+    ];
+    for (relative, id, kind, token, text) in accepted {
+        let record = store
+            .write_document(Path::new(relative), text)
+            .expect(relative);
+        assert_eq!(record.id, id);
+        assert_eq!(record.kind, kind);
+        assert!(record.body.contains(token), "{id}");
+    }
+
+    let ids = ["src-1", "dom-a", "rb-a", "art-1"];
+    let gets_before: Vec<_> = ids
+        .iter()
+        .map(|id| store.get(id).expect("get").expect("present"))
+        .collect();
+    let search_before = search_sorted(&store, "keptafterreindex");
+    assert_eq!(search_before.len(), accepted.len());
+    let tokens = [
+        ("src-1", "sourcetoken"),
+        ("dom-a", "domaintoken"),
+        ("rb-a", "runbooktoken"),
+        ("art-1", "artifacttoken"),
+    ];
+    let token_hits_before: Vec<_> = tokens
+        .iter()
+        .map(|(id, token)| token_hit(&store, id, token))
+        .collect();
+    let source_hits_before = search_sorted_kind(&store, "keptafterreindex", DocumentKind::Source);
+    assert_eq!(source_hits_before.len(), 1);
+    assert_eq!(source_hits_before[0].id, "src-1");
+
+    let indexed = store.reindex().expect("reindex");
+    assert_eq!(indexed, u32::try_from(accepted.len()).expect("count"));
+    assert_eq!(store.document_count().expect("count"), indexed);
+
+    let gets_after: Vec<_> = ids
+        .iter()
+        .map(|id| store.get(id).expect("get").expect("present"))
+        .collect();
+    assert_eq!(gets_before, gets_after);
+    assert_eq!(search_before, search_sorted(&store, "keptafterreindex"));
+    let token_hits_after: Vec<_> = tokens
+        .iter()
+        .map(|(id, token)| token_hit(&store, id, token))
+        .collect();
+    assert_eq!(token_hits_before, token_hits_after);
+    assert_eq!(
+        source_hits_before,
+        search_sorted_kind(&store, "keptafterreindex", DocumentKind::Source)
+    );
+    for id in ["prop-1", "note-1", "src-v2", "art-report"] {
+        assert!(store.get(id).expect("get").is_none(), "{id}");
+    }
+}
+
+fn search_sorted(store: &LibraryStore, query: &str) -> Vec<SearchHit> {
+    let mut hits = store
+        .search(query, &SearchFilter::default())
+        .expect("search");
+    hits.sort_by(|left, right| left.id.cmp(&right.id));
+    hits
+}
+
+fn search_sorted_kind(store: &LibraryStore, query: &str, kind: DocumentKind) -> Vec<SearchHit> {
+    let mut hits = store
+        .search(
+            query,
+            &SearchFilter {
+                kind: Some(kind),
+                ..SearchFilter::default()
+            },
+        )
+        .expect("search");
+    hits.sort_by(|left, right| left.id.cmp(&right.id));
+    hits
+}
+
+fn token_hit(store: &LibraryStore, id: &str, token: &str) -> SearchHit {
+    let hits = search_sorted(store, token);
+    assert_eq!(hits.len(), 1, "{id}");
+    assert_eq!(hits[0].id, id);
+    hits.into_iter().next().expect("one hit")
+}
+
+const SOURCE_ONE: &str = "\
+---
+id: src-1
+kind: note
+title: Source one
+---
+
+sourcetoken keptafterreindex
+";
+
+const DOMAIN_ONE: &str = "\
+---
+id: dom-a
+type: domain
+title: Domain one
+summary: A page that must survive reindex.
+---
+
+domaintoken keptafterreindex
+";
+
+const RUNBOOK_ONE: &str = "\
+---
+id: rb-a
+type: runbook
+title: Runbook one
+---
+
+runbooktoken keptafterreindex
+";
+
+const ARTIFACT_ONE: &str = "\
+---
+id: art-1
+kind: report
+title: Artifact one
+series: renewal-research
+---
+
+artifacttoken keptafterreindex
+";

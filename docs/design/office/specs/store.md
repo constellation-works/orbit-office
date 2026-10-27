@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: office-store — Library persistence structured after orbit-store: contracts, fs machinery, file and SQLite drivers, repository facade"
-last_validated: 2026-10-26
+last_validated: 2026-10-27
 ---
 
 # Spec: office-store
@@ -38,6 +38,15 @@ tool needs them, as new migration steps — never as edits to step 1.
 - **Files are the truth.** The index is rebuildable at any time
   (`reindex` = scan + one-transaction rebuild); a write that succeeds is
   indexed and committed in the same call, so the index never lags a successful write.
+- **Indexed paths are the rebuild set.** `reindex` scans only
+  `sources/**/source.md`, `knowledge/**/*.md` and
+  `artifacts/**/artifact.md`. `write_document` refuses every other
+  Markdown path with `unsafe_path` before it writes, so `get` and
+  `search` for a document that was written are unchanged by `reindex`.
+  `read_document` and `history` use that same path rule. Source
+  versions such as `v2.md`, artifact companions and `proposals/` are
+  not documents of this call. `original.*` stays refused on every
+  path, including under `knowledge/`.
 - **Preconditions before side effects:** path components are validated
   before any write; unknown document kinds and newer index schemas are
   refused, never guessed or rewritten.
