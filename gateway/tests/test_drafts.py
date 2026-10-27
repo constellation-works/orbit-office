@@ -217,6 +217,20 @@ class Draft(DraftCase):
         self.assertEqual(self.stored(out["draft"])["state"], "pending")
         self.assertEqual(list((self.root / ".orbit-gateway" / "outbox").iterdir()), [])
 
+    def test_an_unwritable_staging_directory_still_reports_the_filed_task(self) -> None:
+        outbox = self.root / ".orbit-gateway" / "outbox"
+        outbox.mkdir(parents=True, mode=0o700)
+        outbox.chmod(0o500)
+        self.addCleanup(outbox.chmod, 0o700)
+        self.assertFalse(os.access(outbox, os.W_OK), "the staging directory must be unwritable")
+
+        out = self.draft()
+        self.assertEqual((out["task_id"], out["artifact"], out["artifact_error"]), ("T-100", None, "artifact_staging_failed"))
+        self.assertEqual([call["tool"] for call in self.orbit.calls()], ["orbit.task.add"])
+        stored = self.stored(out["draft"])
+        self.assertEqual((stored["state"], stored["task_id"]), ("pending", "T-100"))
+        self.assertEqual(list(outbox.iterdir()), [])
+
 
 class Send(DraftCase):
     def test_a_matching_send_goes_out_exactly_once(self) -> None:

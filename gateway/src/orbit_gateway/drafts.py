@@ -293,7 +293,10 @@ def _draft(call: Call, root: Path, record: audit.Record, redactor: Redactor) -> 
 def _attach(orbit: callbacks.Orbit, workspace: Path, document: dict[str, Any], redactor: Redactor) -> None:
     staged = workspace / STAGING / f"{document['id']}.json"
     artifact = {key: document[key] for key in ("schema_version", "id", "connection", "request", "sha256", "created_at")}
-    state.store_text(staged, json.dumps(artifact, indent=2, sort_keys=True, ensure_ascii=False) + "\n", redactor)
+    try:
+        state.store_text(staged, json.dumps(artifact, indent=2, sort_keys=True, ensure_ascii=False) + "\n", redactor)
+    except OSError:
+        raise GatewayError("artifact_staging_failed", "could not stage the draft artifact") from None
     try:
         orbit.call(
             "orbit.task.artifact.put",
