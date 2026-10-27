@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createDispatchPass, createDispatcher, selectDispatchIds, shipTasks } from "../dist/dispatch/pass.js";
+import {
+  createDispatchPass,
+  createDispatcher,
+  MAX_SHIP_STDERR_BYTES,
+  selectDispatchIds,
+  shipTasks,
+} from "../dist/dispatch/pass.js";
 import { createOrbitClient } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
 import { installSupervisionDoubles, timerAt } from "./supervision-doubles.mjs";
@@ -192,4 +199,48 @@ test("a live ship child that ignores SIGTERM is killed and the call times out", 
   } finally {
     doubles.restore();
   }
+});
+
+/**
+ * Make a tiny executable that writes small stderr chunks (2 KiB each) past
+ * the capture ceiling, then exits. Total output stays in the tens of KiB,
+ * so the test proves the ceiling without stress or large allocation.
+ */
+async function installStderrEmitter(t, exitCode) {
+  const root = await mkdtemp(join(tmpdir(), "ship-stderr-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const executable = join(root, exitCode === 0 ? "ship-ok" : "ship-noisy-fail");
+  const chunkBytes = 2048;
+  // Enough 2 KiB writes to exceed the 8 KiB ceiling with small allocations.
+  const chunks = Math.ceil(MAX_SHIP_STDERR_BYTES / chunkBytes) + 4;
+  await writeFile(
+    executable,
+    `#!/usr/bin/env node\n` +
+      `const chunk = "e".repeat(${chunkBytes - 32}) + "\\n";\n` +
+      `for (let i = 0; i < ${chunks}; i++) process.stderr.write("chunk-" + i + ":" + chunk);\n` +
+      `process.exitCode = ${exitCode};\n`,
+  );
+  await import("node:fs/promises").then((fs) => fs.chmod(executable, 0o755));
+  return executable;
+}
+
+test("ship failure with stderr above the capture ceiling is bounded and marked", async (t) => {
+  const command = await installStderrEmitter(t, 3);
+  const error = await shipTasks(["ORB-1"], { command, timeoutMs: 10_000 }).then(
+    () => {
+      throw new Error("expected the noisy ship to reject");
+    },
+    (failure) => failure,
+  );
+  assert.match(error.message, /orbit run ship failed \(code 3, signal none\):/);
+  assert.match(error.message, /\.\.\. \[truncated\]/);
+  assert.ok(error.message.length < 1000, `bounded message, got ${error.message.length}`);
+  assert.match(error.message, /chunk-0:/, "retains stderr from the first chunk");
+});
+
+test("ship success drains large stderr without failing", async (t) => {
+  const command = await installStderrEmitter(t, 0);
+  await shipTasks(["ORB-1"], { command, timeoutMs: 10_000 });
 });
