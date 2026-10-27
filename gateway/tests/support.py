@@ -147,6 +147,50 @@ class GatewayCase(unittest.TestCase):
         return b"".join(path.read_bytes() for path in sorted(self.state.rglob("*")) if path.is_file())
 
 
+# The gateway is standard library only, so this checks the JSON Schema keywords
+# the plugin's response schemas use. Any other keyword fails loudly rather than
+# passing unchecked.
+SCHEMA_ANNOTATIONS = ("$schema", "title", "description")
+SCHEMA_KEYWORDS = ("type", "required", "properties", "additionalProperties", "enum", "items")
+SCHEMA_TYPES = {
+    "object": lambda value: isinstance(value, dict),
+    "array": lambda value: isinstance(value, list),
+    "string": lambda value: isinstance(value, str),
+    "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
+    "boolean": lambda value: isinstance(value, bool),
+    "null": lambda value: value is None,
+}
+
+
+def schema_errors(instance: Any, schema: dict[str, Any], path: str = "$") -> list[str]:
+    """Why `instance` does not match `schema`; an empty list when it does."""
+    unsupported = set(schema) - set(SCHEMA_ANNOTATIONS) - set(SCHEMA_KEYWORDS)
+    if unsupported:
+        raise AssertionError(f"{path}: schema keywords this check does not support: {sorted(unsupported)}")
+    additional = schema.get("additionalProperties", True)
+    if additional not in (True, False):
+        raise AssertionError(f"{path}: only a boolean additionalProperties is supported")
+    if "type" in schema:
+        names = [schema["type"]] if isinstance(schema["type"], str) else schema["type"]
+        if not any(SCHEMA_TYPES[name](instance) for name in names):
+            return [f"{path}: expected {' or '.join(names)}, got {instance!r}"]
+    errors: list[str] = []
+    if "enum" in schema and instance not in schema["enum"]:
+        errors.append(f"{path}: {instance!r} is not one of {schema['enum']}")
+    if isinstance(instance, dict):
+        errors.extend(f"{path}: missing {name!r}" for name in schema.get("required", []) if name not in instance)
+        properties = schema.get("properties", {})
+        for name, value in instance.items():
+            if name in properties:
+                errors.extend(schema_errors(value, properties[name], f"{path}.{name}"))
+            elif additional is False:
+                errors.append(f"{path}: unexpected property {name!r}")
+    if isinstance(instance, list) and "items" in schema:
+        for index, item in enumerate(instance):
+            errors.extend(schema_errors(item, schema["items"], f"{path}[{index}]"))
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # Loopback servers
 # ---------------------------------------------------------------------------

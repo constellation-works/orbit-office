@@ -95,6 +95,9 @@
         },
         "disabled": {
           "type": "boolean"
+        },
+        "idempotency_header": {
+          "type": "string"
         }
       },
       "additionalProperties": false
