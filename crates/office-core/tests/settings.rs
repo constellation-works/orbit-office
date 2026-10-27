@@ -152,6 +152,55 @@ fn partial_yaml_merges_policy_defaults_without_creating_observations() {
 }
 
 #[test]
+fn a_single_quoted_value_with_a_doubled_quote_keeps_a_later_hash_as_text() {
+    // `''` is an escaped quote, not a close and reopen, so ` #` stays in the value.
+    let settings = Settings::from_yaml(&BLOCK.replace(
+        "label: Acme's server",
+        "label: 'Acme''s #1 server'   # shown in the app",
+    ))
+    .expect("single-quoted label");
+    assert_eq!(
+        settings.open_weights.expect("block").label,
+        "Acme's #1 server"
+    );
+}
+
+#[test]
+fn a_double_quoted_value_with_escaped_quotes_keeps_a_later_hash_as_text() {
+    // A backslash-escaped quote does not close the value, so ` # x` stays in it.
+    let settings = Settings::from_yaml(&BLOCK.replace(
+        "label: Acme's server",
+        r#"label: "say \"hi\" # x"   # shown in the app"#,
+    ))
+    .expect("double-quoted label");
+    assert_eq!(
+        settings.open_weights.expect("block").label,
+        r#"say "hi" # x"#
+    );
+}
+
+#[test]
+fn a_backslash_does_not_escape_inside_a_single_quoted_value() {
+    // YAML single quotes have no backslash escapes: the quote after `\` closes.
+    let settings = Settings::from_yaml(&BLOCK.replace(
+        "label: Acme's server",
+        r"label: 'Acme\'   # shown in the app",
+    ))
+    .expect("backslash label");
+    assert_eq!(settings.open_weights.expect("block").label, r"Acme\");
+}
+
+#[test]
+fn a_doubled_quote_with_no_closing_quote_is_refused_not_cut_at_the_hash() {
+    // `''` is an escaped quote, so this single-quoted value never closes and
+    // ` # shown` is text, not a comment. YAML refuses the value.
+    let key = refused_key(Settings::from_yaml(
+        &BLOCK.replace("label: Acme's server", "label: 'Acme'' # shown in the app"),
+    ));
+    assert_eq!(key, "open_weights.label");
+}
+
+#[test]
 fn invalid_values_name_the_exact_key_and_never_echo_the_value() {
     for (yaml, key) in [
         ("retention:\n  meeting: -1", "retention.meeting"),
