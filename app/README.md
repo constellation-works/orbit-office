@@ -42,6 +42,7 @@ layout is in `../ARCHITECTURE.md` ("Web app").
 ```bash
 npm install
 npm run check   # tsc -b: every package, strict
+npm test        # server HTTP behavior tests
 npm run dev     # build, then tsx watch on the server entry
 npm start       # run the built server
 ```
