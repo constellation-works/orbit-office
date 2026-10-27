@@ -745,3 +745,12 @@ test("auto-task list and update receive the installed workspace binding", async 
     ["orbit.auto_task.update", { name: "meeting-sweep", enabled: false, workspace: "/installed/workspace" }],
   ]);
 });
+
+test("office.init requests full output without adding tool input", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => { const { rm } = await import("node:fs/promises"); await rm(fake.root, { recursive: true, force: true }); });
+  const client = createOrbitClient({ env: fake.env() });
+  await client.callTool("office.init", {});
+  const calls = (await readLines(join(fake.state, "invocations.log"))).map(JSON.parse);
+  assert.deepEqual(calls[0], ["tool", "run", "office.init", "--json", "--full", "--input", "{}"]);
+});

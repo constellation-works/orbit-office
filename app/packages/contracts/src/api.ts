@@ -328,3 +328,7 @@ export interface SelectionInput {
   sensitivity: "normal" | "private";
 }
 export interface SelectionCount { count: number }
+
+/** Library setup status and the result of an explicit setup action. */
+export interface SetupStatus { state: "ready" | "missing" | "plugin_disabled" | "workspace_unregistered" | "unavailable"; reason?: string; fix?: string }
+export interface SetupResult { created: string[]; already_initialized: boolean }

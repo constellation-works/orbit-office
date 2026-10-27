@@ -40,6 +40,8 @@ export type {
   SettingsConnections,
   SettingsApiCalls,
   Status,
+  SetupStatus,
+  SetupResult,
   Today,
   TodayItem,
   TodayNeed,

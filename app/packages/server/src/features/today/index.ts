@@ -1,8 +1,8 @@
 /** Read-only Today snapshot. Uploads and approval writes (features/approvals) have their own features. */
-import type { Today, TodayItem, TodayNeed, TodayNeedGroup } from "@orbit-office/contracts";
+import type { SetupStatus, Today, TodayItem, TodayNeed, TodayNeedGroup } from "@orbit-office/contracts";
 
 import type { Feature } from "../../http/types.js";
-import { createOrbitClient } from "../../orbit/client.js";
+import { createOrbitClient, OrbitExitError } from "../../orbit/client.js";
 import type { OrbitToolClient } from "../../orbit/client.js";
 
 interface Task {
@@ -94,8 +94,35 @@ function completedAt(task: Task): Date | undefined {
   return new Date(Math.max(...dates));
 }
 
+class SetupRefusal extends Error {
+  constructor(readonly code: string) { super(code); }
+}
+
+function setupOutput(value: unknown): Record<string, unknown> {
+  if (!record(value)) throw new Error("invalid response");
+  if (value.ok === false) throw new SetupRefusal(record(value.error) && typeof value.error.code === "string" ? value.error.code : "unknown");
+  const data = value.ok === true ? value.output : value;
+  if (!record(data)) throw new Error("invalid response");
+  return data;
+}
+
+function setupFailure(error: unknown): SetupStatus {
+  const detail = error instanceof SetupRefusal ? error.code : error instanceof OrbitExitError ? error.stderr.toLowerCase() : "";
+  if (/plugin.*(not enabled|disabled|not found)|unknown tool.*office|tool not found: office\.|tool.*office.*not found/.test(detail)) {
+    return { state: "plugin_disabled", reason: "The Office plugin is not enabled for this workspace.", fix: "Run office init in your workspace." };
+  }
+  if (/workspace.*(not registered|unregistered|unknown|not found)|unknown workspace|no workspace|no workspaces registered/.test(detail)) {
+    return { state: "workspace_unregistered", reason: "This workspace is not registered with Orbit.", fix: "Run office init in your workspace." };
+  }
+  if (detail === "git_missing") return { state: "unavailable", reason: "Git is not available to create the Library.", fix: "Install Git and run office init." };
+  if (/^library_git_/.test(detail)) return { state: "unavailable", reason: "Git could not prepare the Library.", fix: "Check Git in your workspace and run office init." };
+  if (/^index_/.test(detail)) return { state: "unavailable", reason: "Office could not prepare the Library index.", fix: "Run office init in your workspace." };
+  if (/permission|access_denied|write_root|io_error|unsafe_path|library_dir_outside/.test(detail)) return { state: "unavailable", reason: "Office could not write the Library.", fix: "Check the workspace permissions and run office init." };
+  return { state: "unavailable", reason: "Office could not set up the Library.", fix: "Run office init in your workspace, then try again." };
+}
+
 export interface TodayOptions {
-  client: Pick<OrbitToolClient, "pollTool">;
+  client: Pick<OrbitToolClient, "pollTool" | "callTool">;
   now?: () => Date;
 }
 
@@ -104,7 +131,8 @@ export function createTodayFeature({ client, now = () => new Date() }: TodayOpti
   return {
     name: "today",
     status: "built",
-    routes: [{
+    routes: [
+      {
       method: "GET",
       path: "/api/today",
       async handle(_request, response) {
@@ -150,7 +178,30 @@ export function createTodayFeature({ client, now = () => new Date() }: TodayOpti
           response.end(JSON.stringify({ error: error instanceof TodayDataError ? "invalid_today_data" : "today_unavailable" }));
         }
       },
-    }],
+    },
+      { method: "GET", path: "/api/setup", async handle(_request, response) {
+        let status: SetupStatus;
+        try {
+          const data = setupOutput(await client.callTool("office.status", {}));
+          if (!record(data.library) || typeof data.library.initialized !== "boolean") throw new Error("invalid status");
+          status = { state: data.library.initialized ? "ready" : "missing" };
+        } catch (error) { status = setupFailure(error); }
+        response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        response.end(JSON.stringify(status));
+      } },
+      { method: "POST", path: "/api/setup", async handle(_request, response) {
+        try {
+          const data = setupOutput(await client.callTool("office.init", {}));
+          if (typeof data.already_initialized !== "boolean" || !Array.isArray(data.created) ||
+              !data.created.every((path: unknown) => typeof path === "string")) throw new Error("invalid init result");
+          response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+          response.end(JSON.stringify({ created: data.created, already_initialized: data.already_initialized }));
+        } catch (error) {
+          response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+          response.end(JSON.stringify(setupFailure(error)));
+        }
+      } },
+    ],
   };
 }
 
