@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.knowledge-list response",
+  "description": "Complete page summaries and installed bundled singleton templates with no page, sorted by id and template respectively. The optional template filter applies to both arrays. An unreadable or invalid page or bundled template refuses the complete read.",
+  "type": "object",
+  "properties": {
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "template": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "stale",
+              "retired"
+            ]
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "private"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "template",
+          "title",
+          "summary",
+          "status",
+          "sensitivity"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "missing_templates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "template",
+          "id",
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "pages",
+    "missing_templates"
+  ],
+  "additionalProperties": false
+}

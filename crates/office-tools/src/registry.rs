@@ -92,6 +92,7 @@ static TOOLS: &[Tool] = &[
     sources::extract::TOOL,
     sources::show::TOOL,
     // knowledge (specs/library.md)
+    knowledge::list::TOOL,
     knowledge::show::TOOL,
     knowledge::write::TOOL,
     // artifacts (specs/library.md)

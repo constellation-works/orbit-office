@@ -1,5 +1,7 @@
 //! `office.source-show`: Return a source, optionally at an anchor.
 
+use std::path::Path;
+
 use office_core::domain::source::{anchor_span, parse_anchor};
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
@@ -13,11 +15,12 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::ReadOnly,
         mcp_scope: McpScope::Workspace,
     },
-    &["id", "source_id", "anchor"],
+    &["id", "source_id", "anchor", "history"],
     run,
 );
 
 pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
+    let history = crate::history::requested(call.input)?;
     let id = match (call.input.get("id"), call.input.get("source_id")) {
         (Some(Value::String(id)), _) if !id.trim().is_empty() => id.clone(),
         (_, Some(Value::String(id))) if !id.trim().is_empty() => id.clone(),
@@ -48,7 +51,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         None => (None, None),
     };
     let body = span.clone().unwrap_or_else(|| view.body.clone());
-    Ok(json!({
+    let mut output = json!({
         "id": view.id,
         "kind": view.kind,
         "title": view.title,
@@ -62,5 +65,13 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "bytes": view.bytes,
         "media_type": view.media_type,
         "version": view.version,
-    }))
+    });
+    if history {
+        crate::history::append(
+            call.ports.library.as_ref(),
+            Path::new(&view.path),
+            &mut output,
+        )?;
+    }
+    Ok(output)
 }

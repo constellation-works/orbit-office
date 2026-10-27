@@ -14,6 +14,7 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 mod dispatch;
+mod history;
 mod registry;
 mod tools;
 
