@@ -35,15 +35,10 @@ function readText(path: string): string | undefined {
   }
 }
 
-/** True when any string inside `value` mentions Orbit (case-insensitive). */
+/** True when a string or string array mentions Orbit (case-insensitive). */
 function mentionsOrbit(value: unknown): boolean {
   if (typeof value === "string") return value.toLowerCase().includes("orbit");
-  if (Array.isArray(value)) return value.some(mentionsOrbit);
-  if (value !== null && typeof value === "object") {
-    return Object.entries(value).some(
-      ([key, entry]) => key.toLowerCase().includes("orbit") || mentionsOrbit(entry),
-    );
-  }
+  if (Array.isArray(value)) return value.some((entry) => typeof entry === "string" && mentionsOrbit(entry));
   return false;
 }
 
@@ -60,51 +55,90 @@ export function mcpServersHasOrbit(text: string): boolean {
   }
   if (parsed === null || typeof parsed !== "object") return false;
   const servers: unknown = (parsed as Record<string, unknown>)["mcpServers"];
-  if (servers === null || typeof servers !== "object") return false;
-  return mentionsOrbit(servers);
+  if (servers === null || typeof servers !== "object" || Array.isArray(servers)) return false;
+  return Object.entries(servers).some(([name, entry]) => {
+    if (name.toLowerCase().includes("orbit")) return true;
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const config = entry as Record<string, unknown>;
+    return ["command", "args", "arguments", "url"].some((field) => mentionsOrbit(config[field]));
+  });
 }
 
 /**
  * True when a Codex `config.toml` registers an Orbit MCP server: a
- * `[mcp_servers.<name>]` section whose name mentions Orbit, or whose body
- * does. Dotted sub-tables (`[mcp_servers.<name>.env]`) belong to their
- * server's section. Exported for tests.
+ * `[mcp_servers.<name>]` section whose name or direct command, args,
+ * arguments, or URL field mentions Orbit. Other fields, dotted sub-tables
+ * and comments do not count. Exported for tests.
  */
 export function tomlHasOrbitMcp(text: string): boolean {
-  interface Section {
-    name: string;
-    orbit: boolean;
-  }
-  let current: Section | null = null;
-  let found = false;
-  const close = (): void => {
-    if (current !== null && (current.name.toLowerCase().includes("orbit") || current.orbit)) {
-      found = true;
-    }
-    current = null;
-  };
-  for (const rawLine of text.split("\n")) {
-    const line = rawLine.trim();
-    if (line.startsWith("[") && line.endsWith("]")) {
-      const inner = line.slice(1, -1).trim();
-      const server = /^mcp_servers\s*\.(.+)$/i.exec(inner);
-      if (server?.[1] !== undefined) {
-        // A dotted sub-table stays inside the current server's section.
-        if (server[1].includes(".") && current !== null) continue;
-        if (current !== null) close();
-        current = { name: server[1].trim(), orbit: false };
-        continue;
+  const stripComment = (line: string): string => {
+    let quote: "'" | '"' | null = null;
+    let escaped = false;
+    for (let index = 0; index < line.length; index += 1) {
+      const character = line[index];
+      if (quote === '"') {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') quote = null;
+      } else if (quote === "'") {
+        if (character === "'") quote = null;
+      } else if (character === '"' || character === "'") {
+        quote = character;
+      } else if (character === "#") {
+        return line.slice(0, index);
       }
-      if (/^mcp_servers\s*$/i.test(inner)) continue;
-      if (current !== null) close();
+    }
+    return line;
+  };
+  const containerDelta = (value: string): number => {
+    let delta = 0;
+    let quote: "'" | '"' | null = null;
+    let escaped = false;
+    for (let index = 0; index < value.length; index += 1) {
+      const character = value[index];
+      if (quote === '"') {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') quote = null;
+      } else if (quote === "'") {
+        if (character === "'") quote = null;
+      } else if (character === '"' || character === "'") {
+        quote = character;
+      } else if (character === "[" || character === "{") {
+        delta += 1;
+      } else if (character === "]" || character === "}") {
+        delta -= 1;
+      }
+    }
+    return delta;
+  };
+
+  let inServerTable = false;
+  let openIdentityValue = 0;
+  for (const rawLine of text.split("\n")) {
+    const line = stripComment(rawLine).trim();
+    if (line === "") continue;
+    if (line.startsWith("[") && line.endsWith("]")) {
+      const server = /^\[\s*mcp_servers\s*\.\s*(?:"((?:\\.|[^"])*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*\]$/i.exec(line);
+      inServerTable = server !== null;
+      const name = server?.[1] ?? server?.[2] ?? server?.[3] ?? "";
+      if (name.toLowerCase().includes("orbit")) return true;
+      openIdentityValue = 0;
       continue;
     }
-    if (current !== null && !line.startsWith("#") && line.toLowerCase().includes("orbit")) {
-      current.orbit = true;
+    if (!inServerTable) continue;
+    if (openIdentityValue > 0) {
+      if (line.toLowerCase().includes("orbit")) return true;
+      openIdentityValue += containerDelta(line);
+      continue;
     }
+    const assignment = /^(?:"(command|args|arguments|url)"|'(command|args|arguments|url)'|(command|args|arguments|url))\s*=\s*(.*)$/i.exec(line);
+    if (assignment === null) continue;
+    const value = assignment[4] ?? "";
+    if (value.toLowerCase().includes("orbit")) return true;
+    openIdentityValue = containerDelta(value);
   }
-  if (current !== null) close();
-  return found;
+  return false;
 }
 
 /** Home directory the lookup runs against. Empty when unknown. */

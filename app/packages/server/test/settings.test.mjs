@@ -71,9 +71,26 @@ async function withIsolatedHome(home, run) {
 
 test("mcpServers JSON counts an Orbit entry, nothing else", () => {
   assert.equal(mcpServersHasOrbit(JSON.stringify({ mcpServers: { orbit: { command: "orbit" } } })), true);
+  assert.equal(mcpServersHasOrbit(JSON.stringify({ mcpServers: { helper: { command: "orbit" } } })), true);
   assert.equal(
     mcpServersHasOrbit(JSON.stringify({ mcpServers: { helper: { url: "https://orbit.example.com/mcp" } } })),
     true,
+  );
+  assert.equal(
+    mcpServersHasOrbit(JSON.stringify({ mcpServers: { helper: { command: "helper", args: ["--config", "orbit"] } } })),
+    true,
+  );
+  assert.equal(
+    mcpServersHasOrbit(JSON.stringify({ mcpServers: { helper: { command: "helper", arguments: ["orbit"] } } })),
+    true,
+  );
+  assert.equal(
+    mcpServersHasOrbit(JSON.stringify({ mcpServers: { helper: { command: "helper", cwd: "/work/orbit" } } })),
+    false,
+  );
+  assert.equal(
+    mcpServersHasOrbit(JSON.stringify({ mcpServers: { helper: { command: "helper", env: { TOKEN: "orbit" } } } })),
+    false,
   );
   assert.equal(mcpServersHasOrbit(JSON.stringify({ mcpServers: {} })), false);
   assert.equal(mcpServersHasOrbit(JSON.stringify({})), false);
@@ -84,7 +101,17 @@ test("mcpServers JSON counts an Orbit entry, nothing else", () => {
 
 test("Codex TOML counts an Orbit server section, nothing else", () => {
   assert.equal(tomlHasOrbitMcp('[mcp_servers.orbit]\ncommand = "orbit"\n'), true);
+  assert.equal(tomlHasOrbitMcp('[mcp_servers.helper]\ncommand = "orbit"\n'), true);
   assert.equal(tomlHasOrbitMcp('[mcp_servers.helper]\nurl = "https://orbit.example.com/mcp"\n'), true);
+  assert.equal(tomlHasOrbitMcp('[mcp_servers.helper]\ncommand = "helper"\nargs = ["--config", "orbit"]\n'), true);
+  assert.equal(
+    tomlHasOrbitMcp('[mcp_servers.helper]\ncwd = "/work/orbit"\nenv = { TOKEN = "orbit" }\n'),
+    false,
+  );
+  assert.equal(
+    tomlHasOrbitMcp('[mcp_servers.helper]\ncommand = "helper" # orbit is only a comment\n'),
+    false,
+  );
   assert.equal(
     tomlHasOrbitMcp('[mcp_servers.helper]\ncommand = "helper"\n[mcp_servers.helper.env]\nTOKEN = "x"\n'),
     false,
@@ -151,6 +178,31 @@ test("agentCliStatus reads the three CLI configs in order", async (t) => {
   await withIsolatedHome(both, () => {
     assert.deepEqual(agentCliStatus(), { cli: "Muse Code", connected: true });
   });
+});
+
+test("agentCliStatus ignores Orbit in unrelated Muse JSON fields", async (t) => {
+  const muse = await fixtureHome(t, {
+    ".config/muse/settings.json": JSON.stringify({
+      mcpServers: { helper: { command: "helper", cwd: "/work/orbit", env: { TOKEN: "orbit" } } },
+    }),
+  });
+  assert.deepEqual(agentCliStatus({ HOME: muse }), { cli: "Muse Code", connected: false });
+});
+
+test("agentCliStatus ignores Orbit in unrelated Claude JSON fields", async (t) => {
+  const claude = await fixtureHome(t, {
+    ".claude.json": JSON.stringify({
+      mcpServers: { helper: { command: "helper", cwd: "/work/orbit", env: { TOKEN: "orbit" } } },
+    }),
+  });
+  assert.deepEqual(agentCliStatus({ HOME: claude }), { cli: "Muse Code", connected: false });
+});
+
+test("agentCliStatus ignores Orbit in unrelated Codex fields and comments", async (t) => {
+  const codex = await fixtureHome(t, {
+    ".codex/config.toml": '[mcp_servers.helper]\ncwd = "/work/orbit"\n# orbit appears only in a comment\n',
+  });
+  assert.deepEqual(agentCliStatus({ HOME: codex }), { cli: "Muse Code", connected: false });
 });
 
 test("empty config-directory overrides use the documented home defaults", async (t) => {
@@ -245,6 +297,17 @@ test("GET /api/settings reports the agent CLI connection", async (t) => {
 
   const empty = await fixtureHome(t, {});
   await withIsolatedHome(empty, async () => {
+    const res = await request(port, { path: "/api/settings", headers: { host } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(JSON.parse(res.body), { agentCli: { cli: "Muse Code", connected: false } });
+  });
+
+  const unrelated = await fixtureHome(t, {
+    ".config/muse/settings.json": JSON.stringify({
+      mcpServers: { helper: { command: "helper", cwd: "/work/orbit", env: { TOKEN: "orbit" } } },
+    }),
+  });
+  await withIsolatedHome(unrelated, async () => {
     const res = await request(port, { path: "/api/settings", headers: { host } });
     assert.equal(res.status, 200);
     assert.deepEqual(JSON.parse(res.body), { agentCli: { cli: "Muse Code", connected: false } });
