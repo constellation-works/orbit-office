@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from tests.support import TOKEN, GatewayCase
+from tests.support import TOKEN, GatewayCase, schema_errors
 
 SLOTS = [f"conn_{index:02d}" for index in range(1, 17)]
 
@@ -99,6 +99,14 @@ class Put(GatewayCase):
         # Without one, the field is absent.
         out = self.ok("connection-put", put_input(name="plain"))
         self.assertNotIn("idempotency_header", out["connection"])
+
+    def test_the_response_validates_against_its_published_schema(self) -> None:
+        schema = json.loads((self.plugin / "schemas" / "connection-put.response.json").read_text(encoding="utf-8"))
+        with_header = self.ok("connection-put", put_input(drafts=["POST"], idempotency_header="Idempotency-Key"))
+        self.assertEqual(with_header["connection"]["idempotency_header"], "Idempotency-Key")
+        self.assertEqual(schema_errors(with_header, schema), [])
+        plain = self.ok("connection-put", put_input(name="plain"))
+        self.assertEqual(schema_errors(plain, schema), [])
 
     def test_an_idempotency_header_cannot_carry_auth_or_an_agent_header(self) -> None:
         for header in ("Authorization", "Cookie", "Content-Type", "If-Match", "Accept", "Host", "bad header"):
