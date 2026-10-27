@@ -20,8 +20,9 @@ uncommenting its block and adding its schemas and golden
   beside it as `bin/office-bin` and builds nothing at call time.
 - `.orbit-plugin/schemas/` — request/response JSON Schemas per tool, plus `config.json`.
 - `.orbit-plugin/skills/` — `orchestrator`, `library-conventions`, `meetings`.
-- `.orbit-plugin/definitions/` — routines, auto-tasks and activities seeded
-  disabled. Empty in the scaffold; definitions land with the tools they call.
+- `.orbit-plugin/definitions/` — the registered `office-agent-todo` activity
+  and planned routines and auto-tasks. Definitions land with the tools they
+  call; routines and auto-tasks are seeded disabled.
 - `.orbit-plugin/tests/conformance/<tool>.yaml` — one golden file per
   built tool for `orbit plugin test` (no network, no credentials).
   `orbit plugin test` runs the files in path order over one shared

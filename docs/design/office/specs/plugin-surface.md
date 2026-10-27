@@ -109,7 +109,9 @@ unconfigured reply also refuses rather than inventing a successful write.
 
 ## Definitions shipped
 
-Seeded disabled, enabled during onboarding.
+Routines and auto-tasks are seeded disabled and enabled during onboarding.
+Activities have no schedule switch. Definitions load only when listed in
+`spec.definitions` in the plugin manifest.
 
 - **Routines:**
   - `office-kt-inbox`: every 15 minutes, process confirmed video plans: transcribe, frames, extract (`kt`), then file knowledge proposals and question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
@@ -122,9 +124,11 @@ Seeded disabled, enabled during onboarding.
 - **Activities:** `office-agent-todo`, an agent loop that executes an `owner:agent` to-do with its attached runbook and example artifacts, and writes its output as task artifacts with the manifest. Its `proc.spawn` allowlist has `python3` and no cloud CLI, so its agents can use the `gateway` plugin and Orbit refuses them `cloudcli` ([gateway.md](./gateway.md)).
 - **Skills:** `orchestrator`, `library-conventions` (how to cite, write pages and package outputs), and one skill per pack (`kt`, `meetings`, later `receipts`).
 
-A definition lands only with the tools it calls. Every definition's
-`required_tools` lists every plugin tool its steps call, and no definition
-requires an outward-facing action.
+A definition lands only with the tools it calls. An activity lists its
+callable tools in `spec.tools`; `required_tools` belongs to task records.
+The shipped activity is registered in `spec.definitions.activities` as
+`definitions/activities/office-agent-todo.yaml`. No definition requires an
+outward-facing action.
 
 ## Config and permissions
 
