@@ -83,3 +83,11 @@ h2, h3 { line-height: 1.25; margin: 0; }
 .library section { border-left: 3px solid #b9d5ce; padding-left: 1rem; }
 .library section p { margin: .35rem 0; }
 .library-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.routines .card h2 { font-size: 1.1rem; margin: 0; overflow-wrap: anywhere; }
+.routines label { display: inline-flex; align-items: center; gap: .4rem; }
+.routines input[type="checkbox"] { width: 1.25rem; height: 1.25rem; accent-color: #125c51; }
+.routines-retention { margin-top: 2rem; }
+.routines-retention form { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
+.routines-retention input, .routines-retention select, .routines-retention button { font: inherit; padding: .5rem; max-width: 100%; }
+.routines-retention input { width: 7rem; }
