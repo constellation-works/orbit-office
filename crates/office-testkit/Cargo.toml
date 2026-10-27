@@ -11,8 +11,8 @@ repository.workspace = true
 name = "office_testkit"
 path = "src/lib.rs"
 
-# Dependencies arrive with the first task that needs them, within the policy
-# in scripts/check-dependency-direction.sh.
+# Dependencies are added with the fakes that need them, within the policy in
+# scripts/check-dependency-direction.sh.
 [dependencies]
 office-core = { workspace = true }
 serde_json = { workspace = true }
