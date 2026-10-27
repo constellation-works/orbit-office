@@ -357,11 +357,14 @@ URLs, and no browser-only API without a fallback.
 ### Consequences
 
 - Citations are plain `http://localhost` links that the browser opens.
-  They carry anchors (`#t=…` for meetings, `#L…` for line-based sources)
-  that open the source scrolled to the cited span; the "no deep-link
-  scheme" line originally recorded here was superseded on 2026-10-26
-  (see "Anchor deep-links for citations" below). The dispatch pass is a
-  login service (launchd or a systemd user unit) independent of the UI.
+  They carry anchors (`#t=…` for meetings, `#L…` for line-based sources).
+  The anchor landing (opening the source scrolled to the cited span) is
+  planned under ORB-18729: until the planned source screen ships, the
+  anchors are a recorded URL contract with no landing behaviour. The
+  "no deep-link scheme" line originally recorded here was superseded on
+  2026-10-26 (see "Anchor deep-links for citations" below). The dispatch
+  pass is a login service (launchd or a systemd user unit) independent
+  of the UI.
 - Cost: users install Node 20+ themselves, there is no tray or native
   notification for Needs you, and the later Tauri shell must either ship
   the Node server as a sidecar or move it into the `office` binary.
@@ -385,8 +388,10 @@ at exactly the moment the user checks it.
 
 Citation links are `http://localhost` URLs carrying the source anchor
 (`#t=hh:mm:ss` for meetings, `#L<start>-<end>` for line-based bodies).
-The app's source view opens at that anchor and scrolls to the span. This
-supersedes the "no deep-link scheme is needed yet" consequence in the
+This records the URL-format contract; the landing behaviour (the source
+view opening at that anchor and scrolling to the span) is planned under
+ORB-18729 and ships with the source screen, which is currently planned.
+This supersedes the "no deep-link scheme is needed yet" consequence in the
 PWA decision; the rest of that decision stands.
 
 ### Consequences
