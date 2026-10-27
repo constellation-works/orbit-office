@@ -35,7 +35,7 @@ Document uploads cross the existing `Library::capture_source` port. The store's
 read upload. Conversion and structural validation finish before the writer lock
 or source persistence. These external dependencies add no internal crate edge.
 
-`office-orbit` uses its `office-core` edge for the eight Orbit port methods and its
+`office-orbit` uses its `office-core` edge for the eleven Orbit port methods and its
 `office-common` edge for bounded CLI callback supervision. The composing `office` binary
 constructs this adapter from the host call context and inherited callback environment.
 The testkit's recording Orbit fake shares observations across clones.

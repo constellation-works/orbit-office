@@ -67,7 +67,10 @@ Rules:
 
 `orbit_tools` callbacks requested: `orbit.task.add`, `orbit.task.update`,
 `orbit.task.list`, `orbit.task.show`, `orbit.task.artifact.get`,
-`orbit.task.artifact.put`, `orbit.friction.add`, `orbit.search`.
+`orbit.task.artifact.put`, `orbit.friction.add`, `orbit.search`,
+`orbit.auto_task.add`, `orbit.auto_task.update`, `orbit.auto_task.list`.
+The auto-task callbacks serve accepted `auto_task` proposals
+([proposals.md](./proposals.md)); Orbit has no routine-create callback.
 
 The synchronous `office-core::ports::Orbit` port has one method per callback.
 It forwards JSON objects intact to Orbit's schemas (unknown keys are not dropped)
@@ -98,8 +101,8 @@ details are discarded. Missing executables, malformed responses, unstructured
 nonzero exits and supervisor failures are distinct typed adapter errors. Calls
 are never automatically retried. A mutating callback that started but lost its
 reply reports `orbit_outcome_unknown`; a failed spawn is a transport failure,
-since no write could have been sent. Confirm the task or artifact state in Orbit
-before retrying an unknown outcome.
+since no write could have been sent. Confirm the task, artifact or auto-task
+state in Orbit before retrying an unknown outcome.
 An absent callback context refuses with `orbit_unavailable`. The recording testkit
 fake queues explicit results and exposes full calls through a shared clone; an
 unconfigured reply also refuses rather than inventing a successful write.
