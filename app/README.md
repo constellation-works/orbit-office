@@ -6,8 +6,9 @@ To-dos, Routines, Library, Insights, Review. No ids, crews, runs or raw
 statuses are ever shown. There is no Chat screen: conversation happens in
 the user's agent CLI.
 
-**Status: Today and the app server are built.** Today is the landing screen,
-backed by `GET /api/today`. Other features and screens remain planned:
+**Status: The Today and Settings server features are built, as is the app
+server.** Today is the landing screen, backed by `GET /api/today`. Other
+features and screens remain planned:
 planned features mount no routes, and planned screens stay out of navigation.
 `/healthz` lists the built features. The server itself — its Orbit client, static
 serving with loopback Host/Origin guards, and the dispatch pass — is
