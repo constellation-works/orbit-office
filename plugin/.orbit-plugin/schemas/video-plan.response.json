@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.video-plan response",
+  "type": "object",
+  "properties": {
+    "plan": {
+      "type": "object",
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "id": {
+          "type": "string"
+        },
+        "original_sha256": {
+          "type": "string"
+        },
+        "transcript_sha256": {
+          "type": "string"
+        },
+        "settings_digest": {
+          "type": "string"
+        },
+        "sensitivity": {
+          "enum": [
+            "normal",
+            "private"
+          ]
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "transcribe_audio": {
+          "type": "boolean"
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "time_ms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "score": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "dhash": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "time_ms",
+              "score",
+              "dhash"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "audio": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "frames": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "extract": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "audio",
+            "frames",
+            "extract"
+          ],
+          "additionalProperties": false
+        },
+        "routes": {
+          "type": "object",
+          "properties": {
+            "audio": {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "string",
+                  "enum": [
+                    "hosted",
+                    "private:company",
+                    "private:provider",
+                    "private:own_hardware"
+                  ]
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "route",
+                "endpoint",
+                "model"
+              ],
+              "additionalProperties": false
+            },
+            "frames": {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "string",
+                  "enum": [
+                    "hosted",
+                    "private:company",
+                    "private:provider",
+                    "private:own_hardware"
+                  ]
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "route",
+                "endpoint",
+                "model"
+              ],
+              "additionalProperties": false
+            },
+            "extract": {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "string",
+                  "enum": [
+                    "hosted",
+                    "private:company",
+                    "private:provider",
+                    "private:own_hardware"
+                  ]
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "route",
+                "endpoint",
+                "model"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "audio",
+            "frames",
+            "extract"
+          ],
+          "additionalProperties": false
+        },
+        "estimate": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "currency": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "text_tokens": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "currency",
+                "amount",
+                "text_tokens"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "rates_unset": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "digest",
+        "id",
+        "original_sha256",
+        "transcript_sha256",
+        "settings_digest",
+        "sensitivity",
+        "duration_ms",
+        "transcribe_audio",
+        "frames",
+        "counts",
+        "routes",
+        "estimate",
+        "rates_unset"
+      ],
+      "additionalProperties": false
+    },
+    "confirmed_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "calls": {
+      "type": "object",
+      "properties": {
+        "audio": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "extract": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "audio",
+        "frames",
+        "extract"
+      ],
+      "additionalProperties": false
+    },
+    "frames_read": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "plan",
+    "confirmed_at",
+    "calls",
+    "frames_read"
+  ],
+  "additionalProperties": false
+}

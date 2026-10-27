@@ -200,3 +200,56 @@ These gate the plan above:
 - **Private route:** the model takes audio and images. What still needs checking is that the serving stack the demo uses (Baseten's model API) accepts `input_audio` and image parts in chat completions.
 - **Prices:** the published per-call prices, to set the default `costs` the
   demo shows.
+
+## Built tool contracts
+
+`office.video-plan` takes `id`, optional `sensitivity: normal|private`, and,
+for approval, both `confirm: true` and `digest`. A preview updates the source
+sensitivity immediately. It returns `plan`, `confirmed_at`, actual `calls`
+and `frames_read`. The plan includes selected frame timestamps in milliseconds,
+scene scores in millionths, 64-bit difference hashes, per-group `counts` and
+`routes`, `estimate`, and the missing `costs.*` keys as `rates_unset`. An unset
+applicable rate or currency makes `estimate: null`; zero is a valid configured
+rate. Private routes show the endpoint and model for audio, frames and extract.
+An imported VTT removes the audio requirement; a source with no audio stream
+also plans zero audio calls. No model is contacted during preview/confirmation.
+
+Selection requires at least 10,000 milliseconds between frames and drops a
+candidate whose difference hash is at Hamming distance five or less from the
+previous kept frame. The cap is `floor(duration_hours * max_frames_per_hour)`,
+with a minimum of one for short clips. When candidates exceed it, equal-duration
+buckets keep their highest-scoring candidate (earlier wins a tie), followed by
+another adjacent deduplication. The result may contain fewer than the cap.
+Media inspection accepts positive durations up to seven days and refuses invalid,
+overflowing or inconsistent ffprobe/ffmpeg metadata. Each local media process
+uses the shared supervisor's 30-second deadline and bounded captures; raw media
+and diagnostics never reach an error message. Both `ffmpeg` and `ffprobe` must
+be available on the runtime PATH.
+
+Audio counts use ten-minute chunks. Extraction reserves one call up to fifteen
+minutes, otherwise one per fifteen-minute window plus a merge. The text cost is
+an estimate: transcript characters divided by four (rounded up), 256 tokens per
+frame, and 200 projected transcript tokens per audio minute when transcription
+is needed; windowed processing doubles that token allowance for the merge.
+The preview prices actual audio duration, frame count and those estimated text
+tokens using the configured rates. These are planning units, not provider usage
+measurements. Confirmation binds the original bytes, transcript, sensitivity,
+selection, call counts, estimate and video/cost/private-route settings. A matching
+repeat confirmation preserves the original confirmation time and call ledger.
+
+`office.frames` takes only `id`; it returns `id`, the Library-relative `path` of
+`frames.md`, `frames_read`, and actual `calls`. It refuses `plan_unconfirmed`
+before extraction or inference and `plan_changed` when approved inputs differ.
+Each image request is reserved durably first. An unsuccessful or interrupted
+request consumes that slot: a retry refuses `plan_exceeded`, preserving completed
+readings and preventing unapproved spending. A completed run is idempotent.
+The image adapter checks the approved settings digest again immediately before
+constructing its routed client, so a changed private endpoint cannot redirect a
+confirmed call. Each successful frame writes a timestamp entry and `#frame=`
+link, its 640-pixel PNG, the actual route/model in `derived_by.frames`, and the
+updated call ledger. Missing rates, private routing and refusal/success goldens
+are exercised offline through the public tool entry point.
+
+The source's `video` mapping exposes `duration_s`, `plan_digest`, `confirmed_at`,
+`calls` and `frames_read`; its detailed `plan` and `readings` are quoted JSON
+scalars so they remain readable within the Library's bounded YAML subset.

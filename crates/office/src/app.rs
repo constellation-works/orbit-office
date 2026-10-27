@@ -56,6 +56,17 @@ impl ContextModels<'_> {
 }
 
 impl Models for ContextModels<'_> {
+    fn analyze_video(
+        &self,
+        bytes: &[u8],
+        threshold: &serde_json::Number,
+    ) -> office_core::Result<office_core::domain::source::video::VideoAnalysis> {
+        office_models::media::VideoProcessor::default().analyze(bytes, threshold)
+    }
+    fn video_frame(&self, bytes: &[u8], time_ms: u64) -> office_core::Result<Vec<u8>> {
+        office_models::media::VideoProcessor::default().frame(bytes, time_ms)
+    }
+
     fn transcribe(
         &self,
         request: &office_core::ports::TranscribeRequest,
@@ -67,6 +78,30 @@ impl Models for ContextModels<'_> {
         request: &office_core::ports::ExtractRequest,
     ) -> office_core::Result<Routed<Value>> {
         self.client()?.extract(request)
+    }
+    fn read_planned_image(
+        &self,
+        request: &office_core::ports::ImageRequest,
+        expected: &str,
+    ) -> office_core::Result<Routed<office_core::ports::ImageReading>> {
+        let settings = self.library.settings()?;
+        if office_core::domain::source::video::settings_digest(&settings)? != expected {
+            return Err(office_core::domain::source::video::refusal(
+                "plan_changed",
+                "model route changed after confirmation",
+            ));
+        }
+        let secret = |name: &str| {
+            self.context
+                .get("secrets")
+                .and_then(|s| s.get(name))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        };
+        let mut config =
+            office_models::ModelConfig::new(secret("meta_api_key"), secret("open_weights_token"));
+        config.open_weights = settings.open_weights;
+        office_models::RoutedClient::new(config).read_image(request)
     }
     fn read_image(
         &self,
@@ -213,6 +248,21 @@ impl RealLibrary {
 }
 
 impl Library for RealLibrary {
+    fn read_video(
+        &self,
+        id: &str,
+    ) -> office_core::Result<office_core::domain::source::video::VideoSource> {
+        <LibraryStore as Library>::read_video(&self.store()?, id)
+    }
+    fn mutate_video(
+        &self,
+        id: &str,
+        revision: &str,
+        mutation: office_core::domain::source::video::VideoMutation,
+    ) -> office_core::Result<office_core::domain::source::video::VideoState> {
+        <LibraryStore as Library>::mutate_video(&self.store()?, id, revision, mutation)
+    }
+
     fn promote_artifact(
         &self,
         artifact: &office_core::domain::artifact::Artifact,

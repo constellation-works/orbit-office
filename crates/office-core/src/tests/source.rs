@@ -464,3 +464,105 @@ fn rendered_source_keeps_untrusted_metadata_inside_frontmatter() {
         );
     }
 }
+
+#[test]
+fn video_selection_keeps_highest_scores_spread_across_the_recording() {
+    use crate::domain::source::video::{VideoAnalysis, VideoFrame, select_frames};
+    let analysis = VideoAnalysis {
+        duration_ms: 3600000,
+        has_audio: true,
+        candidates: vec![
+            VideoFrame {
+                time_ms: 10000,
+                score: 900000,
+                dhash: 0,
+            },
+            VideoFrame {
+                time_ms: 20000,
+                score: 950000,
+                dhash: u64::MAX,
+            },
+            VideoFrame {
+                time_ms: 1900000,
+                score: 600000,
+                dhash: 0,
+            },
+            VideoFrame {
+                time_ms: 3599999,
+                score: 700000,
+                dhash: 0xffff,
+            },
+        ],
+    };
+    let selected = select_frames(&analysis, 2);
+    assert_eq!(
+        selected.iter().map(|f| f.time_ms).collect::<Vec<_>>(),
+        [20000, 3599999]
+    );
+    let mut duplicate = analysis;
+    duplicate.candidates[1].dhash = 31; // exactly five differing bits: dropped
+    let selected = select_frames(&duplicate, 600);
+    assert!(!selected.iter().any(|f| f.time_ms == 20000));
+    assert!(
+        selected
+            .windows(2)
+            .all(|pair| pair[1].time_ms - pair[0].time_ms >= 10000)
+    );
+}
+#[test]
+fn long_video_counts_audio_windows_and_an_audio_only_plan_creates_empty_frames() {
+    use crate::domain::settings::Settings;
+    use crate::domain::source::{sha256_hex, video};
+    let source = video::VideoSource {
+        path: "sources/1970/01/src-video/source.md".into(),
+        markdown: "---\nid: src-video\nkind: video\nsensitivity: normal\n---\n".into(),
+        bytes: b"video".to_vec(),
+    };
+    let settings = Settings::default();
+    let plan = video::plan(
+        &source,
+        &video::VideoAnalysis {
+            duration_ms: 3_060_000,
+            has_audio: true,
+            candidates: Vec::new(),
+        },
+        &settings,
+        "normal",
+    )
+    .unwrap();
+    assert_eq!(
+        plan.counts,
+        video::VideoCalls {
+            audio: 6,
+            frames: 0,
+            extract: 5
+        }
+    );
+    assert_eq!(plan.original_sha256, sha256_hex(b"video"));
+    let preview = video::apply(
+        &source,
+        &settings,
+        video::VideoMutation::Plan {
+            plan: Box::new(plan.clone()),
+            confirm_digest: None,
+            at: "1970-01-01T00:00:00Z".into(),
+        },
+    )
+    .unwrap();
+    let source = video::VideoSource {
+        markdown: preview.markdown,
+        ..source
+    };
+    let approved = video::apply(
+        &source,
+        &settings,
+        video::VideoMutation::Plan {
+            plan: Box::new(plan.clone()),
+            confirm_digest: Some(plan.digest),
+            at: "1970-01-01T00:00:00Z".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(approved.files, vec![("frames.md".into(), Vec::<u8>::new())]);
+    assert!(crate::domain::source::parse_source_participants(&approved.markdown).is_ok());
+}

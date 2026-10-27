@@ -173,6 +173,7 @@ file requires `office.init`; missing keys within a present file use these defaul
 
 ```yaml
 retention:
+  video: 90
   meeting: 90
   chat: null
   email: null
@@ -182,6 +183,7 @@ retention:
   conversation: null
   note: null
 sensitivity:
+  video: normal
   meeting: normal
   chat: normal
   email: normal
@@ -190,7 +192,15 @@ sensitivity:
   bill: normal
   conversation: normal
   note: normal
-packs: [meetings]
+packs: [kt, meetings]
+video:
+  max_frames_per_hour: 120
+  scene_threshold: 0.3
+costs:
+  currency: null
+  audio_minute: null
+  image: null
+  text_1k_tokens: null
 thresholds:
   repetition_count: 3
   window_days: 30
@@ -199,8 +209,8 @@ open_weights: null
 ```
 
 Retention is a positive integer up to 36,500 days or `null` (keep indefinitely).
-Sensitivity is `normal` or `private`. Packs are distinct names from `meetings`
-and `receipts`; an empty list disables all packs. Repetition count is 1–10,000;
+Sensitivity is `normal` or `private`. Packs are distinct names from `kt`,
+`meetings` and `receipts`; an empty list disables all packs. Repetition count is 1–10,000;
 window/stale days are 1–36,500. The optional `open_weights` block names the
 private route ([models-and-privacy.md](./models-and-privacy.md#the-private-route)):
 `endpoint` (an OpenAI-compatible base URL over HTTPS, or HTTP(S) on loopback,
@@ -262,8 +272,12 @@ including defaults; hand-edited comments and formatting are not retained.
 Repeated identical updates still add one write-event commit. No network or
 secrets are needed. Secrets remain managed by Orbit's plugin secret surface.
 The KT pack adds the `video` kind, the `kt` pack, and the `video` and `costs` keys
-([kt-videos.md](./kt-videos.md#settings)). They land with the KT task, and the
-default pack list then becomes `[kt, meetings]`.
+([kt-videos.md](./kt-videos.md#settings)). The default pack list is `[kt, meetings]`.
+`video.max_frames_per_hour` is an integer from 1 through 600, and
+`video.scene_threshold` is a finite number from 0.05 through 0.95. The cost
+rates are finite, nonnegative numbers or null, and `costs.currency` is a
+three-letter uppercase currency code or null. Missing keys receive these
+defaults; existing explicit pack lists keep their values.
 
 ## Task References
 

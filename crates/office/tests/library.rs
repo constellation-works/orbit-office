@@ -13,6 +13,10 @@ const BIN: &str = env!("CARGO_BIN_EXE_office");
 #[path = "document_capture/mod.rs"]
 mod document_capture;
 
+#[cfg(unix)]
+#[path = "video_pipeline/mod.rs"]
+mod video_pipeline;
+
 struct Env {
     _dir: tempfile::TempDir,
     workspace: PathBuf,
@@ -353,7 +357,7 @@ fn init_second_run_is_an_already_initialized_no_op() {
     }
     assert_eq!(
         std::fs::read_to_string(library.join(".gitignore")).unwrap(),
-        "original.*\n"
+        "original.*\nframes/\n"
     );
     let config = std::fs::read_to_string(library.join(".office/config.yaml")).unwrap();
     assert!(config.contains("retention:"), "default config: {config}");
@@ -371,7 +375,7 @@ fn init_second_run_is_an_already_initialized_no_op() {
         "packs: [meetings, receipts]\n",
     )
     .unwrap();
-    std::fs::write(library.join(".gitignore"), "custom-ignore\n").unwrap();
+    std::fs::write(library.join(".gitignore"), "custom-ignore\nframes/\n").unwrap();
     std::fs::write(library.join("knowledge/domain/dom-keep.md"), DOMAIN).unwrap();
     let head_before = git(&library, &["rev-parse", "HEAD"]);
 
@@ -390,7 +394,7 @@ fn init_second_run_is_an_already_initialized_no_op() {
     );
     assert_eq!(
         std::fs::read_to_string(library.join(".gitignore")).unwrap(),
-        "custom-ignore\n"
+        "custom-ignore\nframes/\n"
     );
     assert_eq!(
         std::fs::read_to_string(library.join("knowledge/domain/dom-keep.md")).unwrap(),

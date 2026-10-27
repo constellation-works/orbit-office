@@ -158,10 +158,41 @@ pub struct ImageReading {
 /// Model access: transcription, structured extraction and image reading,
 /// each with its route, plus the private-endpoint check.
 pub trait Models {
+    /// Inspect video locally with supervised ffprobe/ffmpeg; spends no model calls.
+    fn analyze_video(
+        &self,
+        _bytes: &[u8],
+        _threshold: &serde_json::Number,
+    ) -> Result<crate::domain::source::video::VideoAnalysis> {
+        Err(crate::domain::source::video::refusal(
+            "media_unavailable",
+            "video analysis is unavailable",
+        ))
+    }
+    /// Extract one PNG at the planned timestamp, scaled to 640 pixels wide.
+    fn video_frame(&self, _bytes: &[u8], _time_ms: u64) -> Result<Vec<u8>> {
+        Err(crate::domain::source::video::refusal(
+            "media_unavailable",
+            "frame extraction is unavailable",
+        ))
+    }
+
     /// Transcribe audio into text with speaker turns and timestamps.
     fn transcribe(&self, request: &TranscribeRequest) -> Result<Routed<Transcript>>;
     /// Extract structured JSON, validated against `request.schema`, from text.
     fn extract(&self, request: &ExtractRequest) -> Result<Routed<Value>>;
+    /// Read a confirmed video image using exactly the approved policy/endpoint snapshot.
+    /// Adapters must compare the digest before constructing the routed client.
+    fn read_planned_image(
+        &self,
+        _request: &ImageRequest,
+        _settings_digest: &str,
+    ) -> Result<Routed<ImageReading>> {
+        Err(crate::domain::source::video::refusal(
+            "plan_changed",
+            "planned image routing is unavailable",
+        ))
+    }
     /// Read an image (receipt and bill fields) as text plus structured fields.
     fn read_image(&self, request: &ImageRequest) -> Result<Routed<ImageReading>>;
     /// Send one tiny text, image and audio request to the configured private

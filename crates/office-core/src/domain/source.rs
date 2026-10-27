@@ -3,6 +3,9 @@
 //! The meeting body is the first rule this module owns. Capture, ids and
 //! retention stay with the task that builds `office.transcribe`.
 
+/// KT video planning and processing state.
+pub mod video;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use office_common::Sensitivity;

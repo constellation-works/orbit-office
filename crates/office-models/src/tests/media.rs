@@ -77,3 +77,104 @@ fn splits_a_long_recording_with_the_configured_ffmpeg() {
         assert!(output.exists(), "segment {} was written", output.display());
     }
 }
+
+#[cfg(unix)]
+fn executable(path: &std::path::Path, text: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, text).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+}
+#[cfg(unix)]
+#[test]
+fn video_processor_probes_and_hashes_raw_thumbnails_without_an_image_library() {
+    let dir = tempfile::tempdir().unwrap();
+    let probe = dir.path().join("ffprobe");
+    executable(
+        &probe,
+        "#!/bin/sh\nprintf '%s' '{\"format\":{\"duration\":\"120.001\"},\"streams\":[{\"codec_type\":\"video\"},{\"codec_type\":\"audio\"}]}'\n",
+    );
+    let raw = dir.path().join("thumbnails");
+    let mut bytes = Vec::new();
+    bytes.extend([0u8; 72]);
+    for _ in 0..8 {
+        bytes.extend([9, 8, 7, 6, 5, 4, 3, 2, 1]);
+    }
+    std::fs::write(&raw, bytes).unwrap();
+    let ffmpeg = dir.path().join("ffmpeg");
+    executable(
+        &ffmpeg,
+        &format!(
+            "#!/bin/sh\n[ -f input ] || exit 12\n[ -z \"$META_API_KEY\" ] || exit 13\nprintf 'frame:0 pts:0 pts_time:0\\nlavfi.scene_score=0.4\\nframe:1 pts:10 pts_time:10.5\\nlavfi.scene_score=0.9\\n' > scenes.txt\n/bin/cat '{}'\n",
+            raw.display()
+        ),
+    );
+    let processor = crate::media::VideoProcessor {
+        ffprobe: probe,
+        ffmpeg,
+    };
+    let analysis = processor
+        .analyze(
+            b"fixture video",
+            &serde_json::Number::from_f64(0.3).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(analysis.duration_ms, 120001);
+    assert!(analysis.has_audio);
+    assert_eq!(analysis.candidates.len(), 2);
+    assert_eq!(analysis.candidates[0].dhash, 0);
+    assert_eq!(analysis.candidates[1].dhash, u64::MAX);
+    assert_eq!(analysis.candidates[1].time_ms, 10500);
+    assert_eq!(analysis.candidates[1].score, 900000);
+}
+#[cfg(unix)]
+#[test]
+fn video_processor_refuses_bad_metadata_and_failed_or_mismatched_decodes() {
+    let dir = tempfile::tempdir().unwrap();
+    let probe = dir.path().join("ffprobe");
+    let ffmpeg = dir.path().join("ffmpeg");
+    executable(&ffmpeg, "#!/bin/sh\nexit 1\n");
+    let processor = crate::media::VideoProcessor {
+        ffprobe: probe.clone(),
+        ffmpeg: ffmpeg.clone(),
+    };
+    for duration in ["NaN", "-1", "0", "18446744073709551615.1", "604801"] {
+        executable(
+            &probe,
+            &format!(
+                "#!/bin/sh\nprintf '%s' '{{\"format\":{{\"duration\":\"{duration}\"}},\"streams\":[{{\"codec_type\":\"video\"}}]}}'\n"
+            ),
+        );
+        assert_eq!(
+            processor.analyze(b"video", &0.into()).unwrap_err().code(),
+            "media_processing_failed"
+        );
+    }
+    executable(
+        &probe,
+        "#!/bin/sh\nprintf '%s' '{\"format\":{\"duration\":\"1\"},\"streams\":[{\"codec_type\":\"video\"}]}'\n",
+    );
+    assert!(processor.analyze(b"video", &0.into()).is_err());
+    executable(
+        &ffmpeg,
+        "#!/bin/sh\nprintf 'frame:0 pts_time:0\\nlavfi.scene_score=0.5\\n' > scenes.txt\n",
+    );
+    assert!(processor.analyze(b"video", &0.into()).is_err());
+}
+#[cfg(unix)]
+#[test]
+fn frame_extraction_uses_planned_offset_and_640_pixel_png_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let ffmpeg = dir.path().join("ffmpeg");
+    executable(
+        &ffmpeg,
+        "#!/bin/sh\nseen_scale=0\nseen_time=0\nfor arg; do\n[ \"$arg\" = 'scale=640:-1' ] && seen_scale=1\n[ \"$arg\" = '12.345' ] && seen_time=1\ndone\n[ \"$seen_scale$seen_time\" = 11 ] || exit 7\nprintf '\\211PNG\\015\\012\\032\\012fixture'\n",
+    );
+    let processor = crate::media::VideoProcessor {
+        ffprobe: "/nonexistent".into(),
+        ffmpeg,
+    };
+    assert_eq!(
+        processor.frame(b"video", 12345).unwrap(),
+        b"\x89PNG\r\n\x1a\nfixture"
+    );
+}
