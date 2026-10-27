@@ -13,5 +13,5 @@ mod selection;
 mod session;
 pub mod settings;
 pub mod signals;
-mod source;
+pub mod source;
 pub mod template;

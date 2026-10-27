@@ -54,7 +54,12 @@ FLAC, Ogg or WebM); other long-audio MIME types are refused.
 
 Every chunk passes through the same sensitivity routing with the original
 language hint. Private chunks reach only the configured open-weights endpoint.
-The current plain-text provider replies are joined with newlines in recording
-order; timestamp and speaker segments remain empty until a provider reports
-them. Any split or model failure fails the transcription instead of returning
-a partial success. Temporary audio is cleaned up on success and failure.
+The request asks for a JSON object `{"text","segments"}`, one segment per
+speaker turn (`speaker`, `start_ms`, `end_ms`, `text`, milliseconds from the
+start of that chunk). When the reply is that object, those turns are kept
+and each chunk's timestamps are shifted by the chunk's start so they stay
+offsets into the original recording. A reply that is not that JSON is kept
+as transcript text with no turns. Chunk texts are joined with newlines in
+recording order. Any split or model failure fails the transcription instead
+of returning a partial success. Temporary audio is cleaned up on success
+and failure.

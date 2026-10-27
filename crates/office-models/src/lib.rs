@@ -17,8 +17,13 @@
 //!   text is `choices[0].message.content`. No dedicated Muse Voice
 //!   Transcribe request shape was published in the fetched references,
 //!   so transcription sends the audio as a base64 `input_audio` content
-//!   part through the same confirmed shape and takes the reply as the
-//!   transcript. This assumption is the one unverified remainder.
+//!   part through the same confirmed shape. The reply is parsed as JSON
+//!   `{"text","segments"}` when the endpoint reports that object (a
+//!   markdown code fence around the object is accepted); each segment is
+//!   a speaker turn with millisecond `start_ms` and `end_ms`. A reply
+//!   that is not that JSON is kept as the transcript text and its
+//!   segments stay empty. The live model's compliance with the requested
+//!   JSON is still unverified.
 //! - **Baseten Model APIs** (<https://docs.baseten.co/inference/model-apis/overview>,
 //!   fetched 2026-10-27): Chat Completions at
 //!   `https://inference.baseten.co/v1/chat/completions`, Responses at
@@ -43,10 +48,13 @@
 //! into chunks of at most 600 seconds. Short recordings go straight to the
 //! routed call without files or subprocesses. Long recordings are staged in a
 //! private temporary directory and split by supervised ffmpeg. Each chunk uses
-//! the original sensitivity, MIME type and language hint. Plain-text replies
-//! are joined with newlines in recording order; speaker/timestamp segments stay
-//! empty because the provider currently returns only text. A failed chunk fails
-//! the transcription; temporary audio is removed on success and error.
+//! the original sensitivity, MIME type and language hint. Each chunk's
+//! transcript text is joined with newlines in recording order. Speaker
+//! turns parsed from a chunk are kept, and their timestamps are shifted
+//! by that chunk's start so they stay offsets into the original recording.
+//! A chunk whose reply is not the JSON transcript shape contributes text
+//! only. A failed chunk fails the transcription; temporary audio is
+//! removed on success and error.
 //! Long audio supports WAV, MP3, M4A/MP4, AAC, FLAC, Ogg and WebM MIME types;
 //! other containers are refused before staging rather than given a false suffix.
 
@@ -136,20 +144,33 @@ impl RoutedClient {
         Self { config, agent }
     }
 
+    /// Route one call and post its JSON body. Every hosted operation crosses
+    /// this function, so endpoint selection stays in [`routing::route`].
+    fn post(
+        &self,
+        sensitivity: office_common::Sensitivity,
+        body_for: impl FnOnce(&routing::ResolvedCall) -> Value,
+    ) -> Result<(String, Value)> {
+        let resolved = routing::route(sensitivity, &self.config)?;
+        let url = meta::chat_url(&resolved.base_url);
+        let host = http::host_of(&url).unwrap_or_default();
+        let body = body_for(&resolved);
+        let response = http::post_json(
+            &self.agent,
+            &url,
+            resolved.api_key.as_deref(),
+            &body,
+            resolved.open_weights,
+        )?;
+        Ok((host, response))
+    }
+
     fn call(
         &self,
         sensitivity: office_common::Sensitivity,
         operation: Operation<'_>,
     ) -> Result<String> {
-        let resolved = routing::route(sensitivity, &self.config)?;
-        let url = meta::chat_url(&resolved.base_url);
-        let host = http::host_of(&url).unwrap_or_default();
-        let body = match operation {
-            Operation::Transcribe {
-                mime,
-                audio,
-                language,
-            } => meta::transcribe_body(&resolved.model, mime, audio, language),
+        let (host, response) = self.post(sensitivity, |resolved| match operation {
             Operation::Extract { text, schema } => {
                 if resolved.open_weights {
                     baseten::extract_body(&resolved.model, text, schema)
@@ -162,24 +183,27 @@ impl RoutedClient {
                 image,
                 prompt,
             } => meta::image_body(&resolved.model, mime, image, prompt),
-        };
-        let response = http::post_json(
-            &self.agent,
-            &url,
-            resolved.api_key.as_deref(),
-            &body,
-            resolved.open_weights,
-        )?;
+        })?;
         meta::reply_text(&host, &response)
+    }
+
+    /// Transcribe one audio chunk. Segment timestamps are relative to this
+    /// chunk; the caller shifts them onto the original recording.
+    fn transcribe_chunk(
+        &self,
+        sensitivity: office_common::Sensitivity,
+        mime: &str,
+        audio: &[u8],
+        language: Option<&str>,
+    ) -> Result<meta::ParsedTranscript> {
+        let (host, response) = self.post(sensitivity, |resolved| {
+            meta::transcribe_body(&resolved.model, mime, audio, language)
+        })?;
+        meta::parse_transcript(&host, &response)
     }
 }
 
 enum Operation<'a> {
-    Transcribe {
-        mime: &'a str,
-        audio: &'a [u8],
-        language: Option<&'a str>,
-    },
     Extract {
         text: &'a str,
         schema: &'a Value,

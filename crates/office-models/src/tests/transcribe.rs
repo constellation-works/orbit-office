@@ -72,10 +72,20 @@ fn assert_chunks(server: &FakeServer, chunks: &[&[u8]], token: &str, model: &str
         let body: Value = serde_json::from_str(&request.body).expect("JSON request");
         assert_eq!(body["model"], model);
         let content = &body["messages"][0]["content"];
-        assert_eq!(
-            content[0]["text"],
-            "Transcribe this audio verbatim. The spoken language is English."
+        let instruction = content[0]["text"].as_str().expect("instruction");
+        assert!(
+            instruction
+                .starts_with("Transcribe this audio verbatim. The spoken language is English."),
+            "language hint must stay on the transcription request"
         );
+        assert!(
+            instruction.contains("segments")
+                && instruction.contains("start_ms")
+                && instruction.contains("speaker"),
+            "transcription must ask for speaker turns and timestamps"
+        );
+        assert_eq!(body["response_format"]["json_schema"]["name"], "transcript");
+        assert_eq!(body["response_format"]["json_schema"]["strict"], true);
         assert_eq!(content[1]["input_audio"]["format"], "wav");
         let audio = base64::engine::general_purpose::STANDARD
             .decode(
@@ -153,6 +163,43 @@ fn transcribes_long_recordings_in_multiple_routed_requests() {
         );
     }
     ffmpeg.assert_cleaned();
+}
+
+#[test]
+fn offsets_reported_turns_by_each_chunks_start() {
+    let ffmpeg = Ffmpeg::splitting();
+    let server = FakeServer::start_replies(vec![
+        (200, turn_reply("first", "Jane", 0, 1_500)),
+        (200, turn_reply("second", "Daniel", 1_000, 2_500)),
+        (200, turn_reply("third", "Jane", 500, 900)),
+    ]);
+    let mut config = hosted_config(&server.base_url);
+    config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
+    let adapter = client(config);
+    let models: &dyn Models = &adapter;
+    let transcript = models
+        .transcribe(&request(1500, Sensitivity::Normal))
+        .expect("transcribe long recording");
+    assert_eq!(transcript.text, "first\nsecond\nthird");
+    assert_eq!(transcript.segments.len(), 3);
+    assert_eq!(transcript.segments[0].start_ms, 0);
+    assert_eq!(transcript.segments[0].end_ms, 1_500);
+    assert_eq!(transcript.segments[1].speaker.as_deref(), Some("Daniel"));
+    assert_eq!(transcript.segments[1].start_ms, 601_000);
+    assert_eq!(transcript.segments[1].end_ms, 602_500);
+    assert_eq!(transcript.segments[2].start_ms, 1_200_500);
+    assert_eq!(transcript.segments[2].end_ms, 1_200_900);
+    assert_eq!(
+        office_core::domain::source::meeting_body(&transcript),
+        "[00:00:00] Jane: first\n\n[00:10:01] Daniel: second\n\n[00:20:00] Jane: third"
+    );
+    ffmpeg.assert_cleaned();
+}
+
+fn turn_reply(text: &str, speaker: &str, start_ms: u64, end_ms: u64) -> String {
+    chat_reply(&format!(
+        r#"{{"text":"{text}","segments":[{{"speaker":"{speaker}","start_ms":{start_ms},"end_ms":{end_ms},"text":"{text}"}}]}}"#
+    ))
 }
 
 #[test]
