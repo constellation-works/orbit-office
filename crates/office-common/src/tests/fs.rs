@@ -2,8 +2,9 @@
 
 use std::path::Path;
 
+use crate::Error;
 use crate::fs::atomic::write_atomic;
-use crate::fs::hash::sha256_hex;
+use crate::fs::hash::{sha256_file, sha256_hex};
 use crate::fs::path_safety::{normalize_path, validate_path_stem};
 
 #[test]
@@ -55,4 +56,54 @@ fn sha256_matches_a_known_vector() {
         sha256_hex(b""),
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
+}
+
+#[test]
+fn sha256_file_matches_sha256_hex_for_small_and_empty_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let small = dir.path().join("small.bin");
+    std::fs::write(&small, b"abc").expect("write small");
+    assert_eq!(sha256_file(&small).expect("hash small"), sha256_hex(b"abc"));
+
+    let empty = dir.path().join("empty.bin");
+    std::fs::write(&empty, b"").expect("write empty");
+    assert_eq!(sha256_file(&empty).expect("hash empty"), sha256_hex(b""));
+}
+
+#[test]
+fn sha256_file_matches_sha256_hex_across_many_chunks() {
+    // Well past one 64 KiB read and not a multiple of it, so the streaming
+    // loop reads several full chunks and then a partial tail.
+    let contents: Vec<u8> = b"the quick brown fox jumps over the lazy dog\n"
+        .iter()
+        .copied()
+        .cycle()
+        .take(300_003)
+        .collect();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("multi-chunk.bin");
+    std::fs::write(&path, &contents).expect("write multi-chunk");
+    assert_eq!(
+        sha256_file(&path).expect("hash multi-chunk"),
+        sha256_hex(&contents)
+    );
+}
+
+#[test]
+fn sha256_file_reports_a_missing_file_as_io_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let missing = dir.path().join("absent.bin");
+    let err = sha256_file(&missing).expect_err("a missing file cannot be hashed");
+    assert_eq!(err.code(), "io_error");
+    let Error::Io {
+        action,
+        path,
+        source,
+    } = err
+    else {
+        panic!("expected Error::Io, got {err:?}");
+    };
+    assert_eq!(action, "read for hashing");
+    assert_eq!(path, missing);
+    assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
 }
