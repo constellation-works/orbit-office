@@ -482,6 +482,70 @@ fn legacy_document_decisions_remain_replayable() {
 }
 
 #[test]
+fn source_processing_journal_recovers_and_is_removed() {
+    use office_core::domain::endpoint::ModelRoute;
+    use office_core::domain::source::sha256_hex;
+    use office_core::ports::{CaptureSourceRequest, DerivedBy, Library};
+
+    let dir = tempfile::tempdir().unwrap();
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    let store = LibraryStore::open(&library, &state).unwrap();
+    let captured = store
+        .capture_source(&CaptureSourceRequest {
+            captured_at: "2026-10-27T10:00:00+00:00".into(),
+            kind: Some("meeting".into()),
+            title: Some("Meeting".into()),
+            text: Some("Original transcript".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    let markdown = store.read_text(Path::new(&captured.path)).unwrap();
+    let index_lock = library.join(".git/index.lock");
+    std::fs::write(&index_lock, "fixture lock").unwrap();
+    assert_eq!(
+        Library::write_source_processing(
+            &store,
+            &captured.id,
+            &sha256_hex(markdown.as_bytes()),
+            Some("Recovered transcript"),
+            &DerivedBy {
+                route: ModelRoute::Hosted,
+                model: "fixture".into(),
+            },
+            &[("chapters.md".into(), b"## Chapter 1\n".to_vec())],
+        )
+        .unwrap_err()
+        .code(),
+        "library_git_error"
+    );
+
+    let journal_path = state.join("library.pending-write.json");
+    let journal: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&journal_path).unwrap()).unwrap();
+    assert_eq!(journal["version"], 7);
+    assert_eq!(journal["kind"], "source_processing");
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "1");
+
+    std::fs::remove_file(index_lock).unwrap();
+    drop(store);
+    let recovered = LibraryStore::open(&library, &state).expect("recover source processing");
+    assert!(
+        recovered
+            .read_text(Path::new(&captured.path))
+            .unwrap()
+            .contains("Recovered transcript")
+    );
+    assert_eq!(
+        Library::source_sidecar(&recovered, &captured.id, "chapters.md").unwrap(),
+        Some("## Chapter 1\n".into())
+    );
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "2");
+    assert!(!journal_path.exists());
+}
+
+#[test]
 fn settings_decision_recovers_without_indexing_and_replay_does_not_duplicate_commit() {
     let dir = tempfile::tempdir().expect("tempdir");
     let library = dir.path().join("library");

@@ -27,6 +27,8 @@ use crate::driver::git::Git;
 use crate::driver::sqlite::connection::IndexStore;
 use crate::{Error, Result};
 
+const LATEST_PENDING_WRITE_VERSION: u32 = 7;
+
 /// A Library and its index. Construction may create layout/index directories;
 /// read methods never create state or wait for the writer lock.
 pub struct LibraryStore {
@@ -109,7 +111,9 @@ impl RawPendingWrite {
             (4, Some(WriteKind::Artifact), None, Some(_)) => WriteKind::Artifact,
             (5, Some(WriteKind::Video), None, Some(_)) => WriteKind::Video,
             (6, Some(WriteKind::Bootstrap), None, Some(_)) => WriteKind::Bootstrap,
-            (7, Some(WriteKind::SourceProcessing), None, Some(_)) => WriteKind::SourceProcessing,
+            (LATEST_PENDING_WRITE_VERSION, Some(WriteKind::SourceProcessing), None, Some(_)) => {
+                WriteKind::SourceProcessing
+            }
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -754,7 +758,7 @@ impl LibraryStore {
                 != if matches!(pending.kind, WriteKind::Video) {
                     5
                 } else {
-                    7
+                    LATEST_PENDING_WRITE_VERSION
                 }
                 || pending.original.is_some()
                 || !pending.relative.starts_with("sources/")
@@ -859,7 +863,7 @@ impl LibraryStore {
         })?;
         let pending = PendingWrite {
             version: if matches!(kind, WriteKind::SourceProcessing) {
-                7
+                LATEST_PENDING_WRITE_VERSION
             } else if matches!(kind, WriteKind::Bootstrap) {
                 6
             } else if matches!(kind, WriteKind::Video) {
@@ -955,7 +959,7 @@ impl LibraryStore {
             .root
             .canonicalize()
             .is_ok_and(|root| root == self.library_root());
-        if !(1..=6).contains(&pending.version)
+        if !(1..=LATEST_PENDING_WRITE_VERSION).contains(&pending.version)
             || !same_root
             || pending.token.is_empty()
             || !pending
