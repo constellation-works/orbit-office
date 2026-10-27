@@ -43,7 +43,7 @@ pub enum Error {
     /// `task_list_truncated`. `detail` carries no payload.
     #[error("{read}: {detail}")]
     SignalsScanRefused {
-        /// Canonical read: `orbit.task.list`, `orbit.search`, or `library.search`.
+        /// Canonical Orbit read or Library enumeration/backlink operation.
         read: &'static str,
         /// Checked cause, without payloads or secrets.
         detail: String,

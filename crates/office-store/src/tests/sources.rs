@@ -23,6 +23,77 @@ fn setup() -> (tempfile::TempDir, LibraryStore, std::path::PathBuf) {
 }
 
 #[test]
+fn source_documents_enumerate_all_full_documents_without_the_search_limit() {
+    use office_core::ports::Library;
+
+    let (_dir, store, workspace) = setup();
+    let root = workspace.join("library/sources/1970-02");
+    let mut expected = Vec::new();
+    for index in 0..105 {
+        let name = format!("src-{index:03}");
+        let directory = root.join(&name);
+        std::fs::create_dir_all(&directory).expect("source directory");
+        let markdown = format!(
+            "---\nid: {name}\nkind: text\nparticipants: [Priya]\ncaptured_at: 1970-02-01\n---\n{}\nrhythm: weekly briefing",
+            "context ".repeat(30)
+        );
+        std::fs::write(directory.join("source.md"), &markdown).expect("source");
+        std::fs::write(directory.join("original.md"), "not a source").expect("original");
+        std::fs::write(directory.join("v2.md"), "not the current source").expect("sidecar");
+        expected.push(office_core::ports::LibraryText {
+            path: format!("sources/1970-02/{name}/source.md"),
+            markdown: Some(markdown),
+        });
+    }
+    // No reindex is needed: enumeration reads the files, not search hits.
+    let port: &dyn Library = &store;
+    assert_eq!(
+        port.source_documents().expect("all complete sources"),
+        expected
+    );
+}
+
+#[test]
+fn source_documents_refuse_unreadable_markdown_instead_of_omitting_it() {
+    let (_dir, store, workspace) = setup();
+    let directory = workspace.join("library/sources/bad");
+    std::fs::create_dir_all(&directory).expect("source directory");
+    std::fs::write(directory.join("source.md"), [0xff, 0xfe]).expect("invalid UTF-8 source");
+    let error = store
+        .source_documents()
+        .expect_err("refuse incomplete read");
+    assert_eq!(error.code(), "io_error");
+}
+
+#[cfg(unix)]
+#[test]
+fn source_documents_do_not_follow_directory_file_or_ancestor_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let (dir, store, workspace) = setup();
+    let sources = workspace.join("library/sources");
+    let inside = sources.join("inside");
+    let outside = dir.path().join("outside");
+    std::fs::create_dir_all(&inside).expect("inside");
+    std::fs::create_dir_all(&outside).expect("outside");
+    std::fs::write(inside.join("source.md"), "inside").expect("source");
+    std::fs::write(outside.join("source.md"), "outside").expect("outside source");
+    symlink(&outside, sources.join("directory-link")).expect("directory symlink");
+    let file_link = sources.join("file-link");
+    std::fs::create_dir(&file_link).expect("file-link directory");
+    symlink(outside.join("source.md"), file_link.join("source.md")).expect("file symlink");
+    symlink(&sources, inside.join("cycle")).expect("ancestor cycle");
+    let documents = store.source_documents().expect("scan terminates");
+    assert_eq!(
+        documents,
+        [office_core::ports::LibraryText {
+            path: "sources/inside/source.md".into(),
+            markdown: Some("inside".into()),
+        }]
+    );
+}
+
+#[test]
 fn capture_upload_symlink_escape_is_refused_and_writes_nothing() {
     let (dir, store, workspace) = setup();
     let outside = dir.path().join("outside.txt");

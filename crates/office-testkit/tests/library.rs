@@ -9,6 +9,43 @@ use std::io::Write as _;
 use std::path::Path;
 
 #[test]
+fn fake_source_documents_return_full_markdown_in_path_order_without_a_limit() {
+    let fake = FakeLibrary::initialized();
+    let port: &dyn Library = &fake;
+    let mut expected = Vec::new();
+    for index in (0..105).rev() {
+        let path = format!("sources/src-{index:03}/source.md");
+        let markdown = format!(
+            "---\nid: src-{index:03}\nparticipants: [Priya]\n---\n{}\ndirection: cite evidence",
+            "context ".repeat(30)
+        );
+        port.write_document(Path::new(&path), &markdown)
+            .expect("source");
+        expected.push(office_core::ports::LibraryText {
+            path,
+            markdown: Some(markdown),
+        });
+    }
+    port.write_document(
+        Path::new("knowledge/domain/example.md"),
+        "---\nid: dom-example\n---\nPage",
+    )
+    .expect("knowledge page");
+    expected.reverse();
+    assert_eq!(
+        port.source_documents().expect("all source documents"),
+        expected
+    );
+    assert_eq!(
+        FakeLibrary::default()
+            .source_documents()
+            .expect_err("uninitialized")
+            .code(),
+        "library_not_initialized"
+    );
+}
+
+#[test]
 fn fake_implements_read_write_filtered_search_history_settings_and_readiness() {
     let fake = FakeLibrary::initialized();
     let port: &dyn Library = &fake;
