@@ -442,18 +442,34 @@ pub fn anchor_span(body: &str, anchor: Anchor, raw: &str) -> Result<String> {
             Ok(lines[start - 1..end].join("\n"))
         }
         Anchor::Time { seconds } => {
-            // Paragraphs are `[hh:mm:ss] Speaker: text` (blank-line separated).
-            let mut turns: Vec<(u64, &str)> = Vec::new();
+            // Turns are `[hh:mm:ss] Speaker: text` lines, the same starts
+            // `resolve_anchor` accepts. A turn runs from its timestamped
+            // line to the next timestamped line in the same paragraph
+            // (blank lines separate paragraphs), so single-newline bodies
+            // resolve the same turns citation validation accepts.
+            let mut turns: Vec<(u64, String)> = Vec::new();
             for para in body.split("\n\n") {
-                let trimmed = para.trim_start();
-                let Some(rest) = trimmed.strip_prefix('[') else {
-                    continue;
-                };
-                let Some((stamp, _)) = rest.split_once(']') else {
-                    continue;
-                };
-                if let Some(start) = parse_clock_seconds(stamp) {
-                    turns.push((start, para));
+                let lines: Vec<&str> = para.lines().collect();
+                let mut starts: Vec<(usize, u64)> = Vec::new();
+                for (index, line) in lines.iter().enumerate() {
+                    let trimmed = line.trim_start();
+                    let Some(rest) = trimmed.strip_prefix('[') else {
+                        continue;
+                    };
+                    let Some((stamp, _)) = rest.split_once(']') else {
+                        continue;
+                    };
+                    if let Some(start) = parse_clock_seconds(stamp) {
+                        starts.push((index, start));
+                    }
+                }
+                for (position, (index, start)) in starts.iter().enumerate() {
+                    let end = if position + 1 < starts.len() {
+                        starts[position + 1].0
+                    } else {
+                        lines.len()
+                    };
+                    turns.push((*start, lines[*index..end].join("\n")));
                 }
             }
             let (Some(first), Some(last)) = (
@@ -468,14 +484,14 @@ pub fn anchor_span(body: &str, anchor: Anchor, raw: &str) -> Result<String> {
             // The turn in progress: the latest turn starting at or before
             // the requested time. `seconds >= first` guarantees one exists.
             // On a tied start the first such turn wins, as exact matching did.
-            let mut current: Option<(u64, &str)> = None;
+            let mut current: Option<(u64, String)> = None;
             for (start, para) in turns {
-                if start <= seconds && current.is_none_or(|(best, _)| start > best) {
+                if start <= seconds && current.as_ref().is_none_or(|(best, _)| start > *best) {
                     current = Some((start, para));
                 }
             }
             match current {
-                Some((_, para)) => Ok(para.to_string()),
+                Some((_, para)) => Ok(para),
                 None => Err(anchor_out_of_range(raw)),
             }
         }

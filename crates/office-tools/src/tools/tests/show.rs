@@ -72,3 +72,29 @@ fn source_show_resolves_interior_time_anchor_to_turn_in_progress() {
         "{span}"
     );
 }
+
+#[test]
+fn source_show_resolves_last_turn_of_single_newline_body() {
+    let ports = office_testkit::fakes::PortsBuilder::default().build();
+    let captured = call(
+        "office.capture",
+        json!({
+            "kind": "meeting",
+            "title": "Meeting",
+            "text": "[00:10:00] Jane: one\n[00:12:31] Dee: two"
+        }),
+        &ports,
+    );
+    let id = captured["output"]["id"].as_str().expect("id").to_string();
+    let span = call(
+        "office.source-show",
+        json!({"id": id, "anchor": "#t=00:12:31"}),
+        &ports,
+    );
+    assert_eq!(span["ok"], json!(true), "{span}");
+    assert_eq!(
+        span["output"]["body"],
+        json!("[00:12:31] Dee: two"),
+        "{span}"
+    );
+}
