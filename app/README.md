@@ -51,6 +51,9 @@ layout is in `../ARCHITECTURE.md` ("Web app").
   --json` client), `dispatch/` (the 30-second pass), `features/<f>/`.
 - `packages/web/` — `static/index.html`, `src/router.ts`, `src/screen.ts`,
   `src/api/`, `src/ui/`, `src/screens/<s>/`.
+- `tests/` — the root suite (`http-router.test.ts`, run by `npm test`). Its
+  `tsconfig.json` is a project reference of the root, so `npm run check`
+  type-checks it too.
 
 ## Wiring
 
@@ -115,7 +118,7 @@ not applicable because the base has no Settings screen.
 
 ```bash
 npm install
-npm run check   # tsc -b: every package, strict
+npm run check   # tsc -b: every package and the root tests, strict
 npm test        # node:test suites for every package (fake `orbit` on PATH)
 npm run dev     # build, then tsx watch on the server entry
 npm start       # run the built server
