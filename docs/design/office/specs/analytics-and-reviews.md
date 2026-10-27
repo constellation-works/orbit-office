@@ -27,8 +27,10 @@ Computed by `office.metrics` over a chosen window, by week.
 | **Open load** | `owner:you` to-dos open, and their age | What still lands on the user |
 
 The Insights screen shows the automation ratio as a weekly line, the
-other metrics as small tiles, and a "what got automated" list linking each
-conversion to its proposal ([web-app.md](./web-app.md)). Seeded demo
+other metrics as small tiles, and a "what got automated" list naming each
+conversion and its proposal. Links are deferred until a view of accepted
+proposals exists. Insights shows the most recent 84 UTC days, including today.
+Seeded demo
 history is labelled *simulated* on screen; the metrics themselves never
 distinguish seeded from real records, so the label is the honesty
 mechanism. The Library records how far that history runs as
