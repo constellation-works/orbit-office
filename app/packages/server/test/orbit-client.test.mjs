@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import { createOrbitClient, OrbitExitError, OrbitTimeoutError } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
+import { installSupervisionDoubles, timerAt } from "./supervision-doubles.mjs";
 
 async function readLines(path) {
   return (await readFile(path, "utf8").catch(() => ""))
@@ -150,4 +151,84 @@ test("a fresh poll result is reused inside the cache window", async (t) => {
   await client.pollTool("orbit.task.list", { status: "backlog" });
   const invocations = await readLines(join(fake.state, "invocations.log"));
   assert.equal(invocations.length, 1);
+});
+
+const SUPERVISION_CLIENT = {
+  timeoutMs: 100,
+  command: "orbit-supervision-double",
+  env: { PATH: "" },
+};
+
+test("tool execution does not signal a process group after its leader exits", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const pending = createOrbitClient(SUPERVISION_CLIENT)
+      .callTool("orbit.task.show", { id: "reaped" })
+      .then(
+        () => {
+          throw new Error("expected the timed-out call to reject");
+        },
+        (error) => error,
+      );
+    assert.equal(doubles.children.length, 1);
+    assert.equal(doubles.children[0].options.detached, process.platform !== "win32");
+    timerAt(doubles.timers, 100).fn();
+    const groupPid = process.platform === "win32" ? doubles.children[0].pid : -doubles.children[0].pid;
+    assert.deepEqual(
+      doubles.signals.map((entry) => entry.signal),
+      ["SIGTERM"],
+    );
+    assert.equal(doubles.signals[0].pid, groupPid);
+    assert.equal(doubles.signals[0].closed, false);
+    assert.equal(doubles.signals[0].exitCode, null);
+    doubles.children[0].finish(0, null);
+    const error = await pending;
+    assert.ok(error instanceof OrbitTimeoutError, `expected OrbitTimeoutError, got ${error}`);
+    assert.equal(error.timeoutMs, 100);
+
+    const escalation = timerAt(doubles.timers, 250);
+    const before = doubles.signals.length;
+    escalation.fn();
+    assert.deepEqual(
+      doubles.signals.slice(before),
+      [],
+      "escalation must not signal a reaped process group",
+    );
+    assert.equal(escalation.cleared, true);
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("a live tool child that ignores SIGTERM is killed and the call times out", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const pending = createOrbitClient(SUPERVISION_CLIENT)
+      .callTool("orbit.task.show", { id: "live" })
+      .then(
+        () => {
+          throw new Error("expected the timed-out call to reject");
+        },
+        (error) => error,
+      );
+    timerAt(doubles.timers, 100).fn();
+    const escalation = timerAt(doubles.timers, 250);
+    assert.equal(escalation.cleared, false);
+    assert.equal(doubles.children[0].exitCode, null);
+    escalation.fn();
+    assert.equal(doubles.signals.length, 2);
+    assert.equal(doubles.signals[1].signal, "SIGKILL");
+    assert.equal(doubles.signals[1].closed, false);
+    assert.equal(doubles.signals[1].exitCode, null);
+    const groupPid = process.platform === "win32" ? doubles.children[0].pid : -doubles.children[0].pid;
+    assert.equal(doubles.signals[0].pid, groupPid);
+    assert.equal(doubles.signals[1].pid, groupPid);
+    doubles.children[0].finish(null, "SIGKILL");
+    const error = await pending;
+    assert.ok(error instanceof OrbitTimeoutError, `expected OrbitTimeoutError, got ${error}`);
+    assert.equal(error.code, "timeout");
+    assert.equal(error.timeoutMs, 100);
+  } finally {
+    doubles.restore();
+  }
 });

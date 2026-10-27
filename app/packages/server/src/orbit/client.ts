@@ -196,7 +196,10 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
         // Own process group so a timeout can signal the whole tree (STD-03 R11/R12).
         detached: process.platform !== "win32",
       });
+      // Node reaps the leader before emitting `exit`. The group id is not safe to signal after that (STD-03 R14).
+      let killer: ReturnType<typeof setTimeout> | undefined;
       const killTree = (signal: NodeJS.Signals): void => {
+        if (child.exitCode !== null || child.signalCode !== null) return;
         try {
           if (process.platform !== "win32" && child.pid !== undefined) {
             process.kill(-child.pid, signal);
@@ -217,16 +220,21 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
       const timer = setTimeout(() => {
         timedOut = true;
         killTree("SIGTERM");
-        // Escalate if the child ignores SIGTERM (STD-03 R12).
-        const killer = setTimeout(() => killTree("SIGKILL"), 250);
+        // Escalate if the leader is still live after the grace period (STD-03 R12).
+        killer = setTimeout(() => killTree("SIGKILL"), 250);
         killer.unref();
       }, timeoutMs);
       timer.unref();
 
+      const clearTimers = (): void => {
+        clearTimeout(timer);
+        if (killer !== undefined) clearTimeout(killer);
+      };
+
       const finish = (fn: () => void): void => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        clearTimers();
         fn();
       };
 
@@ -248,6 +256,7 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
       child.on("error", (error) => {
         finish(() => reject(new OrbitSpawnError(name, error)));
       });
+      child.on("exit", clearTimers);
       child.on("close", (code, signal) => {
         finish(() => {
           if (timedOut) {

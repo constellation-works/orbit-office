@@ -108,7 +108,10 @@ export function shipTasks(ids: readonly string[], options: ShipOptions = {}): Pr
       stdio: ["ignore", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
+    // Node reaps the leader before emitting `exit`. The group id is not safe to signal after that (STD-03 R14).
+    let killer: ReturnType<typeof setTimeout> | undefined;
     const killTree = (signal: NodeJS.Signals): void => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
       try {
         if (process.platform !== "win32" && child.pid !== undefined) {
           process.kill(-child.pid, signal);
@@ -123,19 +126,25 @@ export function shipTasks(ids: readonly string[], options: ShipOptions = {}): Pr
     const timer = setTimeout(() => {
       timedOut = true;
       killTree("SIGTERM");
-      const killer = setTimeout(() => killTree("SIGKILL"), 250);
+      // Escalate if the leader is still live after the grace period (STD-03 R12).
+      killer = setTimeout(() => killTree("SIGKILL"), 250);
       killer.unref();
     }, timeoutMs);
     timer.unref();
+    const clearTimers = (): void => {
+      clearTimeout(timer);
+      if (killer !== undefined) clearTimeout(killer);
+    };
     const stderrChunks: Buffer[] = [];
     child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
     child.stdout.on("data", () => undefined);
     child.on("error", (error) => {
-      clearTimeout(timer);
+      clearTimers();
       reject(error);
     });
+    child.on("exit", clearTimers);
     child.on("close", (code, signal) => {
-      clearTimeout(timer);
+      clearTimers();
       if (timedOut) {
         reject(new Error(`orbit run ship timed out after ${timeoutMs} ms`));
         return;
