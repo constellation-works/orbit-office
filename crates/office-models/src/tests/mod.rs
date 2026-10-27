@@ -7,6 +7,7 @@ mod http;
 mod media;
 mod meta;
 mod routing;
+mod transcribe;
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -41,17 +42,23 @@ pub struct FakeServer {
 impl FakeServer {
     /// Serve `body` with HTTP `status` for every request.
     pub fn start(status: u16, body: String) -> Self {
-        Self::serve("127.0.0.1", status, body)
+        Self::serve("127.0.0.1", vec![(status, body)])
+    }
+
+    /// Return successive replies, repeating the last for any extra requests.
+    pub fn start_replies(replies: Vec<(u16, String)>) -> Self {
+        Self::serve("127.0.0.1", replies)
     }
 
     /// Serve `body` on the IPv6 loopback address `[::1]`. Panics when the
     /// host has no IPv6 loopback, so the test fails rather than passing
     /// without exercising the endpoint.
     pub fn start_ipv6(status: u16, body: String) -> Self {
-        Self::serve("[::1]", status, body)
+        Self::serve("[::1]", vec![(status, body)])
     }
 
-    fn serve(host: &str, status: u16, body: String) -> Self {
+    fn serve(host: &str, replies: Vec<(u16, String)>) -> Self {
+        assert!(!replies.is_empty(), "fake server needs at least one reply");
         let listener = TcpListener::bind(format!("{host}:0")).expect("bind loopback");
         let port = listener.local_addr().expect("local addr").port();
         let requests: Arc<Mutex<Vec<Recorded>>> = Arc::new(Mutex::new(Vec::new()));
@@ -66,7 +73,15 @@ impl FakeServer {
                         Ok((mut stream, _)) => {
                             let _ = stream.set_nonblocking(false);
                             let recorded = read_request(&mut stream);
-                            requests.lock().expect("requests lock").push(recorded);
+                            let index = {
+                                let mut requests = requests.lock().expect("requests lock");
+                                let index = requests.len();
+                                requests.push(recorded);
+                                index
+                            };
+                            let (status, body) = replies
+                                .get(index)
+                                .unwrap_or_else(|| replies.last().expect("nonempty replies"));
                             let response = format!(
                                 "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                                 body.len()

@@ -7,6 +7,9 @@
 //! swept and reaped on every exit path). `ffmpeg` never receives a
 //! secret: its arguments are only the input path, offsets and output
 //! paths, and the supervisor discards its stderr.
+//! The child inherits only PATH for executable lookup; HOME and TMPDIR point
+//! into the staging directory. Provider credentials and Office/Orbit authority
+//! variables are never inherited.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -94,6 +97,13 @@ impl AudioSplitter {
         if !needs_split(duration_seconds, self.threshold_seconds) {
             return Ok(vec![input.to_path_buf()]);
         }
+        if self.max_segment_seconds == 0 {
+            return Err(Error::Model {
+                code: "media_split_failed",
+                message: "audio_splitter.max_segment_seconds must be greater than zero".into(),
+                retryable: false,
+            });
+        }
         let extension = input
             .extension()
             .and_then(|ext| ext.to_str())
@@ -105,6 +115,11 @@ impl AudioSplitter {
         {
             let output = output_dir.join(format!("segment-{index:03}.{extension}"));
             let mut command = Command::new(&self.ffmpeg_path);
+            command.env_clear();
+            if let Some(path) = std::env::var_os("PATH") {
+                command.env("PATH", path);
+            }
+            command.env("HOME", output_dir).env("TMPDIR", output_dir);
             command
                 .arg("-y")
                 .arg("-ss")

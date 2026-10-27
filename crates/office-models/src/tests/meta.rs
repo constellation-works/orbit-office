@@ -9,6 +9,7 @@ use super::{FakeServer, chat_reply, client, hosted_config};
 fn transcribe_request() -> TranscribeRequest {
     TranscribeRequest {
         audio: b"fake-audio".to_vec(),
+        duration_seconds: 1,
         mime: "audio/wav".into(),
         sensitivity: Sensitivity::Normal,
         language: None,

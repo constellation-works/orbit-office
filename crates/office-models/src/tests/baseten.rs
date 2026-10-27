@@ -40,6 +40,7 @@ fn transcribes_private_audio_through_the_open_weights_endpoint() {
     let transcript = models
         .transcribe(&TranscribeRequest {
             audio: b"fake-audio".to_vec(),
+            duration_seconds: 1,
             mime: "audio/wav".into(),
             sensitivity: Sensitivity::Private,
             language: None,
