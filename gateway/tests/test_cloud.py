@@ -26,6 +26,9 @@ from tests.support import (
 from orbit_gateway import cloud
 from tests.test_backend import OLD_PYTHON
 
+# Injected by macOS into every process environment; never passed by the plugin.
+OS_INJECTED_ENV = {"__CF_USER_TEXT_ENCODING"}
+
 # Every command the spec's denylist names, and the rule each refusal names.
 SPEC_DENYLIST = [
     ("aws", ["secretsmanager", "get-secret-value", "--secret-id", "prod/db"], "aws secretsmanager get-secret-value"),
@@ -224,7 +227,7 @@ class Isolation(CloudCase):
         config = run["files"][run["env"]["AWS_CONFIG_FILE"]]["text"]
         self.assertIn("region = eu-west-1\n", config)
         self.assertEqual(
-            set(run["env"]),
+            set(run["env"]) - OS_INJECTED_ENV,
             {"PATH", "LANG", "HOME", "TMPDIR", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE", "AWS_PAGER", "AWS_EC2_METADATA_DISABLED"},
         )
         self.assertEqual(run["env"]["AWS_SHARED_CREDENTIALS_FILE"], str(private / "aws" / "credentials"))
@@ -242,7 +245,7 @@ class Isolation(CloudCase):
         self.assertIn("project = fixture-project\n", config)
         self.assertIn("region = europe-west1\n", config)
         self.assertEqual(
-            set(run["env"]),
+            set(run["env"]) - OS_INJECTED_ENV,
             {"PATH", "LANG", "HOME", "TMPDIR", "CLOUDSDK_CONFIG", "CLOUDSDK_CORE_DISABLE_PROMPTS", "CLOUDSDK_PYTHON"},
         )
         self.assertFalse(self.gcloud_tripwire.tripped(), "the user's gcloud configuration was opened")
