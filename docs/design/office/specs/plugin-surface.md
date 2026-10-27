@@ -191,6 +191,13 @@ open_weights_endpoint: null
 Retention is a positive integer up to 36,500 days or `null` (keep indefinitely).
 Sensitivity is `normal` or `private`. Packs are distinct names from `meetings`
 and `receipts`; an empty list disables all packs. Repetition count is 1–10,000;
-window/stale days are 1–36,500. The optional endpoint is an HTTP(S) URL with a
-host and no embedded credentials. No timestamp is synthesized by defaults.
+window/stale days are 1–36,500. The optional `open_weights_endpoint` is a
+Baseten HTTPS URL (`https://inference.baseten.co/...` or
+`https://<deployment>.api.baseten.co/...`) or a loopback HTTP(S) URL
+(`localhost`, `127.0.0.1`, or `::1`), with no embedded credentials. That is
+the open-weights subset of the model host allowlist: hosted calls may also
+use `api.meta.ai`, and that host is not an open-weights endpoint. Any other
+host is refused at load with `invalid_library_setting` on
+`open_weights_endpoint`; the raw URL is not echoed. No timestamp is
+synthesized by defaults.
 These are Library policy settings, independent of plugin installation config.

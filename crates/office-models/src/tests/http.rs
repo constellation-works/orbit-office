@@ -19,11 +19,56 @@ fn host_of_refuses_an_unterminated_ipv6_literal() {
 
 #[test]
 fn check_url_accepts_an_ipv6_loopback_endpoint_over_http() {
-    assert_eq!(check_url("http://[::1]:8080/v1").expect("loopback"), "::1");
+    assert_eq!(
+        check_url("http://[::1]:8080/v1", false).expect("loopback"),
+        "::1"
+    );
 }
 
 #[test]
 fn check_url_refuses_a_non_loopback_ipv6_host() {
-    let error = check_url("http://[2001:db8::1]:8080/v1").expect_err("not allowlisted");
+    let error = check_url("http://[2001:db8::1]:8080/v1", false).expect_err("not allowlisted");
     assert_eq!(error.code(), "model_host_not_allowed");
+}
+
+#[test]
+fn check_url_accepts_meta_and_baseten_over_https_only() {
+    assert_eq!(
+        check_url("https://api.meta.ai/v1", false).expect("meta"),
+        "api.meta.ai"
+    );
+    assert_eq!(
+        check_url("https://inference.baseten.co/v1", false).expect("baseten"),
+        "inference.baseten.co"
+    );
+    assert_eq!(
+        check_url("https://model-abc.api.baseten.co/v1", false).expect("deployment"),
+        "model-abc.api.baseten.co"
+    );
+    assert_eq!(
+        check_url("http://inference.baseten.co/v1", false)
+            .expect_err("https required")
+            .code(),
+        "model_host_not_allowed"
+    );
+    assert_eq!(
+        check_url("https://lan-inference.example/v1", false)
+            .expect_err("not allowlisted")
+            .code(),
+        "model_host_not_allowed"
+    );
+}
+
+#[test]
+fn check_url_keeps_open_weights_calls_on_baseten_or_loopback() {
+    let error = check_url("https://api.meta.ai/v1", true).expect_err("meta is hosted-only");
+    assert_eq!(error.code(), "model_host_not_allowed");
+    assert_eq!(
+        check_url("https://inference.baseten.co/v1", true).expect("baseten"),
+        "inference.baseten.co"
+    );
+    assert_eq!(
+        check_url("http://127.0.0.1:9/v1", true).expect("loopback"),
+        "127.0.0.1"
+    );
 }

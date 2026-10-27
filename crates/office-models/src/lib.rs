@@ -28,11 +28,14 @@
 //!   not enforce it, so open-weights extraction parses and refuses
 //!   non-JSON replies instead of trusting the shape.
 //!
-//! Only the Meta and Baseten hosts are reachable; any other host is
-//! refused in code ([`http::check_url`]). Every call crosses the one
-//! routing function ([`routing::route`]): `private` material goes only
-//! to the open-weights endpoint from Library settings and is refused
-//! when none is configured.
+//! [`http::check_url`] allows `api.meta.ai` (hosted calls), a Baseten
+//! host (`inference.baseten.co` or `*.api.baseten.co`), or loopback, and
+//! refuses every other host before a socket opens. An open-weights
+//! endpoint is the Baseten or loopback subset (HTTPS for Baseten; HTTP
+//! or HTTPS for loopback), never the hosted Meta API. Every call crosses
+//! the one routing function ([`routing::route`]): `private` material goes
+//! only to that endpoint from Library settings and is refused when none
+//! is configured or the endpoint is outside that subset.
 //!
 //! Transcription takes its duration from `TranscribeRequest::duration_seconds`
 //! (caller-supplied metadata, rounded up); this adapter never probes media.
@@ -160,7 +163,13 @@ impl RoutedClient {
                 prompt,
             } => meta::image_body(&resolved.model, mime, image, prompt),
         };
-        let response = http::post_json(&self.agent, &url, resolved.api_key.as_deref(), &body)?;
+        let response = http::post_json(
+            &self.agent,
+            &url,
+            resolved.api_key.as_deref(),
+            &body,
+            resolved.open_weights,
+        )?;
         meta::reply_text(&host, &response)
     }
 }

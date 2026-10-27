@@ -4,6 +4,7 @@
 //! STD-02@3 §R17 deviation recorded in 4_decisions.md).
 
 mod artifact;
+pub mod endpoint;
 pub mod knowledge;
 mod metrics;
 mod proposal;

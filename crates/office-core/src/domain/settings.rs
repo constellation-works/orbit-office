@@ -227,20 +227,10 @@ impl TryFrom<Value> for Settings {
                         let endpoint = value
                             .as_str()
                             .ok_or_else(|| invalid(key, "expected an HTTP(S) URL or null"))?;
-                        let rest = endpoint
-                            .strip_prefix("https://")
-                            .or_else(|| endpoint.strip_prefix("http://"));
-                        let host = rest.and_then(|v| v.split('/').next()).unwrap_or_default();
-                        if host.is_empty()
-                            || host.starts_with(':')
-                            || host.contains('@')
-                            || endpoint.chars().any(char::is_whitespace)
-                        {
-                            return Err(invalid(
-                                key,
-                                "expected an HTTP(S) URL with a host and no credentials",
-                            ));
-                        }
+                        // Same host rule as `office-models`' `check_url`: Baseten
+                        // over HTTPS, or loopback over HTTP(S). Meta stays hosted-only.
+                        super::endpoint::allow_open_weights_endpoint(endpoint)
+                            .map_err(|reason| invalid(key, reason))?;
                         Some(endpoint.into())
                     };
                 }

@@ -28,7 +28,7 @@ pub(crate) fn transcribe(client: &RoutedClient, request: &TranscribeRequest) -> 
 
     // Refuse an unusable route before staging private media or starting ffmpeg.
     let resolved = routing::route(request.sensitivity, &client.config)?;
-    http::check_url(&meta::chat_url(&resolved.base_url))?;
+    http::check_url(&meta::chat_url(&resolved.base_url), resolved.open_weights)?;
     let extension = audio_extension(&request.mime)?;
     let directory = tempfile::tempdir().map_err(|error| media_io("create audio staging", error))?;
     let mut input = tempfile::Builder::new()
