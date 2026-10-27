@@ -29,8 +29,13 @@
 #  13. enable grants every permission plugin.yaml requests: the plugin is
 #      active and office.init is not refused with policy_denied
 #  14. the documented curl-to-sh form (install.sh itself on a piped stdin,
-#      under sh and under bash --posix) stores no secret from script text
-#      and still runs the scaffold and agent steps
+#      under sh and under bash --posix, from an empty temporary working
+#      directory, with prepared plugin and app bundles) stores no secret
+#      from script text and still runs the scaffold and agent steps
+#  20. a piped install with no plugin bundle and no clone fails with the
+#      bundle error from an empty working directory and from a decoy git
+#      checkout carrying a gateway/ tree: it pins no git HEAD from the
+#      working directory and copies no gateway export from it
 #  15. a pre-existing same-named user skill survives install and
 #      uninstall byte-for-byte for claude and codex; uninstall removes
 #      only installer-copied skills still unmodified, keeps a skill the
@@ -426,6 +431,15 @@ printf '{"name":"orbit-office-app","type":"module"}\n' > "$APP_BUNDLE/package.js
 printf 'console.log("orbit-office standalone stub app");\n' > "$APP_BUNDLE/packages/server/dist/main.js"
 printf '// app runtime file\n' > "$APP_BUNDLE/packages/contracts/dist/index.js"
 
+# A prepared plugin bundle for the piped form: office and gateway exports,
+# as a release bundle carries them.
+PLUGIN_BUNDLE="$ROOT/plugin-bundle"
+mkdir -p "$PLUGIN_BUNDLE"
+cp -R "$SCRIPT_DIR/../../plugin" "$PLUGIN_BUNDLE/office"
+printf '#!/bin/sh\nexit 0\n' > "$PLUGIN_BUNDLE/office/.orbit-plugin/bin/office-bin"
+chmod +x "$PLUGIN_BUNDLE/office/.orbit-plugin/bin/office-bin"
+python3 -I "$SCRIPT_DIR/../../gateway/scripts/export.py" gateway "$PLUGIN_BUNDLE/gateway" > /dev/null
+
 snapshot() { # snapshot <home> : sorted relative paths + file hashes
     (cd "$1" && find . -type f | sort | while IFS= read -r _f; do
         if command -v sha256sum >/dev/null 2>&1; then
@@ -497,31 +511,47 @@ run_install() { # run_install <home> <extra env...> -- <args...>
 
 # Run the documented curl-to-sh form: install.sh itself is the shell's
 # stdin (a pipe), so a secret read from stdin would consume script text.
+# The shell runs in $PIPED_CWD, or in a fresh empty temporary working
+# directory when PIPED_CWD is unset, never in this harness's clone.
+# PIPED_NO_PLUGIN_BUNDLE=1 omits ORBIT_OFFICE_PLUGIN_BUNDLE.
 # run_install_piped <home> <sh|bash-posix> <output>
 run_install_piped() {
     _home="$1"; _kind="$2"; _out="$3"
     printf '%s' "$_home" > "$STUB_STATE/current-home"
     rm -f "$STUB_STATE"/plugin-* "$STUB_STATE"/secret.*
+    _cwd="${PIPED_CWD:-}"
+    if [ -z "$_cwd" ]; then
+        _cwd=$(mktemp -d "$ROOT/piped-cwd.XXXXXX")
+    fi
+    mkdir -p "$_cwd"
+    _plugin_bundle_env=""
+    if [ "${PIPED_NO_PLUGIN_BUNDLE:-0}" != 1 ]; then
+        _plugin_bundle_env="ORBIT_OFFICE_PLUGIN_BUNDLE=$PLUGIN_BUNDLE"
+    fi
     if [ "$_kind" = bash-posix ]; then
-        cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
+        # shellcheck disable=SC2086
+        (cd "$_cwd" && cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
             STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
             STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
             STUB_ORBIT_VERSION=0.34.0 STUB_UV_ARCHIVE="$FIXTURE" \
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
+            $_plugin_bundle_env \
             ORBIT_OFFICE_APP_BUNDLE="$APP_BUNDLE" \
-            bash --posix -s -- --yes > "$_out" 2>&1
+            bash --posix -s -- --yes > "$_out" 2>&1)
     else
-        cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
+        # shellcheck disable=SC2086
+        (cd "$_cwd" && cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
             STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
             STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
             STUB_ORBIT_VERSION=0.34.0 STUB_UV_ARCHIVE="$FIXTURE" \
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
+            $_plugin_bundle_env \
             ORBIT_OFFICE_APP_BUNDLE="$APP_BUNDLE" \
-            sh -s -- --yes > "$_out" 2>&1
+            sh -s -- --yes > "$_out" 2>&1)
     fi
 }
 
@@ -702,6 +732,61 @@ for _piped_kind in sh bash-posix; do
     check "piped ($_piped_kind): app bundle provisions the service entrypoint" \
         test -f "$PIPED_HOME/.local/share/orbit-office/app/packages/server/dist/main.js"
 done
+
+# ---------------------------------------------------------------------------
+# 20. Piped with no plugin bundle and no clone: bundle error from any cwd
+# ---------------------------------------------------------------------------
+
+PIPED_EMPTY_CWD=$(mktemp -d "$ROOT/piped-empty.XXXXXX")
+NO_BUNDLE_HOME="$ROOT/piped-no-bundle-home"; mkdir -p "$NO_BUNDLE_HOME"
+OUT_NO_BUNDLE="$ROOT/out-piped-no-bundle.txt"
+PIPED_NO_PLUGIN_BUNDLE=1
+PIPED_CWD="$PIPED_EMPTY_CWD"
+if run_install_piped "$NO_BUNDLE_HOME" sh "$OUT_NO_BUNDLE"; then
+    PIPED_NO_PLUGIN_BUNDLE=0; PIPED_CWD=""
+    cat "$OUT_NO_BUNDLE" >&2; fail "piped install with no bundle from an empty working directory fails"
+fi
+PIPED_NO_PLUGIN_BUNDLE=0; PIPED_CWD=""
+ok "piped install with no bundle from an empty working directory fails"
+check "piped no-bundle (empty cwd) fails with the bundle error" \
+    grep -F "otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE" "$OUT_NO_BUNDLE"
+check "piped no-bundle (empty cwd) adds no plugin" \
+    test ! -e "$STUB_STATE/plugin-added"
+check "piped no-bundle (empty cwd) creates no gateway export" \
+    test ! -e "$NO_BUNDLE_HOME/.local/share/orbit-office/plugins/gateway"
+
+# A decoy checkout: a git repository whose HEAD is not this clone's, with
+# a gateway/ tree that must not be read as the export source.
+DECOY="$ROOT/piped-decoy-checkout"
+mkdir -p "$DECOY"
+cp -R "$SCRIPT_DIR/../../gateway" "$DECOY/gateway"
+printf 'decoy\n' > "$DECOY/README"
+env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git -C "$DECOY" init -q -b main
+env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git -C "$DECOY" add README gateway
+env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git -C "$DECOY" -c user.name=decoy -c user.email=decoy@localhost commit -qm decoy
+DECOY_HEAD=$(git -C "$DECOY" rev-parse HEAD)
+DECOY_HOME="$ROOT/piped-decoy-home"; mkdir -p "$DECOY_HOME"
+OUT_DECOY="$ROOT/out-piped-decoy.txt"
+: > "$STUB_STATE/orbit.log"
+PIPED_NO_PLUGIN_BUNDLE=1
+PIPED_CWD="$DECOY"
+if run_install_piped "$DECOY_HOME" sh "$OUT_DECOY"; then
+    PIPED_NO_PLUGIN_BUNDLE=0; PIPED_CWD=""
+    cat "$OUT_DECOY" >&2; fail "piped install with no bundle from a decoy checkout fails"
+fi
+PIPED_NO_PLUGIN_BUNDLE=0; PIPED_CWD=""
+ok "piped install with no bundle from a decoy checkout fails"
+check "piped no-bundle (decoy cwd) fails with the bundle error" \
+    grep -F "otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE" "$OUT_DECOY"
+check "piped no-bundle (decoy cwd) pins no git HEAD from the working directory" \
+    sh -c '! grep -F "$2" "$1"' sh "$STUB_STATE/orbit.log" "git+https://github.com/constellation-works/orbit-office.git#$DECOY_HEAD"
+check "piped no-bundle (decoy cwd) adds no plugin" \
+    test ! -e "$STUB_STATE/plugin-added"
+check "piped no-bundle (decoy cwd) creates no gateway export" \
+    test ! -e "$DECOY_HOME/.local/share/orbit-office/plugins/gateway"
 
 # ---------------------------------------------------------------------------
 # 2. Older Orbit stops; newer warns and continues

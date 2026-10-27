@@ -861,12 +861,20 @@ plugin_marker() {
 # export as gateway/scripts/export.py, including the shared Python package.
 # A release bundle already has this layout and is used without rebuilding.
 gateway_export() {
+    if [ -z "$SCRIPT_DIR" ]; then
+        printf '%s\n' "plugin export unavailable; run from a clone or set ORBIT_OFFICE_PLUGIN_BUNDLE" >&2
+        return 1
+    fi
     EXPORT_REPO="$SCRIPT_DIR" EXPORT_OUT="$DATA_DIR/plugins/$1" EXPORT_NAME="$1" node <<'NODE'
 const fs = require("fs");
 const path = require("path");
 const repo = process.env.EXPORT_REPO;
 const out = process.env.EXPORT_OUT;
 const name = process.env.EXPORT_NAME;
+if (!repo) {
+  process.stderr.write("plugin export unavailable; run from a clone or set ORBIT_OFFICE_PLUGIN_BUNDLE\n");
+  process.exit(1);
+}
 const source = path.join(repo, "gateway", "plugins", name, ".orbit-plugin");
 const shared = path.join(repo, "gateway", "src", "orbit_gateway");
 if (!fs.existsSync(path.join(source, "plugin.yaml")) || !fs.existsSync(shared)) {
@@ -924,6 +932,9 @@ step_plugin() {
                 _source="$ORBIT_OFFICE_PLUGIN_SOURCE"
             elif [ "$FROM_SOURCE" -eq 1 ] || [ -z "$PLUGIN_SRC" ] \
                 || [ ! -x "$PLUGIN_SRC/.orbit-plugin/bin/office-bin" ]; then
+                if [ -z "$SCRIPT_DIR" ] || [ ! -e "$SCRIPT_DIR/.git" ]; then
+                    die "--from-source needs a clone; otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE"
+                fi
                 _ref=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null) \
                     || die "--from-source needs a clone; otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE"
                 _source="git+$REPO_GIT_URL#$_ref"
