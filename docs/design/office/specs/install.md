@@ -76,7 +76,9 @@ spaces, so script shebangs that name the interpreter keep working.
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set.
 7. **Scaffold.** `orbit tool run office.init`: the Library's layout, git repository, config,
-   `.gitignore` and index, then the first Library commit.
+   `.gitignore` and index, then the first Library commit. The step is done only when the
+   response is an `ok` envelope. An error envelope, even with exit 0, stops the install and
+   names its code; nothing is recorded, so the next run asks `office.init` again.
 8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Muse Code's
    `settings.json`, keeping a backup of the old file, and installs the office skills. It
    also adds deny rules for direct shell use of `curl`, `wget`, `http`, `aws` and `gcloud`,
