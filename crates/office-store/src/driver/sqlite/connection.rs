@@ -155,6 +155,22 @@ impl IndexStore {
         Ok(count)
     }
 
+    /// Indexed document counts grouped by kind token.
+    pub(crate) fn counts_by_kind(&self) -> Result<Vec<(String, u32)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare("SELECT kind, count(*) FROM documents GROUP BY kind")
+            .map_err(|e| Error::sqlite(&self.path, "prepare kind counts", e))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+            })
+            .map_err(|e| Error::sqlite(&self.path, "run kind counts", e))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::sqlite(&self.path, "read kind counts", e))?;
+        Ok(rows)
+    }
+
     /// Full-text search over title, summary, body and tags. Filters apply
     /// before the limit.
     pub(crate) fn search(&self, query: &str, filter: &SearchFilter) -> Result<Vec<SearchHit>> {

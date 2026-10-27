@@ -1,17 +1,38 @@
 //! `office.init`: Scaffold the Library: layout, git repository, config,
 //! .gitignore, index; idempotent.
 //!
-//! Planned: see `docs/design/office/specs/library.md`. To build it, switch
-//! `TOOL` to `Tool::built` with its accepted keys and handler, add its
-//! schemas and golden, and uncomment its block in `plugin.yaml`
-//! (ARCHITECTURE.md, "Tools").
+//! The handler only talks to the Library port; scaffolding, git and the
+//! index live in the adapter (specs/library.md, "Scaffolding: `office.init`").
 
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
+use office_core::{Error, Result};
+use serde_json::{Value, json};
 
-use crate::registry::Tool;
+use crate::registry::{Call, Tool};
 
-pub(crate) const TOOL: Tool = Tool::planned(ToolSpec {
-    name: "init",
-    execution_kind: ExecutionKind::Mutating,
-    mcp_scope: McpScope::None,
-});
+pub(crate) const TOOL: Tool = Tool::built(
+    ToolSpec {
+        name: "init",
+        execution_kind: ExecutionKind::Mutating,
+        mcp_scope: McpScope::None,
+    },
+    &["library_dir"],
+    run,
+);
+
+pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
+    let library_dir = match call.input.get("library_dir") {
+        None => None,
+        Some(Value::String(dir)) => Some(dir.as_str()),
+        Some(_) => {
+            return Err(Error::InvalidArgument(
+                "init library_dir must be a string".to_string(),
+            ));
+        }
+    };
+    let outcome = call.ports.library.initialize(library_dir)?;
+    Ok(json!({
+        "already_initialized": outcome.already_initialized,
+        "created": outcome.created,
+    }))
+}

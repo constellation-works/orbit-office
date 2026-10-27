@@ -6,7 +6,7 @@ mod models;
 mod orbit;
 
 pub use clock::Clock;
-pub use library::Library;
+pub use library::{InitOutcome, Library, LibraryHealth, not_initialized_error};
 pub use models::Models;
 pub use orbit::Orbit;
 

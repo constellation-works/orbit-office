@@ -7,7 +7,11 @@ use office_common::fs::{atomic::write_atomic, hash::sha256_file};
 use office_core::domain::settings::Settings;
 use serde::{Deserialize, Serialize};
 
+use office_core::domain::knowledge::DocumentKind;
+use office_core::ports::{InitOutcome, LibraryHealth};
+
 use crate::contracts::{DocumentRecord, Revision, SearchFilter, SearchHit};
+use crate::driver::file::library::LAYOUT_DIRS;
 use crate::driver::file::{library::LibraryFs, lock::WriterLock};
 use crate::driver::git::Git;
 use crate::driver::sqlite::connection::IndexStore;
@@ -81,6 +85,149 @@ impl LibraryStore {
             store.recover()?;
         }
         Ok(store)
+    }
+
+    /// Scaffold a Library at the requested location (specs/library.md,
+    /// "Scaffolding: `office.init`"), in spec order. Creates only what is
+    /// missing and never overwrites an existing config, `.gitignore` or page.
+    /// A complete Library reports `already_initialized` with no commit.
+    pub fn initialize_at(
+        library_root: &Path,
+        state_dir: &Path,
+        requested: Option<&str>,
+        workspace_root: &Path,
+    ) -> Result<InitOutcome> {
+        let allowed = normalize_path(&workspace_root.join("library"));
+        let candidate = match requested {
+            Some(dir) if !dir.trim().is_empty() => {
+                let path = Path::new(dir);
+                normalize_path(&if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    workspace_root.join(path)
+                })
+            }
+            _ => normalize_path(library_root),
+        };
+        if candidate != allowed && !candidate.starts_with(&allowed) {
+            return Err(Error::LibraryDirOutside {
+                requested: candidate,
+                allowed,
+            });
+        }
+        // Refuse a missing git before creating anything.
+        let probe_cwd = if workspace_root.exists() {
+            workspace_root.to_path_buf()
+        } else {
+            PathBuf::from("/")
+        };
+        Git::ensure_available(&probe_cwd)?;
+
+        let files = LibraryFs::new(candidate.clone());
+        let git = Git::new(&candidate, state_dir);
+        // Completeness is checked without creating layout or index.
+        let is_repo = candidate.exists() && git.is_repository()?;
+        let config_text = if candidate.exists() {
+            files.settings_text()?
+        } else {
+            None
+        };
+        if let Some(text) = &config_text {
+            // An invalid existing config is refused, never overwritten.
+            Settings::from_yaml(text)?;
+        }
+        let gitignore_exists = candidate.join(".gitignore").exists();
+        let index_exists = state_dir.join("index.sqlite").exists();
+        let layout_complete = LAYOUT_DIRS.iter().all(|dir| {
+            let path = candidate.join(dir);
+            if *dir == ".office" {
+                path.is_dir()
+            } else {
+                path.is_dir() && (path.join(".gitkeep").exists() || !dir_is_empty(&path))
+            }
+        });
+        if is_repo && config_text.is_some() && gitignore_exists && index_exists && layout_complete {
+            return Ok(InitOutcome {
+                already_initialized: true,
+                created: Vec::new(),
+            });
+        }
+
+        let mut created: Vec<String> = Vec::new();
+        for dir in LAYOUT_DIRS {
+            if !candidate.join(dir).exists() {
+                created.push((*dir).to_string());
+            }
+        }
+        files.ensure_layout()?;
+        for dir in LAYOUT_DIRS {
+            if *dir == ".office" {
+                continue;
+            }
+            let dir_path = candidate.join(dir);
+            let keep = dir_path.join(".gitkeep");
+            if dir_is_empty(&dir_path) && !keep.exists() {
+                write_atomic(&keep, b"")?;
+                created.push(format!("{dir}/.gitkeep"));
+            }
+        }
+        if !is_repo {
+            git.init()?;
+            created.push(".git".to_string());
+        }
+        if config_text.is_none() {
+            write_atomic(
+                &candidate.join(".office/config.yaml"),
+                Settings::default_yaml().as_bytes(),
+            )?;
+            created.push(".office/config.yaml".to_string());
+        }
+        if !gitignore_exists {
+            write_atomic(&candidate.join(".gitignore"), b"original.*\n")?;
+            created.push(".gitignore".to_string());
+        }
+        let store = Self::open(&candidate, state_dir)?;
+        if !index_exists {
+            created.push("index.sqlite".to_string());
+        }
+        store.reindex()?;
+        let committable: Vec<String> = created
+            .iter()
+            .filter(|path| path.as_str() != ".git" && path.as_str() != "index.sqlite")
+            .cloned()
+            .collect();
+        store
+            .git
+            .commit_created(&committable, "Initialize the Library")?;
+        created.sort();
+        Ok(InitOutcome {
+            already_initialized: false,
+            created,
+        })
+    }
+
+    /// Library and index health. Counts come from the index; an
+    /// uninitialized Library reports zero counts without reading it.
+    pub fn health(&self) -> Result<LibraryHealth> {
+        if !self.is_initialized()? {
+            return Ok(LibraryHealth::uninitialized());
+        }
+        self.read_ready()?;
+        let mut health = LibraryHealth {
+            initialized: true,
+            ..LibraryHealth::default()
+        };
+        for (kind, count) in self.index.counts_by_kind()? {
+            match DocumentKind::parse(&kind) {
+                Some(DocumentKind::Source) => health.source = count,
+                Some(DocumentKind::Domain) => health.domain = count,
+                Some(DocumentKind::Runbook) => health.runbook = count,
+                Some(DocumentKind::Artifact) => health.artifact = count,
+                None => {}
+            }
+            health.documents_total = health.documents_total.saturating_add(count);
+        }
+        Ok(health)
     }
 
     /// Resolved Library root (Markdown files are the source of truth).
@@ -302,6 +449,29 @@ impl LibraryStore {
     }
 }
 
+/// Lexically resolve `.` and `..` without requiring the path to exist.
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::Prefix(prefix) => out.push(prefix.as_os_str()),
+            std::path::Component::RootDir => out.push(std::path::Component::RootDir.as_os_str()),
+            std::path::Component::Normal(name) => out.push(name),
+        }
+    }
+    out
+}
+
+fn dir_is_empty(path: &Path) -> bool {
+    std::fs::read_dir(path)
+        .map(|mut entries| entries.next().is_none())
+        .unwrap_or(true)
+}
+
 impl office_core::ports::Library for LibraryStore {
     fn read_document(&self, relative: &Path) -> office_core::Result<DocumentRecord> {
         Ok(Self::read_document(self, relative)?)
@@ -320,5 +490,26 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn settings(&self) -> office_core::Result<Settings> {
         Ok(Self::settings(self)?)
+    }
+    fn initialize(&self, library_dir: Option<&str>) -> office_core::Result<InitOutcome> {
+        let workspace = self
+            .library_root()
+            .parent()
+            .ok_or(office_core::Error::LibraryUnavailable)?;
+        Ok(Self::initialize_at(
+            self.library_root(),
+            &self.state,
+            library_dir,
+            workspace,
+        )?)
+    }
+    fn reindex(&self) -> office_core::Result<u32> {
+        if !Self::is_initialized(self)? {
+            return Err(office_core::ports::not_initialized_error());
+        }
+        Ok(Self::reindex(self)?)
+    }
+    fn health(&self) -> office_core::Result<LibraryHealth> {
+        Ok(Self::health(self)?)
     }
 }

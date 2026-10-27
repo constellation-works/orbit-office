@@ -142,22 +142,22 @@ spec:
 
     # ---- library ----
 
-    # - name: init
-    #   description: >-
-    #     Scaffold the Library: layout, git repository, config,
-    #     .gitignore, index; idempotent.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/init.request.json }
-    #   output_schema: { $ref: schemas/init.response.json }
+    - name: init
+      description: >-
+        Scaffold the Library: layout, git repository, config,
+        .gitignore, index; idempotent.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/init.request.json }
+      output_schema: { $ref: schemas/init.response.json }
 
-    # - name: reindex
-    #   description: >-
-    #     Rebuild the SQLite index from the Library.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/reindex.request.json }
-    #   output_schema: { $ref: schemas/reindex.response.json }
+    - name: reindex
+      description: >-
+        Rebuild the SQLite index from the Library.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/reindex.request.json }
+      output_schema: { $ref: schemas/reindex.response.json }
 
     # - name: config.set
     #   description: >-

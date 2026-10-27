@@ -16,13 +16,8 @@ use crate::tools::{
 /// What a handler receives: the tool's validated input and Orbit's call context.
 pub(crate) struct Call<'a> {
     /// Tool input, already checked against the tool's accepted keys.
-    #[expect(
-        dead_code,
-        reason = "status, the only built tool, takes no input; the first tool with input reads it"
-    )]
     pub(crate) input: &'a Map<String, Value>,
     /// Services available to this call.
-    #[expect(dead_code, reason = "status does not need ports")]
     pub(crate) ports: &'a office_core::ports::Ports<'a>,
     /// Call context: identity, secrets and roots, from Orbit.
     pub(crate) context: &'a Map<String, Value>,

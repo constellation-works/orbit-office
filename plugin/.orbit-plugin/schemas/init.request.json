@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.init request",
+  "type": "object",
+  "properties": {
+    "library_dir": { "type": "string", "description": "Requested Library location, workspace-relative or absolute. It must stay inside the granted {{workspace}}/library root. Absent means the configured Library." }
+  },
+  "additionalProperties": false
+}

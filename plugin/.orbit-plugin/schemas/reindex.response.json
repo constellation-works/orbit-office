@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.reindex response",
+  "type": "object",
+  "properties": {
+    "indexed_documents": { "type": "integer", "minimum": 0, "description": "Documents indexed by the rebuild." }
+  },
+  "required": ["indexed_documents"],
+  "additionalProperties": false
+}
