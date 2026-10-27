@@ -76,6 +76,7 @@ deny:
 # does neither, so the fallback says so. nextest does not run doctests, so
 # they are a second leg; the core crate carries at least one (STD-04 R14).
 test:
+	./scripts/plugin/test-export.sh
 	@if $(CARGO) nextest --version >/dev/null 2>&1; then \
 		$(CARGO) nextest run --workspace --all-targets $(LOCKED) --no-tests=fail; \
 	else \
