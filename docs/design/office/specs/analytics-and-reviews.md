@@ -37,8 +37,9 @@ mechanism. The Library records how far that history runs as
 `demo.simulated_until` (a `YYYY-MM-DD` date, set by the demo seeder and
 changed with `office.config-set`). `office.metrics` returns it as
 `simulated_until` when it is set and omits it otherwise. The app labels
-points dated on or before `simulated_until` as simulated; records stay
-unmarked.
+weeks with recorded completed work dated on or before `simulated_until`
+as simulated; empty weeks before the first seeded receipt and weeks after
+the cutoff remain unlabelled. Individual records stay unmarked.
 
 ## Reviews
 

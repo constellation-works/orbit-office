@@ -6,6 +6,12 @@ last_validated: 2026-10-26
 
 # Spec: KT videos (the hero pack)
 
+Local scene decoding uses FFmpeg's per-stream `-fps_mode vfr` option. The
+legacy `-vsync` option is no longer accepted by FFmpeg 9. The synthetic demo
+generator in `demo/synthetic` renders invented slides and terminal scenes on
+macOS, then assembles a 900-second recording with FFmpeg; it never records a
+real screen or real speakers.
+
 Knowledge-transfer (KT) videos are the long screen-share recordings a team
 makes before someone leaves or hands a system over. They run an hour, half of
 it tangents. Watching one costs an hour of attention, and what it teaches is

@@ -76,6 +76,19 @@ test('paste, source reads, privacy and citation reads go through the tools and p
   assert.deepEqual((await f.request('/api/sources/citation?id=rb-restart&kind=runbook')).body, { title: 'Runbook', text: 'Restart carefully.' });
 });
 
+test('a private hosted-provider source names the third party in its route badge', async t => {
+  const f = await fixture(t, async name => {
+    if (name === 'office.source-show') return { ...SOURCE, sensitivity: 'private', derived_by: {
+      transcription: { route: 'private:provider', model: 'fixture' },
+    } };
+    if (name === 'office.status') return { open_weights: { kind: 'provider', label: 'Selected provider' } };
+    throw Error('unexpected tool');
+  });
+  const response = await f.request(`/api/sources?id=${SOURCE.id}`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.route_labels, ['Private: Selected provider (third party)']);
+});
+
 test('video and phase previews only plan; Process confirms the exact displayed digest and privacy', async t => {
   const calls = [];
   const f = await fixture(t, async (name, input) => {
