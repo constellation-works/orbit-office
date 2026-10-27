@@ -5,7 +5,7 @@
   "properties": {
     "id": { "type": "string", "description": "Source id, for example src-20261027-title." },
     "source_id": { "type": "string", "description": "Alias for id." },
-    "anchor": { "type": "string", "description": "Optional anchor: #t=hh:mm:ss or #L<start>[-<end>]." }
+    "anchor": { "type": "string", "description": "Optional anchor: #t=hh:mm:ss, #L<start>[-<end>], #slide=<n> or #page=<n>." }
   },
   "additionalProperties": false
 }

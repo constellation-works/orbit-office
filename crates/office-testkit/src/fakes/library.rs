@@ -411,6 +411,7 @@ impl Library for FakeLibrary {
         Ok(())
     }
     fn capture_source(&self, request: &CaptureSourceRequest) -> Result<SourceOutcome> {
+        office_core::domain::source::validate_capture_tags(&request.tags)?;
         self.ready()?;
         let settings = self.settings()?;
         if let Some(target) = &request.append_to {
@@ -438,6 +439,13 @@ impl Library for FakeLibrary {
                     message: format!("source {target} is not a conversation source"),
                 });
             }
+            let raw = self.texts.borrow().get(&view.path).cloned();
+            let tagged_raw = raw
+                .map(|raw| {
+                    office_core::domain::source::merge_source_tags(&raw, &request.tags)
+                        .map(|merged| merged.unwrap_or(raw))
+                })
+                .transpose()?;
             if !view.body.is_empty() && !view.body.ends_with('\n') {
                 view.body.push('\n');
             }
@@ -459,6 +467,13 @@ impl Library for FakeLibrary {
             let path = view.path.clone();
             let new_body = view.body.clone();
             drop(sources);
+            if let Some(raw) = tagged_raw {
+                let end = raw.find("\n---").map(|index| index + 4).unwrap_or(0);
+                let markdown = format!("{}\n{}", &raw[..end], new_body);
+                let record = DocumentRecord::from_markdown(std::path::Path::new(&path), &markdown);
+                self.documents.borrow_mut().insert(path.clone(), record);
+                self.texts.borrow_mut().insert(path.clone(), markdown);
+            }
             // Mirror the appended body into `documents`, as the create path
             // does, so `search` and `read_document` see appended entries.
             // Other record fields keep the frontmatter parsed at create.
@@ -598,6 +613,21 @@ impl Library for FakeLibrary {
                 })
                 .cloned()
         {
+            let raw = self.texts.borrow().get(&existing.path).cloned();
+            if let Some(raw) = raw
+                && let Some(markdown) =
+                    office_core::domain::source::merge_source_tags(&raw, &request.tags)?
+            {
+                let record =
+                    DocumentRecord::from_markdown(std::path::Path::new(&existing.path), &markdown);
+                self.documents
+                    .borrow_mut()
+                    .insert(existing.path.clone(), record);
+                self.texts
+                    .borrow_mut()
+                    .insert(existing.path.clone(), markdown);
+                self.record_commit();
+            }
             return Ok(SourceOutcome {
                 id: existing.id,
                 kind: existing.kind,
@@ -680,6 +710,7 @@ impl Library for FakeLibrary {
             origin: request.origin.as_deref(),
             occurred_at: request.occurred_at.as_deref(),
             participants: &request.participants,
+            tags: &request.tags,
             sensitivity,
             original: None,
             derived_transcription: derived,

@@ -28,6 +28,13 @@ backend only through Orbit's tools) and `gateway/` (two small Python plugins, se
 records; `office-core` uses `office-common` for the shared sensitivity enum. Store record
 exports remain compatible re-exports.
 
+Document uploads cross the existing `Library::capture_source` port. The store's
+`driver/convert/` reads HTML through `html5ever` and Office ZIP/XML parts through
+`zip` and `quick-xml`, with no extraction to disk. PDF conversion uses
+`office-common::process` and a private temporary copy of the already contained,
+read upload. Conversion and structural validation finish before the writer lock
+or source persistence. These external dependencies add no internal crate edge.
+
 `office-orbit` uses its `office-core` edge for the eight Orbit port methods and its
 `office-common` edge for bounded CLI callback supervision. The composing `office` binary
 constructs this adapter from the host call context and inherited callback environment.

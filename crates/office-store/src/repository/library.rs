@@ -19,6 +19,7 @@ use office_core::domain::template::{KnowledgePage, TemplateFile, assess_template
 use office_core::ports::{InitOutcome, LibraryHealth, LibraryText};
 
 use crate::contracts::{Backlink, DocumentRecord, Revision, SearchFilter, SearchHit};
+use crate::driver::convert;
 use crate::driver::file::library::LAYOUT_DIRS;
 use crate::driver::file::{library::LibraryFs, lock::WriterLock};
 use crate::driver::git::Git;
@@ -786,6 +787,26 @@ impl LibraryStore {
                 message: format!("upload path {raw} is outside the allowed roots"),
             });
         }
+        if Path::new(raw)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| convert::is_document(&ext.to_ascii_lowercase()))
+        {
+            use std::io::Read;
+            let file = std::fs::File::open(&canonical)
+                .map_err(|e| office_core::Error::from(Error::io("read document", &canonical, e)))?;
+            let mut bytes = Vec::new();
+            file.take(convert::INPUT_LIMIT + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|e| office_core::Error::from(Error::io("read document", &canonical, e)))?;
+            if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > convert::INPUT_LIMIT {
+                return Err(Error::ConversionLimit {
+                    limit: "32 MiB document input",
+                }
+                .into());
+            }
+            return Ok(bytes);
+        }
         std::fs::read(&canonical).map_err(|_| office_core::Error::Library {
             code: "upload_not_found",
             message: format!("upload path {raw} could not be read"),
@@ -811,6 +832,7 @@ impl LibraryStore {
         &self,
         request: &CaptureSourceRequest,
     ) -> office_core::Result<SourceOutcome> {
+        office_core::domain::source::validate_capture_tags(&request.tags)?;
         // Contained reads happen before any write, so a refused path
         // writes nothing.
         let mut upload_bytes: Option<Vec<u8>> = None;
@@ -846,6 +868,16 @@ impl LibraryStore {
             })?;
             transcript_body = Some(vtt_to_body(&text));
         }
+        let converted = if transcript_body.is_none() {
+            upload_bytes
+                .as_ref()
+                .map(|bytes| convert::document(&upload_ext, bytes))
+                .transpose()
+                .map_err(office_core::Error::from)?
+                .flatten()
+        } else {
+            None
+        };
         let _lock = WriterLock::acquire(&self.state).map_err(office_core::Error::from)?;
         self.recover().map_err(office_core::Error::from)?;
         self.require_initialized()
@@ -897,6 +929,9 @@ impl LibraryStore {
                 new_text.push('\n');
             }
             new_text.push_str(&body);
+            let new_text =
+                office_core::domain::source::merge_source_tags(&new_text, &request.tags)?
+                    .unwrap_or(new_text);
             let pending = self
                 .decide(WriteKind::Document, path, &new_text, None)
                 .map_err(office_core::Error::from)?;
@@ -931,6 +966,8 @@ impl LibraryStore {
         let kind = explicit_kind.unwrap_or_else(|| {
             if is_video_extension(&upload_ext) {
                 SourceKind::Video
+            } else if convert::is_document(&upload_ext) {
+                SourceKind::Doc
             } else if !request.entries.is_empty() {
                 SourceKind::Conversation
             } else {
@@ -953,11 +990,7 @@ impl LibraryStore {
             let media = media_type_for_extension(&upload_ext)
                 .unwrap_or("application/octet-stream")
                 .to_string();
-            let body = if upload_ext == "txt" || upload_ext == "md" {
-                normalize_text(&String::from_utf8_lossy(bytes))
-            } else {
-                String::new()
-            };
+            let body = converted.unwrap_or_default();
             (
                 body,
                 Some(sha256_hex(bytes)),
@@ -1003,6 +1036,14 @@ impl LibraryStore {
                 let meta = parse_source_meta(text);
                 let text_sha = sha256_hex(normalize_text(&source_body(text)).as_bytes());
                 if meta.sha256.as_ref() == Some(sha_value) || &text_sha == sha_value {
+                    if let Some(markdown) =
+                        office_core::domain::source::merge_source_tags(text, &request.tags)?
+                    {
+                        let pending = self
+                            .decide(WriteKind::Document, path, &markdown, None)
+                            .map_err(office_core::Error::from)?;
+                        self.finish(&pending).map_err(office_core::Error::from)?;
+                    }
                     return Ok(SourceOutcome {
                         id: meta.id,
                         kind: meta.kind,
@@ -1090,6 +1131,7 @@ impl LibraryStore {
             origin: request.origin.as_deref(),
             occurred_at: request.occurred_at.as_deref(),
             participants: &request.participants,
+            tags: &request.tags,
             sensitivity,
             original: match (&original_name, &sha, bytes_len, &media_type) {
                 (Some(name), Some(s), Some(b), Some(m)) => {

@@ -30,6 +30,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         "occurred_at",
         "participants",
         "captured_by",
+        "tags",
     ],
     run,
 );
@@ -138,6 +139,22 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         origin: string_field(call, "origin")?,
         occurred_at: string_field(call, "occurred_at")?,
         participants,
+        tags: match call.input.get("tags") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(items)) => items
+                .iter()
+                .map(|item| {
+                    item.as_str().map(str::to_string).ok_or_else(|| {
+                        Error::InvalidArgument("capture tags must be strings".into())
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
+            Some(_) => {
+                return Err(Error::InvalidArgument(
+                    "capture tags must be an array".into(),
+                ));
+            }
+        },
         sensitivity: string_field(call, "sensitivity")?,
     };
     if request.append_to.is_none()

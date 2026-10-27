@@ -10,6 +10,9 @@ use std::process::{Command, Stdio};
 
 const BIN: &str = env!("CARGO_BIN_EXE_office");
 
+#[path = "document_capture/mod.rs"]
+mod document_capture;
+
 struct Env {
     _dir: tempfile::TempDir,
     workspace: PathBuf,

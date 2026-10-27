@@ -36,6 +36,10 @@ office-testkit = { path = "crates/office-testkit" }
 # output sink is the only place allowed to do that (STD-01 R17). Help is plain
 # text everywhere, which also keeps the help goldens byte-stable.
 base64 = "0.22"
+html5ever = "0.38"
+quick-xml = "0.37.5"
+# Only stored/deflated Office parts; no encryption or native compression codecs.
+zip = { version = "4.6.1", default-features = false, features = ["deflate"] }
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 # Schema validation must not retrieve URLs or files outside the model routing boundary.
 jsonschema = { version = "0.60.2", default-features = false }
