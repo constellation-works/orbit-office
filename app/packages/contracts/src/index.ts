@@ -49,3 +49,4 @@ export type {
   TodoItem,
   TodoList,
 } from "./api.js";
+export type { BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView } from "./api.js";

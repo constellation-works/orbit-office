@@ -120,6 +120,20 @@ impl FakeLibrary {
         Ok(())
     }
 
+    /// Seed an allowlisted processing sidecar without host I/O.
+    pub fn insert_source_sidecar(&self, id: &str, name: &str, text: &str) -> Result<()> {
+        self.source_sidecar(id, name)?;
+        let source = self.read_source(id)?;
+        self.texts.borrow_mut().insert(
+            Path::new(&source.path)
+                .with_file_name(name)
+                .to_string_lossy()
+                .into_owned(),
+            text.to_string(),
+        );
+        Ok(())
+    }
+
     /// Seed a generated frame beside an existing source, without host I/O.
     pub fn insert_source_frame(&self, id: &str, name: &str, bytes: &[u8]) -> Result<()> {
         let source = self.read_source(id)?;

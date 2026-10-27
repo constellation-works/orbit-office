@@ -295,6 +295,57 @@
         "truncated"
       ],
       "additionalProperties": false
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "anchor": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^\\d{4,10}\\.png$"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "time",
+          "anchor",
+          "file",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "gotchas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "cites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "text",
+          "cites"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
@@ -315,7 +366,9 @@
     "cited_by",
     "task_citers_available",
     "cited_by_truncated",
-    "chapters"
+    "chapters",
+    "frames",
+    "gotchas"
   ],
   "additionalProperties": false
 }

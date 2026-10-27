@@ -290,3 +290,41 @@ pub fn base64(bytes: &[u8]) -> String {
     }
     result
 }
+
+/// Timeline entries from the exact frames.md format published by video processing.
+pub fn frames(markdown: &str) -> Result<Vec<Value>> {
+    markdown.lines().filter(|line| !line.trim().is_empty()).enumerate().map(|(index, line)| {
+        let invalid = || refusal("invalid_frames", "invalid frame timeline");
+        let (stamp, rest) = line.trim().strip_prefix('[').and_then(|s| s.split_once("] ")).ok_or_else(invalid)?;
+        let time = parse_clock_seconds(stamp).ok_or_else(invalid)?;
+        let suffix = format!(" [frame](#frame={stamp})");
+        let text = rest.strip_suffix(&suffix).ok_or_else(invalid)?;
+        Ok(json!({"time":time,"anchor":format!("#frame={stamp}"),"file":format!("{index:04}.png"),"text":text}))
+    }).collect()
+}
+
+/// Cited warnings already extracted into the bootstrap digest, with no new inference.
+pub fn gotchas(text: &str) -> Result<Vec<Value>> {
+    let digest: Value = serde_json::from_str(text)
+        .map_err(|_| refusal("invalid_source_digest", "invalid source digest"))?;
+    crate::domain::bootstrap::digest(&digest)?;
+    let mut gotchas = Vec::new();
+    for claim in digest["claims"].as_array().into_iter().flatten() {
+        if let Some(text) = claim["text"]
+            .as_str()
+            .and_then(|s| s.strip_prefix("Gotcha: "))
+        {
+            if !claim["cites"]
+                .as_array()
+                .is_some_and(|cites| !cites.is_empty() && cites.iter().all(Value::is_string))
+            {
+                return Err(refusal(
+                    "invalid_source_digest",
+                    "gotcha lacks source citations",
+                ));
+            }
+            gotchas.push(json!({"text":text,"cites":claim["cites"]}));
+        }
+    }
+    Ok(gotchas)
+}

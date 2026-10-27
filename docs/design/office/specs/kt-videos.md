@@ -184,9 +184,10 @@ costs:                             # per-call rates for the preview; null = not 
   nothing spent until it is pressed.
 - **Source view for a video:** the player, the chapter list with tangents
   folded and their gotchas shown, frame thumbnails on the timeline, and the
-  transcript beside them. Once the planned source screen ships, each citation
-  will open the player at its time; until then, the anchor has no landing
-  behaviour.
+  transcript beside them. The Source screen opens `/?source=<id>#t=hh:mm:ss`,
+  `#frame=hh:mm:ss` and `#chapter=<n>` links at their time. In-app playback
+  keeps the source-show limit of 512 KiB per original; larger recordings
+  retain their readable transcript and show an unavailable-player message.
 - **Needs you:** the video's proposals as one group, "From the ingest KT:
   6 pages, 1 runbook", plus its questions in your to-dos.
 

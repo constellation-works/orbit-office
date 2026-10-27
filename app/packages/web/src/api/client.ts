@@ -2,7 +2,7 @@
 import type {
   AcceptAllResult, AcceptRequest, ApprovalDetail, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
-  SettingsConnections, SettingsStatus,
+  SettingsConnections, SettingsStatus, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView,
 } from "@orbit-office/contracts";
 
 export class ApiError extends Error {
@@ -23,10 +23,12 @@ export async function getJson<T>(path: string): Promise<T> {
   return requestJson<T>(path);
 }
 
-async function requestJson<T>(path: string, body?: unknown): Promise<T> {
+async function requestJson<T>(path: string, body?: unknown, upload?: Blob): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, body === undefined
+    response = await fetch(path, upload !== undefined
+      ? { method: "POST", headers: { accept: "application/json", "content-type": "application/octet-stream" }, body: upload }
+      : body === undefined
       ? { headers: { accept: "application/json" } }
       : { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(body) });
   } catch {
@@ -114,4 +116,27 @@ export function acceptProposals(proposals: AcceptRequest[]): Promise<AcceptAllRe
 /** Approve a gateway draft: the server sends it once, bound to `sha256`. */
 export function sendDraft(key: string, sha256: string): Promise<GatewaySendResult> {
   return postJson<GatewaySendResult>("/api/approvals/send", { key, sha256 });
+}
+
+
+export function getSource(id: string): Promise<SourceView> {
+  return getJson<SourceView>(`/api/sources?id=${encodeURIComponent(id)}`);
+}
+export function capturePaste(input: CapturePaste): Promise<CapturedSource> {
+  return postJson<CapturedSource>("/api/sources/paste", input);
+}
+export function uploadSource(file: File, phase?: BootstrapPhase, privateSource = false): Promise<CapturedSource> {
+  const params = new URLSearchParams({ name: file.name });
+  if (phase) params.set("phase", phase);
+  if (privateSource) params.set("private", "true");
+  return requestJson<CapturedSource>(`/api/sources/upload?${params}`, undefined, file);
+}
+export function sourcePlan(input: { id?: string; phase?: BootstrapPhase; private: boolean; confirm?: true; digest?: string }): Promise<SourcePlan> {
+  return postJson<SourcePlan>("/api/sources/plan", input);
+}
+export function markSourcePrivate(id: string): Promise<{ ok: true }> {
+  return postJson<{ ok: true }>("/api/sources/private", { id });
+}
+export function getSourceCitation(id: string, kind: string): Promise<SourceCitation> {
+  return getJson<SourceCitation>(`/api/sources/citation?${new URLSearchParams({ id, kind })}`);
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { acceptProposal, acceptProposals, ApiError, approveOutput, dismissNeed, getApiCalls, getApprovalDetail, sendBack, sendDraft, getConnections, getHealth, getJson, getPrivateRoute, putConnection, savePrivateRoute } from "../dist/api/client.js";
+import { acceptProposal, acceptProposals, ApiError, approveOutput, dismissNeed, getApiCalls, getApprovalDetail, sendBack, sendDraft, getConnections, getHealth, getSource, capturePaste, uploadSource, sourcePlan, markSourcePrivate, getSourceCitation, getJson, getPrivateRoute, putConnection, savePrivateRoute } from "../dist/api/client.js";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -87,4 +87,25 @@ test("approval helpers post closed bodies and carry a refusal reason", async () 
   globalThis.fetch = async () => new Response('{"error":"promote_refused","reason":"task_has_no_artifacts"}', { status: 409 });
   await assert.rejects(approveOutput("ORB-1"), (error) =>
     error instanceof ApiError && error.status === 409 && error.code === "promote_refused" && error.reason === "task_has_no_artifacts");
+});
+
+
+test("source helpers encode identity, stream original bytes and confirm only the supplied digest", async () => {
+  const calls = [];
+  globalThis.fetch = async (path, options) => { calls.push({ path, options }); return new Response(JSON.stringify({ id: "src-fixture" })); };
+  const file = new File(["fixture"], "notes.txt");
+  await getSource("src-fixture space");
+  await capturePaste({ title: "Notes", text: "fixture", private: false });
+  await uploadSource(file, "docs", true);
+  await sourcePlan({ id: "src-fixture", private: true, confirm: true, digest: "c".repeat(64) });
+  await markSourcePrivate("src-fixture"); await getSourceCitation("rb-notes", "runbook");
+  assert.equal(calls[0].path, "/api/sources?id=src-fixture%20space");
+  assert.deepEqual(JSON.parse(calls[1].options.body), { title: "Notes", text: "fixture", private: false });
+  assert.equal(calls[2].path, "/api/sources/upload?name=notes.txt&phase=docs&private=true");
+  assert.equal(calls[2].options.body, file); assert.equal(calls[2].options.headers["content-type"], "application/octet-stream");
+  assert.deepEqual(JSON.parse(calls[3].options.body), { id: "src-fixture", private: true, confirm: true, digest: "c".repeat(64) });
+  assert.deepEqual(JSON.parse(calls[4].options.body), { id: "src-fixture" });
+  assert.equal(calls[5].path, "/api/sources/citation?id=rb-notes&kind=runbook");
+  globalThis.fetch = async () => new Response('{"error":"source_refused"}', { status: 409 });
+  await assert.rejects(sourcePlan({ id: "src-fixture", private: false }), error => error instanceof ApiError && error.code === "source_refused");
 });

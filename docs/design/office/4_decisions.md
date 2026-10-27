@@ -358,9 +358,8 @@ URLs, and no browser-only API without a fallback.
 
 - Citations are plain `http://localhost` links that the browser opens.
   They carry anchors (`#t=…` for meetings, `#L…` for line-based sources).
-  The anchor landing (opening the source scrolled to the cited span) is
-  planned under ORB-18729: until the planned source screen ships, the
-  anchors are a recorded URL contract with no landing behaviour. The
+  The Source screen now opens query-selected sources at those anchors,
+  highlighting and scrolling their spans (ORB-18729). The
   "no deep-link scheme" line originally recorded here was superseded on
   2026-10-26 (see "Anchor deep-links for citations" below). The dispatch
   pass is a login service (launchd or a systemd user unit) independent
@@ -388,9 +387,12 @@ at exactly the moment the user checks it.
 
 Citation links are `http://localhost` URLs carrying the source anchor
 (`#t=hh:mm:ss` for meetings, `#L<start>-<end>` for line-based bodies).
-This records the URL-format contract; the landing behaviour (the source
-view opening at that anchor and scrolling to the span) is planned under
-ORB-18729 and ships with the source screen, which is currently planned.
+The Source screen now opens `/?source=<id>` with that fragment, scrolls
+and highlights the span, and seeks playable media. The same query-selected
+screen accepts `#frame=hh:mm:ss` and `#chapter=<n>`. The query keeps source
+identity separate from the anchor, while ordinary navigation hashes continue
+to select screens. This ships with ORB-18729 without changing the shared
+hash router.
 This supersedes the "no deep-link scheme is needed yet" consequence in the
 PWA decision; the rest of that decision stands.
 

@@ -49,7 +49,7 @@ await import("../dist/pwa/sw.js");
 /** Fresh stub environment; `seed` pre-fills the shell cache like an install. */
 function useWorkerEnv({ seed = [], fetchImpl } = {}) {
   const addedAll = [];
-  const stores = new Map([["office-shell-v4", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
+  const stores = new Map([["office-shell-v5", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
   Object.defineProperty(globalThis, "self", {
     value: {
       location: { origin: "http://office.test" },
@@ -116,6 +116,7 @@ const SHELL = [
   "/pwa/register.js",
   "/router.js",
   "/api/client.js",
+  "/api/source-location.js",
   "/ui/index.js",
   "/ui/card.js",
   "/ui/pill.js",
@@ -132,6 +133,8 @@ const SHELL = [
   "/screens/settings/style.js",
   "/screens/settings/private.js",
   "/screens/source/index.js",
+  "/screens/source/model.js",
+  "/screens/source/style.js",
   "/screens/today/approvals.js",
   "/screens/today/index.js",
   "/screens/todos/index.js",
@@ -163,10 +166,10 @@ test("install precaches the app shell only", async () => {
   listeners.install({ waitUntil: (promise) => { waited = promise; } });
   await waited;
   assert.deepEqual([...addedAll].sort(), [...SHELL].sort());
-  // Live data stays uncached; `/api/client.js` is a static module, not data.
+  // Only the two compiled static modules below use the API prefix.
   for (const url of addedAll) {
     assert.notEqual(url, "/healthz");
-    assert.ok(url === "/api/client.js" || !url.startsWith("/api/"), `${url} is live data and must not be precached`);
+    assert.ok(["/api/client.js", "/api/source-location.js"].includes(url) || !url.startsWith("/api/"), `${url} is live data and must not be precached`);
   }
 });
 
@@ -204,7 +207,7 @@ test("activate drops old caches and keeps the current shell", async () => {
   let waited = null;
   listeners.activate({ waitUntil: (promise) => { waited = promise; } });
   await waited;
-  assert.deepEqual([...stores.keys()], ["office-shell-v4"]);
+  assert.deepEqual([...stores.keys()], ["office-shell-v5"]);
 });
 
 test("live-data requests are left to the network, never answered from cache", async () => {
@@ -243,11 +246,11 @@ test("other same-origin requests go to the network and are not stored", async ()
     fetchImpl: async () => new Response("live"),
   });
   const listeners = workerListeners;
-  const before = stores.get("office-shell-v4").size;
+  const before = stores.get("office-shell-v5").size;
   const { event, answered } = fetchEvent("http://office.test/demo.html");
   listeners.fetch(event);
   assert.equal(await (await answered()).text(), "live");
-  assert.equal(stores.get("office-shell-v4").size, before);
+  assert.equal(stores.get("office-shell-v5").size, before);
 });
 
 test("a failed navigation falls back to the cached shell", async () => {
