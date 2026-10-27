@@ -27,12 +27,24 @@ inputs start empty and clear before a save awaits its response. A failed secret
 write reports that the connection itself was saved. An origin change removes
 the old slot value with `orbit plugin secret rm gateway <slot>`.
 
+The editor offers every gateway auth scheme. For a secret address
+(`secret_path`) it takes the feed's full address and saves its origin as the
+base URL and its path and query as the secret. A sign-in-with-a-code
+connection (`oauth2_device`) has no secret field. Its card offers "Sign in"
+(or "Sign in again" once the gateway reports it `expired`), which shows the
+user code and the verification address and polls until the connection is
+connected, declined or the code expires. The server calls
+`gateway.oauth-device-start` and `gateway.oauth-device-poll` and passes on
+only the code, the address and the state. The refresh token reaches the slot
+inside the gateway call and never crosses HTTP.
+
 API calls reads `gateway.audit-list`, showing up to 100 recent requests newest
 first, with time, connection, method, path, HTTP status, size, duration and caller
 labels. It omits response bodies and internal caller identifiers. Both sections
 show failures and empty states separately, and use the shared dark theme
 at desktop and phone widths. The Settings endpoints are
 `GET /api/settings/connections`, `POST /api/settings/connections/put`,
+`POST /api/settings/connections/sign-in`, `POST /api/settings/connections/sign-in/poll`,
 `GET /api/settings/private-route`, `POST /api/settings/private-route` and
 `GET /api/settings/api-calls`; `GET /api/settings` still reports the agent CLI.
 Private route saves the `open_weights` block with `office.config-set`, then runs
@@ -122,8 +134,9 @@ SETTINGS_SCREENSHOTS_DIR="$PWD/.orbit/tmp/screenshots" node --test app/packages/
 ```
 
 Run this from the repository root after the app build. It captures Connections,
-the connection editor, API calls, and the private route (empty and configured)
-at 1440px and 375px in the dark theme. The app has no light theme. A before
+the connection editor, API calls, the private route (empty and configured), and
+an expired sign-in, the device-code view, its editor and a declined sign-in, at
+1440px and 375px in the dark theme, checking each for horizontal overflow. The app has no light theme. A before
 shot of the private route was not captured: the base revision has no such section.
 
 ## Develop

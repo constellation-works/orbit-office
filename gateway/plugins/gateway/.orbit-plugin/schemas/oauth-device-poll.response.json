@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.oauth-device-poll response",
+  "type": "object",
+  "description": "pending: poll again after interval seconds. connected: the refresh token is in the slot (never returned). denied or expired: start again.",
+  "required": [
+    "connection",
+    "state"
+  ],
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "connected",
+        "denied",
+        "expired"
+      ]
+    },
+    "interval": {
+      "type": "integer"
+    }
+  },
+  "additionalProperties": false
+}

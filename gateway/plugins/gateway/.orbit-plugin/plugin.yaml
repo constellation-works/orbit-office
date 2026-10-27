@@ -52,56 +52,60 @@ spec:
   # Orbit plugin secrets are names fixed in the manifest, so connections take
   # one of sixteen slots. `gateway.connection-put` assigns a free slot and
   # never takes a value; the app sets it with
-  # `orbit plugin secret set gateway <slot>` (value on stdin).
+  # `orbit plugin secret set gateway <slot>` (value on stdin). Slots are
+  # rotatable because any of them may belong to an `oauth2_device`
+  # connection: its sign-in and each rotated refresh token reach the slot
+  # through `secret_updates`, which Orbit stores with compare-and-swap. The
+  # backend sends updates only for an oauth2_device connection's own slot.
   secrets:
     - name: conn_01
       description: Secret for the connection assigned slot conn_01 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_02
       description: Secret for the connection assigned slot conn_02 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_03
       description: Secret for the connection assigned slot conn_03 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_04
       description: Secret for the connection assigned slot conn_04 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_05
       description: Secret for the connection assigned slot conn_05 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_06
       description: Secret for the connection assigned slot conn_06 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_07
       description: Secret for the connection assigned slot conn_07 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_08
       description: Secret for the connection assigned slot conn_08 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_09
       description: Secret for the connection assigned slot conn_09 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_10
       description: Secret for the connection assigned slot conn_10 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_11
       description: Secret for the connection assigned slot conn_11 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_12
       description: Secret for the connection assigned slot conn_12 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_13
       description: Secret for the connection assigned slot conn_13 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_14
       description: Secret for the connection assigned slot conn_14 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_15
       description: Secret for the connection assigned slot conn_15 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
     - name: conn_16
       description: Secret for the connection assigned slot conn_16 (gateway.connection-list names it).
-      rotatable: false
+      rotatable: true
 
   tools:
     - name: http-get
@@ -110,7 +114,8 @@ spec:
         type, a fixed set of headers and the body (JSON parsed, text as text,
         anything else as size and SHA-256), redacted, cut at the connection's
         max_response_bytes. Only Accept, Accept-Language, If-None-Match,
-        If-Modified-Since and Range may be set. Use this instead of curl.
+        If-Modified-Since and Range may be set. A secret_path connection
+        names one resource: leave path empty. Use this instead of curl.
       execution_kind: read_only
       mcp_scope: workspace
       input_schema: { $ref: schemas/http-get.request.json }
@@ -157,6 +162,28 @@ spec:
       mcp_scope: none
       input_schema: { $ref: schemas/connection-put.request.json }
       output_schema: { $ref: schemas/connection-put.response.json }
+
+    - name: oauth-device-start
+      description: >-
+        Start signing an oauth2_device connection in (the OAuth device-code
+        flow). Returns the user code and the address where the user enters
+        it; the device code stays in plugin state. Called by the app's
+        Settings, never by an agent.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/oauth-device-start.request.json }
+      output_schema: { $ref: schemas/oauth-device-start.response.json }
+
+    - name: oauth-device-poll
+      description: >-
+        Check once whether the user approved the sign-in oauth-device-start
+        began: pending, connected, denied or expired. On approval the refresh
+        token goes to the connection's slot through Orbit and is never
+        returned. Called by the app's Settings, never by an agent.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/oauth-device-poll.request.json }
+      output_schema: { $ref: schemas/oauth-device-poll.response.json }
 
     - name: audit-list
       description: >-

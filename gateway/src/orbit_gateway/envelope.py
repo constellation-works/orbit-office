@@ -7,6 +7,12 @@
 The answer is `{"ok": true, "output": {...}}` or
 `{"ok": false, "error": {"code", "message", "retryable", "detail"?}}`, always
 redacted first. Identity and secrets come from `context`, never from `input`.
+
+Beside either, `"secret_updates": {"<slot>": {"value", "expected_version"}}`
+asks Orbit to store a new value in a `rotatable` slot with compare-and-swap
+before it returns the result: an `oauth2_device` connection's rotated or
+newly signed-in refresh token. Orbit applies it whether `ok` is true or
+false, and masks the value in what it returns.
 """
 
 from __future__ import annotations
@@ -48,6 +54,10 @@ class Call:
     input: dict[str, Any]
     context: dict[str, Any]
     environ: Mapping[str, str] = field(default_factory=dict)
+    # Values the call learned (an access token, a device code): masked in the answer.
+    learned: list[str] = field(default_factory=list)
+    # Slot writes for Orbit to apply (`secret_updates` in the answer).
+    secret_updates: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def verb(self) -> str:
@@ -63,6 +73,21 @@ class Call:
                 if isinstance(name, str) and isinstance(value, str) and value:
                     out[name] = value
         return out
+
+    def secret_version(self, name: str) -> str | None:
+        """The version a set slot was delivered at; None when it is unset."""
+        raw = self.context.get("secrets")
+        entry = raw.get(name) if isinstance(raw, dict) else None
+        if isinstance(entry, dict) and isinstance(entry.get("value"), str) and entry["value"]:
+            version = entry.get("version")
+            return version if isinstance(version, str) else None
+        return None
+
+    def update_secret(self, name: str, value: str) -> None:
+        """Ask Orbit to store `value` in slot `name`, replacing only the version
+        this call was delivered (or only while the slot is unset)."""
+        self.learned.append(value)
+        self.secret_updates[name] = {"value": value, "expected_version": self.secret_version(name)}
 
     def caller(self) -> dict[str, Any]:
         """Who is calling, from the call context (never from input)."""
@@ -110,9 +135,21 @@ def parse(raw: str, environ: Mapping[str, str]) -> Call:
     return Call(tool=tool, input=payload, context=context, environ=environ)
 
 
-def emit(stream: TextIO, answer: dict[str, Any], redactor: Redactor) -> None:
-    """Write one answer, redacted. The only writer of results and errors."""
-    stream.write(json.dumps(redactor.value(answer), ensure_ascii=False, sort_keys=True))
+def emit(
+    stream: TextIO,
+    answer: dict[str, Any],
+    redactor: Redactor,
+    secret_updates: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    """Write one answer, redacted. The only writer of results and errors.
+
+    `secret_updates` goes beside the redacted answer as it is: its values are
+    the slot writes Orbit stores, and Orbit masks them in what it returns.
+    """
+    document = redactor.value(answer)
+    if secret_updates:
+        document["secret_updates"] = secret_updates
+    stream.write(json.dumps(document, ensure_ascii=False, sort_keys=True))
     stream.write("\n")
     stream.flush()
 
@@ -132,6 +169,7 @@ def serve(
     """
     make_redactor = redactor or redactor_for
     answer_redactor = Redactor()
+    call: Call | None = None
     try:
         call = parse(raw, environ)
         answer_redactor = make_redactor(call)
@@ -143,20 +181,28 @@ def serve(
         answer = {"ok": False, "error": error.to_json()}
     except Exception as error:  # noqa: BLE001 - reported as a tool error, never a traceback
         answer = {"ok": False, "error": {"code": "backend_error", "message": f"{type(error).__name__}: {error}", "retryable": False}}
-    emit(stream, answer, answer_redactor)
+    if call is None:
+        emit(stream, answer, answer_redactor)
+        return
+    answer_redactor.add(call.learned)
+    emit(stream, answer, answer_redactor, call.secret_updates)
 
 
 def redactor_for(call: Call) -> Redactor:
-    """The redactor for one call: every delivered slot value, and basic-auth pairs."""
+    """The redactor for one call: every delivered slot value, basic-auth pairs,
+    `secret_path` slots read as `<secret_path>`, and what the call learned."""
     # Imported here: connections reads state, and the envelope stays usable without it.
-    from .connections import basic_pairs
+    from .connections import basic_pairs, secret_path_labels
 
     secrets = call.secrets()
     try:
         pairs = basic_pairs(call, secrets)
+        labels = secret_path_labels(call, secrets)
     except GatewayError:
-        pairs = []
-    return Redactor(secrets.values(), pairs)
+        pairs, labels = [], {}
+    redactor = Redactor(secrets.values(), pairs, labels)
+    redactor.add(call.learned)
+    return redactor
 
 
 # ---------------------------------------------------------------------------

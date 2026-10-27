@@ -12,8 +12,8 @@ at run time.
   envelope), `redact` (the one redactor and its writer inventory), `state`
   (owner-only files under `{{plugin_state}}`), `audit`, `callbacks` (Orbit's
   `orbit tool run` callbacks, supervised and never retried), for the
-  gateway plugin only `connections`, `http` and `drafts`, and for the
-  cloudcli plugin only `cloud`.
+  gateway plugin only `connections`, `http`, `drafts` and `oauth`, and for
+  the cloudcli plugin only `cloud`.
 - `plugins/gateway/.orbit-plugin/` — the `gateway` plugin: `plugin.yaml`,
   `bin/backend.py` (version check, then dispatch), `schemas/`, the
   `api-requests` skill and `tests/conformance/` goldens. Exports carry the
@@ -26,8 +26,22 @@ at run time.
   `check_imports.py` (the import-direction scan `make check` runs).
 
 Tools: `gateway.http-get`, `gateway.http-draft`, `gateway.http-send` (app
-only), `gateway.connection-list`, `gateway.connection-put` (app only) and
+only), `gateway.connection-list`, `gateway.connection-put` (app only),
+`gateway.oauth-device-start` and `gateway.oauth-device-poll` (app only) and
 `gateway.audit-list`.
+
+Auth schemes: `bearer`, `basic`, `header`, `none`, `secret_path` and
+`oauth2_device`. A `secret_path` connection's `base_url` is an origin and
+its slot holds the path and query (an ICS feed's address). Requests take no
+`path`, and the URL, redirects and audit read `<secret_path>`. An
+`oauth2_device` connection names `token_url`, `device_url`, `client_id` and
+`scopes`, and its slot holds a refresh token. The app signs it in with the
+two `oauth-device-*` tools (the OAuth device-code flow). Each call exchanges
+the refresh token for an access token held in memory. A new refresh token
+(signed in, or rotated by the provider) goes back to the slot through
+`secret_updates` in the backend's answer, which Orbit stores with
+compare-and-swap, so it never appears in a tool result. A revoked one is
+`auth_expired`.
 
 `http-get` follows up to three redirects only when each target stays on the
 connection's origin and within its base path. An outside-base redirect is
@@ -90,8 +104,9 @@ orbit plugin enable gateway --grant 'fs={{plugin_state}},{{workspace}}/.orbit-ga
 
 Connections are added from the app's Settings (`gateway.connection-put`),
 which then stores the secret with
-`orbit plugin secret set gateway <slot>` (value on stdin). Agents never
-create connections or see a secret.
+`orbit plugin secret set gateway <slot>` (value on stdin), or for
+`oauth2_device` runs the sign-in. Agents never create connections or see a
+secret.
 
 `cloudcli` is optional (the install's `--with-cloudcli`), and needs `aws`
 and `gcloud` on the enabling `PATH` so Orbit records them:

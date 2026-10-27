@@ -90,6 +90,14 @@ def store_text(path: Path, text: str, redactor: Redactor) -> None:
         raise
 
 
+def remove(path: Path) -> None:
+    """Delete a state file when it exists (never a symlink's target)."""
+    if not _check(path.parent, want_dir=True) or not _check(path, want_dir=False):
+        return
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(path)
+
+
 def append_line(path: Path, line: str, redactor: Redactor) -> None:
     """Append one redacted line to an append-only file, mode 0600, under its lock."""
     ensure_dir(path.parent)

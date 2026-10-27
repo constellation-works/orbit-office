@@ -2,8 +2,9 @@
 # secrets; `secrets:` supplies fixture values per case). One `orbit plugin test`
 # run keeps {{plugin_state}} across its cases, in file order, so this file is
 # one scenario: later cases use the connection the earlier ones created.
-# Nothing here reaches a server or Orbit: every http-get, http-draft and
-# http-send case is refused before a request is sent or a task is filed.
+# Nothing here reaches a server or Orbit: every http-get, http-draft, http-send,
+# oauth-device-start and oauth-device-poll case is refused before a request is
+# sent or a task is filed.
 # Responses from a live server are covered by gateway/tests/test_http_get.py,
 # and drafts that file tasks and sends by gateway/tests/test_drafts.py.
 schemaVersion: 1
@@ -178,3 +179,97 @@ tests:
     input: {connection: never-called}
     expect:
       output: {records: [], skipped: 0}
+
+  # secret_path: the origin only, and the slot holds the path and query.
+  - name: connection_put_secret_path_takes_the_origin_only
+    tool: connection-put
+    input: {name: feed, base_url: "https://outlook.example/owa/", auth: {scheme: secret_path}}
+    expect:
+      error: {code: invalid_connection}
+
+  - name: connection_put_creates_a_secret_path_connection
+    tool: connection-put
+    input: {name: feed, base_url: "https://Outlook.example", auth: {scheme: secret_path}}
+    expect:
+      output:
+        created: true
+        released_slot: null
+        connection:
+          name: feed
+          base_url: https://outlook.example/
+          auth: {scheme: secret_path}
+          slot: conn_01
+          slot_state: unset
+          methods: [GET]
+          drafts: []
+          timeout_seconds: 20
+          max_response_bytes: 1048576
+          disabled: false
+
+  - name: http_get_refuses_a_path_on_a_secret_path_connection
+    tool: http-get
+    secrets: {conn_01: /owa/calendar/fixture-0123456789/calendar.ics}
+    input: {connection: feed, path: calendar.ics}
+    expect:
+      error: {code: path_not_allowed}
+
+  # oauth2_device: the slot holds a refresh token the device-code sign-in stores.
+  - name: connection_put_refuses_an_oauth2_device_connection_without_scopes
+    tool: connection-put
+    input:
+      name: outlook
+      base_url: https://graph.example/v1.0/
+      auth: {scheme: oauth2_device, token_url: "https://login.example/token", device_url: "https://login.example/devicecode", client_id: fixture-client}
+    expect:
+      error: {code: invalid_connection}
+
+  - name: connection_put_creates_an_oauth2_device_connection
+    tool: connection-put
+    input:
+      name: outlook
+      base_url: https://graph.example/v1.0/
+      auth:
+        scheme: oauth2_device
+        token_url: https://login.example/token
+        device_url: https://login.example/devicecode
+        client_id: fixture-client
+        scopes: [Calendars.Read, offline_access]
+    expect:
+      output:
+        created: true
+        released_slot: null
+        connection:
+          name: outlook
+          base_url: https://graph.example/v1.0/
+          auth:
+            scheme: oauth2_device
+            token_url: https://login.example/token
+            device_url: https://login.example/devicecode
+            client_id: fixture-client
+            scopes: [Calendars.Read, offline_access]
+          slot: conn_03
+          slot_state: unset
+          auth_state: signed_out
+          methods: [GET]
+          drafts: []
+          timeout_seconds: 20
+          max_response_bytes: 1048576
+          disabled: false
+
+  - name: oauth_device_start_refuses_a_bearer_connection
+    tool: oauth-device-start
+    input: {connection: acme}
+    expect:
+      error: {code: invalid_connection}
+
+  - name: oauth_device_poll_needs_a_started_sign_in
+    tool: oauth-device-poll
+    input: {connection: outlook}
+    expect:
+      error: {code: device_flow_missing}
+
+  - name: http_get_refuses_an_oauth2_device_connection_that_is_not_signed_in
+    tool: http-get
+    input: {connection: outlook, path: me/calendarView}
+    expect:
+      error: {code: secret_unset}

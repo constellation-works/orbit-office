@@ -171,18 +171,18 @@ the app:
 ```
 gateway/
   src/orbit_gateway/     shared: envelope, redact, audit, state (owner-only files), callbacks
-    connections.py  http.py  drafts.py      used by the gateway plugin only
-    cloud.py                                used by the cloudcli plugin only
+    connections.py  http.py  drafts.py  oauth.py   used by the gateway plugin only
+    cloud.py                                       used by the cloudcli plugin only
   plugins/gateway/.orbit-plugin/    plugin.yaml, bin/backend.py, schemas/, skills/, tests/conformance/
   plugins/cloudcli/.orbit-plugin/   the same shape
   tests/                 unittest, standard library only
   Makefile               test, check, export (copies src/orbit_gateway into each export's lib/)
 ```
 
-- Only `http.py` and `drafts.py` open network connections. Only `cloud.py` spawns a
+- Only `http.py`, `drafts.py` and `oauth.py` open network connections. Only `cloud.py` spawns a
   process, apart from `callbacks.py`, which runs only `orbit tool run` for the manifest's
   `orbit_tools` (supervised, bounded, never retried). The gateway backend never imports `cloud.py`, and the cloudcli backend never
-  imports `http.py` or `drafts.py`. `make -C gateway check` enforces this with an import scan.
+  imports `http.py`, `drafts.py` or `oauth.py`. `make -C gateway check` enforces this with an import scan.
 - Every writer that persists text goes through `redact.py`. Its inventory is a test.
 
 ## Integrator-owned files

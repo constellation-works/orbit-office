@@ -45,11 +45,18 @@ export interface SettingsStatus {
   agentCli: AgentCliStatus;
 }
 
+/** How a gateway connection authenticates. `secret_path`: the slot holds the path and query. `oauth2_device`: the slot holds a refresh token from a device-code sign-in. */
+export type ConnectionScheme = "bearer" | "basic" | "header" | "none" | "secret_path" | "oauth2_device";
+
 /** Gateway connection fields; credential values never belong to a tool input. */
 export interface ConnectionInput {
   name: string;
   base_url: string;
-  auth: { scheme: "bearer" | "basic" | "header" | "none"; header?: string; username?: string };
+  auth: {
+    scheme: ConnectionScheme; header?: string; username?: string;
+    /** oauth2_device only. */
+    token_url?: string; device_url?: string; client_id?: string; scopes?: string[];
+  };
   methods: string[];
   drafts: string[];
   timeout_seconds: number;
@@ -60,7 +67,15 @@ export interface ConnectionInput {
 
 /** Only the app's HTTP write accepts a secret, forwarded exclusively on stdin. */
 export interface ConnectionWrite extends ConnectionInput { secret?: string }
-export interface SettingsConnection extends ConnectionInput { slot_state: "set" | "unset" | "none" }
+export interface SettingsConnection extends ConnectionInput {
+  slot_state: "set" | "unset" | "none";
+  /** oauth2_device only: `expired` once the refresh token was refused, so the user signs in again. */
+  auth_state?: "signed_in" | "signed_out" | "expired";
+}
+/** `POST /api/settings/connections/sign-in`: what the user needs to approve a device-code sign-in. */
+export interface SignInStarted { connection: string; user_code: string; verification_uri: string; expires_in: number; interval: number }
+/** `POST /api/settings/connections/sign-in/poll`: one check; the refresh token itself never reaches HTTP. */
+export interface SignInPoll { connection: string; state: "pending" | "connected" | "denied" | "expired"; interval?: number }
 export interface SettingsConnections { connections: SettingsConnection[]; free_slots: number }
 export interface ConnectionSaved { connection: SettingsConnection; created: boolean }
 

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.oauth-device-poll request",
+  "type": "object",
+  "description": "Check once whether the user approved the sign-in.",
+  "required": [
+    "connection"
+  ],
+  "properties": {
+    "connection": {
+      "type": "string",
+      "maxLength": 48
+    }
+  },
+  "additionalProperties": false
+}

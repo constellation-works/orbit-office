@@ -1,5 +1,5 @@
 /** Closed HTTP input and projected gateway output. Never return raw tool errors. */
-import type { ApiCall, ConnectionInput, ConnectionWrite, SettingsConnection } from "@orbit-office/contracts";
+import type { ApiCall, ConnectionInput, ConnectionWrite, SettingsConnection, SignInPoll, SignInStarted } from "@orbit-office/contracts";
 
 export class SettingsError extends Error {
   constructor(
@@ -18,20 +18,37 @@ function strings(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item: unknown) => typeof item === "string");
 }
 
+const SCHEMES = ["bearer", "basic", "header", "none", "secret_path", "oauth2_device"];
+const AUTH_TEXT = ["header", "username", "token_url", "device_url", "client_id"];
+const NAME = /^[a-z][a-z0-9-]{0,47}$/;
+
+function authValid(auth: unknown): boolean {
+  return object(auth) && Object.keys(auth).every((key) => key === "scheme" || key === "scopes" || AUTH_TEXT.includes(key)) &&
+    typeof auth.scheme === "string" && SCHEMES.includes(auth.scheme) &&
+    AUTH_TEXT.every((key) => auth[key] === undefined || typeof auth[key] === "string") &&
+    (auth.scopes === undefined || strings(auth.scopes));
+}
+
 /** Validate types and unknown keys here; gateway owns connection policy validation. */
 export function connectionInput(value: unknown): ConnectionWrite {
   const keys = ["name", "base_url", "auth", "methods", "drafts", "timeout_seconds", "max_response_bytes", "disabled", "idempotency_header", "secret"];
   if (!object(value) || Object.keys(value).some((key) => !keys.includes(key)) ||
-      typeof value.name !== "string" || typeof value.base_url !== "string" ||
-      !object(value.auth) || Object.keys(value.auth).some((key) => !["scheme", "header", "username"].includes(key)) ||
-      typeof value.auth.scheme !== "string" || !["bearer", "basic", "header", "none"].includes(value.auth.scheme) ||
-      (value.auth.header !== undefined && typeof value.auth.header !== "string") ||
-      (value.auth.username !== undefined && typeof value.auth.username !== "string") ||
+      typeof value.name !== "string" || typeof value.base_url !== "string" || !authValid(value.auth) ||
       !strings(value.methods) || !strings(value.drafts) || !Number.isSafeInteger(value.timeout_seconds) ||
       !Number.isSafeInteger(value.max_response_bytes) || typeof value.disabled !== "boolean" ||
-      (value.idempotency_header !== undefined && typeof value.idempotency_header !== "string") ||
-      (value.secret !== undefined && (typeof value.secret !== "string" || value.secret.length === 0 || value.auth.scheme === "none"))) invalid();
+      (value.idempotency_header !== undefined && typeof value.idempotency_header !== "string")) invalid();
+  // An oauth2_device refresh token comes only from the sign-in, never from HTTP.
+  const scheme = (value.auth as Record<string, unknown>).scheme;
+  if (value.secret !== undefined && (typeof value.secret !== "string" || value.secret.length === 0 ||
+      scheme === "none" || scheme === "oauth2_device")) invalid();
   return value as unknown as ConnectionWrite;
+}
+
+/** `{ name }` for the sign-in routes: a connection name and nothing else. */
+export function signInInput(value: unknown): string {
+  if (!object(value) || Object.keys(value).some((key) => key !== "name") ||
+      typeof value.name !== "string" || !NAME.test(value.name)) invalid();
+  return value.name;
 }
 
 /** Tool execution failures can include arbitrary diagnostics; only known codes cross HTTP. */
@@ -41,6 +58,9 @@ export function toolData(value: unknown): Record<string, unknown> {
     const code = object(value.error) ? value.error.code : undefined;
     if (code === "invalid_connection" || code === "invalid_argument") throw new SettingsError(400, "invalid_connection");
     if (code === "no_free_slot") throw new SettingsError(409, "no_free_slot");
+    if (code === "unknown_connection") throw new SettingsError(404, "unknown_connection");
+    if (code === "device_flow_missing") throw new SettingsError(409, "sign_in_not_started");
+    if (code === "auth_failed") throw new SettingsError(502, "sign_in_failed");
     throw new SettingsError(502, "gateway_unavailable");
   }
   // Orbit's tool CLI returns the tool payload; tolerate the exec envelope as well.
@@ -54,12 +74,38 @@ export function connection(value: unknown): SettingsConnection {
   if (value.idempotency_header !== undefined) projected.idempotency_header = value.idempotency_header;
   // Project auth separately too: no accidental credential field can reach HTTP.
   if (!object(value.auth)) throw new SettingsError(502, "invalid_gateway_data");
-  projected.auth = { scheme: value.auth.scheme,
-    ...(value.auth.header === undefined ? {} : { header: value.auth.header }),
-    ...(value.auth.username === undefined ? {} : { username: value.auth.username }) };
+  const auth: Record<string, unknown> = { scheme: value.auth.scheme };
+  for (const key of [...AUTH_TEXT, "scopes"]) if (value.auth[key] !== undefined) auth[key] = value.auth[key];
+  projected.auth = auth;
   let config: ConnectionInput;
   try { config = connectionInput(projected); } catch { throw new SettingsError(502, "invalid_gateway_data"); }
-  return { ...config, slot_state: value.slot_state as SettingsConnection["slot_state"] };
+  const saved: SettingsConnection = { ...config, slot_state: value.slot_state as SettingsConnection["slot_state"] };
+  if (value.auth_state !== undefined) {
+    if (typeof value.auth_state !== "string" || !["signed_in", "signed_out", "expired"].includes(value.auth_state)) throw new SettingsError(502, "invalid_gateway_data");
+    saved.auth_state = value.auth_state as NonNullable<SettingsConnection["auth_state"]>;
+  }
+  return saved;
+}
+
+function webAddress(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try { return ["https:", "http:"].includes(new URL(value).protocol); } catch { return false; }
+}
+
+/** Only what the user needs to approve; a device code would never pass this projection. */
+export function signInStarted(value: unknown, name: string): SignInStarted {
+  if (!object(value) || value.connection !== name || typeof value.user_code !== "string" || value.user_code.length === 0 ||
+      value.user_code.length > 64 || !webAddress(value.verification_uri) ||
+      !Number.isSafeInteger(value.expires_in) || !Number.isSafeInteger(value.interval)) throw new SettingsError(502, "invalid_gateway_data");
+  return { connection: name, user_code: value.user_code, verification_uri: value.verification_uri,
+    expires_in: value.expires_in as number, interval: value.interval as number };
+}
+
+export function signInPoll(value: unknown, name: string): SignInPoll {
+  if (!object(value) || value.connection !== name || typeof value.state !== "string" ||
+      !["pending", "connected", "denied", "expired"].includes(value.state) ||
+      (value.interval !== undefined && !Number.isSafeInteger(value.interval))) throw new SettingsError(502, "invalid_gateway_data");
+  return { connection: name, state: value.state as SignInPoll["state"], ...(value.interval === undefined ? {} : { interval: value.interval as number }) };
 }
 
 export function count(value: unknown): number {
