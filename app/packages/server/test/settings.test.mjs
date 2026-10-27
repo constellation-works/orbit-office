@@ -516,3 +516,207 @@ test("GET /api/settings reports the agent CLI connection", async (t) => {
     assert.deepEqual(JSON.parse(res.body), { agentCli: { cli: "Muse Code", connected: false } });
   });
 });
+
+const privateRoute = {
+  endpoint: "https://muse.internal.example/v1",
+  model: "muse-spark-open",
+  kind: "company",
+  label: "Acme's server",
+};
+const audioNote = "this server doesn't take audio, so private videos can't be transcribed";
+
+function invocationsOf(state) {
+  return readFile(join(state, "invocations.log"), "utf8").then((text) => text.trim().split("\n").filter(Boolean).map(JSON.parse));
+}
+
+test("private route refuses invalid bodies and foreign origins before any Orbit call", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  for (const body of [
+    { ...privateRoute, surprise: "no" },
+    { ...privateRoute, token: "   " },
+    { ...privateRoute, token: "" },
+    { ...privateRoute, kind: "cloud" },
+    { ...privateRoute, model: "has space" },
+    { ...privateRoute, label: "   " },
+    { ...privateRoute, endpoint: "https://muse.example/\n" },
+  ]) assert.equal((await server.call("/api/settings/private-route", body)).status, 400);
+  assert.equal((await server.call("/api/settings/private-route", privateRoute, { origin: "https://other.example" })).status, 403);
+  await assert.rejects(readFile(join(server.fake.state, "invocations.log")), { code: "ENOENT" });
+});
+
+test("private route sends the token only on stdin, then checks once", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  const token = "private-route-token-$()\nline-two";
+  const before = await server.call("/api/settings/private-route");
+  assert.equal(before.status, 200);
+  assert.deepEqual(JSON.parse(before.body), { route: null, token: "unset" });
+  assert.ok(!before.body.includes(".office"));
+  const saved = await server.call("/api/settings/private-route", { ...privateRoute, token });
+  assert.equal(saved.status, 200);
+  const body = JSON.parse(saved.body);
+  assert.deepEqual(body.route, privateRoute);
+  assert.equal(body.check.routable, true);
+  assert.deepEqual(body.check.capabilities, ["text", "image"]);
+  assert.equal(body.check.checks.find((line) => line.capability === "audio").note, audioNote);
+  assert.equal(body.check.checks.find((line) => line.capability === "audio").accepted, false);
+  assert.equal("token" in body, false);
+  assert.ok(!saved.body.includes(".office"));
+  assert.ok(!saved.body.includes(token));
+  const stdin = (await readFile(join(server.fake.state, "secret-stdin.log"), "utf8")).trim().split("\n").map(JSON.parse);
+  assert.deepEqual(stdin, [{ slot: "open_weights_token", value: token }]);
+  const invocations = await invocationsOf(server.fake.state);
+  assert.deepEqual(invocations.filter((args) => args[0] === "plugin"), [["plugin", "secret", "set", "office", "open_weights_token"]]);
+  const names = invocations.map((args) => args[0] === "plugin" ? `secret:${args[4]}` : args[2]);
+  const start = names.indexOf("office.config-set");
+  assert.deepEqual(names.slice(start, start + 3), ["office.config-set", "secret:open_weights_token", "office.private-route-check"]);
+  const configArgs = invocations.find((args) => args[2] === "office.config-set");
+  assert.deepEqual(JSON.parse(configArgs[configArgs.indexOf("--input") + 1]), { key: "open_weights", value: privateRoute });
+  const argvText = await readFile(join(server.fake.state, "invocations.log"), "utf8");
+  assert.ok(!argvText.includes("private-route-token"));
+  for (const line of server.logs) assert.ok(!line.includes("private-route-token"), "server logs exclude the token");
+  for (const response of server.responses) assert.ok(!JSON.stringify(response).includes("private-route-token"), "HTTP responses exclude the token");
+  const after = await server.call("/api/settings/private-route");
+  assert.equal(after.status, 200);
+  assert.equal(JSON.parse(after.body).token, "set");
+  assert.equal(JSON.parse(after.body).route.endpoint, privateRoute.endpoint);
+  assert.equal(JSON.parse(after.body).route.capabilities.includes("text"), true);
+  assert.ok(!after.body.includes(token));
+  const connections = await server.call("/api/settings/connections");
+  assert.equal(JSON.parse(connections.body).connections[0].idempotency_header, "Idempotency-Key");
+});
+
+test("private route without a token writes the block and checks exactly once", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  const saved = await server.call("/api/settings/private-route", privateRoute);
+  assert.equal(saved.status, 200);
+  const invocations = await invocationsOf(server.fake.state);
+  assert.deepEqual(invocations.map((args) => args[0] === "plugin" ? args : args[2]), ["office.config-set", "office.private-route-check"]);
+  await assert.rejects(readFile(join(server.fake.state, "secret-stdin.log")), { code: "ENOENT" });
+});
+
+test("a private-route token failure does not check and does not leak the token", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t, { FAKE_SECRET_FAIL: "1" });
+  const token = "private-route-token-on-failure";
+  const saved = await server.call("/api/settings/private-route", { ...privateRoute, token });
+  assert.equal(saved.status, 502);
+  assert.deepEqual(JSON.parse(saved.body), { error: "secret_not_saved", route_saved: true });
+  const invocations = await invocationsOf(server.fake.state);
+  assert.deepEqual(invocations.map((args) => args[0] === "plugin" ? "secret" : args[2]), ["office.config-set", "secret"]);
+  assert.deepEqual(invocations[1], ["plugin", "secret", "set", "office", "open_weights_token"]);
+  for (const line of server.logs) assert.ok(!line.includes(token));
+  for (const response of server.responses) assert.ok(!JSON.stringify(response).includes(token));
+  const argvText = await readFile(join(server.fake.state, "invocations.log"), "utf8");
+  assert.ok(!argvText.includes(token));
+});
+
+test("a private-route check failure is not forwarded", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  await writeFile(join(server.fake.state, "office.json"), JSON.stringify({
+    fail: { "office.private-route-check": "fixture-diagnostic-do-not-forward" },
+  }));
+  const saved = await server.call("/api/settings/private-route", privateRoute);
+  assert.equal(saved.status, 502);
+  assert.deepEqual(JSON.parse(saved.body), { error: "private_route_check_failed", route_saved: true });
+  assert.ok(!saved.body.includes("fixture-diagnostic-do-not-forward"));
+  const invocations = await invocationsOf(server.fake.state);
+  assert.deepEqual(invocations.map((args) => args[2]), ["office.config-set", "office.private-route-check"]);
+});
+
+test("a private-route check that echoes the token is refused", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  const token = "echo-this-token-9f3a";
+  await writeFile(join(server.fake.state, "office.json"), JSON.stringify({
+    tools: { "office.private-route-check": { ok: true, output: {
+      label: "Acme's server", kind: "company", model: "muse-spark-open", routable: true,
+      capabilities: ["text"], checks: [{ capability: "text", accepted: false, elapsed_ms: 1, error: "model_request_rejected", note: token }],
+    } } },
+  }));
+  const saved = await server.call("/api/settings/private-route", { ...privateRoute, token });
+  assert.equal(saved.status, 502);
+  assert.deepEqual(JSON.parse(saved.body), { error: "private_route_check_failed", route_saved: true });
+  assert.ok(!saved.body.includes(token));
+  for (const line of server.logs) assert.ok(!line.includes(token));
+  const argvText = await readFile(join(server.fake.state, "invocations.log"), "utf8");
+  assert.ok(!argvText.includes(token));
+  const stdin = JSON.parse((await readFile(join(server.fake.state, "secret-stdin.log"), "utf8")).trim());
+  assert.equal(stdin.value, token);
+});
+
+test("private route status drops an unexpected field instead of returning it", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  const token = "hostile-status-token";
+  await writeFile(join(server.fake.state, "office.json"), JSON.stringify({
+    tools: { "office.status": { ok: true, output: {
+      version: "0.1.0",
+      secrets: { meta_api_key: "unset", open_weights_token: "unset" },
+      open_weights: { endpoint: privateRoute.endpoint, model: privateRoute.model, kind: privateRoute.kind, label: privateRoute.label, capabilities: null, verified_at: null, token },
+    } } },
+  }));
+  const response = await server.call("/api/settings/private-route");
+  assert.equal(response.status, 502);
+  assert.equal(JSON.parse(response.body).error, "private_route_unavailable");
+  assert.ok(!response.body.includes(token));
+  assert.ok(!response.body.includes(".office"));
+});
+
+test("a private-route save shares the settings write lock", { timeout: 5000 }, async (t) => {
+  let entered;
+  const gate = new Promise((resolve) => { entered = resolve; });
+  let release;
+  const waiting = new Promise((resolve) => { release = resolve; });
+  const calls = [];
+  const feature = createSettingsFeature({ async callTool(name) {
+    calls.push(name);
+    if (name === "office.config-set") return { ok: true, output: { path: ".office/config.yaml", key: "open_weights" } };
+    if (name === "office.private-route-check") { entered(); await waiting; return { ok: false, error: { code: "fixture_failed", message: "do-not-forward" } }; }
+    if (name === "gateway.connection-put") return { connection: { ...connectionInput, slot: "conn_03", slot_state: "unset" }, created: true, released_slot: null };
+    throw new Error(name);
+  } });
+  const server = createServer((req, res) => {
+    if (!checkLoopbackRequest(req).ok) { res.writeHead(403); res.end(); return; }
+    const route = feature.routes.find((item) => item.method === req.method && item.path === req.url);
+    if (route) void route.handle(req, res); else { res.writeHead(404); res.end(); }
+  });
+  t.after(() => new Promise((resolve) => { release(); server.closeAllConnections(); server.close(resolve); }));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  const headers = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/json" };
+  const first = request(port, { method: "POST", path: "/api/settings/private-route", headers, body: JSON.stringify(privateRoute) });
+  try {
+    await gate;
+    const second = await request(port, { method: "POST", path: "/api/settings/connections/put", headers, body: JSON.stringify(connectionInput) });
+    assert.equal(second.status, 503);
+    assert.equal(JSON.parse(second.body).error, "settings_busy");
+    assert.deepEqual(calls, ["office.config-set", "office.private-route-check"]);
+  } finally { release(); }
+  const saved = await first;
+  assert.equal(saved.status, 502);
+  assert.deepEqual(JSON.parse(saved.body), { error: "private_route_check_failed", route_saved: true });
+  assert.ok(!saved.body.includes("do-not-forward"));
+});
+
+test("a refused private-route config-set does not write the token or check", { timeout: 5000 }, async (t) => {
+  const calls = [];
+  const feature = createSettingsFeature({ async callTool(name) {
+    calls.push(name);
+    return { ok: false, error: { code: "invalid_library_setting", message: "open_weights.endpoint https://secret.example/token" } };
+  } });
+  const server = createServer((req, res) => {
+    if (!checkLoopbackRequest(req).ok) { res.writeHead(403); res.end(); return; }
+    const route = feature.routes.find((item) => item.method === req.method && item.path === req.url);
+    if (route) void route.handle(req, res); else { res.writeHead(404); res.end(); }
+  });
+  t.after(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  const response = await request(port, {
+    method: "POST", path: "/api/settings/private-route",
+    headers: { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/json" },
+    body: JSON.stringify({ ...privateRoute, token: "not-written" }),
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(JSON.parse(response.body), { error: "invalid_input" });
+  assert.ok(!response.body.includes("secret.example"));
+  assert.ok(!response.body.includes("not-written"));
+  assert.deepEqual(calls, ["office.config-set"]);
+});

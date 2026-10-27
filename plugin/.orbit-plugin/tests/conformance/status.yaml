@@ -23,6 +23,7 @@ tests:
             artifact: 0
           pages_off_template: 0
           template_invalid: []
+        open_weights: null
   - name: status_refuses_unknown_input
     tool: status
     input: {"verbose": true}

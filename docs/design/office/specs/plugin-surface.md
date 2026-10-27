@@ -47,7 +47,7 @@ Source: spec §12. The one-call envelope is
 | `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, page templates (no pages), index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
 | `office.config-set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
 | `office.reindex` | mutating | **none** | Rebuild the SQLite index from the Library |
-| `office.status` | read_only | workspace | Library and index health (also a panel) |
+| `office.status` | read_only | workspace | Library and index health, and the private endpoint as `open_weights` or null (also a panel) |
 
 Rules:
 
@@ -208,7 +208,10 @@ with no credentials, query or fragment, and never `api.meta.ai`), `model`, `kind
 alone, an unknown kind, an unknown block key or a refused endpoint fails with
 `invalid_library_setting` naming the dotted key (`open_weights.kind`,
 `open_weights.capabilities`, …); the raw URL is not echoed. No timestamp is
-synthesized by defaults.
+synthesized by defaults. `office.status` reports that block as `open_weights`
+(or null when none is configured). `capabilities` and `verified_at` are null
+until a check records them. The token is not in the object;
+`secrets.open_weights_token` is `set` or `unset`.
 These are Library policy settings, independent of plugin installation config.
 
 ### Updating one Library setting

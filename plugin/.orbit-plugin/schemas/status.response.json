@@ -44,9 +44,38 @@
       },
       "required": ["initialized", "documents", "documents_by_kind", "pages_off_template", "template_invalid"],
       "additionalProperties": false
+    },
+    "open_weights": {
+      "description": "The configured private endpoint, or null when none is configured. The token is never included; see secrets.open_weights_token.",
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "endpoint": { "type": "string", "description": "OpenAI-compatible base URL the user chose." },
+            "model": { "type": "string", "description": "The model name as that server names it." },
+            "kind": { "type": "string", "enum": ["company", "provider", "own_hardware"] },
+            "label": { "type": "string", "description": "Shown wherever the route is used." },
+            "capabilities": {
+              "description": "What the last check accepted, in check order, or null until a check has recorded them.",
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "array",
+                  "items": { "type": "string", "enum": ["text", "image", "audio"] },
+                  "uniqueItems": true
+                }
+              ]
+            },
+            "verified_at": { "type": ["string", "null"], "description": "When the last check ran (RFC 3339), or null until then." }
+          },
+          "required": ["endpoint", "model", "kind", "label", "capabilities", "verified_at"],
+          "additionalProperties": false
+        }
+      ]
     }
   },
-  "required": ["version", "secrets", "library"],
+  "required": ["version", "secrets", "library", "open_weights"],
   "additionalProperties": false,
   "$defs": {
     "presence": { "type": "string", "enum": ["set", "unset"] }

@@ -28,5 +28,10 @@ export const style = `
 .settings .api-call h3 { font-size:1rem; overflow-wrap:anywhere; margin:12px 0; }
 .settings .api-call p { margin:6px 0 0; }
 .settings .settings-cli { margin-top:40px; padding-top:20px; border-top:1px solid #dce5df; }
+.settings .settings-honest, .settings .settings-destination, .settings .settings-preview { margin:12px 0; }
+.settings .capability-notes { margin:16px 0; padding-left:1.2rem; }
+.settings .capability-notes li { margin:8px 0; }
+.settings .settings-attribution { font-weight:650; margin-top:20px; }
+.settings .settings-field input.settings-url { overflow-wrap:anywhere; }
 @media(max-width:600px) { .settings-fields { grid-template-columns:1fr; } .settings-form { padding:20px; } .settings .settings-heading { align-items:flex-start; flex-direction:column; } }
 `;

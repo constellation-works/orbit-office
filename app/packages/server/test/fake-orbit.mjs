@@ -38,6 +38,12 @@ async function main() {
       process.stderr.write(value);
       if (process.env.FAKE_SECRET_FAIL === "1") process.exitCode = 3;
       else {
+        if (args[3] === "office" && args[4] === "open_weights_token") {
+          let office = {};
+          try { office = JSON.parse(readFileSync(join(state, "office.json"), "utf8")); } catch {}
+          office.token = "set";
+          writeFileSync(join(state, "office.json"), JSON.stringify(office));
+        }
         try {
           const fixtures = JSON.parse(readFileSync(join(state, "gateway.json"), "utf8"));
           for (const item of fixtures["gateway.connection-list"].connections) {
@@ -96,7 +102,81 @@ async function main() {
         }
         return;
       }
-      process.stdout.write(JSON.stringify({ ok: true, tool, input }) + "\\n");
+            if (tool.startsWith("office.")) {
+        let office = {};
+        try { office = JSON.parse(readFileSync(join(state, "office.json"), "utf8")); } catch {}
+        const failed = office.fail && typeof office.fail[tool] === "string" ? office.fail[tool] : "";
+        if (failed) {
+          process.stdout.write(JSON.stringify({ ok: false, error: { code: "fixture_failed", message: failed, retryable: false } }));
+          return;
+        }
+        if (office.tools && Object.prototype.hasOwnProperty.call(office.tools, tool)) {
+          process.stdout.write(JSON.stringify(office.tools[tool]));
+          return;
+        }
+        if (tool === "office.config-set") {
+          office.blocks = office.blocks || {};
+          if (input.value === null) delete office.blocks[input.key];
+          else office.blocks[input.key] = input.value;
+          writeFileSync(join(state, "office.json"), JSON.stringify(office));
+          process.stdout.write(JSON.stringify({ ok: true, output: { path: ".office/config.yaml", key: input.key } }));
+          return;
+        }
+        if (tool === "office.private-route-check") {
+          const block = (office.blocks && office.blocks.open_weights) || {};
+          const label = block.label || "Acme";
+          const kind = block.kind || "company";
+          const model = block.model || "muse";
+          const output = {
+            path: ".office/config.yaml",
+            label: label,
+            kind: kind,
+            route: "Private: " + label,
+            model: model,
+            reported_model: model,
+            capabilities: ["text", "image"],
+            routable: true,
+            checks: [
+              { capability: "text", accepted: true, elapsed_ms: 1, error: null, note: null },
+              { capability: "image", accepted: true, elapsed_ms: 1, error: null, note: null },
+              { capability: "audio", accepted: false, elapsed_ms: 1, error: "unsupported", note: "this server doesn't take audio, so private videos can't be transcribed" },
+            ],
+          };
+          office.blocks = office.blocks || {};
+          office.blocks.open_weights = Object.assign({}, block, { capabilities: output.capabilities, verified_at: "2026-10-26T00:00:00Z" });
+          writeFileSync(join(state, "office.json"), JSON.stringify(office));
+          process.stdout.write(JSON.stringify({ ok: true, output: output }));
+          return;
+        }
+        if (tool === "office.status") {
+          const block = office.blocks && office.blocks.open_weights;
+          let openWeights = null;
+          if (block) {
+            openWeights = {
+              endpoint: block.endpoint,
+              model: block.model,
+              kind: block.kind,
+              label: block.label,
+              capabilities: Object.prototype.hasOwnProperty.call(block, "capabilities") ? block.capabilities : null,
+              verified_at: Object.prototype.hasOwnProperty.call(block, "verified_at") ? block.verified_at : null,
+            };
+          }
+          process.stdout.write(JSON.stringify({ ok: true, output: {
+            version: "0.1.0",
+            secrets: { meta_api_key: "unset", open_weights_token: office.token || "unset" },
+            library: {
+              initialized: openWeights !== null,
+              documents: 0,
+              documents_by_kind: { source: 0, domain: 0, runbook: 0, artifact: 0 },
+              pages_off_template: 0,
+              template_invalid: [],
+            },
+            open_weights: openWeights,
+          }}));
+          return;
+        }
+      }
+process.stdout.write(JSON.stringify({ ok: true, tool, input }) + "\\n");
     } finally {
       appendFileSync(join(state, "events.log"), "E\\n");
     }

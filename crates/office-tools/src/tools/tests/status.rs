@@ -46,6 +46,7 @@ fn status_reports_library_health_and_counts_by_kind() {
     assert_eq!(output["library"]["documents_by_kind"]["artifact"], json!(0));
     assert_eq!(output["library"]["pages_off_template"], json!(0));
     assert_eq!(output["library"]["template_invalid"], json!([]));
+    assert_eq!(output["open_weights"], json!(null));
 }
 
 #[test]
@@ -101,6 +102,7 @@ fn status_reports_an_uninitialized_library_without_refusing() {
     assert_eq!(output["library"]["documents"], json!(0));
     assert_eq!(output["library"]["pages_off_template"], json!(0));
     assert_eq!(output["library"]["template_invalid"], json!([]));
+    assert_eq!(output["open_weights"], json!(null));
 }
 
 /// A Library whose health read is refused because a write is pending.
@@ -162,6 +164,7 @@ fn status_reports_an_unavailable_library_adapter_as_uninitialized_without_refusi
     assert_eq!(output["library"]["initialized"], json!(false));
     assert_eq!(output["library"]["documents"], json!(0));
     assert_eq!(output["library"]["template_invalid"], json!([]));
+    assert_eq!(output["open_weights"], json!(null));
 }
 
 #[test]
@@ -183,4 +186,97 @@ fn status_reports_the_private_route_token_and_never_the_retired_name() {
         json!({"meta_api_key": "unset", "open_weights_token": "set"})
     );
     assert!(!output.to_string().contains("do-not-echo-this"));
+    assert_eq!(output["open_weights"], json!(null));
+}
+
+#[test]
+fn status_reports_a_configured_private_endpoint_and_never_its_token() {
+    let input = Map::new();
+    let mut context = Map::new();
+    context.insert(
+        "secrets".to_string(),
+        json!({ "open_weights_token": "do-not-echo-this" }),
+    );
+    let mut library = office_testkit::fakes::FakeLibrary::initialized();
+    library.settings = office_core::domain::settings::Settings {
+        open_weights: Some(office_core::domain::settings::OpenWeights {
+            endpoint: "https://muse.internal.example/v1".into(),
+            model: "muse".into(),
+            kind: office_core::domain::endpoint::EndpointKind::Provider,
+            label: "Hosted".into(),
+            capabilities: Some(vec![
+                office_core::domain::endpoint::Capability::Text,
+                office_core::domain::endpoint::Capability::Image,
+            ]),
+            verified_at: Some("2026-10-26T00:00:00Z".into()),
+        }),
+        ..office_core::domain::settings::Settings::default()
+    };
+    let ports = office_core::ports::Ports {
+        library: Box::new(library),
+        models: Box::new(office_testkit::fakes::FakeModels::new()),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
+        clock: Box::new(office_testkit::fakes::FakeClock(
+            std::time::SystemTime::UNIX_EPOCH,
+        )),
+    };
+    let output = run(&Call {
+        ports: &ports,
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(
+        output["open_weights"],
+        json!({
+            "endpoint": "https://muse.internal.example/v1",
+            "model": "muse",
+            "kind": "provider",
+            "label": "Hosted",
+            "capabilities": ["text", "image"],
+            "verified_at": "2026-10-26T00:00:00Z",
+        })
+    );
+    assert_eq!(output["secrets"]["open_weights_token"], json!("set"));
+    assert!(!output.to_string().contains("do-not-echo-this"));
+}
+
+/// Health says the Library is initialized, but reading settings is refused.
+struct BrokenSettings;
+
+impl office_core::ports::Library for BrokenSettings {
+    fn health(&self) -> office_core::Result<office_core::ports::LibraryHealth> {
+        Ok(office_core::ports::LibraryHealth {
+            initialized: true,
+            ..office_core::ports::LibraryHealth::default()
+        })
+    }
+
+    fn settings(&self) -> office_core::Result<office_core::domain::settings::Settings> {
+        Err(office_core::Error::Library {
+            code: "invalid_library_setting",
+            message: "open_weights.endpoint".to_string(),
+        })
+    }
+}
+
+#[test]
+fn status_returns_a_settings_refusal_instead_of_a_missing_endpoint() {
+    let input = Map::new();
+    let context = Map::new();
+    let ports = office_core::ports::Ports {
+        library: Box::new(BrokenSettings),
+        models: Box::new(office_testkit::fakes::FakeModels::new()),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
+        clock: Box::new(office_testkit::fakes::FakeClock(
+            std::time::SystemTime::UNIX_EPOCH,
+        )),
+    };
+    let error = run(&Call {
+        ports: &ports,
+        input: &input,
+        context: &context,
+    })
+    .expect_err("invalid settings are not reported as no endpoint");
+    assert_eq!(error.code(), "invalid_library_setting");
 }

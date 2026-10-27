@@ -1,9 +1,10 @@
 /** Settings sections. Navigation registration belongs to the integrator. */
 import type { ConnectionWrite, SettingsApiCalls, SettingsConnection } from "@orbit-office/contracts";
-import { ApiError, getApiCalls, getConnections, getSettings, putConnection } from "../../api/client.js";
+import { ApiError, getApiCalls, getConnections, getPrivateRoute, getSettings, putConnection } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
-import { card, emptyState, errorState, pill } from "../../ui/index.js";
+import { PRIVATE_ROUTE_EVENT, card, emptyState, errorState, pill } from "../../ui/index.js";
 import { connectionEditor } from "./editor.js";
+import { mountPrivateRoute } from "./private.js";
 import { style } from "./style.js";
 
 function text<K extends keyof HTMLElementTagNameMap>(tag: K, content: string): HTMLElementTagNameMap[K] {
@@ -37,14 +38,21 @@ async function render(root: HTMLElement): Promise<void> {
   let busy = false;
   const alive = (): boolean => root.contains(view) && view.isConnected;
   const connectionsTab = button("Connections", () => { void showConnections(); });
+  const privateTab = button("Private route", () => { void showPrivate(); });
   const callsTab = button("API calls", () => { void showCalls(); });
-  tabs.append(connectionsTab, callsTab);
-  view.append(text("h1", "Settings"), text("p", "Manage your API access and see what was called."), tabs, content, cli);
+  function setTabsDisabled(disabled: boolean): void {
+    connectionsTab.disabled = disabled;
+    privateTab.disabled = disabled;
+    callsTab.disabled = disabled;
+  }
+  tabs.append(connectionsTab, privateTab, callsTab);
+  view.append(text("h1", "Settings"), text("p", "Manage your API access, the private route, and what was called."), tabs, content, cli);
   root.replaceChildren(css, view);
 
-  function select(section: "Connections" | "API calls"): number {
+  function select(section: "Connections" | "API calls" | "Private route"): number {
     generation += 1;
     connectionsTab.setAttribute("aria-pressed", String(section === "Connections"));
+    privateTab.setAttribute("aria-pressed", String(section === "Private route"));
     callsTab.setAttribute("aria-pressed", String(section === "API calls"));
     content.setAttribute("aria-label", section); content.replaceChildren(text("p", "Loading…")); return generation;
   }
@@ -71,7 +79,7 @@ async function render(root: HTMLElement): Promise<void> {
       async function save(value: ConnectionWrite): Promise<boolean> {
         if (busy) return false;
         busy = true;
-        connectionsTab.disabled = true; callsTab.disabled = true;
+        setTabsDisabled(true);
         for (const control of list.querySelectorAll<HTMLButtonElement>("button")) control.disabled = true;
         try {
           await putConnection(value);
@@ -82,7 +90,7 @@ async function render(root: HTMLElement): Promise<void> {
           return false;
         } finally {
           delete value.secret;
-          busy = false; connectionsTab.disabled = false; callsTab.disabled = false;
+          busy = false; setTabsDisabled(false);
           for (const control of list.querySelectorAll<HTMLButtonElement>("button")) control.disabled = false;
         }
       }
@@ -102,6 +110,27 @@ async function render(root: HTMLElement): Promise<void> {
       content.replaceChildren(header, text("p", "Choose which APIs agents can read and which writes need your approval."), feedback, editor, list);
       const slots = text("p", `${data.free_slots} secret slots available.`); slots.className = "settings-meta"; content.append(slots);
     } catch { if (current(token)) failed("Connections are unavailable", () => { void showConnections(); }); }
+  }
+
+  async function showPrivate(): Promise<void> {
+    const token = select("Private route");
+    try {
+      const data = await getPrivateRoute();
+      if (!current(token)) return;
+      mountPrivateRoute(content, {
+        data,
+        busy: () => busy,
+        setBusy(value: boolean) {
+          busy = value;
+          setTabsDisabled(value);
+          for (const control of content.querySelectorAll<HTMLButtonElement>("button")) control.disabled = value;
+        },
+        alive: () => current(token),
+        onConfigured(configured: boolean) {
+          window.dispatchEvent(new CustomEvent(PRIVATE_ROUTE_EVENT, { detail: { configured } }));
+        },
+      });
+    } catch { if (current(token)) failed("The private route is unavailable", () => { void showPrivate(); }); }
   }
 
   async function showCalls(): Promise<void> {

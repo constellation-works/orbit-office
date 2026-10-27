@@ -1,8 +1,12 @@
 /** Typed access to the app server, with one error path. */
-import type { ConnectionSaved, ConnectionWrite, Health, SettingsApiCalls, SettingsConnections, SettingsStatus } from "@orbit-office/contracts";
+import type { ConnectionSaved, ConnectionWrite, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls, SettingsConnections, SettingsStatus } from "@orbit-office/contracts";
 
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly code: string) {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    readonly routeSaved = false,
+  ) {
     super(`app server answered ${status} (${code})`);
     this.name = "ApiError";
   }
@@ -26,7 +30,8 @@ async function requestJson<T>(path: string, body?: unknown): Promise<T> {
     const body: unknown = await response.json().catch(() => undefined);
     const code = typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
       ? body.error : "unknown";
-    throw new ApiError(response.status, code);
+    const routeSaved = typeof body === "object" && body !== null && "route_saved" in body && body.route_saved === true;
+    throw new ApiError(response.status, code, routeSaved);
   }
   try {
     return (await response.json()) as T;
@@ -55,4 +60,14 @@ export function putConnection(input: ConnectionWrite): Promise<ConnectionSaved> 
 
 export function getApiCalls(): Promise<SettingsApiCalls> {
   return getJson<SettingsApiCalls>("/api/settings/api-calls");
+}
+
+/** The configured private endpoint, or null. Never includes a token value. */
+export function getPrivateRoute(): Promise<PrivateRouteStatus> {
+  return getJson<PrivateRouteStatus>("/api/settings/private-route");
+}
+
+/** Save the endpoint block, then read the check. Omit `token` to leave it. */
+export function savePrivateRoute(input: PrivateRouteWrite): Promise<PrivateRouteSaved> {
+  return requestJson<PrivateRouteSaved>("/api/settings/private-route", input);
 }
