@@ -14,6 +14,9 @@
 #   6. a uv archive checksum mismatch stops before unpack
 #   7. python3 --version must print the pinned minor
 #   8. launchd, systemd and the MCP entry put tools/bin first on PATH
+#   9. a Codex MCP entry uses an inline env table; uninstall removes it
+#  10. an older Claude MCP entry gains tools/bin on PATH
+#  11. an office.init error envelope fails the step and leaves no marker
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -86,10 +89,19 @@ case "${1:-} ${2:-}" in
     "workspace list")
         if [ -n "${STUB_WORKSPACE_LIST:-}" ]; then printf '%s\n' "$STUB_WORKSPACE_LIST"; fi ;;
     "tool run")
+        # Replies with the office response envelope. STUB_INIT_MODE picks
+        # the case: ok (default), already (ok, already_initialized) or error.
         if [ "${3:-}" = "office.init" ]; then
-            mkdir -p library/.office library/.git
-            printf 'config\n' > library/.office/config.yaml
-            printf '{"already_initialized":false,"created":[]}\n'
+            case "${STUB_INIT_MODE:-ok}" in
+                error)
+                    printf '%s\n' '{"ok":false,"error":{"code":"library_dir_outside_workspace","message":"library_dir is outside the workspace","retryable":false}}' ;;
+                already)
+                    printf '{"ok":true,"output":{"already_initialized":true,"created":[]}}\n' ;;
+                *)
+                    mkdir -p library/.office library/.git
+                    printf 'config\n' > library/.office/config.yaml
+                    printf '{"ok":true,"output":{"already_initialized":false,"created":["library/.office/config.yaml"]}}\n' ;;
+            esac
         fi ;;
     "mcp remove"|"mcp init")
         printf 'mcp ok\n' ;;
@@ -117,11 +129,10 @@ case " $* " in
             printf '// stub build\n' > "$_prefix/packages/server/dist/main.js"
         fi ;;
     *" install -g "*)
-        # Simulate installing Orbit: drop a stub orbit next to npm.
+        # Simulate installing Orbit: drop the orbit stub next to npm.
         _bindir=$(dirname -- "$0")
         if [ ! -f "$_bindir/orbit" ]; then
-            printf '#!/bin/sh\nprintf "orbit %s\\n" "${STUB_ORBIT_VERSION:-0.34.0}"\n' \
-                > "$_bindir/orbit"
+            cp "${STUB_ORBIT_SRC:?}" "$_bindir/orbit"
             chmod +x "$_bindir/orbit"
         fi ;;
     *) ;;
@@ -244,6 +255,8 @@ run_install() { # run_install <home> <extra env...> -- <args...>
         STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" \
         STUB_UV_ARCHIVE="$FIXTURE" \
         STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
+        STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" \
+        STUB_ORBIT_SRC="$BIN/orbit" \
         ORBIT_OFFICE_OS=linux \
         $_uv_env $_py_env $_envs \
         sh "$INSTALL_SH" --yes "$@" < /dev/null
@@ -608,5 +621,35 @@ ok "claude repair second run exits 0"
 SNAP_REPAIR2="$ROOT/snap-repair2.txt"
 snapshot "$HOME10" > "$SNAP_REPAIR2"
 check "repaired MCP entry stays unchanged" cmp -s "$SNAP_REPAIR" "$SNAP_REPAIR2"
+
+# ---------------------------------------------------------------------------
+# 11. An office.init error envelope fails the step and leaves no marker
+# ---------------------------------------------------------------------------
+
+HOME11="$ROOT/home11"; mkdir -p "$HOME11"
+STATE11="$HOME11/.local/share/orbit-office/install-state"
+OUT_INIT="$ROOT/out-init.txt"
+if STUB_INIT_MODE=error run_install "$HOME11" -- > "$OUT_INIT" 2>&1; then
+    fail "office.init error envelope stops the install"
+else
+    ok "office.init error envelope stops the install"
+fi
+check "office.init error names its code" grep -F "library_dir_outside_workspace" "$OUT_INIT"
+check "office.init error leaves no scaffolded marker" \
+    sh -c '! grep -qx scaffolded "$1"' sh "$STATE11"
+OUT_INIT2="$ROOT/out-init2.txt"
+run_install "$HOME11" -- > "$OUT_INIT2" 2>&1 \
+    || { cat "$OUT_INIT2" >&2; fail "next run retries office.init"; }
+ok "next run retries office.init"
+check "next run scaffolds the Library" test -f "$HOME11/orbit/library/.office/config.yaml"
+check "next run records the scaffolded marker" grep -qx scaffolded "$STATE11"
+
+HOME12="$ROOT/home12"; mkdir -p "$HOME12"
+OUT_ALREADY="$ROOT/out-already.txt"
+STUB_INIT_MODE=already run_install "$HOME12" -- > "$OUT_ALREADY" 2>&1 \
+    || { cat "$OUT_ALREADY" >&2; fail "already_initialized envelope exits 0"; }
+ok "already_initialized envelope exits 0"
+check "already_initialized envelope records the scaffolded marker" \
+    grep -qx scaffolded "$HOME12/.local/share/orbit-office/install-state"
 
 printf 'PASS: %s checks\n' "$PASS"

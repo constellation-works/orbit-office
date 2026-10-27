@@ -756,6 +756,25 @@ step_secrets() {
     set_secret "baseten_token" "${ORBIT_OFFICE_BASETEN_TOKEN:-${BASETEN_TOKEN:-}}" 1
 }
 
+# Reads an office.init response in ORBIT_OFFICE_INIT_OUT. Prints "ok" for
+# a success envelope, otherwise the error code it names. Node is a proven
+# prerequisite, so the JSON is read the same way as the MCP entry.
+init_envelope_status() {
+    ORBIT_OFFICE_INIT_OUT="$1" node <<'NODE' || printf 'unreadable'
+let env = {};
+try {
+  env = JSON.parse(process.env.ORBIT_OFFICE_INIT_OUT) || {};
+} catch (_) {
+  env = {};
+}
+if (env.ok === true) {
+  process.stdout.write("ok");
+} else {
+  process.stdout.write((env.error && env.error.code) || env.code || "unreadable");
+}
+NODE
+}
+
 step_scaffold() {
     step "7 scaffold"
     if [ -f "$WORKSPACE/library/.office/config.yaml" ] \
@@ -768,9 +787,18 @@ step_scaffold() {
             return 0
         fi
     fi
-    (cd "$WORKSPACE" && orbit tool run office.init --input '{}' >/dev/null)
-    state_mark "scaffolded"
-    say "scaffold: ran office.init ($WORKSPACE/library)"
+    # An error envelope can come back with exit 0, so the marker is set
+    # only for an ok envelope. Otherwise the step fails and the next run
+    # asks office.init again.
+    _init_rc=0
+    _init_out=$(cd "$WORKSPACE" && orbit tool run office.init --json --full --input '{}') || _init_rc=$?
+    _init_status=$(init_envelope_status "$_init_out")
+    if [ "$_init_rc" -eq 0 ] && [ "$_init_status" = "ok" ]; then
+        state_mark "scaffolded"
+        say "scaffold: ran office.init ($WORKSPACE/library)"
+        return 0
+    fi
+    die "scaffold: office.init failed (code: $_init_status, exit: $_init_rc)"
 }
 
 # Register the Orbit MCP entry with the agent CLI. Node is a proven
