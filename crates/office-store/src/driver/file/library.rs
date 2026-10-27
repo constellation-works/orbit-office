@@ -220,11 +220,13 @@ impl LibraryFs {
     }
 
     /// Scan every indexable document in the Library, in path order.
-    /// Symlinks are not followed.
+    /// Symlinks are not followed. A missing layer is empty. Any other
+    /// failure while inspecting or listing a directory is returned, so a
+    /// caller cannot rebuild the index from a partial walk.
     pub(crate) fn scan_documents(&self) -> Result<Vec<DocumentRecord>> {
         let mut files: Vec<PathBuf> = Vec::new();
         for &(layer, stems) in INDEXED_DOCUMENT_LAYERS {
-            collect_markdown(&self.root.join(layer), &mut files, stems);
+            collect_optional_layer(&self.root.join(layer), &mut files, stems)?;
         }
         files.sort();
 
@@ -327,10 +329,11 @@ impl LibraryFs {
 
     /// Knowledge Markdown, Library-relative path then full text, in path order.
     /// Templates are not included. Symlinks are not followed; a symlink leaf
-    /// that still reaches this read is refused.
+    /// that still reaches this read is refused. A missing `knowledge`
+    /// directory is an empty list. Any other enumeration failure is an error.
     pub(crate) fn read_knowledge_markdown(&self) -> Result<Vec<(String, String)>> {
         let mut files = Vec::new();
-        collect_markdown(&self.root.join("knowledge"), &mut files, &[]);
+        collect_optional_layer(&self.root.join("knowledge"), &mut files, &[])?;
         files.sort();
         let mut pages = Vec::new();
         for path in files {
@@ -359,37 +362,59 @@ impl LibraryFs {
     }
 }
 
+/// Collect `.md` files under one indexed layer.
+///
+/// A missing directory and a symlink contribute nothing: layers are optional,
+/// and a link is not followed (including a link back to an ancestor). Any
+/// other inspection or listing failure is returned. `reindex` rebuilds only
+/// after every layer walks successfully, so an unreadable directory must not
+/// look like an empty one.
+fn collect_optional_layer(dir: &Path, out: &mut Vec<PathBuf>, stems: &[&str]) -> Result<()> {
+    match std::fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => collect_markdown(dir, out, stems),
+        Err(error) => Err(Error::io("inspect Library directory", dir, error)),
+    }
+}
+
 /// Collect `.md` files under `dir`; when `stems` is non-empty, only files
 /// whose stem is in it (a source directory holds `source.md` beside its
 /// `original.*`, and `v2.md` corrections share the source's index row
 /// until versions are indexed separately).
 ///
-/// Symlinks are not followed. A symlinked directory is not opened, including
-/// a symlinked layer root, so a link outside the Library contributes nothing
-/// and a link back to an ancestor cannot recurse. Symlinked files are skipped
-/// the same way. `Path::is_dir` is not used: it follows links.
-fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>, stems: &[&str]) {
-    if std::fs::symlink_metadata(dir).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
-        return;
+/// Symlinks are not followed. A symlinked directory is not opened, so a link
+/// outside the Library contributes nothing and a link back to an ancestor
+/// cannot recurse. Symlinked files are skipped the same way. `Path::is_dir`
+/// is not used: it follows links. A directory that cannot be inspected or
+/// listed, and a directory entry that cannot be read, fail the walk. Only
+/// the layer root treats "not found" as empty; a nested path that disappears
+/// after it was listed is an incomplete scan.
+fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>, stems: &[&str]) -> Result<()> {
+    match std::fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.file_type().is_symlink() => return Ok(()),
+        Ok(_) => {}
+        Err(error) => return Err(Error::io("inspect Library directory", dir, error)),
     }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
+    let entries =
+        std::fs::read_dir(dir).map_err(|error| Error::io("list Library directory", dir, error))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| Error::io("list Library directory", dir, error))?;
+        let path = entry.path();
         // `DirEntry::file_type` does not follow symlinks.
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
+        let file_type = entry
+            .file_type()
+            .map_err(|error| Error::io("inspect Library entry", &path, error))?;
         if file_type.is_symlink() {
             continue;
         }
-        let path = entry.path();
         if file_type.is_dir() {
-            collect_markdown(&path, out, stems);
+            collect_markdown(&path, out, stems)?;
         } else if markdown_selected(&path, stems) {
             out.push(path);
         }
     }
+    Ok(())
 }
 
 /// Whether `relative` is a file `scan_documents` would collect.
