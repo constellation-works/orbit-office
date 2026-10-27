@@ -4,26 +4,45 @@
  * ids, crews, runs or raw statuses. There is no Chat screen; conversation
  * happens in the user's agent CLI.
  */
+import type { Today } from "@orbit-office/contracts";
+
 import { screenHash } from "./api/source-location.js";
-import { getPrivateRoute } from "./api/client.js";
+import { getJson, getPrivateRoute } from "./api/client.js";
+import { drawRail, setRailCount } from "./nav.js";
 import { registerServiceWorker } from "./pwa/register.js";
 import { navigableScreens, screenForHash } from "./router.js";
-import { PRIVATE_ROUTE_EVENT, applyFooter } from "./ui/index.js";
+import { PRIVATE_ROUTE_EVENT, RAIL_REFRESH_EVENT, applyFooter } from "./ui/index.js";
 
 registerServiceWorker();
 
 function drawNav(nav: HTMLElement): void {
-  nav.replaceChildren(
-    ...navigableScreens().map((screen) => {
-      const link = document.createElement("a");
-      link.href = `#${screen.id}`;
-      link.textContent = screen.title;
-      if (screen.id === screenHash(window.location.search, window.location.hash).slice(1)) {
-        link.setAttribute("aria-current", "page");
-      }
-      return link;
-    }),
-  );
+  drawRail(nav, navigableScreens(), screenHash(window.location.search, window.location.hash).slice(1));
+  void loadCounts(nav);
+}
+
+/**
+ * Counts beside the rail entries: how many routines are on, and how many
+ * cards wait on you today. A failed read hides the count; it never shows 0.
+ */
+async function loadCounts(nav: HTMLElement): Promise<void> {
+  await Promise.all([
+    getJson<unknown>("/api/routines")
+      .then((data) => {
+        const routines = typeof data === "object" && data !== null && "routines" in data ? data.routines : undefined;
+        if (!Array.isArray(routines)) throw new Error("malformed routines");
+        const on = routines.filter((routine: unknown) => typeof routine === "object" && routine !== null && "enabled" in routine && routine.enabled === true).length;
+        setRailCount(nav, "routines", `${on}/${routines.length}`);
+      })
+      .catch(() => setRailCount(nav, "routines", null)),
+    getJson<Partial<Today>>("/api/today")
+      .then(({ needs_you }) => {
+        if (!Array.isArray(needs_you)) throw new Error("malformed today");
+        // Grouped proposals share one card, so count cards, as Today does.
+        const cards = new Set(needs_you.map((item) => item.group?.key ?? `item:${item.key}`)).size;
+        setRailCount(nav, "today", cards > 0 ? String(cards) : null, true);
+      })
+      .catch(() => setRailCount(nav, "today", null)),
+  ]);
 }
 
 async function drawScreen(root: HTMLElement): Promise<void> {
@@ -47,6 +66,7 @@ if (nav !== null && root !== null) {
     drawNav(nav);
     void drawScreen(root);
   });
+  window.addEventListener(RAIL_REFRESH_EVENT, () => { void loadCounts(nav); });
 }
 if (footer !== null) {
   // A save can land while this read is in flight. The newer generation wins,

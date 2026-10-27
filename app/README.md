@@ -55,7 +55,7 @@ layout is in `../ARCHITECTURE.md` ("Web app").
 - `packages/server/` — `main.ts` (composition), `http/` (`router.ts`,
   `guard.ts`, `static.ts`, `types.ts`), `orbit/` (the `orbit tool run
   --json` client), `dispatch/` (the 30-second pass), `features/<f>/`.
-- `packages/web/` — `static/index.html`, `src/router.ts`, `src/screen.ts`,
+- `packages/web/` — `static/index.html`, `src/router.ts`, `src/nav.ts` (the rail), `src/screen.ts`,
   `src/api/`, `src/ui/`, `src/screens/<s>/`.
 - `tests/` — the root suite (`http-router.test.ts`, run by `npm test`). Its
   `tsconfig.json` is a project reference of the root, so `npm run check`

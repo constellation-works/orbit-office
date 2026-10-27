@@ -33,9 +33,12 @@ test("screen displays effective state, skip reason and retention refusal", async
   };
   try {
     const root = new Element("main"); await screen.render(root);
-    assert.match(root.textContent, /Every 15 minutes: process meetings/);
+    assert.match(root.textContent, /Meeting sweep/);
+    assert.match(root.textContent, /process meetings/);
+    assert.match(root.textContent, /Every 15 minutes/);
     assert.match(root.textContent, /Its plugin is switched off in this workspace/);
-    assert.doesNotMatch(root.textContent, /last run|produced output/i);
+    // No recorded fire reads as "Never", not as a run that happened.
+    assert.match(root.textContent, /Never/);
     const all = node => [node, ...node.children.flatMap(all)];
     const checkbox = all(root).find(node => node.tag === "input" && node.type === "checkbox");
     assert.equal(checkbox.checked, false); checkbox.checked = true; checkbox.listeners.change();

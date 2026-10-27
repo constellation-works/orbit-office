@@ -38,7 +38,7 @@ Source: spec §13.1–§13.2 and §13.4.
 | **Today** | Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
 | **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge |
-| **Routines** | Auto-task cards with plain-language schedules, on/off switches, and retention settings. Run history and produced outputs await an Orbit listing change; scheduled background jobs are managed in Orbit. |
+| **Routines** | The next hour as one track (a mark per scheduled run, hollow where a paused routine skips its slot), then On and Paused tables: a switch, the routine and what it does, when it runs (plain words, with the cron line beneath), when it runs next (worked out from the schedule in the computer's time zone) and how its last time went (from `last_fire` in `orbit.auto_task.list`: when, and its task's state in words; task ids stay on the server). Retention settings below. Full run history and produced outputs await an Orbit listing change; scheduled background jobs are managed in Orbit. |
 | **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meeting sources and other Library documents; task links are deferred until a page-citation read exists); history for every page and artifact |
 | **Settings** | Library settings; **Private route** (choose the endpoint kind, URL, model and label; the token goes straight to `orbit plugin secret set`; the check's capabilities in plain words; "Built with Muse Spark Open"; [models-and-privacy.md](./models-and-privacy.md#the-private-route)); **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
 | **Insights** | Automation ratio line, metric tiles, "what got automated" |
@@ -179,6 +179,13 @@ never literal colours:
 - **Tile**: one number and its label, in a wrapping row (Today's counts,
   Insights).
 - **Section label**: small upper-case heading over a panel.
+- **Rail**: screens in labelled groups (Work, Knowledge, Observe, Manage),
+  each with an icon; a screen can nest under a parent (Library › Source,
+  Insights › Review, Automation › Routines). Counts sit at the right: routines
+  on of total, and Today's waiting cards as an amber pill. A failed read hides
+  a count rather than showing 0. The layout lives in `web/src/nav.ts`.
+- **Table rows** (Routines): a header row of column labels over hairline
+  rows; on a phone each row stacks and every cell carries its label.
 
 ## Rules
 

@@ -136,13 +136,14 @@ app/packages/
     features/<f>/    one folder per feature: today, sources, todos, approvals, routines,
                      library, insights, review, selection, settings
   web/
-    static/          index.html, demo.html, manifest.webmanifest, icons/, style.css
+    static/          index.html, demo.html, manifest.webmanifest, icons/, fonts/, style.css
     src/
-      main.ts        mounts the router
+      main.ts        mounts the router and the rail
+      nav.ts         the rail: groups, icons, nesting and counts (integrator-owned)
       router.ts      every screen (integrator-owned)
       screen.ts      the Screen contract
       api/           typed fetch helpers
-      ui/            shared pieces (cards, pills, provenance links, primary actions)
+      ui/            shared pieces (cards, pills, tiles, provenance links, primary actions)
       screens/<s>/   one folder per screen: today, source, todos, routines, library,
                      insights, review
 ```
@@ -192,7 +193,7 @@ Feature tasks do not edit these. A change to one is its own small task:
 - `crates/office-tools/src/registry.rs` and each `tools/<family>/mod.rs`
 - `plugin/.orbit-plugin/plugin.yaml` outside a tool's own reserved block
 - `app/package.json`, `app/tsconfig*.json`, `app/packages/*/package.json`,
-  `server/src/http/router.ts`, `web/src/router.ts`
+  `server/src/http/router.ts`, `web/src/router.ts`, `web/src/nav.ts`
 
 ## Task footprints
 

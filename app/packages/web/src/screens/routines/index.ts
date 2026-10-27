@@ -1,99 +1,254 @@
+/**
+ * Routines: the next hour of scheduled work, then the routines that are on
+ * and the ones that are paused, each with when it runs, when it runs next
+ * and how its last time went. Plain words: no task ids, runs or crews.
+ */
 import type { Screen } from "../../screen.js";
 import { ApiError, getJson, postJson } from "../../api/client.js";
+import { requestRailRefresh } from "../../ui/index.js";
+import { eventDriven, firesInNextHour, nextFire, scheduleWords } from "./schedule.js";
+import { styles } from "./style.js";
 
-interface Routine { name: string; description: string; schedule: Record<string, unknown>; enabled: boolean; skipped_reason: string | null }
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, text: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag); node.textContent = text; return node;
+export { scheduleWords } from "./schedule.js";
+
+interface LastFire { kind: "fired" | "skipped"; at: string; task_status: string | null }
+interface Routine {
+  name: string;
+  description: string;
+  schedule: Record<string, unknown>;
+  enabled: boolean;
+  skipped_reason: string | null;
+  last_fire?: LastFire | null;
 }
-export function scheduleWords(schedule: Record<string, unknown>): string {
-  const minutes = schedule.every_minutes;
-  if (typeof minutes === "number" && minutes > 0) {
-    if (minutes % 1440 === 0) return `Every ${minutes / 1440} ${minutes === 1440 ? "day" : "days"}`;
-    if (minutes % 60 === 0) return `Every ${minutes / 60} ${minutes === 60 ? "hour" : "hours"}`;
-    return `Every ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
-  }
-  if (typeof schedule.cron === "string") {
-    const [minute, hour, day, month, weekday] = schedule.cron.split(" ");
-    if (minute && hour && day && month && weekday && /^\d+$/.test(minute)) {
-      const time = /^\d+$/.test(hour) ? ` at ${hour.padStart(2, "0")}:${minute.padStart(2, "0")}` : "";
-      if (day === "*" && month === "*" && weekday === "*" && time) return `Every day${time}`;
-      if (day === "1" && month === "*" && weekday === "*" && time) return `Every month on day 1${time}`;
-      const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-      if (day === "*" && month === "*" && /^[0-6]$/.test(weekday) && time) return `Every ${days[Number(weekday)]}${time}`;
-      if (hour === "*" && day === "*" && month === "*" && weekday === "*") return `Every hour at ${minute} minutes past`;
-      const interval = /^\*\/(\d+)$/.exec(hour);
-      if (interval && day === "*" && month === "*" && weekday === "*") return `Every ${interval[1]} hours at ${minute} minutes past`;
-    }
-    const parts = schedule.cron.split(" ");
-    if (parts.length === 5) {
-      const units = ["minute", "hour", "day of the month", "month", "day of the week"];
-      const describe = (part: string, unit: string): string => {
-        if (part === "*") return `every ${unit}`;
-        return part.split(",").map(piece => {
-          const step = /^(\*|\d+-\d+)\/(\d+)$/.exec(piece);
-          if (step) return step[1] === "*" ? `every ${step[2]} ${unit}s` : `every ${step[2]} ${unit}s from ${step[1]?.replace("-", " to ")}`;
-          if (/^\d+-\d+$/.test(piece)) return `${unit}s ${piece.replace("-", " through ")}`;
-          return /^\d+$/.test(piece) ? `${unit} ${piece}` : `${unit} managed in Orbit`;
-        }).join(" or ");
-      };
-      return `Scheduled for ${parts.map((part, index) => describe(part, units[index] ?? "time")).join(", ")}`;
-    }
-    return "On a schedule managed in Orbit";
-  }
-  if (schedule.deliveries_landed && typeof schedule.deliveries_landed === "object") {
-    const delivery = schedule.deliveries_landed as Record<string, unknown>;
-    const count = delivery.threshold;
-    const wait = delivery.max_wait_minutes;
-    if (typeof count === "number" && typeof wait === "number") return `After ${count} deliveries or up to ${wait} minutes`;
-    return "After deliveries are completed";
-  }
-  return "On a schedule managed in Orbit";
+
+function element<K extends keyof HTMLElementTagNameMap>(tag: K, text: string, className?: string): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  node.textContent = text;
+  if (className !== undefined) node.className = className;
+  return node;
 }
+
 function skipWords(reason: string): string {
   if (reason.includes("switched off in this workspace")) return "Its plugin is switched off in this workspace.";
   if (reason.includes("not enabled on this host")) return "Its plugin is not enabled on this computer.";
   return "This task is unavailable. Check its settings in Orbit.";
 }
+
+/** `daily-digest` reads as "Daily digest". */
+export function routineTitle(name: string): string {
+  // Short words without a vowel are initialisms: kt, qbr, gc.
+  const words = name.split(/[-_\s]+/).filter(Boolean).map(word => /^[^aeiouy]{2,3}$/i.test(word) ? word.toUpperCase() : word);
+  const text = words.join(" ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+const TASK_WORDS: Record<string, string> = {
+  done: "Finished",
+  "in-progress": "Working on it",
+  review: "Waiting for review",
+  proposed: "Waiting for you",
+  backlog: "Queued",
+  blocked: "Stuck",
+  rejected: "Turned down",
+  someday: "Set aside",
+  archived: "Put away",
+};
+
+function taskTone(status: string | null): string {
+  if (status === "done") return "done";
+  if (status === "in-progress" || status === "backlog") return "working";
+  if (status === "review" || status === "proposed") return "attention";
+  if (status === "blocked" || status === "rejected") return "danger";
+  return "idle";
+}
+
+function clock(at: Date, now: Date): string {
+  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const days = Math.round((new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime()
+    - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86_400_000);
+  if (days === 0) return time;
+  if (Math.abs(days) < 7) return `${at.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;
+  return `${at.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${time}`;
+}
+
+export function relativeWords(at: Date, now: Date): string {
+  const minutes = Math.round((at.getTime() - now.getTime()) / 60_000);
+  const size = Math.abs(minutes);
+  const amount = size < 1 ? "" : size < 60 ? `${size} min` : size < 48 * 60 ? `${Math.round(size / 60)} h` : `${Math.round(size / 1440)} days`;
+  if (amount === "") return "just now";
+  return minutes > 0 ? `in ${amount}` : `${amount} ago`;
+}
+
+function cell(label: string, main: string, sub?: string, mainClass = "", subClass = "routine-cell-sub routine-cell-sub--mono"): HTMLElement {
+  const node = element("div", "", "routine-cell");
+  node.setAttribute("data-label", label);
+  node.append(element("span", main, `routine-cell-main ${mainClass}`.trim()));
+  if (sub !== undefined && sub !== "") node.append(element("span", sub, subClass));
+  return node;
+}
+
+function whenCell(item: Routine): HTMLElement {
+  const cron = typeof item.schedule.cron === "string" ? item.schedule.cron : undefined;
+  return cell("When", scheduleWords(item.schedule), cron);
+}
+
+function nextCell(item: Routine, now: Date): HTMLElement {
+  if (eventDriven(item.schedule)) return cell("Next", item.enabled ? "When work lands" : "Paused", undefined, "muted");
+  const lastAt = item.last_fire?.kind === "fired" ? new Date(item.last_fire.at) : null;
+  const next = nextFire(item.schedule, now, lastAt);
+  if (next === null) return cell("Next", item.enabled ? "Soon after it starts" : "Paused", undefined, "muted");
+  if (!item.enabled) return cell("Next", `Would be ${clock(next, now)}`, undefined, "muted");
+  return cell("Next", relativeWords(next, now), clock(next, now));
+}
+
+function lastCell(item: Routine, now: Date): HTMLElement {
+  const fire = item.last_fire ?? null;
+  if (fire === null) return cell("Last time", "Never", undefined, "muted");
+  const at = new Date(fire.at);
+  const node = element("div", "", "routine-cell");
+  node.setAttribute("data-label", "Last time");
+  const main = element("span", "", "routine-cell-main routine-outcome");
+  if (fire.kind === "skipped") {
+    main.append(element("span", "", "routine-dot"), element("span", `Skipped ${relativeWords(at, now)}`));
+    node.append(main, element("span", "It was not due to run then.", "routine-cell-sub"));
+    return node;
+  }
+  const words = fire.task_status === null ? "Its task was removed" : TASK_WORDS[fire.task_status] ?? "Ran";
+  main.append(element("span", "", `routine-dot routine-dot--${taskTone(fire.task_status)}`), element("span", `Ran ${relativeWords(at, now)}`));
+  node.append(main, element("span", words, "routine-cell-sub"));
+  return node;
+}
+
+function routineRow(item: Routine, now: Date, onChanged: (routines: Routine[]) => void): HTMLElement {
+  const row = element("article", "", "routine-row");
+  const toggle = document.createElement("input");
+  toggle.type = "checkbox";
+  toggle.checked = item.enabled;
+  toggle.className = "routine-switch";
+  toggle.setAttribute("role", "switch");
+  toggle.setAttribute("aria-label", `${routineTitle(item.name)} on`);
+  const control = element("div", "", "routine-cell routine-cell--control");
+  control.append(toggle);
+
+  const identity = element("div", "", "routine-cell routine-identity");
+  identity.setAttribute("data-label", "Routine");
+  identity.append(element("h3", routineTitle(item.name)), element("p", item.description, "routine-description"));
+  const message = element("p", item.skipped_reason ? skipWords(item.skipped_reason) : "", "routine-note");
+  message.setAttribute("role", "status");
+  identity.append(message);
+
+  toggle.addEventListener("change", () => {
+    const desired = toggle.checked; toggle.disabled = true; message.textContent = "";
+    void (async () => {
+      try {
+        await postJson("/api/routines/toggle", { name: item.name, enabled: desired });
+        const latest = await getJson<{ routines: Routine[] }>("/api/routines");
+        const updated = latest.routines.find(routine => routine.name === item.name);
+        if (!updated) throw new Error("routine unavailable");
+        toggle.checked = updated.enabled; item.enabled = updated.enabled;
+        requestRailRefresh();
+        onChanged(latest.routines);
+      } catch {
+        toggle.checked = item.enabled; message.textContent = "Could not confirm this change. Refresh and try again.";
+      } finally { toggle.disabled = false; }
+    })();
+  });
+
+  row.append(control, identity, whenCell(item), nextCell(item, now), lastCell(item, now));
+  return row;
+}
+
+function group(tone: "on" | "off", title: string, hint: string, items: readonly Routine[], now: Date, onChanged: (routines: Routine[]) => void): HTMLElement {
+  const section = element("section", "", "routine-group");
+  section.setAttribute("aria-label", title);
+  const head = element("div", "", "routine-group-head");
+  const name = element("h2", "", "routine-group-title");
+  name.append(element("span", "", `routine-group-dot routine-group-dot--${tone}`), element("span", title), element("span", String(items.length), "routine-group-count"));
+  head.append(name, element("span", hint, "routine-group-hint"));
+  const columns = element("div", "", "routine-columns");
+  columns.setAttribute("aria-hidden", "true");
+  columns.append(element("span", ""), element("span", "Routine"), element("span", "When"), element("span", "Next"), element("span", "Last time"));
+  section.append(head);
+  if (items.length === 0) {
+    section.append(element("p", tone === "on" ? "No routines are on." : "Nothing is paused.", "routine-empty"));
+    return section;
+  }
+  section.append(columns, ...items.map(item => routineRow(item, now, onChanged)));
+  return section;
+}
+
+/** The next hour as one track: a mark for each fire, hollow where a paused routine skips its slot. */
+function nextHour(routines: readonly Routine[], now: Date): HTMLElement {
+  const strip = element("section", "", "routine-hour");
+  strip.setAttribute("aria-label", "The next hour");
+  const marks: { at: Date; title: string; fires: boolean }[] = [];
+  for (const item of routines) {
+    if (eventDriven(item.schedule)) continue;
+    const lastAt = item.last_fire?.kind === "fired" ? new Date(item.last_fire.at) : null;
+    for (const at of firesInNextHour(item.schedule, now, lastAt)) marks.push({ at, title: routineTitle(item.name), fires: item.enabled });
+  }
+  marks.sort((a, b) => a.at.getTime() - b.at.getTime());
+  const due = marks.filter(mark => mark.fires);
+  const active = routines.filter(item => item.enabled).length;
+  const until = new Date(now.getTime() + 3_600_000);
+  const head = element("div", "", "routine-hour-head");
+  head.append(
+    element("strong", "Next hour"),
+    element("span", `${clock(now, now)} → ${clock(until, now)}`, "routine-hour-range"),
+    element("span", due.length === 0
+      ? "Nothing runs in the next hour."
+      : `${due.length} ${due.length === 1 ? "run" : "runs"} from ${active} ${active === 1 ? "routine" : "routines"} that are on`, "routine-hour-summary"),
+  );
+  const legend = element("span", "", "routine-hour-legend");
+  legend.append(element("span", "will run", "routine-hour-key routine-hour-key--fires"), element("span", "paused, skipped", "routine-hour-key"));
+  head.append(legend);
+  const track = element("div", "", "routine-hour-track");
+  track.append(element("div", "", "routine-hour-axis"));
+  marks.slice(0, 24).forEach((mark, index) => {
+    const offset = Math.min(100, Math.max(0, (mark.at.getTime() - now.getTime()) / 36_000));
+    const node = element("div", "", `routine-hour-mark${mark.fires ? " routine-hour-mark--fires" : ""}${index % 2 === 1 ? " routine-hour-mark--low" : ""}`);
+    node.setAttribute("style", `left: ${offset.toFixed(2)}%`);
+    node.setAttribute("title", `${mark.title} · ${clock(mark.at, now)}${mark.fires ? "" : " · paused"}`);
+    node.append(element("span", "", "routine-hour-tick"), element("span", mark.title, "routine-hour-label"));
+    track.append(node);
+  });
+  strip.append(head, track);
+  return strip;
+}
+
+function draw(root: HTMLElement, routines: Routine[]): void {
+  const now = new Date();
+  const redraw = (latest: Routine[]): void => draw(root, latest);
+  const page = element("section", "", "routines");
+  const style = document.createElement("style");
+  style.textContent = styles;
+  const header = element("header", "", "routines-header");
+  const titles = element("div", "");
+  const on = routines.filter(item => item.enabled);
+  const off = routines.filter(item => !item.enabled);
+  titles.append(element("h1", "Routines"), element("p", "Work that runs for you on a schedule. Results land in Today.", "intro"));
+  header.append(titles, element("span", `${on.length} on of ${routines.length}`, "routines-total"));
+  page.append(style, header);
+  if (!routines.length) page.append(element("p", "No routines are available.", "intro"));
+  else page.append(
+    nextHour(routines, now),
+    group("on", "On", "runs on its schedule on this computer", on, now, redraw),
+    group("off", "Paused", "switched off — scheduled times are skipped", off, now, redraw),
+  );
+  page.append(element("p", "Background jobs that keep the Library tidy are managed in Orbit.", "routines-footnote"), retentionForm());
+  root.replaceChildren(page);
+}
+
 async function render(root: HTMLElement): Promise<void> {
   root.replaceChildren(element("p", "Loading routines."));
   try {
     const data = await getJson<{ routines: Routine[] }>("/api/routines");
-    const section = document.createElement("section"); section.className = "routines";
-    const note = element("p", "Scheduled background jobs are managed in Orbit."); note.className = "intro";
-    section.append(element("h1", "Routines"), note);
-    const grid = document.createElement("div"); grid.className = "card-grid";
-    for (const item of data.routines) {
-      const card = document.createElement("article"); card.className = "card";
-      card.append(element("h2", `${scheduleWords(item.schedule)}: ${item.description}`));
-      const label = document.createElement("label");
-      const toggle = document.createElement("input"); toggle.type = "checkbox"; toggle.checked = item.enabled;
-      const state = element("span", item.enabled ? " On" : " Off");
-      label.append(toggle, state); card.append(label);
-      if (item.skipped_reason) card.append(element("p", skipWords(item.skipped_reason)));
-      const message = element("p", ""); message.setAttribute("role", "status"); card.append(message);
-      toggle.addEventListener("change", () => {
-        const desired = toggle.checked; toggle.disabled = true; message.textContent = "";
-        void (async () => {
-          try {
-            await postJson("/api/routines/toggle", { name: item.name, enabled: desired });
-            const latest = await getJson<{ routines: Routine[] }>("/api/routines");
-            const updated = latest.routines.find(routine => routine.name === item.name);
-            if (!updated) throw new Error("routine unavailable");
-            toggle.checked = updated.enabled; item.enabled = updated.enabled; state.textContent = updated.enabled ? " On" : " Off";
-            if (updated.skipped_reason) message.textContent = skipWords(updated.skipped_reason);
-          } catch {
-            toggle.checked = item.enabled; message.textContent = "Could not confirm this change. Refresh and try again.";
-          } finally { toggle.disabled = false; }
-        })();
-      });
-      grid.append(card);
-    }
-    if (!data.routines.length) section.append(element("p", "No routines are available."));
-    section.append(grid, retentionForm()); root.replaceChildren(section);
+    draw(root, data.routines);
   } catch { root.replaceChildren(element("p", "Routines are unavailable. Try again in a moment.")); }
 }
+
 function retentionForm(): HTMLElement {
-  const section = document.createElement("section"); section.className = "routines-retention";
+  const section = element("section", "", "routines-retention");
   section.append(element("h2", "Retention"), element("p", "Choose how long to keep originals. Leave days empty to keep them indefinitely."));
   const form = document.createElement("form");
   const kindLabel = element("label", "Type "); const kind = document.createElement("select");

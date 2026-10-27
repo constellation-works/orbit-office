@@ -20,7 +20,7 @@ test("routines HTTP routes list definitions, toggle once, and forward retention 
   t.after(() => new Promise(resolve => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}`;
   const result = await (await fetch(`${url}/api/routines`)).json();
-  assert.deepEqual(result.routines[0], { name: "meeting-sweep", description: "process new meetings", schedule: { every_minutes: 15 }, enabled: false, skipped_reason: listing[0].skipped_reason });
+  assert.deepEqual(result.routines[0], { name: "meeting-sweep", description: "process new meetings", schedule: { every_minutes: 15 }, enabled: false, skipped_reason: listing[0].skipped_reason, last_fire: null });
   const post = (path, data) => fetch(`${url}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
   assert.equal((await post("/api/routines/toggle", { name: "meeting-sweep", enabled: true })).status, 200);
   assert.deepEqual(calls.filter(([name]) => name === "orbit.auto_task.update"), [["orbit.auto_task.update", { name: "meeting-sweep", enabled: true }]]);

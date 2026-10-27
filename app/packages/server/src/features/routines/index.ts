@@ -19,6 +19,14 @@ function send(response: ServerResponse, status: number, value: unknown): void {
   response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
   response.end(JSON.stringify(value));
 }
+/**
+ * The latest fire, reduced to when it happened and how its task stands. Task
+ * ids and skip diagnostics stay on the server: the screen shows plain words.
+ */
+function lastFire(value: unknown): { kind: "fired" | "skipped"; at: string; task_status: string | null } | null {
+  if (!object(value) || typeof value.at !== "string" || (value.kind !== "fired" && value.kind !== "skipped")) return null;
+  return { kind: value.kind, at: value.at, task_status: typeof value.task_status === "string" ? value.task_status : null };
+}
 const kinds = ["video", "meeting", "chat", "email", "doc", "receipt", "bill", "conversation", "note"];
 export function createRoutinesFeature(client: OrbitToolClient): Feature {
   return { name: "routines", status: "built", routes: [
@@ -30,7 +38,8 @@ export function createRoutinesFeature(client: OrbitToolClient): Feature {
           if (!object(row) || typeof row.name !== "string" || typeof row.description !== "string" ||
               typeof row.effective_enabled !== "boolean" || !object(row.schedule)) throw new Error("invalid listing");
           return { name: row.name, description: row.description, schedule: row.schedule,
-            enabled: row.effective_enabled, skipped_reason: typeof row.skipped_reason === "string" ? row.skipped_reason : null };
+            enabled: row.effective_enabled, skipped_reason: typeof row.skipped_reason === "string" ? row.skipped_reason : null,
+            last_fire: lastFire(row.last_fire) };
         });
         send(response, 200, { routines });
       } catch { send(response, 502, { error: "unavailable" }); }
