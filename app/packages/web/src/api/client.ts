@@ -1,24 +1,35 @@
-/**
- * Typed fetch helpers for the app server's HTTP API. Screens call these,
- * never `fetch` directly, so errors are handled in one place.
- */
+/** Typed access to the app server, with one error path. */
+import type { Health } from "@orbit-office/contracts";
 
-/** A non-2xx response from the app server. */
 export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-  ) {
+  constructor(readonly status: number, readonly code: string) {
     super(`app server answered ${status} (${code})`);
+    this.name = "ApiError";
   }
 }
 
-/** GET a JSON resource from the app server. */
+/** Fetch JSON, translating network, HTTP and malformed response errors alike. */
 export async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { accept: "application/json" } });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
-    throw new ApiError(response.status, typeof body.error === "string" ? body.error : "unknown");
+  let response: Response;
+  try {
+    response = await fetch(path, { headers: { accept: "application/json" } });
+  } catch {
+    throw new ApiError(0, "network_error");
   }
-  return (await response.json()) as T;
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => undefined);
+    const code = typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
+      ? body.error : "unknown";
+    throw new ApiError(response.status, code);
+  }
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new ApiError(response.status, "invalid_json");
+  }
+}
+
+/** Read the server health contract. */
+export function getHealth(): Promise<Health> {
+  return getJson<Health>("/healthz");
 }

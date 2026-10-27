@@ -48,6 +48,10 @@ layout is in `../ARCHITECTURE.md` ("Web app").
   `proposed` tasks are never submitted.
 - Live status comes from polling Orbit every few seconds; there is no event bus.
 
+The shared UI pieces and responsive styles can be viewed at `/demo.html`
+when the app server is running. Screens can import the pieces from `web/src/ui/`
+and use `web/src/api/` for server requests.
+
 ## Develop
 
 ```bash
