@@ -165,6 +165,45 @@ fn time_anchors_resolve_to_the_turn_in_progress() {
 }
 
 #[test]
+fn time_anchors_resolve_single_newline_turns() {
+    let body = "[00:10:00] Jane: one\n[00:12:31] Dee: two";
+    let span = |raw: &str| anchor_span(body, parse_anchor(raw).expect("anchor"), raw);
+    assert_eq!(
+        span("#t=00:10:00").expect("first turn"),
+        "[00:10:00] Jane: one"
+    );
+    assert_eq!(
+        span("#t=00:11:00").expect("interior"),
+        "[00:10:00] Jane: one"
+    );
+    assert_eq!(
+        span("#t=00:12:31").expect("last turn"),
+        "[00:12:31] Dee: two"
+    );
+    for raw in ["#t=00:09:59", "#t=00:12:32"] {
+        assert_eq!(
+            span(raw).expect_err("out of range").code(),
+            "anchor_out_of_range",
+            "{raw}"
+        );
+    }
+}
+
+#[test]
+fn time_anchors_keep_continuation_lines_with_their_turn() {
+    let body = "[00:10:00] Jane: one\nstill Jane\n[00:12:31] Dee: two";
+    let span = |raw: &str| anchor_span(body, parse_anchor(raw).expect("anchor"), raw);
+    assert_eq!(
+        span("#t=00:10:30").expect("turn with continuation"),
+        "[00:10:00] Jane: one\nstill Jane"
+    );
+    assert_eq!(
+        span("#t=00:12:31").expect("last turn"),
+        "[00:12:31] Dee: two"
+    );
+}
+
+#[test]
 fn vtt_import_keeps_speakers_and_cue_times() {
     let vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Jane>Hi there.</v>\n\n00:01:05.500 --> 00:01:07.000\nDaniel: Next point.\n";
     assert_eq!(
