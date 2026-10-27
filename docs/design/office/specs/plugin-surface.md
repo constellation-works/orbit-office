@@ -214,6 +214,19 @@ until a check records them. The token is not in the object;
 `secrets.open_weights_token` is `set` or `unset`.
 These are Library policy settings, independent of plugin installation config.
 
+### Private-route field limits
+
+The `open_weights` `endpoint`, `model`, `kind` and `label` values must each be
+nonempty, contain no control characters, and fit these limits (Unicode scalar
+values):
+
+| Field | Maximum | Additional rule |
+| --- | ---: | --- |
+| `endpoint` | 2,048 characters | Must also satisfy the URL restrictions above. |
+| `model` | 200 characters | Must not contain whitespace. |
+| `kind` | 32 characters | Must be `company`, `provider` or `own_hardware`. |
+| `label` | 80 characters | — |
+
 ### Updating one Library setting
 
 `office.config-set` takes exactly `{"key":"retention.meeting","value":30}`.
