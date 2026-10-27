@@ -371,8 +371,11 @@ set_secret() {
             printf '\n'
         fi
     else
-        # Piped stdin: one line per secret; EOF means skip.
-        read -r _value || _value=""
+        # No terminal: never read stdin. In the documented
+        # `curl ... | sh` form stdin is the installer script itself,
+        # so a read here could consume the next script line and store
+        # it as the secret. Skip; the message below says how to set it.
+        _value=""
     fi
     if [ -z "$_value" ]; then
         if [ "$_optional" -eq 1 ]; then

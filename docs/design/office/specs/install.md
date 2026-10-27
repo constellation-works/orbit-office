@@ -81,7 +81,11 @@ spaces, so script shebangs that name the interpreter keep working.
    separately. It retains the original office install markers on upgrades.
 6. **Secrets.** Prompts for the Meta API key, and optionally the private route's token (`open_weights_token`), with hidden
    input, and stores them with `orbit plugin secret set office <name>`. They are never
-   written to a file or echoed. Skipped when already set.
+   written to a file or echoed. Skipped when already set. The prompt needs a terminal
+   on stdin: a run without one (the `curl ... | sh` line, whose stdin is the script
+   itself) never reads stdin for a secret, skips each unset secret and prints the
+   `orbit plugin secret set office <name>` command to set it later. Values supplied
+   through the environment are still stored in either case.
 7. **Scaffold.** `orbit tool run office.init --json --full`: the Library's layout, git
    repository, config, `.gitignore` and index, then the first Library commit. The CLI exits 0
    and prints the tool's output object on stdout. That object has no top-level `ok`. The step
