@@ -175,7 +175,9 @@ costs:                             # per-call rates for the preview; null = not 
   nothing spent until it is pressed.
 - **Source view for a video:** the player, the chapter list with tangents
   folded and their gotchas shown, frame thumbnails on the timeline, and the
-  transcript beside them. Every citation link opens the player at its time.
+  transcript beside them. Once the planned source screen ships, each citation
+  will open the player at its time; until then, the anchor has no landing
+  behaviour.
 - **Needs you:** the video's proposals as one group, "From the ingest KT:
   6 pages, 1 runbook", plus its questions in your to-dos.
 
