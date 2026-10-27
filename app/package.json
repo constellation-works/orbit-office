@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc -b",
     "check": "tsc -b",
+    "test": "tsc -b && npm test --workspaces --if-present",
     "typecheck": "tsc -b",
     "test": "tsx --test tests/http-router.test.ts",
     "clean": "tsc -b --clean",

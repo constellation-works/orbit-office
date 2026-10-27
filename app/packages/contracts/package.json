@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Types shared by the orbit-office server and web UI: the app's HTTP API, feature and screen names.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
