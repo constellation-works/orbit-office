@@ -141,7 +141,13 @@ impl Git {
         let actual = Path::new(top.trim())
             .canonicalize()
             .map_err(|e| Error::io("resolve repository root", &self.root, e))?;
-        Ok(actual == self.root)
+        // git reports the resolved path (macOS: /private/var for /var), so
+        // compare canonical forms.
+        let expected = self
+            .root
+            .canonicalize()
+            .map_err(|e| Error::io("resolve Library root", &self.root, e))?;
+        Ok(actual == expected)
     }
 
     pub(crate) fn commit(&self, relative: &str, token: &str) -> Result<()> {
