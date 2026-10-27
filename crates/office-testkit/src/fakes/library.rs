@@ -340,7 +340,14 @@ impl Library for FakeLibrary {
                 version: view.version,
             };
             let path = view.path.clone();
+            let new_body = view.body.clone();
             drop(sources);
+            // Mirror the appended body into `documents`, as the create path
+            // does, so `search` and `read_document` see appended entries.
+            // Other record fields keep the frontmatter parsed at create.
+            if let Some(record) = self.documents.borrow_mut().get_mut(&path) {
+                record.body = new_body.trim().to_string();
+            }
             let mut revisions = self.revisions.borrow_mut();
             let history = revisions.entry(path.clone()).or_default();
             history.insert(
