@@ -16,6 +16,8 @@
 //! body or response body (STD-05), because a hostile endpoint can echo
 //! the credential back in its response body.
 
+use std::time::Duration;
+
 use office_core::Error;
 use office_core::domain::endpoint::{self, ModelUrlError};
 use serde_json::Value;
@@ -80,10 +82,16 @@ pub(crate) fn post_json(
     api_key: Option<&str>,
     body: &Value,
     destination: Destination<'_>,
+    timeout: Option<Duration>,
 ) -> Result<Value, Error> {
     let host = check_url(url, destination)?;
     tracing::debug!(host = %host, "model call");
-    let mut request = agent.post(url).header("Content-Type", "application/json");
+    let request = agent.post(url);
+    let request = match timeout {
+        Some(timeout) => request.config().timeout_global(Some(timeout)).build(),
+        None => request,
+    };
+    let mut request = request.header("Content-Type", "application/json");
     if let Some(key) = api_key {
         request = request.header("Authorization", format!("Bearer {key}"));
     }
@@ -113,6 +121,14 @@ fn map_error(host: &str, error: ureq::Error) -> Error {
         reason = "foreign ureq::Error: all non-status variants are one retryable transport class"
     )]
     match error {
+        ureq::Error::Timeout(_) => {
+            tracing::warn!(host = %host, "model call timed out");
+            Error::Model {
+                code: "model_timeout",
+                message: format!("model endpoint {host} did not answer in time"),
+                retryable: true,
+            }
+        }
         ureq::Error::StatusCode(status) => {
             let retryable = status == 429 || (500..=599).contains(&status);
             tracing::warn!(host = %host, status, retryable, "model call failed");

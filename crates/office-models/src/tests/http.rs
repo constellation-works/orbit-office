@@ -71,6 +71,7 @@ fn a_private_post_to_another_host_is_refused_before_a_socket_opens() {
         Some("token"),
         &json!({}),
         private_to(&configured.base_url),
+        None,
     )
     .expect_err("another loopback port is another origin");
 

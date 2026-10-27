@@ -7,9 +7,15 @@
 //! answers with message content, and reports how long that took. The check ignores the capabilities the
 //! endpoint was last recorded with, since it is what measures them, but
 //! still crosses the private allowlist before any socket opens.
+//!
+//! The whole check shares one deadline ([`ROUTE_CHECK_BUDGET`], below the
+//! exec backend's 60 s cap): each probe gets a fair share of the time
+//! left, so a stalled probe reports `model_timeout` for its modality and
+//! the other probes still return their results.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use office_core::Error;
 use office_core::Result;
 use office_core::domain::endpoint::Capability;
 use office_core::ports::{RouteCheck, RouteProbe};
@@ -29,19 +35,43 @@ const PNG_1X1: [u8; 67] = [
 /// Longest reported model name kept in the result.
 const MAX_REPORTED_MODEL: usize = 200;
 
+/// Total budget for the whole check. The exec backend is capped at
+/// 60 s (`plugin.yaml` `timeout_ms: 60000`); 45 s leaves room for the
+/// caller to record the result before that cap kills the process.
+pub(crate) const ROUTE_CHECK_BUDGET: Duration = Duration::from_secs(45);
+
 pub(crate) fn check(client: &RoutedClient) -> Result<RouteCheck> {
+    check_with_budget(client, ROUTE_CHECK_BUDGET)
+}
+
+pub(crate) fn check_with_budget(client: &RoutedClient, budget: Duration) -> Result<RouteCheck> {
     let resolved = routing::private_endpoint(&client.config)?;
     // A host outside the allowlist is a refusal, not a missing capability.
     http::check_url(&meta::chat_url(&resolved.base_url), resolved.destination())?;
+    let deadline = Instant::now() + budget;
     let mut probes = Vec::with_capacity(Capability::ALL.len());
     let mut reported_model = None;
-    for capability in Capability::ALL {
+    for (index, capability) in Capability::ALL.into_iter().enumerate() {
         let body = probe_body(capability, &resolved.model);
         let started = Instant::now();
-        let outcome = client.send(&resolved, &body).and_then(|(host, response)| {
-            meta::reply_text(&host, &response)?;
-            Ok(response)
-        });
+        // Fair share of what is left: a stalled probe cannot starve the
+        // remaining modalities, and the shares sum to at most `budget`.
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let probes_left = u32::try_from(Capability::ALL.len() - index).unwrap_or(u32::MAX);
+        let outcome = if remaining.is_zero() {
+            Err(Error::Model {
+                code: "model_timeout",
+                message: "private route check budget exhausted before this probe".to_string(),
+                retryable: true,
+            })
+        } else {
+            client
+                .send_with_timeout(&resolved, &body, Some(remaining / probes_left))
+                .and_then(|(host, response)| {
+                    meta::reply_text(&host, &response)?;
+                    Ok(response)
+                })
+        };
         let elapsed = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         let error = match outcome {
             Ok(response) => {

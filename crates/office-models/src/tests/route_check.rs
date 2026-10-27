@@ -67,6 +67,55 @@ fn records_exactly_the_capabilities_the_endpoint_accepts() {
 }
 
 #[test]
+fn a_stalled_probe_times_out_and_the_other_modalities_still_return() {
+    use std::time::{Duration, Instant};
+
+    let company = FakeServer::start_replies_delayed(vec![
+        (200, reply("muse-spark-open", "{}"), Duration::from_secs(2)),
+        (200, reply("muse-spark-open", "a dot"), Duration::ZERO),
+        (200, reply("muse-spark-open", "silence"), Duration::ZERO),
+    ]);
+    let mut config = hosted_config("http://127.0.0.1:1/v1");
+    config.open_weights = Some(open_weights_with(&company.base_url, None));
+    let budget = Duration::from_millis(600);
+    let started = Instant::now();
+    let check = crate::route_check::check_with_budget(&client(config), budget).expect("check");
+    let elapsed = started.elapsed();
+
+    assert_eq!(accepted(&check), vec![Capability::Image, Capability::Audio]);
+    assert_eq!(check.probes[0].error.as_deref(), Some("model_timeout"));
+    assert!(!check.probes[0].accepted);
+    assert_eq!(check.probes[0].elapsed_ms, None);
+    assert_eq!(check.probes[1].error, None);
+    assert_eq!(check.probes[2].error, None);
+    assert!(
+        elapsed < Duration::from_millis(1_500),
+        "check outlasted its budget: {elapsed:?}"
+    );
+    assert_eq!(company.requests().len(), 3);
+}
+
+#[test]
+fn an_exhausted_budget_reports_every_remaining_probe_without_a_request() {
+    use std::time::Duration;
+
+    let company = FakeServer::start(200, reply("muse-spark-open", "{}"));
+    let mut config = hosted_config("http://127.0.0.1:1/v1");
+    config.open_weights = Some(open_weights_with(&company.base_url, None));
+    let check =
+        crate::route_check::check_with_budget(&client(config), Duration::ZERO).expect("check");
+
+    assert_eq!(accepted(&check), Vec::<Capability>::new());
+    assert!(
+        check
+            .probes
+            .iter()
+            .all(|probe| probe.error.as_deref() == Some("model_timeout"))
+    );
+    assert!(company.requests().is_empty());
+}
+
+#[test]
 fn an_endpoint_failing_the_text_request_is_never_routed_to_afterwards() {
     let company = FakeServer::start_replies(vec![
         (500, "{}".to_string()),
