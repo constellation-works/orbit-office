@@ -25,6 +25,9 @@
 #      plugin with them and does not ask
 #  13. enable grants every permission plugin.yaml requests: the plugin is
 #      active and office.init is not refused with policy_denied
+#  14. the documented curl-to-sh form (install.sh itself on a piped stdin,
+#      under sh and under bash --posix) stores no secret from script text
+#      and still runs the scaffold and agent steps
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -192,7 +195,7 @@ case "${1:-} ${2:-}" in
                     fi
                 done ;;
             set)
-                cat > /dev/null
+                cat > "$state/secret.${5:-}.value"
                 [ "${4:-}" = office ] || exit 1
                 case "${5:-}" in meta_api_key|open_weights_token) ;; *) exit 1 ;; esac
                 : > "$state/secret.$5" ;;
@@ -419,6 +422,34 @@ run_install() { # run_install <home> <extra env...> -- <args...>
         sh "$INSTALL_SH" $_yes "$@" < /dev/null
 }
 
+# Run the documented curl-to-sh form: install.sh itself is the shell's
+# stdin (a pipe), so a secret read from stdin would consume script text.
+# run_install_piped <home> <sh|bash-posix> <output>
+run_install_piped() {
+    _home="$1"; _kind="$2"; _out="$3"
+    printf '%s' "$_home" > "$STUB_STATE/current-home"
+    rm -f "$STUB_STATE"/plugin-* "$STUB_STATE"/secret.*
+    if [ "$_kind" = bash-posix ]; then
+        cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
+            STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
+            STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
+            STUB_ORBIT_VERSION=0.34.0 STUB_UV_ARCHIVE="$FIXTURE" \
+            STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
+            STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
+            ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
+            bash --posix -s -- --yes > "$_out" 2>&1
+    else
+        cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
+            STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
+            STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
+            STUB_ORBIT_VERSION=0.34.0 STUB_UV_ARCHIVE="$FIXTURE" \
+            STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
+            STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
+            ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
+            sh -s -- --yes > "$_out" 2>&1
+    fi
+}
+
 TOOLS_REL=".local/share/orbit-office/tools"
 
 assert_home_scope() { # files stay under the workspace, data/tools, service, MCP
@@ -522,6 +553,34 @@ for _word in python orbit workspace plugin scaffold agent service; do
     else
         cat "$OUT2" >&2; fail "second run reports $_word as already done"
     fi
+done
+
+# ---------------------------------------------------------------------------
+# 14. Piped curl-to-sh: no secret is stored from the script text itself
+# ---------------------------------------------------------------------------
+
+for _piped_kind in sh bash-posix; do
+    PIPED_HOME="$ROOT/piped-$_piped_kind"; mkdir -p "$PIPED_HOME"
+    PIPED_OUT="$ROOT/out-piped-$_piped_kind.txt"
+    run_install_piped "$PIPED_HOME" "$_piped_kind" "$PIPED_OUT" \
+        || { cat "$PIPED_OUT" >&2; fail "piped install ($_piped_kind) exits 0"; }
+    ok "piped install ($_piped_kind) exits 0"
+    check "piped ($_piped_kind): no meta_api_key secret stored" \
+        test ! -e "$STUB_STATE/secret.meta_api_key"
+    check "piped ($_piped_kind): no meta_api_key value recorded from script text" \
+        test ! -e "$STUB_STATE/secret.meta_api_key.value"
+    check "piped ($_piped_kind): no open_weights_token secret stored" \
+        test ! -e "$STUB_STATE/secret.open_weights_token"
+    check "piped ($_piped_kind): no open_weights_token value recorded from script text" \
+        test ! -e "$STUB_STATE/secret.open_weights_token.value"
+    check "piped ($_piped_kind): meta_api_key skip is reported" \
+        grep -F "secrets: meta_api_key skipped (no input" "$PIPED_OUT"
+    check "piped ($_piped_kind): open_weights_token skip is reported" \
+        grep -F "secrets: open_weights_token skipped (optional)" "$PIPED_OUT"
+    check "piped ($_piped_kind): scaffold step still runs" \
+        test -f "$PIPED_HOME/orbit/library/.office/config.yaml"
+    check "piped ($_piped_kind): agent step still runs" \
+        grep -q '"orbit"' "$PIPED_HOME/.claude/settings.json"
 done
 
 # ---------------------------------------------------------------------------
