@@ -83,3 +83,27 @@ fn capture_same_upload_twice_dedupes_in_the_real_store() {
     assert!(second.deduplicated);
     assert_eq!(store.document_count().expect("count"), 1);
 }
+
+#[test]
+fn capture_vtt_transcript_keeps_numeric_and_keyword_prefixed_cue_text() {
+    let (_dir, store, workspace) = setup();
+    let transcript = workspace.join("talk.vtt");
+    std::fs::write(
+        &transcript,
+        "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n1234\n\n00:00:03.000 --> 00:00:04.000\nNOTE: the answer\n\n00:00:05.000 --> 00:00:06.000\nWEBVTT is the format\n",
+    )
+    .expect("transcript");
+    let mut req = request();
+    req.kind = Some("meeting".to_string());
+    req.title = Some("Talk".to_string());
+    req.transcript_path = Some(transcript.to_string_lossy().to_string());
+    let outcome = store.capture_source(&req).expect("capture");
+    let source = store.read_source(&outcome.id).expect("read");
+    assert!(
+        source.body.contains(
+            "[00:00:01] Speaker: 1234\n\n[00:00:03] NOTE: the answer\n\n[00:00:05] Speaker: WEBVTT is the format"
+        ),
+        "{}",
+        source.body
+    );
+}

@@ -112,6 +112,24 @@ fn vtt_import_keeps_speakers_and_cue_times() {
 }
 
 #[test]
+fn vtt_import_keeps_numeric_and_keyword_prefixed_cue_text() {
+    let vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n1234\n\n00:00:03.000 --> 00:00:04.000\nNOTE: the answer\n\n00:00:05.000 --> 00:00:06.000\nDaniel: It is\n2026\n\n00:00:07.000 --> 00:00:08.000\nWEBVTT is the format\n";
+    assert_eq!(
+        vtt_to_body(vtt),
+        "[00:00:01] Speaker: 1234\n\n[00:00:03] NOTE: the answer\n\n[00:00:05] Daniel: It is 2026\n\n[00:00:07] Speaker: WEBVTT is the format"
+    );
+}
+
+#[test]
+fn vtt_import_skips_header_cue_identifiers_and_comment_blocks() {
+    let vtt = "WEBVTT\nKind: captions\nLanguage: en\n\nNOTE producer comment\nthat spans lines\n\nSTYLE\n::cue { color: red }\n\n7\n00:00:01.000 --> 00:00:02.000\n<v Jane>Hi there.</v>\n\nNOTE editor aside\n\n8\n00:00:03.000 --> 00:00:04.000\nDaniel: Next point.\n";
+    assert_eq!(
+        vtt_to_body(vtt),
+        "[00:00:01] Jane: Hi there.\n\n[00:00:03] Daniel: Next point."
+    );
+}
+
+#[test]
 fn rendered_source_frontmatter_round_trips() {
     let text = render_source(&RenderSource {
         id: "src-19700101-hello",
