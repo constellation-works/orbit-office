@@ -187,7 +187,7 @@ tags: [client:acme]
 **Rules by kind:**
 
 - **`draft`** (an email or message for someone else) records `sent_at` once the user sends it. In the hackathon build, sending copies the draft to the clipboard.
-- **`script`** is never run because it was promoted. A script runs only as a step of a routine or auto-task whose accepted proposal named it. That step pins the artifact version by `sha256` and runs inside Orbit's sandbox. Changing the script means a new version and a new proposal.
+- **`script`** is never run because it was promoted. A script runs only as a step of a routine or auto-task whose accepted proposal named it. That step pins the artifact version by `sha256` and runs inside Orbit's sandbox. A Python script runs with the Python the install pins ([install.md](./install.md)), through `uv run` when it declares dependencies inline. Changing the script means a new version and a new proposal.
 - **`review`** holds the generated reviews ([analytics-and-reviews.md](./analytics-and-reviews.md)).
 - **`report`** in the series `digest-daily` is the daily digest, the one artifact promoted without review (`approved.by: routine`; [sessions.md](./sessions.md#daily-digest)).
 - **`data`** (csv, json) records its schema in the summary, so later tasks can use it without opening it.

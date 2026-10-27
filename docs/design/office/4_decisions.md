@@ -653,6 +653,42 @@ glossary). The alternatives considered:
   knowledge write, three more signals, and a model-view rule that every
   model call site must use.
 
+## Agents get a pinned Python, installed with uv
+
+**Recorded:** 2026-10-26
+**Code anchors:** `install.sh`; [specs/install.md](./specs/install.md)
+
+### Context
+
+Implementing agents will often write and run Python: cleaning a CSV,
+reshaping data, running a `script` artifact. macOS has only the old Python
+that comes with the Xcode command line tools, and Windows has none (WSL2
+Ubuntu has its own, at whatever version that release ships). The
+alternatives considered:
+
+- **Use the system Python.** Its version differs from machine to machine, or
+  it is missing. A script that works in the demo could fail on a judge's Mac.
+- **Homebrew or the system package manager.** Not every Mac has Homebrew,
+  and both install a Python the user's other tools share and upgrade.
+- **pyenv or a Python installer.** These need a compiler toolchain or an
+  admin prompt, and they change the user's shell profile.
+
+### Decision
+
+The install script installs `uv` at a pinned version, checking the
+release archive's SHA-256 (STD-05@1 §R23). It
+then uses uv to install a pinned Python minor version, both in the app's
+own `tools` folder. Agents reach both through the `PATH` the app service and
+the MCP entry set. Nothing touches the system Python or the shell profile.
+
+### Consequences
+
+- Every install runs the same Python. `uv run` gives a script its declared
+  dependencies without a shared environment that could drift.
+- Cost: about 60 MB more on disk, and network access at install time. Bumping
+  `UV_VERSION` or `PYTHON_VERSION` is a deliberate change to the script,
+  made together with the checksum.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.

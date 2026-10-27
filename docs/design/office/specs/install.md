@@ -1,6 +1,6 @@
 ---
 type: design
-summary: "Spec: install script — one idempotent command that installs Orbit, sets up git and the workspace, enables the plugin, scaffolds the Library and installs the app"
+summary: "Spec: install script — one idempotent command that installs Orbit and a pinned Python, sets up git and the workspace, enables the plugin, scaffolds the Library and installs the app"
 last_validated: 2026-10-26
 ---
 
@@ -22,7 +22,9 @@ a complete one. It prints each step as it goes and a summary at the end.
 `--home DIR` picks another folder. Orbit's own state stays in `~/.orbit`; the two are
 different folders. The app and the plugin export are unpacked to the per-user data folder
 (`~/Library/Application Support/orbit-office` on macOS, `~/.local/share/orbit-office` on
-Linux), never inside the workspace.
+Linux), never inside the workspace. The tools the script installs for agents (`uv` and a
+pinned Python) go in `~/.local/share/orbit-office/tools` on both systems, a path with no
+spaces, so script shebangs that name the interpreter keep working.
 
 **Steps:**
 
@@ -31,36 +33,58 @@ Linux), never inside the workspace.
    get it. It checks `git` (macOS: runs `xcode-select --install` and asks to re-run when it
    is missing) and `ffmpeg` (installs it with Homebrew or the system package manager when
    one is available, otherwise stops with instructions).
-2. **Orbit.** If `orbit` is missing, installs the tested release:
+2. **Python.** Agents write and run small Python scripts (data cleanup, `script` artifacts),
+   and neither macOS nor Windows ships a Python that can be relied on: macOS has only the
+   old Python that comes with the Xcode command line tools, and Windows has none (WSL2
+   Ubuntu has its own, at whatever version that release ships). So the script installs its
+   own, which leaves the system Python and the user's shell profile alone
+   ([decision](../4_decisions.md#agents-get-a-pinned-python-installed-with-uv)):
+   - **`uv`** at the version pinned in the script (`UV_VERSION`). The script downloads that
+     release's archive for the platform and checks its SHA-256 against the checksum
+     recorded beside the pin before unpacking, then places the binary at `tools/bin/uv`. A
+     `uv` already on the user's `PATH` is ignored, so every install runs the same version.
+   - **Python** at the minor version pinned in the script (`PYTHON_VERSION`, 3.12):
+     `uv python install` with `UV_PYTHON_INSTALL_DIR=tools/python`. Then `tools/bin/python3`
+     and `tools/bin/python` are linked to the interpreter that `uv python find` reports.
+   - **Reaching agents.** The app's login service (step 9) puts `tools/bin` first on the
+     `PATH` it starts with, and the dispatch pass passes that `PATH` to the runs it starts.
+     The agent CLI registration (step 8) adds the same `PATH` to the Orbit MCP entry's
+     environment. The `library-conventions` skill tells agents to use `python3`, and
+     `uv run` for a script that declares dependencies inline (PEP 723).
+   - **Check.** `tools/bin/python3 --version` must print the pinned minor version, or the
+     step fails and names what went wrong. A re-run with both already in place changes
+     nothing.
+3. **Orbit.** If `orbit` is missing, installs the tested release:
    `npm install -g @orbit-tools/cli@0.34.0`. An existing Orbit is never upgraded or
    downgraded: an older one stops the script with the command to upgrade, and a newer one
    continues with a warning.
-3. **Git and the workspace.** Creates `~/orbit` and runs `git init -b main` if it is not
+4. **Git and the workspace.** Creates `~/orbit` and runs `git init -b main` if it is not
    already a repository; writes `.gitignore` with `/library/`; makes the first commit if
    the repository has none (Orbit's runs need a commit to create worktrees from). If git
    has no `user.name`/`user.email`, it sets a repo-local identity from the login name. Then
    `orbit workspace init` if the folder is not yet registered. A non-empty folder that is
    not already an office workspace is refused, never adopted.
-4. **Plugin.** `orbit plugin add` from the prebuilt export attached to the orbit-office
+5. **Plugin.** `orbit plugin add` from the prebuilt export attached to the orbit-office
    release (a local directory install, so no Rust toolchain is needed); `--from-source`
    uses the pinned `git+` source and needs `cargo`. Then `orbit plugin enable office` with
    the grants the manifest requests (`fs`, `network`), after printing them and asking once
    (`--yes` skips the question).
-5. **Secrets.** Prompts for the Meta API key, and optionally the Baseten token, with hidden
+6. **Secrets.** Prompts for the Meta API key, and optionally the Baseten token, with hidden
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set.
-6. **Scaffold.** `orbit tool run office.init`: the Library's layout, git repository, config,
+7. **Scaffold.** `orbit tool run office.init`: the Library's layout, git repository, config,
    `.gitignore` and index, then the first Library commit.
-7. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Muse Code's
+8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Muse Code's
    `settings.json`, keeping a backup of the old file, and installs the office skills. With
    `--agent claude|codex` it registers the other CLI instead.
-8. **App.** Builds the app and installs it as a login service (a launchd agent on macOS, a
+9. **App.** Builds the app and installs it as a login service (a launchd agent on macOS, a
    systemd user unit on Linux), then opens `http://localhost:<port>`, where the browser
    offers to install it as a PWA.
 
 The summary lists what was created, where, and the uninstall command
-(`install.sh --uninstall`). Uninstall removes the service, the MCP entry and the plugin. It
-keeps `~/orbit` and the Library unless `--purge` is given.
+(`install.sh --uninstall`). Uninstall removes the service, the MCP entry, the plugin and the
+`tools` folder (`uv` and its Python, which nothing else uses). It keeps `~/orbit` and the
+Library unless `--purge` is given.
 
 Plugin-authored commits in the Library use a fixed author (`orbit-office
 <office@orbit.local>`) passed per commit, so they need no git identity and are easy to tell
