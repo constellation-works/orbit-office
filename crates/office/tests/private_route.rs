@@ -309,7 +309,7 @@ fn status_reports_the_open_weights_token_by_presence_only() {
     );
     assert_eq!(
         response["output"]["secrets"],
-        json!({"meta_api_key": "unset", "open_weights_token": "set"})
+        json!({"meta_api_key": "unset", "open_weights_token": "set", "baseten_token": "set"})
     );
     assert!(!response.to_string().contains("fixture-token"));
 }

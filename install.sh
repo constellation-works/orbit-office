@@ -73,6 +73,11 @@ Environment:
   ORBIT_OFFICE_META_API_KEY  Meta API key (used instead of prompting)
   ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN  Private-route endpoint token (used
                              instead of prompting; optional)
+  ORBIT_OFFICE_BASETEN_TOKEN Deprecated alias of
+                             ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN, accepted
+                             with a warning for one release
+  BASETEN_TOKEN              Deprecated alias of OPEN_WEIGHTS_TOKEN,
+                             accepted with a warning for one release
   CLAUDE_CONFIG_DIR          Claude Code config directory (default: HOME);
                              its .claude.json holds the MCP entry
   ORBIT_OFFICE_OS            Platform override (macos or linux)
@@ -958,7 +963,24 @@ step_plugin() {
 step_secrets() {
     step "6 secrets"
     set_secret "meta_api_key" "${ORBIT_OFFICE_META_API_KEY:-${META_API_KEY:-}}" 0
-    set_secret "open_weights_token" "${ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN:-${OPEN_WEIGHTS_TOKEN:-}}" 1
+    # STD-01@2 §R35: the retired names stay accepted for one release as
+    # aliases of their replacements, each use warning on stderr. The
+    # warning names the variable only; its value is never echoed.
+    _open_weights_token="${ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN:-${OPEN_WEIGHTS_TOKEN:-}}"
+    if [ -n "${ORBIT_OFFICE_BASETEN_TOKEN:-}" ]; then
+        warn "ORBIT_OFFICE_BASETEN_TOKEN is deprecated; use ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN instead"
+        if [ -z "$_open_weights_token" ]; then
+            _open_weights_token="$ORBIT_OFFICE_BASETEN_TOKEN"
+        fi
+    fi
+    if [ -n "${BASETEN_TOKEN:-}" ]; then
+        warn "BASETEN_TOKEN is deprecated; use OPEN_WEIGHTS_TOKEN instead"
+        if [ -z "$_open_weights_token" ]; then
+            _open_weights_token="$BASETEN_TOKEN"
+        fi
+    fi
+    set_secret "open_weights_token" "$_open_weights_token" 1
+    _open_weights_token=""
 }
 
 # Prints "ok" when office.init succeeded, otherwise the office code, or

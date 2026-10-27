@@ -2066,4 +2066,30 @@ check "invalid .claude.json remains byte-identical" cmp -s "$HOME19D/.claude.jso
 check "invalid .claude.json creates no MCP receipt" \
     test ! -e "$HOME19D/.local/share/orbit-office/claude-mcp.json"
 
+# ---------------------------------------------------------------------------
+# 20. Retired token env vars warn and still store the token (STD-01 R35)
+# ---------------------------------------------------------------------------
+
+HOME_OLD1="$ROOT/home-old-token-1"; mkdir -p "$HOME_OLD1"
+run_install "$HOME_OLD1" ORBIT_OFFICE_BASETEN_TOKEN=old-token-must-not-echo-1 -- > "$ROOT/out-old1.txt" 2>&1 \
+    || { cat "$ROOT/out-old1.txt" >&2; fail "ORBIT_OFFICE_BASETEN_TOKEN install exits 0"; }
+ok "ORBIT_OFFICE_BASETEN_TOKEN install exits 0"
+check "ORBIT_OFFICE_BASETEN_TOKEN warns naming the old variable and its replacement" \
+    grep -F "warning: ORBIT_OFFICE_BASETEN_TOKEN is deprecated; use ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN instead" "$ROOT/out-old1.txt"
+check "ORBIT_OFFICE_BASETEN_TOKEN warning never echoes its value" \
+    sh -c '! grep -q "old-token-must-not-echo-1" "$1"' sh "$ROOT/out-old1.txt"
+check "ORBIT_OFFICE_BASETEN_TOKEN is stored as open_weights_token" \
+    test -f "$STUB_STATE/secret.open_weights_token"
+
+HOME_OLD2="$ROOT/home-old-token-2"; mkdir -p "$HOME_OLD2"
+run_install "$HOME_OLD2" BASETEN_TOKEN=old-token-must-not-echo-2 -- > "$ROOT/out-old2.txt" 2>&1 \
+    || { cat "$ROOT/out-old2.txt" >&2; fail "BASETEN_TOKEN install exits 0"; }
+ok "BASETEN_TOKEN install exits 0"
+check "BASETEN_TOKEN warns naming the old variable and its replacement" \
+    grep -F "warning: BASETEN_TOKEN is deprecated; use OPEN_WEIGHTS_TOKEN instead" "$ROOT/out-old2.txt"
+check "BASETEN_TOKEN warning never echoes its value" \
+    sh -c '! grep -q "old-token-must-not-echo-2" "$1"' sh "$ROOT/out-old2.txt"
+check "BASETEN_TOKEN is stored as open_weights_token" \
+    test -f "$STUB_STATE/secret.open_weights_token"
+
 printf 'PASS: %s checks\n' "$PASS"

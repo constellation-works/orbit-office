@@ -76,8 +76,10 @@ open_weights:
 ```
 
 The endpoint's token, when it needs one, is the declared secret
-`open_weights_token`. The token replaces `baseten_token`; there are no
-installs to migrate before the event.
+`open_weights_token`. The token replaces `baseten_token`; for one
+release the old installer inputs and the old status field stay accepted
+as deprecated aliases with a warning (see the deviation recorded in
+[4_decisions.md](../4_decisions.md), STD-01@2 §R10 and §R35).
 
 ### Honest wording
 
