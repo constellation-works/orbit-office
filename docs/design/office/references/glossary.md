@@ -16,6 +16,7 @@ stdout, exit code) is excluded.
 | **Artifact** | Agent output the user approved, promoted from a task into the Library, versioned by `series`, never edited in place. The daily digest is the one artifact promoted by a routine without review. |
 | **Friction** | An Orbit record of something that went wrong or slowed work; the plugin adds `cites` and `runbook` conventions, never a second store. |
 | **Decision log** | The append-only `conversation` source of one orchestrator session: decisions, verbatim directions, actions, open questions. See [specs/sessions.md](../specs/sessions.md). |
+| **Handoff** | The agent's note to its next session: the newest `handoff` entry in the decision log, refreshed whenever the plan changes, and the first thing the session brief shows. |
 | **Session brief** | What `office.session.brief` returns at session start: waiting on you, agents working on, open questions, the last session's decisions. Computed, never stored. |
 | **Daily digest** | The day's cited summary, a `report` artifact in the series `digest-daily`, written by a routine with one Muse Spark call. |
 | **Library** | The three layers together — sources, knowledge, artifacts — as its own git repo inside the user's workspace (ignored by the workspace repo), with a rebuildable SQLite index in plugin state. |

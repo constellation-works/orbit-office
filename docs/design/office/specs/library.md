@@ -107,14 +107,14 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 - **Chat:** one line per message, `[timestamp] Author: text`. The anchor is `#L14-20`.
 - **Email, doc:** paragraphs. The anchor is `#L…`.
 - **Receipt, bill:** extracted fields as a YAML block plus the raw OCR text.
-- **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), action, open question or resolution, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The agent CLI's own transcript belongs to that CLI, so the skill has the agent write this log itself ([sessions.md](./sessions.md#decision-log)).
+- **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), action, open question, resolution or handoff, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The agent CLI's own transcript belongs to that CLI, so the skill has the agent write this log itself ([sessions.md](./sessions.md#decision-log)).
 
 **Rules:**
 
 - **Immutable.** A correction writes `v2.md` with `supersedes` set. Citations name a version when it matters, otherwise the latest.
 - **Dedupe.** If the `sha256` of the original, or of the normalized pasted text, matches an existing source, capture returns that source instead of creating a new one.
 - **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. Short directives typed by the user are not captured separately: they go in the `conversation` source.
-- **Conversation sources.** The skill has the agent open one `conversation` source per session and append to it whenever the user makes a decision or gives a standing direction, and for each action it takes. There is no end-of-session summary: the next session starts from `office.session.brief` ([sessions.md](./sessions.md)). The user's directions are decisions, and the review needs them.
+- **Conversation sources.** The skill has the agent open one `conversation` source per session and append to it whenever the user makes a decision or gives a standing direction, and for each action it takes. Instead of an end-of-session summary, the agent keeps a rolling `handoff` entry current, and the next session starts from `office.session.brief`, which leads with that handoff ([sessions.md](./sessions.md)). The user's directions are decisions, and the review needs them.
 - **Retention** is per kind and shown on the Routines screen: for example, keep meeting transcripts forever and drop the audio after 90 days. Expiry deletes only the `original.*` file and records that in the frontmatter.
 
 ## Knowledge pages

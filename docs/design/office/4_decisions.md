@@ -530,7 +530,9 @@ where the last one stopped. The alternatives considered:
 - **An end-of-session summary written by the agent.** Sessions end abruptly
   (the user closes the terminal), so it is often never written. STD-02@3
   §R25 asks that an obligation the system relies on be produced by
-  deterministic code, not left to prompt text.
+  deterministic code, not left to prompt text. The agent's own words are
+  still worth keeping, so they survive as a rolling handoff (below) that
+  nothing depends on.
 - **A daily auto-task on a cheap crew.** It runs at the wrong cadence for a
   handoff, cannot see the CLI's transcript, mints a task a day into the
   To-dos and the metrics, and pays for an agent loop to write one summary.
@@ -540,8 +542,11 @@ where the last one stopped. The alternatives considered:
 - The narrative is an **append-only decision log**: one `conversation`
   source per session, appended to as decisions, directions and actions
   happen.
-- The handoff is **`office.session.brief`**, computed at session start from
-  Orbit and the Library with no model call.
+- The agent keeps a **rolling handoff**: a `handoff` entry in the log,
+  appended anew whenever the plan changes, so the latest is always current.
+- **`office.session.brief`**, computed at session start from Orbit and the
+  Library with no model call, leads with that handoff and does not depend
+  on it.
 - The day's summary is the **`office-daily-digest` routine**: one
   deterministic step running `office.digest`, which makes one Muse Spark
   call through the privacy routing and writes a `report` artifact in the

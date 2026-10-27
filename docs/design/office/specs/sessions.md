@@ -15,12 +15,15 @@ is the cheapest mechanism that can do its job
 | Piece | Written by | When | Model |
 |---|---|---|---|
 | **Decision log** | the agent, through `office.capture` | as decisions happen | none |
+| **Handoff** | the agent, as `handoff` entries in that log | refreshed whenever the plan changes | none |
 | **Session brief** | `office.session.brief`, computed on demand | at session start | none |
 | **Daily digest** | `office.digest`, from the `office-daily-digest` routine | once a day | one Muse Spark call |
 
-There is no end-of-session summary. A session that ends abruptly loses
-nothing, because the log was written as it went and the brief is computed
-from state that already exists.
+The handoff is never left to the end of a session, which often ends with
+the terminal simply closing. The agent rewrites it whenever the plan
+changes, so the latest one is always current. A session that ends abruptly
+loses nothing: the log and the handoff were written as it went, and the
+brief is computed from state that already exists.
 
 ## Decision log
 
@@ -39,14 +42,34 @@ One `conversation` source per orchestrator session ([library.md](./library.md#so
   [2026-10-28T15:06:40-04:00] action: Filed agent to-do <task-id> with the client-follow-up runbook.
   [2026-10-28T15:09:13-04:00] open: Which pricing tier does Acme get?
   [2026-10-28T16:20:55-04:00] resolved: #L4 — Acme stays on Pro.
+  [2026-10-28T16:22:30-04:00] handoff: Next: review the renewal deck draft when the agent finishes; Jane's pricing question is answered (#L5).
   ```
 
   The kinds are `decision`, `direction` (the user's words, verbatim),
   `action` (one per thing the agent did), `open` (a question left
-  unanswered) and `resolved` (closes an earlier `open` by its anchor).
+  unanswered), `resolved` (closes an earlier `open` by its anchor) and
+  `handoff`.
 - **What goes in:** the user's decisions and standing directions, and one
   line per action. Pasted external content does not: it is captured as
   its own source first, and the log cites it.
+
+### Handoff
+
+The handoff is the agent's note to its next session: what it was about to
+do, what the user is waiting on it for, and the context the structured state
+cannot show (why something is paused, what the user prefers next). It is a
+`handoff` entry in the decision log, one line, citing entries and tasks by
+anchor and id.
+
+- **Rolling.** The agent appends a new `handoff` entry whenever the plan
+  changes: after a decision that changes next steps, after filing or
+  finishing work, and when the user signals they are done. The newest
+  `handoff` entry supersedes earlier ones; nothing is edited.
+- **Read first.** The next session's brief puts the newest handoff at the top
+  (below), so the agent picks up the thread in its own words before reading
+  the computed state.
+- **Never the only record.** The brief does not depend on it: with no
+  handoff, it still returns the computed sections.
 
 ## Session brief
 
@@ -55,6 +78,8 @@ orchestrator skill calls it first in every session. Its output is
 assembled from Orbit and the Library, with no model call, so it is free,
 always current and cannot invent anything:
 
+- **Handoff:** the newest `handoff` entry of the previous session, verbatim,
+  with its time. Absent when that session wrote none.
 - **Since:** the time the last conversation source was appended to.
 - **Waiting on you:** proposals awaiting approval, agent to-dos in `review`,
   and open `owner:you` to-dos, oldest first.
