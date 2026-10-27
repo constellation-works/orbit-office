@@ -3,7 +3,7 @@
 use std::io::Write;
 
 use office_core::domain::endpoint::Capability;
-use office_core::ports::{Routed, TranscribeRequest, Transcript};
+use office_core::ports::{Routed, TranscribeRequest, Transcript, TranscriptChunk};
 use office_core::{Error, Result};
 
 use crate::{RoutedClient, http, media, meta, routing};
@@ -56,6 +56,7 @@ pub(crate) fn transcribe(
     }
     let mut texts = Vec::with_capacity(paths.len());
     let mut segments = Vec::new();
+    let mut chunks = Vec::with_capacity(paths.len());
     for (path, piece) in paths.iter().zip(plan) {
         let audio = std::fs::read(path).map_err(|error| media_io("read split audio", error))?;
         let offset_ms = piece
@@ -63,13 +64,22 @@ pub(crate) fn transcribe(
             .checked_mul(1_000)
             .ok_or_else(timestamp_overflow)?;
         let chunk = call(&audio, offset_ms)?;
-        texts.push(chunk.text);
-        segments.extend(chunk.segments);
+        // `shift_turns` already classified this reply: a text-only chunk
+        // stays in `chunks` where the flat turn list would drop it.
+        let Transcript {
+            text,
+            segments: chunk_segments,
+            chunks: chunk_chunks,
+        } = chunk;
+        texts.push(text);
+        segments.extend(chunk_segments);
+        chunks.extend(chunk_chunks);
     }
     Ok(Routed {
         value: Transcript {
             text: texts.join("\n"),
             segments,
+            chunks,
         },
         derived_by,
     })
@@ -94,9 +104,15 @@ fn shift_turns(mut parsed: meta::ParsedTranscript, offset_ms: u64) -> Result<Tra
             .checked_add(offset_ms)
             .ok_or_else(timestamp_overflow)?;
     }
+    let chunks = if parsed.segments.is_empty() {
+        vec![TranscriptChunk::Text(parsed.text.clone())]
+    } else {
+        vec![TranscriptChunk::Turns(parsed.segments.clone())]
+    };
     Ok(Transcript {
         text: parsed.text,
         segments: parsed.segments,
+        chunks,
     })
 }
 

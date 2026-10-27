@@ -12,7 +12,7 @@ pub use library::{
 };
 pub use models::{
     DerivedBy, ExtractRequest, ImageReading, ImageRequest, Models, RouteCheck, RouteProbe, Routed,
-    TranscribeRequest, Transcript, TranscriptSegment,
+    TranscribeRequest, Transcript, TranscriptChunk, TranscriptSegment,
 };
 pub use orbit::Orbit;
 

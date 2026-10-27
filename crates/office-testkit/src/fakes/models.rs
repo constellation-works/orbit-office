@@ -43,6 +43,7 @@ impl FakeModels {
                     end_ms: 1000,
                     text: "fake transcript".into(),
                 }],
+                chunks: Vec::new(),
             },
             extracted: json!({}),
             ..Self::default()
