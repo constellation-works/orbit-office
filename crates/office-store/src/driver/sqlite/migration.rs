@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::error::{Error, Result};
 
 /// The newest schema this build understands.
-pub(crate) const SUPPORTED_SCHEMA: u32 = 1;
+pub(crate) const SUPPORTED_SCHEMA: u32 = 2;
 
 /// One migration step: SQL applied in order.
 struct Migration {
@@ -19,9 +19,10 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    to: 1,
-    sql: "
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        to: 1,
+        sql: "
 CREATE TABLE documents (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -47,7 +48,20 @@ CREATE TABLE links (
 );
 CREATE VIRTUAL TABLE documents_fts USING fts5(id UNINDEXED, title, summary, body, tags);
 ",
-}];
+    },
+    // The template and date search filters. Rows indexed before this step
+    // read NULL until the next reindex, which `office.init` runs on every
+    // upgrade.
+    Migration {
+        to: 2,
+        sql: "
+ALTER TABLE documents ADD COLUMN template TEXT;
+ALTER TABLE documents ADD COLUMN date TEXT;
+CREATE INDEX documents_template ON documents(template);
+CREATE INDEX documents_date ON documents(date);
+",
+    },
+];
 
 /// Bring `conn` up to [`SUPPORTED_SCHEMA`], refusing a newer database.
 pub(crate) fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {

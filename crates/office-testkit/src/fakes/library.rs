@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::rc::Rc;
 
 use office_common::Sensitivity;
 use office_core::domain::knowledge::{
@@ -45,6 +46,48 @@ pub struct FakeLibrary {
     pub allowed_upload_roots: Vec<PathBuf>,
     /// Files returned by `templates()`, in the order given.
     pub templates: Vec<LibraryText>,
+    commits: RefCell<usize>,
+    staging: FakeStaging,
+}
+
+/// What `stage_attachment` wrote, shared across clones so a test keeps an
+/// observer after the fake moves into boxed ports.
+#[derive(Clone, Default)]
+pub struct FakeStaging {
+    state: Rc<RefCell<StagingState>>,
+}
+
+#[derive(Default)]
+struct StagingState {
+    written: BTreeMap<String, String>,
+    removed: Vec<String>,
+}
+
+impl FakeStaging {
+    /// The text staged at `path`, kept after removal so a test can read
+    /// what an artifact copy carried.
+    #[must_use]
+    pub fn text(&self, path: &str) -> Option<String> {
+        self.state.borrow().written.get(path).cloned()
+    }
+
+    /// Every staged path, in path order.
+    #[must_use]
+    pub fn written(&self) -> Vec<String> {
+        self.state.borrow().written.keys().cloned().collect()
+    }
+
+    /// Staged paths not yet removed.
+    #[must_use]
+    pub fn live(&self) -> Vec<String> {
+        let state = self.state.borrow();
+        state
+            .written
+            .keys()
+            .filter(|path| !state.removed.contains(path))
+            .cloned()
+            .collect()
+    }
 }
 
 impl FakeLibrary {
@@ -71,6 +114,16 @@ impl FakeLibrary {
                 .collect(),
             ..Self::initialized()
         }
+    }
+
+    /// An observer of attachment staging; clones share the log.
+    #[must_use]
+    pub fn staging(&self) -> FakeStaging {
+        self.staging.clone()
+    }
+
+    fn record_commit(&self) {
+        *self.commits.borrow_mut() += 1;
     }
 
     /// Commits recorded for a Library-relative path (one per write).
@@ -163,6 +216,7 @@ impl Library for FakeLibrary {
                 message: format!("Update {}", record.path),
             },
         );
+        self.record_commit();
         Ok(record)
     }
 
@@ -190,6 +244,18 @@ impl Library for FakeLibrary {
                         .series
                         .as_ref()
                         .is_none_or(|series| doc.series.as_ref() == Some(series))
+                    && filter
+                        .template
+                        .as_ref()
+                        .is_none_or(|template| doc.template.as_ref() == Some(template))
+                    && filter
+                        .since
+                        .as_ref()
+                        .is_none_or(|since| doc.date.as_ref().is_some_and(|date| date >= since))
+                    && filter
+                        .until
+                        .as_ref()
+                        .is_none_or(|until| doc.date.as_ref().is_some_and(|date| date <= until))
             })
             .take(filter.limit.unwrap_or(20))
             .map(|doc| SearchHit {
@@ -273,6 +339,44 @@ impl Library for FakeLibrary {
             .cloned()
             .unwrap_or_default())
     }
+    fn read_text(&self, relative: &Path) -> Result<String> {
+        self.ready()?;
+        self.texts
+            .borrow()
+            .get(&relative.to_string_lossy().to_string())
+            .cloned()
+            .ok_or_else(|| Error::Library {
+                code: "io_error",
+                message: format!("document {} is absent", relative.display()),
+            })
+    }
+
+    fn head_commit(&self) -> Result<Option<String>> {
+        self.ready()?;
+        let commits = *self.commits.borrow();
+        Ok((commits > 0).then(|| format!("fake-head-{commits}")))
+    }
+
+    fn stage_attachment(&self, name: &str, text: &str) -> Result<String> {
+        self.ready()?;
+        let mut state = self.staging.state.borrow_mut();
+        let path = format!("staging/{}/{name}", state.written.len() + 1);
+        state.written.insert(path.clone(), text.to_string());
+        Ok(path)
+    }
+
+    fn remove_staged(&self, staged: &str) -> Result<()> {
+        let mut state = self.staging.state.borrow_mut();
+        if !state.written.contains_key(staged) {
+            return Err(Error::Library {
+                code: "unsafe_path",
+                message: format!("{staged} is not a staged attachment"),
+            });
+        }
+        state.removed.push(staged.to_string());
+        Ok(())
+    }
+
     fn is_initialized(&self) -> Result<bool> {
         if self.is_now_initialized() {
             self.ready()?;
@@ -360,6 +464,7 @@ impl Library for FakeLibrary {
                     message: format!("Update {path}"),
                 },
             );
+            self.record_commit();
             return Ok(outcome);
         }
         // Create path.
@@ -567,6 +672,8 @@ impl Library for FakeLibrary {
         });
         let record = DocumentRecord::from_markdown(std::path::Path::new(&path), &markdown);
         self.documents.borrow_mut().insert(path.clone(), record);
+        self.texts.borrow_mut().insert(path.clone(), markdown);
+        self.record_commit();
         let mut revisions = self.revisions.borrow_mut();
         let history = revisions.entry(path.clone()).or_default();
         history.insert(

@@ -1,0 +1,32 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  # Runs after knowledge-show.yaml in the shared conformance workspace, so
+  # the Library holds dom-user (template user, body "Operations lead.").
+  - name: search_finds_a_page_by_template
+    tool: search
+    input: {query: operations, template: user}
+    expect:
+      output:
+        count: 1
+        hits:
+          - id: dom-user
+            kind: domain
+            title: Dee
+            path: knowledge/domain/dom-user.md
+            snippet: "## Name\nDee\n\n## Role\n<b>Operations</b> lead."
+  - name: search_template_filter_narrows_to_nothing
+    tool: search
+    input: {query: operations, template: client}
+    expect:
+      output: {count: 0, hits: []}
+  - name: search_refuses_an_empty_query
+    tool: search
+    input: {query: "  "}
+    expect:
+      error: {code: invalid_argument}
+  - name: search_refuses_unknown_input
+    tool: search
+    input: {query: operations, date: "2026-10-01"}
+    expect:
+      error: {code: invalid_argument}

@@ -139,6 +139,12 @@ pub enum Error {
         /// The requested id.
         id: String,
     },
+    /// Orbit has no task with this id.
+    #[error("no Orbit task has id {id}")]
+    TaskNotFound {
+        /// The requested id.
+        id: String,
+    },
     /// No adapter was supplied for Library operations.
     #[error("Library access is unavailable in this call context")]
     LibraryUnavailable,
@@ -215,6 +221,7 @@ impl Error {
             Self::PolicyWithoutSource { .. } => "policy_without_source",
             Self::UnresolvedCite { .. } => "unresolved_cite",
             Self::PageNotFound { .. } => "page_not_found",
+            Self::TaskNotFound { .. } => "task_not_found",
             Self::LibraryUnavailable => "library_unavailable",
             Self::Library { code, .. } => code,
             Self::Model { code, .. } => code,
@@ -250,6 +257,7 @@ impl Error {
             Self::PolicyWithoutSource { .. } => false,
             Self::UnresolvedCite { .. } => false,
             Self::PageNotFound { .. } => false,
+            Self::TaskNotFound { .. } => false,
             Self::LibraryUnavailable => false,
             Self::Library { .. } => false,
             Self::InvalidSetting { .. } => false,

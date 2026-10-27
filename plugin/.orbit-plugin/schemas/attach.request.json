@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.attach request",
+  "description": "Pick at most 8 Library files for a task and copy them into it as task artifacts under context/. Give task; without task, dry_run with text or tags previews a selection and copies nothing.",
+  "type": "object",
+  "properties": {
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The Orbit task id. Its title, description and tags drive the selection: source:<id> tags name its sources, series:<name> tags its artifact series, and runbook ids (runbook:<id>, rb-… tags or ids in its text) its runbooks. An unknown task is refused with task_not_found before any copy."
+    },
+    "text": {
+      "type": "string",
+      "description": "Extra text to match, added to the task's own."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Extra tags, added to the task's own."
+    },
+    "dry_run": {
+      "type": "boolean",
+      "description": "Return the selection without copying anything (default false)."
+    }
+  },
+  "additionalProperties": false
+}

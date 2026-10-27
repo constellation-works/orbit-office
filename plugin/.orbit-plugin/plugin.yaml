@@ -206,23 +206,25 @@ spec:
     #   input_schema: { $ref: schemas/private-route-check.request.json }
     #   output_schema: { $ref: schemas/private-route-check.response.json }
 
-    # - name: search
-    #   description: >-
-    #     FTS over sources, knowledge and artifacts, with filters by kind,
-    #     tag, series and date.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/search.request.json }
-    #   output_schema: { $ref: schemas/search.response.json }
+    - name: search
+      description: >-
+        FTS over sources, knowledge and artifacts, with filters by kind,
+        template, tag, series and date. An empty query is refused.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/search.request.json }
+      output_schema: { $ref: schemas/search.response.json }
 
-    # - name: attach
-    #   description: >-
-    #     Pick the knowledge, source and example artifact files for a task
-    #     and copy them into it as task artifacts under context/.
-    #   execution_kind: mutating
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/attach.request.json }
-    #   output_schema: { $ref: schemas/attach.response.json }
+    - name: attach
+      description: >-
+        Pick the knowledge, source and example artifact files for a task
+        (at most 8, by template attach policy first) and copy them into it
+        as task artifacts under context/, pages as their model views, with
+        the Library commit they were read at.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/attach.request.json }
+      output_schema: { $ref: schemas/attach.response.json }
 
     # ---- proposals ----
 

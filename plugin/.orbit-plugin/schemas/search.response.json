@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.search response",
+  "description": "Hits in rank order. Writes nothing.",
+  "type": "object",
+  "properties": {
+    "count": { "type": "integer", "minimum": 0, "description": "Number of hits returned." },
+    "hits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["source", "domain", "runbook", "artifact"] },
+          "title": { "type": "string" },
+          "path": { "type": "string", "description": "Relative to the Library." },
+          "snippet": { "type": "string", "description": "A short excerpt of the body around the first match." }
+        },
+        "required": ["id", "kind", "title", "path", "snippet"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["count", "hits"],
+  "additionalProperties": false
+}

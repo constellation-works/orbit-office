@@ -6,7 +6,7 @@ mod models;
 mod orbit;
 
 pub use clock::FakeClock;
-pub use library::FakeLibrary;
+pub use library::{FakeLibrary, FakeStaging};
 pub use models::FakeModels;
 pub use orbit::{FakeOrbit, OrbitCall};
 

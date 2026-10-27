@@ -221,6 +221,66 @@ approved review, or the QBR deck the user accepted unedited, becomes the
 template for the next one. This is the artifacts' part in "gets better
 with time".
 
+## Search and attaching to a task
+
+**`office.search`** (read-only, workspace) is full-text search over the
+index: `{"query": "<terms>"}` plus any of `kind` (`source`, `domain`,
+`runbook`, `artifact`), `template` (pages that name it), `tag`, `series`,
+`since` and `until` (`YYYY-MM-DD`, inclusive), and `limit` (1–100, default
+20). Each term must match, as a prefix, in a document's title, summary,
+body or tags. Every filter narrows the results before the limit. A
+document's date is its `occurred_at`, else `captured_at`, else
+`updated_at`, else `last_verified`, else the date in a dated id
+(`src-YYYYMMDD-…`, `art-YYYYMMDD-…`); a date filter excludes undated
+documents. An empty or blank query, an unknown kind, a malformed date or
+`since` after `until` is refused with `invalid_argument`. Hits carry `id`,
+`kind`, `title`, `path` and a `snippet`.
+
+**`office.attach`** (mutating, workspace) takes `{"task": "<id>"}` and
+copies at most 8 Library files into that task as task artifacts at
+`context/<library path>`. The task is read first with `orbit.task.show`;
+an unknown task is refused with `task_not_found` before anything is read or
+copied. Its title, description and tags drive the selection, and `text` and
+`tags` in the input add to them. Picks fill the 8 slots in this order,
+skipping repeats:
+
+1. Pages by template attach policy, in the order of
+   [knowledge-templates.md](./knowledge-templates.md#attach-policies):
+   `always` (current pages only), `participants` (person pages whose title
+   or an alias equals a participant of a `source:<id>` the task carries,
+   ignoring a trailing `(Organization)`), `tagged` (pages carrying one of
+   the task's tags) and `matched` (the glossary, when a `### Term` heading
+   appears as a whole word in the source or the task text). Retired pages
+   are never picked.
+2. Runbooks the task names: `runbook:<id>` or `rb-…` tags, or `rb-…` ids in
+   its text.
+3. The task's sources (`source:<id>` tags).
+4. Example artifacts in each `series:<name>` the task carries, newest first.
+5. Index search hits for the task's title, then documents carrying each of
+   its tags.
+6. Pages `related` to a page already picked.
+
+Search hits and related pages exclude domain pages whose template attaches
+`never` (goals, rhythm). A knowledge page is copied as its model view
+(`PageView::to_markdown`), so no `contact` ref value is attached; sources
+and artifacts are copied as their `source.md` or `artifact.md`. `private`
+documents are not attached and are listed in `omitted` with reason
+`private`, as are candidates past the limit (`limit`). Page files that do
+not parse are listed in `skipped`. A template that cannot be read or parsed
+refuses the call with `template_invalid`.
+
+Every file is read before the first copy, at one Library commit: attach
+reads the repository's `HEAD` before and after, and refuses with
+`library_changed`, copying nothing, if a write landed in between. Each copy
+is staged in the Library's `.office/attach/` (never indexed or committed),
+put with `orbit.task.artifact.put`, and its staging file removed
+([decision](../4_decisions.md#office-attach-stages-its-copies-inside-the-library)).
+A last artifact, `office-attach.json`, records the task, `library_commit`
+and the attached files; the response carries the same, plus `omitted` and
+`skipped`. With `dry_run: true` the call returns the selection and copies
+nothing; without `task`, a dry run with `text` or `tags` previews a
+selection without reading any task.
+
 ## Frictions
 
 Frictions stay Orbit records (`orbit.friction.add` /

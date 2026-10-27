@@ -1,8 +1,10 @@
+mod attach;
 mod capture;
 mod init;
 mod knowledge_show;
 mod knowledge_write;
 mod reindex;
+mod search;
 mod show;
 mod signals_scan;
 mod status;

@@ -970,6 +970,43 @@ machine", which it does not.
   costs three tiny calls. The demo uses a provider, labelled as a third
   party.
 
+## office.attach stages its copies inside the Library
+
+**Recorded:** 2026-10-27
+**Code anchors:** `crates/office-tools/src/tools/library/attach.rs`, `crates/office-store/src/repository/library.rs`; [specs/library.md](./specs/library.md#search-and-attaching-to-a-task)
+
+### Context
+
+`office.attach` copies Library files into a task with
+`orbit.task.artifact.put`, which takes a `source_path` and reads only files
+inside the workspace. A knowledge page must go out as its model view, not
+its file, so each copy is a rendered file that has to exist somewhere first.
+The plugin's `plugin_state` directory is under the global `~/.orbit`, outside
+the workspace, so the put refuses it. The plugin's only workspace write
+grant is `{{workspace}}/library`.
+
+### Decision
+
+- Each copy is written to `library/.office/attach/<call>/<library path>`,
+  put, and its staging file removed at once. Emptied staging directories
+  are pruned.
+- The store refuses a staging root that is a symlink or not a directory,
+  and removes only regular files under that root.
+- `.office/` is outside the layers `reindex` scans, and each Library commit
+  stages only the paths it wrote, so staging never shows in search or in the
+  Library history.
+- The selection is read at one commit: attach reads `HEAD` before and after
+  and refuses with `library_changed` if it moved. The manifest records that
+  commit.
+
+### Consequences
+
+- Attach needs no new grant, and the model view is the only form of a page
+  that leaves the Library.
+- Cost: a crash between a put and its removal leaves a stray file under
+  `.office/attach/` that `git status` lists as untracked. It is never indexed
+  or committed, and deleting the directory is always safe.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.
@@ -981,5 +1018,6 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-13134] — hardened the template's gates and goldens.
 - [ORB-18729] — builds the source view, upload and paste capture, including citation anchor landing.
 - [ORB-18796] — built the gateway plugin and found Orbit's verb rule.
+- [ORB-18719] — built `office.search` and `office.attach`, and decided where attach stages its copies.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
