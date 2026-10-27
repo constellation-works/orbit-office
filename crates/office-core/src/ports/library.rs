@@ -99,6 +99,15 @@ pub trait Library {
     fn set_setting(&self, _key: &str, _value: serde_json::Value) -> Result<()> {
         Err(Error::LibraryUnavailable)
     }
+    /// Capture a source (upload copy, pasted text, conversation create or
+    /// append). Upload/transcript paths are contained by the adapter.
+    fn capture_source(&self, _request: &CaptureSourceRequest) -> Result<SourceOutcome> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Read one source by id for display at an optional anchor.
+    fn read_source(&self, _id: &str) -> Result<SourceView> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Scaffold the Library (layout, git, config, `.gitignore`, index, one
     /// commit). `library_dir`, when given, is the requested Library location
     /// (workspace-relative or absolute); an adapter refuses one outside its
@@ -118,4 +127,96 @@ pub trait Library {
             ..LibraryHealth::default()
         })
     }
+}
+
+/// One conversation entry to append (specs/sessions.md).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConversationEntry {
+    /// One of the seven decision-log kinds.
+    pub kind: String,
+    /// One line of entry text.
+    pub text: String,
+}
+
+/// Everything `office.capture` asks the Library to do in one call.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CaptureSourceRequest {
+    /// The kind.
+    pub kind: Option<String>,
+    /// The title.
+    pub title: Option<String>,
+    /// The text.
+    pub text: Option<String>,
+    /// The upload path.
+    pub upload_path: Option<String>,
+    /// The transcript path.
+    pub transcript_path: Option<String>,
+    /// The append to.
+    pub append_to: Option<String>,
+    /// The entries.
+    pub entries: Vec<ConversationEntry>,
+    /// The captured at.
+    pub captured_at: String,
+    /// The captured by.
+    pub captured_by: Option<String>,
+    /// The origin.
+    pub origin: Option<String>,
+    /// The occurred at.
+    pub occurred_at: Option<String>,
+    /// The participants.
+    pub participants: Vec<String>,
+    /// The sensitivity.
+    pub sensitivity: Option<String>,
+}
+
+/// The source a capture created, deduplicated to, or appended to.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SourceOutcome {
+    /// The id.
+    pub id: String,
+    /// The kind.
+    pub kind: String,
+    /// The title.
+    pub title: String,
+    /// Library-relative path of `source.md`.
+    pub path: String,
+    /// The sha256.
+    pub sha256: Option<String>,
+    /// The bytes.
+    pub bytes: Option<u64>,
+    /// The media type.
+    pub media_type: Option<String>,
+    /// The sensitivity.
+    pub sensitivity: String,
+    /// The deduplicated.
+    pub deduplicated: bool,
+    /// Entries appended by this call (0 for a create).
+    pub appended: usize,
+    /// The version.
+    pub version: u32,
+}
+
+/// A source read back for `office.source-show`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SourceView {
+    /// The id.
+    pub id: String,
+    /// The kind.
+    pub kind: String,
+    /// The title.
+    pub title: String,
+    /// The path.
+    pub path: String,
+    /// The body.
+    pub body: String,
+    /// The sensitivity.
+    pub sensitivity: String,
+    /// The sha256.
+    pub sha256: Option<String>,
+    /// The bytes.
+    pub bytes: Option<u64>,
+    /// The media type.
+    pub media_type: Option<String>,
+    /// The version.
+    pub version: u32,
 }

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.source-show response",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "kind": { "type": "string" },
+    "title": { "type": "string" },
+    "path": { "type": "string" },
+    "body": { "type": "string" },
+    "text": { "type": "string" },
+    "span": { "type": ["string", "null"] },
+    "anchor": { "type": ["string", "null"] },
+    "sensitivity": { "type": "string" },
+    "sha256": { "type": ["string", "null"] },
+    "bytes": { "type": ["integer", "null"] },
+    "media_type": { "type": ["string", "null"] },
+    "version": { "type": "integer" }
+  },
+  "required": ["id", "kind", "title", "path", "body", "text", "span", "anchor", "sensitivity", "sha256", "bytes", "media_type", "version"],
+  "additionalProperties": false
+}

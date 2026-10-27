@@ -117,6 +117,23 @@ impl LibraryFs {
         )?)
     }
 
+    /// Read one Library file as text, with relative-path containment.
+    pub(crate) fn read_text(&self, relative: &Path) -> Result<String> {
+        self.validate_relative_path(relative)?;
+        let path = self.root.join(relative);
+        std::fs::read_to_string(&path).map_err(|e| Error::io("read", &path, e))
+    }
+
+    /// Write bytes beside a source (its `original.*`), contained and atomic.
+    pub(crate) fn write_bytes(&self, relative: &Path, bytes: &[u8]) -> Result<()> {
+        self.validate_relative_path(relative)?;
+        let path = self.root.join(relative);
+        if let Some(parent) = path.parent() {
+            Self::create_private_dirs(parent)?;
+        }
+        Ok(write_atomic(&path, bytes)?)
+    }
+
     /// Read and parse one document by its Library-relative path.
     pub(crate) fn read_document(&self, relative: &Path) -> Result<DocumentRecord> {
         let path = self.root.join(relative);

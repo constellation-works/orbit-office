@@ -37,3 +37,62 @@ fn meeting_body_keeps_text_when_no_turns_are_reported() {
     assert_eq!(meeting_body(&transcript), "plain transcript");
     assert_eq!(meeting_body(&Transcript::default()), "");
 }
+
+use crate::domain::source::{
+    RenderSource, SourceKind, anchor_span, parse_anchor, parse_source_meta, render_source,
+    vtt_to_body,
+};
+use office_common::Sensitivity;
+
+#[test]
+fn anchors_distinguish_malformed_from_out_of_range() {
+    let body = "one\ntwo\nthree";
+    assert_eq!(
+        anchor_span(body, parse_anchor("#L2-3").expect("anchor"), "#L2-3").expect("span"),
+        "two\nthree"
+    );
+    assert_eq!(
+        parse_anchor("banana").expect_err("malformed").code(),
+        "anchor_invalid"
+    );
+    assert_eq!(
+        anchor_span(body, parse_anchor("#L9").expect("anchor"), "#L9")
+            .expect_err("range")
+            .code(),
+        "anchor_out_of_range"
+    );
+}
+
+#[test]
+fn vtt_import_keeps_speakers_and_cue_times() {
+    let vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Jane>Hi there.</v>\n\n00:01:05.500 --> 00:01:07.000\nDaniel: Next point.\n";
+    assert_eq!(
+        vtt_to_body(vtt),
+        "[00:00:01] Jane: Hi there.\n\n[00:01:05] Daniel: Next point."
+    );
+}
+
+#[test]
+fn rendered_source_frontmatter_round_trips() {
+    let text = render_source(&RenderSource {
+        id: "src-19700101-hello",
+        kind: SourceKind::Video,
+        title: "Hello",
+        captured_at: "1970-01-01T00:00:00+00:00",
+        captured_by: "upload",
+        origin: None,
+        occurred_at: None,
+        participants: &[],
+        sensitivity: Sensitivity::Normal,
+        original: Some(("original.mp4", "abc123", 42, "video/mp4")),
+        derived_transcription: Some("vtt-import"),
+        retention_days: Some(90),
+        body: "body",
+    });
+    let meta = parse_source_meta(&text);
+    assert_eq!(meta.id, "src-19700101-hello");
+    assert_eq!(meta.kind, "video");
+    assert_eq!(meta.sha256.as_deref(), Some("abc123"));
+    assert!(text.contains("derived_by: { transcription: vtt-import }"));
+    assert!(text.contains("original_until: 1970-04-01"));
+}

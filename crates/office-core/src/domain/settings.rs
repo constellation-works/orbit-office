@@ -12,6 +12,7 @@ use serde_json::{Map, Value};
 use crate::{Error, Result};
 
 const KINDS: &[&str] = &[
+    "video",
     "meeting",
     "chat",
     "email",
@@ -64,7 +65,11 @@ impl Default for Settings {
                 .map(|kind| {
                     (
                         (*kind).into(),
-                        if *kind == "meeting" { Some(90) } else { None },
+                        if *kind == "meeting" || *kind == "video" {
+                            Some(90)
+                        } else {
+                            None
+                        },
                     )
                 })
                 .collect(),

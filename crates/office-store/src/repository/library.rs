@@ -3,8 +3,15 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use office_common::Sensitivity;
 use office_common::fs::{atomic::write_atomic, hash::sha256_file};
 use office_core::domain::settings::Settings;
+use office_core::domain::source::{
+    RenderSource, SourceKind, format_conversation_entry, is_video_extension,
+    media_type_for_extension, normalize_text, parse_source_meta, render_source, sha256_hex,
+    source_body, source_id_base, unique_source_id, vtt_to_body,
+};
+use office_core::ports::{CaptureSourceRequest, SourceOutcome, SourceView};
 use serde::{Deserialize, Serialize};
 
 use office_core::domain::knowledge::DocumentKind;
@@ -25,6 +32,7 @@ pub struct LibraryStore {
     index: IndexStore,
     state: PathBuf,
     git: Git,
+    upload_roots: Vec<PathBuf>,
 }
 
 /// A durable decision to finish one write. Replayed idempotently while locked.
@@ -97,11 +105,16 @@ impl LibraryStore {
             .canonicalize()
             .map_err(|e| Error::io("resolve plugin state", state, e))?;
         let git = Git::new(&root, &state);
+        let upload_roots = root
+            .parent()
+            .map(|parent| vec![parent.to_path_buf()])
+            .unwrap_or_default();
         Ok(Self {
             files: LibraryFs::new(root),
             index,
             state,
             git,
+            upload_roots,
         })
     }
 
@@ -555,6 +568,393 @@ impl LibraryStore {
         self.git.history(relative)
     }
 
+    /// Set the canonical roots upload/transcript paths must stay inside.
+    #[must_use]
+    pub fn with_upload_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.upload_roots = roots;
+        self
+    }
+
+    fn read_contained(&self, raw: &str) -> std::result::Result<Vec<u8>, office_core::Error> {
+        let canonical = std::fs::canonicalize(raw).map_err(|_| office_core::Error::Library {
+            code: "upload_not_found",
+            message: format!("upload path {raw} could not be read"),
+        })?;
+        let inside = self
+            .upload_roots
+            .iter()
+            .any(|root| std::fs::canonicalize(root).is_ok_and(|root| canonical.starts_with(root)));
+        if !inside {
+            return Err(office_core::Error::Library {
+                code: "upload_outside_allowed_roots",
+                message: format!("upload path {raw} is outside the allowed roots"),
+            });
+        }
+        std::fs::read(&canonical).map_err(|_| office_core::Error::Library {
+            code: "upload_not_found",
+            message: format!("upload path {raw} could not be read"),
+        })
+    }
+
+    fn source_views(&self) -> Result<Vec<(String, String)>> {
+        // (path, raw markdown) for every indexed source, in path order.
+        let docs = self.files.scan_documents()?;
+        let mut out = Vec::new();
+        for doc in docs {
+            if doc.path.starts_with("sources/") {
+                let text = self.files.read_text(Path::new(&doc.path))?;
+                out.push((doc.path, text));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Capture a source: copy an upload, store pasted text, open a
+    /// conversation, or append to one (see domain rules in office-core).
+    pub fn capture_source(
+        &self,
+        request: &CaptureSourceRequest,
+    ) -> office_core::Result<SourceOutcome> {
+        // Contained reads happen before any write, so a refused path
+        // writes nothing.
+        let mut upload_bytes: Option<Vec<u8>> = None;
+        let mut upload_ext = String::new();
+        let mut upload_stem = String::new();
+        if let Some(raw) = &request.upload_path {
+            let bytes = self.read_contained(raw)?;
+            let path = Path::new(raw);
+            upload_ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            upload_stem = path
+                .file_stem()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_string();
+            upload_bytes = Some(bytes);
+        }
+        let mut transcript_body: Option<String> = None;
+        if let Some(raw) = &request.transcript_path {
+            if !raw.to_ascii_lowercase().ends_with(".vtt") {
+                return Err(office_core::Error::InvalidArgument(
+                    "transcript_path must name a .vtt file".to_string(),
+                ));
+            }
+            let bytes = self.read_contained(raw)?;
+            let text = String::from_utf8(bytes).map_err(|_| {
+                office_core::Error::InvalidArgument(
+                    "transcript_path must be UTF-8 WebVTT".to_string(),
+                )
+            })?;
+            transcript_body = Some(vtt_to_body(&text));
+        }
+        let _lock = WriterLock::acquire(&self.state).map_err(office_core::Error::from)?;
+        self.recover().map_err(office_core::Error::from)?;
+        self.require_initialized()
+            .map_err(office_core::Error::from)?;
+        let settings = self.settings().map_err(office_core::Error::from)?;
+        let existing = self.source_views().map_err(office_core::Error::from)?;
+        if let Some(target) = &request.append_to {
+            if request.entries.is_empty() {
+                return Err(office_core::Error::InvalidArgument(
+                    "capture append_to requires at least one entry".to_string(),
+                ));
+            }
+            let mut lines = Vec::new();
+            for entry in &request.entries {
+                lines.push(format_conversation_entry(
+                    &request.captured_at,
+                    &entry.kind,
+                    &entry.text,
+                )?);
+            }
+            let Some((path, raw_text)) = existing
+                .iter()
+                .find(|(_, text)| parse_source_meta(text).id == *target)
+            else {
+                return Err(office_core::Error::Library {
+                    code: "source_not_found",
+                    message: format!("source {target} was not found"),
+                });
+            };
+            let meta = parse_source_meta(raw_text);
+            if meta.kind != "conversation" {
+                return Err(office_core::Error::Library {
+                    code: "not_a_conversation_source",
+                    message: format!("source {target} is not a conversation source"),
+                });
+            }
+            let mut body = source_body(raw_text);
+            if !body.is_empty() && !body.ends_with('\n') {
+                body.push('\n');
+            }
+            body.push_str(&lines.join("\n"));
+            body.push('\n');
+            // Rebuild the document with identical frontmatter bytes: take
+            // everything up to and including the closing fence verbatim.
+            let head_end = raw_text.find("\n---").map(|i| i + 4).unwrap_or(0);
+            let mut new_text = String::new();
+            new_text.push_str(&raw_text[..head_end]);
+            if !raw_text[..head_end].ends_with('\n') {
+                new_text.push('\n');
+            }
+            new_text.push_str(&body);
+            let pending = self
+                .decide(WriteKind::Document, path, &new_text)
+                .map_err(office_core::Error::from)?;
+            self.finish(&pending).map_err(office_core::Error::from)?;
+            return Ok(SourceOutcome {
+                id: meta.id,
+                kind: meta.kind,
+                title: meta.title,
+                path: path.clone(),
+                sha256: meta.sha256,
+                bytes: meta.bytes,
+                media_type: meta.media_type,
+                sensitivity: if meta.sensitivity.is_empty() {
+                    "normal".into()
+                } else {
+                    meta.sensitivity
+                },
+                deduplicated: false,
+                appended: lines.len(),
+                version: meta.version,
+            });
+        }
+        let explicit_kind = match &request.kind {
+            Some(k) => Some(
+                SourceKind::parse(k).ok_or_else(|| office_core::Error::Library {
+                    code: "invalid_source_kind",
+                    message: format!("unknown source kind {k:?}"),
+                })?,
+            ),
+            None => None,
+        };
+        let kind = explicit_kind.unwrap_or_else(|| {
+            if is_video_extension(&upload_ext) {
+                SourceKind::Video
+            } else if !request.entries.is_empty() {
+                SourceKind::Conversation
+            } else {
+                SourceKind::Note
+            }
+        });
+        let (body, sha, bytes_len, media_type, derived) = if let Some(body) = transcript_body {
+            (
+                body,
+                upload_bytes.as_ref().map(|b| sha256_hex(b)),
+                upload_bytes.as_ref().map(|b| b.len() as u64),
+                upload_bytes.as_ref().map(|_| {
+                    media_type_for_extension(&upload_ext)
+                        .unwrap_or("application/octet-stream")
+                        .to_string()
+                }),
+                Some("vtt-import"),
+            )
+        } else if let Some(bytes) = &upload_bytes {
+            let media = media_type_for_extension(&upload_ext)
+                .unwrap_or("application/octet-stream")
+                .to_string();
+            let body = if upload_ext == "txt" || upload_ext == "md" {
+                normalize_text(&String::from_utf8_lossy(bytes))
+            } else {
+                String::new()
+            };
+            (
+                body,
+                Some(sha256_hex(bytes)),
+                Some(bytes.len() as u64),
+                Some(media),
+                None,
+            )
+        } else if kind == SourceKind::Conversation && !request.entries.is_empty() {
+            let mut lines = Vec::new();
+            for entry in &request.entries {
+                lines.push(format_conversation_entry(
+                    &request.captured_at,
+                    &entry.kind,
+                    &entry.text,
+                )?);
+            }
+            let body = lines.join("\n");
+            (
+                body.clone(),
+                Some(sha256_hex(normalize_text(&body).as_bytes())),
+                None,
+                None,
+                None,
+            )
+        } else {
+            let text = request.text.clone().unwrap_or_default();
+            if text.trim().is_empty() {
+                return Err(office_core::Error::InvalidArgument(
+                    "capture requires text, upload_path, entries or append_to".to_string(),
+                ));
+            }
+            let normalized = normalize_text(&text);
+            (
+                normalized.clone(),
+                Some(sha256_hex(normalized.as_bytes())),
+                None,
+                None,
+                None,
+            )
+        };
+        if let Some(sha_value) = &sha {
+            for (path, text) in &existing {
+                let meta = parse_source_meta(text);
+                let text_sha = sha256_hex(normalize_text(&source_body(text)).as_bytes());
+                if meta.sha256.as_ref() == Some(sha_value) || &text_sha == sha_value {
+                    return Ok(SourceOutcome {
+                        id: meta.id,
+                        kind: meta.kind,
+                        title: meta.title,
+                        path: path.clone(),
+                        sha256: meta.sha256.or_else(|| Some(sha_value.clone())),
+                        bytes: meta.bytes,
+                        media_type: meta.media_type,
+                        sensitivity: if meta.sensitivity.is_empty() {
+                            "normal".into()
+                        } else {
+                            meta.sensitivity
+                        },
+                        deduplicated: true,
+                        appended: 0,
+                        version: meta.version,
+                    });
+                }
+            }
+        }
+        let title = request
+            .title
+            .clone()
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| {
+                if !upload_stem.is_empty() {
+                    upload_stem.replace(['-', '_'], " ")
+                } else {
+                    body.lines()
+                        .next()
+                        .unwrap_or(kind.as_str())
+                        .chars()
+                        .take(60)
+                        .collect()
+                }
+            });
+        let base = source_id_base(&request.captured_at, &title);
+        let known_ids: Vec<String> = existing
+            .iter()
+            .map(|(_, text)| parse_source_meta(text).id)
+            .collect();
+        let id = unique_source_id(&base, |candidate| known_ids.iter().any(|k| k == candidate));
+        let date = &request.captured_at;
+        let (yyyy, mm) = if date.len() >= 7 {
+            (&date[0..4], &date[5..7])
+        } else {
+            ("1970", "01")
+        };
+        let rel_dir = format!("sources/{yyyy}/{mm}/{id}");
+        let rel_path = format!("{rel_dir}/source.md");
+        let sensitivity = match &request.sensitivity {
+            Some(s) => Sensitivity::parse(s).ok_or_else(|| {
+                office_core::Error::InvalidArgument(
+                    "sensitivity must be normal or private".to_string(),
+                )
+            })?,
+            None => settings
+                .sensitivity
+                .get(kind.as_str())
+                .copied()
+                .unwrap_or_default(),
+        };
+        let original_name = upload_bytes
+            .as_ref()
+            .map(|_| format!("original.{upload_ext}"));
+        if let (Some(bytes), Some(name)) = (&upload_bytes, &original_name) {
+            self.files
+                .write_bytes(Path::new(&format!("{rel_dir}/{name}")), bytes)
+                .map_err(office_core::Error::from)?;
+        }
+        let markdown = render_source(&RenderSource {
+            id: &id,
+            kind,
+            title: &title,
+            captured_at: &request.captured_at,
+            captured_by: request
+                .captured_by
+                .as_deref()
+                .unwrap_or(if upload_bytes.is_some() {
+                    "upload"
+                } else {
+                    "paste"
+                }),
+            origin: request.origin.as_deref(),
+            occurred_at: request.occurred_at.as_deref(),
+            participants: &request.participants,
+            sensitivity,
+            original: match (&original_name, &sha, bytes_len, &media_type) {
+                (Some(name), Some(s), Some(b), Some(m)) => {
+                    Some((name.as_str(), s.as_str(), b, m.as_str()))
+                }
+                _ => None,
+            },
+            derived_transcription: derived,
+            retention_days: settings.retention.get(kind.as_str()).copied().flatten(),
+            body: &body,
+        });
+        let pending = self
+            .decide(WriteKind::Document, &rel_path, &markdown)
+            .map_err(office_core::Error::from)?;
+        self.finish(&pending).map_err(office_core::Error::from)?;
+        Ok(SourceOutcome {
+            id,
+            kind: kind.as_str().to_string(),
+            title,
+            path: rel_path,
+            sha256: sha,
+            bytes: bytes_len,
+            media_type,
+            sensitivity: sensitivity.as_str().to_string(),
+            deduplicated: false,
+            appended: 0,
+            version: 1,
+        })
+    }
+
+    /// Read one source by id.
+    pub fn read_source(&self, id: &str) -> office_core::Result<SourceView> {
+        self.read_ready().map_err(office_core::Error::from)?;
+        let existing = self.source_views().map_err(office_core::Error::from)?;
+        let Some((path, text)) = existing
+            .iter()
+            .find(|(_, text)| parse_source_meta(text).id == id)
+        else {
+            return Err(office_core::Error::Library {
+                code: "source_not_found",
+                message: format!("source {id} was not found"),
+            });
+        };
+        let meta = parse_source_meta(text);
+        Ok(SourceView {
+            id: meta.id,
+            kind: meta.kind,
+            title: meta.title,
+            path: path.clone(),
+            body: source_body(text).trim_end_matches('\n').to_string(),
+            sensitivity: if meta.sensitivity.is_empty() {
+                "normal".into()
+            } else {
+                meta.sensitivity
+            },
+            sha256: meta.sha256,
+            bytes: meta.bytes,
+            media_type: meta.media_type,
+            version: meta.version,
+        })
+    }
+
     /// SHA-256 of a Library file, including an `original.*` upload.
     pub fn file_sha256(&self, relative: &Path) -> Result<String> {
         self.read_ready()?;
@@ -607,6 +1007,12 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn set_setting(&self, key: &str, value: serde_json::Value) -> office_core::Result<()> {
         Ok(Self::set_setting(self, key, value)?)
+    }
+    fn capture_source(&self, request: &CaptureSourceRequest) -> office_core::Result<SourceOutcome> {
+        Self::capture_source(self, request)
+    }
+    fn read_source(&self, id: &str) -> office_core::Result<SourceView> {
+        Self::read_source(self, id)
     }
     fn initialize(&self, library_dir: Option<&str>) -> office_core::Result<InitOutcome> {
         let workspace = self
