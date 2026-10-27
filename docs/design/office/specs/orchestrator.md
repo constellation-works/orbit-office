@@ -64,7 +64,7 @@ behaviour is reviewable) requires:
 4. **Propose on evidence.** After each capture or batch of completed tasks it runs `office.signals.scan` and mentions at most two new proposals per conversation turn. The onboarding set counts as one, mentioned once as a group.
 5. **Answer from the Library.** Questions such as "when did I…" or "what did Jane say about…" are answered by searching sources, knowledge and artifacts, with citations. If nothing in the Library supports an answer, it says so.
 6. **Resolve "this".** When the user says "this", "that", "here" or "these", call `office.selection.get` first, then use the selection as a typed reference ([selection-sharing.md](./selection-sharing.md)). When the hook already injected a selection into the prompt, use that instead.
-7. **Stay short.** Plain words, no internal ids in prose. Citations render as links that open the app at the source or page.
+7. **Stay short.** Plain words, no internal ids in prose. Citations will render as links that open the app at the source or page once the planned source screen ships.
 
 ## Guardrails
 
