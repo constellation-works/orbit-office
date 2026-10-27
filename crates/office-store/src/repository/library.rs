@@ -175,6 +175,16 @@ impl LibraryStore {
             let _lock = WriterLock::acquire(&store.state)?;
             store.recover()?;
         }
+        // A schema upgrade that added template/date left pre-upgrade rows
+        // NULL in those columns; template and date come from file
+        // frontmatter, so only a rescan can fill them. Do it here, under
+        // the writer lock, before any search can silently miss those
+        // rows. The durable marker (migration.rs) survives a failed
+        // rescan, so the next open retries instead of never healing.
+        if store.index.needs_backfill()? {
+            let lock = WriterLock::acquire(&store.state)?;
+            store.reindex_locked(&lock)?;
+        }
         Ok(store)
     }
 

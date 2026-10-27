@@ -94,13 +94,32 @@ pub struct TranscriptSegment {
     pub text: String,
 }
 
+/// One transcribed chunk, in recording order.
+///
+/// [`Transcript::segments`] lists only speaker turns, so it cannot say where
+/// a chunk that reported no turns sat. This enum keeps that chunk's text in
+/// place among the turns.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TranscriptChunk {
+    /// Speaker turns from a chunk that reported them. Timestamps are already
+    /// offsets into the original recording.
+    Turns(Vec<TranscriptSegment>),
+    /// Text from a chunk that reported no turns, kept unchanged.
+    Text(String),
+}
+
 /// A completed transcription.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Transcript {
-    /// Full transcript text.
+    /// Full transcript text. Chunk texts are joined with newlines.
     pub text: String,
     /// Speaker turns with timestamps, when the model reports them.
+    /// Text-only chunks are omitted; their place is in [`Transcript::chunks`].
     pub segments: Vec<TranscriptSegment>,
+    /// Chunks in recording order. Empty when the caller built `text` and
+    /// `segments` without chunk boundaries. Transcription of one reply stores
+    /// a single chunk; a split recording stores one entry per chunk.
+    pub chunks: Vec<TranscriptChunk>,
 }
 
 /// Text to extract structured JSON from, with its source's sensitivity.

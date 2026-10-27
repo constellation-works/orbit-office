@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use office_common::Sensitivity;
 
-use crate::ports::Transcript;
+use crate::ports::{Transcript, TranscriptChunk, TranscriptSegment};
 use crate::{Error, Result};
 
 /// Meeting source body from a transcript (specs/library.md, Sources).
@@ -17,25 +17,70 @@ use crate::{Error, Result};
 /// start, truncated to whole seconds. A turn with no speaker is labeled
 /// `Speaker`. When the transcript reports no turns, the body is the
 /// transcript text, unchanged.
+///
+/// A split recording carries [`TranscriptChunk`]s in order. A chunk that
+/// reported no turns keeps its text, unchanged, in the position it occupies,
+/// as its own paragraph between the surrounding turns. Adjacent text-only
+/// chunks are still separate paragraphs. When no chunk reported turns, the
+/// body stays the transcript text (chunks joined with newlines), not a
+/// blank-line join. A transcript with no chunk list uses `segments`, or
+/// `text` when that is empty.
 #[must_use]
 pub fn meeting_body(transcript: &Transcript) -> String {
-    if transcript.segments.is_empty() {
-        return transcript.text.clone();
+    if !has_ordered_turns(transcript) {
+        return turns_or_text(transcript);
     }
+    let mut blocks = Vec::new();
+    for chunk in &transcript.chunks {
+        match chunk {
+            TranscriptChunk::Text(text) => {
+                if !text.is_empty() {
+                    blocks.push(text.clone());
+                }
+            }
+            TranscriptChunk::Turns(segments) => {
+                for segment in segments {
+                    blocks.push(format_turn(segment));
+                }
+            }
+        }
+    }
+    blocks.join("\n\n")
+}
+
+fn has_ordered_turns(transcript: &Transcript) -> bool {
+    transcript
+        .chunks
+        .iter()
+        .any(|chunk| matches!(chunk, TranscriptChunk::Turns(segments) if !segments.is_empty()))
+}
+
+fn turns_or_text(transcript: &Transcript) -> String {
+    if transcript.segments.is_empty() {
+        transcript.text.clone()
+    } else {
+        format_turns(&transcript.segments)
+    }
+}
+
+fn format_turns(segments: &[TranscriptSegment]) -> String {
     let mut body = String::new();
-    for (index, segment) in transcript.segments.iter().enumerate() {
+    for (index, segment) in segments.iter().enumerate() {
         if index > 0 {
             body.push_str("\n\n");
         }
-        let speaker = segment.speaker.as_deref().unwrap_or("Speaker");
-        body.push('[');
-        body.push_str(&clock_time(segment.start_ms));
-        body.push_str("] ");
-        body.push_str(speaker);
-        body.push_str(": ");
-        body.push_str(&segment.text);
+        body.push_str(&format_turn(segment));
     }
     body
+}
+
+fn format_turn(segment: &TranscriptSegment) -> String {
+    let speaker = segment.speaker.as_deref().unwrap_or("Speaker");
+    format!(
+        "[{}] {speaker}: {}",
+        clock_time(segment.start_ms),
+        segment.text
+    )
 }
 
 /// Seconds from an `hh:mm:ss` stamp, in the form `clock_time` writes and
@@ -397,18 +442,34 @@ pub fn anchor_span(body: &str, anchor: Anchor, raw: &str) -> Result<String> {
             Ok(lines[start - 1..end].join("\n"))
         }
         Anchor::Time { seconds } => {
-            // Paragraphs are `[hh:mm:ss] Speaker: text` (blank-line separated).
-            let mut turns: Vec<(u64, &str)> = Vec::new();
+            // Turns are `[hh:mm:ss] Speaker: text` lines, the same starts
+            // `resolve_anchor` accepts. A turn runs from its timestamped
+            // line to the next timestamped line in the same paragraph
+            // (blank lines separate paragraphs), so single-newline bodies
+            // resolve the same turns citation validation accepts.
+            let mut turns: Vec<(u64, String)> = Vec::new();
             for para in body.split("\n\n") {
-                let trimmed = para.trim_start();
-                let Some(rest) = trimmed.strip_prefix('[') else {
-                    continue;
-                };
-                let Some((stamp, _)) = rest.split_once(']') else {
-                    continue;
-                };
-                if let Some(start) = parse_clock_seconds(stamp) {
-                    turns.push((start, para));
+                let lines: Vec<&str> = para.lines().collect();
+                let mut starts: Vec<(usize, u64)> = Vec::new();
+                for (index, line) in lines.iter().enumerate() {
+                    let trimmed = line.trim_start();
+                    let Some(rest) = trimmed.strip_prefix('[') else {
+                        continue;
+                    };
+                    let Some((stamp, _)) = rest.split_once(']') else {
+                        continue;
+                    };
+                    if let Some(start) = parse_clock_seconds(stamp) {
+                        starts.push((index, start));
+                    }
+                }
+                for (position, (index, start)) in starts.iter().enumerate() {
+                    let end = if position + 1 < starts.len() {
+                        starts[position + 1].0
+                    } else {
+                        lines.len()
+                    };
+                    turns.push((*start, lines[*index..end].join("\n")));
                 }
             }
             let (Some(first), Some(last)) = (
@@ -423,14 +484,14 @@ pub fn anchor_span(body: &str, anchor: Anchor, raw: &str) -> Result<String> {
             // The turn in progress: the latest turn starting at or before
             // the requested time. `seconds >= first` guarantees one exists.
             // On a tied start the first such turn wins, as exact matching did.
-            let mut current: Option<(u64, &str)> = None;
+            let mut current: Option<(u64, String)> = None;
             for (start, para) in turns {
-                if start <= seconds && current.is_none_or(|(best, _)| start > best) {
+                if start <= seconds && current.as_ref().is_none_or(|(best, _)| start > *best) {
                     current = Some((start, para));
                 }
             }
             match current {
-                Some((_, para)) => Ok(para.to_string()),
+                Some((_, para)) => Ok(para),
                 None => Err(anchor_out_of_range(raw)),
             }
         }

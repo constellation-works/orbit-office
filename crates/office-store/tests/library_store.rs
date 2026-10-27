@@ -1817,7 +1817,7 @@ fn attach_reads_the_head_commit_and_stages_copies_outside_the_index() {
 }
 
 #[test]
-fn a_version_one_index_migrates_and_reindex_fills_template_and_date() {
+fn a_version_one_index_migrates_and_open_fills_template_and_date() {
     let dir = tempfile::tempdir().expect("tempdir");
     let library = dir.path().join("library");
     let state = dir.path().join("state");
@@ -1846,8 +1846,10 @@ fn a_version_one_index_migrates_and_reindex_fills_template_and_date() {
         )
         .expect("v1 schema");
     }
+    // Opening must backfill without an explicit reindex: the pre-upgrade
+    // rows were indexed under schema 1, so their template/date are NULL
+    // until the files are rescanned.
     let store = LibraryStore::open(&library, &state).expect("migrates");
-    assert_eq!(store.reindex().expect("reindex"), 2);
     let hits = store
         .search(
             "renewal",
@@ -1865,6 +1867,118 @@ fn a_version_one_index_migrates_and_reindex_fills_template_and_date() {
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("version");
     assert_eq!(version, 2);
+}
+
+#[test]
+fn a_version_two_index_with_null_template_and_date_backfills_on_open() {
+    // A Library already migrated to schema 2 by a build that did not
+    // backfill: columns exist, rows are NULL, user_version is already 2.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    write(
+        &library,
+        "knowledge/domain/dom-person-jane.md",
+        "---\nid: dom-person-jane\ntemplate: person\ntitle: Jane\nupdated_at: 2026-10-20T10:00:00Z\n---\nRenewal owner.\n",
+    );
+    std::fs::create_dir_all(&state).expect("state");
+    {
+        let conn = rusqlite::Connection::open(state.join("index.sqlite")).expect("v2 index");
+        conn.execute_batch(
+            "CREATE TABLE documents (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL,
+                 summary TEXT NOT NULL, tags TEXT NOT NULL, series TEXT, sensitivity TEXT NOT NULL,
+                 path TEXT NOT NULL UNIQUE, body TEXT NOT NULL, template TEXT, date TEXT);
+             CREATE INDEX documents_kind ON documents(kind);
+             CREATE INDEX documents_series ON documents(series);
+             CREATE INDEX documents_template ON documents(template);
+             CREATE INDEX documents_date ON documents(date);
+             CREATE TABLE cites (doc_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                 target TEXT NOT NULL, PRIMARY KEY (doc_id, target));
+             CREATE TABLE links (from_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                 to_id TEXT NOT NULL, PRIMARY KEY (from_id, to_id));
+             CREATE VIRTUAL TABLE documents_fts USING fts5(id UNINDEXED, title, summary, body, tags);
+             INSERT INTO documents (id, kind, title, summary, tags, series, sensitivity, path, body, template, date)
+                 VALUES ('dom-person-jane', 'domain', 'Jane', '', '[]', NULL, 'normal',
+                         'knowledge/domain/dom-person-jane.md', 'Renewal owner.', NULL, NULL);
+             INSERT INTO documents_fts (id, title, summary, body, tags)
+                 VALUES ('dom-person-jane', 'Jane', '', 'Renewal owner.', '');
+             PRAGMA user_version = 2;",
+        )
+        .expect("v2 schema with stale row");
+    }
+    let store = LibraryStore::open(&library, &state).expect("open backfills");
+    let hits = store
+        .search(
+            "renewal",
+            &SearchFilter {
+                template: Some("person".into()),
+                since: Some("2026-10-01".into()),
+                until: Some("2026-10-31".into()),
+                ..SearchFilter::default()
+            },
+        )
+        .expect("search");
+    let ids: Vec<&str> = hits.iter().map(|hit| hit.id.as_str()).collect();
+    assert_eq!(ids, ["dom-person-jane"]);
+    // A second open must not loop: the backfill marker is cleared.
+    drop(store);
+    let store = LibraryStore::open(&library, &state).expect("second open");
+    assert_eq!(store.document_count().expect("count"), 1);
+}
+
+#[test]
+fn a_failed_backfill_on_open_is_retried_by_the_next_open() {
+    // Same stale schema-2 index as above, plus a document the scan cannot
+    // read: the first open must fail its backfill, and the marker must
+    // survive so the next open retries instead of never healing.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    write(
+        &library,
+        "knowledge/domain/dom-person-jane.md",
+        "---\nid: dom-person-jane\ntemplate: person\ntitle: Jane\nupdated_at: 2026-10-20T10:00:00Z\n---\nRenewal owner.\n",
+    );
+    std::fs::create_dir_all(&state).expect("state");
+    {
+        let conn = rusqlite::Connection::open(state.join("index.sqlite")).expect("v2 index");
+        conn.execute_batch(
+            "CREATE TABLE documents (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL,
+                 summary TEXT NOT NULL, tags TEXT NOT NULL, series TEXT, sensitivity TEXT NOT NULL,
+                 path TEXT NOT NULL UNIQUE, body TEXT NOT NULL, template TEXT, date TEXT);
+             CREATE TABLE cites (doc_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                 target TEXT NOT NULL, PRIMARY KEY (doc_id, target));
+             CREATE TABLE links (from_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                 to_id TEXT NOT NULL, PRIMARY KEY (from_id, to_id));
+             CREATE VIRTUAL TABLE documents_fts USING fts5(id UNINDEXED, title, summary, body, tags);
+             INSERT INTO documents (id, kind, title, summary, tags, series, sensitivity, path, body, template, date)
+                 VALUES ('dom-person-jane', 'domain', 'Jane', '', '[]', NULL, 'normal',
+                         'knowledge/domain/dom-person-jane.md', 'Renewal owner.', NULL, NULL);
+             INSERT INTO documents_fts (id, title, summary, body, tags)
+                 VALUES ('dom-person-jane', 'Jane', '', 'Renewal owner.', '');
+             PRAGMA user_version = 2;",
+        )
+        .expect("v2 schema with stale row");
+    }
+    let broken = library.join("knowledge/domain/broken.md");
+    std::fs::write(&broken, [0xff, 0xfe, b'\n']).expect("unreadable document");
+    assert!(LibraryStore::open(&library, &state).is_err());
+    std::fs::remove_file(&broken).expect("remove broken document");
+    let store = LibraryStore::open(&library, &state).expect("retry backfills");
+    let hits = store
+        .search(
+            "renewal",
+            &SearchFilter {
+                template: Some("person".into()),
+                since: Some("2026-10-01".into()),
+                ..SearchFilter::default()
+            },
+        )
+        .expect("search");
+    let ids: Vec<&str> = hits.iter().map(|hit| hit.id.as_str()).collect();
+    assert_eq!(ids, ["dom-person-jane"]);
 }
 
 fn artifact_candidate() -> office_core::domain::artifact::Artifact {

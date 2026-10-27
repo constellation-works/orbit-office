@@ -61,9 +61,11 @@
 //! transcript text is joined with newlines in recording order. Speaker
 //! turns parsed from a chunk are kept, and their timestamps are shifted
 //! by that chunk's start so they stay offsets into the original recording.
-//! A chunk whose reply is not the JSON transcript shape contributes text
-//! only. A failed chunk fails the transcription; temporary audio is
-//! removed on success and error.
+//! A chunk whose reply is not the JSON transcript shape, or whose `segments`
+//! are empty, contributes text only. Those chunks stay in recording order
+//! beside the turns, so the meeting body can keep a text-only chunk in the
+//! position it occupies. A failed chunk fails the transcription; temporary
+//! audio is removed on success and error.
 //! Transcription accepts WAV (`audio/wav`, `audio/wave`, `audio/x-wav`) and
 //! MP3 (`audio/mpeg`, `audio/mp3`) audio, sent to the model as `wav` or `mp3`.
 //! Other containers are refused before staging or any model call, because the

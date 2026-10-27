@@ -167,15 +167,15 @@ export function shipTasks(ids: readonly string[], options: ShipOptions = {}): Pr
     const stderrChunks: Buffer[] = [];
     child.stderr.on("data", (chunk: Buffer | string) => {
       // Drain every chunk so the child never blocks on a full pipe, but
-      // retain at most MAX_SHIP_STDERR_BYTES from the first chunks (STD-03 R15).
+      // retain the first MAX_SHIP_STDERR_BYTES bytes, including a partial
+      // final chunk when it crosses the ceiling (STD-03 R15).
       if (stderrTruncated) return;
-      const length = Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
-      stderrBytes += length;
-      if (stderrBytes > MAX_SHIP_STDERR_BYTES) {
-        stderrTruncated = true;
-        return;
-      }
-      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const remaining = MAX_SHIP_STDERR_BYTES - stderrBytes;
+      const retainedBytes = Math.min(bytes.length, remaining);
+      if (retainedBytes > 0) stderrChunks.push(bytes.subarray(0, retainedBytes));
+      stderrBytes += retainedBytes;
+      if (retainedBytes < bytes.length) stderrTruncated = true;
     });
     child.stdout.on("data", () => undefined);
     child.on("error", (error) => {

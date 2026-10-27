@@ -278,6 +278,28 @@ fn config_set_refuses_bad_open_weights_blocks_naming_the_key() {
 }
 
 #[test]
+fn unreadable_settings_are_reported_not_as_an_unset_open_weights_block() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", json!({}), json!({}))["ok"], true);
+    let config_path = env.workspace.join("library/.office/config.yaml");
+    let mut config = std::fs::read_to_string(&config_path).expect("config");
+    config.push_str("open_weights_endpoint: null\n");
+    std::fs::write(&config_path, config).expect("rewrite config");
+    let response = env.tool("office.private-route-check", json!({}), json!({}));
+    assert_eq!(response["ok"], false, "{response}");
+    assert_eq!(
+        response["error"]["code"], "invalid_library_setting",
+        "{response}"
+    );
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("open_weights_endpoint")),
+        "{response}"
+    );
+}
+
+#[test]
 fn status_reports_the_open_weights_token_by_presence_only() {
     let env = Env::new();
     let response = env.tool(

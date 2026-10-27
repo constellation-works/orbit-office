@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use base64::Engine;
 use office_common::Sensitivity;
-use office_core::ports::{Models, TranscribeRequest};
+use office_core::ports::{Models, TranscribeRequest, TranscriptChunk};
 use serde_json::Value;
 
 use super::{FakeServer, chat_reply, client, hosted_config};
@@ -136,6 +136,10 @@ fn transcribes_long_recordings_in_multiple_routed_requests() {
         .value;
     assert_eq!(transcript.text, "first\nsecond\nthird");
     assert!(transcript.segments.is_empty());
+    assert_eq!(
+        office_core::domain::source::meeting_body(&transcript),
+        "first\nsecond\nthird"
+    );
     assert_chunks(
         &server,
         &[b"audio-0-600", b"audio-600-600", b"audio-1200-300"],
@@ -195,6 +199,49 @@ fn offsets_reported_turns_by_each_chunks_start() {
     assert_eq!(
         office_core::domain::source::meeting_body(&transcript),
         "[00:00:00] Jane: first\n\n[00:10:01] Daniel: second\n\n[00:20:00] Jane: third"
+    );
+    ffmpeg.assert_cleaned();
+}
+
+#[test]
+fn keeps_the_text_of_a_chunk_that_reports_no_turns() {
+    let ffmpeg = Ffmpeg::splitting();
+    let server = FakeServer::start_replies(vec![
+        (200, turn_reply("first", "Jane", 0, 1_500)),
+        (200, chat_reply(r#"{"text":"the gap","segments":[]}"#)),
+        (200, turn_reply("third", "Daniel", 500, 900)),
+    ]);
+    let mut config = hosted_config(&server.base_url);
+    config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
+    let adapter = client(config);
+    let models: &dyn Models = &adapter;
+    let transcript = models
+        .transcribe(&request(1500, Sensitivity::Normal))
+        .expect("transcribe mixed chunks")
+        .value;
+    assert_eq!(transcript.text, "first\nthe gap\nthird");
+    assert_eq!(transcript.segments.len(), 2);
+    assert_eq!(transcript.segments[0].text, "first");
+    assert_eq!(transcript.segments[0].start_ms, 0);
+    assert_eq!(transcript.segments[1].speaker.as_deref(), Some("Daniel"));
+    assert_eq!(transcript.segments[1].start_ms, 1_200_500);
+    assert!(matches!(
+        transcript.chunks.as_slice(),
+        [
+            TranscriptChunk::Turns(first),
+            TranscriptChunk::Text(gap),
+            TranscriptChunk::Turns(third),
+        ] if first.len() == 1
+            && first[0].text == "first"
+            && first[0].start_ms == 0
+            && gap == "the gap"
+            && third.len() == 1
+            && third[0].text == "third"
+            && third[0].start_ms == 1_200_500
+    ));
+    assert_eq!(
+        office_core::domain::source::meeting_body(&transcript),
+        "[00:00:00] Jane: first\n\nthe gap\n\n[00:20:00] Daniel: third"
     );
     ffmpeg.assert_cleaned();
 }
