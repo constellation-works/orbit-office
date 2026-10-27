@@ -1561,11 +1561,40 @@ EOF
             say "app: service already done ($LAUNCHD_PLIST)"
         fi
         if [ "$_svc_changed" -eq 1 ] || ! state_has "service_installed"; then
-            if command -v launchctl >/dev/null 2>&1; then
-                launchctl unload "$LAUNCHD_PLIST" >/dev/null 2>&1 || true
-                launchctl load "$LAUNCHD_PLIST" >/dev/null 2>&1 || true
+            if ! command -v launchctl >/dev/null 2>&1; then
+                state_clear "service_installed"
+                die "service: launchctl is not available; cannot install the login agent $LAUNCHD_PLIST (re-run on macOS with launchd)"
+            fi
+            launchctl unload "$LAUNCHD_PLIST" >/dev/null 2>&1 || true
+            if ! launchctl load "$LAUNCHD_PLIST" >/dev/null 2>&1; then
+                state_clear "service_installed"
+                die "service: launchctl load $LAUNCHD_PLIST failed; fix launchd and re-run to retry"
+            fi
+            if ! launchctl list com.orbit-office.app >/dev/null 2>&1; then
+                state_clear "service_installed"
+                die "service: launchd agent com.orbit-office.app is not loaded after load; fix launchd and re-run to retry"
             fi
             state_mark "service_installed"
+            say "app: service installed (login agent com.orbit-office.app)"
+        else
+            if ! command -v launchctl >/dev/null 2>&1; then
+                state_clear "service_installed"
+                die "service: launchctl is not available; cannot verify the login agent $LAUNCHD_PLIST (re-run on macOS with launchd)"
+            fi
+            if launchctl list com.orbit-office.app >/dev/null 2>&1; then
+                say "app: service already done ($LAUNCHD_PLIST)"
+            else
+                launchctl unload "$LAUNCHD_PLIST" >/dev/null 2>&1 || true
+                if ! launchctl load "$LAUNCHD_PLIST" >/dev/null 2>&1; then
+                    state_clear "service_installed"
+                    die "service: launchctl load $LAUNCHD_PLIST failed; fix launchd and re-run to retry"
+                fi
+                if ! launchctl list com.orbit-office.app >/dev/null 2>&1; then
+                    state_clear "service_installed"
+                    die "service: launchd agent com.orbit-office.app is not loaded after load; fix launchd and re-run to retry"
+                fi
+                say "app: service re-enabled (login agent com.orbit-office.app)"
+            fi
         fi
     else
         if write_if_changed "$SYSTEMD_UNIT" <<EOF
@@ -1593,16 +1622,50 @@ EOF
             say "app: service already done ($SYSTEMD_UNIT)"
         fi
         if [ "$_svc_changed" -eq 1 ] || ! state_has "service_installed"; then
-            if command -v systemctl >/dev/null 2>&1; then
-                systemctl --user daemon-reload >/dev/null 2>&1 || true
-                systemctl --user enable "$SERVICE_NAME.service" >/dev/null 2>&1 || true
-                systemctl --user restart "$SERVICE_NAME.service" >/dev/null 2>&1 \
-                    || systemctl --user start "$SERVICE_NAME.service" >/dev/null 2>&1 || true
+            if ! command -v systemctl >/dev/null 2>&1; then
+                state_clear "service_installed"
+                die "service: systemctl is not available; cannot install the user unit $SYSTEMD_UNIT (re-run with systemd --user)"
+            fi
+            if ! systemctl --user daemon-reload >/dev/null 2>&1; then
+                state_clear "service_installed"
+                die "service: systemctl --user daemon-reload failed; fix systemd and re-run to retry"
+            fi
+            if ! systemctl --user enable "$SERVICE_NAME.service" >/dev/null 2>&1; then
+                state_clear "service_installed"
+                die "service: systemctl --user enable $SERVICE_NAME.service failed; fix systemd and re-run to retry"
+            fi
+            if ! systemctl --user restart "$SERVICE_NAME.service" >/dev/null 2>&1; then
+                if ! systemctl --user start "$SERVICE_NAME.service" >/dev/null 2>&1; then
+                    state_clear "service_installed"
+                    die "service: systemctl --user start $SERVICE_NAME.service failed; fix systemd and re-run to retry"
+                fi
+            fi
+            if ! systemctl --user is-active "$SERVICE_NAME.service" >/dev/null 2>&1; then
+                state_clear "service_installed"
+                die "service: $SERVICE_NAME.service is not active after start; fix systemd and re-run to retry"
             fi
             state_mark "service_installed"
             say "app: service installed (login service $SERVICE_NAME)"
         else
-            say "app: service already enabled ($SERVICE_NAME)"
+            if ! command -v systemctl >/dev/null 2>&1; then
+                state_clear "service_installed"
+                die "service: systemctl is not available; cannot verify the user unit $SYSTEMD_UNIT (re-run with systemd --user)"
+            fi
+            if systemctl --user is-active "$SERVICE_NAME.service" >/dev/null 2>&1; then
+                say "app: service already enabled ($SERVICE_NAME)"
+            else
+                if ! systemctl --user restart "$SERVICE_NAME.service" >/dev/null 2>&1; then
+                    if ! systemctl --user start "$SERVICE_NAME.service" >/dev/null 2>&1; then
+                        state_clear "service_installed"
+                        die "service: systemctl --user start $SERVICE_NAME.service failed; fix systemd and re-run to retry"
+                    fi
+                fi
+                if ! systemctl --user is-active "$SERVICE_NAME.service" >/dev/null 2>&1; then
+                    state_clear "service_installed"
+                    die "service: $SERVICE_NAME.service is not active after start; fix systemd and re-run to retry"
+                fi
+                say "app: service re-enabled (login service $SERVICE_NAME)"
+            fi
         fi
     fi
     say "app: http://localhost:$PORT/ (open it to install the PWA)"
