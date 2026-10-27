@@ -430,6 +430,49 @@ else
 fi
 check "unrelated folder is untouched" grep -q precious "$HOME4/orbit/notes.txt"
 
+# A library directory by itself does not prove that this installer owns the
+# workspace and must not make the default install adopt it.
+HOME4LIB="$ROOT/home4-library"
+LIBRARY_ONLY="$HOME4LIB/orbit"
+mkdir -p "$LIBRARY_ONLY/library"
+printf 'precious\n' > "$LIBRARY_ONLY/library/keep.txt"
+OUT_ADOPT_LIB="$ROOT/out-adopt-library.txt"
+if run_install "$HOME4LIB" -- > "$OUT_ADOPT_LIB" 2>&1; then
+    fail "library-only workspace is refused during adoption"
+else
+    ok "library-only workspace is refused during adoption"
+fi
+check "library-only adoption refusal message is unchanged" \
+    grep -qxF "error: refusing to adopt non-empty folder $LIBRARY_ONLY: it is not an office workspace (move it aside or pass --home DIR)" "$OUT_ADOPT_LIB"
+check "library-only adoption leaves the sentinel" \
+    grep -qx precious "$LIBRARY_ONLY/library/keep.txt"
+check "library-only adoption creates no git repository" test ! -e "$LIBRARY_ONLY/.git"
+check "library-only adoption creates no .gitignore" test ! -e "$LIBRARY_ONLY/.gitignore"
+check "library-only adoption creates no .orbit marker" test ! -e "$LIBRARY_ONLY/.orbit"
+check "library-only adoption creates no office library" test ! -e "$LIBRARY_ONLY/library/.office"
+
+# A registered workspace path that only shares the default workspace's prefix
+# is not proof that the default workspace itself is owned.
+HOME4PREFIX="$ROOT/home4-prefix"
+PREFIX_ONLY="$HOME4PREFIX/orbit"
+REGISTERED_PREFIX="$HOME4PREFIX/orbit-archive"
+mkdir -p "$PREFIX_ONLY"
+printf 'precious\n' > "$PREFIX_ONLY/notes.txt"
+OUT_ADOPT_PREFIX="$ROOT/out-adopt-prefix.txt"
+if run_install "$HOME4PREFIX" "STUB_WORKSPACE_LIST=$REGISTERED_PREFIX" -- \
+    > "$OUT_ADOPT_PREFIX" 2>&1; then
+    fail "prefix-only workspace-list match is refused during adoption"
+else
+    ok "prefix-only workspace-list match is refused during adoption"
+fi
+check "prefix-only adoption refusal message is unchanged" \
+    grep -qxF "error: refusing to adopt non-empty folder $PREFIX_ONLY: it is not an office workspace (move it aside or pass --home DIR)" "$OUT_ADOPT_PREFIX"
+check "prefix-only adoption leaves the sentinel" \
+    grep -qx precious "$PREFIX_ONLY/notes.txt"
+check "prefix-only adoption creates no git repository" test ! -e "$PREFIX_ONLY/.git"
+check "prefix-only adoption creates no .gitignore" test ! -e "$PREFIX_ONLY/.gitignore"
+check "prefix-only adoption creates no .orbit marker" test ! -e "$PREFIX_ONLY/.orbit"
+
 # --purge --home at an unrelated non-empty folder must not delete it.
 HOME4P="$ROOT/home4-purge"
 UNRELATED="$HOME4P/Documents"
