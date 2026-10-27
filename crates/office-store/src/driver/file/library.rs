@@ -135,8 +135,10 @@ impl LibraryFs {
     }
 
     /// Read and parse one document by its Library-relative path.
+    /// A symlink leaf is refused so a scan cannot read through a link.
     pub(crate) fn read_document(&self, relative: &Path) -> Result<DocumentRecord> {
         let path = self.root.join(relative);
+        refuse_symlink(&path)?;
         let text = std::fs::read_to_string(&path).map_err(|e| Error::io("read", &path, e))?;
         Ok(DocumentRecord::from_markdown(relative, &text))
     }
@@ -218,6 +220,7 @@ impl LibraryFs {
     }
 
     /// Scan every indexable document in the Library, in path order.
+    /// Symlinks are not followed.
     pub(crate) fn scan_documents(&self) -> Result<Vec<DocumentRecord>> {
         let mut files: Vec<PathBuf> = Vec::new();
         for &(layer, stems) in INDEXED_DOCUMENT_LAYERS {
@@ -323,7 +326,8 @@ impl LibraryFs {
     }
 
     /// Knowledge Markdown, Library-relative path then full text, in path order.
-    /// Templates are not included.
+    /// Templates are not included. Symlinks are not followed; a symlink leaf
+    /// that still reaches this read is refused.
     pub(crate) fn read_knowledge_markdown(&self) -> Result<Vec<(String, String)>> {
         let mut files = Vec::new();
         collect_markdown(&self.root.join("knowledge"), &mut files, &[]);
@@ -359,13 +363,28 @@ impl LibraryFs {
 /// whose stem is in it (a source directory holds `source.md` beside its
 /// `original.*`, and `v2.md` corrections share the source's index row
 /// until versions are indexed separately).
+///
+/// Symlinks are not followed. A symlinked directory is not opened, including
+/// a symlinked layer root, so a link outside the Library contributes nothing
+/// and a link back to an ancestor cannot recurse. Symlinked files are skipped
+/// the same way. `Path::is_dir` is not used: it follows links.
 fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>, stems: &[&str]) {
+    if std::fs::symlink_metadata(dir).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return;
+    }
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
+        // `DirEntry::file_type` does not follow symlinks.
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
         let path = entry.path();
-        if path.is_dir() {
+        if file_type.is_dir() {
             collect_markdown(&path, out, stems);
         } else if markdown_selected(&path, stems) {
             out.push(path);
