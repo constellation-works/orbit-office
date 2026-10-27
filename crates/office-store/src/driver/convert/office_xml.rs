@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
-use quick_xml::{Reader, events::Event};
+use quick_xml::{Reader, XmlVersion, events::Event};
 use zip::ZipArchive;
 
 use crate::{Error, Result};
@@ -28,11 +28,14 @@ impl<'a> Package<'a> {
             let entry = zip
                 .by_index(index)
                 .map_err(|_| super::invalid(format, "unreadable ZIP entry"))?;
-            let name = entry.name();
+            // zip 9 returns the decoded member name; a non-UTF-8 name is unsafe.
+            let name = entry
+                .name()
+                .map_err(|_| super::invalid(format, "unreadable ZIP entry"))?;
             if name.starts_with('/')
                 || name.contains(['\\', ':', '\0'])
                 || name.split('/').any(|part| part == "..")
-                || !names.insert(name.to_string())
+                || !names.insert(name.into_owned())
             {
                 return Err(super::invalid(
                     format,
@@ -122,6 +125,39 @@ impl Node {
     }
 }
 
+fn resolved_reference(
+    reference: &quick_xml::events::BytesRef<'_>,
+    format: &'static str,
+) -> Result<String> {
+    let invalid = || {
+        super::invalid(
+            format,
+            "malformed XML part (DTDs and external entities are unsupported)",
+        )
+    };
+    if let Some(character) = reference.resolve_char_ref().map_err(|_| invalid())? {
+        return Ok(character.to_string());
+    }
+    let name = reference.decode().map_err(|_| invalid())?;
+    quick_xml::escape::resolve_predefined_entity(name.as_ref())
+        .map(str::to_owned)
+        .ok_or_else(invalid)
+}
+
+fn push_xml_text(stack: &mut [Node], text: &str, format: &'static str) -> Result<()> {
+    let invalid = || {
+        super::invalid(
+            format,
+            "malformed XML part (DTDs and external entities are unsupported)",
+        )
+    };
+    if stack.len() == 1 && !text.trim().is_empty() {
+        return Err(invalid());
+    }
+    stack.last_mut().ok_or_else(invalid)?.text.push_str(text);
+    Ok(())
+}
+
 fn parse(text: &str, format: &'static str) -> Result<Node> {
     let invalid = || {
         super::invalid(
@@ -147,7 +183,7 @@ fn parse(text: &str, format: &'static str) -> Result<Node> {
                     let attr = attr.map_err(|_| invalid())?;
                     let key = super::utf8(attr.key.as_ref(), format)?.to_string();
                     let value = attr
-                        .decode_and_unescape_value(reader.decoder())
+                        .decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
                         .map_err(|_| invalid())?
                         .into_owned();
                     attributes.insert(key, value);
@@ -166,11 +202,13 @@ fn parse(text: &str, format: &'static str) -> Result<Node> {
                 stack.last_mut().ok_or_else(invalid)?.children.push(node);
             }
             Event::Text(text) => {
-                let text = text.unescape().map_err(|_| invalid())?;
-                if stack.len() == 1 && !text.trim().is_empty() {
-                    return Err(invalid());
-                }
-                stack.last_mut().ok_or_else(invalid)?.text.push_str(&text);
+                // Entities are separate `GeneralRef` events in quick-xml 0.41.
+                let text = text.xml10_content().map_err(|_| invalid())?;
+                push_xml_text(&mut stack, &text, format)?;
+            }
+            Event::GeneralRef(reference) => {
+                let text = resolved_reference(&reference, format)?;
+                push_xml_text(&mut stack, &text, format)?;
             }
             Event::CData(text) => {
                 stack
