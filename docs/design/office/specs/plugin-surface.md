@@ -106,9 +106,7 @@ unconfigured reply also refuses rather than inventing a successful write.
 
 ## Definitions shipped
 
-Seeded disabled, enabled during onboarding. The scaffold README still names
-`office-meeting-inbox`; [ORB-18838] tracks that divergence from
-`office-kt-inbox`.
+Seeded disabled, enabled during onboarding.
 
 - **Routines:**
   - `office-kt-inbox`: every 15 minutes, process confirmed video plans: transcribe, frames, extract (`kt`), then file knowledge proposals and question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
@@ -247,6 +245,6 @@ default pack list then becomes `[kt, meetings]`.
 
 ## Task References
 
-- [ORB-18838] — tracks the scaffold README still naming `office-meeting-inbox` instead of `office-kt-inbox`.
+- [ORB-18838] — renamed the scaffold README's KT routine from `office-meeting-inbox` to `office-kt-inbox`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
