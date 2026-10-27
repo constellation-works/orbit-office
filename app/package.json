@@ -13,6 +13,7 @@
     "build": "tsc -b",
     "check": "tsc -b",
     "typecheck": "tsc -b",
+    "test": "tsx --test tests/http-router.test.ts",
     "clean": "tsc -b --clean",
     "dev": "tsc -b && tsx watch packages/server/src/main.ts",
     "start": "node packages/server/dist/main.js"

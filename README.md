@@ -61,7 +61,9 @@ make ci           # fmt, structure, standards, clippy, cargo-deny, tests, golden
 make goldens      # compare help/output goldens with the built binary
 ```
 
-The web app has its own checks: `npm --prefix app run check`.
+The web app CI job runs `npm --prefix app ci`, `npm --prefix app run check`,
+`npm --prefix app test` and `python3 -I scripts/check-app-boundaries.py` on
+Linux and macOS.
 
 ## License
 
