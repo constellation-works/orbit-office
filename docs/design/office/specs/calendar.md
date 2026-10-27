@@ -304,4 +304,8 @@ instance. It is never a real calendar.
 
 ## Task References
 
-None yet.
+- [ORB-19191] — adds the gateway's `secret_path` and `oauth2_device` schemes.
+- [ORB-19192] — builds `office.calendar-sync`, `office.calendar-list` and the snapshot.
+- [ORB-19193] — builds `office.meeting-prep` and its routine.
+- [ORB-19194] — builds capture from an event and the `office-meeting-inbox` routine.
+- [ORB-19195] — builds the Calendar screen, its server feature and Today's card.
