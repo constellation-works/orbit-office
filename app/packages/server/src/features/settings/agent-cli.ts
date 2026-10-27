@@ -5,7 +5,7 @@
  * running the `office-orchestrator` skill over Orbit MCP — it is not code
  * in this repo. This module is the app's typed view of that connection:
  * whether the install script's Orbit MCP entry is present in the CLI's
- * user settings (docs/design/office/specs/install.md#steps, step 7).
+ * user settings (docs/design/office/specs/install.md#steps, step 8).
  *
  * Detection is a read-only presence check over three user-level files:
  * Muse Code's `mcpServers` in `${XDG_CONFIG_HOME:-$HOME/.config}/muse/settings.json`,
