@@ -273,6 +273,8 @@ impl Drop for ChildGuard {
         if self.reaped {
             return;
         }
+        #[cfg(target_os = "linux")]
+        let process_group = self.child.id();
         self.signal_group(15);
         let grace = Instant::now() + Duration::from_millis(200);
         // Probe the group, not merely the leader. A zombie leader can keep the
@@ -289,7 +291,45 @@ impl Drop for ChildGuard {
         self.signal_group(9);
         let _ = self.child.wait();
         self.reaped = true;
+        #[cfg(target_os = "linux")]
+        wait_for_process_group_quiescence(process_group);
     }
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_process_group_quiescence(process_group: u32) {
+    // SIGKILL is asynchronous. A pipe can reach EOF just before a descendant
+    // becomes a zombie, so wait briefly for every member to stop running.
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while process_group_has_running_process(process_group) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn process_group_has_running_process(process_group: u32) -> bool {
+    let Ok(processes) = std::fs::read_dir("/proc") else {
+        return false;
+    };
+    processes.flatten().any(|process| {
+        let Ok(stat) = std::fs::read_to_string(process.path().join("stat")) else {
+            return false;
+        };
+        let Some((_, fields)) = stat.rsplit_once(')') else {
+            return false;
+        };
+        let mut fields = fields.split_whitespace();
+        let Some(state) = fields.next() else {
+            return false;
+        };
+        let Some(_parent) = fields.next() else {
+            return false;
+        };
+        let Some(group) = fields.next().and_then(|value| value.parse::<u32>().ok()) else {
+            return false;
+        };
+        group == process_group && state != "Z" && state != "X"
+    })
 }
 
 // These ABIs are the workspace's Linux/macOS CI targets. No external crate is
