@@ -50,6 +50,90 @@ fn atomic_write_replaces_and_leaves_no_temp() {
 }
 
 #[test]
+fn atomic_write_survives_concurrent_writers_to_the_same_target() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("shared.md");
+    const THREADS: usize = 8;
+    const WRITES_PER_THREAD: usize = 25;
+    let payloads: Vec<Vec<u8>> = (0..THREADS * WRITES_PER_THREAD)
+        .map(|n| format!("concurrent-payload-{n:04}").into_bytes())
+        .collect();
+    std::thread::scope(|scope| {
+        for chunk in payloads.chunks(WRITES_PER_THREAD) {
+            let target = &path;
+            scope.spawn(move || {
+                for payload in chunk {
+                    write_atomic(target, payload).expect("concurrent write");
+                }
+            });
+        }
+    });
+    let final_contents = std::fs::read(&path).expect("read back");
+    assert!(
+        payloads.contains(&final_contents),
+        "final file must be one complete payload, got {final_contents:?}"
+    );
+    let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+        .expect("list")
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "temp files left: {leftovers:?}");
+}
+
+#[test]
+fn atomic_write_never_follows_a_planted_symlink_at_the_legacy_temp_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("page.md");
+    // The temp name the pre-fix code always used: process id plus target
+    // name, with no per-call uniqueness.
+    let legacy_tmp = dir
+        .path()
+        .join(format!(".office-store-{}-page.md.tmp", std::process::id()));
+    let victim = dir.path().join("victim.md");
+    std::fs::write(&victim, b"victim-contents").expect("write victim");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&victim, &legacy_tmp).expect("plant symlink");
+    #[cfg(not(unix))]
+    std::fs::write(&legacy_tmp, b"planted-blocker").expect("plant blocker");
+    write_atomic(&path, b"payload").expect("write around planted entry");
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("read back"),
+        "payload"
+    );
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            std::fs::read_to_string(&victim).expect("victim intact"),
+            "victim-contents"
+        );
+        assert!(
+            std::fs::symlink_metadata(&legacy_tmp)
+                .expect("planted entry still present")
+                .file_type()
+                .is_symlink(),
+            "planted symlink must not be replaced or removed"
+        );
+    }
+    #[cfg(not(unix))]
+    assert_eq!(
+        std::fs::read_to_string(&legacy_tmp).expect("planted entry intact"),
+        "planted-blocker"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn atomic_write_leaves_owner_only_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("secret.md");
+    write_atomic(&path, b"payload").expect("write");
+    let mode = std::fs::metadata(&path).expect("stat").permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "final mode must be owner-only, got {mode:o}");
+}
+
+#[test]
 fn sha256_matches_a_known_vector() {
     // SHA-256 of the empty input.
     assert_eq!(
