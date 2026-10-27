@@ -592,7 +592,10 @@ impl Library for FakeLibrary {
                 .sources
                 .borrow()
                 .values()
-                .find(|s| s.sha256.as_ref() == Some(sha_value))
+                .find(|s| {
+                    s.sha256.as_ref() == Some(sha_value)
+                        || sha256_hex(normalize_text(&s.body).as_bytes()) == *sha_value
+                })
                 .cloned()
         {
             return Ok(SourceOutcome {

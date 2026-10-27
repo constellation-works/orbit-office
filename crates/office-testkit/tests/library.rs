@@ -5,6 +5,7 @@ use office_core::{
     ports::{CaptureSourceRequest, ConversationEntry, Library},
 };
 use office_testkit::fakes::FakeLibrary;
+use std::io::Write as _;
 use std::path::Path;
 
 #[test]
@@ -87,4 +88,44 @@ fn fake_capture_append_updates_search_and_read_document() {
         "read_document body should contain appended term: {}",
         document.body
     );
+}
+
+#[test]
+fn fake_capture_upload_then_paste_dedupes_to_the_same_id() {
+    let dir = std::env::temp_dir().join(format!(
+        "office-fake-library-test-{}-crlf-upload",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let upload = dir.join("notes-crlf.txt");
+    std::fs::File::create(&upload)
+        .expect("create upload")
+        .write_all(b"Hello world.  \r\nSecond line.\r\n")
+        .expect("write upload");
+
+    let fake = FakeLibrary::initialized();
+    let port: &dyn Library = &fake;
+    let uploaded = port
+        .capture_source(&CaptureSourceRequest {
+            upload_path: Some(upload.to_string_lossy().to_string()),
+            title: Some("CRLF upload".to_string()),
+            captured_at: "2026-10-27T10:00:00+00:00".to_string(),
+            ..CaptureSourceRequest::default()
+        })
+        .expect("capture upload");
+    assert!(!uploaded.deduplicated);
+
+    let pasted = port
+        .capture_source(&CaptureSourceRequest {
+            text: Some("Hello world.\nSecond line.".to_string()),
+            title: Some("Pasted copy".to_string()),
+            captured_at: "2026-10-27T10:01:00+00:00".to_string(),
+            ..CaptureSourceRequest::default()
+        })
+        .expect("capture paste");
+    assert!(
+        pasted.deduplicated,
+        "same normalized text pasted after a CRLF upload should deduplicate: {pasted:?}"
+    );
+    assert_eq!(pasted.id, uploaded.id);
 }
