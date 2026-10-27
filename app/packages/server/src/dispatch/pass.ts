@@ -150,17 +150,38 @@ export function shipTasks(ids: readonly string[], options: ShipOptions = {}): Pr
       }
     };
     let timedOut = false;
+    let leaderExited = false;
+    let settled = false;
     const timer = setTimeout(() => {
       timedOut = true;
+      // After `exit` the leader is reaped: never signal (STD-03 R14), but
+      // still settle — a descendant holding a pipe must not hang the pass.
+      if (leaderExited) {
+        settleTimedOut();
+        return;
+      }
       killTree("SIGTERM");
       // Escalate if the leader is still live after the grace period (STD-03 R12).
-      killer = setTimeout(() => killTree("SIGKILL"), 250);
+      killer = setTimeout(() => {
+        killer = undefined;
+        killTree("SIGKILL");
+        if (leaderExited) settleTimedOut();
+      }, 250);
       killer.unref();
     }, timeoutMs);
     timer.unref();
     const clearTimers = (): void => {
       clearTimeout(timer);
       if (killer !== undefined) clearTimeout(killer);
+    };
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      fn();
+    };
+    const settleTimedOut = (): void => {
+      finish(() => reject(new Error(`orbit run ship timed out after ${timeoutMs} ms`)));
     };
     let stderrBytes = 0;
     let stderrTruncated = false;
@@ -179,27 +200,38 @@ export function shipTasks(ids: readonly string[], options: ShipOptions = {}): Pr
     });
     child.stdout.on("data", () => undefined);
     child.on("error", (error) => {
-      clearTimers();
-      reject(error);
+      finish(() => reject(error));
     });
-    child.on("exit", clearTimers);
+    child.on("exit", () => {
+      // Keep the deadline armed (see the timer above); if it already fired,
+      // bound the remaining wait for `close` by the same 250 ms grace.
+      leaderExited = true;
+      if (timedOut && killer === undefined) {
+        killer = setTimeout(() => {
+          killer = undefined;
+          settleTimedOut();
+        }, 250);
+        killer.unref();
+      }
+    });
     child.on("close", (code, signal) => {
-      clearTimers();
-      if (timedOut) {
-        reject(new Error(`orbit run ship timed out after ${timeoutMs} ms`));
-        return;
-      }
-      if (code !== 0) {
-        // Bounded: stderrChunks holds at most MAX_SHIP_STDERR_BYTES, so this
-        // concat never touches unbounded data (STD-03 R15).
-        const captured = Buffer.concat(stderrChunks).toString("utf8").trim();
-        const preview = captured.slice(0, SHIP_STDERR_PREVIEW_CHARS);
-        const wasCut = stderrTruncated || preview.length < captured.length;
-        const suffix = wasCut ? ` ${SHIP_STDERR_TRUNCATED_MARK}` : "";
-        reject(new Error(`orbit run ship failed (code ${code ?? "none"}, signal ${signal ?? "none"}): ${preview}${suffix}`));
-        return;
-      }
-      resolve();
+      finish(() => {
+        if (timedOut) {
+          reject(new Error(`orbit run ship timed out after ${timeoutMs} ms`));
+          return;
+        }
+        if (code !== 0) {
+          // Bounded: stderrChunks holds at most MAX_SHIP_STDERR_BYTES, so this
+          // concat never touches unbounded data (STD-03 R15).
+          const captured = Buffer.concat(stderrChunks).toString("utf8").trim();
+          const preview = captured.slice(0, SHIP_STDERR_PREVIEW_CHARS);
+          const wasCut = stderrTruncated || preview.length < captured.length;
+          const suffix = wasCut ? ` ${SHIP_STDERR_TRUNCATED_MARK}` : "";
+          reject(new Error(`orbit run ship failed (code ${code ?? "none"}, signal ${signal ?? "none"}): ${preview}${suffix}`));
+          return;
+        }
+        resolve();
+      });
     });
   });
 }

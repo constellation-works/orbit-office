@@ -317,6 +317,7 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
         }
       };
       let settled = false;
+      let leaderExited = false;
       let timedOut = false;
       let outputTooLarge = false;
       let spawnError: unknown;
@@ -328,9 +329,19 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
 
       const timer = setTimeout(() => {
         timedOut = true;
+        // After `exit` the leader is reaped: never signal (STD-03 R14), but
+        // still settle — a descendant holding a pipe must not hang the call.
+        if (leaderExited) {
+          settleBounded();
+          return;
+        }
         killTree("SIGTERM");
         // Escalate if the leader is still live after the grace period (STD-03 R12).
-        killer = setTimeout(() => killTree("SIGKILL"), 250);
+        killer = setTimeout(() => {
+          killer = undefined;
+          killTree("SIGKILL");
+          if (leaderExited) settleBounded();
+        }, 250);
         killer.unref();
       }, timeoutMs);
       timer.unref();
@@ -345,6 +356,21 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
         settled = true;
         clearTimers();
         fn();
+      };
+
+      /** Settle without waiting for `close`, mirroring its precedence. No signal is sent. */
+      const settleBounded = (): void => {
+        finish(() => {
+          if (outputTooLarge) {
+            reject(new OrbitError("output_too_large", `orbit tool ${name} exceeded the output limit`));
+            return;
+          }
+          if (spawnError !== undefined) {
+            reject(new OrbitSpawnError(name, spawnError));
+            return;
+          }
+          reject(new OrbitTimeoutError(name, timeoutMs));
+        });
       };
 
       child.stdout.on("data", (chunk: Buffer) => {
@@ -372,7 +398,20 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
           finish(() => reject(new OrbitSpawnError(name, error)));
         }
       });
-      child.on("exit", clearTimers);
+      child.on("exit", () => {
+        // `exit` means the leader is reaped but its pipes may stay open via a
+        // descendant. Keep the deadline armed (it settles without signalling);
+        // if it already fired, bound the remaining wait for `close` by the
+        // same 250 ms grace instead of waiting indefinitely.
+        leaderExited = true;
+        if ((timedOut || outputTooLarge) && killer === undefined) {
+          killer = setTimeout(() => {
+            killer = undefined;
+            settleBounded();
+          }, 250);
+          killer.unref();
+        }
+      });
       child.on("close", (code, signal) => {
         closed = true;
         finish(() => {

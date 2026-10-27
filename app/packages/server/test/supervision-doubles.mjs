@@ -30,12 +30,20 @@ export function installSupervisionDoubles() {
     child.stderr = new EventEmitter();
     child.stdin = new EventEmitter();
     child.stdin.end = () => {};
-    child.finish = (code = 0, signal = null) => {
+    child.exitOnly = (code = 0, signal = null) => {
+      child.exitCode = code;
+      child.signalCode = signal;
+      child.emit("exit", code, signal);
+    };
+    child.closeOnly = (code = 0, signal = null) => {
       child.exitCode = code;
       child.signalCode = signal;
       child.closed = true;
-      child.emit("exit", code, signal);
       child.emit("close", code, signal);
+    };
+    child.finish = (code = 0, signal = null) => {
+      child.exitOnly(code, signal);
+      child.closeOnly(code, signal);
     };
     child.kill = (signal) => {
       signals.push(snapshot(child, child.pid, signal));
