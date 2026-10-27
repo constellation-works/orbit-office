@@ -2,8 +2,8 @@
 
 Resolve the connection, keep the path under its `base_url`, allow only a
 short list of agent headers, add the auth from the slot, follow at most three
-same-origin redirects, and return the status, a fixed header set and the
-body (JSON parsed, text as text, anything else as size and SHA-256), cut at
+same-origin redirects within the base path, and return the status, a fixed
+header set and the body (JSON parsed, text as text, anything else as size and SHA-256), cut at
 `max_response_bytes`. Every call, refused or not, appends one audit record.
 
 With `drafts.py`, the only module that opens network connections.
@@ -251,6 +251,17 @@ def origin(url: str) -> tuple[str, str, int]:
     return scheme, (parts.hostname or "").lower(), port
 
 
+def _redirect_within_base(base_url: str, target: str) -> str | None:
+    """Validate and normalize the target path using the initial request's rules."""
+    parts = urllib.parse.urlsplit(target)
+    try:
+        normalized = resolve(base_url, parts.path or "/", {})
+    except GatewayError:
+        return None
+    path = urllib.parse.urlsplit(normalized).path
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, path, parts.query, ""))
+
+
 def _send(
     connection: Connection,
     method: str,
@@ -274,12 +285,14 @@ def _send(
             target = urllib.parse.urldefrag(urllib.parse.urljoin(url, location))[0]
             if origin(target) != home:
                 unfollowed = {"location": target, "reason": "other_origin"}
+            elif (safe_target := _redirect_within_base(connection.base_url, target)) is None:
+                unfollowed = {"location": target, "reason": "outside_base"}
             elif redirects >= MAX_REDIRECTS:
                 unfollowed = {"location": target, "reason": "limit"}
             else:
                 response.close()
                 redirects += 1
-                url = target
+                url = safe_target
                 continue
         break
     record.status = status

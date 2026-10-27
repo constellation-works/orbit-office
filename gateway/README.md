@@ -29,6 +29,11 @@ Tools: `gateway.http-get`, `gateway.http-draft`, `gateway.http-send` (app
 only), `gateway.connection-list`, `gateway.connection-put` (app only) and
 `gateway.audit-list`.
 
+`http-get` follows up to three redirects only when each target stays on the
+connection's origin and within its base path. An outside-base redirect is
+returned without a request to its target, with `redirect.reason` set to
+`outside_base`.
+
 A write is drafted, approved and sent once. `http-draft` stores the request
 in `{{plugin_state}}/drafts/<id>.json` with its SHA-256 and files one
 `proposed` task tagged `gateway-draft` (through the `orbit.task.add` and
