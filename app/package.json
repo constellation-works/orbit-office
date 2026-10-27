@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc -b",
     "check": "tsc -b",
+    "test": "tsc -b && npm test --workspaces --if-present",
     "typecheck": "tsc -b",
     "clean": "tsc -b --clean",
     "dev": "tsc -b && tsx watch packages/server/src/main.ts",

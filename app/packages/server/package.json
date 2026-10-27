@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "The orbit-office app server: serves the UI and calls Orbit as the user.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "dependencies": {
     "@orbit-office/contracts": "0.1.0"
   }

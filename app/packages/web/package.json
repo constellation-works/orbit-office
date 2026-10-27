@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "The orbit-office browser UI: one folder per screen, no framework, no bundler.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "devDependencies": {
     "@orbit-office/contracts": "0.1.0"
   }
