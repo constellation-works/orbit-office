@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: Library — layout, sources, knowledge pages, artifacts and frictions"
-last_validated: 2026-10-26
+last_validated: 2026-10-27
 ---
 
 # Spec: Library
@@ -33,7 +33,9 @@ library/
 ```
 
 - The index in `plugin_state/index.sqlite` (FTS5 plus link tables) is
-  rebuildable at any time with `office.reindex`.
+  rebuildable at any time with `office.reindex`. Reindex rebuilds only
+  after a complete scan: a missing layer is empty, and an enumeration
+  failure leaves the previous index unchanged.
 ## Git
 
 - The Library is its own git repository at `library/`, created by

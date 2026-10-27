@@ -2,7 +2,7 @@
 //! and searched — the flow `office.reindex` and `office.search` will use.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use office_store::{DocumentKind, LibraryStore, SearchFilter, SearchHit};
+use office_store::{DocumentKind, Error, LibraryStore, SearchFilter, SearchHit};
 use std::path::Path;
 
 const MEETING: &str = "\
@@ -1327,6 +1327,93 @@ fn reindex_and_knowledge_pages_terminate_on_an_ancestor_symlink_cycle() {
             .unwrap()
             .contains("inside library page")
     );
+}
+
+/// A missing indexed layer is an empty part of a complete scan. A regular
+/// file where a layer directory belongs is an enumeration failure: `reindex`
+/// returns `io_error` and does not rebuild, so rows indexed earlier stay
+/// searchable. Replacing the directory with a file yields `ENOTDIR` without
+/// depending on permissions, including when the test runs as root.
+#[test]
+fn enumeration_error_aborts_reindex_and_preserves_the_prior_index() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let library = dir.path().join("library");
+    let state = dir.path().join("state");
+    initialize(&library);
+    write(
+        &library,
+        "sources/2026/10/src-kept/source.md",
+        "---\nid: src-kept\nkind: note\ntitle: Kept source\n---\n\nkeptsource token\n",
+    );
+    write(
+        &library,
+        "knowledge/domain/dom-kept.md",
+        "---\nid: dom-kept\ntype: domain\ntitle: Kept page\n---\n\nkeptpage token\n",
+    );
+    let store = LibraryStore::open(&library, &state).expect("open");
+    let root = library.canonicalize().expect("canonical library");
+    assert_eq!(store.reindex().expect("initial reindex"), 2);
+    let indexed_before = search_sorted(&store, "kept");
+    assert_eq!(indexed_before.len(), 2);
+    assert_eq!(store.document_count().expect("count"), 2);
+
+    std::fs::remove_dir(root.join("artifacts")).expect("remove empty artifacts layer");
+    assert!(
+        !root.join("artifacts").exists(),
+        "artifacts layer is absent"
+    );
+    assert_eq!(store.reindex().expect("absent layer reindexes"), 2);
+    assert_eq!(search_sorted(&store, "kept"), indexed_before);
+    assert_eq!(
+        store
+            .get("src-kept")
+            .expect("get source")
+            .expect("source")
+            .id,
+        "src-kept"
+    );
+    assert_eq!(
+        store.get("dom-kept").expect("get page").expect("page").id,
+        "dom-kept"
+    );
+
+    std::fs::remove_dir_all(root.join("knowledge")).expect("remove knowledge layer");
+    std::fs::write(root.join("knowledge"), "not a directory\n").expect("knowledge file");
+    assert!(root.join("knowledge").is_file(), "layer path is a file");
+    assert!(
+        root.join("sources/2026/10/src-kept/source.md").is_file(),
+        "source remains on disk"
+    );
+
+    let error = store
+        .reindex()
+        .expect_err("enumeration failure must abort reindex");
+    assert_eq!(error.code(), "io_error");
+    let Error::Io {
+        action,
+        path,
+        source,
+    } = &error
+    else {
+        panic!("expected Io, got {error:?}");
+    };
+    assert_eq!(*action, "list Library directory");
+    assert_eq!(path, &root.join("knowledge"));
+    assert_eq!(source.kind(), std::io::ErrorKind::NotADirectory);
+
+    assert_eq!(store.document_count().expect("count unchanged"), 2);
+    assert_eq!(search_sorted(&store, "kept"), indexed_before);
+    token_hit(&store, "src-kept", "keptsource");
+    token_hit(&store, "dom-kept", "keptpage");
+    assert!(store.get("dom-kept").expect("get").is_some());
+    let pages = store
+        .knowledge_pages()
+        .expect_err("knowledge walk fails closed");
+    assert_eq!(pages.code(), "io_error");
+    let Error::Io { path, .. } = &pages else {
+        panic!("expected Io, got {pages:?}");
+    };
+    assert_eq!(path, &root.join("knowledge"));
 }
 
 fn markdown_under(root: &Path) -> Vec<String> {

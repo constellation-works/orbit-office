@@ -56,6 +56,14 @@ tool needs them, as new migration steps — never as edits to step 1.
   and a directory symlink that points at an ancestor ends the walk at
   the link. `read_document` still refuses a symlink leaf with
   `unsafe_path`.
+- **An incomplete scan does not rebuild the index.** A missing indexed
+  layer is an empty part of a complete scan. Any other failure while
+  inspecting or listing a layer directory, a nested directory, or a
+  directory entry — including a regular file where a layer directory
+  belongs — returns `io_error` before the index transaction. Previously
+  indexed rows stay searchable. Knowledge-page reads use the same walk:
+  a missing or symlinked `knowledge` directory is an empty page list,
+  and any other enumeration error fails the read.
 - **Preconditions before side effects:** path components are validated
   before any write; unknown document kinds and newer index schemas are
   refused, never guessed or rewritten.

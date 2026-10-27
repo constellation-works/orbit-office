@@ -489,6 +489,9 @@ impl LibraryStore {
 
     fn reindex_locked(&self, _lock: &WriterLock) -> Result<u32> {
         self.recover()?;
+        // Scan before rebuild. `rebuild` deletes every indexed row in one
+        // transaction, so an incomplete walk must return here and leave the
+        // previous index in place.
         let documents = self.files.scan_documents()?;
         let count = u32::try_from(documents.len()).map_err(|e| {
             Error::io(

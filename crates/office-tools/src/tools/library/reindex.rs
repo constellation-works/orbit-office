@@ -1,6 +1,8 @@
 //! `office.reindex`: Rebuild the SQLite index from the Library.
 //!
 //! Files are the truth; the adapter rescans them under the writer lock.
+//! A missing indexed layer is an empty part of that scan. An enumeration
+//! failure returns `io_error` and leaves the previous index in place.
 //! An uninitialized Library is refused by the shared dispatch check
 //! (`library_not_initialized`, STD-02 R24) before this handler runs.
 
