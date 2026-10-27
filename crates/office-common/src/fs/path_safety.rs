@@ -37,9 +37,15 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
+            Component::ParentDir => match normalized.components().next_back() {
+                None | Some(Component::ParentDir) => normalized.push(".."),
+                Some(Component::Normal(_)) => {
+                    normalized.pop();
+                }
+                // At a root or prefix: `..` cannot escape further, so it is
+                // a no-op (keeps `/a/../b` resolving to `/b`).
+                Some(Component::CurDir | Component::RootDir | Component::Prefix(_)) => {}
+            },
             Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
             Component::RootDir => normalized.push(component.as_os_str()),
             Component::Normal(part) => normalized.push(part),
