@@ -226,6 +226,7 @@ fn refuses_malformed_endpoint_authorities_at_every_settings_boundary() {
         "http://[::1]:65536/v1",
         "http://[::1]:/v1",
         "http://[::1]9/v1",
+        "https://[not-an-ip]/v1",
     ] {
         // Load (from_yaml).
         let yaml = BLOCK.replace("https://muse.internal.acme.example/v1", endpoint);
@@ -245,9 +246,11 @@ fn refuses_malformed_endpoint_authorities_at_every_settings_boundary() {
             }
         }))
         .unwrap();
+        let error = serde_json::from_str::<Settings>(&json)
+            .expect_err(&format!("deserialization accepted {endpoint}"));
         assert!(
-            serde_json::from_str::<Settings>(&json).is_err(),
-            "deserialization accepted {endpoint}"
+            !error.to_string().contains(endpoint),
+            "deserialization echoed {endpoint}: {error}"
         );
 
         // with_setting: whole block and endpoint leaf.
@@ -257,6 +260,7 @@ fn refuses_malformed_endpoint_authorities_at_every_settings_boundary() {
             .with_setting("open_weights", block)
             .expect_err(endpoint);
         assert_eq!(error.code(), "invalid_library_setting", "{endpoint}");
+        assert!(!error.to_string().contains(endpoint), "echoed: {error}");
         assert!(!error.to_string().contains("secret-value"));
 
         let configured = Settings::default()
@@ -266,6 +270,7 @@ fn refuses_malformed_endpoint_authorities_at_every_settings_boundary() {
             .with_setting("open_weights.endpoint", json!(endpoint))
             .expect_err(endpoint);
         assert_eq!(error.code(), "invalid_library_setting", "{endpoint}");
+        assert!(!error.to_string().contains(endpoint), "echoed: {error}");
         let Error::InvalidSetting { key, .. } = error else {
             panic!("wrong error: {error:?}")
         };
