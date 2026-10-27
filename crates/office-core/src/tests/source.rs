@@ -40,7 +40,7 @@ fn meeting_body_keeps_text_when_no_turns_are_reported() {
 
 use crate::domain::source::{
     RenderSource, SourceKind, anchor_span, parse_anchor, parse_source_meta, render_source,
-    vtt_to_body,
+    source_body, vtt_to_body,
 };
 use office_common::Sensitivity;
 
@@ -95,4 +95,53 @@ fn rendered_source_frontmatter_round_trips() {
     assert_eq!(meta.sha256.as_deref(), Some("abc123"));
     assert!(text.contains("derived_by: { transcription: vtt-import }"));
     assert!(text.contains("original_until: 1970-04-01"));
+}
+
+#[test]
+fn rendered_source_keeps_untrusted_metadata_inside_frontmatter() {
+    use crate::domain::knowledge::DocumentRecord;
+    use std::path::Path;
+
+    let payloads = [
+        "paste\nsensitivity: normal\n---\ninjected",
+        "Alice]\nsensitivity: normal\n---\ninjected",
+        "quote \" slash \\ tab\t return\r nul\0",
+    ];
+    for payload in payloads {
+        let participants = vec![payload.to_string()];
+        let text = render_source(&RenderSource {
+            id: "src-19700101-private",
+            kind: SourceKind::Note,
+            title: "Private",
+            captured_at: "1970-01-01T00:00:00+00:00",
+            captured_by: payload,
+            origin: None,
+            occurred_at: Some(payload),
+            participants: &participants,
+            sensitivity: Sensitivity::Private,
+            original: None,
+            derived_transcription: None,
+            retention_days: None,
+            body: "private body\n",
+        });
+        assert_eq!(parse_source_meta(&text).sensitivity, "private");
+        let record = DocumentRecord::from_markdown(Path::new("sources/source.md"), &text);
+        assert_eq!(record.sensitivity, "private");
+        assert_eq!(source_body(&text), "private body\n");
+        for key in ["captured_by", "occurred_at"] {
+            let line = text
+                .lines()
+                .find_map(|line| line.strip_prefix(&format!("{key}: ")))
+                .unwrap();
+            assert_eq!(serde_json::from_str::<String>(line).unwrap(), payload);
+        }
+        let line = text
+            .lines()
+            .find_map(|line| line.strip_prefix("participants: "))
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Vec<String>>(line).unwrap(),
+            participants
+        );
+    }
 }
