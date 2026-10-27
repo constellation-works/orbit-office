@@ -11,9 +11,14 @@ repository.workspace = true
 name = "office_orbit"
 path = "src/lib.rs"
 
-# Dependencies arrive with the first task that needs them, within the policy
-# in scripts/check-dependency-direction.sh.
 [dependencies]
+office-common = { workspace = true }
+office-core = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

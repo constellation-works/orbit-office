@@ -11,6 +11,26 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// No callback adapter was supplied for this call.
+    #[error("Orbit callbacks are unavailable in this call context")]
+    OrbitUnavailable,
+    /// A write was sent but its result could not be verified. Never retry blindly.
+    #[error("Orbit callback outcome is unknown; inspect Orbit before retrying")]
+    OrbitOutcomeUnknown,
+    /// Orbit rejected a callback; its structured code is preserved.
+    #[error("Orbit refused the callback ({code})")]
+    OrbitRefused {
+        /// Orbit's machine-readable refusal code, without diagnostic text.
+        code: String,
+    },
+    /// The callback channel failed; raw child output is never included.
+    #[error("Orbit callback ({code}) failed: {message}")]
+    Orbit {
+        /// Stable adapter failure code.
+        code: &'static str,
+        /// Safe diagnostic without callback payloads or credentials.
+        message: String,
+    },
     /// A template file has invalid or incomplete rules.
     #[error("invalid template {file}, field {field}: {reason}")]
     TemplateInvalid {
@@ -105,6 +125,10 @@ impl Error {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
+            Self::OrbitUnavailable => "orbit_unavailable",
+            Self::OrbitOutcomeUnknown => "orbit_outcome_unknown",
+            Self::OrbitRefused { .. } => "orbit_refused",
+            Self::Orbit { code, .. } => code,
             Self::TemplateInvalid { .. } => "template_invalid",
             Self::PageIdMismatch { .. } => "page_id_mismatch",
             Self::TemplateTypeMismatch { .. } => "template_type_mismatch",
@@ -127,6 +151,10 @@ impl Error {
     pub fn retryable(&self) -> bool {
         match self {
             Self::Model { retryable, .. } => *retryable,
+            Self::OrbitUnavailable => false,
+            Self::OrbitOutcomeUnknown => false,
+            Self::OrbitRefused { .. } => false,
+            Self::Orbit { .. } => false,
             Self::TemplateInvalid { .. } => false,
             Self::PageIdMismatch { .. } => false,
             Self::TemplateTypeMismatch { .. } => false,

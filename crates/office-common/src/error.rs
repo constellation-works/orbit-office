@@ -13,6 +13,15 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// The child was never started, so it could not perform an operation.
+    #[error("cannot start subprocess {}", program.display())]
+    ProcessSpawn {
+        /// Executable supplied to the supervisor.
+        program: PathBuf,
+        /// Failure returned by process creation.
+        #[source]
+        source: std::io::Error,
+    },
     /// A supervised child exceeded its deadline.
     #[error("subprocess exceeded its deadline")]
     ProcessTimeout,
@@ -48,6 +57,7 @@ impl Error {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
+            Self::ProcessSpawn { .. } => "process_spawn_failed",
             Self::ProcessTimeout => "process_timeout",
             Self::ProcessOutputLimit => "process_output_limit",
             Self::ProcessUnsupported => "process_unsupported",

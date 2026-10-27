@@ -8,7 +8,7 @@ mod orbit;
 pub use clock::FakeClock;
 pub use library::FakeLibrary;
 pub use models::FakeModels;
-pub use orbit::FakeOrbit;
+pub use orbit::{FakeOrbit, OrbitCall};
 
 /// Builder for a complete set of fake services.
 pub struct PortsBuilder {
@@ -37,7 +37,7 @@ impl PortsBuilder {
         office_core::ports::Ports {
             library: Box::new(FakeLibrary::initialized()),
             models: Box::new(FakeModels::new()),
-            orbit: Box::new(FakeOrbit),
+            orbit: Box::new(FakeOrbit::default()),
             clock: Box::new(FakeClock(self.now)),
         }
     }

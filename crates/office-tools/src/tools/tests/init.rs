@@ -12,7 +12,7 @@ fn uninitialized_ports() -> office_core::ports::Ports<'static> {
     office_core::ports::Ports {
         library: Box::new(office_testkit::fakes::FakeLibrary::default()),
         models: Box::new(office_testkit::fakes::FakeModels::new()),
-        orbit: Box::new(office_testkit::fakes::FakeOrbit),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),

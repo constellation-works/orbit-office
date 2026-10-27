@@ -28,6 +28,11 @@ backend only through Orbit's tools).
 records; `office-core` uses `office-common` for the shared sensitivity enum. Store record
 exports remain compatible re-exports.
 
+`office-orbit` uses its `office-core` edge for the eight Orbit port methods and its
+`office-common` edge for bounded CLI callback supervision. The composing `office` binary
+constructs this adapter from the host call context and inherited callback environment.
+The testkit's recording Orbit fake shares observations across clones.
+
 Port traits are declared in `office-core` because an adapter crate must depend on the crate
 that defines the trait it implements (Rust's orphan rule). A trait declaration does no I/O,
 so the domain stays pure. The four port interfaces and fakes are established together for dispatch; adapter
@@ -181,3 +186,6 @@ process.
   The app server's Orbit client caps concurrent `orbit` subprocesses at four by default
   (configurable), queues calls FIFO, times out every call, and shares one in-flight poll
   between browser tabs. Its dispatch pass is single-flight.
+- Orbit callbacks in the exec backend are synchronous and bounded to 30 seconds and
+  512 KiB per output stream by `office-common::process`. The inherited callback descriptor
+  stays open across the CLI child; Orbit owns authentication and live grant checks.
