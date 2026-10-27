@@ -1500,6 +1500,59 @@ for _bad_json in '{invalid' '{"permissions":{"deny":"wrong"}}' '{"permissions":{
 done
 check "Codex summary describes its sandbox deny limitation" grep -F "deny rules unavailable for sandboxed Codex shell calls" "$OUT_CODEX"
 
+# Ordinary settings files: an empty file, a group-writable (664) file and
+# a symlinked file must install (proceed), and an unusable settings file
+# must not abort --uninstall partway.
+EMPTY_SET_HOME="$ROOT/home-empty-settings"; mkdir -p "$EMPTY_SET_HOME/.claude"
+: > "$EMPTY_SET_HOME/.claude/settings.json"
+run_install "$EMPTY_SET_HOME" -- > "$ROOT/out-empty-settings.txt" 2>&1 \
+    || { cat "$ROOT/out-empty-settings.txt" >&2; fail "empty settings install exits 0"; }
+ok "empty settings install exits 0"
+check "empty settings gains exactly five deny rules" \
+    node -e 'const d=require(process.argv[1]).permissions.deny; process.exit(d.length===5&&new Set(d).size===5?0:1)' "$EMPTY_SET_HOME/.claude/settings.json"
+check "empty settings install writes the MCP entry" grep -q '"orbit"' "$EMPTY_SET_HOME/.claude.json"
+
+GROUP_SET_HOME="$ROOT/home-group-settings"; mkdir -p "$GROUP_SET_HOME/.claude"
+printf '{"kept":true}\n' > "$GROUP_SET_HOME/.claude/settings.json"
+chmod 664 "$GROUP_SET_HOME/.claude/settings.json"
+run_install "$GROUP_SET_HOME" -- > "$ROOT/out-group-settings.txt" 2>&1 \
+    || { cat "$ROOT/out-group-settings.txt" >&2; fail "group-writable settings install exits 0"; }
+ok "group-writable settings install exits 0"
+check "group-writable settings keeps user keys and gains five deny rules" \
+    node -e 'const d=require(process.argv[1]); process.exit(d.kept===true&&d.permissions.deny.length===5?0:1)' "$GROUP_SET_HOME/.claude/settings.json"
+
+LINK_SET_HOME="$ROOT/home-link-settings"; mkdir -p "$LINK_SET_HOME/.claude"
+printf '{"kept":true}\n' > "$LINK_SET_HOME/.claude/real-settings.json"
+ln -s real-settings.json "$LINK_SET_HOME/.claude/settings.json"
+run_install "$LINK_SET_HOME" -- > "$ROOT/out-link-settings.txt" 2>&1 \
+    || { cat "$ROOT/out-link-settings.txt" >&2; fail "symlinked settings install exits 0"; }
+ok "symlinked settings install exits 0"
+check "symlinked settings remains a symlink" test -L "$LINK_SET_HOME/.claude/settings.json"
+check "symlinked settings target keeps user keys and gains five deny rules" \
+    node -e 'const d=require(process.argv[1]); process.exit(d.kept===true&&d.permissions.deny.length===5?0:1)' "$LINK_SET_HOME/.claude/real-settings.json"
+
+UNUSABLE_HOME="$ROOT/home-unusable-settings"
+run_install "$UNUSABLE_HOME" -- > "$ROOT/out-unusable-install.txt" 2>&1 \
+    || { cat "$ROOT/out-unusable-install.txt" >&2; fail "unusable-settings setup install exits 0"; }
+ok "unusable-settings setup install exits 0"
+printf '{invalid' > "$UNUSABLE_HOME/.claude/settings.json"
+cp "$UNUSABLE_HOME/.claude/settings.json" "$ROOT/unusable-original"
+run_install "$UNUSABLE_HOME" -- --uninstall > "$ROOT/out-unusable-un.txt" 2>&1 \
+    || { cat "$ROOT/out-unusable-un.txt" >&2; fail "uninstall with unusable settings exits 0"; }
+ok "uninstall with unusable settings exits 0"
+check "uninstall with unusable settings warns instead of dying" \
+    grep -qi 'warning:' "$ROOT/out-unusable-un.txt"
+check "uninstall with unusable settings leaves the file byte-identical" \
+    cmp -s "$UNUSABLE_HOME/.claude/settings.json" "$ROOT/unusable-original"
+check "uninstall with unusable settings removes the service unit" \
+    test ! -e "$UNUSABLE_HOME/.config/systemd/user/orbit-office.service"
+check "uninstall with unusable settings removes the plugin (stub)" \
+    test ! -e "$STUB_STATE/plugin-added"
+check "uninstall with unusable settings removes tools" \
+    test ! -e "$UNUSABLE_HOME/$TOOLS_REL"
+check "uninstall with unusable settings keeps the workspace" \
+    test -d "$UNUSABLE_HOME/orbit"
+
 # Drive the real interactive entry point over a PTY. The stty wrapper emits
 # a synchronization marker only AFTER the actual terminal has disabled echo;
 # input is sent at that marker, so no sleep or timing race is involved.

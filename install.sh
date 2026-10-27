@@ -1110,9 +1110,9 @@ const rules = ["curl", "wget", "http", "aws", "gcloud"].map((p) => `Bash(${p} *)
 const object = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 function regular(p) {
   try {
-    const stat = fs.lstatSync(p);
-    if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o022) !== 0) {
-      throw new Error("expected an owned regular file without group/world write access");
+    const stat = fs.statSync(p);
+    if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o002) !== 0) {
+      throw new Error("expected an owned regular file without world write access");
     }
     return true;
   } catch (e) {
@@ -1122,13 +1122,19 @@ function regular(p) {
 }
 function write(p, text) {
   regular(p);
-  fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
-  const tmp = p + "." + crypto.randomBytes(12).toString("hex");
+  let dest = p;
+  try {
+    if (fs.lstatSync(p).isSymbolicLink()) dest = fs.realpathSync(p);
+  } catch (e) {
+    if (e.code !== "ENOENT") throw e;
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+  const tmp = dest + "." + crypto.randomBytes(12).toString("hex");
   try {
     const fd = fs.openSync(tmp, "wx", 0o600);
     try { fs.writeFileSync(fd, text); fs.fsyncSync(fd); }
     finally { fs.closeSync(fd); }
-    fs.renameSync(tmp, p);
+    fs.renameSync(tmp, dest);
   } finally {
     if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
   }
@@ -1253,7 +1259,8 @@ try {
   }
   const load = (file) => {
     const existed = regular(file);
-    const original = existed ? fs.readFileSync(file, "utf8") : "{}\n";
+    const raw = existed ? fs.readFileSync(file, "utf8") : "{}\n";
+    const original = raw.trim() === "" ? "{}\n" : raw;
     return { file, existed, original, doc: makeDoc(original) };
   };
   const mcp = load(mcpFile);
@@ -1414,8 +1421,11 @@ register_mcp_codex() {
 }
 
 remove_mcp_claude() {
-    edit_claude_settings uninstall || die "agent: could not remove owned entries from $CLAUDE_CONFIG_FILE and $AGENT_SETTINGS"
-    say "agent: removed the owned Orbit MCP entry from $CLAUDE_CONFIG_FILE and recorded deny rules from $AGENT_SETTINGS"
+    if edit_claude_settings uninstall; then
+        say "agent: removed the owned Orbit MCP entry from $CLAUDE_CONFIG_FILE and recorded deny rules from $AGENT_SETTINGS"
+    else
+        warn "agent: could not remove owned entries from $CLAUDE_CONFIG_FILE and $AGENT_SETTINGS; leaving them in place and continuing uninstall"
+    fi
 }
 
 remove_mcp_codex() {
