@@ -289,6 +289,9 @@ impl Library for RealLibrary {
     fn artifact_documents(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(self.store()?.artifact_documents()?)
     }
+    fn read_artifact_file(&self, relative: &Path) -> office_core::Result<Vec<u8>> {
+        Ok(self.store()?.read_artifact_file(relative)?)
+    }
 
     fn read_document(&self, relative: &Path) -> office_core::Result<DocumentRecord> {
         Ok(LibraryStore::read_document(&self.store()?, relative)?)

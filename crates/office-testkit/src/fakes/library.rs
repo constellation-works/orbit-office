@@ -361,6 +361,17 @@ impl Library for FakeLibrary {
         }
         Ok(artifact)
     }
+    fn read_artifact_file(&self, relative: &Path) -> Result<Vec<u8>> {
+        self.ready()?;
+        self.artifact_files
+            .borrow()
+            .get(&relative.to_string_lossy().to_string())
+            .cloned()
+            .ok_or_else(|| Error::Library {
+                code: "io_error",
+                message: format!("artifact file {} is absent", relative.display()),
+            })
+    }
     fn artifact_documents(&self) -> Result<Vec<LibraryText>> {
         self.ready()?;
         Ok(self

@@ -77,6 +77,73 @@ fn promotes_versions_and_shows_provenance_without_deleting_the_previous_output()
     assert_eq!(orbit.calls().len(), 6);
 }
 
+fn seed_custom(orbit: &FakeOrbit, title: &str, series: &str, payload: Value) {
+    orbit.push_response(Ok(
+        json!({"id":"fixture-task","status":"review","crew":"fixture-crew",
+        "updated_at":"1970-01-01T00:00:00Z", "artifacts":[
+            {"path":"artifact-manifest.json"}, {"path":"report.md"}]}),
+    ));
+    orbit.push_response(Ok(json!({"content":json!({"kind":"report","title":title,
+        "summary":"A fixture", "files":["report.md"], "series":series, "cites":[], "tags":[]}).to_string()})));
+    orbit.push_response(Ok(payload));
+}
+
+fn promote_and_show(orbit: &FakeOrbit) -> Value {
+    let ports = ports(orbit.clone());
+    let promoted = call(
+        &ports,
+        "office.artifact-promote",
+        json!({"task":"fixture-task"}),
+    );
+    assert_eq!(promoted["ok"], true, "{promoted}");
+    let id = promoted["output"]["id"].as_str().unwrap();
+    let show = call(&ports, "office.artifact-show", json!({"id":id}));
+    assert_eq!(show["ok"], true, "{show}");
+    show["output"].clone()
+}
+
+#[test]
+fn artifact_show_returns_the_text_body_of_a_report() {
+    let orbit = FakeOrbit::default();
+    seed_custom(
+        &orbit,
+        "Body report",
+        "body-report",
+        json!({"content":"Line one [src-19700101-x#L1]\nLine two\n"}),
+    );
+    let output = promote_and_show(&orbit);
+    assert_eq!(output["body"], "Line one [src-19700101-x#L1]\nLine two\n");
+    assert_eq!(output["truncated"], false);
+}
+
+#[test]
+fn artifact_show_truncates_a_body_past_the_byte_limit() {
+    let orbit = FakeOrbit::default();
+    seed_custom(
+        &orbit,
+        "Long report",
+        "long-report",
+        json!({"content":"x".repeat(20_000)}),
+    );
+    let output = promote_and_show(&orbit);
+    assert_eq!(output["truncated"], true);
+    assert_eq!(output["body"].as_str().unwrap().len(), 16_384);
+}
+
+#[test]
+fn artifact_show_returns_no_body_for_a_binary_artifact() {
+    let orbit = FakeOrbit::default();
+    seed_custom(
+        &orbit,
+        "Binary report",
+        "binary-report",
+        json!({"content_base64":"AP+A"}),
+    );
+    let output = promote_and_show(&orbit);
+    assert!(output.get("body").is_none(), "{output}");
+    assert_eq!(output["truncated"], false);
+}
+
 #[test]
 fn refuses_tasks_without_artifacts_with_a_distinct_code() {
     let orbit = FakeOrbit::default();
@@ -99,10 +166,34 @@ fn refuses_tasks_without_artifacts_with_a_distinct_code() {
 fn conformance_goldens_replay_with_offline_task_artifacts_and_a_fixed_clock() {
     let orbit = FakeOrbit::default();
     seed(&orbit, false);
-    let ports = ports(orbit);
+    let ports = ports(orbit.clone());
     // The golden format deliberately uses JSON flow values (valid YAML), so
     // this narrow fixture reader needs no YAML or networking dependency.
     for verb in ["artifact-promote", "artifact-show"] {
+        if verb == "artifact-show" {
+            // Seed the truncated and binary artifacts the golden replays,
+            // through the same public promote path as its first case.
+            seed_custom(
+                &orbit,
+                "Long report",
+                "long-report",
+                json!({"content":"x".repeat(20_000)}),
+            );
+            seed_custom(
+                &orbit,
+                "Binary report",
+                "binary-report",
+                json!({"content_base64":"AP+A"}),
+            );
+            for _ in 0..2 {
+                let promoted = call(
+                    &ports,
+                    "office.artifact-promote",
+                    json!({"task":"fixture-task"}),
+                );
+                assert_eq!(promoted["ok"], true, "{promoted}");
+            }
+        }
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
             "../../plugin/.orbit-plugin/tests/conformance/{verb}.yaml"
         ));

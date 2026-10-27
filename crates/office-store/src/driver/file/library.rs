@@ -167,6 +167,15 @@ impl LibraryFs {
         )?)
     }
 
+    /// Read one Library file as exact bytes, with relative-path containment.
+    /// No extension or UTF-8 requirement, so artifact companions of any
+    /// kind can be read; symlink components are refused as elsewhere.
+    pub(crate) fn read_bytes(&self, relative: &Path) -> Result<Vec<u8>> {
+        self.validate_relative_path(relative)?;
+        let path = self.root.join(relative);
+        std::fs::read(&path).map_err(|e| Error::io("read", &path, e))
+    }
+
     /// Read one Library file as text, with relative-path containment.
     pub(crate) fn read_text(&self, relative: &Path) -> Result<String> {
         self.validate_relative_path(relative)?;

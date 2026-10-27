@@ -127,6 +127,13 @@ pub trait Library {
     fn artifact_documents(&self) -> Result<Vec<LibraryText>> {
         Err(Error::LibraryUnavailable)
     }
+    /// One artifact companion file's exact bytes, by its Library-relative
+    /// path, under the adapter's containment rules. Unlike `read_text`,
+    /// this does not require Markdown or UTF-8, so a caller can tell a
+    /// binary companion from a text one.
+    fn read_artifact_file(&self, _relative: &Path) -> Result<Vec<u8>> {
+        Err(Error::LibraryUnavailable)
+    }
 
     /// Read the current document by Library-relative path, without a writer lock.
     fn read_document(&self, _relative: &Path) -> Result<DocumentRecord> {

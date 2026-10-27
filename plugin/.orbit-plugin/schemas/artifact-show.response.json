@@ -193,6 +193,14 @@
         "additionalProperties": false
       }
     },
+    "body": {
+      "type": "string",
+      "description": "Text body of a report/review artifact's first Markdown companion, as written with citations inline; at most 16384 bytes, cut on a character boundary when truncated. Absent for other kinds and for binary (non-UTF-8) companions."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when the body exceeded the 16384-byte limit and was cut; false when the full body is returned or there is no body."
+    },
     "backlinks": {
       "type": "array",
       "items": {
@@ -244,7 +252,8 @@
     "path",
     "files",
     "series_history",
-    "backlinks"
+    "backlinks",
+    "truncated"
   ],
   "additionalProperties": false
 }
