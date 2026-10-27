@@ -38,7 +38,11 @@ uncommenting its block and adding its schemas and golden
 
 Orbit builds the backend at install time for `git+` pinned sources
 (`spec.build`: `cargo build --release` → `bin/office-bin`). For a local
-directory install, `make export` prebuilds the same binary into the export.
+directory install, `make export` builds the backend from the same resolved HEAD
+commit as the plugin metadata. The default destination is
+`/tmp/office-plugin-<sha>` (or under `TMPDIR` when set); pass `OUT=<path>`
+to choose another destination. The destination must not already exist, and a
+failed copy may leave a partial destination for inspection.
 
 ## Develop
 
