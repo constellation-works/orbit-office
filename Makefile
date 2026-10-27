@@ -1,4 +1,4 @@
-.PHONY: help build test goldens fmt fmt-check clippy deny structure standards-check ci-fast ci-lint ci install clean
+.PHONY: help build test goldens fmt fmt-check clippy deny structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-check plugin-export install clean
 
 CARGO ?= cargo
 # Every build uses the committed Cargo.lock as is; a stale lock fails instead
@@ -34,7 +34,8 @@ help:
 	@echo "  make goldens UPDATE=1 Regenerate goldens after an intended surface change"
 	@echo "  make standards-check  Run the vendored standards check (docs/standards/check.sh)"
 	@echo "  make ci               Everything above; what CI runs"
-	@echo "  make baseline         Every stack's gate: ci-lint + gateway + app typecheck/tests"
+	@echo "  make baseline         Every stack's gate: ci + gateway + app typecheck/tests"
+	@echo "  make app-deps         Install app/node_modules from the lockfile when missing or stale"
 	@echo "  make build | fmt | install | clean"
 
 build:
@@ -121,15 +122,23 @@ ci: ci-fast ci-lint test goldens
 # Every stack's gate, as one command: the local prediction of the three
 # required CI checks on main (ci, app, gateway). This is the list recorded
 # as baseline_commands for the workspace.
-baseline: ci-lint gateway-check app-typecheck app-test
+baseline: ci gateway-check app-typecheck app-test
 
 gateway-check:
 	$(MAKE) -C gateway check test
 
-app-typecheck:
+# A fresh worktree has no app/node_modules. npm ci rewrites
+# node_modules/.package-lock.json, so this reinstalls only when that is
+# missing or older than the lockfile.
+app-deps: app/node_modules/.package-lock.json
+
+app/node_modules/.package-lock.json: app/package-lock.json
+	npm --prefix app ci --prefer-offline --no-audit --no-fund
+
+app-typecheck: app-deps
 	npm --prefix app run check
 
-app-test:
+app-test: app-deps
 	npm --prefix app test
 
 # ---------------------------------------------------------------------------
@@ -148,7 +157,7 @@ clean:
 # Web app (TypeScript) and plugin export — not part of the Rust CI gate.
 # ---------------------------------------------------------------------------
 
-app-check:
+app-check: app-deps
 	npm --prefix app run check
 
 plugin-export:
