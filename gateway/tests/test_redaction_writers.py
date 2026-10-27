@@ -52,7 +52,7 @@ class Inventory(GatewayCase):
         found: set[str] = set()
         for path in SOURCES:
             found |= writers_in(path)
-        listed = set(redact.WRITERS) | set(redact.UNREDACTED_WRITERS)
+        listed = set(redact.WRITERS) | set(redact.CREDENTIAL_WRITERS) | set(redact.UNREDACTED_WRITERS)
         self.assertEqual(
             found,
             listed,
