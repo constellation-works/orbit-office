@@ -238,9 +238,12 @@ The value is typed JSON, not a YAML string. Supported keys are
 `open_weights.<endpoint|model|kind|label>` and the whole `open_weights` block
 (a mapping of those four keys, or null), using the kinds, threshold names and
 bounds above. A leaf needs the block to exist. Changing the endpoint or model
-clears the recorded capabilities; `open_weights.capabilities` and
-`open_weights.verified_at` are refused with `invalid_library_setting`, because
-only `office.private-route-check` writes them.
+clears the recorded capabilities. A whole-block update follows the same rule:
+when both endpoint and model are unchanged, it preserves the recorded
+capabilities and verification time; changing either clears both. The
+`open_weights.capabilities` and `open_weights.verified_at` fields are refused
+with `invalid_library_setting`, because only `office.private-route-check`
+writes them.
 The additional thresholds `friction_count` and `new_subject_count` default to
 2 (range 1–10,000); `unused_days` defaults to 30 (range 1–36,500).
 Whole retention/sensitivity/threshold mappings cannot be replaced in one call.
