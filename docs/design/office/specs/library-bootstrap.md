@@ -140,7 +140,7 @@ whole phase:
 - Counts one standard digest call per document, each video's own planned
   calls, and an estimate of careful calls (one per subject group expected
   from earlier phases and the files' headings, refined after stage 1).
-- Prices them from `costs.*`, or shows the counts with rates unset.
+- Prices them from `costs.*`, or shows the counts with rates unset, and shows the route per call group. A batch marked private at the preview routes every call to the private endpoint ([models-and-privacy.md](./models-and-privacy.md#what-private-changes)).
 - Confirms with the digest the user saw (`plan_changed` if it moved;
   STD-05@1 §R21).
 - No step makes more calls than the plan allows. Careful calls past the

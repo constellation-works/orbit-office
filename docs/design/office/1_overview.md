@@ -17,7 +17,10 @@ related_artifacts: [ORB-16585]
 # office — Overview
 
 Office work is a generic, easy-to-use, personal agentic work-management
-system. It automates repeatable work systematically, tracks all work, and
+system for anyone whose work is knowledge work: analysts, consultants,
+managers, operations, and software engineers. An engineer's day has the same
+shape: KT videos, design docs, runbooks, on-call procedures, API calls and
+cloud queries. It automates repeatable work systematically, tracks all work, and
 keeps a store of knowledge that agents draw on and that grows more useful
 the longer it is used. With prolonged use the user does barely any manual
 work and acts as a **manager** who sets high-level direction: they talk to

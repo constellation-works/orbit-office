@@ -79,7 +79,7 @@ spaces, so script shebangs that name the interpreter keep working.
    added and enabled the same way, in the same consent prompt, and `cloudcli` only with
    `--with-cloudcli` ([gateway.md](./gateway.md)). Both come from the same release export, and
    neither has a build step.
-6. **Secrets.** Prompts for the Meta API key, and optionally the Baseten token, with hidden
+6. **Secrets.** Prompts for the Meta API key, and optionally the private route's token (`open_weights_token`), with hidden
    input, and stores them with `orbit plugin secret set office <name>`. They are never
    written to a file or echoed. Skipped when already set.
 7. **Scaffold.** `orbit tool run office.init`: the Library's layout, git repository, config,

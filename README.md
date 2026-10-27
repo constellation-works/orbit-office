@@ -1,11 +1,13 @@
 # orbit-office
 
-Local-first office work on [Orbit](https://github.com/constellation-works/orbit): an
-Orbit plugin (`office`, Rust) plus a standalone web app (TypeScript) that together turn
-hour-long knowledge-transfer videos, pasted chats and other sources into a chaptered index
-with the tangents folded away, to-dos for you and for agents, a compounding
-Library of sources / knowledge / artifacts, evidence-backed proposals, and generated
-reviews.
+Local-first office work on [Orbit](https://github.com/constellation-works/orbit), for
+any office worker, software engineers included. An Orbit plugin (`office`, Rust) and a
+standalone web app (TypeScript) turn onboarding material, hour-long knowledge-transfer
+videos, pasted chats and other sources into a cited Library (KT videos come back as a
+chaptered index with the tangents folded away), to-dos for you and for agents,
+evidence-backed proposals and generated reviews. Private material can go to Meta's
+open-weights Muse Spark Open on an endpoint you choose instead of the hosted API.
+Built with Muse Spark Open.
 
 > **Pre-existing vs built for the hackathon:** Orbit is a pre-existing open-source
 > agent runtime (MIT), used here as a labelled dependency pinned to a tested commit

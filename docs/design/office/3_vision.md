@@ -43,7 +43,7 @@ skills — not code paths, so new verticals need no plugin change:
    or keep them as `owner:you` to-dos? The to-dos are simpler for the
    event. Decision records may be the better long-term fit.
 2. **Business model** for the startup-track pitch: a free local runtime
-   with paid role-based routine packs (consultant, student, small office)
+   with paid role-based routine packs (engineer, consultant, student, small office)
    and optional encrypted sync between devices.
 3. **Relationship to a team knowledgebase:** the Library's ingest,
    provenance and freshness machinery could later be shared with a

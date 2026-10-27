@@ -42,6 +42,7 @@ Source: spec §12. The one-call envelope is
 | `office.batch-plan` | mutating | **none** | Plan a bootstrap phase's batch: calls and cost; confirm with the digest the user saw ([library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation)) |
 | `office.consolidate` | mutating | **none** | Group a batch's digests by subject, apply the page rules, one careful call per passing group, file one proposal per page ([library-bootstrap.md](./library-bootstrap.md#stage-2-consolidate-per-topic-careful)) |
 | `office.bootstrap-status` | read_only | workspace | Setup progress per phase, with computed gaps |
+| `office.private-route-check` | mutating | **none** | Check the configured open-weights endpoint with a tiny text, image and audio request; record its capabilities ([models-and-privacy.md](./models-and-privacy.md#checking-an-endpoint-officeprivate-route-check)) |
 | `office.review-inputs` | read_only | workspace | Gather a period's completed work, conversions, metrics, decisions and knowledge changes for a review |
 | `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, page templates (no pages), index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
 | `office.config-set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
@@ -136,7 +137,7 @@ requires an outward-facing action.
   - fs read and write on `{{workspace}}/library` and `{{plugin_state}}`.
   - network `any`, the only setting that reaches remote hosts. The plugin calls only the Meta and Baseten endpoints.
   - `orbit_tools`: the callbacks listed above.
-  - Secrets: `meta_api_key` and `baseten_token` (`spec.secrets`).
+  - Secrets: `meta_api_key` and `open_weights_token` (`spec.secrets`).
 - **Required programs:** `spec.requires.programs: [git, ffmpeg, ffprobe, uv, pdftotext]` (`pdftotext` is optional: without it PDFs are refused with `converter_unavailable`), plus
   `cargo` under `spec.build` for source-built installs. Programs are
   resolved against the operator's `PATH` when the plugin is enabled, and

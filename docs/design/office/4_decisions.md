@@ -926,6 +926,50 @@ page per document. The alternatives considered:
   this, the KT pack proposed pages directly; now it hands its candidates to
   consolidation.
 
+## The private route is Muse Spark Open on an endpoint the user chooses
+
+**Recorded:** 2026-10-27
+**Code anchors:** `crates/office-models/src/routing.rs`, `crates/office-models/src/http.rs`; [specs/models-and-privacy.md](./specs/models-and-privacy.md#the-private-route)
+
+### Context
+
+The private route sent `private` material to Muse Spark Open on Baseten or
+on loopback. Checked on 2026-10-27 against Meta's release and the model
+card, the model has 816B parameters (42B active) and needs about 700 GB of
+GPU memory even in NVFP4, so "local" is not an option on office hardware. A
+company's own deployment, the most useful choice for work material, was
+refused by the host allowlist. And "private" read as "stays on your
+machine", which it does not.
+
+### Decision
+
+- **Three endpoint kinds:** company deployment, hosted provider, and own
+  hardware. Each is labelled with where data goes. The allowlist is
+  `api.meta.ai` plus the one configured endpoint's exact host, over HTTPS
+  unless it is loopback, which replaces the Baseten-or-loopback rule.
+- "Private" is worded as **"not sent to Meta's hosted API; sent only to the
+  endpoint you chose"**, everywhere it appears.
+- **`office.private-route-check` records what the endpoint can take**
+  (text, image, audio). Private KT videos and bootstrap batches route
+  every tier and modality to it, and are refused only for a missing
+  capability.
+- Preview shows the route per call group. Private material is never sent to
+  the hosted API.
+- `open_weights_token` replaces `baseten_token`.
+- **Attribution:** "Built with Muse Spark Open", shown as the license asks.
+- The audience is **every office worker, software engineers included**. The
+  pitch names engineering work alongside the rest.
+
+### Consequences
+
+- A company that runs its own Muse Spark Open gets a clean story: work
+  material never reaches a third party.
+- Cost: the endpoint allowlist changes from fixed provider hosts to one
+  configured host, which is less of a code rule and more of an operator
+  choice, so the Settings screen states the destination plainly. The check
+  costs three tiny calls. The demo uses a provider, labelled as a third
+  party.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.
