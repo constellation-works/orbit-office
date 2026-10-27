@@ -218,6 +218,141 @@ A tool failure prints the office error code read from its JSON output, or
 `unreadable` when no code can be recovered. Earlier successful setup is retained
 for repair on the next run; a scaffold failure records no success marker.
 
+## `office open [path]`
+
+Open the app for a workspace in the default browser.
+
+Arguments: an optional workspace `path`. Without a path, the workspace is
+`ORBIT_OFFICE_HOME` when set, otherwise the workspace the installed app
+service is bound to (`ORBIT_OFFICE_WORKSPACE` in its launchd plist or
+systemd unit), otherwise the last `workspace_path` recorded in install
+state, otherwise `~/orbit`. Relative paths resolve from the calling
+directory, as for `office init`.
+
+The app service is the login service from step 9: the launchd agent
+`com.orbit-office.app` (plist under `~/Library/LaunchAgents/`) on macOS,
+or the systemd user unit `orbit-office.service` on Linux. Its port is
+read from that service definition (`PORT`), falling back to
+`ORBIT_OFFICE_PORT` and then `4317`; the app URL is
+`http://localhost:<port>/`.
+
+Behaviour, in order:
+
+1. If no service definition is installed, exit **1** with
+   `app service is not installed; run install.sh to install it` (naming
+   `install.sh`) and open nothing.
+2. If the installed service is bound to a different workspace than the
+   requested one, exit **1** naming both workspaces and the fix
+   (`install.sh --home <path>`); the service serves only its bound
+   workspace, so opening another workspace's URL would show the wrong
+   Library.
+3. If the service is installed but stopped, start it
+   (`launchctl load` on macOS, `systemctl --user start` on Linux) and
+   verify it is running; a service that does not start exits **1**.
+4. Open the app URL with the platform browser opener (`open` on macOS,
+   `xdg-open` on Linux; `ORBIT_OFFICE_BROWSER` overrides the command).
+   A missing or failing opener exits **1**. On success the command
+   prints `app: http://localhost:<port>/` and exits **0**.
+
+Exit codes: **0** the URL was opened, **1** no service installed, a
+workspace mismatch, a start failure or a browser failure, **2** invalid
+arguments (more than one path, an unknown option, an empty path).
+`office open --help` prints the `open` usage. Starting the service and
+opening the browser are the only effects; no workspace files change.
+
+## `office status [path] [--json]`
+
+Report, in plain words, whether everything the app needs is wired for
+one workspace. It changes nothing: it never starts the service, never
+opens a browser and never writes to the workspace.
+
+Arguments: an optional workspace `path` (same defaulting as
+`office open`) and `--json`. Unknown options, a second path or an empty
+path exit **2**.
+
+The report covers, in this order:
+
+- **Workspace** — whether the folder is a registered Orbit workspace,
+  from `orbit workspace list --json` (an exact active registration for
+  the resolved path).
+- **Plugins** — whether `office` and `gateway` are enabled there, from
+  `orbit plugin list --json --workspace <path>` (host enabled and the
+  workspace toggle on).
+- **Library** — health from `orbit tool run office.status --json`
+  (never from reading `.orbit/` or the Library directly): whether it is
+  initialized (scaffolded) and how many documents it holds.
+- **Meta API key** — presence only (`set`/`unset`), from the
+  `office.status` secrets report, falling back to
+  `orbit plugin secret list office` when the tool call cannot run. The
+  key's value never appears in any output.
+- **Private route** — the `open_weights` endpoint from `office.status`
+  (endpoint, model, kind and label), or `not configured`. The private
+  route is optional: not configuring one is reported but is not a
+  failure, and its token likewise appears only as `set`/`unset`.
+- **App service** — whether the login service (as in `office open`) is
+  installed, whether it is running, and the app URL
+  `http://localhost:<port>/` it serves.
+- **Agent CLI** — whether an Orbit MCP registration is present in the
+  agent CLI's user config (Claude Code's `.claude.json`, the Muse
+  settings file, or Codex's `config.toml`, matching the app's
+  `agentCliStatus` reader). File contents are never printed.
+
+Plain output is one line per fact, then either `Status: OK` or a
+`Problems:` list where each entry names the problem and its fix
+command, for example:
+
+```text
+Workspace: /home/user/orbit — registered
+Plugins: office enabled; gateway enabled
+Library: initialized (12 documents)
+Meta API key: set
+Private route: not configured (optional)
+App service: running at http://localhost:4317/
+Agent CLI: registered
+Status: OK
+```
+
+With `--json`, stdout is exactly one JSON object with the same facts
+and no other text:
+
+```json
+{
+  "workspace": "/home/user/orbit",
+  "workspace_registered": true,
+  "plugins": { "office": true, "gateway": true },
+  "library": { "initialized": true, "documents": 12 },
+  "secrets": { "meta_api_key": "set" },
+  "meta_api_key": "set",
+  "private_route": null,
+  "app_service": { "installed": true, "running": true, "url": "http://localhost:4317/", "port": 4317, "workspace": "/home/user/orbit" },
+  "agent_cli": { "registered": true },
+  "ok": true,
+  "problems": []
+}
+```
+
+`library` also carries the tool's `documents_by_kind`,
+`pages_off_template` and `template_invalid` when the tool reports them.
+`private_route` is the tool's `open_weights` object or `null`.
+`problems` is a list of `{"check", "problem", "fix"}` objects (empty
+when healthy). No secret value appears in either form.
+
+Exit codes: **0** when every needed check passes, **1** when anything
+needed for the app to work is missing, **2** for invalid arguments.
+Each missing prerequisite is a problem with its fix command:
+
+| Problem | Fix named in the report |
+| --- | --- |
+| Workspace not registered | `office init <path>` |
+| `office` or `gateway` plugin not enabled | `office init <path>` |
+| Library not initialized | `office init <path>` |
+| Meta API key unset | `orbit plugin secret set office meta_api_key` |
+| App service not installed | `install.sh` |
+| App service stopped | `office open <path>` |
+| Agent CLI registration missing | `install.sh` |
+
+`office status --help` prints the `status` usage.
+
 The installer refuses to replace an unrelated `~/.local/bin/office`. It records
 `launcher_path` only when it creates the launcher, updates an owned launcher on
 reinstall, and keeps an identical pre-existing launcher unclaimed. Uninstall

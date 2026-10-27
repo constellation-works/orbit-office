@@ -62,6 +62,11 @@
 #      manager restored retries activation; an installed but inactive
 #      service is re-enabled on the next run. Stubs only; no host service
 #      is touched.
+#  21. office status/open: healthy plain and --json reports, one missing
+#      prerequisite at a time (Library, plugin, Meta key, stopped app)
+#      naming its fix, no secret value in output, open starting a stopped
+#      installed service via stub managers and a stub browser, and the
+#      missing-service install.sh error (linux and macos service shapes).
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -293,6 +298,13 @@ JSON
             *) if [ -n "${STUB_WORKSPACE_LIST:-}" ]; then printf '%s\n' "$STUB_WORKSPACE_LIST"; fi ;;
         esac ;;
     "tool run")
+        if [ "${3:-}" = "office.status" ]; then
+            _meta=unset; [ -f "$state/secret.meta_api_key" ] && _meta=set
+            _ow=unset; [ -f "$state/secret.open_weights_token" ] && _ow=set
+            if [ -f library/.office/config.yaml ]; then _init=true; _docs=3; else _init=false; _docs=0; fi
+            printf '{"version":"0.1.0","secrets":{"meta_api_key":"%s","open_weights_token":"%s","baseten_token":"%s"},"library":{"initialized":%s,"documents":%s,"documents_by_kind":{"source":%s,"domain":0,"runbook":0,"artifact":0},"pages_off_template":0,"template_invalid":[]},"open_weights":null}\n' "$_meta" "$_ow" "$_ow" "$_init" "$_docs" "$_docs"
+            exit 0
+        fi
         # office.init uses recorded `orbit tool run --json --full` bytes.
         # success and already are stdout objects with no top-level ok and
         # exit 0. error is exit 1, empty stdout, and a WARN line before
@@ -412,6 +424,22 @@ esac
 exit 0
 STUB
 
+cat > "$BIN/open" <<'STUB'
+#!/bin/sh
+state=${STUB_STATE:?}
+mkdir -p "$state"
+printf '%s\n' "$*" >> "$state/browser.log"
+exit "${STUB_BROWSER_EXIT:-0}"
+STUB
+
+cat > "$BIN/xdg-open" <<'STUB'
+#!/bin/sh
+state=${STUB_STATE:?}
+mkdir -p "$state"
+printf '%s\n' "$*" >> "$state/browser.log"
+exit "${STUB_BROWSER_EXIT:-0}"
+STUB
+
 printf '#!/bin/sh\nexit 0\n' > "$BIN/ffmpeg"
 
 # Serves the recorded fixture, or different bytes when the checksum
@@ -467,7 +495,7 @@ exit 99
 STUB
 
 chmod +x "$BIN/orbit" "$BIN/npm" "$BIN/systemctl" "$BIN/launchctl" "$BIN/ffmpeg" \
-    "$BIN/curl" "$BIN/tar" "$BIN/uv"
+    "$BIN/curl" "$BIN/tar" "$BIN/uv" "$BIN/open" "$BIN/xdg-open"
 
 # A prepared app bundle for installs with no adjacent app tree (the piped
 # form and the standalone section): a runnable entrypoint plus a runtime file.
@@ -758,7 +786,7 @@ run_office() { # run_office <home> <args...>
         STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
         STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" STUB_INIT_FIXTURES="$INIT_FIXTURES" \
-        ORBIT_OFFICE_OS=linux ORBIT_OFFICE_HOME="${OFFICE_TEST_HOME:-}" "$_office_home/.local/bin/office" "$@" < /dev/null
+        ORBIT_OFFICE_OS="${OFFICE_TEST_OS:-linux}" ORBIT_OFFICE_HOME="${OFFICE_TEST_HOME:-}" "$_office_home/.local/bin/office" "$@" < /dev/null
 }
 WS2="$ROOT/second workspace"
 run_office "$HOME1" init "$WS2" --yes > "$ROOT/office-second" 2>&1 \
@@ -820,9 +848,117 @@ run_office "$HOME1" --help > "$ROOT/office-help" 2>&1
 if [ "${UPDATE_GOLDENS:-0}" = 1 ]; then cp "$ROOT/office-help" "$SCRIPT_DIR/fixtures/office-help.stdout"; fi
 check "office help matches its shipped golden" cmp -s "$ROOT/office-help" "$SCRIPT_DIR/fixtures/office-help.stdout"
 run_office "$HOME1" init --help > "$ROOT/office-init-help" 2>&1
-check "office init help matches root help" cmp -s "$ROOT/office-help" "$ROOT/office-init-help"
-if run_office "$HOME1" status > "$ROOT/office-usage" 2>&1; then fail "office rejects unimplemented commands";
+check "office init help names init usage" grep -qF "Usage: office init" "$ROOT/office-init-help"
+run_office "$HOME1" open --help > "$ROOT/office-open-help" 2>&1
+check "office open help names open usage" grep -qF "Usage: office open" "$ROOT/office-open-help"
+run_office "$HOME1" status --help > "$ROOT/office-status-help" 2>&1
+check "office status help names status usage" grep -qF "Usage: office status" "$ROOT/office-status-help"
+if run_office "$HOME1" bogus > "$ROOT/office-usage" 2>&1; then fail "office rejects unknown commands";
 else _usage_rc=$?; check "office usage exits 2" test "$_usage_rc" -eq 2; fi
+
+# ---------------------------------------------------------------------------
+# 21. office status and office open (fixtures; stub browser/service, no host)
+# ---------------------------------------------------------------------------
+# Healthy: meta key set (presence only), Library scaffolded, plugins on,
+# service running, agent CLI registered.
+printf 'stub-secret-value-must-not-leak\n' > "$STUB_STATE/secret.meta_api_key.value"
+grep -qxF "$HOME1/orbit" "$STUB_STATE/workspace-roots" 2>/dev/null || printf '%s\n' "$HOME1/orbit" >> "$STUB_STATE/workspace-roots"
+: > "$STUB_STATE/secret.meta_api_key"
+: > "$STUB_STATE/svc-active"
+rm -f "$STUB_STATE/browser.log"
+run_office "$HOME1" status > "$ROOT/status-healthy" 2>&1 || { cat "$ROOT/status-healthy" >&2; fail "office status healthy exits 0"; }
+ok "office status healthy exits 0"
+check "status reports workspace" grep -F "Workspace: $HOME1/orbit" "$ROOT/status-healthy"
+check "status reports plugins enabled" grep -F "Plugins: office enabled; gateway enabled" "$ROOT/status-healthy"
+check "status reports Library health" grep -F "Library: initialized" "$ROOT/status-healthy"
+check "status reports Meta key presence" grep -F "Meta API key: set" "$ROOT/status-healthy"
+check "status reports private route" grep -F "Private route:" "$ROOT/status-healthy"
+check "status reports app URL" grep -F "App service: running at http://localhost:4317/" "$ROOT/status-healthy"
+check "status reports agent CLI" grep -F "Agent CLI: registered" "$ROOT/status-healthy"
+check "status healthy prints Status OK" grep -qxF "Status: OK" "$ROOT/status-healthy"
+check "status never leaks secret value" sh -c '! grep -qF "stub-secret-value-must-not-leak" "$1"' sh "$ROOT/status-healthy"
+check "status does not launch browser" test ! -e "$STUB_STATE/browser.log"
+run_office "$HOME1" status --json > "$ROOT/status-healthy.json" 2> "$ROOT/status-healthy.json.err" || { cat "$ROOT/status-healthy.json" >&2; fail "office status --json healthy exits 0"; }
+ok "office status --json healthy exits 0"
+check "status --json stderr is empty" test ! -s "$ROOT/status-healthy.json.err"
+node - "$ROOT/status-healthy.json" "$HOME1/orbit" <<'NODE' || fail "office status --json shape"
+const fs = require("fs");
+const [file, ws] = process.argv.slice(2);
+const lines = fs.readFileSync(file, "utf8").trim().split("\n");
+if (lines.length !== 1) process.exit(1);
+const r = JSON.parse(lines[0]);
+if (r.workspace !== ws || r.workspace_registered !== true) process.exit(1);
+if (r.plugins.office !== true || r.plugins.gateway !== true) process.exit(1);
+if (!r.library.initialized || typeof r.library.documents !== "number") process.exit(1);
+if (r.meta_api_key !== "set" || r.secrets.meta_api_key !== "set") process.exit(1);
+if (r.private_route !== null) process.exit(1);
+if (!r.app_service.installed || !r.app_service.running || r.app_service.url !== "http://localhost:4317/") process.exit(1);
+if (r.agent_cli.registered !== true || r.ok !== true || !Array.isArray(r.problems) || r.problems.length !== 0) process.exit(1);
+if (fs.readFileSync(file, "utf8").includes("stub-secret-value")) process.exit(1);
+NODE
+ok "office status --json shape"
+
+# One missing prerequisite at a time.
+mv "$HOME1/orbit/library" "$ROOT/saved-healthy-library"
+if run_office "$HOME1" status > "$ROOT/status-no-library" 2>&1; then fail "status without Library exits non-zero"; else ok "status without Library exits non-zero"; fi
+check "status names missing Library" grep -F "Library is not initialized" "$ROOT/status-no-library"
+check "status names Library fix" grep -F "fix: office init $HOME1/orbit" "$ROOT/status-no-library"
+mv "$ROOT/saved-healthy-library" "$HOME1/orbit/library"
+
+rm -f "$HOME1/orbit/.orbit/enabled-office"
+if run_office "$HOME1" status > "$ROOT/status-plugin-off" 2>&1; then fail "status with plugin disabled exits non-zero"; else ok "status with plugin disabled exits non-zero"; fi
+check "status names disabled office plugin" grep -F "plugin 'office' is not enabled" "$ROOT/status-plugin-off"
+check "status names plugin fix" grep -F "fix: office init $HOME1/orbit" "$ROOT/status-plugin-off"
+: > "$HOME1/orbit/.orbit/enabled-office"
+
+rm -f "$STUB_STATE/secret.meta_api_key"
+if run_office "$HOME1" status > "$ROOT/status-no-key" 2>&1; then fail "status without Meta key exits non-zero"; else ok "status without Meta key exits non-zero"; fi
+check "status names unset Meta key" grep -F "Meta API key is not set" "$ROOT/status-no-key"
+check "status names Meta key fix" grep -F "fix: orbit plugin secret set office meta_api_key" "$ROOT/status-no-key"
+check "status without key leaks no secret" sh -c '! grep -qF "stub-secret-value-must-not-leak" "$1"' sh "$ROOT/status-no-key"
+: > "$STUB_STATE/secret.meta_api_key"
+
+rm -f "$STUB_STATE/svc-active"
+if run_office "$HOME1" status > "$ROOT/status-stopped" 2>&1; then fail "status with app stopped exits non-zero"; else ok "status with app stopped exits non-zero"; fi
+check "status names stopped app service" grep -F "app service is not running" "$ROOT/status-stopped"
+check "status names stopped fix" grep -F "fix: office open $HOME1/orbit" "$ROOT/status-stopped"
+check "status does not start stopped service" test ! -e "$STUB_STATE/svc-active"
+
+# open starts a stopped but installed service, then opens the URL.
+run_office "$HOME1" open > "$ROOT/open-stopped" 2>&1 || { cat "$ROOT/open-stopped" >&2; fail "office open starts stopped service"; }
+ok "office open starts stopped service and exits 0"
+check "office open started the service" test -f "$STUB_STATE/svc-active"
+check "office open opened app URL via stub browser" grep -qxF "http://localhost:4317/" "$STUB_STATE/browser.log"
+check "office open prints app URL" grep -F "app: http://localhost:4317/" "$ROOT/open-stopped"
+
+# open with no service installed fails naming install.sh, opens nothing.
+mv "$HOME1/.config/systemd/user/orbit-office.service" "$ROOT/saved-unit"
+rm -f "$STUB_STATE/browser.log"
+if run_office "$HOME1" open > "$ROOT/open-no-service" 2>&1; then fail "office open without service exits non-zero"; else ok "office open without service exits non-zero"; fi
+check "office open names install.sh when no service" grep -F "install.sh" "$ROOT/open-no-service"
+check "office open without service opens nothing" test ! -e "$STUB_STATE/browser.log"
+mv "$ROOT/saved-unit" "$HOME1/.config/systemd/user/orbit-office.service"
+if run_office "$HOME1" status > "$ROOT/status-restored" 2>&1; then ok "office status healthy again after open fixtures"; else cat "$ROOT/status-restored" >&2; fail "office status healthy again after open fixtures"; fi
+run_office "$HOME1" status "$HOME1/orbit" > "$ROOT/status-explicit" 2>&1 || { cat "$ROOT/status-explicit" >&2; fail "office status accepts explicit path"; }
+ok "office status accepts explicit path"
+rm -f "$STUB_STATE/browser.log"
+run_office "$HOME1" open "$HOME1/orbit" > "$ROOT/open-explicit" 2>&1 || { cat "$ROOT/open-explicit" >&2; fail "office open accepts explicit path"; }
+ok "office open accepts explicit path"
+check "office open explicit path opens URL" grep -qxF "http://localhost:4317/" "$STUB_STATE/browser.log"
+if run_office "$HOME1" status --json "$HOME1/orbit" extra > "$ROOT/status-usage2" 2>&1; then fail "office status rejects two paths"; else _rc=$?; check "office status two paths exits 2" test "$_rc" -eq 2; fi
+# macOS service shape: launchd plist + launchctl stubs.
+mkdir -p "$HOME1/Library/LaunchAgents"
+printf '%s\n' '<?xml version="1.0"?>' '<plist><dict><key>Label</key><string>com.orbit-office.app</string><key>EnvironmentVariables</key>' "<dict><key>PORT</key><string>4317</string><key>HOST</key><string>127.0.0.1</string><key>ORBIT_OFFICE_WORKSPACE</key><string>$HOME1/orbit</string></dict></dict></plist>" > "$HOME1/Library/LaunchAgents/com.orbit-office.app.plist"
+: > "$STUB_STATE/launchd-loaded"
+OFFICE_TEST_OS=macos run_office "$HOME1" status > "$ROOT/status-macos" 2>&1 || { cat "$ROOT/status-macos" >&2; fail "office status reads launchd service"; }
+ok "office status reads launchd service (macos)"
+check "status macos reports running URL" grep -F "App service: running at http://localhost:4317/" "$ROOT/status-macos"
+rm -f "$STUB_STATE/launchd-loaded" "$STUB_STATE/browser.log"
+OFFICE_TEST_OS=macos run_office "$HOME1" open > "$ROOT/open-macos" 2>&1 || { cat "$ROOT/open-macos" >&2; fail "office open loads launchd service"; }
+ok "office open loads launchd service (macos)"
+check "office open macos loaded the agent" test -f "$STUB_STATE/launchd-loaded"
+check "office open macos opened URL" grep -qxF "http://localhost:4317/" "$STUB_STATE/browser.log"
+rm -f "$HOME1/Library/LaunchAgents/com.orbit-office.app.plist"
 check "office launcher is recorded as created" grep -qxF "launcher_path=$HOME1/.local/bin/office" "$HOME1/.local/share/orbit-office/install-state"
 
 # ---------------------------------------------------------------------------
