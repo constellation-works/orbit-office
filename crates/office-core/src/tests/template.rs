@@ -507,3 +507,101 @@ fn assess_templates_counts_pages_and_names_broken_files() {
         ]
     );
 }
+
+#[test]
+fn assess_templates_counts_commented_and_quoted_page_frontmatter() {
+    let person = BUNDLED
+        .iter()
+        .find(|entry| entry.filename == "person.md")
+        .expect("person template");
+    let commented_template = r#"---
+id: dom-person-ada
+type: domain
+template: person # selection
+title: Ada
+---
+
+## Role
+Keeps the notes.
+"#;
+    let commented_type = r#"---
+id: dom-person-bev
+type: domain # layer
+template: person
+title: Bev
+---
+
+## Role
+Keeps the notes.
+"#;
+    let quoted = r#"---
+id: dom-person-cy
+type: "domain"
+template: 'person'
+title: Cy
+---
+
+## Role
+Keeps the notes.
+"#;
+    let unknown = r#"---
+id: dom-person-dee
+type: domain
+template: missing # intentional
+title: Dee
+---
+
+## Role
+Keeps the notes.
+"#;
+    let missing_section = r#"---
+id: dom-person-eli
+type: domain
+template: person # current rules
+title: Eli
+---
+
+## History
+No role.
+"#;
+
+    let templates = [TemplateFile {
+        path: ".office/templates/person.md",
+        markdown: Some(person.markdown),
+    }];
+    let valid_report = assess_templates(
+        &templates,
+        &[
+            KnowledgePage {
+                kind: DocumentKind::Domain,
+                markdown: commented_template,
+            },
+            KnowledgePage {
+                kind: DocumentKind::Domain,
+                markdown: commented_type,
+            },
+            KnowledgePage {
+                kind: DocumentKind::Domain,
+                markdown: quoted,
+            },
+        ],
+    );
+    let unknown_report = assess_templates(
+        &templates,
+        &[KnowledgePage {
+            kind: DocumentKind::Domain,
+            markdown: unknown,
+        }],
+    );
+    let violation_report = assess_templates(
+        &templates,
+        &[KnowledgePage {
+            kind: DocumentKind::Domain,
+            markdown: missing_section,
+        }],
+    );
+
+    assert_eq!(valid_report.pages_off_template, 0);
+    assert_eq!(unknown_report.pages_off_template, 1);
+    assert_eq!(violation_report.pages_off_template, 1);
+}
