@@ -1061,6 +1061,111 @@ fn library_with_source(env: &Env) -> PathBuf {
 const RENEWAL_PAGE: &str = "---\nid: dom-project-acme-renewal\ntype: domain\ntemplate: project\ntitle: Acme renewal\naliases: [the renewal]\ncites:\n  - src-20261028-acme-qbr#t=00:12:31\nrefs:\n  - { label: Renewal tickets, account: \"jira:ACME\" }\n  - { label: Jane Park, contact: jane@acme.example }\n---\n## Status\nRenewal is due in March [src-20261028-acme-qbr#t=00:10:00].\n\n## Background\nPrice sensitivity is high [src-20261028-acme-qbr#t=00:12:31].\n";
 
 #[test]
+fn source_show_and_knowledge_write_refuse_timestamp_overflow() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", serde_json::json!({}))["ok"], true);
+    let captured = env.tool(
+        "office.capture",
+        serde_json::json!({"kind": "meeting", "title": "Zero", "text": "[00:00:00] Jane: zero"}),
+    );
+    assert_eq!(captured["ok"], true, "{captured}");
+    let id = captured["output"]["id"].as_str().unwrap();
+    let head = git(&env.library(), &["rev-parse", "HEAD"]);
+    for (stamp, code) in [
+        ("1152921504606846976:00:00", "anchor_invalid"),
+        ("5124095576030431:00:16", "anchor_invalid"),
+        ("5124095576040:25:51", "anchor_out_of_range"),
+    ] {
+        for markdown in [
+            format!(
+                "---\nid: dom-overflow\ntitle: Overflow\ncites: [\"{id}#t={stamp}\"]\n---\nClaim.\n"
+            ),
+            format!("---\nid: dom-overflow\ntitle: Overflow\n---\nClaim [{id}#t={stamp}].\n"),
+        ] {
+            let written = env.tool(
+                "office.knowledge-write",
+                serde_json::json!({"markdown": markdown}),
+            );
+            assert_eq!(written["ok"], false, "{written}");
+            assert_eq!(written["error"]["code"], "unresolved_cite", "{written}");
+            assert!(
+                !env.library()
+                    .join("knowledge/domain/dom-overflow.md")
+                    .exists()
+            );
+        }
+        let shown = env.tool(
+            "office.source-show",
+            serde_json::json!({"id": id, "anchor": format!("#t={stamp}")}),
+        );
+        assert_eq!(shown["ok"], false, "{shown}");
+        assert_eq!(shown["error"]["code"], code, "{shown}");
+    }
+    assert_eq!(git(&env.library(), &["rev-parse", "HEAD"]), head);
+}
+
+#[test]
+fn vtt_capture_refuses_timestamp_overflow_before_persisting() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", serde_json::json!({}))["ok"], true);
+    let head = git(&env.library(), &["rev-parse", "HEAD"]);
+    let transcript = env.workspace.join("overflow.vtt");
+    for stamp in [
+        "1152921504606846976:00:00.000",
+        "5124095576030431:00:16.000",
+        "5124095576030:25:52.000",
+        "5124095576030:25:51.616",
+        "18446744073709551615:00.000",
+    ] {
+        for (start, end) in [(stamp, "00:00:03.000"), ("00:00:01.000", stamp)] {
+            std::fs::write(
+                &transcript,
+                format!("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nJane: valid first cue\n\n{start} --> {end}\nJane: overflow\n"),
+            ).unwrap();
+            let input = serde_json::json!({"kind": "meeting", "title": "Overflow", "text": "fallback", "transcript_path": transcript});
+            let response = env.tool("office.capture", input);
+            assert_eq!(response["ok"], false, "{stamp}: {response}");
+            assert_eq!(response["error"]["code"], "invalid_argument", "{response}");
+            assert_eq!(git(&env.library(), &["rev-parse", "HEAD"]), head);
+            assert!(git(&env.library(), &["status", "--porcelain"]).is_empty());
+        }
+    }
+    let status = env.tool("office.status", serde_json::json!({}));
+    assert_eq!(status["output"]["library"]["documents"], 0, "{status}");
+}
+
+#[test]
+fn capture_show_and_cite_preserve_supported_timestamp_boundaries() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", serde_json::json!({}))["ok"], true);
+    let transcript = env.workspace.join("long.vtt");
+    for (index, stamp) in ["100:00:00", "5124095576030:25:51"].iter().enumerate() {
+        std::fs::write(
+            &transcript,
+            format!("WEBVTT\n\n{stamp}.615 --> {stamp}.615 align:start\nJane: valid\n"),
+        )
+        .unwrap();
+        let captured = env.tool(
+            "office.capture",
+            serde_json::json!({"kind": "meeting", "title": "Long", "text": "fallback", "transcript_path": transcript}),
+        );
+        assert_eq!(captured["ok"], true, "{captured}");
+        let id = captured["output"]["id"].as_str().unwrap();
+        let shown = env.tool(
+            "office.source-show",
+            serde_json::json!({"id": id, "anchor": format!("#t={stamp}")}),
+        );
+        assert_eq!(shown["ok"], true, "{shown}");
+        assert_eq!(shown["output"]["body"], format!("[{stamp}] Jane: valid"));
+        let written = env.tool(
+            "office.knowledge-write",
+            serde_json::json!({"markdown": format!("---\nid: dom-long-{index}\ntitle: Long\ncites: [\"{id}#t={stamp}\"]\n---\nClaim [{id}#t={stamp}].\n")}),
+        );
+        assert_eq!(written["ok"], true, "{written}");
+    }
+}
+
+#[test]
 fn knowledge_write_refuses_unresolved_cites_without_writing_and_commits_a_valid_page_once() {
     let env = Env::new();
     let library = library_with_source(&env);

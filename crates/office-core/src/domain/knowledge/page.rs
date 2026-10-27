@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use super::frontmatter;
 use super::{DocumentKind, DocumentRecord};
+use crate::domain::source::parse_clock_seconds;
 use crate::domain::template::{Template, TemplateFile, frontmatter_scalar};
 use crate::{Error, Result};
 
@@ -737,13 +738,13 @@ pub fn parse_citation(text: &str) -> Option<Citation> {
 /// those files are readable here. Returns the refusal reason.
 pub fn resolve_anchor(body: &str, anchor: &str) -> std::result::Result<(), &'static str> {
     if let Some(time) = anchor.strip_prefix("t=") {
-        let at = seconds(time).ok_or("expected t=hh:mm:ss")?;
+        let at = parse_clock_seconds(time).ok_or("expected t=hh:mm:ss within u64 seconds")?;
         let turns: Vec<u64> = body
             .lines()
             .filter_map(|line| {
                 let rest = line.trim_start().strip_prefix('[')?;
                 let (stamp, _) = rest.split_once(']')?;
-                seconds(stamp)
+                parse_clock_seconds(stamp)
             })
             .collect();
         let (Some(first), Some(last)) = (turns.iter().min(), turns.iter().max()) else {
@@ -838,22 +839,6 @@ fn headings(body: &str) -> impl Iterator<Item = (usize, &str)> {
         }
         Some((level, rest.trim().trim_end_matches('#').trim_end()))
     })
-}
-
-fn seconds(stamp: &str) -> Option<u64> {
-    let mut parts = stamp.split(':');
-    let (h, m, s) = (parts.next()?, parts.next()?, parts.next()?);
-    if parts.next().is_some()
-        || [m, s].iter().any(|p| p.len() != 2)
-        || h.len() < 2
-        || ![h, m, s]
-            .iter()
-            .all(|p| p.bytes().all(|c| c.is_ascii_digit()))
-    {
-        return None;
-    }
-    let (h, m, s): (u64, u64, u64) = (h.parse().ok()?, m.parse().ok()?, s.parse().ok()?);
-    (m < 60 && s < 60).then(|| h * 3_600 + m * 60 + s)
 }
 
 /// Email addresses and phone numbers in `text`, as byte ranges and kinds.

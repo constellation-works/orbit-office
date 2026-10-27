@@ -1050,7 +1050,7 @@ impl LibraryStore {
                     "transcript_path must be UTF-8 WebVTT".to_string(),
                 )
             })?;
-            transcript_body = Some(vtt_to_body(&text));
+            transcript_body = Some(vtt_to_body(&text)?);
         }
         let converted = if transcript_body.is_none() {
             upload_bytes

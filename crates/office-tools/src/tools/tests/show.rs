@@ -48,6 +48,30 @@ fn source_show_returns_line_anchors_and_refuses_bad_anchors() {
 }
 
 #[test]
+fn source_show_refuses_timestamp_overflow_through_dispatch() {
+    let ports = office_testkit::fakes::PortsBuilder::default().build();
+    let captured = call(
+        "office.capture",
+        json!({"kind": "meeting", "title": "Zero", "text": "[00:00:00] Jane: zero"}),
+        &ports,
+    );
+    assert_eq!(captured["ok"], json!(true), "{captured}");
+    for (stamp, code) in [
+        ("1152921504606846976:00:00", "anchor_invalid"),
+        ("5124095576030431:00:16", "anchor_invalid"),
+        ("5124095576040:25:51", "anchor_out_of_range"),
+    ] {
+        let response = call(
+            "office.source-show",
+            json!({"id": captured["output"]["id"], "anchor": format!("#t={stamp}")}),
+            &ports,
+        );
+        assert_eq!(response["ok"], json!(false), "{response}");
+        assert_eq!(response["error"]["code"], json!(code), "{response}");
+    }
+}
+
+#[test]
 fn source_show_resolves_interior_time_anchor_to_turn_in_progress() {
     let ports = office_testkit::fakes::PortsBuilder::default().build();
     let captured = call(
