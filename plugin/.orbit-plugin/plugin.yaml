@@ -197,6 +197,15 @@ spec:
       input_schema: { $ref: schemas/config-set.request.json }
       output_schema: { $ref: schemas/config-set.response.json }
 
+    # - name: private-route-check
+    #   description: >-
+    #     Check the configured open-weights endpoint with a tiny text, image
+    #     and audio request; record the capabilities it accepts.
+    #   execution_kind: mutating
+    #   mcp_scope: none
+    #   input_schema: { $ref: schemas/private-route-check.request.json }
+    #   output_schema: { $ref: schemas/private-route-check.response.json }
+
     # - name: search
     #   description: >-
     #     FTS over sources, knowledge and artifacts, with filters by kind,

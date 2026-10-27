@@ -18,7 +18,9 @@
 #   8. launchd, systemd and the MCP entry put tools/bin first on PATH
 #   9. a Codex MCP entry uses an inline env table; uninstall removes it
 #  10. an older Claude MCP entry gains tools/bin on PATH
-#  11. an office.init error envelope fails the step and leaves no marker
+#  11. a real office.init error (exit 1, WARN then JSON on stderr)
+#      fails the step, names the office code and leaves no marker;
+#      an {ok:false} stdout envelope with exit 0 still does too
 #  12. a non-interactive run without --yes prints the grants, enables the
 #      plugin with them and does not ask
 # Usage: sh scripts/install/test-install.sh
@@ -27,8 +29,16 @@ set -eu
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 1
 INSTALL_SH="$SCRIPT_DIR/../../install.sh"
 FIXTURE="$SCRIPT_DIR/fixtures/uv-test-fixture.tar.gz"
+INIT_FIXTURES="$SCRIPT_DIR/fixtures/office-init"
 [ -f "$INSTALL_SH" ] || { printf 'missing %s\n' "$INSTALL_SH" >&2; exit 1; }
 [ -f "$FIXTURE" ] || { printf 'missing %s\n' "$FIXTURE" >&2; exit 1; }
+for _need in success.stdout success.exit already.stdout already.exit \
+    error.stdout error.stderr error.exit; do
+    [ -f "$INIT_FIXTURES/$_need" ] || {
+        printf 'missing %s\n' "$INIT_FIXTURES/$_need" >&2
+        exit 1
+    }
+done
 REAL_TAR=$(command -v tar) || { printf 'tar is required\n' >&2; exit 1; }
 
 ROOT=$(mktemp -d)
@@ -41,6 +51,49 @@ check() { # check <label> <condition...>
     _label="$1"; shift
     if "$@" >/dev/null 2>&1; then ok "$_label"; else fail "$_label"; fi
 }
+
+# The success fixture is the real CLI object. A wrapped {ok:true} envelope
+# is the stub that hid this bug, so the harness fails if that is what
+# success stdout is (STD-04 R5: the message names the escape).
+if ! node -e '
+const fs = require("fs");
+const path = require("path");
+const dir = process.argv[1];
+function load(name) { return fs.readFileSync(path.join(dir, name), "utf8"); }
+const success = JSON.parse(load("success.stdout"));
+if (!success || typeof success !== "object" || Array.isArray(success) ||
+    Object.prototype.hasOwnProperty.call(success, "ok") ||
+    success.already_initialized !== false || !Array.isArray(success.created)) {
+  process.stderr.write("success fixture must be the CLI output object without ok\n");
+  process.exit(1);
+}
+const already = JSON.parse(load("already.stdout"));
+if (Object.prototype.hasOwnProperty.call(already, "ok") ||
+    already.already_initialized !== true ||
+    !Array.isArray(already.created) || already.created.length !== 0) {
+  process.stderr.write("already fixture must be already_initialized without ok\n");
+  process.exit(1);
+}
+const errText = load("error.stderr");
+try {
+  JSON.parse(errText);
+  process.stderr.write("error stderr must not be bare JSON\n");
+  process.exit(1);
+} catch (_) {}
+const lines = errText.split(/\n/);
+if (!lines[0].includes("WARN")) {
+  process.stderr.write("error stderr must start with a WARN line\n");
+  process.exit(1);
+}
+const err = JSON.parse(lines.slice(1).join("\n"));
+if (err.code !== "library_dir_outside_workspace") process.exit(1);
+if (load("error.exit").trim() !== "1") process.exit(1);
+if (load("success.exit").trim() !== "0" || load("already.exit").trim() !== "0") process.exit(1);
+if (load("error.stdout") !== "") process.exit(1);
+' "$INIT_FIXTURES"; then
+    fail "recorded office.init fixtures match the real CLI"
+fi
+ok "recorded office.init fixtures match the real CLI"
 
 # ---------------------------------------------------------------------------
 # Stubs (bin/ and state/ live outside the temp HOME)
@@ -93,19 +146,42 @@ case "${1:-} ${2:-}" in
     "workspace list")
         if [ -n "${STUB_WORKSPACE_LIST:-}" ]; then printf '%s\n' "$STUB_WORKSPACE_LIST"; fi ;;
     "tool run")
-        # Replies with the office response envelope. STUB_INIT_MODE picks
-        # the case: ok (default), already (ok, already_initialized) or error.
+        # office.init uses recorded `orbit tool run --json --full` bytes.
+        # success and already are stdout objects with no top-level ok and
+        # exit 0. error is exit 1, empty stdout, and a WARN line before
+        # the JSON object on stderr. ok-false is the direct office
+        # binary's {ok:false} envelope on stdout with exit 0.
         if [ "${3:-}" = "office.init" ]; then
-            case "${STUB_INIT_MODE:-ok}" in
-                error)
-                    printf '%s\n' '{"ok":false,"error":{"code":"library_dir_outside_workspace","message":"library_dir is outside the workspace","retryable":false}}' ;;
-                already)
-                    printf '{"ok":true,"output":{"already_initialized":true,"created":[]}}\n' ;;
+            _mode="${STUB_INIT_MODE:-ok}"
+            _fix="${STUB_INIT_FIXTURES:?}"
+            case "$_mode" in
+                ok-false)
+                    printf '%s\n' '{"ok":false,"error":{"code":"library_dir_outside_workspace","message":"library_dir is outside the workspace","retryable":false}}'
+                    exit 0
+                    ;;
+                error) _name="error" ;;
+                already) _name="already" ;;
+                ok|success) _name="success" ;;
                 *)
-                    mkdir -p library/.office library/.git
-                    printf 'config\n' > library/.office/config.yaml
-                    printf '{"ok":true,"output":{"already_initialized":false,"created":["library/.office/config.yaml"]}}\n' ;;
+                    printf 'stub orbit: unknown STUB_INIT_MODE %s\n' "$_mode" >&2
+                    exit 1
+                    ;;
             esac
+            if [ "$_name" = "success" ]; then
+                mkdir -p library/.office library/.git
+                printf 'config\n' > library/.office/config.yaml
+            fi
+            if [ -s "$_fix/$_name.stdout" ]; then
+                cat "$_fix/$_name.stdout"
+            fi
+            if [ -s "$_fix/$_name.stderr" ]; then
+                cat "$_fix/$_name.stderr" >&2
+            fi
+            _rc=0
+            if [ -f "$_fix/$_name.exit" ]; then
+                _rc=$(tr -d '[:space:]' < "$_fix/$_name.exit")
+            fi
+            exit "$_rc"
         fi ;;
     "mcp remove"|"mcp init")
         printf 'mcp ok\n' ;;
@@ -263,6 +339,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
         STUB_UV_ARCHIVE="$FIXTURE" \
         STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
         STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" \
+        STUB_INIT_FIXTURES="$INIT_FIXTURES" \
         STUB_ORBIT_SRC="$BIN/orbit" \
         ORBIT_OFFICE_OS=linux \
         $_uv_env $_py_env $_envs \
@@ -321,6 +398,8 @@ SNAP1="$ROOT/snap1.txt"; snapshot "$HOME1" > "$SNAP1"
 check "workspace is a git repo" test -d "$HOME1/orbit/.git"
 check "workspace registered (.orbit)" test -d "$HOME1/orbit/.orbit"
 check "library scaffolded" test -f "$HOME1/orbit/library/.office/config.yaml"
+check "first run records the scaffolded marker" \
+    grep -qx scaffolded "$HOME1/.local/share/orbit-office/install-state"
 check "systemd unit written" test -f "$HOME1/.config/systemd/user/orbit-office.service"
 check "MCP entry written" grep -q '"orbit"' "$HOME1/.claude/settings.json"
 check "plugin added (stub)" test -f "$STUB_STATE/plugin-added"
@@ -766,18 +845,22 @@ snapshot "$HOME10" > "$SNAP_REPAIR2"
 check "repaired MCP entry stays unchanged" cmp -s "$SNAP_REPAIR" "$SNAP_REPAIR2"
 
 # ---------------------------------------------------------------------------
-# 11. An office.init error envelope fails the step and leaves no marker
+# 11. office.init failure names the office code and leaves no marker.
+#     The error fixture is a non-zero exit: empty stdout, a WARN line,
+#     then the JSON object on stderr. An {ok:false} envelope with exit 0
+#     is still a failure.
 # ---------------------------------------------------------------------------
 
 HOME11="$ROOT/home11"; mkdir -p "$HOME11"
 STATE11="$HOME11/.local/share/orbit-office/install-state"
 OUT_INIT="$ROOT/out-init.txt"
 if STUB_INIT_MODE=error run_install "$HOME11" -- > "$OUT_INIT" 2>&1; then
-    fail "office.init error envelope stops the install"
+    fail "office.init error stops the install"
 else
-    ok "office.init error envelope stops the install"
+    ok "office.init error stops the install"
 fi
-check "office.init error names its code" grep -F "library_dir_outside_workspace" "$OUT_INIT"
+check "office.init error names its code in the die message" \
+    grep -F "scaffold: office.init failed (code: library_dir_outside_workspace, exit: 1)" "$OUT_INIT"
 check "office.init error leaves no scaffolded marker" \
     sh -c '! grep -qx scaffolded "$1"' sh "$STATE11"
 OUT_INIT2="$ROOT/out-init2.txt"
@@ -787,12 +870,25 @@ ok "next run retries office.init"
 check "next run scaffolds the Library" test -f "$HOME11/orbit/library/.office/config.yaml"
 check "next run records the scaffolded marker" grep -qx scaffolded "$STATE11"
 
+HOME11B="$ROOT/home11b"; mkdir -p "$HOME11B"
+STATE11B="$HOME11B/.local/share/orbit-office/install-state"
+OUT_ENV="$ROOT/out-init-envelope.txt"
+if STUB_INIT_MODE=ok-false run_install "$HOME11B" -- > "$OUT_ENV" 2>&1; then
+    fail "ok:false envelope stops the install"
+else
+    ok "ok:false envelope stops the install"
+fi
+check "ok:false envelope names its code" \
+    grep -F "scaffold: office.init failed (code: library_dir_outside_workspace, exit: 0)" "$OUT_ENV"
+check "ok:false envelope leaves no scaffolded marker" \
+    sh -c '! grep -qx scaffolded "$1"' sh "$STATE11B"
+
 HOME12="$ROOT/home12"; mkdir -p "$HOME12"
 OUT_ALREADY="$ROOT/out-already.txt"
 STUB_INIT_MODE=already run_install "$HOME12" -- > "$OUT_ALREADY" 2>&1 \
-    || { cat "$OUT_ALREADY" >&2; fail "already_initialized envelope exits 0"; }
-ok "already_initialized envelope exits 0"
-check "already_initialized envelope records the scaffolded marker" \
+    || { cat "$OUT_ALREADY" >&2; fail "already_initialized object exits 0"; }
+ok "already_initialized object exits 0"
+check "already_initialized object records the scaffolded marker" \
     grep -qx scaffolded "$HOME12/.local/share/orbit-office/install-state"
 
 # ---------------------------------------------------------------------------

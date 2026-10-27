@@ -20,7 +20,7 @@ Source: spec §13.1–§13.2 and §13.4.
   (`office.knowledge-write`, `office.proposal-accept`,
   `office.artifact-promote`, `office.selection-put`, `office.config-set`,
   `office.reindex`). Settings changed in the app, such as retention on the
-  Routines screen, are written with `office.config-set`.
+  Routines screen, are written with `office.config-set` ([ORB-18711]).
 - It never reads `.orbit/` directly. Orbit's HTTP API is not used; it
   belongs to Orbit's own dashboard (spec §18.3).
 - It owns the **dispatch pass**: every 30 seconds it lists `backlog` tasks
@@ -38,7 +38,7 @@ Source: spec §13.1–§13.2 and §13.4.
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge |
 | **Routines** | Plain-sentence cards ("Every 15 minutes: process the KT videos you confirmed") with an on/off switch, last run, what it produced, and retention settings |
 | **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meetings and tasks); history for every page and artifact |
-| **Settings** | Library settings; **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
+| **Settings** | Library settings; **Private route** (choose the endpoint kind, URL, model and label; the token goes straight to `orbit plugin secret set`; the check's capabilities in plain words; "Built with Muse Spark Open"; [models-and-privacy.md](./models-and-privacy.md#the-private-route)); **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
 | **Insights** | Automation ratio line, metric tiles, "what got automated" |
 | **Review** | Generated reviews with their citations, and a regenerate button |
 
@@ -49,7 +49,7 @@ planned source screen ships.
 
 ### Today implementation
 
-Today and `GET /api/today` are built. The endpoint polls `orbit.task.list`
+Today and `GET /api/today` are built ([ORB-18727]). The endpoint polls `orbit.task.list`
 through a shared Orbit client, with separate active and completed listings
 (200 items each). Its shared contract is `Today` in `app/packages/contracts`.
 The browser polls the endpoint five seconds after the preceding read settles.
@@ -77,6 +77,12 @@ snapshot, not a complete history. The view supports the shared light theme.
 Empty `drop-zone` and per-item `approval-actions` slots reserve integration
 points; uploading and approval mutations remain separate features.
 
+### To-dos implementation
+
+To-dos are built ([ORB-18728]). `GET /api/todos` lists You and Agents
+columns; each to-do shows its source and attached knowledge, and the user
+can close their own. An agent to-do has no close action.
+
 ## Rules
 
 - Each item has one primary action (approve, edit or dismiss) and a provenance link on every agent output.
@@ -101,3 +107,17 @@ For the event the app ships as a local web app, not a desktop app
   Needs you, and native drag-and-drop for recordings. Tauri does not
   bundle Node, so the server either ships as a sidecar or moves into the
   `office` binary.
+
+The installable shell (manifest and service worker) and the agent-CLI
+settings read have landed ([ORB-18735]). Connections and the API calls
+view are the rest of Settings ([ORB-18798]).
+
+## Task References
+
+- [ORB-18711] — builds `office.config-set` for Library settings.
+- [ORB-18727] — built the Today screen and `GET /api/today`.
+- [ORB-18728] — built the To-dos screen and `GET /api/todos`.
+- [ORB-18735] — built the PWA shell and the settings feature's agent-CLI read.
+- [ORB-18798] — builds the Settings connections and API calls views.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

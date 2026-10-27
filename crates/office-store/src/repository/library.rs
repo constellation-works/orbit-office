@@ -40,13 +40,52 @@ pub struct LibraryStore {
 #[serde(deny_unknown_fields)]
 struct PendingWrite {
     version: u32,
-    /// Old version-1 journals are documents; unknown kinds fail closed.
-    #[serde(default)]
     kind: WriteKind,
     root: PathBuf,
     relative: String,
     text: String,
     token: String,
+}
+
+/// A journal as read from disk, before its version gate is applied.
+/// Version-1 journals predate `kind` and are always documents; version-2
+/// journals must carry `kind` explicitly. Defaulting a missing `kind` on
+/// a version-2 journal would silently change what the journal means, so
+/// recovery refuses it instead (STD-02: a persisted shape only widens
+/// through an explicit version step).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPendingWrite {
+    version: u32,
+    #[serde(default)]
+    kind: Option<WriteKind>,
+    root: PathBuf,
+    relative: String,
+    text: String,
+    token: String,
+}
+
+impl RawPendingWrite {
+    /// Apply the version gate and produce the replayable decision.
+    fn into_pending(self, path: &Path) -> Result<PendingWrite> {
+        let kind = match (self.version, self.kind) {
+            (1, None) | (1, Some(WriteKind::Document)) => WriteKind::Document,
+            (2, Some(kind)) => kind,
+            _ => {
+                return Err(Error::Journal {
+                    path: path.to_path_buf(),
+                });
+            }
+        };
+        Ok(PendingWrite {
+            version: self.version,
+            kind,
+            root: self.root,
+            relative: self.relative,
+            text: self.text,
+            token: self.token,
+        })
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -471,8 +510,9 @@ impl LibraryStore {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
             Err(e) => return Err(Error::io("read write journal", &path, e)),
         };
-        let pending: PendingWrite =
+        let raw: RawPendingWrite =
             serde_json::from_slice(&bytes).map_err(|_| Error::Journal { path: path.clone() })?;
+        let pending = raw.into_pending(&path)?;
         if !(1..=2).contains(&pending.version)
             || pending.root != self.library_root()
             || pending.token.is_empty()

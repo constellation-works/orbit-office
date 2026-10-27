@@ -17,7 +17,10 @@ related_artifacts: [ORB-16585]
 # office — Overview
 
 Office work is a generic, easy-to-use, personal agentic work-management
-system. It automates repeatable work systematically, tracks all work, and
+system for anyone whose work is knowledge work: analysts, consultants,
+managers, operations, and software engineers. An engineer's day has the same
+shape: KT videos, design docs, runbooks, on-call procedures, API calls and
+cloud queries. It automates repeatable work systematically, tracks all work, and
 keeps a store of knowledge that agents draw on and that grows more useful
 the longer it is used. With prolonged use the user does barely any manual
 work and acts as a **manager** who sets high-level direction: they talk to
@@ -97,17 +100,17 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 
 | Concern | File | Task |
 |---|---|---|
-| System shape, dispatch, authority boundaries | [2_design.md](./2_design.md) | [ORB-16585] |
+| System shape, dispatch, authority boundaries | [2_design.md](./2_design.md) | [ORB-16585]; dispatch [ORB-18725] done |
 | Library data model (sources, knowledge, artifacts, frictions) | [specs/library.md](./specs/library.md) | [ORB-16585] |
 | Plugin tool surface, definitions, config, permissions | [specs/plugin-surface.md](./specs/plugin-surface.md) | [ORB-16585] |
-| Library persistence (`office-store`, after `orbit-store`) | [specs/store.md](./specs/store.md) | [ORB-16585] |
+| Library persistence (`office-store`, after `orbit-store`) | [specs/store.md](./specs/store.md) | [ORB-18709] done, [ORB-18710] done |
 | Exec envelope contract | [specs/output-contract.md](./specs/output-contract.md) | [ORB-16585] |
-| Orchestrator skill, tools and guardrails | [specs/orchestrator.md](./specs/orchestrator.md) | [ORB-16585] |
-| Proposals and their signals | [specs/proposals.md](./specs/proposals.md) | [ORB-16585] |
-| Analytics and generated reviews | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) | [ORB-16585] |
-| Web app screens and rules | [specs/web-app.md](./specs/web-app.md) | [ORB-16585] |
-| Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-16585] |
-| Models and privacy routing | [specs/models-and-privacy.md](./specs/models-and-privacy.md) | [ORB-16585] |
+| Orchestrator skill, tools and guardrails | [specs/orchestrator.md](./specs/orchestrator.md) | [ORB-18720] |
+| Proposals and their signals | [specs/proposals.md](./specs/proposals.md) | [ORB-18721] done, [ORB-18722] |
+| Analytics and generated reviews | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) | [ORB-18724] |
+| Web app screens and rules | [specs/web-app.md](./specs/web-app.md) | [ORB-18727] done, [ORB-18728] done |
+| Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-18723] |
+| Models and privacy routing | [specs/models-and-privacy.md](./specs/models-and-privacy.md) | [ORB-18712] done |
 | Hackathon compliance, demo and build plan | [specs/delivery.md](./specs/delivery.md) | [ORB-16585] |
 | Directions beyond the event | [3_vision.md](./3_vision.md) | [ORB-16585] |
 
@@ -135,5 +138,16 @@ email or making purchases, hardware, changes to Orbit core.
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
+- [ORB-18709] — built the Library store adapter with the writer lock, git and settings.
+- [ORB-18710] — built `office.init`, `office.reindex` and Library health.
+- [ORB-18712] — built the Meta and Baseten model adapters with privacy routing.
+- [ORB-18720] — builds the agent to-do activity and the orchestrator skills.
+- [ORB-18721] — built `office.signals-scan`.
+- [ORB-18722] — builds proposal create and accept, with the signals routine.
+- [ORB-18723] — builds `office.selection-get` and `office.selection-put`.
+- [ORB-18724] — builds metrics, review inputs and the review.
+- [ORB-18725] — built the app server, the Orbit client, static serving and the dispatch pass.
+- [ORB-18727] — built the Today screen and its server feature.
+- [ORB-18728] — built the To-dos screen and its server feature.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

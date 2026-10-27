@@ -755,21 +755,86 @@ step_secrets() {
     set_secret "baseten_token" "${ORBIT_OFFICE_BASETEN_TOKEN:-${BASETEN_TOKEN:-}}" 1
 }
 
-# Reads an office.init response in ORBIT_OFFICE_INIT_OUT. Prints "ok" for
-# a success envelope, otherwise the error code it names. Node is a proven
-# prerequisite, so the JSON is read the same way as the MCP entry.
+# Prints "ok" when office.init succeeded, otherwise the office code, or
+# "unreadable". Arguments are the exit status, stdout and stderr.
+#
+# `orbit tool run --json --full` exits 0 and prints the tool output object
+# on stdout. That object has no top-level ok. An {ok:true} envelope (the
+# direct office binary) is also success. An {ok:false} envelope names its
+# code even when the exit status is 0. A non-zero exit puts the code in a
+# JSON object on stderr, which a WARN line may precede.
 init_envelope_status() {
-    ORBIT_OFFICE_INIT_OUT="$1" node <<'NODE' || printf 'unreadable'
-let env = {};
-try {
-  env = JSON.parse(process.env.ORBIT_OFFICE_INIT_OUT) || {};
-} catch (_) {
-  env = {};
+    ORBIT_OFFICE_INIT_RC="$1" \
+    ORBIT_OFFICE_INIT_OUT="$2" \
+    ORBIT_OFFICE_INIT_ERR="$3" \
+        node <<'NODE' || printf 'unreadable'
+function tryParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return undefined;
+  }
 }
-if (env.ok === true) {
-  process.stdout.write("ok");
+
+function parseLoose(text) {
+  if (text == null) return undefined;
+  var trimmed = String(text).trim();
+  if (!trimmed) return undefined;
+  var direct = tryParse(trimmed);
+  if (direct !== undefined) return direct;
+  var lines = trimmed.split(/\r?\n/);
+  var i;
+  for (i = lines.length - 1; i >= 0; i--) {
+    var line = lines[i].trim();
+    if (line.charAt(0) !== "{") continue;
+    var parsed = tryParse(line);
+    if (parsed !== undefined) return parsed;
+    var block = tryParse(lines.slice(i).join("\n").trim());
+    if (block !== undefined) return block;
+  }
+  var start = trimmed.indexOf("{");
+  var end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    var sliced = tryParse(trimmed.slice(start, end + 1));
+    if (sliced !== undefined) return sliced;
+  }
+  return undefined;
+}
+
+function asObject(text) {
+  var value = parseLoose(text);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value;
+}
+
+function codeOf(obj) {
+  if (!obj) return "";
+  var nested = obj.error;
+  if (nested && typeof nested === "object" && !Array.isArray(nested) &&
+      typeof nested.code === "string" && nested.code) {
+    return nested.code;
+  }
+  if (typeof obj.code === "string" && obj.code) return obj.code;
+  return "";
+}
+
+var rc = Number(process.env.ORBIT_OFFICE_INIT_RC || "0");
+var out = asObject(process.env.ORBIT_OFFICE_INIT_OUT || "");
+if (!isFinite(rc)) {
+  process.stdout.write("unreadable");
+} else if (rc === 0) {
+  if (!out) {
+    process.stdout.write("unreadable");
+  } else if (out.ok === true || !Object.prototype.hasOwnProperty.call(out, "ok")) {
+    process.stdout.write("ok");
+  } else if (out.ok === false) {
+    process.stdout.write(codeOf(out) || "unreadable");
+  } else {
+    process.stdout.write("unreadable");
+  }
 } else {
-  process.stdout.write((env.error && env.error.code) || env.code || "unreadable");
+  var err = asObject(process.env.ORBIT_OFFICE_INIT_ERR || "");
+  process.stdout.write(codeOf(err) || codeOf(out) || "unreadable");
 }
 NODE
 }
@@ -786,12 +851,23 @@ step_scaffold() {
             return 0
         fi
     fi
-    # An error envelope can come back with exit 0, so the marker is set
-    # only for an ok envelope. Otherwise the step fails and the next run
-    # asks office.init again.
+    # Exit 0 with the tool output object (no top-level ok) is success, as
+    # is an {ok:true} envelope. Anything else fails and the next run asks
+    # office.init again. Stderr is kept: a WARN line can precede the JSON
+    # error object, and the office code is in that object.
+    _init_err_file="$DATA_DIR/office-init.stderr"
+    mkdir -p "$DATA_DIR"
+    : > "$_init_err_file"
     _init_rc=0
-    _init_out=$(cd "$WORKSPACE" && orbit tool run office.init --json --full --input '{}') || _init_rc=$?
-    _init_status=$(init_envelope_status "$_init_out")
+    _init_out=$(
+        cd "$WORKSPACE" && orbit tool run office.init --json --full --input '{}' 2>"$_init_err_file"
+    ) || _init_rc=$?
+    if [ -s "$_init_err_file" ]; then
+        cat "$_init_err_file" >&2
+    fi
+    _init_err=$(cat "$_init_err_file")
+    rm -f "$_init_err_file"
+    _init_status=$(init_envelope_status "$_init_rc" "$_init_out" "$_init_err")
     if [ "$_init_rc" -eq 0 ] && [ "$_init_status" = "ok" ]; then
         state_mark "scaffolded"
         say "scaffold: ran office.init ($WORKSPACE/library)"

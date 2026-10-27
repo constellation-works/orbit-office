@@ -62,8 +62,11 @@ impl FakeServer {
     }
 
     /// Serve on a loopback host outside the model endpoint allowlist.
+    /// Binds `127.0.0.1` but presents the URL host as `localhost`: binding
+    /// `127.0.0.2` fails on macOS, which has no such loopback alias, while
+    /// `localhost` is still an unlisted host string for the allowlist.
     pub fn start_unlisted_loopback(status: u16, body: String) -> Self {
-        Self::serve("127.0.0.2", vec![(status, body, None)])
+        Self::serve_on("127.0.0.1", "localhost", vec![(status, body, None)])
     }
 
     /// Serve `body` on the IPv6 loopback address `[::1]`. Panics when the
@@ -74,6 +77,16 @@ impl FakeServer {
     }
 
     fn serve(host: &str, replies: Vec<(u16, String, Option<String>)>) -> Self {
+        Self::serve_on(host, host, replies)
+    }
+
+    /// Serve bound to `bind_host`, presenting `url_host` in the base URL.
+    fn serve_on(
+        bind_host: &str,
+        url_host: &str,
+        replies: Vec<(u16, String, Option<String>)>,
+    ) -> Self {
+        let host = bind_host;
         assert!(!replies.is_empty(), "fake server needs at least one reply");
         let listener = TcpListener::bind(format!("{host}:0")).expect("bind loopback");
         let port = listener.local_addr().expect("local addr").port();
@@ -117,7 +130,7 @@ impl FakeServer {
             })
         };
         Self {
-            base_url: format!("http://{host}:{port}/v1"),
+            base_url: format!("http://{url_host}:{port}/v1"),
             requests,
             stop,
             thread: Some(thread),

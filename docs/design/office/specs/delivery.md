@@ -24,7 +24,7 @@ Source: spec §14–§16.
 
 1. **0:00 Opening line** (compliance), then the problem in one sentence: cloud agents run your work where you can't see or keep it.
 2. **0:15 Today screen:** seeded weeks of work. The automation ratio has climbed from 10% to 55% (labelled simulated).
-3. **0:30 Day one in a new role:** drop the onboarding folder and a 50-minute KT video. Library setup shows the batch preview; press Process. Pages arrive grouped by subject, one per topic rather than one per document. **The KT video:** The cost preview appears; press Process. The result: a 6-minute chaptered index with tangents folded and one gotcha lifted out, a key-rotation runbook and three system pages proposed, and two questions for the presenter in your to-dos, every line citing `#t=…` or `#frame=…`. Ask "how do I rotate the ingest keys?" and the answer links to 00:31:12.
+3. **0:30 Day one in a new role:** drop the onboarding folder and a 50-minute KT video. Library setup shows the batch preview; press Process. Pages arrive grouped by subject, one per topic rather than one per document. **The KT video** (marked private at the preview, so every call goes to Muse Spark Open on the private route, labelled with where it runs): The cost preview appears; press Process. The result: a 6-minute chaptered index with tangents folded and one gotcha lifted out, a key-rotation runbook and three system pages proposed, and two questions for the presenter in your to-dos, every line citing `#t=…` or `#frame=…`. Ask "how do I rotate the ingest keys?" and the answer links to 00:31:12.
 4. **1:10 Paste a Slack thread into Muse Code.** It is saved as a source, and the orchestrator links it to the client page and answers with citations. Then highlight a line in the KT transcript and say "make this a to-do for me". The task appears, citing that timestamp.
 5. **1:35 "Request access to the ingest AD group for me."** The agent follows the `performable` runbook the onboarding folder produced and drafts the request. Needs you: approve it (copied, not sent: the trust gate).
 6. **1:55 A proposal appears.** "You've prepared a QBR deck by hand three times. Want a routine?" It shows the evidence, you accept, and it appears in Routines.
@@ -50,3 +50,100 @@ lists `office-orchestrator`; whether Muse Code has a prompt-submit hook;
 the Muse Spark multimodal request shape (fallback: local OCR, then
 Muse Spark on the text); and the KT checks in
 [kt-videos.md](./kt-videos.md#day-1-checks).
+
+### Slice tasks
+
+The calendar above is the order. These are the tasks that implement it.
+"Done" means the task is done and its merged commit is in this checkout.
+
+Landed:
+
+- App server, Orbit client, static serving, dispatch pass — [ORB-18725] done
+- Web UI kit — [ORB-18726] done
+- Today screen — [ORB-18727] done
+- To-dos screen — [ORB-18728] done
+- PWA shell and the settings feature — [ORB-18735] done
+- Install script — [ORB-18736] done
+- App CI job — [ORB-18738] done
+- Port wiring through dispatch — [ORB-18708] done
+- Library store — [ORB-18709] done
+- `office.init`, `office.reindex`, Library health — [ORB-18710] done
+- About templates — [ORB-18760] done; `office.init` installs them — [ORB-18762] done
+- Model adapters and privacy routing — [ORB-18712] done
+- Orbit callback adapter — [ORB-18713] done
+- `office.signals-scan` — [ORB-18721] done
+- Pinned uv and Python for agents — [ORB-18779] done
+- Gateway GET, connections, redaction, audit — [ORB-18796] done
+- Gateway drafted writes — [ORB-18797] done
+
+Filed, not done in this checkout:
+
+- `office.capture` and `office.source-show` — [ORB-18714]
+- `office.transcribe` and `office.extract` — [ORB-18715]
+- `office.video-plan` and `office.frames` — [ORB-18809]
+- KT routine and the kt skill — [ORB-18716]
+- Knowledge show and write — [ORB-18717]
+- Artifact show and promote — [ORB-18718]
+- Search and attach — [ORB-18719]
+- Agent to-do activity and orchestrator skills — [ORB-18720]
+- Proposal create and accept — [ORB-18722]
+- Source view, upload and paste capture — [ORB-18729]
+- Library screen — [ORB-18730]
+- Routines screen — [ORB-18731]
+- Approvals in the app — [ORB-18733]
+- Selection tools — [ORB-18723]; selection tray — [ORB-18734]
+- Metrics and review — [ORB-18724]; Insights and Review screens — [ORB-18732]
+- Synthetic demo data — [ORB-18737]
+- Session brief — [ORB-18746]
+- Daily digest — [ORB-18747]
+- Script runner — [ORB-18781]
+- Gateway install and agent CLI deny rules — [ORB-18799]
+- cloudcli — [ORB-18800]
+- Delete modules still planned at submission — [ORB-18739]
+
+## Task References
+
+- [ORB-18708] — wired office-core ports through dispatch and composition.
+- [ORB-18709] — built the Library store adapter.
+- [ORB-18710] — built `office.init`, `office.reindex` and Library health.
+- [ORB-18712] — built the Meta and Baseten model adapters with privacy routing.
+- [ORB-18713] — built the Orbit callback adapter.
+- [ORB-18714] — builds `office.capture` and `office.source-show`.
+- [ORB-18715] — builds `office.transcribe` and `office.extract`.
+- [ORB-18716] — builds the KT routine and the kt skill.
+- [ORB-18717] — builds `office.knowledge-show` and `office.knowledge-write`.
+- [ORB-18718] — builds `office.artifact-show` and `office.artifact-promote`.
+- [ORB-18719] — builds `office.search` and `office.attach`.
+- [ORB-18720] — builds the agent to-do activity and the orchestrator skills.
+- [ORB-18721] — built `office.signals-scan`.
+- [ORB-18722] — builds proposal create and accept, with the signals routine.
+- [ORB-18723] — builds `office.selection-get` and `office.selection-put`.
+- [ORB-18724] — builds metrics, review inputs and the review.
+- [ORB-18725] — built the app server, the Orbit client, static serving and the dispatch pass.
+- [ORB-18726] — built the web UI kit, API client and base styles.
+- [ORB-18727] — built the Today screen.
+- [ORB-18728] — built the To-dos screen.
+- [ORB-18729] — builds the source view, upload and paste capture.
+- [ORB-18730] — builds the Library screen.
+- [ORB-18731] — builds the Routines screen.
+- [ORB-18732] — builds the Insights and Review screens.
+- [ORB-18733] — builds in-app approval of to-dos and proposals.
+- [ORB-18734] — builds the selection tray, selection feature and prompt hook.
+- [ORB-18735] — built the PWA shell and the settings feature.
+- [ORB-18736] — built the install script.
+- [ORB-18737] — builds synthetic demo data seeded through the tools.
+- [ORB-18738] — added the app CI job.
+- [ORB-18739] — deletes modules still planned at submission.
+- [ORB-18746] — builds `office.session-brief`.
+- [ORB-18747] — builds `office.digest` and the daily digest routine.
+- [ORB-18760] — built the knowledge template model and the bundled About templates.
+- [ORB-18762] — made `office.init` install the bundled templates.
+- [ORB-18779] — pinned uv and Python 3.12 for agents in the install script.
+- [ORB-18781] — builds `office.script-run`.
+- [ORB-18796] — built the gateway plugin's connections, GET, redaction and audit.
+- [ORB-18797] — built drafted API writes, approved and sent once.
+- [ORB-18799] — installs the gateway plugins and the agent CLI deny rules.
+- [ORB-18800] — builds the read-only cloudcli plugin.
+- [ORB-18809] — builds `office.video-plan` and `office.frames`.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
