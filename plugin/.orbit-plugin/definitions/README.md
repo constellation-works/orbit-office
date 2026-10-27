@@ -24,7 +24,19 @@ No definition may require an outward-facing action.
 Plugin definitions are loaded only when listed in `spec.definitions` in
 `plugin.yaml`. The activity is registered in `spec.definitions.activities`
 as `definitions/activities/office-agent-todo.yaml`. Merely placing a file
-in this directory does not register it. `office-kt-inbox` remains planned.
+in this directory does not register it.
+
+`office-kt-inbox` is registered under `spec.definitions.routines` and its
+job under `spec.definitions.jobs`. The disabled routine (`*/15 * * * *`)
+targets `job:office-kt-inbox`; the job lists confirmed, unprocessed plans
+with `office.video-plan` in list mode, fans out over them with deterministic
+`plugin.tool_call` steps `office.transcribe`, `office.frames` and
+`office.extract` (`profile: kt`), then runs `office.consolidate`
+(`batch_id: kt`) over the videos' digests instead of filing proposals
+itself. Extraction files one `owner:you` to-do per question, tagged
+`kt-question`. The job creates no agent loop, crew or task, calls no
+outward-facing action, and uses only the routine fields Orbit accepts
+(routines carry no `required_tools`).
 
 `office-daily-digest` is registered under `spec.definitions.routines` and
 its single-step job under `spec.definitions.jobs`. The job contains an inline

@@ -115,7 +115,7 @@ Activities have no schedule switch. Definitions load only when listed in
 `spec.definitions` in the plugin manifest.
 
 - **Routines:**
-  - `office-kt-inbox`: every 15 minutes, process confirmed video plans: transcribe, frames, extract (`kt`), then file knowledge proposals and question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
+  - `office-kt-inbox`: every 15 minutes, seeded disabled, process confirmed video plans: transcribe, frames, extract (`kt`), then `office.consolidate` over the videos' digests; extraction files question to-dos ([kt-videos.md](./kt-videos.md#3-process-the-office-kt-inbox-routine)).
   - `office-bootstrap`: every 15 minutes, run a confirmed bootstrap batch: digests (and the KT steps for videos), then `office.consolidate` ([library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation)).
   - `office-signals`: daily.
   - `office-daily-digest`: daily at `5 0 * * *`, seeded disabled. Targets `job:office-daily-digest`, whose sole step inlines a deterministic `plugin.tool_call` activity (`config.tool: office.digest`). The routine and job are registered in `spec.definitions`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).

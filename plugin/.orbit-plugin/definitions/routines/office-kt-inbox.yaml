@@ -1,0 +1,7 @@
+schemaVersion: 1
+name: office-kt-inbox
+description: Process confirmed KT video plans every 15 minutes; never re-process without a new confirmed plan.
+enabled: false
+trigger:
+  cron: "*/15 * * * *"
+target: job:office-kt-inbox
