@@ -7,11 +7,12 @@ import { test } from "node:test";
 import {
   createDispatchPass,
   createDispatcher,
+  listBacklogAgentTasks,
   MAX_SHIP_STDERR_BYTES,
   selectDispatchIds,
   shipTasks,
 } from "../dist/dispatch/pass.js";
-import { createOrbitClient } from "../dist/orbit/client.js";
+import { createOrbitClient, OrbitError } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
 import { installSupervisionDoubles, timerAt } from "./supervision-doubles.mjs";
 
@@ -127,6 +128,126 @@ test("nothing eligible means no ship invocation", async (t) => {
   assert.deepEqual(await dispatcher.runOnce(), { skipped: false, submitted: [] });
   const shipLog = await readFile(join(fake.state, "ship.log"), "utf8").catch(() => "");
   assert.equal(shipLog, "");
+});
+
+/** A client whose `orbit.task.list` answers with `output`, as the Orbit CLI would print it. */
+function listingClient(output) {
+  return { callTool: async () => output };
+}
+
+/** The error a call rejects with; fails the test when the call resolves. */
+function rejectionOf(promise) {
+  return promise.then(
+    () => {
+      throw new Error("expected the call to reject");
+    },
+    (error) => error,
+  );
+}
+
+/** Install a fake orbit whose `orbit.task.list` answers with `listing`. */
+async function fakeListing(t, listing) {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  await writeFile(join(fake.state, "tasks.json"), JSON.stringify(listing));
+  return fake;
+}
+
+/** The ids `orbit run ship` was called with, or "" when it never ran. */
+function shipLog(fake) {
+  return readFile(join(fake.state, "ship.log"), "utf8").catch(() => "");
+}
+
+test("a listing without a tasks array is an invalid_output failure, not an empty pass", async () => {
+  for (const output of [{ unexpected: true }, { tasks: { id: "ORB-1" } }, null]) {
+    const error = await rejectionOf(listBacklogAgentTasks(listingClient(output)));
+    assert.ok(error instanceof OrbitError, `expected OrbitError for ${JSON.stringify(output)}`);
+    assert.equal(error.code, "invalid_output", `code for ${JSON.stringify(output)}`);
+  }
+});
+
+test("malformed task rows are an invalid_output failure, never silently dropped", async () => {
+  const malformedRows = [
+    [{ id: "ORB-1" }],
+    [{ status: "backlog" }],
+    [1],
+    [null],
+    [{ id: 7, status: "backlog" }],
+    [{ id: "ORB-1", status: "backlog", tags: "owner:agent" }],
+    [{ id: "ORB-1", status: "backlog", tags: ["owner:agent"] }, { status: "backlog" }],
+  ];
+  for (const rows of malformedRows) {
+    for (const output of [rows, { tasks: rows }]) {
+      const error = await rejectionOf(listBacklogAgentTasks(listingClient(output)));
+      assert.ok(error instanceof OrbitError, `expected OrbitError for ${JSON.stringify(output)}`);
+      assert.equal(error.code, "invalid_output", `code for ${JSON.stringify(output)}`);
+    }
+  }
+});
+
+test("valid listings still parse: empty ones are no work, and tags may be absent", async () => {
+  assert.deepEqual(await listBacklogAgentTasks(listingClient([])), []);
+  assert.deepEqual(await listBacklogAgentTasks(listingClient({ tasks: [] })), []);
+  assert.deepEqual(
+    await listBacklogAgentTasks(
+      listingClient({
+        tasks: [
+          { id: "ORB-1", status: "backlog", tags: ["owner:agent"] },
+          { id: "ORB-2", status: "backlog" },
+        ],
+      }),
+    ),
+    [
+      { id: "ORB-1", status: "backlog", tags: ["owner:agent"] },
+      { id: "ORB-2", status: "backlog" },
+    ],
+  );
+});
+
+test("a scheduled pass reports a malformed listing through onError and ships nothing", { timeout: 10_000 }, async (t) => {
+  const fake = await fakeListing(t, { unexpected: true });
+  const env = fake.env();
+  const client = createOrbitClient({ timeoutMs: 10_000, env });
+  const reported = new Promise((resolve) => {
+    const dispatcher = createDispatcher({ client, env, timeoutMs: 10_000, intervalMs: 20, onError: resolve });
+    t.after(() => dispatcher.stop());
+    dispatcher.start();
+  });
+  const error = await reported;
+  assert.ok(error instanceof OrbitError);
+  assert.equal(error.code, "invalid_output");
+  assert.equal(await shipLog(fake), "");
+});
+
+test("a manual pass rejects a listing without a tasks field and ships nothing", async (t) => {
+  const fake = await fakeListing(t, []);
+  const env = fake.env();
+  const dispatcher = createDispatcher({ client: listingClient({ unexpected: true }), env, timeoutMs: 10_000 });
+  const error = await rejectionOf(dispatcher.runOnce());
+  assert.ok(error instanceof OrbitError);
+  assert.equal(error.code, "invalid_output");
+  assert.equal(await shipLog(fake), "");
+  assert.equal(dispatcher.running, false, "a failed pass releases the single-flight guard");
+});
+
+test("a manual pass rejects malformed rows from orbit and ships nothing", async (t) => {
+  const fake = await fakeListing(t, [{ id: "ORB-1" }]);
+  const env = fake.env();
+  const dispatcher = createDispatcher({ client: createOrbitClient({ timeoutMs: 10_000, env }), env, timeoutMs: 10_000 });
+  const error = await rejectionOf(dispatcher.runOnce());
+  assert.ok(error instanceof OrbitError);
+  assert.equal(error.code, "invalid_output");
+  assert.equal(await shipLog(fake), "");
+});
+
+test("a valid empty listing is a successful empty pass with no ship call", async (t) => {
+  const fake = await fakeListing(t, []);
+  const env = fake.env();
+  const dispatcher = createDispatcher({ client: createOrbitClient({ timeoutMs: 10_000, env }), env, timeoutMs: 10_000 });
+  assert.deepEqual(await dispatcher.runOnce(), { skipped: false, submitted: [] });
+  assert.equal(await shipLog(fake), "");
 });
 
 const SHIP_SUPERVISION = {
