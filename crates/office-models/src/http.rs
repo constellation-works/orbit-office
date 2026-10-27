@@ -2,17 +2,15 @@
 //! then one blocking JSON POST.
 //!
 //! [`check_url`] allows only:
-//! - `api.meta.ai`, for hosted calls;
-//! - a Baseten host (`inference.baseten.co`, or a host ending in
-//!   `.api.baseten.co`);
-//! - loopback (`localhost`, `127.0.0.1`, `::1`), only as an explicitly
-//!   configured endpoint (a local open-weights server, or the test server).
+//! - for hosted calls, `api.meta.ai` over HTTPS (or loopback, which only a
+//!   test configures as the hosted base URL);
+//! - for private calls, exactly the configured endpoint's origin (scheme,
+//!   host and port), over HTTPS unless it is loopback, and never
+//!   `api.meta.ai`.
 //!
-//! An open-weights endpoint is that Baseten or loopback subset, not an
-//! arbitrary configured host and not the hosted Meta API. Any other host
-//! is refused before a socket opens. Non-loopback endpoints must use
-//! HTTPS; loopback may use HTTP. Library settings apply the same
-//! open-weights rule at load.
+//! Any other host, a Baseten host that is not the configured one
+//! included, is refused before a socket opens. Library settings apply the
+//! same endpoint rule at load.
 //!
 //! Errors name only the host and status: never a credential, request
 //! body or response body (STD-05), because a hostile endpoint can echo
@@ -22,32 +20,46 @@ use office_core::Error;
 use office_core::domain::endpoint::{self, ModelUrlError};
 use serde_json::Value;
 
+/// The allowlist one request is checked against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Destination<'a> {
+    /// The hosted Meta Model API.
+    Hosted,
+    /// The configured private endpoint (its base URL).
+    Private {
+        /// The configured base URL whose origin the request must match.
+        endpoint: &'a str,
+    },
+}
+
 /// The host part of an `http(s)://` URL, without port, userinfo or the
 /// brackets of an IPv6 literal (`[::1]:8080` is `::1`).
 pub(crate) fn host_of(url: &str) -> Option<String> {
     endpoint::host_of(url)
 }
 
-/// Whether `url` may be contacted. Non-loopback endpoints must use HTTPS;
-/// loopback endpoints (a configured local model, the test server) may use
-/// HTTP. `open_weights` keeps only the Baseten or loopback subset; hosted
-/// calls pass `false` and may use `api.meta.ai`.
-pub(crate) fn check_url(url: &str, open_weights: bool) -> Result<String, Error> {
-    match endpoint::allow_model_url(url) {
-        Ok((host, role)) if open_weights && !role.is_open_weights() => Err(refused(format!(
-            "open-weights endpoint host {host} is not a Baseten or loopback host"
-        ))),
-        Ok((host, _)) => Ok(host),
-        Err(ModelUrlError::NotHttpUrl) => Err(refused(
-            "model endpoint is not an HTTP(S) URL with a host".to_string(),
-        )),
-        Err(ModelUrlError::HostNotAllowed { host }) => Err(refused(format!(
-            "model endpoint host {host} is not a Meta or Baseten host; refusing the call"
-        ))),
-        Err(ModelUrlError::HttpsRequired { host }) => Err(refused(format!(
-            "model endpoint host {host} must use HTTPS"
-        ))),
-    }
+/// Whether `url` may be contacted for `destination`. Returns the host.
+pub(crate) fn check_url(url: &str, destination: Destination<'_>) -> Result<String, Error> {
+    let checked = match destination {
+        Destination::Hosted => endpoint::allow_hosted_url(url),
+        Destination::Private { endpoint } => endpoint::allow_private_url(url, endpoint),
+    };
+    checked.map_err(|error| match error {
+        ModelUrlError::NotHttpUrl => {
+            refused("model endpoint is not an HTTP(S) URL with a host".to_string())
+        }
+        ModelUrlError::HostNotAllowed { host } => refused(match destination {
+            Destination::Hosted => format!(
+                "model endpoint host {host} is not the Meta Model API host; refusing the call"
+            ),
+            Destination::Private { .. } => format!(
+                "model endpoint host {host} is not the configured private endpoint; refusing the call"
+            ),
+        }),
+        ModelUrlError::HttpsRequired { host } => {
+            refused(format!("model endpoint host {host} must use HTTPS"))
+        }
+    })
 }
 
 fn refused(message: String) -> Error {
@@ -59,18 +71,17 @@ fn refused(message: String) -> Error {
 }
 
 /// POST `body` as JSON to `url` with an optional Bearer credential and
-/// return the parsed JSON response. The URL is allowlist-checked first.
-/// `open_weights` applies the Baseten-or-loopback role on top of the
-/// transport allowlist. The routed client's agent disables redirects so a
+/// return the parsed JSON response. The URL is allowlist-checked against
+/// `destination` first. The routed client's agent disables redirects so a
 /// response cannot cause a request to an unchecked host.
 pub(crate) fn post_json(
     agent: &ureq::Agent,
     url: &str,
     api_key: Option<&str>,
     body: &Value,
-    open_weights: bool,
+    destination: Destination<'_>,
 ) -> Result<Value, Error> {
-    let host = check_url(url, open_weights)?;
+    let host = check_url(url, destination)?;
     tracing::debug!(host = %host, "model call");
     let mut request = agent.post(url).header("Content-Type", "application/json");
     if let Some(key) = api_key {

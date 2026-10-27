@@ -160,12 +160,18 @@ pub enum Error {
     },
     /// A single-setting update named no supported policy leaf (including secrets).
     #[error(
-        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, packs or open_weights_endpoint"
+        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, packs, open_weights or open_weights.<endpoint|model|kind|label>"
     )]
     UnknownSetting {
         /// Refused key, never the supplied value.
         key: String,
     },
+    /// The private endpoint or model changed (or was removed) while
+    /// `office.private-route-check` ran, so its result was not recorded.
+    #[error(
+        "the open_weights endpoint or model changed during the check; nothing was recorded, run office.private-route-check again"
+    )]
+    PrivateRouteChanged,
     /// A model call failed; `retryable` follows the HTTP failure class.
     ///
     /// The message names only the endpoint host, status and operation:
@@ -220,6 +226,7 @@ impl Error {
             Self::Model { code, .. } => code,
             Self::InvalidSetting { .. } => "invalid_library_setting",
             Self::UnknownSetting { .. } => "unknown_library_setting",
+            Self::PrivateRouteChanged => "private_route_changed",
             Self::InvalidRequest(_) => "invalid_request",
             Self::UnsupportedVersion(_) => "unsupported_schema_version",
             Self::UnknownTool(_) => "unknown_tool",
@@ -254,6 +261,7 @@ impl Error {
             Self::Library { .. } => false,
             Self::InvalidSetting { .. } => false,
             Self::UnknownSetting { .. } => false,
+            Self::PrivateRouteChanged => false,
             Self::InvalidRequest(_) => false,
             Self::UnsupportedVersion(_) => false,
             Self::UnknownTool(_) => false,

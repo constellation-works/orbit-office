@@ -1,6 +1,6 @@
 [package]
 name = "office-models"
-description = "Model adapters for the office plugin: Meta Model API (Muse Spark, Muse Voice Transcribe) and Baseten (Muse Spark Open), behind office-core ports, with privacy routing. The only crate that speaks HTTP."
+description = "Model adapters for the office plugin: Meta Model API (Muse Spark, Muse Voice Transcribe) and the private route (Muse Spark Open on the endpoint the user chose), behind office-core ports, with privacy routing. The only crate that speaks HTTP."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

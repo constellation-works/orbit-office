@@ -1,16 +1,117 @@
-//! Model-endpoint host policy shared by Library settings and `check_url`.
+//! Model-endpoint host policy and the private route's vocabulary, shared by
+//! Library settings and `office-models`' `check_url`
+//! (specs/models-and-privacy.md, "The private route").
 //!
-//! The transport allowlist is Meta, Baseten, or loopback. An open-weights
-//! endpoint is the Baseten or loopback subset: Baseten over HTTPS, loopback
-//! over HTTP or HTTPS. Any other host is refused. Hosted calls may use
-//! `api.meta.ai`; that host is not an open-weights endpoint.
+//! Hosted calls go only to `api.meta.ai` (or loopback, which only a test
+//! configures). Private calls go only to the one configured open-weights
+//! endpoint: the same scheme, exact host and port, over HTTPS unless the
+//! host is loopback, and never the hosted Meta API. Any other host is
+//! refused, at settings load and again before a socket opens.
+
+use std::fmt;
+
+use serde::Serialize;
+
+/// The hosted Meta Model API host.
+pub const META_HOST: &str = "api.meta.ai";
+
+/// Where a private endpoint runs; shown with its label wherever it is used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointKind {
+    /// The user's company's own deployment.
+    Company,
+    /// A hosted provider (a third party, not Meta's hosted API).
+    Provider,
+    /// Machines the user owns.
+    OwnHardware,
+}
+
+impl EndpointKind {
+    /// Every kind, in documentation order.
+    pub const ALL: [Self; 3] = [Self::Company, Self::Provider, Self::OwnHardware];
+
+    /// The settings spelling: `company`, `provider` or `own_hardware`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Company => "company",
+            Self::Provider => "provider",
+            Self::OwnHardware => "own_hardware",
+        }
+    }
+
+    /// Parse the settings spelling.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == text)
+    }
+}
+
+/// An input modality the private endpoint was checked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Capability {
+    /// Text in (every private call needs it).
+    Text,
+    /// Image in (frame and receipt reading).
+    Image,
+    /// Audio in (transcription).
+    Audio,
+}
+
+impl Capability {
+    /// Every capability, in check order.
+    pub const ALL: [Self; 3] = [Self::Text, Self::Image, Self::Audio];
+
+    /// The settings spelling: `text`, `image` or `audio`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Image => "image",
+            Self::Audio => "audio",
+        }
+    }
+
+    /// Parse the settings spelling.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|cap| cap.as_str() == text)
+    }
+}
+
+/// Where one model call went: `hosted` or `private:<kind>`, as recorded in
+/// `derived_by.route`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModelRoute {
+    /// The hosted Meta Model API.
+    Hosted,
+    /// The configured private endpoint of this kind.
+    Private(EndpointKind),
+}
+
+impl fmt::Display for ModelRoute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Hosted => f.write_str("hosted"),
+            Self::Private(kind) => write!(f, "private:{}", kind.as_str()),
+        }
+    }
+}
+
+impl Serialize for ModelRoute {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
 
 /// Why a model URL is outside the transport allowlist.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ModelUrlError {
     /// Not an `http://` or `https://` URL, or the host is missing or malformed.
     NotHttpUrl,
-    /// The host is not Meta, Baseten, or loopback.
+    /// The host is not one this call may reach.
     HostNotAllowed {
         /// Lowercase host, without port or brackets.
         host: String,
@@ -22,97 +123,120 @@ pub enum ModelUrlError {
     },
 }
 
-/// Which transport-allowlist role a host fills.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ModelHostRole {
-    /// `api.meta.ai`. Hosted calls only.
-    Meta,
-    /// `inference.baseten.co` or a host ending in `.api.baseten.co`.
-    Baseten,
-    /// `localhost`, `127.0.0.1`, or `::1`.
-    Loopback,
-}
-
-impl ModelHostRole {
-    /// Open-weights endpoints are Baseten or loopback, never the hosted Meta API.
-    #[must_use]
-    pub const fn is_open_weights(self) -> bool {
-        matches!(self, Self::Baseten | Self::Loopback)
-    }
-}
-
-/// Refusal reported for an open-weights URL outside the Baseten-or-loopback rule.
-///
+/// Refusal reported for a private endpoint over plain HTTP off loopback.
 /// Static, so a settings error never echoes the configured URL.
-pub(crate) const OPEN_WEIGHTS_ENDPOINT_REASON: &str =
-    "expected a Baseten HTTPS endpoint or a loopback HTTP(S) endpoint";
-
-const MALFORMED_ENDPOINT: &str = "expected an HTTP(S) URL with a host and no credentials";
+const HTTPS_REQUIRED: &str = "expected an HTTPS URL (plain HTTP only on loopback)";
+const META_REFUSED: &str =
+    "expected the endpoint you chose, not Meta's hosted API (api.meta.ai is never private)";
+const MALFORMED_ENDPOINT: &str =
+    "expected an HTTP(S) base URL with a host, no credentials, query or fragment";
 
 /// The host part of an `http(s)://` URL, without port, userinfo or the
 /// brackets of an IPv6 literal (`[::1]:8080` is `::1`).
 #[must_use]
 pub fn host_of(url: &str) -> Option<String> {
+    let host = authority_parts(url)?.0;
+    if host.is_empty() { None } else { Some(host) }
+}
+
+/// Lowercase host and explicit port (if any) of an `http(s)://` URL.
+fn authority_parts(url: &str) -> Option<(String, Option<String>)> {
     let rest = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))?;
-    let authority = rest.split('/').next().unwrap_or_default();
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
     let host_and_port = authority.rsplit('@').next().unwrap_or_default();
-    let host = match host_and_port.strip_prefix('[') {
+    let (host, port) = match host_and_port.strip_prefix('[') {
         // An unclosed bracket is malformed: no host, so the URL is refused.
-        Some(literal) => literal.split_once(']')?.0,
-        None => host_and_port.split(':').next().unwrap_or_default(),
+        Some(literal) => {
+            let (host, after) = literal.split_once(']')?;
+            (host, after.strip_prefix(':'))
+        }
+        None => match host_and_port.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (host_and_port, None),
+        },
     };
+    Some((host.to_ascii_lowercase(), port.map(str::to_string)))
+}
+
+/// `https` or `http`, the explicit-or-default port, and the lowercase host:
+/// the origin a request to `url` opens a socket to.
+fn origin_of(url: &str) -> Option<(&'static str, String, String)> {
+    let scheme = if url.starts_with("https://") {
+        "https"
+    } else if url.starts_with("http://") {
+        "http"
+    } else {
+        return None;
+    };
+    let (host, port) = authority_parts(url)?;
     if host.is_empty() {
-        None
-    } else {
-        Some(host.to_ascii_lowercase())
+        return None;
     }
+    let port = port.unwrap_or_else(|| if scheme == "https" { "443" } else { "80" }.into());
+    Some((scheme, host, port))
 }
 
-/// Classify `host` (already lowercase, without port or brackets).
+/// `localhost`, `127.0.0.1` or `::1` (already lowercase, no brackets).
 #[must_use]
-pub(crate) fn model_host_role(host: &str) -> Option<ModelHostRole> {
-    if host == "api.meta.ai" {
-        Some(ModelHostRole::Meta)
-    } else if host == "inference.baseten.co" || host.ends_with(".api.baseten.co") {
-        Some(ModelHostRole::Baseten)
-    } else if matches!(host, "127.0.0.1" | "localhost" | "::1") {
-        Some(ModelHostRole::Loopback)
-    } else {
-        None
-    }
+pub fn is_loopback(host: &str) -> bool {
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
 }
 
-/// Transport allowlist used by `check_url`: Meta, Baseten, or loopback.
-///
-/// Non-loopback endpoints must use HTTPS. Returns the lowercase host and
-/// its role.
-pub fn allow_model_url(url: &str) -> Result<(String, ModelHostRole), ModelUrlError> {
+/// The hosted allowlist: `api.meta.ai` over HTTPS, or a loopback host
+/// (only a test points the hosted base URL there). Returns the host.
+pub fn allow_hosted_url(url: &str) -> Result<String, ModelUrlError> {
     let host = host_of(url).ok_or(ModelUrlError::NotHttpUrl)?;
-    let role = model_host_role(&host)
-        .ok_or_else(|| ModelUrlError::HostNotAllowed { host: host.clone() })?;
-    if !matches!(role, ModelHostRole::Loopback) && !url.starts_with("https://") {
+    if is_loopback(&host) {
+        return Ok(host);
+    }
+    if host != META_HOST {
+        return Err(ModelUrlError::HostNotAllowed { host });
+    }
+    if !url.starts_with("https://") {
         return Err(ModelUrlError::HttpsRequired { host });
     }
-    Ok((host, role))
+    Ok(host)
 }
 
-/// Accept an open-weights endpoint, or the static reason settings should report.
-///
-/// Embedded credentials are refused even when the host would otherwise be
-/// allowed. The returned reason never contains the URL.
-pub(crate) fn allow_open_weights_endpoint(url: &str) -> Result<(), &'static str> {
-    if url.chars().any(char::is_whitespace) || authority_has_userinfo(url) {
+/// The private allowlist: `url` must open a socket to exactly the origin
+/// (scheme, host and port) of the configured `endpoint`, over HTTPS unless
+/// loopback, and never to `api.meta.ai`. Returns the host.
+pub fn allow_private_url(url: &str, endpoint: &str) -> Result<String, ModelUrlError> {
+    let (scheme, host, port) = origin_of(url).ok_or(ModelUrlError::NotHttpUrl)?;
+    let Some(configured) = origin_of(endpoint) else {
+        return Err(ModelUrlError::HostNotAllowed { host });
+    };
+    if host == META_HOST || (scheme, &host, &port) != (configured.0, &configured.1, &configured.2) {
+        return Err(ModelUrlError::HostNotAllowed { host });
+    }
+    if scheme != "https" && !is_loopback(&host) {
+        return Err(ModelUrlError::HttpsRequired { host });
+    }
+    Ok(host)
+}
+
+/// Accept a configured private endpoint, or the static reason settings
+/// should report. Any host is allowed (the user chose it), over HTTPS
+/// unless loopback, except Meta's hosted API. Embedded credentials, a
+/// query or a fragment are refused. The returned reason never contains
+/// the URL.
+pub(crate) fn allow_private_endpoint(url: &str) -> Result<(), &'static str> {
+    if url.chars().any(|c| c.is_whitespace() || c.is_control())
+        || url.contains(['?', '#'])
+        || authority_has_userinfo(url)
+    {
         return Err(MALFORMED_ENDPOINT);
     }
-    match allow_model_url(url) {
-        Ok((_, role)) if role.is_open_weights() => Ok(()),
-        Ok(_) | Err(ModelUrlError::HostNotAllowed { .. } | ModelUrlError::HttpsRequired { .. }) => {
-            Err(OPEN_WEIGHTS_ENDPOINT_REASON)
-        }
-        Err(ModelUrlError::NotHttpUrl) => Err(MALFORMED_ENDPOINT),
+    let host = host_of(url).ok_or(MALFORMED_ENDPOINT)?;
+    if host == META_HOST {
+        return Err(META_REFUSED);
     }
+    if !url.starts_with("https://") && !is_loopback(&host) {
+        return Err(HTTPS_REQUIRED);
+    }
+    Ok(())
 }
 
 /// `userinfo@host` in the authority. Credentials do not belong in settings.

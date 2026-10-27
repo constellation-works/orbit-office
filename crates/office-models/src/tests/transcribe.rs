@@ -132,7 +132,8 @@ fn transcribes_long_recordings_in_multiple_routed_requests() {
     let models: &dyn Models = &adapter;
     let transcript = models
         .transcribe(&request(1500, Sensitivity::Normal))
-        .expect("transcribe long recording");
+        .expect("transcribe long recording")
+        .value;
     assert_eq!(transcript.text, "first\nsecond\nthird");
     assert!(transcript.segments.is_empty());
     assert_chunks(
@@ -180,7 +181,8 @@ fn offsets_reported_turns_by_each_chunks_start() {
     let models: &dyn Models = &adapter;
     let transcript = models
         .transcribe(&request(1500, Sensitivity::Normal))
-        .expect("transcribe long recording");
+        .expect("transcribe long recording")
+        .value;
     assert_eq!(transcript.text, "first\nsecond\nthird");
     assert_eq!(transcript.segments.len(), 3);
     assert_eq!(transcript.segments[0].start_ms, 0);
@@ -209,7 +211,7 @@ fn routes_every_private_chunk_to_open_weights_with_configured_lengths() {
     let hosted = FakeServer::start(200, chat_reply("must not receive private audio"));
     let open = FakeServer::start(200, chat_reply("private"));
     let mut config = hosted_config(&hosted.base_url);
-    config.open_weights_endpoint = Some(open.base_url.clone());
+    config.open_weights = Some(super::open_weights(&open.base_url));
     config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
     config.audio_splitter.threshold_seconds = 30;
     config.audio_splitter.max_segment_seconds = 20;
@@ -217,14 +219,15 @@ fn routes_every_private_chunk_to_open_weights_with_configured_lengths() {
     let models: &dyn Models = &adapter;
     let transcript = models
         .transcribe(&request(45, Sensitivity::Private))
-        .expect("private audio");
+        .expect("private audio")
+        .value;
     assert_eq!(transcript.text, "private\nprivate\nprivate");
     assert!(hosted.requests().is_empty());
     assert_chunks(
         &open,
         &[b"audio-0-20", b"audio-20-20", b"audio-40-5"],
-        "Bearer test-baseten-token",
-        "meta-models/muse-spark-open-1026",
+        "Bearer test-open-weights-token",
+        super::PRIVATE_MODEL,
         "wav",
     );
     ffmpeg.assert_cleaned();
@@ -245,6 +248,7 @@ fn at_or_below_threshold_never_runs_ffmpeg() {
             models
                 .transcribe(&request(duration, Sensitivity::Normal))
                 .expect("unsplit")
+                .value
                 .text,
             "unsplit"
         );
@@ -376,7 +380,10 @@ fn transcribes_long_mp3_recordings_as_mp3_under_each_alias() {
         let models: &dyn Models = &adapter;
         let mut request = request(1500, Sensitivity::Normal);
         request.mime = mime.into();
-        let transcript = models.transcribe(&request).expect("transcribe long mp3");
+        let transcript = models
+            .transcribe(&request)
+            .expect("transcribe long mp3")
+            .value;
         assert_eq!(transcript.text, "first\nsecond\nthird");
         assert_chunks(
             &server,
@@ -413,7 +420,7 @@ fn sends_short_mp3_audio_with_the_mp3_format() {
     request.mime = "audio/mpeg".into();
     let audio = request.audio.clone();
     assert_eq!(
-        models.transcribe(&request).expect("short mp3").text,
+        models.transcribe(&request).expect("short mp3").value.text,
         "unsplit"
     );
     assert_chunks(

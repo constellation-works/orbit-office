@@ -24,7 +24,8 @@ fn maps_reported_speaker_turns_through_the_models_port() {
     let models: &dyn Models = &adapter;
     let transcript = models
         .transcribe(&transcribe_request())
-        .expect("transcribe");
+        .expect("transcribe")
+        .value;
     assert_eq!(transcript.text, "Jane opened. Daniel agreed.");
     assert_eq!(transcript.segments.len(), 2);
     assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Jane"));
@@ -59,7 +60,8 @@ fn keeps_text_and_no_turns_when_the_reply_reports_none() {
     let models: &dyn Models = &client(hosted_config(&server.base_url));
     let transcript = models
         .transcribe(&transcribe_request())
-        .expect("transcribe");
+        .expect("transcribe")
+        .value;
     assert_eq!(transcript.text, "no turns");
     assert!(transcript.segments.is_empty());
     assert_eq!(
@@ -81,7 +83,8 @@ fn drops_a_malformed_turn_and_keeps_its_siblings() {
     let models: &dyn Models = &client(hosted_config(&server.base_url));
     let transcript = models
         .transcribe(&transcribe_request())
-        .expect("transcribe");
+        .expect("transcribe")
+        .value;
     assert_eq!(transcript.text, "kept");
     assert_eq!(transcript.segments.len(), 2);
     assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Ada"));
@@ -98,7 +101,8 @@ fn reads_speaker_turns_from_a_fenced_json_reply() {
     let models: &dyn Models = &client(hosted_config(&server.base_url));
     let transcript = models
         .transcribe(&transcribe_request())
-        .expect("transcribe");
+        .expect("transcribe")
+        .value;
     assert_eq!(transcript.text, "hello");
     assert_eq!(transcript.segments.len(), 1);
     assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Jane"));
@@ -112,7 +116,8 @@ fn transcribes_audio_on_the_hosted_endpoint() {
     let models = client(hosted_config(&server.base_url));
     let transcript = models
         .transcribe(&transcribe_request())
-        .expect("transcribe");
+        .expect("transcribe")
+        .value;
     assert_eq!(transcript.text, "hello from the meeting");
     assert!(transcript.segments.is_empty());
     let requests = server.requests();
@@ -135,7 +140,8 @@ fn extracts_structured_json_on_the_hosted_endpoint() {
             schema: super::receipt_schema(),
             sensitivity: Sensitivity::Normal,
         })
-        .expect("extract");
+        .expect("extract")
+        .value;
     assert_eq!(value, reply);
     assert_eq!(server.requests().len(), 1);
 }
@@ -152,7 +158,7 @@ fn refuses_invalid_or_external_extraction_schemas_before_inference() {
     std::fs::write(&schema_file, r#"{"type":"object"}"#).expect("write schema fixture");
     let server = FakeServer::start(200, chat_reply(r#"{"total":"12.50"}"#));
     let mut config = hosted_config(&server.base_url);
-    config.open_weights_endpoint = Some(server.base_url.clone());
+    config.open_weights = Some(super::open_weights(&server.base_url));
     let adapter = client(config);
     let models: &dyn Models = &adapter;
 
@@ -193,7 +199,8 @@ fn reads_an_image_on_the_hosted_endpoint() {
             prompt: "Read the receipt total as JSON.".into(),
             sensitivity: Sensitivity::Normal,
         })
-        .expect("read image");
+        .expect("read image")
+        .value;
     assert_eq!(reading.fields, json!({"total": "12.50"}));
     assert_eq!(server.requests().len(), 1);
 }

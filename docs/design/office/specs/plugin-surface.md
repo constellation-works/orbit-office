@@ -61,7 +61,7 @@ Rules:
   costs money is `mutating`, including `selection-get` (it consumes).
 - Unknown input keys are refused, never ignored; identity and secrets come
   from the call context, never from input.
-- Secrets are declared in the manifest (`meta_api_key`, `baseten_token`)
+- Secrets are declared in the manifest (`meta_api_key`, `open_weights_token`)
   and set with `orbit plugin secret set office <name>`; handlers report
   presence only.
 
@@ -132,12 +132,12 @@ requires an outward-facing action.
   workspace (default `library`; it must stay inside the write grant).
 - **Library settings** live in `library/.office/config.yaml`: `retention`
   per kind, default `sensitivity` per kind, enabled packs, signal
-  thresholds and `open_weights_endpoint`. `office.init` writes the
+  thresholds and the private route's `open_weights` block. `office.init` writes the
   defaults, the app changes them through `office.config-set`, and the
   plugin validates the file on every read. Secrets are never in it.
 - **Permissions** (`spec.permissions`, granted at `orbit plugin enable`):
   - fs read and write on `{{workspace}}/library` and `{{plugin_state}}`.
-  - network `any`, the only setting that reaches remote hosts. The plugin calls only the Meta and Baseten endpoints.
+  - network `any`, the only setting that reaches remote hosts. The plugin calls only `api.meta.ai` and the one private endpoint the user configured ([models-and-privacy.md](./models-and-privacy.md#the-private-route)).
   - `orbit_tools`: the callbacks listed above.
   - Secrets: `meta_api_key` and `open_weights_token` (`spec.secrets`).
 - **Required programs:** `spec.requires.programs: [git, ffmpeg, ffprobe, uv, pdftotext]` (`pdftotext` is optional: without it PDFs are refused with `converter_unavailable`), plus
@@ -194,20 +194,22 @@ thresholds:
   repetition_count: 3
   window_days: 30
   stale_days: 90
-open_weights_endpoint: null
+open_weights: null
 ```
 
 Retention is a positive integer up to 36,500 days or `null` (keep indefinitely).
 Sensitivity is `normal` or `private`. Packs are distinct names from `meetings`
 and `receipts`; an empty list disables all packs. Repetition count is 1–10,000;
-window/stale days are 1–36,500. The optional `open_weights_endpoint` is a
-Baseten HTTPS URL (`https://inference.baseten.co/...` or
-`https://<deployment>.api.baseten.co/...`) or a loopback HTTP(S) URL
-(`localhost`, `127.0.0.1`, or `::1`), with no embedded credentials. That is
-the open-weights subset of the model host allowlist: hosted calls may also
-use `api.meta.ai`, and that host is not an open-weights endpoint. Any other
-host is refused at load with `invalid_library_setting` on
-`open_weights_endpoint`; the raw URL is not echoed. No timestamp is
+window/stale days are 1–36,500. The optional `open_weights` block names the
+private route ([models-and-privacy.md](./models-and-privacy.md#the-private-route)):
+`endpoint` (an OpenAI-compatible base URL over HTTPS, or HTTP(S) on loopback,
+with no credentials, query or fragment, and never `api.meta.ai`), `model`, `kind`
+(`company`, `provider` or `own_hardware`) and `label`, all required.
+`capabilities` (a distinct list of `text`, `image`, `audio`) and `verified_at`
+(RFC 3339) are written together by `office.private-route-check`; either one
+alone, an unknown kind, an unknown block key or a refused endpoint fails with
+`invalid_library_setting` naming the dotted key (`open_weights.kind`,
+`open_weights.capabilities`, …); the raw URL is not echoed. No timestamp is
 synthesized by defaults.
 These are Library policy settings, independent of plugin installation config.
 
@@ -215,8 +217,13 @@ These are Library policy settings, independent of plugin installation config.
 
 `office.config-set` takes exactly `{"key":"retention.meeting","value":30}`.
 The value is typed JSON, not a YAML string. Supported keys are
-`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `packs` and
-`open_weights_endpoint`, using the kinds, threshold names and bounds above.
+`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `packs`,
+`open_weights.<endpoint|model|kind|label>` and the whole `open_weights` block
+(a mapping of those four keys, or null), using the kinds, threshold names and
+bounds above. A leaf needs the block to exist. Changing the endpoint or model
+clears the recorded capabilities; `open_weights.capabilities` and
+`open_weights.verified_at` are refused with `invalid_library_setting`, because
+only `office.private-route-check` writes them.
 The additional thresholds `friction_count` and `new_subject_count` default to
 2 (range 1–10,000); `unused_days` defaults to 30 (range 1–36,500).
 Whole retention/sensitivity/threshold mappings cannot be replaced in one call.

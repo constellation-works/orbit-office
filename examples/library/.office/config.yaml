@@ -13,4 +13,12 @@ enabled_packs:
 signal_thresholds:
   repetition_min_tasks: 3
   repetition_window_days: 30
-open_weights_endpoint: ""
+# The private route: Muse Spark Open on the one endpoint you chose. Null
+# refuses private material rather than sending it to the hosted API.
+# capabilities and verified_at are written by office.private-route-check.
+open_weights: null
+# open_weights:
+#   endpoint: https://muse.internal.acme.example/v1
+#   model: meta-models/Muse-Spark-Open-816B-A42B
+#   kind: company            # company | provider | own_hardware
+#   label: Acme's server

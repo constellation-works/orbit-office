@@ -293,6 +293,19 @@ impl Library for FakeLibrary {
         *self.current_settings.borrow_mut() = Some(settings);
         Ok(())
     }
+    fn record_route_check(
+        &self,
+        endpoint: &str,
+        model: &str,
+        capabilities: &[office_core::domain::endpoint::Capability],
+        verified_at: &str,
+    ) -> Result<()> {
+        let settings =
+            self.settings()?
+                .with_route_check(endpoint, model, capabilities, verified_at)?;
+        *self.current_settings.borrow_mut() = Some(settings);
+        Ok(())
+    }
     fn capture_source(&self, request: &CaptureSourceRequest) -> Result<SourceOutcome> {
         self.ready()?;
         let settings = self.settings()?;

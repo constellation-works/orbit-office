@@ -1,0 +1,45 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  # Runs on the shared conformance Library (scaffolded by config-set.yaml's
+  # init case, earlier in path order). No network and no secrets: the
+  # refusal runs before any endpoint is configured, and the success case
+  # points the endpoint at a closed loopback port, so every request fails
+  # to connect and the check records no capabilities. Nothing routes there.
+  - name: private_route_check_refuses_without_an_endpoint
+    tool: private-route-check
+    input: {}
+    expect:
+      error: {code: private_endpoint_unconfigured}
+  - name: private_route_check_refuses_unknown_input
+    tool: private-route-check
+    input: {verbose: true}
+    expect:
+      error: {code: invalid_argument}
+  - name: config_set_configures_a_loopback_private_endpoint
+    tool: config-set
+    input: {key: open_weights, value: {endpoint: "http://127.0.0.1:9/v1", model: conformance-model, kind: own_hardware, label: Conformance hardware}}
+    expect:
+      output: {path: .office/config.yaml, key: open_weights}
+  - name: config_set_refuses_hand_written_capabilities
+    tool: config-set
+    input: {key: open_weights.capabilities, value: [text]}
+    expect:
+      error: {code: invalid_library_setting}
+  - name: private_route_check_records_an_unreachable_endpoint_as_not_routable
+    tool: private-route-check
+    input: {}
+    expect:
+      output:
+        path: .office/config.yaml
+        label: Conformance hardware
+        kind: own_hardware
+        route: private:own_hardware
+        model: conformance-model
+        reported_model: null
+        capabilities: []
+        routable: false
+        checks:
+          - {capability: text, accepted: false, elapsed_ms: null, error: model_unavailable, note: "this server didn't answer a text request, so nothing private is sent to it"}
+          - {capability: image, accepted: false, elapsed_ms: null, error: model_unavailable, note: "this server doesn't take images, so private frames and receipts can't be read"}
+          - {capability: audio, accepted: false, elapsed_ms: null, error: model_unavailable, note: "this server doesn't take audio, so private videos can't be transcribed"}

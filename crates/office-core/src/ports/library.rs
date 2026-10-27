@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use crate::domain::endpoint::Capability;
 use crate::domain::knowledge::{
     Backlink, DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit,
 };
@@ -127,6 +128,19 @@ pub trait Library {
     /// Apply one typed setting to the latest config and commit under one
     /// writer lock. Unknown keys and invalid values leave it unchanged.
     fn set_setting(&self, _key: &str, _value: serde_json::Value) -> Result<()> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Record a private-endpoint check (`Settings::with_route_check`) in the
+    /// latest config and commit under one writer lock. Refused with
+    /// `private_route_changed` when the endpoint or model is no longer the
+    /// one checked; nothing changes on error.
+    fn record_route_check(
+        &self,
+        _endpoint: &str,
+        _model: &str,
+        _capabilities: &[Capability],
+        _verified_at: &str,
+    ) -> Result<()> {
         Err(Error::LibraryUnavailable)
     }
     /// Capture a source (upload copy, pasted text, conversation create or

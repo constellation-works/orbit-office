@@ -9,6 +9,7 @@ use office_common::Sensitivity;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use super::endpoint::{Capability, EndpointKind};
 use crate::{Error, Result};
 
 const KINDS: &[&str] = &[
@@ -36,9 +37,47 @@ pub struct Settings {
     pub packs: Vec<String>,
     /// Signal policy thresholds.
     pub thresholds: SignalThresholds,
-    /// Optional endpoint for the open-weight model; absent means unconfigured.
-    pub open_weights_endpoint: Option<String>,
+    /// The private route's endpoint; absent means private material is refused.
+    pub open_weights: Option<OpenWeights>,
 }
+
+/// The one private endpoint the user chose (specs/models-and-privacy.md,
+/// "The private route"). `capabilities` and `verified_at` are written only
+/// by `office.private-route-check`, always together.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct OpenWeights {
+    /// OpenAI-compatible base URL; HTTPS unless loopback, never `api.meta.ai`.
+    pub endpoint: String,
+    /// The model as the server names it.
+    pub model: String,
+    /// Where the endpoint runs.
+    pub kind: EndpointKind,
+    /// Shown in the app wherever the route is used.
+    pub label: String,
+    /// What the last check found the endpoint accepts; `None` until checked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<Capability>>,
+    /// When the last check ran (RFC 3339); `None` until checked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<String>,
+}
+
+impl OpenWeights {
+    /// Whether the last check found the endpoint accepts `capability`.
+    /// An unchecked endpoint accepts nothing.
+    #[must_use]
+    pub fn accepts(&self, capability: Capability) -> bool {
+        self.capabilities
+            .as_deref()
+            .is_some_and(|caps| caps.contains(&capability))
+    }
+}
+
+/// Keys a caller may write in the `open_weights` block.
+const OPEN_WEIGHTS_SETTABLE: [&str; 4] = ["endpoint", "model", "kind", "label"];
+/// Keys only `office.private-route-check` writes.
+const OPEN_WEIGHTS_CHECKED: [&str; 2] = ["capabilities", "verified_at"];
+const CHECK_ONLY: &str = "written only by office.private-route-check, never typed in";
 
 /// Positive, bounded signal thresholds.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -86,7 +125,7 @@ impl Default for Settings {
                 new_subject_count: 2,
                 unused_days: 30,
             },
-            open_weights_endpoint: None,
+            open_weights: None,
         }
     }
 }
@@ -122,7 +161,7 @@ impl Settings {
             defaults.thresholds.new_subject_count,
             defaults.thresholds.unused_days
         ));
-        out.push_str("open_weights_endpoint: null\n");
+        out.push_str("open_weights: null\n");
         out
     }
 
@@ -132,15 +171,20 @@ impl Settings {
     }
 
     /// Return one validated policy update, preserving every other setting.
-    /// Only leaves are settable; whole per-kind/threshold maps and secret
-    /// names are refused separately from invalid values. No mutation on error.
+    /// Only leaves are settable, plus the whole `open_weights` block (a
+    /// mapping of `endpoint`, `model`, `kind` and `label`, or null); whole
+    /// per-kind/threshold maps and secret names are refused separately from
+    /// invalid values. `open_weights.capabilities` and `verified_at` are
+    /// refused: only [`Settings::with_route_check`] writes them, and changing
+    /// the endpoint or model clears them. No mutation on error.
     pub fn with_setting(&self, key: &str, value: Value) -> Result<Self> {
-        let encode = |settings: &Self| {
-            serde_json::to_value(settings).map_err(|_| invalid("config", "cannot encode settings"))
-        };
         // Normalize public, caller-constructed settings through the disk boundary
         // first, including policy defaults for missing per-kind entries.
         let mut encoded = encode(&Self::try_from(encode(self)?)?)?;
+        if key == "open_weights" || key.starts_with("open_weights.") {
+            set_open_weights(&mut encoded, key, value)?;
+            return Self::try_from(encoded);
+        }
         let target = match key.split_once('.') {
             Some((section, name))
                 if ["retention", "sensitivity", "thresholds"].contains(&section) =>
@@ -150,12 +194,41 @@ impl Settings {
                     .and_then(Value::as_object_mut)
                     .and_then(|map| map.get_mut(name))
             }
-            None if ["packs", "open_weights_endpoint"].contains(&key) => encoded.get_mut(key),
+            None if key == "packs" => encoded.get_mut(key),
             _ => None,
         }
         .ok_or_else(|| Error::UnknownSetting { key: key.into() })?;
         *target = value;
         Self::try_from(encoded)
+    }
+
+    /// Record what `office.private-route-check` found: the capabilities the
+    /// endpoint accepted and when. Refused with `private_route_changed` when
+    /// the configured endpoint or model is no longer the one checked, so a
+    /// result never lands on an endpoint it was not measured on.
+    pub fn with_route_check(
+        &self,
+        endpoint: &str,
+        model: &str,
+        capabilities: &[Capability],
+        verified_at: &str,
+    ) -> Result<Self> {
+        let mut next = Self::try_from(encode(self)?)?;
+        let block = next
+            .open_weights
+            .as_mut()
+            .filter(|block| {
+                block.endpoint.trim_end_matches('/') == endpoint.trim_end_matches('/')
+                    && block.model == model
+            })
+            .ok_or(Error::PrivateRouteChanged)?;
+        let mut capabilities = capabilities.to_vec();
+        capabilities.sort_unstable();
+        capabilities.dedup();
+        block.capabilities = Some(capabilities);
+        block.verified_at = Some(verified_at.into());
+        next.validate()?;
+        Ok(next)
     }
 
     /// Canonical config text: a JSON mapping, which is also valid YAML and
@@ -262,25 +335,204 @@ impl TryFrom<Value> for Settings {
                         }
                     }
                 }
-                "open_weights_endpoint" => {
-                    settings.open_weights_endpoint = if value.is_null() {
-                        None
-                    } else {
-                        let endpoint = value
-                            .as_str()
-                            .ok_or_else(|| invalid(key, "expected an HTTP(S) URL or null"))?;
-                        // Same host rule as `office-models`' `check_url`: Baseten
-                        // over HTTPS, or loopback over HTTP(S). Meta stays hosted-only.
-                        super::endpoint::allow_open_weights_endpoint(endpoint)
-                            .map_err(|reason| invalid(key, reason))?;
-                        Some(endpoint.into())
-                    };
-                }
+                "open_weights" => settings.open_weights = open_weights(value)?,
                 _ => return Err(invalid(key, "unknown setting")),
             }
         }
         Ok(settings)
     }
+}
+
+fn encode(settings: &Settings) -> Result<Value> {
+    serde_json::to_value(settings).map_err(|_| invalid("config", "cannot encode settings"))
+}
+
+/// Apply one `open_weights` update to the encoded settings, before validation.
+fn set_open_weights(encoded: &mut Value, key: &str, value: Value) -> Result<()> {
+    let Some((_, name)) = key.split_once('.') else {
+        if let Some(block) = value.as_object()
+            && let Some(checked) = OPEN_WEIGHTS_CHECKED
+                .iter()
+                .find(|checked| block.contains_key(**checked))
+        {
+            return Err(invalid(&format!("open_weights.{checked}"), CHECK_ONLY));
+        }
+        encoded["open_weights"] = value;
+        return Ok(());
+    };
+    if OPEN_WEIGHTS_CHECKED.contains(&name) {
+        return Err(invalid(key, CHECK_ONLY));
+    }
+    if !OPEN_WEIGHTS_SETTABLE.contains(&name) {
+        return Err(Error::UnknownSetting { key: key.into() });
+    }
+    let block = encoded
+        .get_mut("open_weights")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            invalid(
+                "open_weights",
+                "set the whole open_weights block (endpoint, model, kind, label) first",
+            )
+        })?;
+    // A new endpoint or model has not been checked: what the old one
+    // accepted says nothing about it.
+    if ["endpoint", "model"].contains(&name) && block.get(name) != Some(&value) {
+        for checked in OPEN_WEIGHTS_CHECKED {
+            block.remove(checked);
+        }
+    }
+    block.insert(name.into(), value);
+    Ok(())
+}
+
+/// Validate the `open_weights` block (null means unconfigured).
+fn open_weights(value: &Value) -> Result<Option<OpenWeights>> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let map = value.as_object().ok_or_else(|| {
+        invalid(
+            "open_weights",
+            "expected a mapping of endpoint, model, kind and label, or null",
+        )
+    })?;
+    if let Some(unknown) = map.keys().find(|key| {
+        !OPEN_WEIGHTS_SETTABLE.contains(&key.as_str())
+            && !OPEN_WEIGHTS_CHECKED.contains(&key.as_str())
+    }) {
+        return Err(invalid(
+            &format!("open_weights.{unknown}"),
+            "unknown open_weights key",
+        ));
+    }
+    let text = |name: &str, max: usize| -> Result<String> {
+        let dotted = format!("open_weights.{name}");
+        map.get(name)
+            .ok_or_else(|| invalid(&dotted, "required in the open_weights block"))?
+            .as_str()
+            .filter(|text| {
+                !text.trim().is_empty()
+                    && text.chars().count() <= max
+                    && !text.chars().any(char::is_control)
+            })
+            .map(str::to_string)
+            .ok_or_else(|| {
+                invalid(
+                    &dotted,
+                    "expected a nonempty single-line string within the documented length",
+                )
+            })
+    };
+    let endpoint = text("endpoint", 2048)?;
+    super::endpoint::allow_private_endpoint(&endpoint)
+        .map_err(|reason| invalid("open_weights.endpoint", reason))?;
+    let model = text("model", 200)?;
+    if model.chars().any(char::is_whitespace) {
+        return Err(invalid(
+            "open_weights.model",
+            "expected the model name as the server names it, without spaces",
+        ));
+    }
+    let kind = EndpointKind::parse(&text("kind", 32)?).ok_or_else(|| {
+        invalid(
+            "open_weights.kind",
+            "expected company, provider or own_hardware",
+        )
+    })?;
+    let label = text("label", 80)?;
+    let capabilities = map
+        .get("capabilities")
+        .map(|value| {
+            let list = value.as_array().ok_or_else(|| {
+                invalid(
+                    "open_weights.capabilities",
+                    "expected a list of text, image or audio",
+                )
+            })?;
+            let mut seen = Vec::new();
+            for item in list {
+                let capability = item.as_str().and_then(Capability::parse).ok_or_else(|| {
+                    invalid(
+                        "open_weights.capabilities",
+                        "expected a list of text, image or audio",
+                    )
+                })?;
+                if seen.contains(&capability) {
+                    return Err(invalid("open_weights.capabilities", "duplicate capability"));
+                }
+                seen.push(capability);
+            }
+            Ok(seen)
+        })
+        .transpose()?;
+    let verified_at = map
+        .get("verified_at")
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|text| is_rfc3339(text))
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    invalid("open_weights.verified_at", "expected an RFC 3339 timestamp")
+                })
+        })
+        .transpose()?;
+    // The check writes both together; one without the other was typed in.
+    match (&capabilities, &verified_at) {
+        (Some(_), None) => return Err(invalid("open_weights.capabilities", CHECK_ONLY)),
+        (None, Some(_)) => return Err(invalid("open_weights.verified_at", CHECK_ONLY)),
+        (Some(_), Some(_)) | (None, None) => {}
+    }
+    Ok(Some(OpenWeights {
+        endpoint,
+        model,
+        kind,
+        label,
+        capabilities,
+        verified_at,
+    }))
+}
+
+/// `YYYY-MM-DDTHH:MM:SS[.frac](Z|±HH:MM)`.
+fn is_rfc3339(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let digits = |range: std::ops::Range<usize>| {
+        bytes
+            .get(range)
+            .is_some_and(|part| part.iter().all(u8::is_ascii_digit))
+    };
+    let at = |index: usize, byte: u8| bytes.get(index) == Some(&byte);
+    if !(digits(0..4)
+        && at(4, b'-')
+        && digits(5..7)
+        && at(7, b'-')
+        && digits(8..10)
+        && (at(10, b'T') || at(10, b't'))
+        && digits(11..13)
+        && at(13, b':')
+        && digits(14..16)
+        && at(16, b':')
+        && digits(17..19))
+    {
+        return false;
+    }
+    let mut rest = &text[19..];
+    if let Some(fraction) = rest.strip_prefix('.') {
+        let count = fraction.bytes().take_while(u8::is_ascii_digit).count();
+        if count == 0 {
+            return false;
+        }
+        rest = &fraction[count..];
+    }
+    let offset = rest.as_bytes();
+    rest == "Z"
+        || rest == "z"
+        || (offset.len() == 6
+            && matches!(offset[0], b'+' | b'-')
+            && offset[1..3].iter().all(u8::is_ascii_digit)
+            && offset[3] == b':'
+            && offset[4..6].iter().all(u8::is_ascii_digit))
 }
 
 fn positive(value: &Value, key: &str, max: u32) -> Result<u32> {
@@ -315,7 +567,13 @@ fn parse_yaml(text: &str) -> Result<Value> {
         let line = raw.split_once('\r').map_or(raw, |(line, _)| line);
         let mut end = line.len();
         for (i, c) in line.char_indices() {
-            if (c == '\'' || c == '"') && (quote.is_none() || quote == Some(c)) {
+            // A quote opens only at the start of a value or list item, so an
+            // apostrophe inside a word (`Acme's server`) does not hide a comment.
+            if (c == '\'' || c == '"')
+                && (quote == Some(c)
+                    || (quote.is_none()
+                        && (i == 0 || matches!(line.as_bytes()[i - 1], b' ' | b'[' | b','))))
+            {
                 quote = if quote.is_none() { Some(c) } else { None };
             }
             if c == '#'

@@ -9,9 +9,9 @@
       "description": "Each declared secret name mapped to whether Orbit delivered a value. Never a value.",
       "properties": {
         "meta_api_key": { "$ref": "#/$defs/presence" },
-        "baseten_token": { "$ref": "#/$defs/presence" }
+        "open_weights_token": { "$ref": "#/$defs/presence" }
       },
-      "required": ["meta_api_key", "baseten_token"],
+      "required": ["meta_api_key", "open_weights_token"],
       "additionalProperties": false
     },
     "library": {

@@ -2,14 +2,23 @@
 
 use std::io::Write;
 
-use office_core::ports::{TranscribeRequest, Transcript};
+use office_core::domain::endpoint::Capability;
+use office_core::ports::{Routed, TranscribeRequest, Transcript};
 use office_core::{Error, Result};
 
 use crate::{RoutedClient, http, media, meta, routing};
 
-pub(crate) fn transcribe(client: &RoutedClient, request: &TranscribeRequest) -> Result<Transcript> {
+pub(crate) fn transcribe(
+    client: &RoutedClient,
+    request: &TranscribeRequest,
+) -> Result<Routed<Transcript>> {
     // Refuse a container the model schema cannot take before any call or staging.
     let format = audio_format(&request.mime)?;
+    // Refuse an unusable route before staging private media or starting
+    // ffmpeg. Every chunk resolves the same route, so this is its record.
+    let resolved = routing::route(request.sensitivity, Capability::Audio, &client.config)?;
+    http::check_url(&meta::chat_url(&resolved.base_url), resolved.destination())?;
+    let derived_by = resolved.derived_by();
     let call = |audio: &[u8], offset_ms: u64| {
         let parsed = client.transcribe_chunk(
             request.sensitivity,
@@ -21,12 +30,12 @@ pub(crate) fn transcribe(client: &RoutedClient, request: &TranscribeRequest) -> 
     };
     let splitter = &client.config.audio_splitter;
     if !media::needs_split(request.duration_seconds, splitter.threshold_seconds) {
-        return call(&request.audio, 0);
+        return Ok(Routed {
+            value: call(&request.audio, 0)?,
+            derived_by,
+        });
     }
 
-    // Refuse an unusable route before staging private media or starting ffmpeg.
-    let resolved = routing::route(request.sensitivity, &client.config)?;
-    http::check_url(&meta::chat_url(&resolved.base_url), resolved.open_weights)?;
     let directory = tempfile::tempdir().map_err(|error| media_io("create audio staging", error))?;
     let mut input = tempfile::Builder::new()
         .suffix(&format!(".{format}"))
@@ -57,9 +66,12 @@ pub(crate) fn transcribe(client: &RoutedClient, request: &TranscribeRequest) -> 
         texts.push(chunk.text);
         segments.extend(chunk.segments);
     }
-    Ok(Transcript {
-        text: texts.join("\n"),
-        segments,
+    Ok(Routed {
+        value: Transcript {
+            text: texts.join("\n"),
+            segments,
+        },
+        derived_by,
     })
 }
 

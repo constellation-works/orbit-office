@@ -398,6 +398,26 @@ impl LibraryStore {
         self.finish(&pending)
     }
 
+    /// Record a private-endpoint check in the latest config while holding
+    /// the document writer lock (`Settings::with_route_check`).
+    pub fn record_route_check(
+        &self,
+        endpoint: &str,
+        model: &str,
+        capabilities: &[office_core::domain::endpoint::Capability],
+        verified_at: &str,
+    ) -> Result<()> {
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        let settings =
+            self.settings()?
+                .with_route_check(endpoint, model, capabilities, verified_at)?;
+        let text = settings.to_yaml()?;
+        self.files.validate_settings_path()?;
+        let pending = self.decide(WriteKind::Settings, ".office/config.yaml", &text)?;
+        self.finish(&pending)
+    }
+
     fn require_initialized(&self) -> Result<()> {
         if self.is_initialized()? {
             Ok(())
@@ -1095,6 +1115,21 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn set_setting(&self, key: &str, value: serde_json::Value) -> office_core::Result<()> {
         Ok(Self::set_setting(self, key, value)?)
+    }
+    fn record_route_check(
+        &self,
+        endpoint: &str,
+        model: &str,
+        capabilities: &[office_core::domain::endpoint::Capability],
+        verified_at: &str,
+    ) -> office_core::Result<()> {
+        Ok(Self::record_route_check(
+            self,
+            endpoint,
+            model,
+            capabilities,
+            verified_at,
+        )?)
     }
     fn capture_source(&self, request: &CaptureSourceRequest) -> office_core::Result<SourceOutcome> {
         Self::capture_source(self, request)

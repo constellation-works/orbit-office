@@ -175,7 +175,7 @@ fn config_set_refusals_leave_config_and_head_unchanged() {
             "unknown_library_setting",
         ),
         (
-            serde_json::json!({"key": "baseten_token", "value": "secret-fixture-value"}),
+            serde_json::json!({"key": "open_weights_token", "value": "secret-fixture-value"}),
             "unknown_library_setting",
         ),
         (
