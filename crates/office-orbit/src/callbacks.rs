@@ -59,7 +59,9 @@ pub const CALLBACK_ENV_NAMES: &[&str] = &[
 /// inherited unchanged: it is neither read nor copied into argv or input.
 /// Orbit authenticates it and rechecks the live grant and session ceiling.
 ///
-/// Calls have a 30-second deadline and 512 KiB per-stream capture limit. They
+/// Calls have a 30-second deadline and a default 512 KiB per-stream capture
+/// limit. Artifact reads allow 6 MiB plus 64 KiB of stdout for a 1 MiB file's
+/// worst-case JSON escaping and envelope; stderr retains its 512 KiB limit. They
 /// are never retried: a missing reply to a write can mean the outcome is unknown.
 pub struct OrbitCallbacks {
     program: PathBuf,
@@ -103,8 +105,18 @@ impl OrbitCallbacks {
             .env("ORBIT_PLUGIN_CALLBACK", "descriptor-required")
             .args(["tool", "run", tool, "--json", "--full", "--input"])
             .arg(Value::Object(input.clone()).to_string());
-        let output = office_common::process::run_captured(&mut command, &self.cwd)
-            .map_err(|error| process_failure(tool, error))?;
+        // One artifact is bounded to 1 MiB by Orbit. JSON can expand each
+        // control byte to six characters; base64 fits well below that bound.
+        let captured = if tool == "orbit.task.artifact.get" {
+            office_common::process::run_captured_with_stdout_limit(
+                &mut command,
+                &self.cwd,
+                6 * 1_048_576 + 65_536,
+            )
+        } else {
+            office_common::process::run_captured(&mut command, &self.cwd)
+        };
+        let output = captured.map_err(|error| process_failure(tool, error))?;
         if !output.status.success() {
             // The CLI emits {"error": "diagnostic", "code": "…"} on stderr.
             // Classify only from that structure, never from prose or stdout.

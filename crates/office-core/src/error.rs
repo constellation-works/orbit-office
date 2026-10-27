@@ -11,6 +11,9 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// Artifact metadata, approval, payload or lookup refusal.
+    #[error(transparent)]
+    Artifact(#[from] crate::domain::artifact::ArtifactError),
     /// No callback adapter was supplied for this call.
     #[error("Orbit callbacks are unavailable in this call context")]
     OrbitUnavailable,
@@ -227,6 +230,7 @@ impl Error {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
+            Self::Artifact(error) => error.code(),
             Self::OrbitUnavailable => "orbit_unavailable",
             Self::OrbitOutcomeUnknown => "orbit_outcome_unknown",
             Self::OrbitRefused { .. } => "orbit_refused",
@@ -265,6 +269,7 @@ impl Error {
     pub fn retryable(&self) -> bool {
         match self {
             Self::Model { retryable, .. } => *retryable,
+            Self::Artifact(_) => false,
             Self::OrbitUnavailable => false,
             Self::OrbitOutcomeUnknown => false,
             Self::OrbitRefused { .. } => false,

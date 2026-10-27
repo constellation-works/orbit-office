@@ -150,7 +150,7 @@ impl Git {
         Ok(actual == expected)
     }
 
-    pub(crate) fn commit(&self, relative: &str, token: &str) -> Result<()> {
+    pub(crate) fn commit_paths(&self, paths: &[String], token: &str) -> Result<()> {
         // A replay after a crash just after commit must not add a duplicate.
         let (has_head, _) = self.run(&["rev-parse", "--verify", "--quiet", "HEAD"])?;
         if has_head {
@@ -162,30 +162,30 @@ impl Git {
                 return Ok(());
             }
         }
-        self.checked("stage document", &["add", "--force", "--", relative])?;
-        let message = format!("Update {relative}\n\noffice-write: {token}");
+        let mut add = vec!["add", "--force", "--"];
+        add.extend(paths.iter().map(String::as_str));
+        self.checked("stage document", &add)?;
+        let message = format!("Update {}\n\noffice-write: {token}", paths.join(", "));
         // --only isolates this write from unrelated staged files, even originals
         // that somebody staged before our call. Per-command identity never edits
         // either the Library's config or the user's global config.
-        self.checked(
-            "commit document",
-            &[
-                "-c",
-                "user.name=orbit-office",
-                "-c",
-                "user.email=office@orbit.local",
-                "commit",
-                "--quiet",
-                "--no-gpg-sign",
-                "--author=orbit-office <office@orbit.local>",
-                "--only",
-                "--allow-empty",
-                "-m",
-                &message,
-                "--",
-                relative,
-            ],
-        )?;
+        let mut args = vec![
+            "-c",
+            "user.name=orbit-office",
+            "-c",
+            "user.email=office@orbit.local",
+            "commit",
+            "--quiet",
+            "--no-gpg-sign",
+            "--author=orbit-office <office@orbit.local>",
+            "--only",
+            "--allow-empty",
+            "-m",
+            &message,
+            "--",
+        ];
+        args.extend(paths.iter().map(String::as_str));
+        self.checked("commit document", &args)?;
         Ok(())
     }
 

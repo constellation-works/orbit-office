@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
-mod frontmatter;
+pub(crate) mod frontmatter;
 mod page;
 
 pub use page::{

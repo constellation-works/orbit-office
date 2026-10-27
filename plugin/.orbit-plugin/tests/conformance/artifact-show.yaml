@@ -1,0 +1,16 @@
+# Offline fixture callbacks and the fixed clock are supplied by
+# crates/office-tools/tests/artifacts.rs (the public dispatch conformance runner).
+# The promotion case seeds the Library read by artifact-show.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: artifact_show_approved_fixture
+    tool: artifact-show
+    input: {"id": "art-19700101-fixture-report"}
+    expect:
+      output: {"artifact": {"id": "art-19700101-fixture-report", "kind": "report", "title": "Fixture report", "summary": "A fixture", "files": ["report.md"], "task": "fixture-task", "produced_by": {"crew": "fixture-crew", "runbook": null, "at": "1970-01-01T00:00:00Z"}, "approved": {"by": "user", "at": "1970-01-01T00:00:00+00:00", "edited": true}, "cites": [], "series": "fixture-report", "version": 1, "supersedes": null, "sensitivity": "normal", "tags": []}, "path": "artifacts/1970/01/art-19700101-fixture-report/artifact.md", "files": [{"name": "report.md", "path": "artifacts/1970/01/art-19700101-fixture-report/report.md"}], "series_history": [{"id": "art-19700101-fixture-report", "version": 1, "supersedes": null, "path": "artifacts/1970/01/art-19700101-fixture-report/artifact.md"}], "backlinks": []}
+  - name: artifact_show_refuses_missing_artifact
+    tool: artifact-show
+    input: {"id": "art-19700101-absent"}
+    expect:
+      error: {"code": "artifact_not_found"}

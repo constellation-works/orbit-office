@@ -1,0 +1,16 @@
+# Offline fixture callbacks and the fixed clock are supplied by
+# crates/office-tools/tests/artifacts.rs (the public dispatch conformance runner).
+# The promotion case seeds the Library read by artifact-show.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: artifact_promote_approved_fixture
+    tool: artifact-promote
+    input: {"task": "fixture-task", "edited": true}
+    expect:
+      output: {"id": "art-19700101-fixture-report", "path": "artifacts/1970/01/art-19700101-fixture-report/artifact.md", "files": ["report.md"], "series": "fixture-report", "version": 1, "supersedes": null}
+  - name: artifact_promote_refuses_unknown_input
+    tool: artifact-promote
+    input: {"task": "fixture-task", "approved_by": "routine"}
+    expect:
+      error: {"code": "invalid_argument"}

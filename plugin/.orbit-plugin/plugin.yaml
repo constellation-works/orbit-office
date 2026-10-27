@@ -150,23 +150,23 @@ spec:
 
     # ---- artifacts ----
 
-    # - name: artifact-show
-    #   description: >-
-    #     Read an artifact, its files, its series history and what cites
-    #     it.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/artifact-show.request.json }
-    #   output_schema: { $ref: schemas/artifact-show.response.json }
+    - name: artifact-show
+      description: >-
+        Read an artifact, its files, its series history and what cites
+        it.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/artifact-show.request.json }
+      output_schema: { $ref: schemas/artifact-show.response.json }
 
-    # - name: artifact-promote
-    #   description: >-
-    #     Copy an approved task's output into the Library as an artifact;
-    #     write provenance; commit.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/artifact-promote.request.json }
-    #   output_schema: { $ref: schemas/artifact-promote.response.json }
+    - name: artifact-promote
+      description: >-
+        Copy an approved task's output into the Library as an artifact;
+        write provenance; commit.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/artifact-promote.request.json }
+      output_schema: { $ref: schemas/artifact-promote.response.json }
 
     # ---- library ----
 

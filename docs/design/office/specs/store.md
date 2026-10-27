@@ -121,7 +121,8 @@ is decided together with the source Markdown before either file is published;
 failure to record the decision leaves no original or capture directory behind.
 Version-1 document journals (with or without `kind: document`) and version-2
 document/settings journals remain readable. Original payloads in older versions,
-version-3 decisions without an original, unknown kinds and newer versions are
+version-3 decisions without an original, malformed version-4 artifact bundles,
+unknown kinds and newer versions are
 refused and preserved. Settings decisions
 accept only `.office/config.yaml`, validate the decided settings, replace the
 config and commit it without indexing it as a document. Recovery can finish a
@@ -181,3 +182,19 @@ are not embedded in errors because they can contain document text or credentials
 The small POSIX FFI boundary has documented Linux/macOS ABI assumptions and
 safety comments; there is no new external dependency. CI validates both supported
 platforms; this task's local execution can validate only its host platform.
+
+### Immutable artifact bundles
+
+Artifact promotion holds the writer lock across series-version and id
+allocation, a version-4 `artifact` journal decision, all companion bytes,
+`artifact.md`, the index upsert and one commit of the exact bundle paths.
+The journal stores each relative file name and its bytes. Version-1/2
+single-document and settings decisions and version-3 upload decisions retain
+their existing recovery semantics. Older builds refuse version 4 rather
+than dropping companion files. Recovery validates the full manifest/path/file
+set, stages the complete directory beside its destination under a reserved
+`.office-pending-artifact-<token>` name excluded from all document scans,
+then publishes with one directory rename. Existing staging or published
+files are accepted only when their bytes are identical to the decision. A conflicting existing file preserves both it and
+the journal for diagnosis. Replaying after commit does not duplicate the
+commit. Companion Markdown files remain outside the document index.

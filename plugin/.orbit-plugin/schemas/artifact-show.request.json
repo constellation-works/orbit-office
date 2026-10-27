@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.artifact-show request",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^art-[0-9]{8}-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.artifact-show response",
+  "type": "object",
+  "properties": {
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "report",
+            "doc",
+            "draft",
+            "script",
+            "data",
+            "review",
+            "other"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "task": {
+          "type": "string"
+        },
+        "produced_by": {
+          "type": "object",
+          "properties": {
+            "crew": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "runbook": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "crew",
+            "runbook",
+            "at"
+          ],
+          "additionalProperties": false
+        },
+        "approved": {
+          "type": "object",
+          "properties": {
+            "by": {
+              "type": "string",
+              "enum": [
+                "user",
+                "routine"
+              ]
+            },
+            "at": {
+              "type": "string"
+            },
+            "edited": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "by",
+            "at",
+            "edited"
+          ],
+          "additionalProperties": false
+        },
+        "cites": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "series": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "supersedes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sensitivity": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "private"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "summary",
+        "files",
+        "task",
+        "produced_by",
+        "approved",
+        "cites",
+        "series",
+        "version",
+        "supersedes",
+        "sensitivity",
+        "tags"
+      ],
+      "additionalProperties": false
+    },
+    "path": {
+      "type": "string"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "series_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "supersedes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "supersedes",
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "backlinks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "source",
+              "domain",
+              "runbook",
+              "artifact"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "via": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "cites",
+                "related"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "path",
+          "via"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "artifact",
+    "path",
+    "files",
+    "series_history",
+    "backlinks"
+  ],
+  "additionalProperties": false
+}
