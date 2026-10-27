@@ -725,10 +725,10 @@ for _piped_kind in sh bash-posix; do
         test ! -e "$STUB_STATE/secret.open_weights_token"
     check "piped ($_piped_kind): no open_weights_token value recorded from script text" \
         test ! -e "$STUB_STATE/secret.open_weights_token.value"
-    check "piped ($_piped_kind): meta_api_key skip is reported" \
-        grep -F "secrets: meta_api_key skipped (no input" "$PIPED_OUT"
-    check "piped ($_piped_kind): open_weights_token skip is reported" \
-        grep -F "secrets: open_weights_token skipped (optional)" "$PIPED_OUT"
+    check "piped ($_piped_kind): required meta_api_key skip prints the set-later command" \
+        grep -qxF "secrets: meta_api_key skipped (no input; set it later with: orbit plugin secret set office meta_api_key)" "$PIPED_OUT"
+    check "piped ($_piped_kind): optional open_weights_token skip prints no set command" \
+        grep -qxF "secrets: open_weights_token skipped (optional)" "$PIPED_OUT"
     check "piped ($_piped_kind): scaffold step still runs" \
         test -f "$PIPED_HOME/orbit/library/.office/config.yaml"
     check "piped ($_piped_kind): agent step still runs" \
