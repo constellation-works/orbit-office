@@ -30,9 +30,19 @@
           },
           "required": ["source", "domain", "runbook", "artifact"],
           "additionalProperties": false
+        },
+        "pages_off_template": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Knowledge pages that name a template and no longer meet its current rules. Pages with no template field are not counted."
+        },
+        "template_invalid": {
+          "type": "array",
+          "description": "Library-relative paths of template files that do not parse, sorted. Empty when every template file is valid. A broken template does not fail the status call.",
+          "items": { "type": "string" }
         }
       },
-      "required": ["initialized", "documents", "documents_by_kind"],
+      "required": ["initialized", "documents", "documents_by_kind", "pages_off_template", "template_invalid"],
       "additionalProperties": false
     }
   },

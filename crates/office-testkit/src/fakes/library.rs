@@ -21,6 +21,10 @@ pub struct FakeLibrary {
     pub initialized: bool,
     /// Settings returned by the fake (validated on every load).
     pub settings: Settings,
+    /// Pages the fixture reports as no longer meeting their template.
+    pub pages_off_template: u32,
+    /// Template files the fixture reports as unreadable or invalid.
+    pub template_invalid: Vec<String>,
 }
 
 impl FakeLibrary {
@@ -185,6 +189,8 @@ impl Library for FakeLibrary {
         self.settings.validate()?;
         let mut health = LibraryHealth {
             initialized: true,
+            pages_off_template: self.pages_off_template,
+            template_invalid: self.template_invalid.clone(),
             ..LibraryHealth::default()
         };
         for doc in self.documents.borrow().values() {

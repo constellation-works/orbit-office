@@ -823,3 +823,167 @@ series: renewal-research
 
 artifacttoken keptafterreindex
 ";
+
+#[test]
+fn init_copies_missing_templates_and_health_reports_template_drift() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let library = workspace.join("library");
+    let state = dir.path().join("state");
+    let first =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("fresh init");
+    assert!(!first.already_initialized);
+    for bundled in office_core::domain::template::BUNDLED {
+        let relative = format!(".office/templates/{}", bundled.filename);
+        assert_eq!(
+            std::fs::read(library.join(&relative)).expect("template bytes"),
+            bundled.markdown.as_bytes(),
+            "{}",
+            bundled.filename
+        );
+        assert!(first.created.iter().any(|path| path == &relative));
+    }
+    assert!(markdown_under(&library.join("knowledge")).is_empty());
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "1");
+
+    let user = library.join(".office/templates/user.md");
+    let person = library.join(".office/templates/person.md");
+    let original_person = std::fs::read(&person).expect("person bytes");
+    let mut edited = std::fs::read(&user).expect("user bytes");
+    edited.extend_from_slice(b"\nEdited by the user.\n");
+    std::fs::write(&user, &edited).expect("edit template");
+    std::fs::remove_file(&person).expect("delete template");
+    let second = LibraryStore::initialize_at(&library, &state, None, &workspace).expect("restore");
+    assert!(!second.already_initialized);
+    assert_eq!(
+        second.created,
+        vec![".office/templates/person.md".to_string()]
+    );
+    assert_eq!(std::fs::read(&user).expect("edited bytes"), edited);
+    assert_eq!(
+        std::fs::read(&person).expect("restored bytes"),
+        original_person
+    );
+    // The deleted file matched HEAD, so restoring it does not add a commit,
+    // and the edit to another template stays unstaged.
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    let dirty = git(&library, &["status", "--porcelain"]);
+    assert!(
+        dirty
+            .lines()
+            .any(|line| line.ends_with(".office/templates/user.md")),
+        "{dirty}"
+    );
+    assert!(
+        !dirty.lines().any(|line| line.contains("person.md")),
+        "{dirty}"
+    );
+
+    std::fs::remove_file(&person).expect("delete committed template");
+    git(&library, &["add", "--", ".office/templates/person.md"]);
+    git(
+        &library,
+        &[
+            "commit",
+            "--quiet",
+            "-m",
+            "remove person template",
+            "--",
+            ".office/templates/person.md",
+        ],
+    );
+    let restored =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("committed restore");
+    assert!(!restored.already_initialized);
+    assert_eq!(
+        restored.created,
+        vec![".office/templates/person.md".to_string()]
+    );
+    assert_eq!(std::fs::read(&user).expect("edited bytes"), edited);
+    assert_eq!(
+        std::fs::read(&person).expect("restored bytes"),
+        original_person
+    );
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "3");
+    assert_eq!(
+        git(
+            &library,
+            &["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]
+        )
+        .trim(),
+        ".office/templates/person.md"
+    );
+    let still_dirty = git(&library, &["status", "--porcelain"]);
+    assert!(
+        still_dirty
+            .lines()
+            .any(|line| line.ends_with(".office/templates/user.md")),
+        "{still_dirty}"
+    );
+    assert!(
+        !still_dirty.lines().any(|line| line.contains("person.md")),
+        "{still_dirty}"
+    );
+    let third = LibraryStore::initialize_at(&library, &state, None, &workspace).expect("complete");
+    assert!(third.already_initialized);
+    assert!(third.created.is_empty());
+    assert_eq!(std::fs::read(&user).expect("edit survives"), edited);
+
+    std::fs::write(
+        library.join("knowledge/domain/ada.md"),
+        "---\nid: dom-person-ada\ntype: domain\ntemplate: person\ntitle: Ada\n---\n\n## Role\nKeeps the notes.\n",
+    )
+    .expect("meeting page");
+    std::fs::write(
+        library.join("knowledge/domain/bev.md"),
+        "---\nid: dom-person-bev\ntype: domain\ntemplate: person\ntitle: Bev\n---\n\n## History\nNo role.\n",
+    )
+    .expect("off-template page");
+    std::fs::write(
+        library.join("knowledge/domain/free.md"),
+        "---\nid: dom-free\ntype: domain\ntitle: Free\n---\n\n## Role\nUnbound.\n",
+    )
+    .expect("free-form page");
+    std::fs::write(
+        library.join(".office/templates/notes.md"),
+        "not a template\n",
+    )
+    .expect("broken template");
+    let store = LibraryStore::open(&library, &state).expect("open");
+    assert_eq!(store.reindex().expect("reindex"), 3);
+    let health = store.health().expect("status still returns");
+    assert!(health.initialized);
+    assert_eq!(health.documents_total, 3);
+    assert_eq!(health.domain, 3);
+    assert_eq!(health.pages_off_template, 1);
+    assert_eq!(
+        health.template_invalid,
+        vec![".office/templates/notes.md".to_string()]
+    );
+}
+
+fn markdown_under(root: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "md") {
+                found.push(
+                    path.strip_prefix(root)
+                        .expect("relative")
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+    }
+    found.sort();
+    found
+}

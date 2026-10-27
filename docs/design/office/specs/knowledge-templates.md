@@ -94,7 +94,9 @@ A page without a `template` is a free-form About page, checked against the
 base rules only. When a user changes a template, existing pages stay
 readable and are not migrated. Pages that no longer meet it are counted
 by `office.status` as `pages_off_template`, and their next write must
-meet the current template.
+meet the current template. A template file that does not parse is listed
+in `template_invalid` by its Library-relative path; status still returns
+the rest of its report.
 
 ## Bundled templates
 

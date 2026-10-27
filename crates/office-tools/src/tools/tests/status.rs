@@ -43,6 +43,39 @@ fn status_reports_library_health_and_counts_by_kind() {
     assert_eq!(output["library"]["documents_by_kind"]["domain"], json!(0));
     assert_eq!(output["library"]["documents_by_kind"]["runbook"], json!(0));
     assert_eq!(output["library"]["documents_by_kind"]["artifact"], json!(0));
+    assert_eq!(output["library"]["pages_off_template"], json!(0));
+    assert_eq!(output["library"]["template_invalid"], json!([]));
+}
+
+#[test]
+fn status_reports_off_template_pages_and_names_a_broken_template() {
+    let input = Map::new();
+    let context = Map::new();
+    let mut library = office_testkit::fakes::FakeLibrary::initialized();
+    library.pages_off_template = 2;
+    library.template_invalid = vec![".office/templates/notes.md".to_string()];
+    let ports = office_core::ports::Ports {
+        library: Box::new(library),
+        models: Box::new(office_testkit::fakes::FakeModels::new()),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
+        clock: Box::new(office_testkit::fakes::FakeClock(
+            std::time::SystemTime::UNIX_EPOCH,
+        )),
+    };
+    let output = run(&Call {
+        ports: &ports,
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(output["library"]["initialized"], json!(true));
+    assert_eq!(output["library"]["documents"], json!(0));
+    assert_eq!(output["library"]["pages_off_template"], json!(2));
+    assert_eq!(
+        output["library"]["template_invalid"],
+        json!([".office/templates/notes.md"])
+    );
+    assert_eq!(output["secrets"]["baseten_token"], json!("unset"));
 }
 
 #[test]
@@ -65,4 +98,6 @@ fn status_reports_an_uninitialized_library_without_refusing() {
     .expect("status succeeds");
     assert_eq!(output["library"]["initialized"], json!(false));
     assert_eq!(output["library"]["documents"], json!(0));
+    assert_eq!(output["library"]["pages_off_template"], json!(0));
+    assert_eq!(output["library"]["template_invalid"], json!([]));
 }

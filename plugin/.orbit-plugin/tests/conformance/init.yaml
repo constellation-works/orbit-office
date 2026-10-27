@@ -7,7 +7,7 @@ tests:
     expect:
       output:
         already_initialized: false
-        created: [".git", ".gitignore", ".office", ".office/config.yaml", "artifacts", "artifacts/.gitkeep", "index.sqlite", "knowledge/domain", "knowledge/domain/.gitkeep", "knowledge/runbooks", "knowledge/runbooks/.gitkeep", "proposals", "proposals/.gitkeep", "sources", "sources/.gitkeep"]
+        created: [".git", ".gitignore", ".office", ".office/config.yaml", ".office/templates", ".office/templates/client.md", ".office/templates/glossary.md", ".office/templates/goals.md", ".office/templates/person.md", ".office/templates/project.md", ".office/templates/rhythm.md", ".office/templates/runbook.md", ".office/templates/standing-directions.md", ".office/templates/systems.md", ".office/templates/topic.md", ".office/templates/user.md", "artifacts", "artifacts/.gitkeep", "index.sqlite", "knowledge/domain", "knowledge/domain/.gitkeep", "knowledge/runbooks", "knowledge/runbooks/.gitkeep", "proposals", "proposals/.gitkeep", "sources", "sources/.gitkeep"]
   - name: init_refuses_a_library_dir_outside_the_library
     tool: init
     input: {"library_dir": "../outside"}

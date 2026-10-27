@@ -281,3 +281,266 @@ fn reindex_refuses_an_uninitialized_library() {
             .is_some_and(|m| m.contains("office.init"))
     );
 }
+
+const BUNDLED_TEMPLATES: &[&str] = &[
+    "client.md",
+    "glossary.md",
+    "goals.md",
+    "person.md",
+    "project.md",
+    "rhythm.md",
+    "runbook.md",
+    "standing-directions.md",
+    "systems.md",
+    "topic.md",
+    "user.md",
+];
+
+fn bundled_template(name: &str) -> Vec<u8> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../office-core/templates")
+        .join(name);
+    std::fs::read(&path).unwrap_or_else(|error| panic!("read bundled {name}: {error}"))
+}
+
+fn markdown_under(root: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "md") {
+                found.push(
+                    path.strip_prefix(root)
+                        .expect("relative")
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn init_writes_every_bundled_template_and_no_knowledge_page_in_one_commit() {
+    let env = Env::new();
+    let first = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(first["ok"], serde_json::json!(true), "{first}");
+    assert_eq!(
+        first["output"]["already_initialized"],
+        serde_json::json!(false)
+    );
+    let library = env.library();
+    let created = &first["output"]["created"];
+    for name in BUNDLED_TEMPLATES {
+        let relative = format!(".office/templates/{name}");
+        assert_eq!(
+            std::fs::read(library.join(&relative)).expect("installed template"),
+            bundled_template(name),
+            "{name}"
+        );
+        assert!(
+            created
+                .as_array()
+                .expect("created")
+                .iter()
+                .any(|item| item == &relative),
+            "{relative} missing from {created}"
+        );
+    }
+    assert!(markdown_under(&library.join("knowledge")).is_empty());
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    let tree = git(&library, &["ls-tree", "-r", "--name-only", "HEAD"]);
+    for name in BUNDLED_TEMPLATES {
+        assert!(
+            tree.lines()
+                .any(|line| line == format!(".office/templates/{name}")),
+            "{tree}"
+        );
+    }
+    assert!(
+        !tree
+            .lines()
+            .any(|line| line.starts_with("knowledge/") && line.ends_with(".md"))
+    );
+}
+
+#[test]
+fn init_preserves_an_edited_template_and_restores_only_the_deleted_one() {
+    let env = Env::new();
+    let first = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(first["ok"], serde_json::json!(true), "{first}");
+    let library = env.library();
+    let user = library.join(".office/templates/user.md");
+    let person = library.join(".office/templates/person.md");
+    let original_person = std::fs::read(&person).expect("person bytes");
+    let mut edited = std::fs::read(&user).expect("user bytes");
+    edited.extend_from_slice(b"\nEdited by the user.\n");
+    std::fs::write(&user, &edited).expect("edit template");
+    std::fs::remove_file(&person).expect("delete template");
+
+    let second = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(second["ok"], serde_json::json!(true), "{second}");
+    assert_eq!(
+        second["output"]["already_initialized"],
+        serde_json::json!(false)
+    );
+    assert_eq!(
+        second["output"]["created"],
+        serde_json::json!([".office/templates/person.md"])
+    );
+    assert_eq!(std::fs::read(&user).expect("edited bytes"), edited);
+    assert_eq!(
+        std::fs::read(&person).expect("restored bytes"),
+        original_person
+    );
+    // Restoring bytes that still match HEAD does not add a commit.
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    let dirty = git(&library, &["status", "--porcelain"]);
+    assert!(
+        dirty
+            .lines()
+            .any(|line| line.ends_with(".office/templates/user.md")),
+        "{dirty}"
+    );
+    assert!(
+        !dirty.lines().any(|line| line.contains("person.md")),
+        "{dirty}"
+    );
+
+    std::fs::remove_file(&person).expect("delete committed template");
+    git(&library, &["add", "--", ".office/templates/person.md"]);
+    git(
+        &library,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.test",
+            "-c",
+            "commit.gpgSign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "remove person template",
+            "--",
+            ".office/templates/person.md",
+        ],
+    );
+    let third = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(third["ok"], serde_json::json!(true), "{third}");
+    assert_eq!(
+        third["output"]["already_initialized"],
+        serde_json::json!(false)
+    );
+    assert_eq!(
+        third["output"]["created"],
+        serde_json::json!([".office/templates/person.md"])
+    );
+    assert_eq!(std::fs::read(&user).expect("edited bytes"), edited);
+    assert_eq!(
+        std::fs::read(&person).expect("restored bytes"),
+        original_person
+    );
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "3");
+    assert_eq!(
+        git(
+            &library,
+            &["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]
+        )
+        .trim(),
+        ".office/templates/person.md"
+    );
+    let still_dirty = git(&library, &["status", "--porcelain"]);
+    assert!(
+        still_dirty
+            .lines()
+            .any(|line| line.ends_with(".office/templates/user.md")),
+        "{still_dirty}"
+    );
+    assert!(
+        !still_dirty.lines().any(|line| line.contains("person.md")),
+        "{still_dirty}"
+    );
+    assert!(markdown_under(&library.join("knowledge")).is_empty());
+}
+
+#[test]
+fn status_counts_off_template_pages_and_names_a_broken_template() {
+    let env = Env::new();
+    let init = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(init["ok"], serde_json::json!(true), "{init}");
+    let quiet = env.tool("office.status", serde_json::json!({}));
+    assert_eq!(quiet["ok"], serde_json::json!(true), "{quiet}");
+    assert_eq!(
+        quiet["output"]["library"]["pages_off_template"],
+        serde_json::json!(0)
+    );
+    assert_eq!(
+        quiet["output"]["library"]["template_invalid"],
+        serde_json::json!([])
+    );
+
+    let library = env.library();
+    std::fs::write(
+        library.join("knowledge/domain/ada.md"),
+        "---\nid: dom-person-ada\ntype: domain\ntemplate: person\ntitle: Ada\n---\n\n## Role\nKeeps the notes.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        library.join("knowledge/domain/bev.md"),
+        "---\nid: dom-person-bev\ntype: domain\ntemplate: person\ntitle: Bev\n---\n\n## History\nNo role.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        library.join("knowledge/domain/free.md"),
+        "---\nid: dom-free\ntype: domain\ntitle: Free\n---\n\n## Role\nUnbound.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        library.join(".office/templates/notes.md"),
+        "not a template\n",
+    )
+    .unwrap();
+    let reindex = env.tool("office.reindex", serde_json::json!({}));
+    assert_eq!(
+        reindex["output"]["indexed_documents"],
+        serde_json::json!(3),
+        "{reindex}"
+    );
+    let status = env.tool("office.status", serde_json::json!({}));
+    assert_eq!(status["ok"], serde_json::json!(true), "{status}");
+    assert!(status.get("error").is_none());
+    assert_eq!(
+        status["output"]["library"]["initialized"],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        status["output"]["library"]["documents"],
+        serde_json::json!(3)
+    );
+    assert_eq!(
+        status["output"]["library"]["documents_by_kind"]["domain"],
+        serde_json::json!(3)
+    );
+    assert_eq!(
+        status["output"]["library"]["pages_off_template"],
+        serde_json::json!(1)
+    );
+    assert_eq!(
+        status["output"]["library"]["template_invalid"],
+        serde_json::json!([".office/templates/notes.md"])
+    );
+    assert_eq!(
+        status["output"]["secrets"]["meta_api_key"],
+        serde_json::json!("unset")
+    );
+    assert_eq!(status["output"]["version"], serde_json::json!("0.1.0"));
+}

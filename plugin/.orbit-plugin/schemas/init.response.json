@@ -4,7 +4,7 @@
   "type": "object",
   "properties": {
     "already_initialized": { "type": "boolean", "description": "True when a complete Library already existed and nothing was created or committed." },
-    "created": { "type": "array", "items": { "type": "string" }, "description": "Paths this call created, Library-relative (index.sqlite is state-relative), sorted. Empty when already initialized." }
+    "created": { "type": "array", "items": { "type": "string" }, "description": "Paths this call created, Library-relative (index.sqlite is state-relative), sorted. Includes each bundled template copied into .office/templates/. Empty when already initialized." }
   },
   "required": ["already_initialized", "created"],
   "additionalProperties": false

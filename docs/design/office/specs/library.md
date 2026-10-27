@@ -69,9 +69,12 @@ workspace and enabled the plugin. The user never runs it by hand.
 7. Commits whatever it created ("Initialize the Library").
 
 It is idempotent: it creates only what is missing and never overwrites an
-existing config, `.gitignore`, template or page. A second run on a complete Library
-changes nothing and reports `already_initialized`. The result lists what
-was created.
+existing config, `.gitignore`, template or page. A Library is complete only
+when its layout, repository, config, `.gitignore`, index and every bundled
+template file are present. A second run on a complete Library changes
+nothing and reports `already_initialized`. Copying a missing bundled
+template lists that file in `created` and does not report
+`already_initialized`. The result lists what was created.
 
 Other tools open the store, which still creates the layout directories
 (`LibraryStore::open`, a safety net), but they never write the config,

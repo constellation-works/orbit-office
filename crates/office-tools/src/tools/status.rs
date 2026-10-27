@@ -55,6 +55,8 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
                 "runbook": health.runbook,
                 "artifact": health.artifact,
             },
+            "pages_off_template": health.pages_off_template,
+            "template_invalid": health.template_invalid,
         },
     }))
 }

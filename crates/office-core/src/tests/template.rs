@@ -4,7 +4,9 @@ use office_common::Sensitivity;
 
 use crate::Error;
 use crate::domain::knowledge::DocumentKind;
-use crate::domain::template::{AttachPolicy, BUNDLED, Template, TemplateKind};
+use crate::domain::template::{
+    AttachPolicy, BUNDLED, KnowledgePage, Template, TemplateFile, TemplateKind, assess_templates,
+};
 
 const PERSON: &str = "---\ntemplate: person\ntype: domain\nid: dom-person-<slug>\ntitle: \"<Full name>\"\none_per_library: false\nattach: participants\nsensitivity: normal\nsections: [Role, Works with, What they care about, History]\nrequired: [Role]\n---\n## Role\nDescribe their work.\n";
 
@@ -450,4 +452,58 @@ fn runbooks_require_all_three_sections() {
             matches!(error, Error::MissingSection { section: actual, .. } if actual == section)
         );
     }
+}
+
+#[test]
+fn assess_templates_counts_pages_and_names_broken_files() {
+    let person = BUNDLED
+        .iter()
+        .find(|entry| entry.filename == "person.md")
+        .expect("person template");
+    let meets = "---\nid: dom-person-ada\ntype: domain\ntemplate: person\ntitle: Ada\n---\n\n## Role\nKeeps the notes.\n";
+    let missing = "---\nid: dom-person-bev\ntype: domain\ntemplate: person\ntitle: Bev\n---\n\n## History\nNo role.\n";
+    let free = "---\nid: dom-free\ntype: domain\ntitle: Free\n---\n\n## Role\nUnbound.\n";
+    let unknown = "---\nid: dom-person-cy\ntype: domain\ntemplate: missing\ntitle: Cy\n---\n\n## Role\nPresent.\n";
+    let report = assess_templates(
+        &[
+            TemplateFile {
+                path: ".office/templates/person.md",
+                markdown: Some(person.markdown),
+            },
+            TemplateFile {
+                path: ".office/templates/notes.md",
+                markdown: Some("not a template\n"),
+            },
+            TemplateFile {
+                path: ".office/templates/linked.md",
+                markdown: None,
+            },
+        ],
+        &[
+            KnowledgePage {
+                kind: DocumentKind::Domain,
+                markdown: meets,
+            },
+            KnowledgePage {
+                kind: DocumentKind::Domain,
+                markdown: missing,
+            },
+            KnowledgePage {
+                kind: DocumentKind::Domain,
+                markdown: free,
+            },
+            KnowledgePage {
+                kind: DocumentKind::Domain,
+                markdown: unknown,
+            },
+        ],
+    );
+    assert_eq!(report.pages_off_template, 2);
+    assert_eq!(
+        report.template_invalid,
+        vec![
+            ".office/templates/linked.md".to_string(),
+            ".office/templates/notes.md".to_string(),
+        ]
+    );
 }

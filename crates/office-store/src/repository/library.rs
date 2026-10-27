@@ -8,6 +8,7 @@ use office_core::domain::settings::Settings;
 use serde::{Deserialize, Serialize};
 
 use office_core::domain::knowledge::DocumentKind;
+use office_core::domain::template::{KnowledgePage, TemplateFile, assess_templates};
 use office_core::ports::{InitOutcome, LibraryHealth};
 
 use crate::contracts::{DocumentRecord, Revision, SearchFilter, SearchHit};
@@ -89,8 +90,9 @@ impl LibraryStore {
 
     /// Scaffold a Library at the requested location (specs/library.md,
     /// "Scaffolding: `office.init`"), in spec order. Creates only what is
-    /// missing and never overwrites an existing config, `.gitignore` or page.
-    /// A complete Library reports `already_initialized` with no commit.
+    /// missing and never overwrites an existing config, `.gitignore`,
+    /// template or page. A complete Library, including every bundled
+    /// template file, reports `already_initialized` with no commit.
     pub fn initialize_at(
         library_root: &Path,
         state_dir: &Path,
@@ -146,7 +148,14 @@ impl LibraryStore {
                 path.is_dir() && (path.join(".gitkeep").exists() || !dir_is_empty(&path))
             }
         });
-        if is_repo && config_text.is_some() && gitignore_exists && index_exists && layout_complete {
+        let templates_present = files.bundled_templates_present()?;
+        if is_repo
+            && config_text.is_some()
+            && gitignore_exists
+            && index_exists
+            && layout_complete
+            && templates_present
+        {
             return Ok(InitOutcome {
                 already_initialized: true,
                 created: Vec::new(),
@@ -186,6 +195,9 @@ impl LibraryStore {
             write_atomic(&candidate.join(".gitignore"), b"original.*\n")?;
             created.push(".gitignore".to_string());
         }
+        // Only the paths this call created are committed, so a later restore
+        // does not stage an edit the user made to another template.
+        created.extend(files.install_missing_templates()?);
         let store = Self::open(&candidate, state_dir)?;
         if !index_exists {
             created.push("index.sqlite".to_string());
@@ -227,6 +239,31 @@ impl LibraryStore {
             }
             health.documents_total = health.documents_total.saturating_add(count);
         }
+        let templates = self.files.read_templates()?;
+        let template_files: Vec<TemplateFile<'_>> = templates
+            .iter()
+            .map(|template| TemplateFile {
+                path: &template.relative,
+                markdown: template.markdown.as_deref(),
+            })
+            .collect();
+        let knowledge = self.files.read_knowledge_markdown()?;
+        let pages: Vec<KnowledgePage<'_>> = knowledge
+            .iter()
+            .filter_map(|(relative, text)| {
+                let record = DocumentRecord::from_markdown(Path::new(relative), text);
+                match record.kind {
+                    DocumentKind::Domain | DocumentKind::Runbook => Some(KnowledgePage {
+                        kind: record.kind,
+                        markdown: text.as_str(),
+                    }),
+                    DocumentKind::Source | DocumentKind::Artifact => None,
+                }
+            })
+            .collect();
+        let assessment = assess_templates(&template_files, &pages);
+        health.pages_off_template = assessment.pages_off_template;
+        health.template_invalid = assessment.template_invalid;
         Ok(health)
     }
 
