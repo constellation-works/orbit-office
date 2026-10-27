@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.extract response",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profile": {
+      "enum": [
+        "kt",
+        "meeting"
+      ]
+    },
+    "result": {
+      "type": "object"
+    },
+    "dropped": {
+      "type": "object",
+      "properties": {
+        "uncited": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dangling": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tangent": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "uncited",
+        "dangling",
+        "tangent"
+      ],
+      "additionalProperties": false
+    },
+    "calls": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "derived_by": {
+      "type": "object",
+      "properties": {
+        "route": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "route",
+        "model"
+      ],
+      "additionalProperties": false
+    },
+    "to_dos": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "profile",
+    "result",
+    "dropped",
+    "calls",
+    "derived_by",
+    "to_dos"
+  ],
+  "additionalProperties": false
+}

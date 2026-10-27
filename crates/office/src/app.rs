@@ -33,7 +33,23 @@ struct ContextModels<'a> {
 }
 
 impl ContextModels<'_> {
+    fn planned_client(&self, expected: &str) -> office_core::Result<office_models::RoutedClient> {
+        let settings = self.library.settings()?;
+        if office_core::domain::source::video::settings_digest(&settings)? != expected {
+            return Err(office_core::domain::source::video::refusal(
+                "plan_changed",
+                "model route changed after confirmation",
+            ));
+        }
+        self.client_with_settings(settings)
+    }
     fn client(&self) -> office_core::Result<office_models::RoutedClient> {
+        self.client_with_settings(self.library.settings()?)
+    }
+    fn client_with_settings(
+        &self,
+        settings: office_core::domain::settings::Settings,
+    ) -> office_core::Result<office_models::RoutedClient> {
         let secret = |name: &str| {
             self.context
                 .get("secrets")
@@ -50,12 +66,35 @@ impl ContextModels<'_> {
         // the verified cause as `private_endpoint_unconfigured`. A load that
         // succeeds with no block still refuses private material rather than
         // sending it hosted.
-        config.open_weights = self.library.settings()?.open_weights;
+        config.open_weights = settings.open_weights;
         Ok(office_models::RoutedClient::new(config))
     }
 }
 
 impl Models for ContextModels<'_> {
+    fn media_audio(
+        &self,
+        bytes: &[u8],
+        start_seconds: u64,
+        length_seconds: u64,
+    ) -> office_core::Result<Vec<u8>> {
+        office_models::media::VideoProcessor::default().audio(bytes, start_seconds, length_seconds)
+    }
+    fn transcribe_planned(
+        &self,
+        request: &office_core::ports::TranscribeRequest,
+        expected: &str,
+    ) -> office_core::Result<Routed<office_core::ports::Transcript>> {
+        self.planned_client(expected)?
+            .transcribe_planned(request, expected)
+    }
+    fn extract_planned(
+        &self,
+        request: &office_core::ports::ExtractRequest,
+        expected: &str,
+    ) -> office_core::Result<Routed<Value>> {
+        self.planned_client(expected)?.extract(request)
+    }
     fn analyze_video(
         &self,
         bytes: &[u8],
@@ -84,24 +123,7 @@ impl Models for ContextModels<'_> {
         request: &office_core::ports::ImageRequest,
         expected: &str,
     ) -> office_core::Result<Routed<office_core::ports::ImageReading>> {
-        let settings = self.library.settings()?;
-        if office_core::domain::source::video::settings_digest(&settings)? != expected {
-            return Err(office_core::domain::source::video::refusal(
-                "plan_changed",
-                "model route changed after confirmation",
-            ));
-        }
-        let secret = |name: &str| {
-            self.context
-                .get("secrets")
-                .and_then(|s| s.get(name))
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        };
-        let mut config =
-            office_models::ModelConfig::new(secret("meta_api_key"), secret("open_weights_token"));
-        config.open_weights = settings.open_weights;
-        office_models::RoutedClient::new(config).read_image(request)
+        self.planned_client(expected)?.read_image(request)
     }
     fn read_image(
         &self,
@@ -254,6 +276,33 @@ impl RealLibrary {
 }
 
 impl Library for RealLibrary {
+    fn read_media(
+        &self,
+        id: &str,
+    ) -> office_core::Result<office_core::domain::source::video::VideoSource> {
+        <LibraryStore as Library>::read_media(&self.store()?, id)
+    }
+    fn source_sidecar(&self, id: &str, name: &str) -> office_core::Result<Option<String>> {
+        <LibraryStore as Library>::source_sidecar(&self.store()?, id, name)
+    }
+    fn write_source_processing(
+        &self,
+        id: &str,
+        revision: &str,
+        body: Option<&str>,
+        derived: &office_core::ports::DerivedBy,
+        files: &[(String, Vec<u8>)],
+    ) -> office_core::Result<office_core::ports::SourceView> {
+        <LibraryStore as Library>::write_source_processing(
+            &self.store()?,
+            id,
+            revision,
+            body,
+            derived,
+            files,
+        )
+    }
+
     fn bootstrap_snapshot(&self) -> office_core::Result<office_core::domain::bootstrap::Snapshot> {
         <LibraryStore as Library>::bootstrap_snapshot(&self.store()?)
     }

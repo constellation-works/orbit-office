@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.transcribe request",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "duration_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 604800
+    },
+    "language": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,15 @@
+# Offline media, Models/Orbit fakes and fixed clock supplied by the dispatch
+# runner in crates/office-tools/src/tools/tests/extract.rs; no network or secrets.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: transcribe_fixture_success
+    tool: transcribe
+    input: {"id": "src-19700101-video"}
+    expect:
+      output: {"chunks":0,"id":"src-19700101-video","noop":true,"path":"sources/1970/01/src-19700101-video/source.md","version":1}
+  - name: transcribe_refuses_unknown_input
+    tool: transcribe
+    input: {"id": "src-19700101-video", "extra": true}
+    expect:
+      error: {"code":"invalid_argument"}

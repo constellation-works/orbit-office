@@ -18,6 +18,18 @@ use serde_json::{Value, json};
 /// A models fake with explicit canned answers and no host I/O.
 #[derive(Clone, Default)]
 pub struct FakeModels {
+    /// Successive window/merge replies; an empty queue uses `extracted`.
+    pub extract_replies: Rc<RefCell<std::collections::VecDeque<Value>>>,
+    /// Transcription requests, including deterministic failures.
+    pub transcribe_requests: Rc<RefCell<Vec<TranscribeRequest>>>,
+    /// Optional zero-based transcription request to fail after recording it.
+    pub transcribe_failure: Option<usize>,
+    /// Optional zero-based extraction request to fail after recording it.
+    pub extract_failure: Option<usize>,
+    /// Extraction inputs in call order, shared across clones.
+    pub extract_requests: Rc<RefCell<Vec<ExtractRequest>>>,
+    /// Local audio windows requested; these spend no model calls.
+    pub audio_windows: Rc<RefCell<Vec<(u64, u64)>>>,
     /// Local media metadata returned by analysis; never records an inference.
     pub video_analysis: Option<office_core::domain::source::video::VideoAnalysis>,
     /// PNG bytes returned by local extraction.
@@ -91,6 +103,10 @@ impl FakeModels {
 }
 
 impl Models for FakeModels {
+    fn media_audio(&self, bytes: &[u8], start: u64, length: u64) -> Result<Vec<u8>> {
+        self.audio_windows.borrow_mut().push((start, length));
+        Ok(bytes.to_vec())
+    }
     fn analyze_video(
         &self,
         _bytes: &[u8],
@@ -108,11 +124,34 @@ impl Models for FakeModels {
     }
 
     fn transcribe(&self, request: &TranscribeRequest) -> Result<Routed<Transcript>> {
-        Ok(self.routed(request.sensitivity, self.transcript.clone()))
+        self.transcribe_requests.borrow_mut().push(request.clone());
+        let reply = self.routed(request.sensitivity, self.transcript.clone());
+        if self.transcribe_failure == Some(self.transcribe_requests.borrow().len() - 1) {
+            return Err(Error::Model {
+                code: "model_unavailable",
+                message: "fixture transcription failed".into(),
+                retryable: false,
+            });
+        }
+        Ok(reply)
     }
 
     fn extract(&self, request: &ExtractRequest) -> Result<Routed<Value>> {
-        Ok(self.routed(request.sensitivity, self.extracted.clone()))
+        self.extract_requests.borrow_mut().push(request.clone());
+        let value = self
+            .extract_replies
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| self.extracted.clone());
+        let reply = self.routed(request.sensitivity, value);
+        if self.extract_failure == Some(self.extract_requests.borrow().len() - 1) {
+            return Err(Error::Model {
+                code: "model_unavailable",
+                message: "fixture extraction failed".into(),
+                retryable: false,
+            });
+        }
+        Ok(reply)
     }
 
     fn read_planned_image(

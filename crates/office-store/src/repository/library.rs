@@ -81,6 +81,7 @@ fn normalize_upload_extension(extension: &str) -> String {
 /// Version 4 binds an artifact document and every immutable companion byte.
 /// Version 5 binds a video source update and its mutable derived files.
 /// Version 6 binds bootstrap phase ledgers and source privacy updates.
+/// Version 7 binds model provenance, immutable transcript versions and extraction sidecars.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPendingWrite {
@@ -108,6 +109,7 @@ impl RawPendingWrite {
             (4, Some(WriteKind::Artifact), None, Some(_)) => WriteKind::Artifact,
             (5, Some(WriteKind::Video), None, Some(_)) => WriteKind::Video,
             (6, Some(WriteKind::Bootstrap), None, Some(_)) => WriteKind::Bootstrap,
+            (7, Some(WriteKind::SourceProcessing), None, Some(_)) => WriteKind::SourceProcessing,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -136,6 +138,7 @@ enum WriteKind {
     Artifact,
     Video,
     Bootstrap,
+    SourceProcessing,
 }
 
 impl LibraryStore {
@@ -746,8 +749,13 @@ impl LibraryStore {
             }
             return Ok(());
         }
-        if matches!(pending.kind, WriteKind::Video) {
-            if pending.version != 5
+        if matches!(pending.kind, WriteKind::Video | WriteKind::SourceProcessing) {
+            if pending.version
+                != if matches!(pending.kind, WriteKind::Video) {
+                    5
+                } else {
+                    7
+                }
                 || pending.original.is_some()
                 || !pending.relative.starts_with("sources/")
                 || !pending.relative.ends_with("/source.md")
@@ -758,11 +766,13 @@ impl LibraryStore {
             }
             self.files
                 .validate_document_path(Path::new(&pending.relative))?;
-            office_core::domain::source::video::state(&pending.text)
-                .map_err(Error::from)?
-                .ok_or_else(|| Error::Journal {
-                    path: self.journal_path(),
-                })?;
+            if matches!(pending.kind, WriteKind::Video) {
+                office_core::domain::source::video::state(&pending.text)
+                    .map_err(Error::from)?
+                    .ok_or_else(|| Error::Journal {
+                        path: self.journal_path(),
+                    })?;
+            }
             let parent = Path::new(&pending.relative)
                 .parent()
                 .ok_or_else(|| Error::Journal {
@@ -777,13 +787,33 @@ impl LibraryStore {
                     .is_some_and(|s| {
                         (4..=6).contains(&s.len()) && s.bytes().all(|c| c.is_ascii_digit())
                     });
-                if (file.path != "frames.md" && !image) || !seen.insert(&file.path) {
+                let processing = matches!(pending.kind, WriteKind::SourceProcessing)
+                    && office_core::domain::source::processing_file_name(&file.path);
+                let allowed = if matches!(pending.kind, WriteKind::SourceProcessing) {
+                    processing
+                } else {
+                    file.path == "frames.md" || image
+                };
+                if !allowed || !seen.insert(&file.path) {
                     return Err(Error::Journal {
                         path: self.journal_path(),
                     });
                 }
                 self.files
                     .validate_relative_path(&parent.join(&file.path))?;
+                if file.path.starts_with('v') && file.path.ends_with(".md") {
+                    match self.files.read_bytes(&parent.join(&file.path)) {
+                        Ok(bytes) if bytes != file.bytes => {
+                            return Err(Error::Journal {
+                                path: self.journal_path(),
+                            });
+                        }
+                        Ok(_) => {}
+                        Err(Error::Io { source, .. })
+                            if source.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => return Err(error),
+                    }
+                }
             }
             return Ok(());
         }
@@ -828,7 +858,9 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: if matches!(kind, WriteKind::Bootstrap) {
+            version: if matches!(kind, WriteKind::SourceProcessing) {
+                7
+            } else if matches!(kind, WriteKind::Bootstrap) {
                 6
             } else if matches!(kind, WriteKind::Video) {
                 5
@@ -935,7 +967,7 @@ impl LibraryStore {
                     &pending.text,
                 ))?;
             }
-            WriteKind::Artifact | WriteKind::Video => {
+            WriteKind::Artifact | WriteKind::Video | WriteKind::SourceProcessing => {
                 self.require_initialized()?;
                 self.validate_bundle(&pending)?;
                 self.validate_identity(&DocumentRecord::from_markdown(
@@ -992,7 +1024,7 @@ impl LibraryStore {
                 self.index
                     .upsert(&self.files.read_document(Path::new(&pending.relative))?)?;
             }
-            WriteKind::Video => {
+            WriteKind::Video | WriteKind::SourceProcessing => {
                 self.validate_bundle(pending)?;
                 let parent =
                     Path::new(&pending.relative)
@@ -1007,7 +1039,11 @@ impl LibraryStore {
                     if let Some(parent) = path.parent() {
                         LibraryFs::create_private_dirs(parent)?;
                     }
-                    write_atomic(&path, &file.bytes)?;
+                    if file.path.starts_with('v') && file.path.ends_with(".md") {
+                        self.files.write_original(&relative, &file.bytes)?;
+                    } else {
+                        write_atomic(&path, &file.bytes)?;
+                    }
                 }
                 self.files
                     .write_document(Path::new(&pending.relative), &pending.text)?;
@@ -1039,7 +1075,8 @@ impl LibraryStore {
                 files
                     .iter()
                     .filter(|file| {
-                        !matches!(pending.kind, WriteKind::Video) || file.path == "frames.md"
+                        !matches!(pending.kind, WriteKind::Video | WriteKind::SourceProcessing)
+                            || !file.path.starts_with("frames/")
                     })
                     .map(|file| {
                         if matches!(pending.kind, WriteKind::Bootstrap) {
@@ -1913,10 +1950,26 @@ impl office_core::ports::Library for LibraryStore {
         &self,
         id: &str,
     ) -> office_core::Result<office_core::domain::source::video::VideoSource> {
+        let source = <Self as office_core::ports::Library>::read_media(self, id)?;
+        if parse_source_meta(&source.markdown).kind != "video" {
+            return Err(office_core::domain::source::video::refusal(
+                "not_a_video_source",
+                "source is not a video",
+            ));
+        }
+        Ok(source)
+    }
+    fn read_media(
+        &self,
+        id: &str,
+    ) -> office_core::Result<office_core::domain::source::video::VideoSource> {
         use office_core::domain::source::video::{VideoSource, refusal};
         let view = self.read_source(id)?;
-        if view.kind != "video" {
-            return Err(refusal("not_a_video_source", "source is not a video"));
+        if view.kind != "video" && view.kind != "meeting" {
+            return Err(refusal(
+                "invalid_source_kind",
+                "transcription needs a video or meeting source",
+            ));
         }
         let markdown = self.files.read_text(Path::new(&view.path))?;
         let meta = parse_source_meta(&markdown);
@@ -1943,6 +1996,60 @@ impl office_core::ports::Library for LibraryStore {
             markdown,
             bytes,
         })
+    }
+    fn source_sidecar(&self, id: &str, name: &str) -> office_core::Result<Option<String>> {
+        use office_core::domain::source::video::refusal;
+        if name != "frames.md" && name != "chapters.md" && name != "digest.json" {
+            return Err(refusal("unsafe_path", "unsupported source sidecar"));
+        }
+        let source = self.read_source(id)?;
+        let relative = Path::new(&source.path).with_file_name(name);
+        self.files.validate_relative_path(&relative)?;
+        match std::fs::read_to_string(self.library_root().join(relative)) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(Error::io("read source sidecar", self.library_root(), error).into()),
+        }
+    }
+    fn write_source_processing(
+        &self,
+        id: &str,
+        revision: &str,
+        body: Option<&str>,
+        derived: &office_core::ports::DerivedBy,
+        files: &[(String, Vec<u8>)],
+    ) -> office_core::Result<SourceView> {
+        use office_core::domain::source::{processing_markdown, video::refusal};
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        let source = self.read_source(id)?;
+        let markdown = self.files.read_text(Path::new(&source.path))?;
+        if sha256_hex(markdown.as_bytes()) != revision {
+            return Err(refusal("plan_changed", "source changed during processing"));
+        }
+        let (text, snapshot) = processing_markdown(&markdown, body, derived)?;
+        let mut bundle: Vec<ArtifactFile> = files
+            .iter()
+            .map(|(path, bytes)| ArtifactFile {
+                path: path.clone(),
+                bytes: bytes.clone(),
+            })
+            .collect();
+        if let Some(path) = snapshot {
+            bundle.push(ArtifactFile {
+                path,
+                bytes: text.as_bytes().to_vec(),
+            });
+        }
+        let pending = self.decide(
+            WriteKind::SourceProcessing,
+            &source.path,
+            &text,
+            None,
+            Some(bundle),
+        )?;
+        self.finish(&pending)?;
+        self.read_source(id)
     }
     fn mutate_video(
         &self,

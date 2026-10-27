@@ -84,6 +84,26 @@ pub fn not_initialized_error() -> Error {
 /// An adapter must override all operations; defaults support contexts that have
 /// no Library (for example the status-only dispatch scaffold).
 pub trait Library {
+    /// Read a contained video or meeting original, checking its recorded digest.
+    fn read_media(&self, id: &str) -> Result<crate::domain::source::video::VideoSource> {
+        self.read_video(id)
+    }
+    /// Read an optional allowlisted source sidecar; missing is distinct from unreadable.
+    fn source_sidecar(&self, _id: &str, _name: &str) -> Result<Option<String>> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Publish model provenance, an optional versioned transcript, and derived sidecars
+    /// in one journaled compare-and-swap. Existing version files are immutable.
+    fn write_source_processing(
+        &self,
+        _id: &str,
+        _revision: &str,
+        _body: Option<&str>,
+        _derived: &crate::ports::DerivedBy,
+        _files: &[(String, Vec<u8>)],
+    ) -> Result<SourceView> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Read every bootstrap source/digest, knowledge page and durable phase ledger.
     /// This is a read-only file scan, never a bounded index search.
     fn bootstrap_snapshot(&self) -> Result<crate::domain::bootstrap::Snapshot> {

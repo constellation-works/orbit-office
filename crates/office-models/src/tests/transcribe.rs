@@ -513,3 +513,25 @@ fn refuses_containers_the_model_schema_cannot_take_before_any_model_call() {
         }
     }
 }
+
+#[test]
+fn planned_window_is_one_request_even_with_a_shorter_general_split_threshold() {
+    let ffmpeg = Ffmpeg::new("exit 99");
+    let server = FakeServer::start(200, chat_reply("Ada: No timestamps"));
+    let mut config = hosted_config(&server.base_url);
+    config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
+    config.audio_splitter.threshold_seconds = 10;
+    config.audio_splitter.max_segment_seconds = 5;
+    let adapter = client(config);
+    let transcript = adapter
+        .transcribe_planned(&request(600, Sensitivity::Normal), "fixture")
+        .unwrap();
+    assert_eq!(transcript.value.text, "Ada: No timestamps");
+    assert_eq!(server.requests().len(), 1);
+    ffmpeg.assert_not_run();
+    let error = adapter
+        .transcribe_planned(&request(601, Sensitivity::Normal), "fixture")
+        .unwrap_err();
+    assert_eq!(error.code(), "plan_exceeded");
+    assert_eq!(server.requests().len(), 1);
+}

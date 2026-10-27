@@ -87,14 +87,14 @@ spec:
       input_schema: { $ref: schemas/capture.request.json }
       output_schema: { $ref: schemas/capture.response.json }
 
-    # - name: transcribe
-    #   description: >-
-    #     Transcribe a meeting source's original into its body (Muse Voice
-    #     Transcribe).
-    #   execution_kind: mutating
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/transcribe.request.json }
-    #   output_schema: { $ref: schemas/transcribe.response.json }
+    - name: transcribe
+      description: >-
+        Transcribe a meeting source's original into its body (Muse Voice
+        Transcribe).
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/transcribe.request.json }
+      output_schema: { $ref: schemas/transcribe.response.json }
 
     - name: video-plan
       description: >-
@@ -115,15 +115,15 @@ spec:
       input_schema: { $ref: schemas/frames.request.json }
       output_schema: { $ref: schemas/frames.response.json }
 
-    # - name: extract
-    #   description: >-
-    #     From a source, produce structured JSON plus a task artifact:
-    #     for a KT video the chapters, knowledge candidates and questions;
-    #     for a meeting the summary, decisions and to-dos.
-    #   execution_kind: mutating
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/extract.request.json }
-    #   output_schema: { $ref: schemas/extract.response.json }
+    - name: extract
+      description: >-
+        From a source, produce structured JSON plus a task artifact:
+        for a KT video the chapters, knowledge candidates and questions;
+        for a meeting the summary, decisions and to-dos.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/extract.request.json }
+      output_schema: { $ref: schemas/extract.response.json }
 
     - name: source-show
       description: >-

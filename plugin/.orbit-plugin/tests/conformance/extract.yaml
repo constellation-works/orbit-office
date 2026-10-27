@@ -1,0 +1,15 @@
+# Offline media, Models/Orbit fakes and fixed clock supplied by the dispatch
+# runner in crates/office-tools/src/tools/tests/extract.rs; no network or secrets.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: extract_fixture_success
+    tool: extract
+    input: {"id": "src-19700101-video", "profile": "kt", "task": "task-fixture"}
+    expect:
+      output: {"calls":1,"derived_by":{"model":"fake-hosted","route":"hosted"},"dropped":{"dangling":1,"tangent":1,"uncited":1},"id":"src-19700101-video","profile":"kt","result":{"chapters":[{"end":60,"label":"core","start":0,"title":"Deploy"},{"end":120,"label":"tangent","start":60,"title":"Aside"}],"glossary":[{"cites":["#t=00:00:00"],"definition":"Knowledge transfer","term":"KT"}],"gotchas":[{"cites":["#t=00:01:10"],"text":"Avoid the trap"}],"knowledge_candidates":[{"claims":[{"cites":["#t=00:00:00"],"text":"Useful"}],"target_page":"Deployment","template":"topic"}],"questions":[{"cites":["#t=00:00:00"],"text":"Who deploys?"}],"runbook_candidates":[{"done_when":"Healthy","inputs":["branch"],"steps":[{"cites":["#frame=00:00:20"],"text":"Run deploy"}],"title":"Deploy"}],"summary":"Fixture KT"},"to_dos":[{"id":"task-fixture"}]}
+  - name: extract_refuses_unknown_input
+    tool: extract
+    input: {"id": "src-19700101-video", "profile": "kt", "task": "task-fixture", "extra": true}
+    expect:
+      error: {"code":"invalid_argument"}

@@ -885,6 +885,110 @@ fn yaml_quote(value: &str) -> String {
     format!("\"{escaped}\"")
 }
 
+/// Whether capture imported a WebVTT transcript, which must never invoke a model.
+pub fn imported_vtt(markdown: &str) -> Result<bool> {
+    let (header, _) = crate::domain::knowledge::frontmatter::split(markdown)?;
+    Ok(crate::domain::knowledge::frontmatter::parse(header)?
+        .iter()
+        .any(|(key, value)| key == "derived_by" && value["transcription"] == "vtt-import"))
+}
+
+/// Derived files the source-processing journal may publish, never originals.
+#[must_use]
+pub fn processing_file_name(name: &str) -> bool {
+    let numbered = |prefix: &str, suffix: &str| {
+        name.strip_prefix(prefix)
+            .and_then(|n| n.strip_suffix(suffix))
+            .is_some_and(|n| {
+                !n.is_empty() && n.len() <= 10 && n.bytes().all(|c| c.is_ascii_digit())
+            })
+    };
+    name == "extract-result.json"
+        || name == "chapters.md"
+        || name == "digest.json"
+        || numbered("v", ".md")
+        || numbered("extract-window-", ".json")
+}
+
+/// Prepare a model result while preserving unrelated metadata. `source.md` is
+/// the current view; every generated transcript has an immutable `vN.md` snapshot.
+pub fn processing_markdown(
+    markdown: &str,
+    body: Option<&str>,
+    derived: &crate::ports::DerivedBy,
+) -> Result<(String, Option<String>)> {
+    let (header, _) = crate::domain::knowledge::frontmatter::split(markdown)?;
+    let mut fields = crate::domain::knowledge::frontmatter::parse(header)?;
+    let mut provenance = fields
+        .iter()
+        .find(|(key, _)| key == "derived_by")
+        .map(|(_, value)| value.clone())
+        .unwrap_or_else(|| serde_json::json!({}));
+    let previous = provenance.get("transcription").is_some();
+    provenance
+        .as_object_mut()
+        .ok_or_else(|| video::refusal("invalid_source", "derived_by must be a mapping"))?
+        .insert(
+            if body.is_some() {
+                "transcription"
+            } else {
+                "extraction"
+            }
+            .into(),
+            serde_json::json!(derived),
+        );
+    fields.retain(|(key, _)| key != "derived_by");
+    fields.push(("derived_by".into(), provenance));
+    let mut snapshot = None;
+    if let Some(body) = body {
+        let version = parse_source_meta(markdown).version;
+        let next = if previous {
+            version
+                .checked_add(1)
+                .ok_or_else(|| video::refusal("invalid_source", "source version overflow"))?
+        } else {
+            version
+        };
+        fields.retain(|(key, _)| key != "version" && key != "supersedes");
+        fields.push(("version".into(), serde_json::json!(next)));
+        fields.push((
+            "supersedes".into(),
+            if previous {
+                serde_json::json!(format!("v{version}.md"))
+            } else {
+                serde_json::Value::Null
+            },
+        ));
+        if let Some(ledger) = video::with_transcript(markdown, body)? {
+            fields.retain(|(key, _)| key != "video");
+            // The ledger is already encoded in the Library YAML subset.
+            let rendered = fields
+                .iter()
+                .map(|(key, value)| format!("{key}: {}", video::flow(value)))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Ok((
+                format!("---\n{rendered}\nvideo: {ledger}\n---\n{body}"),
+                Some(format!("v{next}.md")),
+            ));
+        }
+        snapshot = Some(format!("v{next}.md"));
+    }
+    let rendered = fields
+        .iter()
+        .map(|(key, value)| format!("{key}: {}", video::flow(value)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok((
+        format!(
+            "---\n{rendered}\n---\n{}",
+            body.map(str::to_string)
+                .unwrap_or_else(|| source_body(markdown))
+        ),
+        snapshot,
+    ))
+}
+
 /// Inputs for [`render_source`].
 pub struct RenderSource<'a> {
     /// Documented item: id.

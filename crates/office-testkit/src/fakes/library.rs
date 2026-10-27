@@ -260,6 +260,16 @@ impl Library for FakeLibrary {
         Ok(write.batch)
     }
     fn read_video(&self, id: &str) -> Result<office_core::domain::source::video::VideoSource> {
+        let source = self.read_media(id)?;
+        if office_core::domain::source::parse_source_meta(&source.markdown).kind != "video" {
+            return Err(office_core::domain::source::video::refusal(
+                "not_a_video_source",
+                "source is not a video",
+            ));
+        }
+        Ok(source)
+    }
+    fn read_media(&self, id: &str) -> Result<office_core::domain::source::video::VideoSource> {
         use office_core::domain::source::video::{VideoSource, refusal};
         self.ready()?;
         let doc = self
@@ -267,8 +277,11 @@ impl Library for FakeLibrary {
             .ok_or_else(|| refusal("source_not_found", "source was not found"))?;
         let markdown = self.read_text(Path::new(&doc.path))?;
         let meta = office_core::domain::source::parse_source_meta(&markdown);
-        if meta.kind != "video" {
-            return Err(refusal("not_a_video_source", "source is not a video"));
+        if meta.kind != "video" && meta.kind != "meeting" {
+            return Err(refusal(
+                "invalid_source_kind",
+                "transcription needs a video or meeting source",
+            ));
         }
         let bytes = self
             .originals
@@ -287,6 +300,105 @@ impl Library for FakeLibrary {
             markdown,
             bytes,
         })
+    }
+    fn source_sidecar(&self, id: &str, name: &str) -> Result<Option<String>> {
+        let source = self.get(id)?.ok_or_else(|| {
+            office_core::domain::source::video::refusal("source_not_found", "source was not found")
+        })?;
+        if !["frames.md", "chapters.md", "digest.json"].contains(&name) {
+            return Err(office_core::domain::source::video::refusal(
+                "unsafe_path",
+                "unsupported source sidecar",
+            ));
+        }
+        Ok(self
+            .texts
+            .borrow()
+            .get(
+                &Path::new(&source.path)
+                    .with_file_name(name)
+                    .to_string_lossy()
+                    .to_string(),
+            )
+            .cloned())
+    }
+    fn write_source_processing(
+        &self,
+        id: &str,
+        revision: &str,
+        body: Option<&str>,
+        derived: &office_core::ports::DerivedBy,
+        files: &[(String, Vec<u8>)],
+    ) -> Result<SourceView> {
+        use office_core::domain::source::{
+            parse_source_meta, processing_markdown, source_body, video::refusal,
+        };
+        let doc = self
+            .get(id)?
+            .ok_or_else(|| refusal("source_not_found", "source was not found"))?;
+        let markdown = self.read_text(Path::new(&doc.path))?;
+        if sha256_hex(markdown.as_bytes()) != revision {
+            return Err(refusal("plan_changed", "source changed during processing"));
+        }
+        let (text, snapshot) = processing_markdown(&markdown, body, derived)?;
+        let mut files = files.to_vec();
+        if let Some(name) = snapshot {
+            files.push((name, text.as_bytes().to_vec()));
+        }
+        for (name, bytes) in &files {
+            if !office_core::domain::source::processing_file_name(name) {
+                return Err(refusal("unsafe_path", "unsupported source processing file"));
+            }
+            let path = Path::new(&doc.path)
+                .with_file_name(name)
+                .to_string_lossy()
+                .to_string();
+            if name.starts_with('v')
+                && self
+                    .texts
+                    .borrow()
+                    .get(&path)
+                    .is_some_and(|old| old.as_bytes() != bytes)
+            {
+                return Err(refusal(
+                    "source_version_conflict",
+                    "existing transcript version differs",
+                ));
+            }
+        }
+        for (name, bytes) in files {
+            if name == "digest.json" {
+                self.bootstrap_digests.borrow_mut().insert(
+                    id.into(),
+                    serde_json::from_slice(&bytes)
+                        .map_err(|_| refusal("invalid_source", "digest is not JSON"))?,
+                );
+            }
+            self.texts.borrow_mut().insert(
+                Path::new(&doc.path)
+                    .with_file_name(name)
+                    .to_string_lossy()
+                    .to_string(),
+                String::from_utf8(bytes)
+                    .map_err(|_| refusal("invalid_source", "sidecar is not UTF-8"))?,
+            );
+        }
+        self.write_document(Path::new(&doc.path), &text)?;
+        let meta = parse_source_meta(&text);
+        let view = SourceView {
+            id: meta.id,
+            kind: meta.kind,
+            title: meta.title,
+            path: doc.path,
+            body: source_body(&text).trim_end().into(),
+            sensitivity: meta.sensitivity,
+            version: meta.version,
+            sha256: meta.sha256,
+            bytes: meta.bytes,
+            media_type: meta.media_type,
+        };
+        self.sources.borrow_mut().insert(id.into(), view.clone());
+        Ok(view)
     }
     fn mutate_video(
         &self,
@@ -956,6 +1068,9 @@ impl Library for FakeLibrary {
             retention_days: settings.retention.get(kind.as_str()).copied().flatten(),
             body: &body,
         });
+        if let Some(bytes) = upload_bytes {
+            self.originals.borrow_mut().insert(id.clone(), bytes);
+        }
         let record = DocumentRecord::from_markdown(std::path::Path::new(&path), &markdown);
         self.documents.borrow_mut().insert(path.clone(), record);
         self.texts.borrow_mut().insert(path.clone(), markdown);
@@ -988,15 +1103,27 @@ impl Library for FakeLibrary {
     }
     fn read_source(&self, id: &str) -> Result<SourceView> {
         self.ready()?;
-        self.sources
-            .borrow()
-            .get(id)
-            .cloned()
-            .ok_or_else(|| Error::Library {
-                code: "source_not_found",
-                message: format!("source {id} was not found"),
-            })
+        let doc = self.get(id)?.ok_or_else(|| {
+            office_core::domain::source::video::refusal("source_not_found", "source was not found")
+        })?;
+        let text = self.read_text(Path::new(&doc.path))?;
+        let meta = office_core::domain::source::parse_source_meta(&text);
+        Ok(SourceView {
+            id: meta.id,
+            kind: meta.kind,
+            title: meta.title,
+            path: doc.path,
+            body: office_core::domain::source::source_body(&text)
+                .trim_end_matches('\n')
+                .into(),
+            sensitivity: meta.sensitivity,
+            sha256: meta.sha256,
+            bytes: meta.bytes,
+            media_type: meta.media_type,
+            version: meta.version,
+        })
     }
+
     fn initialize(&self, library_dir: Option<&str>) -> Result<InitOutcome> {
         if let Some(dir) = library_dir {
             // The fake has no workspace root, so it cannot recognise an

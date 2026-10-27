@@ -158,6 +158,34 @@ pub struct ImageReading {
 /// Model access: transcription, structured extraction and image reading,
 /// each with its route, plus the private-endpoint check.
 pub trait Models {
+    /// Decode one bounded audio window locally as WAV; no inference is spent.
+    fn media_audio(
+        &self,
+        _bytes: &[u8],
+        _start_seconds: u64,
+        _length_seconds: u64,
+    ) -> Result<Vec<u8>> {
+        Err(crate::domain::source::video::refusal(
+            "media_unavailable",
+            "audio extraction is unavailable",
+        ))
+    }
+    /// Transcribe one approved window against the confirmed routing snapshot.
+    fn transcribe_planned(
+        &self,
+        request: &TranscribeRequest,
+        _settings_digest: &str,
+    ) -> Result<Routed<Transcript>> {
+        self.transcribe(request)
+    }
+    /// Extract against the confirmed routing snapshot.
+    fn extract_planned(
+        &self,
+        request: &ExtractRequest,
+        _settings_digest: &str,
+    ) -> Result<Routed<Value>> {
+        self.extract(request)
+    }
     /// Inspect video locally with supervised ffprobe/ffmpeg; spends no model calls.
     fn analyze_video(
         &self,
