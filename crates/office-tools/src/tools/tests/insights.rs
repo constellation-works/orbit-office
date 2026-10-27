@@ -496,15 +496,11 @@ fn insights_conformance_goldens_replay_success_and_refusal_offline() {
         ));
         let golden = std::fs::read_to_string(path).expect("golden");
         let mut input = None;
-        let mut library = None;
         let mut successes = 0;
         let mut refusals = 0;
         for line in golden.lines() {
             if let Some(value) = line.strip_prefix("    input: ") {
                 input = Some(serde_json::from_str::<Value>(value).expect("input"));
-            }
-            if let Some(value) = line.strip_prefix("    library: ") {
-                library = Some(serde_json::from_str::<Value>(value).expect("library settings"));
             }
             for (prefix, success) in [("      output: ", true), ("      error: ", false)] {
                 if let Some(value) = line.strip_prefix(prefix) {
@@ -512,7 +508,7 @@ fn insights_conformance_goldens_replay_success_and_refusal_offline() {
                     let response = serve(
                         verb,
                         input.take().expect("case input"),
-                        &fixture(json!([]), case_library(library.take())),
+                        &fixture(json!([]), case_library(None)),
                     );
                     assert_eq!(response["ok"], success, "{response}");
                     if success {
@@ -530,6 +526,18 @@ fn insights_conformance_goldens_replay_success_and_refusal_offline() {
             "each golden must execute success and refusal cases"
         );
     }
+}
+
+#[test]
+fn metrics_reports_simulated_until_when_configured() {
+    let library = case_library(Some(json!({"demo": {"simulated_until": "2026-10-12"}})));
+    let response = serve(
+        "metrics",
+        json!({"since": "2026-10-05", "until": "2026-10-12"}),
+        &fixture(json!([]), library),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(response["output"]["simulated_until"], "2026-10-12");
 }
 
 #[test]
