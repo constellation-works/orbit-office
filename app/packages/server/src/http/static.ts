@@ -105,9 +105,44 @@ export async function serveStatic(
     }
     await new Promise<void>((resolveStream, rejectStream) => {
       const stream = createReadStream(file);
-      stream.on("error", rejectStream);
-      response.on("finish", resolveStream);
-      response.on("close", resolveStream);
+      let settled = false;
+      const cleanup = (): void => {
+        stream.removeListener("error", onStreamError);
+        response.removeListener("finish", onFinish);
+        response.removeListener("close", onClose);
+        response.removeListener("error", onResponseError);
+      };
+      const settleResolve = (): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolveStream();
+      };
+      const settleReject = (err: unknown): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        stream.destroy();
+        rejectStream(err);
+      };
+      const onStreamError = (err: unknown): void => {
+        settleReject(err);
+      };
+      const onResponseError = (err: unknown): void => {
+        stream.destroy();
+        settleReject(err);
+      };
+      const onFinish = (): void => {
+        settleResolve();
+      };
+      const onClose = (): void => {
+        if (!stream.readableEnded) stream.destroy();
+        settleResolve();
+      };
+      stream.on("error", onStreamError);
+      response.on("error", onResponseError);
+      response.on("finish", onFinish);
+      response.on("close", onClose);
       stream.pipe(response);
     });
     return true;
