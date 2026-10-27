@@ -3,14 +3,16 @@
 //!
 //! Reads tasks and frictions through the Orbit port and thresholds plus
 //! Library pages/sources through the Library port, then runs the pure
-//! signals domain (specs/proposals.md#signals). Writes nothing.
+//! signals domain (specs/proposals.md#signals). Writes nothing. A failed
+//! read or a truncated task list is refused by name; it is not reported
+//! as an empty or partial candidate set.
 
-use office_core::Result;
 use office_core::domain::knowledge::SearchFilter;
 use office_core::domain::signals::{
     FrictionFact, PageFact, SignalFacts, SourceFact, TaskFact, scan,
 };
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
+use office_core::{Error, Result};
 use serde_json::{Map, Value, json};
 
 use crate::registry::{Call, Tool};
@@ -53,46 +55,61 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
             "updated_at"
         ]),
     );
-    if let Ok(value) = call.ports.orbit.task_list(&task_input) {
-        facts.tasks = parse_tasks(&value, now_days);
+    // Fail closed (STD-02 R29, R31): these reads are the scan's integrity,
+    // not a side channel. A failed read or a truncated task page is named
+    // and refused, never turned into an empty or partial candidate count.
+    let tasks = call
+        .ports
+        .orbit
+        .task_list(&task_input)
+        .map_err(|error| refuse_read("orbit.task.list", "failed", &error))?;
+    if tasks.get("truncated").and_then(Value::as_bool) == Some(true) {
+        return Err(refuse_truncated(&tasks));
     }
+    facts.tasks = parse_tasks(&tasks, now_days);
 
     // Frictions through Orbit search (listing mode: no query).
     let mut friction_input = Map::new();
     friction_input.insert("kind".into(), json!("friction"));
     friction_input.insert("all".into(), json!(true));
-    if let Ok(value) = call.ports.orbit.search(&friction_input) {
-        facts.frictions = parse_frictions(&value);
-    }
+    let frictions = call
+        .ports
+        .orbit
+        .search(&friction_input)
+        .map_err(|error| refuse_read("orbit.search", "friction search failed", &error))?;
+    facts.frictions = parse_frictions(&frictions);
 
     // Library pages and sources through the Library port.
-    if let Ok(hits) = call.ports.library.search(
-        "",
-        &SearchFilter {
-            limit: Some(1000),
-            ..SearchFilter::default()
-        },
-    ) {
-        for hit in hits {
-            match hit.kind {
-                office_core::domain::knowledge::DocumentKind::Source => {
-                    facts.sources.push(SourceFact {
-                        id: hit.id,
-                        tags: Vec::new(),
-                        participants: Vec::new(),
-                        body: hit.snippet,
-                    });
-                }
-                office_core::domain::knowledge::DocumentKind::Domain
-                | office_core::domain::knowledge::DocumentKind::Runbook => {
-                    facts.pages.push(PageFact {
-                        id: hit.id,
-                        title: hit.title,
-                        ..PageFact::default()
-                    });
-                }
-                office_core::domain::knowledge::DocumentKind::Artifact => {}
+    let hits = call
+        .ports
+        .library
+        .search(
+            "",
+            &SearchFilter {
+                limit: Some(1000),
+                ..SearchFilter::default()
+            },
+        )
+        .map_err(|error| refuse_read("library.search", "failed", &error))?;
+    for hit in hits {
+        match hit.kind {
+            office_core::domain::knowledge::DocumentKind::Source => {
+                facts.sources.push(SourceFact {
+                    id: hit.id,
+                    tags: Vec::new(),
+                    participants: Vec::new(),
+                    body: hit.snippet,
+                });
             }
+            office_core::domain::knowledge::DocumentKind::Domain
+            | office_core::domain::knowledge::DocumentKind::Runbook => {
+                facts.pages.push(PageFact {
+                    id: hit.id,
+                    title: hit.title,
+                    ..PageFact::default()
+                });
+            }
+            office_core::domain::knowledge::DocumentKind::Artifact => {}
         }
     }
 
@@ -219,4 +236,34 @@ fn parse_frictions(value: &Value) -> Vec<FrictionFact> {
         })
         .filter(|f| !f.id.is_empty())
         .collect()
+}
+
+/// Name the failed read. The envelope code stays the underlying class, and
+/// the original message is kept so a refusal code is not dropped.
+fn refuse_read(read: &'static str, failure: &str, error: &Error) -> Error {
+    let code = error.code();
+    Error::SignalsScanRefused {
+        read,
+        detail: format!("{failure} ({code}): {error}"),
+        code,
+    }
+}
+
+/// A task page that reports truncation is not the complete task set.
+fn refuse_truncated(value: &Value) -> Error {
+    let detail = match value.get("total").and_then(Value::as_u64) {
+        Some(total) => format!(
+            "returned a truncated page (total {total}); the scan does not treat that page as the \
+             complete task set"
+        ),
+        None => {
+            "returned a truncated page; the scan does not treat that page as the complete task set"
+                .to_string()
+        }
+    };
+    Error::SignalsScanRefused {
+        read: "orbit.task.list",
+        detail,
+        code: "task_list_truncated",
+    }
 }

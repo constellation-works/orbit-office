@@ -31,6 +31,22 @@ pub enum Error {
         /// Safe diagnostic without callback payloads or credentials.
         message: String,
     },
+    /// `office.signals-scan` refused because a source read failed or the
+    /// task list was truncated.
+    ///
+    /// Fail closed (STD-02 R29, R31): these reads are the scan's integrity,
+    /// not a side channel. For a failed read, `code` is the underlying
+    /// failure class and the message names the read. Truncation uses
+    /// `task_list_truncated`. `detail` carries no payload.
+    #[error("{read}: {detail}")]
+    SignalsScanRefused {
+        /// Canonical read: `orbit.task.list`, `orbit.search`, or `library.search`.
+        read: &'static str,
+        /// Checked cause, without payloads or secrets.
+        detail: String,
+        /// Stable envelope code naming the read and the outcome.
+        code: &'static str,
+    },
     /// A template file has invalid or incomplete rules.
     #[error("invalid template {file}, field {field}: {reason}")]
     TemplateInvalid {
@@ -215,6 +231,7 @@ impl Error {
             Self::OrbitOutcomeUnknown => "orbit_outcome_unknown",
             Self::OrbitRefused { .. } => "orbit_refused",
             Self::Orbit { code, .. } => code,
+            Self::SignalsScanRefused { code, .. } => code,
             Self::TemplateInvalid { .. } => "template_invalid",
             Self::PageIdMismatch { .. } => "page_id_mismatch",
             Self::TemplateTypeMismatch { .. } => "template_type_mismatch",
@@ -252,6 +269,7 @@ impl Error {
             Self::OrbitOutcomeUnknown => false,
             Self::OrbitRefused { .. } => false,
             Self::Orbit { .. } => false,
+            Self::SignalsScanRefused { .. } => false,
             Self::TemplateInvalid { .. } => false,
             Self::PageIdMismatch { .. } => false,
             Self::TemplateTypeMismatch { .. } => false,
