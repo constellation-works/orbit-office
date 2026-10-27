@@ -55,6 +55,7 @@ export interface ConnectionInput {
   timeout_seconds: number;
   max_response_bytes: number;
   disabled: boolean;
+  idempotency_header?: string;
 }
 
 /** Only the app's HTTP write accepts a secret, forwarded exclusively on stdin. */

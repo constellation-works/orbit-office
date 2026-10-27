@@ -63,6 +63,11 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
   await page.getByRole("button", { name: "Save connection", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Connection saved." }).waitFor();
 
+  await region.getByRole("button", { name: "Disable", exact: true }).click();
+  await region.getByText("Disabled", { exact: true }).waitFor();
+  await region.getByRole("button", { name: "Enable", exact: true }).click();
+  await region.getByText("Enabled", { exact: true }).waitFor();
+
   await page.getByRole("button", { name: "Add connection", exact: true }).click();
   await page.getByLabel("Connection name", { exact: true }).fill("billing-api");
   await page.getByLabel("Base URL", { exact: true }).fill("https://billing.example/v1/");
@@ -89,8 +94,13 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
   const argv = (await readFile(resolve(fake.state, "invocations.log"), "utf8")).trim().split("\n").map(JSON.parse);
   const puts = argv.filter((args) => args[2] === "gateway.connection-put").map((args) => JSON.parse(args.at(-1)));
   assert.equal(puts[0].timeout_seconds, 35);
-  assert.deepEqual(puts[1], { name: "billing-api", base_url: "https://billing.example/v1/", auth: { scheme: "header", header: "X-Api-Key" }, methods: ["GET", "HEAD"], drafts: ["POST"], timeout_seconds: 20, max_response_bytes: 1048576, disabled: false });
-  assert.deepEqual(puts[2], { ...puts[1], disabled: true });
+  assert.equal(puts[0].idempotency_header, "Idempotency-Key");
+  assert.equal(puts[1].idempotency_header, "Idempotency-Key");
+  assert.equal(puts[1].disabled, true);
+  assert.equal(puts[2].idempotency_header, "Idempotency-Key");
+  assert.equal(puts[2].disabled, false);
+  assert.deepEqual(puts[3], { name: "billing-api", base_url: "https://billing.example/v1/", auth: { scheme: "header", header: "X-Api-Key" }, methods: ["GET", "HEAD"], drafts: ["POST"], timeout_seconds: 20, max_response_bytes: 1048576, disabled: false });
+  assert.deepEqual(puts[4], { ...puts[3], disabled: true });
   await page.getByRole("button", { name: "API calls", exact: true }).click();
   await page.locator(".api-call").first().waitFor();
   assert.deepEqual(await page.locator(".api-call h3").allTextContents(), ["GET deals", "GET accounts", "GET contacts"]);

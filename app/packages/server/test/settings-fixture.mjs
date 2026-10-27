@@ -3,7 +3,7 @@ export const connection = {
   name: "acme-crm", base_url: "https://api.acme.example/v2/",
   auth: { scheme: "bearer" }, methods: ["GET", "HEAD"], drafts: ["PATCH"],
   timeout_seconds: 20, max_response_bytes: 1048576, disabled: false,
-  slot: "conn_03", slot_state: "set",
+  slot: "conn_03", slot_state: "set", idempotency_header: "Idempotency-Key",
 };
 export const audit = {
   records: [

@@ -37,6 +37,10 @@ show failures and empty states separately, and support the shared light theme
 at desktop and phone widths. The Settings endpoints are
 `GET /api/settings/connections`, `POST /api/settings/connections/put` and
 `GET /api/settings/api-calls`; `GET /api/settings` still reports the agent CLI.
+Connection reads and full writes carry the optional `idempotency_header` gateway
+field; the Settings editor and enable/disable controls preserve existing values.
+An HTTP client can change it by supplying a new header name or remove it by
+omitting the field from a full write.
 
 ## Layout
 

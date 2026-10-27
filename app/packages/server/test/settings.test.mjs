@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -145,6 +145,56 @@ async function gatewayServer(t, extra = {}) {
     return res;
   } };
 }
+
+test("Settings preserves a persisted gateway idempotency header across edits and toggles", async (t) => {
+  const root = await fixtureHome(t, {});
+  const source = resolve(import.meta.dirname, "../../../../gateway/src");
+  const python = `import json, sys
+from orbit_gateway.connections import tool_list, tool_put
+from orbit_gateway.envelope import Call
+request = json.load(sys.stdin)
+call = Call(request["tool"], request["input"], {"plugin_state": sys.argv[1]})
+print(json.dumps(tool_put(call) if request["tool"] == "gateway.connection-put" else tool_list(call)))`;
+  const client = { async callTool(tool, input) {
+    const result = spawnSync("python3", ["-c", python, root], {
+      input: JSON.stringify({ tool, input }), encoding: "utf8",
+      env: { ...process.env, HOME: root, OFFICE_DATA_ROOT: root, OFFICE_CONFIG_ROOT: root, PYTHONPATH: source },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  } };
+  await client.callTool("gateway.connection-put", { ...connectionInput, idempotency_header: "Idempotency-Key" });
+  const feature = createSettingsFeature(client);
+  const server = createServer((req, res) => {
+    if (!checkLoopbackRequest(req).ok) { res.writeHead(403); res.end(); return; }
+    const route = feature.routes.find((item) => item.method === req.method && item.path === req.url);
+    if (route) void route.handle(req, res); else { res.writeHead(404); res.end(); }
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => { server.closeAllConnections(); server.close(done); }));
+  const { port } = server.address();
+  const headers = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}` };
+  for (const change of [{ timeout_seconds: 35 }, { disabled: true }, { disabled: false }]) {
+    const listed = await request(port, { path: "/api/settings/connections", headers });
+    assert.equal(listed.status, 200);
+    const { slot_state, ...config } = JSON.parse(listed.body).connections[0];
+    assert.equal(config.idempotency_header, "Idempotency-Key");
+    const saved = await request(port, { method: "POST", path: "/api/settings/connections/put", headers, body: JSON.stringify({ ...config, ...change }) });
+    assert.equal(saved.status, 200);
+    assert.equal(JSON.parse(saved.body).connection.idempotency_header, "Idempotency-Key");
+    assert.equal((await client.callTool("gateway.connection-list", {})).connections[0].idempotency_header, "Idempotency-Key");
+    assert.equal(JSON.parse(await readFile(join(root, "connections.json"), "utf8")).connections[0].idempotency_header, "Idempotency-Key");
+  }
+  for (const header of ["X-Request-Id", undefined]) {
+    const input = { ...connectionInput, ...(header === undefined ? {} : { idempotency_header: header }) };
+    const saved = await request(port, { method: "POST", path: "/api/settings/connections/put", headers, body: JSON.stringify(input) });
+    assert.equal(saved.status, 200);
+    assert.equal((await client.callTool("gateway.connection-list", {})).connections[0].idempotency_header, header);
+  }
+  const invalid = await request(port, { method: "POST", path: "/api/settings/connections/put", headers,
+    body: JSON.stringify({ ...connectionInput, idempotency_header: 42 }) });
+  assert.equal(invalid.status, 400);
+});
 
 test("Settings adds, edits and disables via gateway and sends secrets only on stdin", { timeout: 15000 }, async (t) => {
   const server = await gatewayServer(t);
