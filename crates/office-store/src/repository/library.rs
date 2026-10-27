@@ -67,16 +67,7 @@ impl LibraryStore {
     }
 
     fn compose(root: PathBuf, state: &Path, index: IndexStore) -> Result<Self> {
-        let state = state
-            .canonicalize()
-            .map_err(|e| Error::io("resolve plugin state", state, e))?;
-        let git = Git::new(&root, &state);
-        let store = Self {
-            files: LibraryFs::new(root),
-            index,
-            state,
-            git,
-        };
+        let store = Self::from_parts(root, state, index)?;
         if store
             .journal_path()
             .try_exists()
@@ -88,11 +79,28 @@ impl LibraryStore {
         Ok(store)
     }
 
+    // Construction only: callers must recover under the writer lock before
+    // exposing the store or performing another write.
+    fn from_parts(root: PathBuf, state: &Path, index: IndexStore) -> Result<Self> {
+        let state = state
+            .canonicalize()
+            .map_err(|e| Error::io("resolve plugin state", state, e))?;
+        let git = Git::new(&root, &state);
+        Ok(Self {
+            files: LibraryFs::new(root),
+            index,
+            state,
+            git,
+        })
+    }
+
     /// Scaffold a Library at the requested location (specs/library.md,
     /// "Scaffolding: `office.init`"), in spec order. Creates only what is
     /// missing and never overwrites an existing config, `.gitignore`,
     /// template or page. A complete Library, including every bundled
     /// template file, reports `already_initialized` with no commit.
+    /// Holds the writer lock from before inspecting Library state through
+    /// scaffolding, recovery, indexing and the initialization commit.
     pub fn initialize_at(
         library_root: &Path,
         state_dir: &Path,
@@ -125,6 +133,11 @@ impl LibraryStore {
         };
         Git::ensure_available(&probe_cwd)?;
 
+        // Bootstrap only the lock directory; Library and index writes wait
+        // until this guard is held, and completeness is checked under it.
+        std::fs::create_dir_all(state_dir)
+            .map_err(|e| Error::io("create writer state", state_dir, e))?;
+        let lock = WriterLock::acquire(state_dir)?;
         let files = LibraryFs::new(candidate.clone());
         let git = Git::new(&candidate, state_dir);
         // Completeness is checked without creating layout or index.
@@ -198,11 +211,15 @@ impl LibraryStore {
         // Only the paths this call created are committed, so a later restore
         // does not stage an edit the user made to another template.
         created.extend(files.install_missing_templates()?);
-        let store = Self::open(&candidate, state_dir)?;
+        let root = candidate
+            .canonicalize()
+            .map_err(|e| Error::io("resolve Library", &candidate, e))?;
+        let index = IndexStore::open(&state_dir.join("index.sqlite"))?;
+        let store = Self::from_parts(root, state_dir, index)?;
         if !index_exists {
             created.push("index.sqlite".to_string());
         }
-        store.reindex()?;
+        store.reindex_locked(&lock)?;
         let committable: Vec<String> = created
             .iter()
             .filter(|path| path.as_str() != ".git" && path.as_str() != "index.sqlite")
@@ -332,7 +349,11 @@ impl LibraryStore {
 
     /// Rebuild the index under the same writer lock used by document writes.
     pub fn reindex(&self) -> Result<u32> {
-        let _lock = WriterLock::acquire(&self.state)?;
+        let lock = WriterLock::acquire(&self.state)?;
+        self.reindex_locked(&lock)
+    }
+
+    fn reindex_locked(&self, _lock: &WriterLock) -> Result<u32> {
         self.recover()?;
         let documents = self.files.scan_documents()?;
         let count = u32::try_from(documents.len()).map_err(|e| {

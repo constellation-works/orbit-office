@@ -192,6 +192,107 @@ fn init_second_run_is_an_already_initialized_no_op() {
 }
 
 #[test]
+fn init_lock_timeout_leaves_no_scaffold_and_retry_commits() {
+    let env = Env::new();
+    std::fs::create_dir_all(&env.state).expect("plugin state");
+    let lock =
+        std::fs::File::create(env.state.join("library.writer.lock")).expect("writer lock file");
+    lock.lock().expect("hold writer lock in another process");
+
+    let refused = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(refused["ok"], serde_json::json!(false), "{refused}");
+    assert_eq!(
+        refused["error"]["code"],
+        serde_json::json!("library_lock_timeout"),
+        "{refused}"
+    );
+    for path in [
+        ".office/config.yaml",
+        ".gitignore",
+        "sources",
+        "knowledge",
+        "artifacts",
+        "proposals",
+        ".office",
+        ".git",
+    ] {
+        assert!(
+            !env.library().join(path).exists(),
+            "init wrote {path} while another process held the writer lock"
+        );
+    }
+    assert!(!env.library().exists(), "init created the Library root");
+    assert!(!env.state.join("index.sqlite").exists());
+    drop(lock);
+
+    let retry = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(retry["ok"], serde_json::json!(true), "{retry}");
+    assert_eq!(
+        retry["output"]["already_initialized"],
+        serde_json::json!(false)
+    );
+    assert_eq!(
+        git(&env.library(), &["log", "-1", "--format=%s"]).trim(),
+        "Initialize the Library"
+    );
+    assert_eq!(
+        git(&env.library(), &["rev-list", "--count", "HEAD"]).trim(),
+        "1"
+    );
+    assert!(git(&env.library(), &["status", "--porcelain"]).is_empty());
+}
+
+#[test]
+fn init_recovers_pending_write_while_restoring_missing_template() {
+    let env = Env::new();
+    let first = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(first["ok"], serde_json::json!(true), "{first}");
+    let template = env.library().join(".office/templates/person.md");
+    let original_template = std::fs::read(&template).expect("bundled template");
+    std::fs::remove_file(&template).expect("remove template for init to restore");
+    let relative = "knowledge/domain/recovered.md";
+    let journal_path = env.state.join("library.pending-write.json");
+    let journal = serde_json::json!({
+        "version": 1,
+        "root": env.library().canonicalize().expect("Library root"),
+        "relative": relative,
+        "text": DOMAIN,
+        "token": "123-456"
+    });
+    std::fs::write(&journal_path, journal.to_string()).expect("interrupted write decision");
+
+    let restored = env.tool("office.init", serde_json::json!({}));
+    assert_eq!(restored["ok"], serde_json::json!(true), "{restored}");
+    assert_eq!(
+        restored["output"]["created"],
+        serde_json::json!([".office/templates/person.md"])
+    );
+    assert_eq!(std::fs::read(&template).unwrap(), original_template);
+    assert_eq!(
+        std::fs::read_to_string(env.library().join(relative)).unwrap(),
+        DOMAIN
+    );
+    assert!(!journal_path.exists(), "init must finish recovery");
+    assert_eq!(
+        git(
+            &env.library(),
+            &["show", "HEAD:knowledge/domain/recovered.md"]
+        ),
+        DOMAIN
+    );
+    assert_eq!(
+        git(&env.library(), &["rev-list", "--count", "HEAD"]).trim(),
+        "2"
+    );
+    let status = env.tool("office.status", serde_json::json!({}));
+    assert_eq!(status["ok"], serde_json::json!(true), "{status}");
+    assert_eq!(
+        status["output"]["library"]["documents"],
+        serde_json::json!(1)
+    );
+}
+
+#[test]
 fn missing_git_is_a_typed_refusal_before_any_creation() {
     let env = Env::new();
     let response = env.tool_with_path(
