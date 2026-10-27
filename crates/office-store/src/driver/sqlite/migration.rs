@@ -50,8 +50,12 @@ CREATE VIRTUAL TABLE documents_fts USING fts5(id UNINDEXED, title, summary, body
 ",
     },
     // The template and date search filters. Rows indexed before this step
-    // read NULL until the next reindex, which `office.init` runs on every
-    // upgrade.
+    // read NULL until they are rescanned from their files, so migrating
+    // from schema 1 records a durable backfill marker (below) and
+    // `LibraryStore::open` reindexes under the writer lock before it
+    // returns. The marker survives a failed or interrupted backfill:
+    // `user_version` is already 2 by then, so the version alone could
+    // never retrigger it.
     Migration {
         to: 2,
         sql: "
@@ -85,6 +89,54 @@ pub(crate) fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
             .map_err(|e| Error::sqlite(path, "record schema version", e))?;
         tx.commit()
             .map_err(|e| Error::sqlite(path, "commit migration", e))?;
+    }
+    record_backfill_marker(conn, path, found)
+}
+
+/// Record the durable migration-2 backfill marker when it is owed.
+///
+/// The marker table is created on every open so a database already at
+/// schema 2 (migrated by a build that never backfilled) can be marked
+/// the first time this build sees it: any row with a `NULL` template or
+/// date may be a stale pre-upgrade row, and one rescan heals it. A fresh
+/// database (schema 0) and a schema-2 database this build has already
+/// marked or healed owe nothing. `rebuild` clears the marker in its
+/// rebuild transaction, so a failed backfill is retried on the next open.
+fn record_backfill_marker(conn: &mut Connection, path: &Path, found: u32) -> Result<()> {
+    let marker_existed: bool = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master
+             WHERE type = 'table' AND name = 'index_backfill_pending'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| Error::sqlite(path, "inspect backfill marker", e))?
+        > 0;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS index_backfill_pending (
+             id INTEGER PRIMARY KEY CHECK (id = 1)
+         );",
+    )
+    .map_err(|e| Error::sqlite(path, "create backfill marker", e))?;
+    let owed = if found == 1 {
+        true
+    } else if found == SUPPORTED_SCHEMA && !marker_existed {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM documents
+                            WHERE template IS NULL OR date IS NULL)",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|e| Error::sqlite(path, "inspect stale index rows", e))?
+    } else {
+        false
+    };
+    if owed {
+        conn.execute(
+            "INSERT OR IGNORE INTO index_backfill_pending (id) VALUES (1)",
+            [],
+        )
+        .map_err(|e| Error::sqlite(path, "record backfill marker", e))?;
     }
     Ok(())
 }
