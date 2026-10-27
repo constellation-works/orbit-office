@@ -46,3 +46,29 @@ fn source_show_returns_line_anchors_and_refuses_bad_anchors() {
     );
     assert_eq!(missing["error"]["code"], json!("source_not_found"));
 }
+
+#[test]
+fn source_show_resolves_interior_time_anchor_to_turn_in_progress() {
+    let ports = office_testkit::fakes::PortsBuilder::default().build();
+    let captured = call(
+        "office.capture",
+        json!({
+            "kind": "meeting",
+            "title": "Meeting",
+            "text": "[00:10:00] Jane: one\n\n[00:12:31] Dee: two"
+        }),
+        &ports,
+    );
+    let id = captured["output"]["id"].as_str().expect("id").to_string();
+    let span = call(
+        "office.source-show",
+        json!({"id": id, "anchor": "#t=00:11:00"}),
+        &ports,
+    );
+    assert_eq!(span["ok"], json!(true), "{span}");
+    assert_eq!(
+        span["output"]["body"],
+        json!("[00:10:00] Jane: one"),
+        "{span}"
+    );
+}

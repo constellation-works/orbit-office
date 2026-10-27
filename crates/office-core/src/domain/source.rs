@@ -38,6 +38,24 @@ pub fn meeting_body(transcript: &Transcript) -> String {
     body
 }
 
+/// Seconds from an `hh:mm:ss` stamp, in the form `clock_time` writes and
+/// the knowledge citation validator accepts.
+fn parse_clock_seconds(stamp: &str) -> Option<u64> {
+    let mut parts = stamp.split(':');
+    let (h, m, s) = (parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some()
+        || h.len() < 2
+        || [m, s].iter().any(|p| p.len() != 2)
+        || ![h, m, s]
+            .iter()
+            .all(|p| p.bytes().all(|c| c.is_ascii_digit()))
+    {
+        return None;
+    }
+    let (h, m, s): (u64, u64, u64) = (h.parse().ok()?, m.parse().ok()?, s.parse().ok()?);
+    (m < 60 && s < 60).then(|| h * 3_600 + m * 60 + s)
+}
+
 /// `hh:mm:ss` from a millisecond offset. Hours grow past 99 instead of wrapping.
 fn clock_time(start_ms: u64) -> String {
     let total_seconds = start_ms / 1_000;
@@ -335,6 +353,12 @@ pub fn parse_anchor(raw: &str) -> Result<Anchor> {
 }
 
 /// The span an anchor names in `body`.
+///
+/// A time anchor names the speaker turn in progress at that time: the
+/// latest turn starting at or before it. It resolves for every time from
+/// the first turn's timestamp to the last's, matching the citation
+/// contract `resolve_anchor` validates; times outside that range are
+/// out of range.
 pub fn anchor_span(body: &str, anchor: Anchor, raw: &str) -> Result<String> {
     match anchor {
         Anchor::Lines { start, end } => {
@@ -345,15 +369,42 @@ pub fn anchor_span(body: &str, anchor: Anchor, raw: &str) -> Result<String> {
             Ok(lines[start - 1..end].join("\n"))
         }
         Anchor::Time { seconds } => {
-            let target = clock_time(seconds * 1_000);
             // Paragraphs are `[hh:mm:ss] Speaker: text` (blank-line separated).
+            let mut turns: Vec<(u64, &str)> = Vec::new();
             for para in body.split("\n\n") {
                 let trimmed = para.trim_start();
-                if trimmed.starts_with(&format!("[{target}]")) {
-                    return Ok(para.to_string());
+                let Some(rest) = trimmed.strip_prefix('[') else {
+                    continue;
+                };
+                let Some((stamp, _)) = rest.split_once(']') else {
+                    continue;
+                };
+                if let Some(start) = parse_clock_seconds(stamp) {
+                    turns.push((start, para));
                 }
             }
-            Err(anchor_out_of_range(raw))
+            let (Some(first), Some(last)) = (
+                turns.iter().map(|(start, _)| start).min(),
+                turns.iter().map(|(start, _)| start).max(),
+            ) else {
+                return Err(anchor_out_of_range(raw));
+            };
+            if seconds < *first || seconds > *last {
+                return Err(anchor_out_of_range(raw));
+            }
+            // The turn in progress: the latest turn starting at or before
+            // the requested time. `seconds >= first` guarantees one exists.
+            // On a tied start the first such turn wins, as exact matching did.
+            let mut current: Option<(u64, &str)> = None;
+            for (start, para) in turns {
+                if start <= seconds && current.is_none_or(|(best, _)| start > best) {
+                    current = Some((start, para));
+                }
+            }
+            match current {
+                Some((_, para)) => Ok(para.to_string()),
+                None => Err(anchor_out_of_range(raw)),
+            }
         }
     }
 }
