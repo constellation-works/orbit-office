@@ -4,9 +4,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use office_core::domain::knowledge::{DocumentRecord, Revision, SearchFilter, SearchHit};
+use office_core::domain::knowledge::{Backlink, DocumentRecord, Revision, SearchFilter, SearchHit};
 use office_core::domain::settings::Settings;
-use office_core::ports::{Clock, InitOutcome, Library, LibraryHealth, Models, Orbit, Ports};
+use office_core::ports::{
+    Clock, InitOutcome, Library, LibraryHealth, LibraryText, Models, Orbit, Ports,
+};
 use office_core::protocol::{self, Context};
 use office_orbit::{CALLBACK_ENV_NAMES, OrbitCallbacks};
 use office_store::LibraryStore;
@@ -150,6 +152,18 @@ impl Library for RealLibrary {
             relative,
             text,
         )?)
+    }
+    fn get(&self, id: &str) -> office_core::Result<Option<DocumentRecord>> {
+        Ok(LibraryStore::get(&self.store()?, id)?)
+    }
+    fn backlinks(&self, id: &str) -> office_core::Result<Vec<Backlink>> {
+        Ok(LibraryStore::backlinks(&self.store()?, id)?)
+    }
+    fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(LibraryStore::knowledge_pages(&self.store()?)?)
+    }
+    fn templates(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(LibraryStore::templates(&self.store()?)?)
     }
     fn search(&self, query: &str, filter: &SearchFilter) -> office_core::Result<Vec<SearchHit>> {
         Ok(LibraryStore::search(&self.store()?, query, filter)?)

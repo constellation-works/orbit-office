@@ -6,7 +6,7 @@ use std::path::Path;
 
 use office_common::Sensitivity;
 use office_core::domain::knowledge::{
-    DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit,
+    Backlink, DocumentKind, DocumentRecord, LinkKind, Revision, SearchFilter, SearchHit,
 };
 use office_core::domain::settings::Settings;
 use office_core::domain::source::{
@@ -14,9 +14,10 @@ use office_core::domain::source::{
     media_type_for_extension, normalize_text, render_source, sha256_hex, source_id_base,
     unique_source_id, vtt_to_body,
 };
+use office_core::domain::template::BUNDLED;
 use office_core::ports::{
-    CaptureSourceRequest, InitOutcome, Library, LibraryHealth, SourceOutcome, SourceView,
-    not_initialized_error,
+    CaptureSourceRequest, InitOutcome, Library, LibraryHealth, LibraryText, SourceOutcome,
+    SourceView, not_initialized_error,
 };
 use office_core::{Error, Result};
 use std::path::PathBuf;
@@ -25,6 +26,7 @@ use std::path::PathBuf;
 #[derive(Default)]
 pub struct FakeLibrary {
     documents: RefCell<BTreeMap<String, DocumentRecord>>,
+    texts: RefCell<BTreeMap<String, String>>,
     revisions: RefCell<BTreeMap<String, Vec<Revision>>>,
     now_initialized: RefCell<Option<bool>>,
     current_settings: RefCell<Option<Settings>>,
@@ -41,6 +43,8 @@ pub struct FakeLibrary {
     /// means any existing file may be read (unit-test convenience); the
     /// real adapter always sets its workspace root.
     pub allowed_upload_roots: Vec<PathBuf>,
+    /// Files returned by `templates()`, in the order given.
+    pub templates: Vec<LibraryText>,
 }
 
 impl FakeLibrary {
@@ -51,6 +55,28 @@ impl FakeLibrary {
             initialized: true,
             ..Self::default()
         }
+    }
+
+    /// An initialized fixture whose template directory holds every
+    /// bundled template, as `office.init` leaves it.
+    #[must_use]
+    pub fn with_bundled_templates() -> Self {
+        Self {
+            templates: BUNDLED
+                .iter()
+                .map(|bundled| LibraryText {
+                    path: format!(".office/templates/{}", bundled.filename),
+                    markdown: Some(bundled.markdown.to_string()),
+                })
+                .collect(),
+            ..Self::initialized()
+        }
+    }
+
+    /// Commits recorded for a Library-relative path (one per write).
+    #[must_use]
+    pub fn commits(&self, relative: &str) -> usize {
+        self.revisions.borrow().get(relative).map_or(0, Vec::len)
     }
 
     fn is_now_initialized(&self) -> bool {
@@ -108,9 +134,23 @@ impl Library for FakeLibrary {
     fn write_document(&self, relative: &Path, text: &str) -> Result<DocumentRecord> {
         self.ready()?;
         let record = DocumentRecord::from_markdown(relative, text);
+        if let Some(existing) = self
+            .documents
+            .borrow()
+            .values()
+            .find(|doc| doc.id == record.id && doc.path != record.path)
+        {
+            return Err(Error::Library {
+                code: "library_document_conflict",
+                message: format!("document id {} is already at {}", record.id, existing.path),
+            });
+        }
         self.documents
             .borrow_mut()
             .insert(record.path.clone(), record.clone());
+        self.texts
+            .borrow_mut()
+            .insert(record.path.clone(), text.to_string());
         let mut revisions = self.revisions.borrow_mut();
         let history = revisions.entry(record.path.clone()).or_default();
         history.insert(
@@ -160,6 +200,68 @@ impl Library for FakeLibrary {
                 snippet: doc.body.chars().take(120).collect(),
             })
             .collect())
+    }
+
+    fn get(&self, id: &str) -> Result<Option<DocumentRecord>> {
+        self.ready()?;
+        Ok(self
+            .documents
+            .borrow()
+            .values()
+            .find(|doc| doc.id == id)
+            .cloned())
+    }
+
+    fn backlinks(&self, id: &str) -> Result<Vec<Backlink>> {
+        self.ready()?;
+        let anchored = format!("{id}#");
+        let mut links: Vec<Backlink> = self
+            .documents
+            .borrow()
+            .values()
+            .filter(|doc| doc.id != id)
+            .filter_map(|doc| {
+                let mut via = Vec::new();
+                if doc
+                    .cites
+                    .iter()
+                    .any(|cite| cite == id || cite.starts_with(&anchored))
+                {
+                    via.push(LinkKind::Cites);
+                }
+                if doc.related.iter().any(|related| related == id) {
+                    via.push(LinkKind::Related);
+                }
+                (!via.is_empty()).then(|| Backlink {
+                    id: doc.id.clone(),
+                    kind: doc.kind,
+                    title: doc.title.clone(),
+                    path: doc.path.clone(),
+                    via,
+                })
+            })
+            .collect();
+        links.sort_by(|left, right| left.id.cmp(&right.id));
+        Ok(links)
+    }
+
+    fn knowledge_pages(&self) -> Result<Vec<LibraryText>> {
+        self.ready()?;
+        Ok(self
+            .texts
+            .borrow()
+            .iter()
+            .filter(|(path, _)| path.starts_with("knowledge/"))
+            .map(|(path, markdown)| LibraryText {
+                path: path.clone(),
+                markdown: Some(markdown.clone()),
+            })
+            .collect())
+    }
+
+    fn templates(&self) -> Result<Vec<LibraryText>> {
+        self.ready()?;
+        Ok(self.templates.clone())
     }
 
     fn history(&self, relative: &Path) -> Result<Vec<Revision>> {

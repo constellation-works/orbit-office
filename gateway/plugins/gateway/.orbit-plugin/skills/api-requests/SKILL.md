@@ -48,9 +48,12 @@ other tool in your shell, and never ask the user to paste an API key. Use:
 
 The status, the content type, a fixed set of headers and the body: JSON
 parsed, text as text, anything else as its size and SHA-256 only. A body
-longer than the connection's limit is cut, with `truncated: true`. Anything
-that looks like a credential reads `[secret]`; that is the gateway working,
-not a fault in the API.
+longer than the connection's limit is cut, with `truncated: true`.
+`truncated: true` means those bytes are not the whole reply. A sent draft
+whose server closed before the body it declared uses the same flag, and an
+empty cut-off is `kind: none` with `truncated: true`, not a complete empty
+reply. Anything that looks like a credential reads `[secret]`; that is the
+gateway working, not a fault in the API.
 
 A redirect to another host is returned, not followed (`redirect.reason:
 other_origin`). Do not fetch that location yourself; tell the user.

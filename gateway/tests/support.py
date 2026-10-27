@@ -498,3 +498,82 @@ class CloudCase(GatewayCase):
     def call(self, tool: str, payload: dict[str, Any] | None = None, secrets: dict[str, str] | None = None, **kwargs: Any) -> dict[str, Any]:
         env = {"PATH": self.path, "LANG": "C.UTF-8", **(kwargs.pop("env", None) or {})}
         return super().call(tool, payload, secrets=IDENTITIES if secrets is None else secrets, env=env, **kwargs)
+
+
+class CutoffServer:
+    """Answers a status, writes fewer body bytes than Content-Length, and closes.
+
+    `body` is what is written. `declared` is the Content-Length header, and
+    it is larger, so the client sees a reply cut off after the status: either
+    right after the headers (`body` empty) or mid-body.
+    """
+
+    def __init__(self, case: unittest.TestCase, body: bytes, declared: int, status: int = 200, content_type: str = "application/json"):
+        if declared <= len(body):
+            raise ValueError("declared Content-Length must exceed the bytes written")
+        self.body = body
+        self.declared = declared
+        self.status = status
+        self.content_type = content_type
+        self.requests: list[bytes] = []
+        self.listener = socket.create_server(("127.0.0.1", 0))
+        self.listener.settimeout(0.05)
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+        case.addCleanup(self.close)
+
+    def _read_request(self, conn: socket.socket) -> bytes:
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = conn.recv(65536)
+            if not chunk:
+                return data
+            data += chunk
+        head, rest = data.split(b"\r\n\r\n", 1)
+        length = 0
+        for line in head.split(b"\r\n")[1:]:
+            name, _, value = line.partition(b":")
+            if name.lower() == b"content-length":
+                try:
+                    length = int(value.strip())
+                except ValueError:
+                    length = 0
+        while len(rest) < length:
+            chunk = conn.recv(65536)
+            if not chunk:
+                break
+            rest += chunk
+        return head + b"\r\n\r\n" + rest[:length]
+
+    def _serve(self) -> None:
+        while not self.stop.is_set():
+            try:
+                conn, _ = self.listener.accept()
+            except (TimeoutError, OSError):
+                continue
+            conn.settimeout(2)
+            try:
+                self.requests.append(self._read_request(conn))
+                reason = "OK" if self.status == 200 else "RESPONSE"
+                header = (
+                    f"HTTP/1.1 {self.status} {reason}\r\n"
+                    f"Content-Type: {self.content_type}\r\n"
+                    f"Content-Length: {self.declared}\r\n"
+                    "Connection: close\r\n"
+                    "\r\n"
+                )
+                conn.sendall(header.encode() + self.body)
+            except OSError:
+                pass
+            finally:
+                conn.close()
+
+    @property
+    def origin(self) -> str:
+        return f"http://127.0.0.1:{self.listener.getsockname()[1]}"
+
+    def close(self) -> None:
+        self.stop.set()
+        self.thread.join(timeout=5)
+        self.listener.close()

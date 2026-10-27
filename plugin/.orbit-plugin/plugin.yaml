@@ -133,21 +133,21 @@ spec:
 
     # ---- knowledge ----
 
-    # - name: knowledge-show
-    #   description: >-
-    #     Read a page and its back-links.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/knowledge-show.request.json }
-    #   output_schema: { $ref: schemas/knowledge-show.response.json }
+    - name: knowledge-show
+      description: >-
+        Read a page and its back-links.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/knowledge-show.request.json }
+      output_schema: { $ref: schemas/knowledge-show.response.json }
 
-    # - name: knowledge-write
-    #   description: >-
-    #     Create or update a page; validate frontmatter and cites; commit.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/knowledge-write.request.json }
-    #   output_schema: { $ref: schemas/knowledge-write.response.json }
+    - name: knowledge-write
+      description: >-
+        Create or update a page; validate frontmatter and cites; commit.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/knowledge-write.request.json }
+      output_schema: { $ref: schemas/knowledge-write.response.json }
 
     # ---- artifacts ----
 

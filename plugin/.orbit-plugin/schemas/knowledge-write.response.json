@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.knowledge-write response",
+  "description": "The page passed every check and was written, indexed and committed once. A refusal writes nothing: invalid_frontmatter, unknown_template, page_id_mismatch, template_page_exists, missing_section, template_type_mismatch, template_invalid, contact_in_body, page_too_long, policy_without_source or unresolved_cite.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "description": "The page id." },
+    "type": { "type": "string", "enum": ["domain", "runbook"] },
+    "path": { "type": "string", "description": "The page's path relative to the Library." },
+    "created": { "type": "boolean", "description": "True when no page had this id before the write." }
+  },
+  "required": ["id", "type", "path", "created"],
+  "additionalProperties": false
+}

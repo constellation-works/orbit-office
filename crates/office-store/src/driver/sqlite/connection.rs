@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
-use crate::contracts::{DocumentKind, DocumentRecord, SearchFilter, SearchHit};
+use crate::contracts::{Backlink, DocumentKind, DocumentRecord, LinkKind, SearchFilter, SearchHit};
 use crate::driver::sqlite::migration;
 use crate::error::{Error, Result};
 
@@ -215,6 +215,54 @@ impl IndexStore {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::sqlite(&self.path, "read search rows", e))?;
         Ok(hits)
+    }
+
+    /// Documents whose `cites` name `id` (bare or with an anchor) or whose
+    /// `related` names it, sorted by id. A document never links to itself.
+    pub(crate) fn backlinks(&self, id: &str) -> Result<Vec<Backlink>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT d.id, d.kind, d.title, d.path, l.by_cite, l.by_link
+                 FROM (
+                     SELECT doc_id,
+                            max(by_cite) AS by_cite,
+                            max(by_link) AS by_link
+                     FROM (
+                         SELECT doc_id, 1 AS by_cite, 0 AS by_link FROM cites
+                         WHERE target = ?1 OR substr(target, 1, length(?1) + 1) = ?1 || '#'
+                         UNION ALL
+                         SELECT from_id, 0, 1 FROM links WHERE to_id = ?1
+                     )
+                     GROUP BY doc_id
+                 ) l
+                 JOIN documents d ON d.id = l.doc_id
+                 WHERE d.id <> ?1
+                 ORDER BY d.id",
+            )
+            .map_err(|e| Error::sqlite(&self.path, "prepare backlinks", e))?;
+        let links = stmt
+            .query_map(params![id], |row| {
+                let mut via = Vec::new();
+                if row.get::<_, i64>(4)? != 0 {
+                    via.push(LinkKind::Cites);
+                }
+                if row.get::<_, i64>(5)? != 0 {
+                    via.push(LinkKind::Related);
+                }
+                Ok(Backlink {
+                    id: row.get(0)?,
+                    kind: DocumentKind::parse(&row.get::<_, String>(1)?)
+                        .unwrap_or(DocumentKind::Source),
+                    title: row.get(2)?,
+                    path: row.get(3)?,
+                    via,
+                })
+            })
+            .map_err(|e| Error::sqlite(&self.path, "run backlinks", e))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::sqlite(&self.path, "read backlink rows", e))?;
+        Ok(links)
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {

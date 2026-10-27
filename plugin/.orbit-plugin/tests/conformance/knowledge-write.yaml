@@ -1,0 +1,70 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  # Runs after knowledge-show.yaml, which wrote dom-user and dom-client-acme.
+  # Every refusal here writes nothing; the one success adds a third page.
+  - name: knowledge_write_commits_a_runbook
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: rb-client-qbr-prep\ntemplate: runbook\ntitle: QBR prep\ncites: [dom-client-acme]\nperformable: agent\nsubmission:\n  system: ServiceNow\n  via: draft\n---\n## Inputs\nThe client page.\n\n## Steps\nDraft the agenda.\n\n## Done when\nThe agenda is approved.\n"
+    expect:
+      output: {id: rb-client-qbr-prep, type: runbook, path: knowledge/runbooks/rb-client-qbr-prep.md, created: true}
+  - name: knowledge_write_refuses_a_cite_to_a_missing_source
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-topic-pricing\ntitle: Pricing\ncites: [\"src-20261028-missing#t=00:12:31\"]\n---\nPrices rise.\n"
+    expect:
+      error: {code: unresolved_cite}
+  - name: knowledge_write_refuses_an_anchor_on_a_page_cite
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-topic-pricing\ntitle: Pricing\n---\nSee [dom-user#Role].\n"
+    expect:
+      error: {code: unresolved_cite}
+  - name: knowledge_write_refuses_an_unknown_template
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-topic-pricing\ntemplate: nobody\ntitle: Pricing\n---\nx\n"
+    expect:
+      error: {code: unknown_template}
+  - name: knowledge_write_refuses_a_page_id_off_its_template
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-pricing\ntemplate: topic\ntitle: Pricing\n---\n## Overview\nx\n"
+    expect:
+      error: {code: page_id_mismatch}
+  - name: knowledge_write_refuses_a_missing_required_section
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-topic-pricing\ntemplate: topic\ntitle: Pricing\n---\n## Key numbers\n8%\n"
+    expect:
+      error: {code: missing_section}
+  - name: knowledge_write_refuses_a_type_off_its_template
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-topic-pricing\ntype: runbook\ntemplate: topic\ntitle: Pricing\n---\n## Overview\nx\n"
+    expect:
+      error: {code: template_type_mismatch}
+  - name: knowledge_write_refuses_contact_details_in_the_body
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-person-jane\ntitle: Jane\n---\nReach her at jane@example.com.\n"
+    expect:
+      error: {code: contact_in_body}
+  - name: knowledge_write_refuses_a_policy_without_source
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-topic-pto\ntitle: PTO\ntags: [policy]\n---\nTwo weeks.\n"
+    expect:
+      error: {code: policy_without_source}
+  - name: knowledge_write_refuses_unknown_frontmatter
+    tool: knowledge-write
+    input:
+      markdown: "---\nid: dom-topic-pricing\ntitle: Pricing\npassword: x\n---\nx\n"
+    expect:
+      error: {code: invalid_frontmatter}
+  - name: knowledge_write_refuses_unknown_input
+    tool: knowledge-write
+    input: {markdown: "x", path: knowledge/domain/x.md}
+    expect:
+      error: {code: invalid_argument}

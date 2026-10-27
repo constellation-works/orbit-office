@@ -11,7 +11,7 @@ import re
 import stat
 import urllib.parse
 
-from tests.support import TOKEN, GatewayCase, Reply, Server, SilentServer, json_reply
+from tests.support import TOKEN, CutoffServer, GatewayCase, Reply, Server, SilentServer, json_reply
 
 DRAFT_ID = re.compile(r"^gd-[0-9a-f]{16}$")
 
@@ -273,6 +273,47 @@ class Send(DraftCase):
         out = self.ok("http-draft", {"connection": "acme", "method": "POST", "path": "deals", "body": {"code": "later-secret-0123456789"}}, secrets={})
         self.refused("secret_in_body", "http-send", {"draft": out["draft"], "sha256": out["sha256"]}, secrets={"conn_01": "later-secret-0123456789"})
         self.assertEqual(self.server.seen, [])
+
+    def test_a_reply_closed_after_the_headers_is_truncated_and_sent_once(self) -> None:
+        self._assert_cutoff(b"")
+
+    def test_a_reply_closed_mid_body_is_truncated_and_sent_once(self) -> None:
+        self._assert_cutoff(b'{"id":42')
+
+    def _assert_cutoff(self, body: bytes) -> None:
+        """A Content-Length the server does not finish. Fails while a short
+        read is reported as a complete body (`truncated` false)."""
+        declared = 32
+        cutoff = CutoffServer(self, body=body, declared=declared)
+        self.put("cut", cutoff.origin + "/", scheme="none", drafts=["POST"])
+        out = self.ok("http-draft", {"connection": "cut", "method": "POST", "path": "orders", "body": {"qty": 1}})
+        sent = self.ok("http-send", {"draft": out["draft"], "sha256": out["sha256"]})
+        self.assertEqual((sent["outcome"], sent["status"], sent["truncated"]), ("sent", 200, True))
+        self.assertNotEqual((sent["body"]["kind"], sent["truncated"]), ("none", False))
+        if body:
+            self.assertEqual(sent["bytes"], len(body))
+            self.assertEqual(sent["body"], {"kind": "text", "text": body.decode()})
+        else:
+            self.assertEqual((sent["body"], sent["bytes"]), ({"kind": "none"}, 0))
+
+        [line] = [line for line in self.audit_lines() if line["tool"] == "gateway.http-send" and line["outcome"] == "sent"]
+        self.assertIs(line["truncated"], True)
+        self.assertNotEqual(line["bytes"], declared)
+        if body:
+            self.assertEqual(line["bytes"], len(body))
+            self.assertEqual(len(line["body_sha256"]), 64)
+        else:
+            self.assertEqual((line["bytes"], line["body_sha256"]), (0, None))
+        listed = self.ok("audit-list", {"connection": "cut"})
+        self.assertEqual(listed["skipped"], 0)
+        [row] = [row for row in listed["records"] if row["tool"] == "gateway.http-send" and row["outcome"] == "sent"]
+        self.assertIs(row["truncated"], True)
+
+        self.assertEqual(self.stored(out["draft"])["state"], "sent")
+        self.assertEqual(len(cutoff.requests), 1)
+        self.assertTrue(cutoff.requests[0].startswith(b"POST /orders HTTP/1.1"))
+        self.refused("draft_not_pending", "http-send", {"draft": out["draft"], "sha256": out["sha256"]})
+        self.assertEqual(len(cutoff.requests), 1, "a cut-off reply is not sent again")
 
 
 class OutcomeUnknown(GatewayCase):
