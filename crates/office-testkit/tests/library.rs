@@ -205,3 +205,33 @@ fn fake_initialize_accepts_the_library_and_workspace_relative_library_dirs() {
         assert!(port.is_initialized().expect("initialized"));
     }
 }
+
+#[test]
+fn explicit_fixture_history_replaces_only_the_named_document_without_host_io() {
+    use office_core::domain::knowledge::Revision;
+    let fake = FakeLibrary::initialized();
+    for id in ["one", "two"] {
+        fake.write_document(
+            Path::new(&format!("knowledge/domain/dom-{id}.md")),
+            &format!("---\nid: dom-{id}\n---\nPage"),
+        )
+        .expect("seed");
+    }
+    let path = Path::new("knowledge/domain/dom-one.md");
+    let revisions = vec![Revision {
+        commit: "fixture-commit".into(),
+        author: "Fixture".into(),
+        email: "fixture@example.invalid".into(),
+        authored_at: "2026-10-05T00:00:00Z".into(),
+        message: "Create page".into(),
+    }];
+    fake.set_history(path, revisions.clone()).expect("history");
+    assert_eq!(fake.history(path).expect("read"), revisions);
+    assert_eq!(
+        fake.history(Path::new("knowledge/domain/dom-two.md"))
+            .expect("other")[0]
+            .authored_at,
+        "1970-01-01T00:00:00+00:00"
+    );
+    assert!(fake.set_history(Path::new("missing.md"), vec![]).is_err());
+}

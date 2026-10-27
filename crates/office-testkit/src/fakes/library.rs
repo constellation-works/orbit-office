@@ -123,6 +123,14 @@ impl FakeLibrary {
         self.staging.clone()
     }
 
+    /// Replace one existing document's revision history with explicit fixture
+    /// timestamps. Does no host I/O and leaves other documents unchanged.
+    pub fn set_history(&self, relative: &Path, revisions: Vec<Revision>) -> Result<()> {
+        let record = self.read_document(relative)?;
+        self.revisions.borrow_mut().insert(record.path, revisions);
+        Ok(())
+    }
+
     fn record_commit(&self) {
         *self.commits.borrow_mut() += 1;
     }

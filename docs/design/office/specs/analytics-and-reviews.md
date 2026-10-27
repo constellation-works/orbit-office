@@ -48,3 +48,75 @@ mechanism.
 
 Every line cites a task, source or proposal, so the review can be audited.
 A line the material does not support is omitted, never invented.
+
+## Tool and evidence contract
+
+`office.metrics` and `office.review-inputs` accept exactly `since` and `until`,
+both real `YYYY-MM-DD` dates. The window is `[since, until)` in UTC, at most
+3,660 days. For example, the fourth quarter is
+`{"since":"2026-10-01","until":"2027-01-01"}`. Weekly buckets start on
+Monday and are clipped at both period boundaries. Ratios with no eligible
+observations are `null`; their numerators and denominators are zero.
+
+The tools read a complete Orbit task-list projection (including `tags`,
+`type`, `created_at`, state-transition `history` and artifact paths), plus
+all Library artifact metadata. An unavailable read, malformed relevant
+record, or truncated task list refuses the request. The current callback
+limit is 10,000 records; a larger corpus is explicitly refused rather than
+silently sampled. Neither tool writes data or calls a model. A Library
+commit change during a read refuses the snapshot for retry.
+
+- Work is identified by `owner:agent`, `owner:you` or `owner:routine` tags.
+  Proposals are decisions, not completed work. Completion and proposal
+  decisions use recorded `history[].to_status` transitions into `done` or
+  `rejected`, reconstructed as of the exclusive period end. `updated_at`
+  is never substituted for completion. Terminal work without transition
+  history is refused. Work reopened before period end is not completed.
+- A task's `estimate-minutes:<integer>` tag supplies its estimated minutes
+  (0–1,000,000). Otherwise the fixed defaults by Orbit type are: feature
+  60, bug 30, refactor 30, chore 15. Estimates are explicitly estimates;
+  the tools do not infer them from titles, bodies or a model.
+- A routine output without a listed owner task is identified by a
+  `routine:<name>` artifact tag. It counts once per originating task/run,
+  at its first approval, so multiple output files or promoted versions
+  do not inflate work. The same estimate tag overrides artifact-kind
+  defaults: report/review 30, doc/script 60, draft/data/other 15 minutes.
+  Listed task work is counted at task completion, not counted again on
+  artifact promotion. `digest-daily` artifacts and their source tasks
+  (also recognizable by `series:digest-daily`) are housekeeping and excluded.
+- First-pass acceptance counts user-approved non-digest artifact outputs
+  whose approval timestamp is in the period. Its numerator has
+  `approved.edited: false`; its denominator includes edited user approvals.
+  Routine approvals never enter this population.
+- Knowledge coverage uses completed agent tasks in the period. A runbook
+  is attached only when the task's artifact metadata includes an actual
+  `context/knowledge/runbooks/*.md` file produced by `office.attach`.
+  A runbook named in a tag alone does not claim coverage.
+- A conversion needs a shared explicit `cluster:<id>` tag on prior completed
+  `owner:you` work and an accepted `proposal:routine` or `proposal:auto_task`.
+  Only the first accepted automation of each cluster counts. The conversion
+  returns its proposal and manual task ids, even when the manual examples
+  predate this period. Without that link the tools report no conversion;
+  they do not invent a cluster from similar titles.
+- Open load is user-owned work open just before `until`, including work
+  created before `since`. Age is measured from creation to that period end,
+  in whole days. Future-created tasks and terminal states are excluded.
+
+`review-inputs` returns period-completed tasks with their output paths,
+period-accepted proposals, the same complete metrics report, period-approved
+outputs, and daily digests separately. Conversation sources contain only
+entries timestamped in the period, with their original source line anchors;
+an old session appended during the period is included. Knowledge changes
+are selected by Library git revision timestamps, with commit ids, paths and
+subjects. A later revision or a newer current page header does not hide an
+earlier in-period change. Returned knowledge references identify revisions;
+the current page body is not presented as historical text.
+
+The seeded `office-review` definition is disabled and uses `skip_if_open`.
+Orbit currently supports cron/interval schedules rather than a `period_end`
+condition token, so its period-end implementation fires at 00:05 host-local
+time on January, April, July and October 1. It requests the just-completed
+UTC quarter and, in January, the previous UTC year as a second review. The
+task's recorded creation date anchors the periods even if execution is late.
+Reviews remain task artifacts awaiting user approval; the definition does
+not promote them. The plugin manifest registers this definition explicitly.

@@ -1,0 +1,49 @@
+schemaVersion: 1
+name: office-review
+description: Cited quarterly and yearly reviews at period end
+enabled: false
+# Orbit's period-end implementation: the first day of each new quarter,
+# host-local time. Review material uses explicit UTC calendar boundaries.
+schedule:
+  cron: "5 0 1 1,4,7,10 *"
+dedupe: skip_if_open
+template:
+  title: Write the completed period's office reviews
+  description: |-
+    Use this task's recorded creation date to identify the quarter that just
+    ended. Call office.review-inputs with since (the quarter's first UTC date)
+    and until (the next quarter's first UTC date, exclusive). In January also
+    call it for the previous calendar year. State each exact window in the review.
+
+    Write one quarterly review and, in January, one yearly review. Use the
+    metrics exactly as returned, including null ratios for empty populations;
+    never estimate counts, acceptance, hours or conversions with a model.
+    Consult the period's daily_digests and conversation_sources. Every factual
+    line must cite a completed task, output, proposal, source anchor or knowledge
+    revision returned by the tool. Omit unsupported claims and empty sections.
+
+    Sections: Highlights; Work by area (project and client tags); What I
+    automated (conversions and hours returned); Decisions; Snags and fixes
+    (only when cited evidence supports them); Next period (open load).
+    Respect each item's sensitivity. Never send or publish the review.
+
+    Attach the review Markdown and an artifact-manifest.json for user review:
+    kind review, series review-quarterly or review-yearly, title, summary,
+    files, cites and tags. When producing both cadences use separate task
+    artifact directories with a manifest and review.md in each. Promotion is
+    a user approval action; do not approve or promote the review yourself.
+    Previously approved reviews in outputs may be consulted using
+    office.artifact-show; cite the prior version when building on it.
+  acceptance_criteria:
+    - Each required cadence has a review and manifest with explicit UTC period, correct series and citations for every factual line.
+    - Metrics and daily digests come from office.review-inputs; unsupported claims are omitted and the output awaits user approval.
+  task_type: chore
+  tags: [office, owner:agent, office-review, no-diff-expected]
+  required_tools: [office.review-inputs, office.artifact-show, orbit.task.show, orbit.task.artifact.put]
+  status: backlog
+  priority: medium
+  complexity: medium
+created_by: office
+created_at: 2026-10-26T00:00:00Z
+updated_by: office
+updated_at: 2026-10-26T00:00:00Z
