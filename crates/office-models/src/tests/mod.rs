@@ -48,7 +48,10 @@ pub struct FakeServer {
 impl FakeServer {
     /// Serve `body` with HTTP `status` for every request.
     pub fn start(status: u16, body: String) -> Self {
-        Self::serve("127.0.0.1", vec![(status, body, None)])
+        Self::serve(
+            "127.0.0.1",
+            vec![(status, body, None, std::time::Duration::ZERO)],
+        )
     }
 
     /// Return successive replies, repeating the last for any extra requests.
@@ -57,14 +60,33 @@ impl FakeServer {
             "127.0.0.1",
             replies
                 .into_iter()
-                .map(|(status, body)| (status, body, None))
+                .map(|(status, body)| (status, body, None, std::time::Duration::ZERO))
+                .collect(),
+        )
+    }
+
+    /// Return successive replies, delaying each answer by its duration.
+    pub fn start_replies_delayed(replies: Vec<(u16, String, std::time::Duration)>) -> Self {
+        Self::serve(
+            "127.0.0.1",
+            replies
+                .into_iter()
+                .map(|(status, body, delay)| (status, body, None, delay))
                 .collect(),
         )
     }
 
     /// Return a redirect to `location` from the allowlisted loopback host.
     pub fn start_redirect(location: String) -> Self {
-        Self::serve("127.0.0.1", vec![(302, String::new(), Some(location))])
+        Self::serve(
+            "127.0.0.1",
+            vec![(
+                302,
+                String::new(),
+                Some(location),
+                std::time::Duration::ZERO,
+            )],
+        )
     }
 
     /// Serve on a loopback host outside the model endpoint allowlist.
@@ -72,17 +94,24 @@ impl FakeServer {
     /// `127.0.0.2` fails on macOS, which has no such loopback alias, while
     /// `localhost` is still an unlisted host string for the allowlist.
     pub fn start_unlisted_loopback(status: u16, body: String) -> Self {
-        Self::serve_on("127.0.0.1", "localhost", vec![(status, body, None)])
+        Self::serve_on(
+            "127.0.0.1",
+            "localhost",
+            vec![(status, body, None, std::time::Duration::ZERO)],
+        )
     }
 
     /// Serve `body` on the IPv6 loopback address `[::1]`. Panics when the
     /// host has no IPv6 loopback, so the test fails rather than passing
     /// without exercising the endpoint.
     pub fn start_ipv6(status: u16, body: String) -> Self {
-        Self::serve("[::1]", vec![(status, body, None)])
+        Self::serve(
+            "[::1]",
+            vec![(status, body, None, std::time::Duration::ZERO)],
+        )
     }
 
-    fn serve(host: &str, replies: Vec<(u16, String, Option<String>)>) -> Self {
+    fn serve(host: &str, replies: Vec<(u16, String, Option<String>, std::time::Duration)>) -> Self {
         Self::serve_on(host, host, replies)
     }
 
@@ -90,7 +119,7 @@ impl FakeServer {
     fn serve_on(
         bind_host: &str,
         url_host: &str,
-        replies: Vec<(u16, String, Option<String>)>,
+        replies: Vec<(u16, String, Option<String>, std::time::Duration)>,
     ) -> Self {
         let host = bind_host;
         assert!(!replies.is_empty(), "fake server needs at least one reply");
@@ -98,6 +127,7 @@ impl FakeServer {
         let port = listener.local_addr().expect("local addr").port();
         let requests: Arc<Mutex<Vec<Recorded>>> = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
+        let replies = Arc::new(replies);
         let thread = {
             let requests = Arc::clone(&requests);
             let stop = Arc::clone(&stop);
@@ -106,26 +136,35 @@ impl FakeServer {
                 while !stop.load(Ordering::Relaxed) {
                     match listener.accept() {
                         Ok((mut stream, _)) => {
-                            let _ = stream.set_nonblocking(false);
-                            let recorded = read_request(&mut stream);
-                            let index = {
-                                let mut requests = requests.lock().expect("requests lock");
-                                let index = requests.len();
-                                requests.push(recorded);
-                                index
-                            };
-                            let (status, body, location) = replies
-                                .get(index)
-                                .unwrap_or_else(|| replies.last().expect("nonempty replies"));
-                            let location_header =
-                                location.as_ref().map_or_else(String::new, |location| {
-                                    format!("Location: {location}\r\n")
-                                });
-                            let response = format!(
-                                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n{location_header}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                                body.len()
-                            );
-                            let _ = stream.write_all(response.as_bytes());
+                            // One thread per connection: a delayed reply
+                            // must not block later requests.
+                            let requests = Arc::clone(&requests);
+                            let replies = Arc::clone(&replies);
+                            std::thread::spawn(move || {
+                                let _ = stream.set_nonblocking(false);
+                                let recorded = read_request(&mut stream);
+                                let index = {
+                                    let mut requests = requests.lock().expect("requests lock");
+                                    let index = requests.len();
+                                    requests.push(recorded);
+                                    index
+                                };
+                                let (status, body, location, delay) = replies
+                                    .get(index)
+                                    .unwrap_or_else(|| replies.last().expect("nonempty replies"));
+                                if !delay.is_zero() {
+                                    std::thread::sleep(*delay);
+                                }
+                                let location_header =
+                                    location.as_ref().map_or_else(String::new, |location| {
+                                        format!("Location: {location}\r\n")
+                                    });
+                                let response = format!(
+                                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n{location_header}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                                    body.len()
+                                );
+                                let _ = stream.write_all(response.as_bytes());
+                            });
                         }
                         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                             std::thread::sleep(std::time::Duration::from_millis(2));

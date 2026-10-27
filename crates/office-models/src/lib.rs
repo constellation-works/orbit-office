@@ -176,6 +176,16 @@ impl RoutedClient {
 
     /// Post `body` to a resolved endpoint, allowlist-checked first.
     fn send(&self, resolved: &routing::ResolvedCall, body: &Value) -> Result<(String, Value)> {
+        self.send_with_timeout(resolved, body, None)
+    }
+
+    /// Post `body` with a per-request timeout overriding the agent's cap.
+    fn send_with_timeout(
+        &self,
+        resolved: &routing::ResolvedCall,
+        body: &Value,
+        timeout: Option<Duration>,
+    ) -> Result<(String, Value)> {
         let url = meta::chat_url(&resolved.base_url);
         let host = http::host_of(&url).unwrap_or_default();
         let response = http::post_json(
@@ -184,6 +194,7 @@ impl RoutedClient {
             resolved.api_key.as_deref(),
             body,
             resolved.destination(),
+            timeout,
         )?;
         Ok((host, response))
     }
