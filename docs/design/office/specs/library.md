@@ -145,7 +145,7 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 
 `office.source-show` preserves the display fields (`body` and its `text` alias,
 optional anchor `span`, identity, original metadata and version), and adds
-`derived_by`, `cited_by` and `chapters`. `derived_by` is the recorded
+`derived_by`, `cited_by`, `chapters`, `frames` and `gotchas`. `derived_by` is the recorded
 transcription/extraction/frame provenance; an unprocessed source returns `{}`.
 `cited_by` contains `id`, `title` and `kind` for indexed Library backlinks
 (sources, domain/runbook pages and artifacts), plus tasks tagged
@@ -161,6 +161,13 @@ written by `office.extract` into `number`, `title`, `label` (`core` or
 `tangent`), `start` (whole seconds) and a `#t=hh:mm:ss` anchor. An unreadable
 or malformed sidecar refuses the read, with `invalid_chapters` for malformed
 chapter data. The source body's anchor behavior is unchanged.
+
+`frames` reads the persisted `frames.md` timeline into `time` (whole seconds),
+`anchor`, generated PNG `file` and `text`. The file names follow the processing
+order (`0000.png`, `0001.png`, …). `gotchas` reads only already extracted
+`Gotcha: ` claims from `digest.json`, returning their text and citations.
+Both lists are empty when their sidecars are absent; malformed sidecars refuse
+the read rather than inventing display data.
 
 Media is opt-in: `{"id":"<source-id>","media":"original"}` reads the
 recorded original; `{"id":"<source-id>","media":"frame","frame":"0000.png"}`
@@ -234,7 +241,7 @@ last_verified: 2026-10-28
 status: current                # current | stale | retired
 ```
 
-- Claims in the body carry inline citations, for example `[src-…#t=00:12:31]`. Once the planned source screen ships, the app will render them as links that open the source at the anchor; until then the anchors are a recorded URL contract with no landing behaviour.
+- Claims in the body carry inline citations, for example `[src-…#t=00:12:31]`. The Source screen resolves these anchors in `/?source=<id>#t=hh:mm:ss` links. Line, frame and chapter fragments use the same query-selected screen.
 - **Runbooks** add `inputs`, `steps` and `done_when` sections. These are what an implementing agent follows.
 - **Templates.** A page may name the template it follows (`template: person`). Templates fix its id pattern and required sections, and decide when `office.attach` includes it. The bundled set and the onboarding interview that writes the first pages are in [knowledge-templates.md](./knowledge-templates.md).
 - **Pointers** (files, links, contacts, templates, accounts) live in a domain page's `refs`, on the page about their subject, for example Jane Park's email on `dom-person-jane-park`. Each ref has one `path`, `url`, `contact`, `account` (`system:key`, such as `jira:ACME`) or `artifact` target. Never secrets. Contact values never reach a model ([knowledge-templates.md](./knowledge-templates.md#contact-details)).

@@ -6,9 +6,9 @@
  * no fetch handler ever stores a response, so live-data `/api/*` endpoints
  * and `/healthz` always come live from the local server and are never
  * cached. Same-origin navigations fall back to the cached shell when the
- * network fails; there is no offline data mode. The one static file under
- * the `/api/` prefix, the compiled `/api/client.js` module, is part of the
- * shell (see `isApiRequest`), not live data.
+ * network fails; there is no offline data mode. The static modules under
+ * the `/api/` prefix (the compiled client and source-location modules) are
+ * part of the shell (see `isApiRequest`), not live data.
  *
  * Self-contained on purpose: the shell list and the live-data check live
  * here (no imports to resolve at install time) and are covered by driving
@@ -39,6 +39,7 @@ const SHELL_ASSETS: readonly string[] = [
   "/pwa/register.js",
   "/router.js",
   "/api/client.js",
+  "/api/source-location.js",
   "/ui/index.js",
   "/ui/card.js",
   "/ui/pill.js",
@@ -55,6 +56,8 @@ const SHELL_ASSETS: readonly string[] = [
   "/screens/settings/style.js",
   "/screens/settings/private.js",
   "/screens/source/index.js",
+  "/screens/source/model.js",
+  "/screens/source/style.js",
   "/screens/today/approvals.js",
   "/screens/today/index.js",
   "/screens/todos/index.js",
@@ -62,7 +65,7 @@ const SHELL_ASSETS: readonly string[] = [
 ];
 
 /** Cache name for the shell. Bump when the shell's bytes change. */
-const SHELL_CACHE = "office-shell-v4";
+const SHELL_CACHE = "office-shell-v5";
 
 /**
  * True for live-data paths, which the worker must never cache. A `.js`

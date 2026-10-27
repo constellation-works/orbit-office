@@ -36,7 +36,7 @@ Source: spec §13.1–§13.2 and §13.4.
 | Screen | Content |
 |---|---|
 | **Today** | Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
-| **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; once the planned source screen ships, every video citation will open the player at its second ([kt-videos.md](./kt-videos.md#app)) |
+| **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge |
 | **Routines** | Auto-task cards with plain-language schedules, on/off switches, and retention settings. Run history and produced outputs await an Orbit listing change; scheduled background jobs are managed in Orbit. |
 | **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meeting sources and other Library documents; task links are deferred until a page-citation read exists); history for every page and artifact |
@@ -46,12 +46,12 @@ Source: spec §13.1–§13.2 and §13.4.
 
 There is no Chat screen: conversation happens in the user's agent CLI.
 Citations the agent prints are `http://localhost` links carrying the
-source anchor; they will open the app's source or page view once the
-planned source screen ships.
+source anchor; source links open the Source screen using `/?source=<id>#t=hh:mm:ss` (or
+`#L`, `#frame=` and `#chapter=` anchors).
 
 ### Review implementation
 
-Review searches the quarterly and yearly review series, reads each returned artifact body, and orders the returned reviews by approval time. Search is bounded to 100 hits per series and matches indexed text, so it is not a complete review listing. At most 100 reviews are shown, with a notice at the limit. Citation links retain the source reference for the planned source or page view; those views do not yet resolve them. Regenerate requests the review auto-task and explains when that request is refused.
+Review searches the quarterly and yearly review series, reads each returned artifact body, and orders the returned reviews by approval time. Search is bounded to 100 hits per series and matches indexed text, so it is not a complete review listing. At most 100 reviews are shown, with a notice at the limit. Review citation links retain their source references; the Source screen accepts anchored localhost URLs. Regenerate requests the review auto-task and explains when that request is refused.
 
 ### Today implementation
 
@@ -74,8 +74,7 @@ screen. Open results, background panels and keyboard focus survive refreshes.
   between local midnight and the snapshot time. Last-edit timestamps do not
   establish completion. Each result opens its recorded execution summary;
   missing summaries are explicitly identified. “About this work” opens the
-  recorded task description as provenance on every item. Source-specific
-  navigation will arrive with the Source and Library screens.
+  recorded task description as provenance on every item. The Source screen also provides direct anchored navigation.
 
 Empty sections have their own messages. A failed or malformed Orbit read
 refuses the whole snapshot; the UI reports that failure and retains previous
@@ -86,6 +85,50 @@ snapshot, not a complete history. The view supports the shared light theme.
 An empty `drop-zone` slot reserves the upload integration point; uploading
 remains a separate feature. Each Needs-you card except the user's own to-dos
 carries its `approval-actions` (below).
+
+### Source implementation
+
+Source is built. It accepts files, folder drops and pasted text; single uploads
+call `office.capture` once and open the resulting source. Folder capture adds
+`bootstrap:<phase>` to each supported file, skips unsupported extensions, and
+then previews that phase's whole pending batch (including sources captured
+earlier). A partial upload reports how many files were saved; it never retries
+a capture automatically.
+
+The app stages each upload in a random owner-only directory inside the configured
+`ORBIT_OFFICE_WORKSPACE`, which is within the plugin's existing upload grant.
+The filename must be a basename with a supported extension. The server streams
+at most 256 MiB per file and removes its staging file and directory on success
+or failure. JSON paste input is bounded to 1 MiB. Request reads have a 30-second
+idle timeout. No browser-supplied filesystem path is accepted.
+
+A video calls `office.video-plan` for a plan-only preview after capture. A folder
+calls `office.batch-plan`. Neither starts model processing. The preview shows
+minutes, frames, model calls and the recorded estimate, or “Rates unset”. Process
+confirms once with `confirm: true` and the exact digest shown. Marking a preview
+private fetches a new preview and disables the old confirmation. Privacy can
+only be raised in this UI. Confirmation failures offer a fresh preview rather
+than retrying a potentially completed mutation.
+
+The original and text appear side by side on desktop and stack on phones.
+`/?source=<id>#t=hh:mm:ss`, `#L<n>-<m>`, `#frame=hh:mm:ss` and `#chapter=<n>`
+select the Source screen through the app entry point, highlight and scroll the
+span, and seek audio/video after metadata loads. Ordinary navigation hashes
+still select their named screens. Chapter tangents start folded, while their
+gotchas remain visible. Keyframe links seek the same player. Citing tasks and
+Library pages open their recorded text through the server; unavailable or capped
+task citations are identified. Route badges come from `derived_by`; a recorded
+private route uses the configured endpoint label. Mark private calls
+`office.source-set-sensitivity` for subsequent processing.
+
+Source JSON is served by `GET /api/sources?id=…`, originals and frames by
+`GET /api/sources/media?id=…[&frame=0000.png]`, and citing documents by
+`GET /api/sources/citation?id=…&kind=…`. Mutations use POST at
+`/api/sources/upload`, `/paste`, `/private` and `/plan` (each below
+`/api/sources`). Media stays behind `office.source-show` and its privacy checks;
+byte ranges allow seeking, but the tool's existing **512 KiB** media cap still
+applies. Larger, expired or refused originals show an unavailable message while
+the source text remains readable. Source supports the shared light theme.
 
 ### Approvals implementation
 

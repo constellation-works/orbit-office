@@ -599,3 +599,68 @@ fn source_show_checks_private_frame_image_audio_and_text_capabilities() {
         }
     }
 }
+
+#[test]
+fn source_show_exposes_frame_timeline_and_cited_gotchas_from_processing_sidecars() {
+    let library = fixture(b"video", false, Default::default());
+    let markdown = library.read_text(Path::new(SOURCE_PATH)).unwrap();
+    let digest = json!({"summary":"KT", "subjects":[], "procedures":[], "terms":[], "refs":[],
+        "claims":[{"subject":"KT","text":"Gotcha: Never restart on Friday","cites":[format!("{ID}#t=00:01:06")],"volatile":false}]});
+    library
+        .insert_source_sidecar(
+            ID,
+            "frames.md",
+            "[00:01:06] Ingest console [frame](#frame=00:01:06)\n",
+        )
+        .unwrap();
+    library
+        .write_source_processing(
+            ID,
+            &office_core::domain::source::sha256_hex(markdown.as_bytes()),
+            None,
+            &office_core::ports::DerivedBy {
+                route: office_core::domain::endpoint::ModelRoute::Hosted,
+                model: "fixture".into(),
+            },
+            &[("digest.json".into(), serde_json::to_vec(&digest).unwrap())],
+        )
+        .unwrap();
+    let response = call("office.source-show", json!({"id":ID}), &ports(library));
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        response["output"]["frames"],
+        json!([{"time":66,"anchor":"#frame=00:01:06","file":"0000.png","text":"Ingest console"}])
+    );
+    assert_eq!(
+        response["output"]["gotchas"],
+        json!([{"text":"Never restart on Friday","cites":[format!("{ID}#t=00:01:06")]}])
+    );
+}
+
+#[test]
+fn source_show_refuses_malformed_frame_and_gotcha_sidecars() {
+    for (file, text, code) in [
+        (
+            "frames.md",
+            "[00:99:00] wrong [frame](#frame=00:99:00)",
+            "invalid_frames",
+        ),
+        (
+            "frames.md",
+            "[00:01:00] wrong [frame](#frame=00:02:00)",
+            "invalid_frames",
+        ),
+        ("digest.json", "not JSON", "invalid_source_digest"),
+        (
+            "digest.json",
+            r#"{"summary":"x","subjects":[],"claims":[{"text":"Gotcha: warning","cites":[]}],"procedures":[],"terms":[],"refs":[]}"#,
+            "invalid_source_digest",
+        ),
+    ] {
+        let library = fixture(b"video", false, Default::default());
+        library.insert_source_sidecar(ID, file, text).unwrap();
+        let response = call("office.source-show", json!({"id":ID}), &ports(library));
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["code"], code, "{response}");
+    }
+}

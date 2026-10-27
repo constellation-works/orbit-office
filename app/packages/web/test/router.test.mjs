@@ -22,7 +22,7 @@ test("every built screen is navigable and routable by its hash", () => {
 
 test("planned screens stay out of navigation and cannot be routed to", () => {
   const planned = SCREENS.filter((screen) => screen.status === "planned");
-  assert.ok(planned.length > 0, "fixture expects planned screens in the scaffold");
+  // The last planned screen may be built; every remaining planned screen is still excluded.
   for (const screen of navigableScreens()) {
     assert.equal(screen.status, "built");
   }

@@ -50,6 +50,20 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         .map(|text| access::chapters(&text))
         .transpose()?
         .unwrap_or_default();
+    let frames = call
+        .ports
+        .library
+        .source_sidecar(&id, "frames.md")?
+        .map(|text| access::frames(&text))
+        .transpose()?
+        .unwrap_or_default();
+    let gotchas = call
+        .ports
+        .library
+        .source_sidecar(&id, "digest.json")?
+        .map(|text| access::gotchas(&text))
+        .transpose()?
+        .unwrap_or_default();
     let (cited_by, task_citers_available, cited_by_truncated) = citers(call, &id)?;
     let (span, resolved_anchor) = match &anchor {
         Some(raw) => {
@@ -81,6 +95,8 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "task_citers_available": task_citers_available,
         "cited_by_truncated": cited_by_truncated,
         "chapters": chapters,
+        "frames": frames,
+        "gotchas": gotchas,
     });
     if let Some(selection) = media {
         let media = call.ports.library.source_media(&id, &selection)?;

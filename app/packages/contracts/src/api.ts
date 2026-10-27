@@ -286,3 +286,35 @@ export interface GatewaySendResult {
 
 /** Every approval mutation that has no other result. */
 export interface ApprovalOk { ok: true }
+
+/** Source display data. Original bytes are fetched separately through the server. */
+export interface SourceView {
+  id: string;
+  kind: string;
+  title: string;
+  text: string;
+  sensitivity: "normal" | "private";
+  media_type: string | null;
+  route_labels: string[];
+  cited_by: Array<{ id: string; title: string; kind: string }>;
+  task_citers_available: boolean;
+  cited_by_truncated: boolean;
+  chapters: Array<{ number: number; title: string; label: "core" | "tangent"; start: number; anchor: string }>;
+  frames: Array<{ time: number; anchor: string; file: string; text: string }>;
+  gotchas: Array<{ text: string; cites: string[] }>;
+}
+export interface CapturedSource { id: string; kind: string; title: string }
+export type BootstrapPhase = "docs" | "kt" | "team" | "process";
+export interface CapturePaste { title: string; text: string; private: boolean }
+export interface SourcePlan {
+  digest: string;
+  source?: string;
+  phase?: BootstrapPhase;
+  private: boolean;
+  minutes: number;
+  frames: number;
+  calls: number;
+  sources: number;
+  estimate: { amount: number; currency: string } | null;
+}
+export interface SourceCitation { title: string; text: string }

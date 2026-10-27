@@ -6,11 +6,10 @@ To-dos, Routines, Library, Insights, Review. No ids, crews, runs or raw
 statuses are ever shown. There is no Chat screen: conversation happens in
 the user's agent CLI.
 
-**Status: Today, To-dos, Library, Insights, Review and Settings are built, as is the app server.** Today is the landing screen, backed by `GET /api/today`. To-dos shows your open to-dos and the agents' in two
+**Status: Today, To-dos, Routines, Library, Insights, Review, Source and Settings are built, as is the app server.** Today is the landing screen, backed by `GET /api/today`. To-dos shows your open to-dos and the agents' in two
 columns. Each one names its source and its attached knowledge, in plain words.
 Closing one of yours marks it done through Orbit; an agent's to-do has no close
-action. Other features and screens remain planned:
-planned features mount no routes, and planned screens stay out of navigation.
+action. Planned server features mount no routes; every listed screen is now built.
 `/healthz` lists the built features. The server itself — its Orbit client, static
 serving with loopback Host/Origin guards, and the dispatch pass — is
 built (below).
@@ -138,3 +137,30 @@ npm start       # run the built server
 ```
 
 Library searches and browses pages, outputs and setup progress through Office read tools. Outputs show the latest 100 matches, with kind and exact series filters and a notice when more exist. Person pages show Library document back-links; task links await a supported citation read. Page and artifact history comes from the show tools.
+
+
+## Source capture and citation links
+
+Source accepts file and folder drops, file pickers and pasted text. A video or
+folder opens a processing preview with counts and cost before Process confirms
+the shown digest. A preview can be raised to private; that obtains a fresh plan.
+The source view shows original media, anchorable text, chapters, keyframes,
+citing work and route badges. Use `/?source=<id>#t=hh:mm:ss`, `#L<n>-<m>`,
+`#frame=hh:mm:ss` or `#chapter=<n>` for citations.
+
+Uploads need the installed `ORBIT_OFFICE_WORKSPACE` binding. They are staged
+inside that workspace with owner-only permissions, bounded to 256 MiB per file,
+and cleaned after capture. Media reads use Office tools exclusively; their
+512 KiB original/frame cap applies, and the screen explains unavailable media.
+The view uses the shared light theme and stacks at phone widths.
+
+After building, run the Source browser suite from the repository root with the
+verified browser kit:
+
+```sh
+. "$ORBIT_BROWSER_KIT_ENV"
+SOURCE_SCREENSHOTS_DIR="$PWD/.orbit/tmp/screenshots" node --test app/packages/web/test/source.browser.mjs
+```
+
+This fixture suite exercises the production screen and HTTP feature without
+calling a live Library or Orbit, and captures desktop and 375px views.

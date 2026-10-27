@@ -4,6 +4,7 @@
  * ids, crews, runs or raw statuses. There is no Chat screen; conversation
  * happens in the user's agent CLI.
  */
+import { screenHash } from "./api/source-location.js";
 import { getPrivateRoute } from "./api/client.js";
 import { registerServiceWorker } from "./pwa/register.js";
 import { navigableScreens, screenForHash } from "./router.js";
@@ -17,7 +18,7 @@ function drawNav(nav: HTMLElement): void {
       const link = document.createElement("a");
       link.href = `#${screen.id}`;
       link.textContent = screen.title;
-      if (screen.id === (window.location.hash.slice(1) || "today")) {
+      if (screen.id === screenHash(window.location.search, window.location.hash).slice(1)) {
         link.setAttribute("aria-current", "page");
       }
       return link;
@@ -26,7 +27,7 @@ function drawNav(nav: HTMLElement): void {
 }
 
 async function drawScreen(root: HTMLElement): Promise<void> {
-  const screen = screenForHash(window.location.hash || "#today");
+  const screen = screenForHash(screenHash(window.location.search, window.location.hash));
   if (screen?.render === undefined) {
     const note = document.createElement("p");
     note.textContent = "Nothing to show yet.";
