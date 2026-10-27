@@ -694,11 +694,31 @@ pub fn parse_source_meta(text: &str) -> SourceMeta {
             continue;
         };
         let value = value.trim();
+        // Only a double-quoted scalar is decoded, and only the escapes
+        // `yaml_quote` writes (`\\` and `\"`), in a single pass so an
+        // already-escaped sequence is never decoded twice. Unquoted
+        // values (such as `original.file`) keep their backslashes.
         let unq = |v: &str| {
-            v.strip_prefix('"')
-                .and_then(|s| s.strip_suffix('"'))
-                .unwrap_or(v)
-                .to_string()
+            let Some(inner) = v.strip_prefix('"').and_then(|s| s.strip_suffix('"')) else {
+                return v.to_string();
+            };
+            let mut out = String::with_capacity(inner.len());
+            let mut chars = inner.chars();
+            while let Some(ch) = chars.next() {
+                if ch != '\\' {
+                    out.push(ch);
+                    continue;
+                }
+                match chars.next() {
+                    Some(escaped @ ('\\' | '"')) => out.push(escaped),
+                    Some(other) => {
+                        out.push('\\');
+                        out.push(other);
+                    }
+                    None => out.push('\\'),
+                }
+            }
+            out
         };
         match key.trim() {
             "id" => meta.id = unq(value),

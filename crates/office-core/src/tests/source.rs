@@ -156,6 +156,41 @@ fn rendered_source_frontmatter_round_trips() {
 }
 
 #[test]
+fn rendered_source_title_with_quotes_and_backslashes_round_trips() {
+    let titles = [
+        r#"Say "Hello" from C:\docs"#,
+        r#"Literal \"escape\" and \\ pair"#,
+        r"C:\docs\file.txt",
+    ];
+    for title in titles {
+        let text = render_source(&RenderSource {
+            id: "src-19700101-hello",
+            kind: SourceKind::Note,
+            title,
+            captured_at: "1970-01-01T00:00:00+00:00",
+            captured_by: "upload",
+            origin: None,
+            occurred_at: None,
+            participants: &[],
+            tags: &[],
+            sensitivity: Sensitivity::Normal,
+            original: Some((r"C:\docs\file.txt", "abc123", 42, "text/plain")),
+            derived_transcription: None,
+            retention_days: None,
+            body: "body",
+        });
+        let meta = parse_source_meta(&text);
+        assert_eq!(meta.title, title, "rendered: {text}");
+        // `original.file` is written unquoted, so its backslashes are literal
+        // and must not be decoded.
+        assert_eq!(meta.original_file.as_deref(), Some(r"C:\docs\file.txt"));
+    }
+    // Unsupported escapes in a hand-written quoted scalar stay literal.
+    let meta = parse_source_meta("---\ntitle: \"a\\nb\"\n---\nbody");
+    assert_eq!(meta.title, r"a\nb");
+}
+
+#[test]
 fn rendered_source_keeps_untrusted_metadata_inside_frontmatter() {
     use crate::domain::knowledge::DocumentRecord;
     use std::path::Path;
