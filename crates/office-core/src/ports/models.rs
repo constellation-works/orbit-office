@@ -21,7 +21,8 @@ pub struct TranscribeRequest {
     /// Round fractional seconds up so a recording above the split threshold
     /// cannot be treated as short. The adapter does not probe the media.
     pub duration_seconds: u64,
-    /// MIME type of `audio`, for example `audio/wav`.
+    /// MIME type of `audio`, for example `audio/wav`. Transcription accepts
+    /// WAV and MP3 only.
     pub mime: String,
     /// Sensitivity of the source this audio came from.
     pub sensitivity: Sensitivity,
