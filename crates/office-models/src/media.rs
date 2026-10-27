@@ -308,7 +308,7 @@ impl VideoProcessor {
                 "-an".into(),
                 "-vf".into(),
                 filter,
-                "-vsync".into(),
+                "-fps_mode".into(),
                 "vfr".into(),
                 "-f".into(),
                 "rawvideo".into(),

@@ -29,3 +29,19 @@ test("Insights renders weekly ratios, gaps, simulation dates and plain proposal 
     assert.equal(drawInsights(noDate).textContent.includes("simulated"), false);
   } finally { globalThis.document = original; }
 });
+
+test("Insights labels recorded seeded weeks but leaves empty and later weeks unlabelled", () => {
+  const original = globalThis.document;
+  globalThis.document = { createElement: (tag) => new Element(tag), createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const recorded = fixture.totals;
+    const empty = { ...recorded, automation: { ...recorded.automation, total_count: 0, automated_count: 0, count_ratio: null } };
+    const view = drawInsights({ ...fixture, simulated_until: "2026-10-25", weeks: [
+      { since: "2026-09-07", metrics: empty },
+      { since: "2026-09-14", metrics: recorded },
+      { since: "2026-10-26", metrics: recorded },
+    ] });
+    const weeks = all(view, "li").slice(0, 3);
+    assert.deepEqual(weeks.map((item) => item.textContent.includes("simulated")), [false, true, false]);
+  } finally { globalThis.document = original; }
+});
