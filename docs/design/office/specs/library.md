@@ -334,6 +334,22 @@ companion returns no `body`. A missing artifact returns
 `artifact_not_found`. Companion files are listed, never executed or sent to
 a model. Series enumeration is not limited by the search result cap.
 
+`office.artifact-list` takes `{}` or any of `{"kind": "<kind>", "series":
+"<series>", "limit": 20}` and returns the complete artifact inventory as
+summaries, for the Library screen's "Outputs by kind and series" and the
+Review screen. `kind` is one of `report`, `doc`, `draft`, `script`,
+`data`, `review` or `other`; `series` is an exact series name; both
+filters narrow the inventory before the limit. `limit` is 1–100 and
+defaults to 20. Entries carry `id`, `kind`, `series`, `title`,
+`approved_at` (the approval timestamp) and `sensitivity`, sorted newest
+first by `approved_at` with the id breaking ties. The response's `total`
+counts every matching artifact and `truncated` says whether the limit
+cut the list. An unknown kind, an empty series, an out-of-range limit or
+an unknown input key is refused with `invalid_argument`. The read is
+all-or-nothing: an unreadable or invalid artifact document refuses the
+request, so an incomplete corpus cannot imply that an output is absent.
+The tool reads through Library ports and writes nothing.
+
 The artifact conformance goldens include successful and refused requests.
 Their source task and fixed clock are fixtures: run
 `cargo test -p office-tools --test artifacts` to replay both files through

@@ -96,6 +96,7 @@ static TOOLS: &[Tool] = &[
     knowledge::show::TOOL,
     knowledge::write::TOOL,
     // artifacts (specs/library.md)
+    artifacts::list::TOOL,
     artifacts::show::TOOL,
     artifacts::promote::TOOL,
     // library (specs/library.md, specs/plugin-surface.md)

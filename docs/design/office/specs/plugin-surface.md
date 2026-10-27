@@ -27,6 +27,7 @@ Source: spec §12. The one-call envelope is
 | `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, template, tag, series and date |
 | `office.knowledge-show` | read_only | workspace | Read a page and its back-links |
 | `office.knowledge-write` | mutating | **none** | Create or update a page; validate frontmatter, cites and its template ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)); commit |
+| `office.artifact-list` | read_only | workspace | List artifact summaries by kind and series, newest first, bounded with total and truncated |
 | `office.artifact-show` | read_only | workspace | Read an artifact, its files, its series history and what cites it |
 | `office.artifact-promote` | mutating | **none** | Copy an approved task's output into the Library as an artifact; write provenance; commit |
 | `office.attach` | mutating | workspace | Pick the knowledge, source and example artifact files for a task, by template attach policy first ([knowledge-templates.md](./knowledge-templates.md#attach-policies)), and copy their model views into it as task artifacts under `context/` |
