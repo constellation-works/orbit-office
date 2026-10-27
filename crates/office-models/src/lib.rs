@@ -140,11 +140,13 @@ pub struct RoutedClient {
 
 impl RoutedClient {
     /// Build a client. Endpoint hosts are allowlist-checked on every
-    /// call, before any socket opens, not only here.
+    /// call, before any socket opens, not only here. Redirects are disabled
+    /// so a response cannot send a later request to an unchecked host.
     #[must_use]
     pub fn new(config: ModelConfig) -> Self {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(60)))
+            .max_redirects(0)
             .build()
             .into();
         Self { config, agent }
