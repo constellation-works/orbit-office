@@ -19,6 +19,8 @@
 #   9. a Codex MCP entry uses an inline env table; uninstall removes it
 #  10. an older Claude MCP entry gains tools/bin on PATH
 #  11. an office.init error envelope fails the step and leaves no marker
+#  12. a non-interactive run without --yes prints the grants, enables the
+#      plugin with them and does not ask
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -252,6 +254,9 @@ run_install() { # run_install <home> <extra env...> -- <args...>
     if [ -n "${ORBIT_OFFICE_TEST_PYTHON_VERSION:-}" ]; then
         _py_env="ORBIT_OFFICE_TEST_PYTHON_VERSION=$ORBIT_OFFICE_TEST_PYTHON_VERSION"
     fi
+    # --yes unless the caller sets NO_YES=1 (the non-interactive case).
+    _yes="--yes"
+    [ -z "${NO_YES:-}" ] || _yes=""
     # shellcheck disable=SC2086
     env -i PATH="${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin" HOME="$_home" STUB_STATE="$STUB_STATE" \
         STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" \
@@ -261,7 +266,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
         STUB_ORBIT_SRC="$BIN/orbit" \
         ORBIT_OFFICE_OS=linux \
         $_uv_env $_py_env $_envs \
-        sh "$INSTALL_SH" --yes "$@" < /dev/null
+        sh "$INSTALL_SH" $_yes "$@" < /dev/null
 }
 
 TOOLS_REL=".local/share/orbit-office/tools"
@@ -789,5 +794,27 @@ STUB_INIT_MODE=already run_install "$HOME12" -- > "$OUT_ALREADY" 2>&1 \
 ok "already_initialized envelope exits 0"
 check "already_initialized envelope records the scaffolded marker" \
     grep -qx scaffolded "$HOME12/.local/share/orbit-office/install-state"
+
+# ---------------------------------------------------------------------------
+# 12. A non-interactive run without --yes prints the grants, enables the
+#     plugin with the same grants and does not ask
+# ---------------------------------------------------------------------------
+
+HOME12N="$ROOT/home12n"; mkdir -p "$HOME12N"
+rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled"
+: > "$STUB_STATE/orbit.log"
+OUT_NOYES="$ROOT/out-noyes.txt"
+NO_YES=1 run_install "$HOME12N" -- > "$OUT_NOYES" 2>&1 \
+    || { cat "$OUT_NOYES" >&2; fail "non-interactive run without --yes exits 0"; }
+ok "non-interactive run without --yes exits 0"
+check "non-interactive run does not ask the question" \
+    sh -c '! grep -qF "[y/N]" "$1"' sh "$OUT_NOYES"
+check "non-interactive run says it proceeds" \
+    grep -qF "non-interactive run, enabling office" "$OUT_NOYES"
+check "printed network grant is unscoped" \
+    grep -qF "network unscoped" "$OUT_NOYES"
+check "plugin enabled with the fs and network grants" \
+    grep -qF "plugin enable office --grant fs={{workspace}},{{plugin_state}} --grant network" "$STUB_STATE/orbit.log"
+check "plugin enabled (stub, non-interactive)" test -f "$STUB_STATE/plugin-enabled"
 
 printf 'PASS: %s checks\n' "$PASS"

@@ -313,7 +313,7 @@ check_workspace_adoptable() {
 consent_enable_plugin() {
     say "The $PLUGIN_NAME plugin requests these grants:"
     say "  fs      {{workspace}}, {{plugin_state}}"
-    say "  network any (Meta Model API and the open-weights endpoint only)"
+    say "  network unscoped (the code calls only the Meta Model API and the open-weights endpoint)"
     if [ "$ASSUME_YES" -eq 1 ]; then
         say "Consent: --yes given, enabling $PLUGIN_NAME."
         return 0
