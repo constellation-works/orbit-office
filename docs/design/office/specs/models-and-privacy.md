@@ -16,6 +16,7 @@ Source: spec §9.
 | Orchestrator | Muse Code (default) running Muse Spark or Muse Wonder | Any MCP-capable agent CLI works. The orchestrator plus agents loop is the candidate for the agentic bonus prize |
 | Meeting transcription | Muse Voice Transcribe | Speaker turns and timestamps feed the anchors |
 | Summaries, decisions, to-do extraction | Muse Spark | Structured output validated against a JSON Schema |
+| Daily digest | Muse Spark, one call a day | Through the same routing; private items go to open weights or are listed by reference ([sessions.md](./sessions.md#daily-digest)) |
 | Receipt and bill field extraction | Muse Spark with image input | Confirm the request shape in the API reference on day 1. Fallback: local OCR, then Muse Spark on the text |
 | Sources marked `private` | Muse Spark Open (`meta-models/muse-spark-open-1026` on Baseten, or local) | Candidate for the open-weights bonus prize |
 | Implementing agents | Orbit's existing crews, including its Muse crews | Pre-existing: not counted as new Meta-tooling work |

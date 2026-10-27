@@ -34,6 +34,8 @@ Source: spec §12. The one-call envelope is
 | `office.metrics` | read_only | workspace | Compute the analytics metrics for a window |
 | `office.selection.get` | mutating | workspace | Return the user's fresh, unused selections from the app and mark them consumed. Mutating because it consumes |
 | `office.selection.put` | mutating | **none** | Record a selection from the app; `clear: true` empties the tray |
+| `office.session.brief` | read_only | workspace | Assemble the session-start brief from Orbit and the Library, with no model call ([sessions.md](./sessions.md#session-brief)) |
+| `office.digest` | mutating | **none** | Write the day's digest artifact with one Muse Spark call; run only by the `office-daily-digest` routine ([sessions.md](./sessions.md#daily-digest)) |
 | `office.review.inputs` | read_only | workspace | Gather a period's completed work, conversions, metrics, decisions and knowledge changes for a review |
 | `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
 | `office.config.set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
@@ -45,8 +47,8 @@ Rules:
 - `mcp_scope: none` tools are callable only by the app, through
   `orbit tool run`, and by the install script for `office.init`. The
   orchestrator cannot scaffold the Library, approve its own proposals,
-  write knowledge, promote artifacts, record selections, change settings
-  or reindex
+  write knowledge, promote artifacts, record selections, change settings,
+  write digests or reindex
   ([orchestrator.md](./orchestrator.md)).
 - `execution_kind` is about consequence: anything that changes state or
   costs money is `mutating`, including `selection.get` (it consumes).
@@ -67,6 +69,7 @@ Seeded disabled, enabled during onboarding:
 - **Routines:**
   - `office-meeting-inbox`: every 15 minutes, process new meeting uploads, then capture, transcribe, extract, file to-dos and propose knowledge updates.
   - `office-signals`: daily.
+  - `office-daily-digest`: daily. One deterministic `plugin.tool_call` step running `office.digest`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).
 - **Auto-tasks:**
   - `office-knowledge-maintenance`: weekly. Re-verifies stale pages against newer sources and frictions, and files `knowledge_update` proposals.
   - `office-review`: on period end.

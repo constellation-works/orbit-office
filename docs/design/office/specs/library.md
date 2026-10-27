@@ -107,14 +107,14 @@ retention: { original_until: 2027-01-26 }  # from config; null = keep
 - **Chat:** one line per message, `[timestamp] Author: text`. The anchor is `#L14-20`.
 - **Email, doc:** paragraphs. The anchor is `#L…`.
 - **Receipt, bill:** extracted fields as a YAML block plus the raw OCR text.
-- **Conversation:** a decision log from an orchestrator session. It quotes the user's directions verbatim and adds one line for each action the agent took. The agent CLI's own transcript belongs to that CLI, so the skill has the agent write this log itself.
+- **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), action, open question or resolution, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The agent CLI's own transcript belongs to that CLI, so the skill has the agent write this log itself ([sessions.md](./sessions.md#decision-log)).
 
 **Rules:**
 
 - **Immutable.** A correction writes `v2.md` with `supersedes` set. Citations name a version when it matters, otherwise the latest.
 - **Dedupe.** If the `sha256` of the original, or of the normalized pasted text, matches an existing source, capture returns that source instead of creating a new one.
 - **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. Short directives typed by the user are not captured separately: they go in the `conversation` source.
-- **Conversation sources.** The skill has the agent capture a `conversation` source whenever the user makes a decision or gives a standing direction, and at the end of a session. The user's directions are decisions, and the review needs them.
+- **Conversation sources.** The skill has the agent open one `conversation` source per session and append to it whenever the user makes a decision or gives a standing direction, and for each action it takes. There is no end-of-session summary: the next session starts from `office.session.brief` ([sessions.md](./sessions.md)). The user's directions are decisions, and the review needs them.
 - **Retention** is per kind and shown on the Routines screen: for example, keep meeting transcripts forever and drop the audio after 90 days. Expiry deletes only the `original.*` file and records that in the frontmatter.
 
 ## Knowledge pages
@@ -160,7 +160,7 @@ summary: Three competitors undercut by 8–15%; recommends a two-year lock at cu
 files: [report.md]       # one or more, beside artifact.md
 task: <orbit-task-id>    # the task that produced it
 produced_by: { crew: muse-wonder, runbook: rb-pricing-research, at: 2026-10-29T10:41:00-04:00 }
-approved: { at: 2026-10-29T11:05:00-04:00, edited: false }   # edited = user changed it before approving
+approved: { by: user, at: 2026-10-29T11:05:00-04:00, edited: false }   # edited = user changed it before approving; by: routine only for the daily digest
 cites: [src-20261028-acme-qbr#t=00:12:31, dom-acme-renewal]
 series: acme-renewal-research   # groups versions of the same deliverable
 version: 1
@@ -181,6 +181,7 @@ tags: [client:acme]
 - **`draft`** (an email or message for someone else) records `sent_at` once the user sends it. In the hackathon build, sending copies the draft to the clipboard.
 - **`script`** is never run because it was promoted. A script runs only as a step of a routine or auto-task whose accepted proposal named it. That step pins the artifact version by `sha256` and runs inside Orbit's sandbox. Changing the script means a new version and a new proposal.
 - **`review`** holds the generated reviews ([analytics-and-reviews.md](./analytics-and-reviews.md)).
+- **`report`** in the series `digest-daily` is the daily digest, the one artifact promoted without review (`approved.by: routine`; [sessions.md](./sessions.md#daily-digest)).
 - **`data`** (csv, json) records its schema in the summary, so later tasks can use it without opening it.
 
 **Compounding.** `office.attach` can attach earlier artifacts in the same

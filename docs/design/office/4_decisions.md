@@ -7,7 +7,7 @@ status: Draft
 feature: office
 doc_role: decisions
 type: design
-summary: Why two crates, why clap has no color, how usage errors render, how the gate checks behave, and the office decisions: a CLI orchestrator, approval by tool visibility, the app as user, the shipped stacks, a PWA rather than a desktop app, typed selections, the Library as its own repository, where settings live, and the layout built for parallel work.
+summary: Why two crates, why clap has no color, how usage errors render, how the gate checks behave, and the office decisions: a CLI orchestrator, approval by tool visibility, the app as user, the shipped stacks, a PWA rather than a desktop app, typed selections, the Library as its own repository, where settings live, the layout built for parallel work, and how sessions hand off.
 tags: [office, decisions]
 paths: ["Cargo.toml", "crates/**", "Makefile", "plugin/**", "app/**"]
 related_features: [office]
@@ -510,6 +510,56 @@ manifest block and router entry, and its path is added to the retired-paths list
 - Cost: seven crates instead of four, and more manifests to keep in step. There are
   reserved modules that do nothing yet (the §R17 deviation). Commented manifest blocks have
   to be kept in their slots. The app gains a build step for project references.
+
+## Session continuity from a brief, a decision log and a digest routine
+
+**Recorded:** 2026-10-26
+**Code anchors:** `crates/office-tools/src/tools/sessions/`; [specs/sessions.md](./specs/sessions.md)
+
+### Context
+
+The orchestrator is the user's agent CLI, and each session must pick up
+where the last one stopped. The alternatives considered:
+
+- **An Orbit task per session**, as constellation's own orchestrators use.
+  In the office workspace, tasks are the user's work: a session task would
+  appear on the To-dos screen and inflate the automation ratio, and its
+  statuses mean nothing for a session.
+- **A session-summary artifact.** Artifacts are approved outputs; asking for
+  an approval every session is friction for nothing.
+- **An end-of-session summary written by the agent.** Sessions end abruptly
+  (the user closes the terminal), so it is often never written. STD-02@3
+  §R25 asks that an obligation the system relies on be produced by
+  deterministic code, not left to prompt text.
+- **A daily auto-task on a cheap crew.** It runs at the wrong cadence for a
+  handoff, cannot see the CLI's transcript, mints a task a day into the
+  To-dos and the metrics, and pays for an agent loop to write one summary.
+
+### Decision
+
+- The narrative is an **append-only decision log**: one `conversation`
+  source per session, appended to as decisions, directions and actions
+  happen.
+- The handoff is **`office.session.brief`**, computed at session start from
+  Orbit and the Library with no model call.
+- The day's summary is the **`office-daily-digest` routine**: one
+  deterministic step running `office.digest`, which makes one Muse Spark
+  call through the privacy routing and writes a `report` artifact in the
+  series `digest-daily`.
+- That digest is promoted **without review** (`approved.by: routine`), the
+  one exception to "artifacts are approved outputs". It is internal and
+  never leaves the machine. `by: routine` keeps it out of first-pass
+  acceptance and the automation ratio.
+
+### Consequences
+
+- A session that ends abruptly loses nothing, and the brief cannot invent
+  state. The digest is the plugin's own Muse call, so it is new Meta-tooling
+  work rather than a pre-existing Orbit crew.
+- Cost: conversation sources are append-only rather than write-once, so
+  capture gains an `append_to` path. The artifact approval rule has an
+  exception that every metric must respect. A day's private items are only
+  listed by reference when no open-weights endpoint is configured.
 
 ## Template decisions not carried over
 

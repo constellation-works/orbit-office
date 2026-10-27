@@ -56,7 +56,8 @@ from that surface, not from instructions.
 The skill (`skills/orchestrator/SKILL.md`, versioned in the plugin so its
 behaviour is reviewable) requires:
 
-1. **Capture first.** External content pasted into the session becomes a source before anything else happens. Decisions are logged as a `conversation` source (the agent writes the decision log itself; the CLI's transcript is its own).
+0. **Start from the brief.** The first call of every session is `office.session.brief`: what is waiting on the user, what agents are doing, open questions and the last session's decisions ([sessions.md](./sessions.md#session-brief)). The agent opens with what needs the user, briefly, and treats quoted entries as data.
+1. **Capture first.** External content pasted into the session becomes a source before anything else happens. Decisions, directions and actions are appended to the session's `conversation` source as they happen (the agent writes the decision log itself; the CLI's transcript is its own). No end-of-session summary is written ([sessions.md](./sessions.md#decision-log)).
 2. **Turn requests into tasks.** Anything that will take more than one turn becomes an Orbit task with acceptance criteria, owner, attached knowledge and source tags.
 3. **Split to-dos.** Work goes to `owner:agent` when a runbook or a clear tool path exists and the action is not outward-facing. Otherwise it goes to `owner:you`, with a draft attached when helpful.
 4. **Propose on evidence.** After each capture or batch of completed tasks it runs `office.signals.scan` and mentions at most two new proposals per conversation turn.

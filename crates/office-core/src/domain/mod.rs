@@ -8,6 +8,7 @@ mod knowledge;
 mod metrics;
 mod proposal;
 mod selection;
+mod session;
 mod settings;
 mod signals;
 mod source;

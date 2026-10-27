@@ -7,6 +7,7 @@ pub(crate) mod knowledge;
 pub(crate) mod library;
 pub(crate) mod proposals;
 pub(crate) mod selection;
+pub(crate) mod sessions;
 pub(crate) mod sources;
 pub(crate) mod status;
 

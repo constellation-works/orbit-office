@@ -121,7 +121,7 @@ knowledge attached to agent tasks; proposals from three signals
 (repetition, friction, staleness); Needs you; Insights (automation ratio);
 review generation over seeded history.
 
-**Should:** receipts pack; weekly digest; open-weight routing for
+**Should:** receipts pack; daily digest (session brief and decision log are Must, with the orchestrator); open-weight routing for
 `private` sources; selection sharing; proposal dismissal memory.
 
 **Pitch slide only:** bills pack; email triage, social content, groceries,

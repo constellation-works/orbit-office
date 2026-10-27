@@ -232,6 +232,27 @@ spec:
     #   input_schema: { $ref: schemas/selection.put.request.json }
     #   output_schema: { $ref: schemas/selection.put.response.json }
 
+    # ---- sessions ----
+
+    # - name: session.brief
+    #   description: >-
+    #     Assemble the session-start brief from Orbit and the Library:
+    #     waiting on you, agents working on, open questions, the last
+    #     session's decisions. Makes no model call. Writes nothing.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/session.brief.request.json }
+    #   output_schema: { $ref: schemas/session.brief.response.json }
+
+    # - name: digest
+    #   description: >-
+    #     Write the day's digest artifact with one Muse Spark call; run only
+    #     by the office-daily-digest routine.
+    #   execution_kind: mutating
+    #   mcp_scope: none
+    #   input_schema: { $ref: schemas/digest.request.json }
+    #   output_schema: { $ref: schemas/digest.response.json }
+
     # ---- insights ----
 
     # - name: metrics

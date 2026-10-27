@@ -67,6 +67,7 @@ crates/office-tools/src/
     library/             init  reindex  config_set  search  attach    (specs/library.md, plugin-surface.md)
     proposals/           signals_scan  create  accept                 (specs/proposals.md)
     selection/           get  put                                     (specs/selection-sharing.md)
+    sessions/            brief  digest                                (specs/sessions.md)
     insights/            metrics  review_inputs                       (specs/analytics-and-reviews.md)
 ```
 
