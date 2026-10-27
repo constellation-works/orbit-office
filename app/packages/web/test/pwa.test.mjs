@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { getSettings } from "../dist/api/client.js";
 import { registerServiceWorker } from "../dist/pwa/register.js";
@@ -46,7 +49,7 @@ await import("../dist/pwa/sw.js");
 /** Fresh stub environment; `seed` pre-fills the shell cache like an install. */
 function useWorkerEnv({ seed = [], fetchImpl } = {}) {
   const addedAll = [];
-  const stores = new Map([["office-shell-v1", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
+  const stores = new Map([["office-shell-v2", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
   Object.defineProperty(globalThis, "self", {
     value: {
       location: { origin: "http://office.test" },
@@ -110,7 +113,42 @@ const SHELL = [
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon-maskable-512.png",
+  "/pwa/register.js",
+  "/router.js",
+  "/api/client.js",
+  "/ui/index.js",
+  "/ui/card.js",
+  "/ui/pill.js",
+  "/ui/provenance.js",
+  "/ui/action.js",
+  "/ui/state.js",
+  "/screens/insights/index.js",
+  "/screens/library/index.js",
+  "/screens/review/index.js",
+  "/screens/routines/index.js",
+  "/screens/source/index.js",
+  "/screens/today/index.js",
+  "/screens/todos/index.js",
+  "/screens/todos/view.js",
 ];
+
+const distDir = fileURLToPath(new URL("../dist/", import.meta.url));
+
+/** Every JS module statically reachable from the compiled `/main.js`. */
+function reachableModules(entry = "/main.js") {
+  const seen = new Set();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const url = queue.shift();
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const source = readFileSync(path.join(distDir, `.${url}`), "utf8");
+    for (const match of source.matchAll(/(?:import|export)\s+(?:[^'"]*?from\s+)?["'](\.[^"']+)["']/g)) {
+      queue.push(new URL(match[1], `http://office.test${url}`).pathname);
+    }
+  }
+  return [...seen].sort();
+}
 
 test("install precaches the app shell only", async () => {
   const { addedAll } = useWorkerEnv();
@@ -119,8 +157,37 @@ test("install precaches the app shell only", async () => {
   listeners.install({ waitUntil: (promise) => { waited = promise; } });
   await waited;
   assert.deepEqual([...addedAll].sort(), [...SHELL].sort());
+  // Live data stays uncached; `/api/client.js` is a static module, not data.
   for (const url of addedAll) {
-    assert.doesNotMatch(url, /^\/api\//);
+    assert.notEqual(url, "/healthz");
+    assert.ok(url === "/api/client.js" || !url.startsWith("/api/"), `${url} is live data and must not be precached`);
+  }
+});
+
+test("precache covers every JS module statically reachable from main.js", async () => {
+  const { addedAll } = useWorkerEnv();
+  let waited = null;
+  workerListeners.install({ waitUntil: (promise) => { waited = promise; } });
+  await waited;
+  const modules = reachableModules();
+  assert.ok(modules.length > 1, "the graph must reach beyond main.js");
+  for (const url of modules) {
+    assert.ok(addedAll.includes(url), `${url} reachable from /main.js must be precached`);
+  }
+  assert.ok(!addedAll.includes("/healthz"));
+});
+
+test("offline, every module reachable from main.js is answered from the precache", async () => {
+  useWorkerEnv({
+    seed: SHELL,
+    fetchImpl: async () => { throw new Error("offline"); },
+  });
+  const listeners = workerListeners;
+  for (const url of reachableModules()) {
+    const { event, answered } = fetchEvent(`http://office.test${url}`);
+    listeners.fetch(event);
+    assert.ok(answered() !== null, `${url} must be answered from the precache offline`);
+    assert.equal(await (await answered()).text(), `cached:${url}`);
   }
 });
 
@@ -131,7 +198,7 @@ test("activate drops old caches and keeps the current shell", async () => {
   let waited = null;
   listeners.activate({ waitUntil: (promise) => { waited = promise; } });
   await waited;
-  assert.deepEqual([...stores.keys()], ["office-shell-v1"]);
+  assert.deepEqual([...stores.keys()], ["office-shell-v2"]);
 });
 
 test("live-data requests are left to the network, never answered from cache", async () => {
@@ -170,11 +237,11 @@ test("other same-origin requests go to the network and are not stored", async ()
     fetchImpl: async () => new Response("live"),
   });
   const listeners = workerListeners;
-  const before = stores.get("office-shell-v1").size;
+  const before = stores.get("office-shell-v2").size;
   const { event, answered } = fetchEvent("http://office.test/demo.html");
   listeners.fetch(event);
   assert.equal(await (await answered()).text(), "live");
-  assert.equal(stores.get("office-shell-v1").size, before);
+  assert.equal(stores.get("office-shell-v2").size, before);
 });
 
 test("a failed navigation falls back to the cached shell", async () => {
