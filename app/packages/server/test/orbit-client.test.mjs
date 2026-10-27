@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createOrbitClient, OrbitExitError, OrbitTimeoutError } from "../dist/orbit/client.js";
+import { createOrbitClient, OrbitError, OrbitExitError, OrbitTimeoutError } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
 import { installSupervisionDoubles, timerAt } from "./supervision-doubles.mjs";
 
@@ -195,6 +195,60 @@ test("tool execution does not signal a process group after its leader exits", as
       "escalation must not signal a reaped process group",
     );
     assert.equal(escalation.cleared, true);
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("oversized output holds its slot until the child closes", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = createOrbitClient({
+      maxConcurrent: 1,
+      timeoutMs: 10_000,
+      maxOutputBytes: 16,
+      command: "orbit-supervision-double",
+      env: { PATH: "" },
+    });
+    let firstSettled = false;
+    let firstError;
+    const first = client.callTool("orbit.task.show", { id: "oversized" }).then(
+      () => {
+        throw new Error("expected the oversized call to reject");
+      },
+      (error) => {
+        firstSettled = true;
+        firstError = error;
+      },
+    );
+    const second = client.callTool("orbit.task.show", { id: "queued" });
+    assert.equal(doubles.children.length, 1);
+    assert.equal(client.activeCount, 1);
+    assert.equal(client.queuedCount, 1);
+
+    doubles.children[0].stdout.emit("data", Buffer.from("12345678901234567"));
+    assert.deepEqual(
+      doubles.signals.map((entry) => entry.signal),
+      ["SIGKILL"],
+    );
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    assert.equal(firstSettled, false, "oversized call must not settle before close");
+    assert.equal(doubles.children.length, 1, "queued call must not spawn before close");
+    assert.equal(client.activeCount, 1);
+    assert.equal(client.queuedCount, 1);
+
+    doubles.children[0].finish(null, "SIGKILL");
+    await first;
+    assert.ok(firstError instanceof OrbitError, `expected OrbitError, got ${firstError}`);
+    assert.equal(firstError.code, "output_too_large");
+    assert.equal(doubles.children.length, 2, "queued call spawns after close");
+    assert.equal(client.activeCount, 1);
+    assert.equal(client.queuedCount, 0);
+
+    doubles.children[1].stdout.emit("data", Buffer.from('{"ok":true}\n'));
+    doubles.children[1].finish(0, null);
+    assert.deepEqual(await second, { ok: true });
+    assert.equal(client.activeCount, 0);
   } finally {
     doubles.restore();
   }

@@ -212,6 +212,9 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
       };
       let settled = false;
       let timedOut = false;
+      let outputTooLarge = false;
+      let spawnError: unknown;
+      let closed = false;
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
       let stdoutBytes = 0;
@@ -239,11 +242,12 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
       };
 
       child.stdout.on("data", (chunk: Buffer) => {
+        if (outputTooLarge) return;
         stdoutBytes += chunk.length;
         if (stdoutBytes > maxOutputBytes) {
-          finish(() =>
-            reject(new OrbitError("output_too_large", `orbit tool ${name} exceeded the output limit`)),
-          );
+          // Settle only on `close`: the slot must stay occupied until the
+          // killed child has terminated and its streams have closed.
+          outputTooLarge = true;
           killTree("SIGKILL");
           return;
         }
@@ -254,11 +258,26 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
         if (stderrBytes <= maxOutputBytes) stderrChunks.push(chunk);
       });
       child.on("error", (error) => {
-        finish(() => reject(new OrbitSpawnError(name, error)));
+        if (spawnError === undefined) spawnError = error;
+        // Node emits `close` after a spawn `error`; settle there so the
+        // slot is not released before the child is reaped. If `close`
+        // already fired, settle now.
+        if (closed) {
+          finish(() => reject(new OrbitSpawnError(name, error)));
+        }
       });
       child.on("exit", clearTimers);
       child.on("close", (code, signal) => {
+        closed = true;
         finish(() => {
+          if (outputTooLarge) {
+            reject(new OrbitError("output_too_large", `orbit tool ${name} exceeded the output limit`));
+            return;
+          }
+          if (spawnError !== undefined) {
+            reject(new OrbitSpawnError(name, spawnError));
+            return;
+          }
           if (timedOut) {
             reject(new OrbitTimeoutError(name, timeoutMs));
             return;
