@@ -1,5 +1,5 @@
-//! Reading and writing Library documents on disk, and scanning the whole
-//! Library for a reindex.
+//! Reading and writing Library documents on disk, and scanning the indexed
+//! layers for a reindex.
 //!
 //! The pure frontmatter reader lives with `DocumentRecord` in office-core;
 //! files remain the source of truth for fields the index does not consume.
@@ -20,6 +20,23 @@ pub(crate) const LAYOUT_DIRS: &[&str] = &[
     "proposals",
     ".office",
 ];
+
+/// Layers `reindex` rebuilds, in scan order. An empty stem list means every
+/// `*.md` file; otherwise only those stems (`source.md` beside `original.*`
+/// and `v2.md`, `artifact.md` beside its companion files). Document writes
+/// accept only paths this table covers, so a successful write survives the
+/// next rebuild.
+const INDEXED_DOCUMENT_LAYERS: &[(&str, &[&str])] = &[
+    ("sources", &["source"]),
+    ("knowledge", &[]),
+    ("artifacts", &["artifact"]),
+];
+
+const INDEXED_DOCUMENT_KIND: &str = concat!(
+    "indexed document (",
+    "sources/**/source.md, knowledge/**/*.md, artifacts/**/artifact.md",
+    ")"
+);
 
 /// The file driver over one Library root.
 pub(crate) struct LibraryFs {
@@ -134,6 +151,9 @@ impl LibraryFs {
         Ok(())
     }
 
+    /// Safe Markdown that [`Self::scan_documents`] would index, and not
+    /// `original.*`. The repository uses this for document reads, history
+    /// and writes.
     pub(crate) fn validate_document_path(&self, relative: &Path) -> Result<()> {
         self.validate_relative_path(relative)?;
         if relative.extension().is_none_or(|ext| ext != "md")
@@ -147,15 +167,21 @@ impl LibraryFs {
                 value: relative.display().to_string(),
             });
         }
+        if !is_indexed_document(relative) {
+            return Err(Error::UnsafePath {
+                kind: INDEXED_DOCUMENT_KIND,
+                value: relative.display().to_string(),
+            });
+        }
         Ok(())
     }
 
     /// Scan every indexable document in the Library, in path order.
     pub(crate) fn scan_documents(&self) -> Result<Vec<DocumentRecord>> {
         let mut files: Vec<PathBuf> = Vec::new();
-        collect_markdown(&self.root.join("sources"), &mut files, &["source"]);
-        collect_markdown(&self.root.join("knowledge"), &mut files, &[]);
-        collect_markdown(&self.root.join("artifacts"), &mut files, &["artifact"]);
+        for &(layer, stems) in INDEXED_DOCUMENT_LAYERS {
+            collect_markdown(&self.root.join(layer), &mut files, stems);
+        }
         files.sort();
 
         let mut documents = Vec::new();
@@ -181,16 +207,44 @@ fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>, stems: &[&str]) {
         let path = entry.path();
         if path.is_dir() {
             collect_markdown(&path, out, stems);
-        } else if path.extension().is_some_and(|ext| ext == "md")
-            && (stems.is_empty()
-                || path
-                    .file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .is_some_and(|stem| stems.contains(&stem)))
-        {
+        } else if markdown_selected(&path, stems) {
             out.push(path);
         }
     }
+}
+
+/// Whether `relative` is a file `scan_documents` would collect.
+fn is_indexed_document(relative: &Path) -> bool {
+    let mut components = relative.components();
+    let Some(std::path::Component::Normal(layer)) = components.next() else {
+        return false;
+    };
+    let Some(layer) = layer.to_str() else {
+        return false;
+    };
+    let Some(&(_, stems)) = INDEXED_DOCUMENT_LAYERS
+        .iter()
+        .find(|(name, _)| *name == layer)
+    else {
+        return false;
+    };
+    let mut inside_layer = false;
+    for component in components {
+        let std::path::Component::Normal(_) = component else {
+            return false;
+        };
+        inside_layer = true;
+    }
+    inside_layer && markdown_selected(relative, stems)
+}
+
+fn markdown_selected(path: &Path, stems: &[&str]) -> bool {
+    path.extension().is_some_and(|ext| ext == "md")
+        && (stems.is_empty()
+            || path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .is_some_and(|stem| stems.contains(&stem)))
 }
 
 fn refuse_symlink(path: &Path) -> Result<()> {
