@@ -51,9 +51,11 @@ library/
 
 ## Scaffolding: `office.init`
 
-The [install script](./install.md) creates the Library with one explicit
-call, `orbit tool run office.init`, after it has set up git and the
-workspace and enabled the plugin. The user never runs it by hand.
+The standalone [`office init [path]` command](./install.md#office-init-path)
+creates or repairs the workspace and calls `orbit tool run office.init` after
+setting up git, registering the workspace and enabling its plugins. The install
+script calls that same installed launcher; users run `office init` directly for
+a second workspace or a repair. The plugin tool remains Library-only.
 
 `office.init` (mutating, `mcp_scope: none`) does, in order:
 

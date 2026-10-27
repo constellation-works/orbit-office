@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: install script — one idempotent command that installs Orbit and a pinned Python, sets up git and the workspace, enables the plugin, scaffolds the Library and installs the app"
-last_validated: 2026-10-26
+last_validated: 2026-10-27
 ---
 
 # Spec: Install script
@@ -60,7 +60,7 @@ spaces, so script shebangs that name the interpreter keep working.
    `npm install -g @orbit-tools/cli@0.34.0`. An existing Orbit is never upgraded or
    downgraded: an older one stops the script with the command to upgrade, and a newer one
    continues with a warning.
-4. **Git and the workspace.** Creates `~/orbit` and runs `git init -b main` if it is not
+4. **Git and the workspace.** Delegated to the installed `office init` command below. It creates `~/orbit` and runs `git init -b main` if it is not
    already a repository; writes `.gitignore` with `/library/`; makes the first commit if
    the repository has none (Orbit's runs need a commit to create worktrees from). If git
    has no `user.name`/`user.email`, it sets a repo-local identity from the login name. Then
@@ -78,7 +78,7 @@ spaces, so script shebangs that name the interpreter keep working.
    must be available from the repository remote and `cargo` is required. An explicit local
    office source or bundle must already contain an executable `bin/office-bin`; a missing
    backend or failed build stops before office is recorded as added or enabled. Then
-   `orbit plugin enable office` with the grants the manifest requests (`fs`, `network`, `orbit_tools`), after printing them and
+   workspace enablement through `office init` using `orbit plugin enable office` with the grants the manifest requests (`fs`, `network`, `orbit_tools`), after printing them and
    asking once. A grant left out leaves the plugin inactive, and `office.init` is then refused.
    The question needs a terminal on stdin. A piped install without one (piped stdin is
    the script itself, for example) prints the grants and enables the plugin without asking,
@@ -101,7 +101,7 @@ spaces, so script shebangs that name the interpreter keep working.
    (`open_weights_token`) prints only `secrets: open_weights_token skipped (optional)`,
    with no command; set it later with `orbit plugin secret set office open_weights_token`.
    Values supplied through the environment are still stored in either case.
-7. **Scaffold.** `orbit tool run office.init --json --full`: the Library's layout, git
+7. **Scaffold.** Delegated to the same `office init` invocation, which runs `orbit tool run office.init --json --full`: the Library's layout, git
    repository, config, `.gitignore` and index, then the first Library commit. The CLI exits 0
    and prints the tool's output object on stdout. That object has no top-level `ok`. The step
    is done for that object, including a retry that prints `{"already_initialized": true, "created": []}`
@@ -162,8 +162,72 @@ spaces, so script shebangs that name the interpreter keep working.
    on re-run and changes nothing; a partial one is repaired by supplying the bundle
    again, and without one the failure names the concrete missing entrypoint.
 
+## `office init [path]`
+
+`install.sh` installs a standalone human launcher at `~/.local/bin/office` and
+calls that installed command for steps 4, workspace enablement in 5, and 7.
+Machine setup still installs Python, Orbit and plugin exports, stores secrets,
+registers the agent CLI and provisions the app. `office init` installs none of
+those. Add `~/.local/bin` to your PATH if your shell does not already include it;
+the installer prints the absolute launcher path and does not edit shell profiles.
+The launcher is embedded in the installer, so a piped install needs no extra
+script download. It needs Node, git, Orbit, and the already added plugins.
+
+Run `office init` for `~/orbit`, `office init ~/another-office` for a second
+workspace, or either again to repair setup. `ORBIT_OFFICE_HOME` supplies the
+path default when set; an explicit path wins. Relative paths resolve from the
+calling directory. `ORBIT_OFFICE_DATA_DIR` selects the same install-state folder
+as the installer. `office init --yes [path]` skips the consent question.
+`office --help` and `office init --help` describe the same command.
+
+The installer adds the machine plugins first, then calls `office init` once
+for steps 4, 5 and 7, before prompting for secrets in step 6. The numbers above
+name the responsibilities rather than their execution order.
+
+The command does these steps in order:
+
+1. Refuse a non-empty folder unless the install state records its exact
+   `workspace_path`, or it is the partial office tree defined in step 4 above.
+   A registered path, a bare `.orbit` directory or Library alone is not proof.
+   Refusal names the folder and reason and changes nothing. HOME, `/`, a file
+   and a symlink destination are refused too. Resolve existing parents before
+   checking ownership and use that resolved path throughout.
+2. Create the folder and `git init -b main`, ensure the `/library/` ignore
+   line, fill missing repo-local git identity fields from the login name, and
+   make the first commit if absent. Preserve existing commits and identity.
+3. Read `orbit workspace list --json` and register the exact folder with
+   `orbit workspace init` when absent; an old marker or `.orbit` directory
+   alone never substitutes for registration. Record ownership in install state.
+4. Enable installed `office` and `gateway`, plus `cloudcli` when installed,
+   with the manifest grants from step 5. Print grants and ask once when setup
+   needs enablement and stdin is a terminal; decline fails. `--yes` prints
+   explicit consent. Non-interactive stdin prints that it proceeds without a
+   question and is never consumed. Read live enablement and permissions rather
+   than global install markers. Record host grants when needed, then enable
+   the selected workspace with `--scope workspace` to seed its definitions;
+   a workspace toggle never receives host-only grant flags.
+5. Always call `orbit tool run office.init --json --full --input '{}'` in
+   that workspace, interpreting stdout, stderr, exit status and error codes
+   exactly as step 7 above. `already_initialized` is success. Re-running a
+   complete setup changes no workspace or install-state bytes. Always asking
+   the initializer also repairs a missing Library despite an old scaffold marker.
+
+Exit codes: **0** success (including already initialized), **1** setup,
+consent, prerequisite or tool failure, **2** invalid command/option/path arguments.
+A tool failure prints the office error code read from its JSON output, or
+`unreadable` when no code can be recovered. Earlier successful setup is retained
+for repair on the next run; a scaffold failure records no success marker.
+
+The installer refuses to replace an unrelated `~/.local/bin/office`. It records
+`launcher_path` only when it creates the launcher, updates an owned launcher on
+reinstall, and keeps an identical pre-existing launcher unclaimed. Uninstall
+removes that path only with the creation receipt and a matching recorded SHA-256; an unrecorded or
+user-modified launcher is kept. Reinstall refuses to overwrite a modified launcher.
+It keeps workspace ownership records for all workspaces initialized by this
+command. `--purge --home DIR` still applies only to the selected owned workspace.
+
 The summary lists what was created, where, and the uninstall command
-(`install.sh --uninstall`). Uninstall removes the service, the MCP entry and its deny rules, the plugins and the
+(`install.sh --uninstall`). Uninstall removes the service, the MCP entry and its deny rules, the plugins, its recorded `office` launcher and the
 `tools` folder (`uv` and its Python, which nothing else uses). For skills it removes only a
 skill recorded in `agent-skills-<agent>.txt` whose tree still matches its recorded digest;
 a pre-existing same-named skill, a skill the user edited after copying, and any unrecorded
@@ -189,6 +253,9 @@ A standalone install (no adjacent `app/` tree, as in the piped form) likewise ne
 a prepared `ORBIT_OFFICE_APP_BUNDLE` for the app, as step 9 describes; without one
 it stops at the app step rather than installing a service with nothing to run.
 
-Run `sh scripts/install/test-install.sh` for the installer acceptance harness. It uses
+Run `sh scripts/install/test-install.sh` for the installer acceptance harness; CI
+runs it on Linux and macOS with Node 24 (the fixture imports TypeScript directly).
+`UPDATE_GOLDENS=1 sh scripts/install/test-install.sh` explicitly refreshes the
+installed launcher help golden. The launcher itself supports Node 20+. The harness uses
 temporary homes, stub Orbit and service managers, local archive fixtures and a PTY
 for the hidden-input and single-consent checks; it never contacts a provider.

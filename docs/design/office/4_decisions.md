@@ -1150,3 +1150,30 @@ returns it on creation, and records it in completion evidence. Script execution
 checks that binding for new approvals; legacy undigested approvals stay readable.
 Knowledge revisions are separately protected by compare-and-write under the
 Library writer lock, and proposal records have a version-8 Library journal.
+
+## Machine installation and workspace initialization are separate
+
+**Recorded:** 2026-10-27
+**Code anchors:** `install.sh`; [specs/install.md](./specs/install.md#office-init-path)
+
+The installer owns machine provisioning: toolchains, plugin installation,
+secrets, agent integration and the app service. A small installed `office`
+launcher owns `init [path]`: git, workspace registration, plugin enablement and
+the Library initializer. The installer calls that launcher so repairs and
+second workspaces follow the same implementation. Embed its source once in the
+installer so a curl-to-sh installation remains self-contained. Creation receipts
+govern launcher uninstall; global enable/scaffold markers cannot decide the
+state of another workspace. Live Orbit state governs those checks.
+
+This command is outside the Rust exec backend (`office-bin`). That backend
+serves Orbit's one-call JSON envelope and runs only after a plugin is enabled;
+a human command must be able to create the workspace before that point.
+`office.init` remains the Library-only tool. No `open` or `status` command is
+introduced.
+
+**Deviation: STD-03@2 §R6, §R8 and §R9.** Like the existing machine installer,
+setup is a sequential repair procedure across git, Orbit and local receipts,
+not a transaction across those stores. Successful steps remain after a later
+failure and the next invocation checks and repairs them. Run one installer or
+initializer per user at a time; the receipt file has atomic replacement but
+no cross-process writer lock. Concurrent setup is not supported.

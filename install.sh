@@ -442,6 +442,7 @@ check_workspace_adoptable() {
     if [ -e "$WORKSPACE" ] && [ ! -d "$WORKSPACE" ]; then
         die "workspace path $WORKSPACE exists and is not a folder"
     fi
+    WORKSPACE=$(lexical_path "$WORKSPACE")
     case "$WORKSPACE" in
         "$HOME"|"/"|"") die "refusing to use $WORKSPACE as the workspace" ;;
         *) ;;
@@ -450,32 +451,6 @@ check_workspace_adoptable() {
         && ! is_office_workspace; then
         die "refusing to adopt non-empty folder $WORKSPACE: it is not an office workspace (move it aside or pass --home DIR)"
     fi
-}
-
-# Ask once for consent. --yes and non-interactive runs proceed after
-# printing the grants, so a piped install never hangs on a question.
-consent_enable_plugin() {
-    say "The plugins $INSTALL_PLUGINS request these grants:"
-    say "  office: fs {{workspace}}, {{plugin_state}}; network unscoped; orbit_tools task, friction, search and auto-task"
-    say "  gateway: fs {{workspace}}/.orbit-gateway, {{plugin_state}}; network unscoped; orbit_tools task add/artifact/show/update"
-    if [ "$WITH_CLOUDCLI" -eq 1 ]; then
-        say "  cloudcli: fs {{plugin_state}}; network unscoped; programs python3, aws, gcloud"
-    fi
-    if [ "$ASSUME_YES" -eq 1 ]; then
-        say "Consent: --yes given, enabling $INSTALL_PLUGINS."
-        return 0
-    fi
-    if [ -t 0 ]; then
-        printf 'Enable plugins %s with these grants? [y/N] ' "$INSTALL_PLUGINS"
-        _answer=""
-        read -r _answer || _answer=""
-        case "$_answer" in
-            y|Y|yes|YES) return 0 ;;
-            *) die "plugin enable declined; re-run with --yes to consent" ;;
-        esac
-    fi
-    say "Consent: non-interactive run, enabling $INSTALL_PLUGINS (pass --yes to confirm explicitly)."
-    return 0
 }
 
 secret_is_set() {
@@ -802,54 +777,287 @@ step_orbit() {
     say "orbit: installed ($ORBIT_NPM_PACKAGE)"
 }
 
-step_workspace() {
-    step "4 workspace"
-    check_workspace_adoptable
-    if [ -d "$WORKSPACE/.git" ]; then
-        say "workspace: git repository already done ($WORKSPACE)"
-    else
-        mkdir -p "$WORKSPACE"
-        if git -C "$WORKSPACE" init -b main >/dev/null 2>&1; then
-            say "workspace: ran git init -b main"
+# The same standalone launcher ships in clone and curl-to-sh installs.
+launcher_digest() {
+    node -e 'const fs = require("fs"), crypto = require("crypto"); process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"));' "$1"
+}
+
+step_launcher() {
+    LAUNCHER="$HOME/.local/bin/office"
+    mkdir -p "$DATA_DIR"
+    _candidate="$DATA_DIR/office-launcher.$$"
+    _launcher_created=0
+    trap 'rm -f "$_candidate" "$LAUNCHER.install-$$"' EXIT HUP INT TERM
+    cat > "$_candidate" <<'OFFICE_LAUNCHER'
+#!/usr/bin/env node
+// Human workspace setup. The Rust office-bin remains Orbit's exec backend.
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
+const { spawnSync } = require("node:child_process");
+const help = `Usage: office init [path] [--yes]
+
+Create or repair an office workspace and its Library.
+Default path: ~/orbit (or ORBIT_OFFICE_HOME). Plugins must already be installed.
+
+Options:
+  --yes       Enable plugins without the consent question (default: ask on a TTY)
+  -h, --help  Show this help
+
+Non-interactive stdin prints the grants and proceeds without reading input.
+Existing non-empty folders are refused unless owned by office setup.
+Exit codes: 0 success, 1 setup/tool failure, 2 usage error.
+
+Examples:
+  office init
+  office init ~/another-office --yes
+`;
+const say = (message) => process.stderr.write(message + "\n");
+function fail(message, code = 1) {
+  say("error: " + message);
+  process.exit(code);
+}
+const args = process.argv.slice(2);
+if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
+  process.stdout.write(help);
+  process.exit(0);
+}
+if (args.shift() !== "init") fail("expected 'office init [path] [--yes]'; use --help", 2);
+let yes = false;
+let target;
+for (const arg of args) {
+  if (arg === "--yes") yes = true;
+  else if (["--help", "-h"].includes(arg)) {
+    process.stdout.write(help);
+    process.exit(0);
+  } else if (arg.startsWith("-")) fail("unknown option: " + arg + "; use --help", 2);
+  else if (target !== undefined) fail("expected one workspace path; use --help", 2);
+  else target = arg;
+}
+if (!process.env.HOME) fail("HOME is not set");
+if (target === "") fail("workspace path must not be empty", 2);
+process.umask(0o077);
+function exists(file) {
+  try { return fs.lstatSync(file); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+}
+function resolvePhysical(file) {
+  const absolute = path.resolve(file);
+  if (exists(absolute)) return fs.realpathSync(absolute);
+  const parent = path.dirname(absolute);
+  return path.join(resolvePhysical(parent), path.basename(absolute));
+}
+function run(command, argv, cwd, required = true) {
+  const result = spawnSync(command, argv, {
+    cwd, encoding: "utf8", timeout: 300000, maxBuffer: 8 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, PATH: path.join(process.env.HOME, ".local/share/orbit-office/tools/bin") + path.delimiter + process.env.PATH },
+  });
+  if (required && (result.error || result.status !== 0)) {
+    if (result.stderr) process.stderr.write(result.stderr);
+    fail(command + " " + argv.join(" ") + " failed" + (result.error ? ": " + result.error.message : " (exit: " + result.status + ")"));
+  }
+  return result;
+}
+function json(command, argv, cwd) {
+  const result = run(command, argv, cwd);
+  try {
+    const rows = JSON.parse(result.stdout);
+    if (!Array.isArray(rows)) throw new Error("expected an array");
+    return rows;
+  } catch (_) { fail("could not read JSON from " + command + " " + argv.join(" ")); }
+}
+function parseLoose(text) {
+  function parse(value) { try { return JSON.parse(value); } catch (_) { return undefined; } }
+  const trimmed = String(text || "").trim();
+  let value = parse(trimmed);
+  if (value !== undefined) return value;
+  const lines = trimmed.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].trim().startsWith("{")) continue;
+    value = parse(lines[i].trim());
+    if (value !== undefined) return value;
+    value = parse(lines.slice(i).join("\n").trim());
+    if (value !== undefined) return value;
+  }
+  return parse(trimmed.slice(trimmed.indexOf("{"), trimmed.lastIndexOf("}") + 1));
+}
+function initStatus(result) {
+  const object = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  const code = (value) => {
+    if (!value) return "";
+    if (object(value.error) && typeof value.error.code === "string" && value.error.code) return value.error.code;
+    return typeof value.code === "string" ? value.code : "";
+  };
+  const out = object(parseLoose(result.stdout));
+  if (!result.error && result.status === 0) {
+    if (!out) return "unreadable";
+    if (out.ok === true || !Object.hasOwn(out, "ok")) return "ok";
+    return out.ok === false ? code(out) || "unreadable" : "unreadable";
+  }
+  return code(object(parseLoose(result.stderr))) || code(out) || "unreadable";
+}
+function writeAtomic(file, content) {
+  const temp = file + ".office-init-" + process.pid;
+  const fd = fs.openSync(temp, "wx", 0o600);
+  try {
+    fs.writeFileSync(fd, content);
+    fs.fsyncSync(fd);
+  } finally { fs.closeSync(fd); }
+  try {
+    fs.renameSync(temp, file);
+    const parent = fs.openSync(path.dirname(file), "r");
+    try { fs.fsyncSync(parent); } finally { fs.closeSync(parent); }
+  } finally { if (exists(temp)) fs.unlinkSync(temp); }
+}
+function main() {
+  const requested = path.resolve(target || process.env.ORBIT_OFFICE_HOME || path.join(process.env.HOME, "orbit"));
+  const entry = exists(requested);
+  if (entry && (entry.isSymbolicLink() || !entry.isDirectory())) fail("workspace path " + requested + " exists and is not a folder or is a symlink");
+  const workspace = resolvePhysical(requested);
+  if ([resolvePhysical(process.env.HOME), path.parse(workspace).root].includes(workspace)) fail("refusing to use " + workspace + " as the workspace");
+  const macos = ["macos", "macOS", "Darwin", "darwin"].includes(process.env.ORBIT_OFFICE_OS || "") || (!process.env.ORBIT_OFFICE_OS && process.platform === "darwin");
+  const data = path.resolve(process.env.ORBIT_OFFICE_DATA_DIR || (macos ? path.join(process.env.HOME, "Library/Application Support/orbit-office") : path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME, ".local/share"), "orbit-office")));
+  const stateFile = path.join(data, "install-state");
+  for (let current = stateFile; current !== path.dirname(current); current = path.dirname(current)) {
+    const stat = exists(current);
+    if (stat && stat.isSymbolicLink()) fail("refusing symlink install state path: " + current);
+  }
+  const stateStat = exists(stateFile);
+  if (stateStat && (!stateStat.isFile() || stateStat.uid !== process.getuid() || (stateStat.mode & 0o022))) fail("unsafe install state: " + stateFile);
+  let state = stateStat ? fs.readFileSync(stateFile, "utf8") : "";
+  const has = (line) => state.split("\n").includes(line);
+  function mark(line) {
+    if (has(line)) return;
+    fs.mkdirSync(data, { recursive: true, mode: 0o700 });
+    const next = state + (state && !state.endsWith("\n") ? "\n" : "") + line + "\n";
+    writeAtomic(stateFile, next);
+    state = next;
+  }
+  const names = entry ? fs.readdirSync(workspace) : [];
+  for (const name of [".git", ".gitignore", ".orbit"]) {
+    const stat = exists(path.join(workspace, name));
+    if (stat && stat.isSymbolicLink()) fail("refusing symlink workspace entry: " + path.join(workspace, name));
+  }
+  const ignore = path.join(workspace, ".gitignore");
+  const ignoreStat = exists(ignore);
+  const partial = exists(path.join(workspace, ".git"))?.isDirectory() && ignoreStat?.isFile() &&
+    fs.readFileSync(ignore, "utf8").split("\n").includes("/library/") && names.every((name) => [".git", ".gitignore", ".orbit"].includes(name));
+  if (names.length && !has("workspace_path=" + workspace) && !partial) fail("refusing to adopt non-empty folder " + workspace + ": it is not an office workspace (move it aside or choose another path)");
+  run("git", ["--version"]);
+  const installed = json("orbit", ["plugin", "list", "--json"]);
+  for (const name of ["office", "gateway"]) {
+    if (!installed.some((plugin) => plugin.name === name)) fail("plugin '" + name + "' is not installed; run install.sh first");
+  }
+  const plugins = ["office", "gateway", ...(installed.some((plugin) => plugin.name === "cloudcli") ? ["cloudcli"] : [])];
+  say("==> 4 workspace");
+  fs.mkdirSync(workspace, { recursive: true, mode: 0o700 });
+  if (!exists(path.join(workspace, ".git"))) {
+    const result = run("git", ["init", "-b", "main"], workspace, false);
+    if (result.status !== 0) {
+      run("git", ["init"], workspace);
+      run("git", ["symbolic-ref", "HEAD", "refs/heads/main"], workspace);
+    }
+    say("workspace: ran git init -b main (" + workspace + ")");
+  } else say("workspace: git repository already done (" + workspace + ")");
+  const oldIgnore = exists(ignore) ? fs.readFileSync(ignore, "utf8") : "";
+  if (!oldIgnore.split("\n").includes("/library/")) writeAtomic(ignore, oldIgnore + (oldIgnore && !oldIgnore.endsWith("\n") ? "\n" : "") + "/library/\n");
+  const login = os.userInfo().username || "orbit";
+  for (const [key, fallback] of [["user.name", login], ["user.email", login + "@localhost"]]) {
+    if (!run("git", ["config", key], workspace, false).stdout.trim()) run("git", ["config", key, fallback], workspace);
+  }
+  if (run("git", ["rev-parse", "--verify", "HEAD"], workspace, false).status !== 0) {
+    run("git", ["add", ".gitignore"], workspace);
+    run("git", ["commit", "-m", "Initial commit"], workspace);
+    say("workspace: made the first commit");
+  } else say("workspace: first commit already done");
+  const registrations = json("orbit", ["workspace", "list", "--json"], workspace);
+  if (!registrations.some((row) => typeof row.repo_root === "string" && resolvePhysical(row.repo_root) === workspace && row.status === "active")) {
+    run("orbit", ["workspace", "init"], workspace);
+    say("workspace: registered with orbit workspace init");
+  } else say("workspace: already registered (" + workspace + ")");
+  mark("workspace_path=" + workspace);
+  say("==> 5 workspace plugins");
+  const rows = json("orbit", ["plugin", "list", "--json", "--workspace", workspace], workspace);
+  const grants = {
+    office: ["fs={{workspace}},{{plugin_state}}", "network", "orbit_tools"],
+    gateway: ["fs={{workspace}}/.orbit-gateway,{{plugin_state}}", "network", "orbit_tools"],
+    cloudcli: ["fs={{plugin_state}}", "network"],
+  };
+  const needsHost = (row, name) => row.host_enabled !== true || grants[name].some((grant) => !row.permissions?.some((permission) => permission.grant === grant.split("=")[0] && permission.granted === true));
+  if (plugins.some((name) => { const row = rows.find((plugin) => plugin.name === name); return !row || needsHost(row, name) || row.workspace_toggle !== true; })) {
+    say("The plugins " + plugins.join(" ") + " request these grants:");
+    say("  office: fs {{workspace}}, {{plugin_state}}; network unscoped; orbit_tools task, friction, search and auto-task");
+    say("  gateway: fs {{workspace}}/.orbit-gateway, {{plugin_state}}; network unscoped; orbit_tools task add/artifact/show/update");
+    if (plugins.includes("cloudcli")) say("  cloudcli: fs {{plugin_state}}; network unscoped; programs python3, aws, gcloud");
+    if (yes) say("Consent: --yes given, enabling " + plugins.join(" ") + ".");
+    else if (require("node:tty").isatty(0)) {
+      process.stderr.write("Enable plugins " + plugins.join(" ") + " with these grants? [y/N] ");
+      let answer = "";
+      const byte = Buffer.alloc(1);
+      while (fs.readSync(0, byte, 0, 1, null) && byte[0] !== 10) answer += byte.toString();
+      if (!["y", "yes"].includes(answer.trim().toLowerCase())) fail("plugin enable declined; re-run with --yes to consent");
+    } else say("Consent: non-interactive run, enabling " + plugins.join(" ") + " (pass --yes to confirm explicitly).");
+  }
+  for (const name of plugins) {
+    const row = rows.find((plugin) => plugin.name === name);
+    if (!row) fail("plugin disappeared during setup: " + name);
+    if (needsHost(row, name)) run("orbit", ["plugin", "enable", name, ...grants[name].flatMap((grant) => ["--grant", grant]), "--workspace", workspace], workspace);
+    if (row.workspace_toggle !== true) run("orbit", ["plugin", "enable", name, "--scope", "workspace", "--workspace", workspace], workspace);
+    mark(name === "office" ? "plugin_enabled" : "plugin." + name + ".enabled");
+    say("plugin: already enabled or repaired (" + name + ", " + workspace + ")");
+  }
+  say("==> 7 scaffold");
+  const result = run("orbit", ["tool", "run", "office.init", "--json", "--full", "--input", "{}", "--workspace", workspace], workspace, false);
+  if (result.stderr) process.stderr.write(result.stderr);
+  const status = initStatus(result);
+  if (result.error || result.status !== 0 || status !== "ok") fail("scaffold: office.init failed (code: " + status + ", exit: " + result.status + ")");
+  mark("scaffolded");
+  say("scaffold: already initialized or repaired (office.init, " + workspace + "/library)");
+}
+try { main(); } catch (error) { fail(error.message); }
+OFFICE_LAUNCHER
+    if [ -e "$LAUNCHER" ] || [ -L "$LAUNCHER" ]; then
+        [ -f "$LAUNCHER" ] && [ ! -L "$LAUNCHER" ] \
+            || die "refusing to replace unrelated launcher $LAUNCHER"
+        if state_has "launcher_path=$LAUNCHER"; then
+            _old_digest=$(launcher_digest "$LAUNCHER")
+            state_has "launcher_digest=$_old_digest" \
+                || die "refusing to replace modified launcher $LAUNCHER (move it aside and re-run)"
         else
-            git -C "$WORKSPACE" init >/dev/null
-            git -C "$WORKSPACE" symbolic-ref HEAD refs/heads/main
-            say "workspace: ran git init"
+            cmp -s "$_candidate" "$LAUNCHER" && [ -x "$LAUNCHER" ] \
+                || die "refusing to replace unrelated launcher $LAUNCHER (move it aside and re-run)"
+        fi
+    else
+        mkdir -p "$(dirname -- "$LAUNCHER")"
+        _launcher_created=1
+    fi
+    if [ ! -f "$LAUNCHER" ] || ! cmp -s "$_candidate" "$LAUNCHER"; then
+        # Stage next to the destination so replacement is atomic.
+        cp "$_candidate" "$LAUNCHER.install-$$"
+        chmod 755 "$LAUNCHER.install-$$"
+        mv "$LAUNCHER.install-$$" "$LAUNCHER"
+    fi
+    if [ "$_launcher_created" -eq 1 ] || state_has "launcher_path=$LAUNCHER"; then
+        _new_digest=$(launcher_digest "$LAUNCHER")
+        state_mark "launcher_digest=$_new_digest"
+        state_mark "launcher_path=$LAUNCHER"
+        if [ -n "${_old_digest:-}" ] && [ "$_old_digest" != "$_new_digest" ]; then
+            state_clear "launcher_digest=$_old_digest"
         fi
     fi
-    _ignore="$WORKSPACE/.gitignore"
-    if [ -f "$_ignore" ] && grep -qx '/library/' "$_ignore"; then
-        say "workspace: .gitignore already done"
-    elif [ -f "$_ignore" ]; then
-        printf '/library/\n' >> "$_ignore"
-        say "workspace: added /library/ to .gitignore"
+    rm -f "$_candidate"
+    trap - EXIT HUP INT TERM
+    say "office: launcher already installed or updated ($LAUNCHER)"
+}
+
+step_workspace_init() {
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        PATH="$TOOLS_BIN:$PATH" "$LAUNCHER" init "$WORKSPACE" --yes
     else
-        printf '/library/\n' > "$_ignore"
-        say "workspace: wrote .gitignore"
+        PATH="$TOOLS_BIN:$PATH" "$LAUNCHER" init "$WORKSPACE"
     fi
-    # A repo-local identity, only for the fields git does not have.
-    _login=$(id -un 2>/dev/null || printf 'orbit')
-    [ -n "$_login" ] || _login="orbit"
-    if [ -z "$(git -C "$WORKSPACE" config user.name 2>/dev/null || true)" ]; then
-        git -C "$WORKSPACE" config user.name "$_login"
-    fi
-    if [ -z "$(git -C "$WORKSPACE" config user.email 2>/dev/null || true)" ]; then
-        git -C "$WORKSPACE" config user.email "$_login@localhost"
-    fi
-    if git -C "$WORKSPACE" rev-parse --verify HEAD >/dev/null 2>&1; then
-        say "workspace: first commit already done"
-    else
-        git -C "$WORKSPACE" add .gitignore
-        git -C "$WORKSPACE" commit -m "Initial commit" >/dev/null
-        say "workspace: made the first commit"
-    fi
-    if [ -d "$WORKSPACE/.orbit" ] || state_has "workspace_path=$WORKSPACE"; then
-        say "workspace: already registered ($WORKSPACE)"
-    else
-        (cd "$WORKSPACE" && orbit workspace init >/dev/null)
-        say "workspace: registered with orbit workspace init"
-    fi
-    state_mark "workspace_path=$WORKSPACE"
 }
 
 plugin_is_listed() {
@@ -913,14 +1121,8 @@ step_plugin() {
                 || die "missing $_plugin export in ORBIT_OFFICE_PLUGIN_BUNDLE"
         done
     fi
-    _need_consent=0
-    for _plugin in $INSTALL_PLUGINS; do
-        if ! state_has "$(plugin_marker "$_plugin" enabled)"; then _need_consent=1; fi
-    done
-    if [ "$_need_consent" -eq 1 ]; then consent_enable_plugin; fi
     for _plugin in $INSTALL_PLUGINS; do
         _added=$(plugin_marker "$_plugin" added)
-        _enabled=$(plugin_marker "$_plugin" enabled)
         if plugin_is_listed "$_plugin" || state_has "$_added"; then
             say "plugin: already added ($_plugin)"
         else
@@ -964,17 +1166,6 @@ step_plugin() {
             state_mark "$_added"
             say "plugin: added $_plugin from $_source"
         fi
-        if state_has "$_enabled"; then
-            say "plugin: already enabled ($_plugin)"
-        else
-            case "$_plugin" in
-                office) PATH="$TOOLS_BIN:$PATH" orbit plugin enable office --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools ;;
-                gateway) PATH="$TOOLS_BIN:$PATH" orbit plugin enable gateway --grant 'fs={{workspace}}/.orbit-gateway,{{plugin_state}}' --grant network --grant orbit_tools ;;
-                cloudcli) PATH="$TOOLS_BIN:$PATH" orbit plugin enable cloudcli --grant 'fs={{plugin_state}}' --grant network ;;
-            esac
-            state_mark "$_enabled"
-            say "plugin: enabled ($_plugin)"
-        fi
     done
 }
 
@@ -999,127 +1190,6 @@ step_secrets() {
     fi
     set_secret "open_weights_token" "$_open_weights_token" 1
     _open_weights_token=""
-}
-
-# Prints "ok" when office.init succeeded, otherwise the office code, or
-# "unreadable". Arguments are the exit status, stdout and stderr.
-#
-# `orbit tool run --json --full` exits 0 and prints the tool output object
-# on stdout. That object has no top-level ok. An {ok:true} envelope (the
-# direct office binary) is also success. An {ok:false} envelope names its
-# code even when the exit status is 0. A non-zero exit puts the code in a
-# JSON object on stderr, which a WARN line may precede.
-init_envelope_status() {
-    ORBIT_OFFICE_INIT_RC="$1" \
-    ORBIT_OFFICE_INIT_OUT="$2" \
-    ORBIT_OFFICE_INIT_ERR="$3" \
-        node <<'NODE' || printf 'unreadable'
-function tryParse(text) {
-  try {
-    return JSON.parse(text);
-  } catch (_) {
-    return undefined;
-  }
-}
-
-function parseLoose(text) {
-  if (text == null) return undefined;
-  var trimmed = String(text).trim();
-  if (!trimmed) return undefined;
-  var direct = tryParse(trimmed);
-  if (direct !== undefined) return direct;
-  var lines = trimmed.split(/\r?\n/);
-  var i;
-  for (i = lines.length - 1; i >= 0; i--) {
-    var line = lines[i].trim();
-    if (line.charAt(0) !== "{") continue;
-    var parsed = tryParse(line);
-    if (parsed !== undefined) return parsed;
-    var block = tryParse(lines.slice(i).join("\n").trim());
-    if (block !== undefined) return block;
-  }
-  var start = trimmed.indexOf("{");
-  var end = trimmed.lastIndexOf("}");
-  if (start !== -1 && end > start) {
-    var sliced = tryParse(trimmed.slice(start, end + 1));
-    if (sliced !== undefined) return sliced;
-  }
-  return undefined;
-}
-
-function asObject(text) {
-  var value = parseLoose(text);
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value;
-}
-
-function codeOf(obj) {
-  if (!obj) return "";
-  var nested = obj.error;
-  if (nested && typeof nested === "object" && !Array.isArray(nested) &&
-      typeof nested.code === "string" && nested.code) {
-    return nested.code;
-  }
-  if (typeof obj.code === "string" && obj.code) return obj.code;
-  return "";
-}
-
-var rc = Number(process.env.ORBIT_OFFICE_INIT_RC || "0");
-var out = asObject(process.env.ORBIT_OFFICE_INIT_OUT || "");
-if (!isFinite(rc)) {
-  process.stdout.write("unreadable");
-} else if (rc === 0) {
-  if (!out) {
-    process.stdout.write("unreadable");
-  } else if (out.ok === true || !Object.prototype.hasOwnProperty.call(out, "ok")) {
-    process.stdout.write("ok");
-  } else if (out.ok === false) {
-    process.stdout.write(codeOf(out) || "unreadable");
-  } else {
-    process.stdout.write("unreadable");
-  }
-} else {
-  var err = asObject(process.env.ORBIT_OFFICE_INIT_ERR || "");
-  process.stdout.write(codeOf(err) || codeOf(out) || "unreadable");
-}
-NODE
-}
-
-step_scaffold() {
-    step "7 scaffold"
-    if [ -f "$WORKSPACE/library/.office/config.yaml" ] \
-        || [ -d "$WORKSPACE/library/.git" ] \
-        || state_has "scaffolded"; then
-        # Still ask office.init when the Library exists but our marker
-        # does not: it answers already_initialized and creates nothing.
-        if state_has "scaffolded"; then
-            say "scaffold: already done (office.init, $WORKSPACE/library)"
-            return 0
-        fi
-    fi
-    # Exit 0 with the tool output object (no top-level ok) is success, as
-    # is an {ok:true} envelope. Anything else fails and the next run asks
-    # office.init again. Stderr is kept: a WARN line can precede the JSON
-    # error object, and the office code is in that object.
-    _init_err_file="$DATA_DIR/office-init.stderr"
-    mkdir -p "$DATA_DIR"
-    : > "$_init_err_file"
-    _init_rc=0
-    _init_out=$(
-        cd "$WORKSPACE" && orbit tool run office.init --json --full --input '{}' 2>"$_init_err_file"
-    ) || _init_rc=$?
-    if [ -s "$_init_err_file" ]; then
-        cat "$_init_err_file" >&2
-    fi
-    _init_err=$(cat "$_init_err_file")
-    rm -f "$_init_err_file"
-    _init_status=$(init_envelope_status "$_init_rc" "$_init_out" "$_init_err")
-    if [ "$_init_rc" -eq 0 ] && [ "$_init_status" = "ok" ]; then
-        state_mark "scaffolded"
-        say "scaffold: ran office.init ($WORKSPACE/library)"
-        return 0
-    fi
-    die "scaffold: office.init failed (code: $_init_status, exit: $_init_rc)"
 }
 
 # Register the Orbit MCP entry with the agent CLI. Node is a proven
@@ -1965,6 +2035,21 @@ do_uninstall() {
             state_clear "plugin.$_plugin.exported"
         fi
     done
+    _launcher="$HOME/.local/bin/office"
+    if state_has "launcher_path=$_launcher"; then
+        if [ -f "$_launcher" ] && [ ! -L "$_launcher" ] \
+            && _current_digest=$(launcher_digest "$_launcher" 2>/dev/null) \
+            && state_has "launcher_digest=$_current_digest"; then
+            rm -f "$_launcher"
+            state_clear "launcher_digest=$_current_digest"
+            say "uninstall: removed the office launcher ($_launcher)"
+        elif [ -e "$_launcher" ] || [ -L "$_launcher" ]; then
+            warn "uninstall: kept changed launcher path $_launcher"
+        fi
+        state_clear "launcher_path=$_launcher"
+    else
+        say "uninstall: kept any unrecorded office launcher ($_launcher)"
+    fi
     # tools/ is not the data folder. On Linux the data folder is its
     # parent; on macOS they are different trees. Remove only tools/.
     case "$TOOLS_DIR" in
@@ -2023,14 +2108,15 @@ check_workspace_adoptable
 step_preflight
 step_python
 step_orbit
-step_workspace
+step_launcher
 step_plugin
+step_workspace_init
 step_secrets
-step_scaffold
 step_agent
 step_app
 
 step "summary"
+say "summary: office     $LAUNCHER (add $HOME/.local/bin to PATH if needed)"
 say "summary: workspace  $WORKSPACE"
 say "summary: library    $WORKSPACE/library"
 say "summary: data       $DATA_DIR"
