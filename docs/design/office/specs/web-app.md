@@ -49,6 +49,10 @@ Citations the agent prints are `http://localhost` links carrying the
 source anchor; they will open the app's source or page view once the
 planned source screen ships.
 
+### Review implementation
+
+Review searches the quarterly and yearly review series, reads each returned artifact body, and orders the returned reviews by approval time. Search is bounded to 100 hits per series and matches indexed text, so it is not a complete review listing. At most 100 reviews are shown, with a notice at the limit. Citation links retain the source reference for the planned source or page view; those views do not yet resolve them. Regenerate requests the review auto-task and explains when that request is refused.
+
 ### Today implementation
 
 Today and `GET /api/today` are built ([ORB-18727]). The endpoint polls `orbit.task.list`
