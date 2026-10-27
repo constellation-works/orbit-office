@@ -1,0 +1,84 @@
+schemaVersion: 2
+kind: Job
+metadata:
+  name: office-kt-inbox
+spec:
+  state: enabled
+  kind: workflow
+  max_active_runs: 1
+  steps:
+    - id: list
+      timeout_seconds: 300
+      spec:
+        type: deterministic
+        action: plugin.tool_call
+        config:
+          tool: office.video-plan
+          input: {}
+    - id: transcribe
+      fan_out:
+        items: "{{ steps.list.output.plans }}"
+        max_workers: 4
+        worker:
+          id: transcribe-one
+          timeout_seconds: 3600
+          default_input:
+            tool: office.transcribe
+            input:
+              id: "{{ item.source_id }}"
+          spec:
+            type: deterministic
+            action: plugin.tool_call
+            config:
+              tool: office.transcribe
+              input: {}
+      fan_in:
+        join: { mode: all }
+    - id: frames
+      fan_out:
+        items: "{{ steps.list.output.plans }}"
+        max_workers: 4
+        worker:
+          id: frames-one
+          timeout_seconds: 3600
+          default_input:
+            tool: office.frames
+            input:
+              id: "{{ item.source_id }}"
+          spec:
+            type: deterministic
+            action: plugin.tool_call
+            config:
+              tool: office.frames
+              input: {}
+      fan_in:
+        join: { mode: all }
+    - id: extract
+      fan_out:
+        items: "{{ steps.list.output.plans }}"
+        max_workers: 4
+        worker:
+          id: extract-one
+          timeout_seconds: 3600
+          default_input:
+            tool: office.extract
+            input:
+              id: "{{ item.source_id }}"
+              profile: kt
+          spec:
+            type: deterministic
+            action: plugin.tool_call
+            config:
+              tool: office.extract
+              input: {}
+      fan_in:
+        join: { mode: all }
+    - id: consolidate
+      timeout_seconds: 3600
+      spec:
+        type: deterministic
+        action: plugin.tool_call
+        config:
+          tool: office.consolidate
+          input:
+            batch_id: kt
