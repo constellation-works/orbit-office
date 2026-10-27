@@ -43,7 +43,9 @@ class GatewayCase(unittest.TestCase):
     def setUp(self) -> None:
         temp = tempfile.TemporaryDirectory(prefix="gateway-test-")
         self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name)
+        # Resolve so path comparisons match the canonical cwd a child
+        # process reports (macOS /var is a symlink to /private/var).
+        self.root = Path(temp.name).resolve()
         self.plugin = export.export(self.PLUGIN, self.root / "plugin") / ".orbit-plugin"
         self.backend = self.plugin / "bin" / "backend.py"
         self.state = self.root / "state"
