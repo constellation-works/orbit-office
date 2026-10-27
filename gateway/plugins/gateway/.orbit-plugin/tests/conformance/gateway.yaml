@@ -1,0 +1,147 @@
+# Request/response goldens for `orbit plugin test` (no network, no stored
+# secrets; `secrets:` supplies fixture values per case). One `orbit plugin test`
+# run keeps {{plugin_state}} across its cases, in file order, so this file is
+# one scenario: later cases use the connection the earlier ones created.
+# Nothing here reaches a server: every http-get case is refused before a
+# request is sent. Responses from a live server are covered by
+# gateway/tests/test_http_get.py.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: connection_list_starts_empty
+    tool: connection-list
+    input: {}
+    expect:
+      output: {connections: [], free_slots: 16}
+
+  # conn_01 holds a value no connection uses, so it is not free: a stale
+  # secret is never handed to a new connection.
+  - name: connection_put_assigns_a_free_unset_slot
+    tool: connection-put
+    secrets: {conn_01: fixture-stale-value-0123456789}
+    input:
+      name: acme
+      base_url: http://127.0.0.1:9/v2
+      auth: {scheme: bearer}
+    expect:
+      output:
+        created: true
+        released_slot: null
+        connection:
+          name: acme
+          base_url: http://127.0.0.1:9/v2/
+          auth: {scheme: bearer}
+          slot: conn_02
+          slot_state: unset
+          methods: [GET]
+          drafts: []
+          timeout_seconds: 20
+          max_response_bytes: 1048576
+          disabled: false
+
+  - name: connection_put_keeps_the_slot_for_the_same_origin
+    tool: connection-put
+    input:
+      name: acme
+      base_url: http://127.0.0.1:9/v2/
+      auth: {scheme: bearer}
+      methods: [GET, HEAD]
+      drafts: [PATCH]
+    expect:
+      output:
+        created: false
+        released_slot: null
+        connection:
+          name: acme
+          base_url: http://127.0.0.1:9/v2/
+          auth: {scheme: bearer}
+          slot: conn_02
+          slot_state: unset
+          methods: [GET, HEAD]
+          drafts: [PATCH]
+          timeout_seconds: 20
+          max_response_bytes: 1048576
+          disabled: false
+
+  - name: connection_put_refuses_plain_http_to_a_remote_host
+    tool: connection-put
+    input: {name: remote, base_url: "http://api.example.com/", auth: {scheme: none}}
+    expect:
+      error: {code: invalid_connection}
+
+  - name: connection_put_refuses_a_write_method_in_methods
+    tool: connection-put
+    input: {name: writer, base_url: "https://api.example.com/", auth: {scheme: none}, methods: [GET, POST]}
+    expect:
+      error: {code: invalid_connection}
+
+  - name: connection_put_refuses_a_secret_value
+    tool: connection-put
+    input: {name: leaky, base_url: "https://api.example.com/", auth: {scheme: bearer, secret: not-taken}}
+    expect:
+      error: {code: invalid_argument}
+
+  - name: connection_list_reports_whether_a_slot_is_set
+    tool: connection-list
+    secrets: {conn_02: fixture-token-0123456789}
+    input: {}
+    expect:
+      output:
+        free_slots: 15
+        connections:
+          - name: acme
+            base_url: http://127.0.0.1:9/v2/
+            auth: {scheme: bearer}
+            slot: conn_02
+            slot_state: set
+            methods: [GET, HEAD]
+            drafts: [PATCH]
+            timeout_seconds: 20
+            max_response_bytes: 1048576
+            disabled: false
+
+  - name: http_get_refuses_an_unknown_connection
+    tool: http-get
+    input: {connection: nobody, path: users}
+    expect:
+      error: {code: unknown_connection}
+
+  - name: http_get_refuses_a_write_method
+    tool: http-get
+    secrets: {conn_02: fixture-token-0123456789}
+    input: {connection: acme, path: users, method: POST}
+    expect:
+      error: {code: method_not_allowed}
+
+  - name: http_get_refuses_an_absolute_url
+    tool: http-get
+    secrets: {conn_02: fixture-token-0123456789}
+    input: {connection: acme, path: "https://evil.example/steal"}
+    expect:
+      error: {code: path_outside_connection}
+
+  - name: http_get_refuses_a_path_that_climbs_out
+    tool: http-get
+    secrets: {conn_02: fixture-token-0123456789}
+    input: {connection: acme, path: "users/../../admin"}
+    expect:
+      error: {code: path_outside_connection}
+
+  - name: http_get_refuses_an_authorization_header
+    tool: http-get
+    secrets: {conn_02: fixture-token-0123456789}
+    input: {connection: acme, path: users, headers: {Authorization: "Bearer mine"}}
+    expect:
+      error: {code: header_not_allowed}
+
+  - name: http_get_refuses_unknown_input
+    tool: http-get
+    input: {connection: acme, path: users, body: "{}"}
+    expect:
+      error: {code: invalid_argument}
+
+  - name: audit_list_filters_by_connection
+    tool: audit-list
+    input: {connection: never-called}
+    expect:
+      output: {records: [], skipped: 0}

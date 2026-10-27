@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gateway.http-get request",
+  "type": "object",
+  "required": [
+    "connection"
+  ],
+  "properties": {
+    "connection": {
+      "type": "string",
+      "maxLength": 48,
+      "description": "A connection name from gateway.connection-list."
+    },
+    "path": {
+      "type": "string",
+      "maxLength": 2048,
+      "description": "Path relative to the connection's base_url; no scheme, host, query or fragment."
+    },
+    "query": {
+      "type": "object",
+      "description": "Query parameters; a value may be a string, number, boolean or an array of them.",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "maxItems": 64
+          }
+        ]
+      }
+    },
+    "headers": {
+      "type": "object",
+      "description": "Only Accept, Accept-Language, If-None-Match, If-Modified-Since and Range.",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 1024
+      }
+    },
+    "method": {
+      "type": "string",
+      "maxLength": 16,
+      "description": "GET (default) or HEAD, if the connection lists it."
+    }
+  },
+  "additionalProperties": false
+}

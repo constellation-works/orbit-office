@@ -798,6 +798,32 @@ alternatives considered:
   names. The deny rules do not stop an agent that opens sockets itself, and
   the spec says so.
 
+## Gateway tool verbs are hyphenated
+
+**Recorded:** 2026-10-26 · [ORB-18796]
+**Code anchors:** `gateway/plugins/gateway/.orbit-plugin/plugin.yaml`; [specs/gateway.md](./specs/gateway.md)
+
+### Context
+
+The gateway spec named its tools `gateway.http.get`, `gateway.connection.list`
+and so on. Orbit 0.34 accepts a plugin tool's name only when it is lowercase
+letters, digits and `-`, so `orbit plugin validate` refuses a dotted verb and
+the plugin could not be installed.
+
+### Decision
+
+The verbs are `http-get`, `http-draft`, `http-send`, `connection-list`,
+`connection-put` and `audit-list`; the canonical tool names are
+`gateway.http-get` and so on.
+
+### Consequences
+
+- The spec, the skill and the app use the hyphenated names.
+- The same rule refuses the `office` plugin's `signals.scan`; that is its own
+  fix.
+- Cost: the tool names differ from the dotted `office.*` style until Orbit
+  accepts dotted verbs.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.
@@ -807,5 +833,6 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
 - [ORB-13117] — created the Rust CLI template this workspace was generated from.
 - [ORB-13134] — hardened the template's gates and goldens.
+- [ORB-18796] — built the gateway plugin and found Orbit's verb rule.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
