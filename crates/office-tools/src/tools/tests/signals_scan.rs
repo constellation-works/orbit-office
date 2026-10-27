@@ -29,6 +29,7 @@ fn ports_with(
             clock: Box::new(office_testkit::fakes::FakeClock(
                 std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(86_400 * 40),
             )),
+            calendar: Box::new(office_core::ports::UnavailableCalendar),
             selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         },
         observer,
@@ -100,6 +101,7 @@ fn scan_refuses_an_uninitialized_library() {
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     };
     let input = Map::new();
@@ -129,6 +131,7 @@ fn ports_for(
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(orbit),
         clock: Box::new(clock()),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     }
 }

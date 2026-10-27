@@ -13,6 +13,7 @@ fn fixture() -> (Ports<'static>, FakeOrbit) {
         clock: Box::new(FakeClock(
             std::time::UNIX_EPOCH + std::time::Duration::from_secs(86400 * 40),
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(FakeSelections::default()),
     };
     (ports, orbit)

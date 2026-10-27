@@ -73,7 +73,9 @@ Rules:
 `orbit_tools` callbacks requested: `orbit.task.add`, `orbit.task.update`,
 `orbit.task.list`, `orbit.task.show`, `orbit.task.artifact.get`,
 `orbit.task.artifact.put`, `orbit.friction.add`, `orbit.search`,
-`orbit.auto_task.add`, `orbit.auto_task.update`, `orbit.auto_task.list`.
+`orbit.auto_task.add`, `orbit.auto_task.update`, `orbit.auto_task.list`,
+`gateway.connection-list`, `gateway.http-get`. The gateway reads supply calendar
+connection metadata and all calendar network reads; their credentials stay in gateway.
 The auto-task callbacks serve accepted `auto_task` proposals
 ([proposals.md](./proposals.md)); Orbit has no routine-create callback.
 
@@ -313,3 +315,23 @@ Promotion separately enforces the decoded 1 MiB per-file limit before a
 Library write; increasing the transport allowance does not raise that limit.
 
 Script execution bounds are validated Library settings under `scripts`; defaults, caps and approval/preparation contracts are specified in [scripts.md](./scripts.md#implementation-contracts).
+
+### Calendar settings and results
+
+The two calendar tools are built. `calendar-sync` accepts only an optional
+workspace-relative `ics_file`, writes a private versioned atomic snapshot, and
+returns event/skipped counts, its window and sync timestamp. `calendar-list`
+requires RFC 3339 `from`/`until` at most 42 days apart, optionally includes
+cancelled events, and returns `events`, nullable `synced_at` and nullable safe
+`last_error` code. Attendee email values are withheld, including repetitions in
+invite text. Ranges are half-open and include overlapping events.
+
+`office.config-set` accepts `calendar.connection` (null or a 1–48 byte ASCII
+connection name using letters, digits, `_`, `-`), `calendar.window_days_past`
+and `calendar.window_days_ahead` (integers 1–90, default 14/30),
+`calendar.prep_lead_minutes` (15–1440, default 120) and
+`calendar.prep_max_per_run` (1–20, default 5). The prep settings are validated
+for the separate meeting-prep feature. The calendar-sync job inlines the
+single deterministic call, and its routine is seeded disabled every 15 minutes.
+See [calendar.md](./calendar.md#callback-and-snapshot-implementation) for bounds,
+timezone/recurrence rules, callback grants and persistence semantics.

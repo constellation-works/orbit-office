@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "series": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "agenda": {
+            "type": "string"
+          },
+          "all_day": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "confirmed",
+              "tentative",
+              "cancelled"
+            ]
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "organizer": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "response"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "sensitivity": {
+            "enum": [
+              "normal",
+              "private"
+            ]
+          },
+          "recurrence_unsupported": {
+            "type": "boolean"
+          },
+          "prep": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capture": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "summarized": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "source",
+                  "summarized"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "key",
+          "series",
+          "title",
+          "start",
+          "end",
+          "location",
+          "agenda",
+          "all_day",
+          "status",
+          "online",
+          "organizer",
+          "attendees",
+          "sensitivity",
+          "recurrence_unsupported",
+          "prep",
+          "capture",
+          "people"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "synced_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "events",
+    "synced_at",
+    "last_error"
+  ],
+  "additionalProperties": false
+}

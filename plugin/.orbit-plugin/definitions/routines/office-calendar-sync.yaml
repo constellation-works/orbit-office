@@ -1,0 +1,7 @@
+schemaVersion: 1
+name: office-calendar-sync
+description: Refresh the read-only calendar snapshot through the gateway every fifteen minutes.
+enabled: false
+trigger:
+  cron: "*/15 * * * *"
+target: job:office-calendar-sync

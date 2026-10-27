@@ -91,7 +91,7 @@ sys.exit(response.get('exit', 0))
 
 type Method = fn(&dyn Orbit, &Map<String, Value>) -> office_core::Result<Value>;
 
-fn callbacks() -> [(&'static str, Method, Value, Value); 11] {
+fn callbacks() -> [(&'static str, Method, Value, Value); 13] {
     [
         (
             "orbit.task.add",
@@ -160,6 +160,18 @@ fn callbacks() -> [(&'static str, Method, Value, Value); 11] {
             |p, i| p.auto_task_list(i),
             json!({"view":"bounded","limit":1,"unknown_future_key":null}),
             json!({"auto_tasks":[{"name":"weekly-report"}],"total":2,"truncated":true}),
+        ),
+        (
+            "gateway.connection-list",
+            |p, i| p.gateway_connection_list(i),
+            json!({}),
+            json!({"connections":[]}),
+        ),
+        (
+            "gateway.http-get",
+            |p, i| p.gateway_http_get(i),
+            json!({"connection":"fixture","path":""}),
+            json!({"status":200,"body":{"kind":"text","text":"BEGIN:VCALENDAR"}}),
         ),
     ]
 }

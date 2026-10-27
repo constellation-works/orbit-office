@@ -2189,10 +2189,7 @@ impl office_core::ports::Library for LibraryStore {
         })
     }
     fn source_sidecar(&self, id: &str, name: &str) -> office_core::Result<Option<String>> {
-        use office_core::domain::source::video::refusal;
-        if name != "frames.md" && name != "chapters.md" && name != "digest.json" {
-            return Err(refusal("unsafe_path", "unsupported source sidecar"));
-        }
+        office_core::domain::source::access::validate_sidecar(name)?;
         let source = self.read_source(id)?;
         let relative = Path::new(&source.path).with_file_name(name);
         self.files.validate_relative_path(&relative)?;

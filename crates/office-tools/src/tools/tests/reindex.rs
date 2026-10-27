@@ -18,6 +18,7 @@ fn ports(library: office_testkit::fakes::FakeLibrary) -> office_core::ports::Por
         clock: Box::new(office_testkit::fakes::FakeClock(
             std::time::SystemTime::UNIX_EPOCH,
         )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
     }
 }

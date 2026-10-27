@@ -561,6 +561,11 @@ fn input_digest(snapshot: &Snapshot, plan: &Plan, settings: &Settings) -> Result
     // simulated history date has been configured.
     let mut settings_value = serde_json::to_value(settings)
         .map_err(|_| video::refusal("invalid_bootstrap_data", "cannot encode settings"))?;
+    // Calendar reads do not affect bootstrap inference or its approved budget.
+    // Keep existing plans stable when the new optional block is introduced/set.
+    if let Some(map) = settings_value.as_object_mut() {
+        map.remove("calendar");
+    }
     if settings.demo.simulated_until.is_none()
         && let Some(settings) = settings_value.as_object_mut()
     {

@@ -36,6 +36,7 @@ fn ports_at(
         models: Box::new(office_testkit::fakes::FakeModels::new()),
         orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
         clock: Box::new(office_testkit::fakes::FakeClock(now)),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(selections),
     }
 }

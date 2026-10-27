@@ -103,7 +103,7 @@ pub trait Library {
     fn read_media(&self, id: &str) -> Result<crate::domain::source::video::VideoSource> {
         self.read_video(id)
     }
-    /// Read an optional allowlisted source sidecar; missing is distinct from unreadable.
+    /// Read an optional allowlisted source sidecar (including summary.md); missing is distinct from unreadable.
     fn source_sidecar(&self, _id: &str, _name: &str) -> Result<Option<String>> {
         Err(Error::LibraryUnavailable)
     }

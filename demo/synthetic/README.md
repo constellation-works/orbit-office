@@ -177,3 +177,11 @@ The current Source view limits inline originals to 512 KiB. The generated
 transcript, chapters, gotcha and keyframes render, but the app cannot play
 the full original inline. The screenshot check waits for the player's
 settled state and records that limitation rather than claiming playback.
+
+
+`calendar.ics` is also synthetic: Lantern's weekly checkpoint includes a
+cancelled occurrence and a moved one with its original key, plus invented
+review/planning meetings. Mira's invented attendee address matches the seeded
+person page's contact ref. Import it from a workspace-relative path with
+`office.calendar-sync`'s `ics_file`; it never connects a real account. The demo
+feed uses fixed October/November 2026 dates and sync's configured window.

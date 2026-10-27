@@ -1,0 +1,18 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: never_synced
+    tool: calendar-list
+    input: {"from":"2026-10-26T00:00:00Z","until":"2026-11-02T00:00:00Z"}
+    expect:
+      output: {"events":[],"synced_at":null,"last_error":null}
+  - name: refuses_long_range
+    tool: calendar-list
+    input: {"from":"2026-10-01T00:00:00Z","until":"2026-11-13T00:00:00Z"}
+    expect:
+      error: {code: invalid_argument}
+  - name: refuses_unknown_input
+    tool: calendar-list
+    input: {"from":"2026-10-26T00:00:00Z","until":"2026-11-02T00:00:00Z","emails":true}
+    expect:
+      error: {code: invalid_argument}

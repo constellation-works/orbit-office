@@ -1,0 +1,13 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: refuses_invalid_file_input
+    tool: calendar-sync
+    input: {"ics_file":42}
+    expect:
+      error: {code: invalid_argument}
+  - name: refuses_unknown_input
+    tool: calendar-sync
+    input: {"url":"https://calendar.example.invalid/secret"}
+    expect:
+      error: {code: invalid_argument}

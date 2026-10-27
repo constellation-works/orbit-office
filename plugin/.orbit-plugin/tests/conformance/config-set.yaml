@@ -28,3 +28,58 @@ tests:
     input: {key: retention.meeting, value: 30, verbose: true}
     expect:
       error: {code: invalid_argument}
+  - name: calendar_window_days_past_1
+    tool: config-set
+    input: {"key": "calendar.window_days_past", "value": 1}
+    expect:
+      output: {"path": ".office/config.yaml", "key": "calendar.window_days_past"}
+  - name: calendar_window_days_ahead_90
+    tool: config-set
+    input: {"key": "calendar.window_days_ahead", "value": 90}
+    expect:
+      output: {"path": ".office/config.yaml", "key": "calendar.window_days_ahead"}
+  - name: calendar_prep_lead_minutes_15
+    tool: config-set
+    input: {"key": "calendar.prep_lead_minutes", "value": 15}
+    expect:
+      output: {"path": ".office/config.yaml", "key": "calendar.prep_lead_minutes"}
+  - name: calendar_prep_max_per_run_20
+    tool: config-set
+    input: {"key": "calendar.prep_max_per_run", "value": 20}
+    expect:
+      output: {"path": ".office/config.yaml", "key": "calendar.prep_max_per_run"}
+  - name: calendar_connection_demo_calendar
+    tool: config-set
+    input: {"key": "calendar.connection", "value": "demo-calendar"}
+    expect:
+      output: {"path": ".office/config.yaml", "key": "calendar.connection"}
+  - name: calendar_connection_None
+    tool: config-set
+    input: {"key": "calendar.connection", "value": null}
+    expect:
+      output: {"path": ".office/config.yaml", "key": "calendar.connection"}
+  - name: calendar_window_days_past_0
+    tool: config-set
+    input: {"key": "calendar.window_days_past", "value": 0}
+    expect:
+      error: {code: invalid_library_setting}
+  - name: calendar_window_days_ahead_91
+    tool: config-set
+    input: {"key": "calendar.window_days_ahead", "value": 91}
+    expect:
+      error: {code: invalid_library_setting}
+  - name: calendar_prep_lead_minutes_14
+    tool: config-set
+    input: {"key": "calendar.prep_lead_minutes", "value": 14}
+    expect:
+      error: {code: invalid_library_setting}
+  - name: calendar_prep_max_per_run_21
+    tool: config-set
+    input: {"key": "calendar.prep_max_per_run", "value": 21}
+    expect:
+      error: {code: invalid_library_setting}
+  - name: calendar_typo_1
+    tool: config-set
+    input: {"key": "calendar.typo", "value": 1}
+    expect:
+      error: {code: unknown_library_setting}

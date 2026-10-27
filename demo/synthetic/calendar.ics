@@ -1,0 +1,45 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Orbit Office//Synthetic calendar//EN
+BEGIN:VEVENT
+UID:lantern-weekly@calendar.example.invalid
+DTSTART;TZID=Eastern Standard Time:20261012T090000
+DTEND;TZID=Eastern Standard Time:20261012T093000
+RRULE:FREQ=WEEKLY;COUNT=5;BYDAY=MO
+SUMMARY:SIMULATED Lantern weekly checkpoint
+ORGANIZER;CN=Jules Reed:mailto:jules@acme.example
+ATTENDEE;CN=Mira Vale;PARTSTAT=ACCEPTED:mailto:mira@acme.example
+DESCRIPTION:Invented paper-kite pilot. Review the saved checkpoint.
+LOCATION:Invented room 4B
+END:VEVENT
+BEGIN:VEVENT
+UID:lantern-weekly@calendar.example.invalid
+RECURRENCE-ID;TZID=Eastern Standard Time:20261019T090000
+DTSTART;TZID=Eastern Standard Time:20261019T090000
+STATUS:CANCELLED
+SUMMARY:SIMULATED Lantern weekly checkpoint (cancelled)
+END:VEVENT
+BEGIN:VEVENT
+UID:lantern-weekly@calendar.example.invalid
+RECURRENCE-ID;TZID=Eastern Standard Time:20261026T090000
+DTSTART;TZID=Eastern Standard Time:20261027T100000
+DTEND;TZID=Eastern Standard Time:20261027T103000
+SUMMARY:SIMULATED Lantern checkpoint (moved)
+END:VEVENT
+BEGIN:VEVENT
+UID:lantern-qbr@calendar.example.invalid
+DTSTART:20261028T140000Z
+DTEND:20261028T150000Z
+SUMMARY:SIMULATED Acme Paper Kites review
+ATTENDEE;CN=Mira Vale;PARTSTAT=TENTATIVE:mailto:mira@acme.example
+DESCRIPTION:Invented agenda: checkpoint and manual handoff.
+END:VEVENT
+BEGIN:VEVENT
+UID:lantern-planning@calendar.example.invalid
+DTSTART;VALUE=DATE:20261029
+DTEND;VALUE=DATE:20261030
+SUMMARY:SIMULATED Lantern planning day
+ATTENDEE;CN=Mira Vale;PARTSTAT=ACCEPTED:mailto:mira@acme.example
+CLASS:PRIVATE
+END:VEVENT
+END:VCALENDAR

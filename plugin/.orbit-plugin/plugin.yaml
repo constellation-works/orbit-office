@@ -51,6 +51,8 @@ spec:
       - orbit.auto_task.add
       - orbit.auto_task.update
       - orbit.auto_task.list
+      - gateway.connection-list
+      - gateway.http-get
 
   secrets:
     - name: meta_api_key
@@ -75,6 +77,20 @@ spec:
     # tool is not advertised (STD-01 R36). The task that builds one
     # uncomments its block in place and edits nothing else here
     # (ARCHITECTURE.md, "Tools"); keep the blank line between blocks.
+
+    - name: calendar-sync
+      description: Read an ICS file or gateway calendar and atomically replace the private snapshot.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/calendar-sync.request.json }
+      output_schema: { $ref: schemas/calendar-sync.response.json }
+
+    - name: calendar-list
+      description: Events overlapping a range of at most 42 days, with matched people and no attendee emails.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/calendar-list.request.json }
+      output_schema: { $ref: schemas/calendar-list.response.json }
 
     # ---- sources ----
 
@@ -388,8 +404,8 @@ spec:
   definitions:
     auto_tasks: [definitions/auto_tasks/office-review.yaml, definitions/auto_tasks/office-knowledge-maintenance.yaml]
     activities: [definitions/activities/office-agent-todo.yaml]
-    jobs: [definitions/jobs/office-daily-digest.yaml, definitions/jobs/office-signals.yaml, definitions/jobs/office-kt-inbox.yaml, definitions/jobs/office-bootstrap.yaml]
-    routines: [definitions/routines/office-daily-digest.yaml, definitions/routines/office-signals.yaml, definitions/routines/office-kt-inbox.yaml, definitions/routines/office-bootstrap.yaml]
+    jobs: [definitions/jobs/office-calendar-sync.yaml, definitions/jobs/office-daily-digest.yaml, definitions/jobs/office-signals.yaml, definitions/jobs/office-kt-inbox.yaml, definitions/jobs/office-bootstrap.yaml]
+    routines: [definitions/routines/office-calendar-sync.yaml, definitions/routines/office-daily-digest.yaml, definitions/routines/office-signals.yaml, definitions/routines/office-kt-inbox.yaml, definitions/routines/office-bootstrap.yaml]
 
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings, skills/kt, skills/bootstrap]
 

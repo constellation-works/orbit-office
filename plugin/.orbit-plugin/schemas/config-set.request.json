@@ -5,14 +5,25 @@
   "properties": {
     "key": {
       "type": "string",
-      "description": "One policy leaf: retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, packs, models.careful, demo.simulated_until, open_weights.<endpoint|model|kind|label>, or the whole open_weights block. Secrets, other whole mappings and open_weights.capabilities/verified_at (written only by office.private-route-check) are refused."
+      "description": "One policy leaf: retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, packs, models.careful, demo.simulated_until, open_weights.<endpoint|model|kind|label>, or the whole open_weights block. Secrets, other whole mappings and open_weights.capabilities/verified_at (written only by office.private-route-check) are refused. Calendar leaves: calendar.connection, calendar.window_days_past, calendar.window_days_ahead, calendar.prep_lead_minutes, calendar.prep_max_per_run."
     },
     "value": {
-      "type": ["integer", "string", "array", "object", "null"],
-      "items": { "type": "string" },
-      "description": "Typed JSON value, validated for the selected key. Retention is 1–36500 days or null; sensitivity is normal/private; packs is a distinct list of meetings/receipts; thresholds are bounded positive integers; scripts bounds are positive integers up to timeout_seconds=1800, log_bytes=1048576, output_files=8, output_file_bytes=1048576; open_weights is a mapping of endpoint (an HTTPS base URL, or HTTP(S) on loopback; never api.meta.ai), model, kind (company, provider or own_hardware) and label, or null. demo.simulated_until is a YYYY-MM-DD date, or null to clear it. Changing the endpoint or model clears the recorded capabilities. models.careful is a nonempty ASCII model slug of at most 128 bytes (letters, digits, -._/:); the default is muse-wonder."
+      "type": [
+        "integer",
+        "string",
+        "array",
+        "object",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "Typed JSON value, validated for the selected key. Retention is 1\u201336500 days or null; sensitivity is normal/private; packs is a distinct list of meetings/receipts; thresholds are bounded positive integers; scripts bounds are positive integers up to timeout_seconds=1800, log_bytes=1048576, output_files=8, output_file_bytes=1048576; open_weights is a mapping of endpoint (an HTTPS base URL, or HTTP(S) on loopback; never api.meta.ai), model, kind (company, provider or own_hardware) and label, or null. demo.simulated_until is a YYYY-MM-DD date, or null to clear it. Changing the endpoint or model clears the recorded capabilities. models.careful is a nonempty ASCII model slug of at most 128 bytes (letters, digits, -._/:); the default is muse-wonder. Calendar: connection is 1\u201348 ASCII letters, digits, _ or - (null clears it); window_days_past/ahead are 1\u201390; prep_lead_minutes 15\u20131440; prep_max_per_run 1\u201320."
     }
   },
-  "required": ["key", "value"],
+  "required": [
+    "key",
+    "value"
+  ],
   "additionalProperties": false
 }

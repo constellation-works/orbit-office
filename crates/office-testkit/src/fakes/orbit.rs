@@ -8,7 +8,7 @@ use office_core::ports::Orbit;
 use office_core::{Error, Result};
 use serde_json::{Map, Value};
 
-/// A call made through one of the eleven Orbit port methods.
+/// A call made through one of the exact-name Orbit/gateway callback port methods.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OrbitCall {
     /// Canonical callback tool name.
@@ -56,6 +56,12 @@ impl FakeOrbit {
 }
 
 impl Orbit for FakeOrbit {
+    fn gateway_connection_list(&self, input: &Map<String, Value>) -> Result<Value> {
+        self.record("gateway.connection-list", input)
+    }
+    fn gateway_http_get(&self, input: &Map<String, Value>) -> Result<Value> {
+        self.record("gateway.http-get", input)
+    }
     fn task_add(&self, input: &Map<String, Value>) -> Result<Value> {
         self.record("orbit.task.add", input)
     }

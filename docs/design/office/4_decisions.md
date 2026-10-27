@@ -1262,3 +1262,49 @@ Cost: the other schemes' slots are rotatable too, so a backend bug could
 overwrite a bearer token. Compare-and-swap means two overlapping calls
 rotating from one version store only one token; the other call's refusal is
 `auth_stale`, which is retryable, not `auth_expired`.
+
+
+## Calendar snapshots use gateway callbacks and a separate private port
+
+**Recorded:** 2026-10-27
+
+The calendar feature owns its tool registry rows, family module, manifest tool
+blocks, callback grants, job/routine registrations and schemas. This is the
+explicit narrow integrator-ownership exception authorized by the calendar task,
+as for the digest. The external parser dependencies are recorded in the root
+manifest, architecture and dependency-direction guard; no crate or internal
+crate edge is added. Existing complete Ports literals receive a refusing
+calendar adapter; testkit's builder receives the working in-memory adapter.
+
+Orbit's `enforce_plugin_callback_allowlist`/`refuse_unless_recorded` compares
+exact granted names and does not restrict namespaces. Choose its existing
+host-issued descriptor channel with `gateway.connection-list` and
+`gateway.http-get`, not a two-step scratch-file bridge. The metadata read
+selects Graph versus ICS and provides the base_url for next-link confinement.
+Only the gateway makes calendar network requests. Local exact-name allowlists
+are accident guards; live host grants and descriptor credentials decide authority
+(STD-05@1 §R1, §R5). A real connection requires both Office's new callback grants
+and the gateway connection to be enabled; offline fixtures do not establish a
+live account connection.
+
+`chrono` disables its clock/default features. `chrono-tz` supplies IANA
+transitions and a vendored CLDR release-46 territory-001 table supplies Windows
+names. Floating/unresolved times are skipped, never interpreted as UTC. RRULE
+work is bounded and unknown syntax retains only the first instance.
+
+The calendar store uses the existing bounded writer-lock mechanism in its own
+private directory (no Library-lock nesting). Each success atomically replaces
+owner-only events.json with a new generation. Failures atomically write a safe
+code plus the exact prior snapshot hash in last_error.json; list ignores error
+metadata for a different generation. This leaves snapshot bytes untouched on
+failure and avoids a two-file clear/publication transaction. Readers see an
+atomic event generation; concurrent failed attempts may update only its banner.
+The whole backend retains its 60-second deadline; an interrupted process keeps
+the old snapshot but cannot guarantee a last_error receipt. Each gateway child
+is separately bounded to 30 seconds and is never retried.
+
+Calendar settings are excluded from the existing bootstrap plan fingerprint:
+they do not affect its sources, inference or approved budget (STD-03@2 §R28).
+This preserves existing preview digests instead of regenerating unrelated
+conformance goldens when the calendar block is introduced. A public dispatch
+regression checks confirmation after changing calendar.connection.

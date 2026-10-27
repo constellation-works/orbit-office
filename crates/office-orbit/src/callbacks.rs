@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use crate::{Error, Result};
 
 /// Office's complete callback allowlist; no namespace or wildcard expansion.
-pub const ORBIT_TOOLS: [&str; 11] = [
+pub const ORBIT_TOOLS: [&str; 13] = [
     "orbit.task.add",
     "orbit.task.update",
     "orbit.task.list",
@@ -22,6 +22,8 @@ pub const ORBIT_TOOLS: [&str; 11] = [
     "orbit.auto_task.add",
     "orbit.auto_task.update",
     "orbit.auto_task.list",
+    "gateway.connection-list",
+    "gateway.http-get",
 ];
 
 /// Non-secret environment names needed by the callback CLI. Composition reads
@@ -110,7 +112,7 @@ impl OrbitCallbacks {
             .arg(Value::Object(input.clone()).to_string());
         // One artifact is bounded to 1 MiB by Orbit. JSON can expand each
         // control byte to six characters; base64 fits well below that bound.
-        let captured = if tool == "orbit.task.artifact.get" {
+        let captured = if tool == "orbit.task.artifact.get" || tool == "gateway.http-get" {
             office_common::process::run_captured_with_stdout_limit(
                 &mut command,
                 &self.cwd,
@@ -184,6 +186,12 @@ fn indeterminate(tool: &str, failure: Error) -> Error {
 }
 
 impl Orbit for OrbitCallbacks {
+    fn gateway_connection_list(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
+        Ok(self.call("gateway.connection-list", input)?)
+    }
+    fn gateway_http_get(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
+        Ok(self.call("gateway.http-get", input)?)
+    }
     fn task_add(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
         Ok(self.call("orbit.task.add", input)?)
     }

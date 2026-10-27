@@ -1,5 +1,6 @@
 //! Ports through which tools reach external services and the clock.
 
+mod calendar;
 mod clock;
 mod library;
 mod models;
@@ -7,6 +8,7 @@ mod orbit;
 mod scripts;
 mod selection;
 
+pub use calendar::{Calendar, UnavailableCalendar};
 pub use clock::Clock;
 pub use library::{
     CaptureSourceRequest, ConversationEntry, InitOutcome, Library, LibraryHealth, LibraryText,
@@ -23,6 +25,8 @@ pub use selection::{Selections, UnavailableSelections};
 
 /// The services available to a single tool call.
 pub struct Ports<'a> {
+    /// Private calendar snapshot and offline imports.
+    pub calendar: Box<dyn Calendar + 'a>,
     /// Script dependency preparation and execution.
     pub scripts: Box<dyn ScriptRunner + 'a>,
     /// Library access, opened only when needed.

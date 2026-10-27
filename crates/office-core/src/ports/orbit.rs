@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 
 use crate::{Error, Result};
 
-/// Exactly the task, artifact, friction, search and auto-task callbacks used by
+/// Exactly the task, artifact, friction, search, auto-task and gateway read callbacks used by
 /// Office.
 ///
 /// Inputs are forwarded intact to Orbit's versioned tool schemas, including
@@ -12,6 +12,14 @@ use crate::{Error, Result};
 /// by the host callback session, never added to these inputs by the adapter.
 /// Defaults refuse access when no callback adapter is configured.
 pub trait Orbit {
+    /// Read gateway connection metadata, never secret values.
+    fn gateway_connection_list(&self, _input: &Map<String, Value>) -> Result<Value> {
+        Err(Error::OrbitUnavailable)
+    }
+    /// Audited gateway GET; no direct networking in Office.
+    fn gateway_http_get(&self, _input: &Map<String, Value>) -> Result<Value> {
+        Err(Error::OrbitUnavailable)
+    }
     /// Create a task.
     fn task_add(&self, _input: &Map<String, Value>) -> Result<Value> {
         Err(Error::OrbitUnavailable)

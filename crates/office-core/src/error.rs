@@ -11,6 +11,9 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// Calendar parsing, storage or gateway refusal.
+    #[error(transparent)]
+    Calendar(#[from] crate::domain::calendar::CalendarError),
     /// Approved script refusal or bounded execution failure.
     #[error(transparent)]
     Script(#[from] crate::domain::script::ScriptError),
@@ -188,7 +191,7 @@ pub enum Error {
     },
     /// A single-setting update named no supported policy leaf (including secrets).
     #[error(
-        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, packs, demo.simulated_until, open_weights or open_weights.<endpoint|model|kind|label>"
+        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, calendar.<connection|window_days_past|window_days_ahead|prep_lead_minutes|prep_max_per_run>, packs, demo.simulated_until, open_weights or open_weights.<endpoint|model|kind|label>"
     )]
     UnknownSetting {
         /// Refused key, never the supplied value.
@@ -233,6 +236,7 @@ impl Error {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
+            Self::Calendar(error) => error.code(),
             Self::Artifact(error) => error.code(),
             Self::Script(error) => error.code(),
             Self::OrbitUnavailable => "orbit_unavailable",
@@ -273,6 +277,7 @@ impl Error {
     pub fn retryable(&self) -> bool {
         match self {
             Self::Model { retryable, .. } => *retryable,
+            Self::Calendar(_) => false,
             Self::Artifact(_) => false,
             Self::Script(_) => false,
             Self::OrbitUnavailable => false,
