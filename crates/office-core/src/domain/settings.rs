@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::endpoint::{Capability, EndpointKind};
+use super::metrics::date_seconds;
 use crate::{Error, Result};
 
 const KINDS: &[&str] = &[
@@ -45,6 +46,16 @@ pub struct Settings {
     pub thresholds: SignalThresholds,
     /// The private route's endpoint; absent means private material is refused.
     pub open_weights: Option<OpenWeights>,
+    /// Facts about seeded demo history, recorded by the demo seeder.
+    pub demo: DemoSettings,
+}
+
+/// Demo-history facts the app's labels read. Records themselves stay unmarked.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct DemoSettings {
+    /// Last date (`YYYY-MM-DD`, inclusive) of seeded history; points dated on
+    /// or before it are labelled simulated. `None` means none is recorded.
+    pub simulated_until: Option<String>,
 }
 
 /// Validated video policy. Decimal settings keep their JSON number type
@@ -174,6 +185,7 @@ impl Default for Settings {
                 unused_days: 30,
             },
             open_weights: None,
+            demo: DemoSettings::default(),
             scripts: Default::default(),
         }
     }
@@ -244,6 +256,7 @@ impl Settings {
                     "scripts",
                     "video",
                     "costs",
+                    "demo",
                 ]
                 .contains(&section) =>
             {
@@ -439,6 +452,20 @@ impl TryFrom<Value> for Settings {
                                 }
                             }
                             _ => return Err(invalid(&key, "unknown cost setting")),
+                        }
+                    }
+                }
+                "demo" => {
+                    let items = value
+                        .as_object()
+                        .ok_or_else(|| invalid(key, "expected a mapping"))?;
+                    for (name, value) in items {
+                        let key = format!("demo.{name}");
+                        match name.as_str() {
+                            "simulated_until" => {
+                                settings.demo.simulated_until = simulated_until(value, &key)?
+                            }
+                            _ => return Err(invalid(&key, "unknown demo setting")),
                         }
                     }
                 }
@@ -667,6 +694,18 @@ fn is_rfc3339(text: &str) -> bool {
             && offset[1..3].iter().all(u8::is_ascii_digit)
             && offset[3] == b':'
             && offset[4..6].iter().all(u8::is_ascii_digit))
+}
+
+/// A real `YYYY-MM-DD` date, or null for no simulated history.
+fn simulated_until(value: &Value, key: &str) -> Result<Option<String>> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    value
+        .as_str()
+        .filter(|text| date_seconds(text).is_some())
+        .map(|text| Some(text.to_string()))
+        .ok_or_else(|| invalid(key, "expected a YYYY-MM-DD date or null"))
 }
 
 fn positive(value: &Value, key: &str, max: u32) -> Result<u32> {

@@ -137,9 +137,10 @@ outward-facing action.
   workspace (default `library`; it must stay inside the write grant).
 - **Library settings** live in `library/.office/config.yaml`: `retention`
   per kind, default `sensitivity` per kind, enabled packs, signal
-  thresholds and the private route's `open_weights` block. `office.init` writes the
-  defaults, the app changes them through `office.config-set`, and the
-  plugin validates the file on every read. Secrets are never in it.
+  thresholds, the demo `simulated_until` date and the private route's
+  `open_weights` block. `office.init` writes the defaults, the app changes
+  them through `office.config-set`, and the plugin validates the file on
+  every read. Secrets are never in it.
 - **Permissions** (`spec.permissions`, granted at `orbit plugin enable`):
   - fs read and write on `{{workspace}}/library` and `{{plugin_state}}`.
   - network `any`, the only setting that reaches remote hosts. The plugin calls only `api.meta.ai` and the one private endpoint the user configured ([models-and-privacy.md](./models-and-privacy.md#the-private-route)).
@@ -248,10 +249,11 @@ values):
 
 `office.config-set` takes exactly `{"key":"retention.meeting","value":30}`.
 The value is typed JSON, not a YAML string. Supported keys are
-`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>`, `packs`,
+`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>`, `packs`, `demo.simulated_until`,
 `open_weights.<endpoint|model|kind|label>` and the whole `open_weights` block
 (a mapping of those four keys, or null), using the kinds, threshold names and
-bounds above. A leaf needs the block to exist. Changing the endpoint or model
+bounds above. `demo.simulated_until` is a `YYYY-MM-DD` date, or null to clear it.
+A leaf needs the block to exist. Changing the endpoint or model
 clears the recorded capabilities. A whole-block update follows the same rule:
 when both endpoint and model are unchanged, it preserves the recorded
 capabilities and verification time; changing either clears both. The

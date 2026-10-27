@@ -22,8 +22,15 @@ pub(crate) const TOOL: Tool = Tool::built(
 fn run(call: &Call<'_>) -> Result<Value> {
     let window = window(call)?;
     let facts = load(call)?;
-    serde_json::to_value(compute(&window, &facts.tasks, &facts.artifacts)?)
-        .map_err(|_| invalid_data("report"))
+    // Read inside the same snapshot: a settings commit during the read refuses it.
+    let simulated_until = call.ports.library.settings()?.demo.simulated_until;
+    unchanged(call, &facts.library_commit)?;
+    let mut report = serde_json::to_value(compute(&window, &facts.tasks, &facts.artifacts)?)
+        .map_err(|_| invalid_data("report"))?;
+    if let (Some(until), Some(object)) = (simulated_until, report.as_object_mut()) {
+        object.insert("simulated_until".into(), json!(until));
+    }
+    Ok(report)
 }
 
 pub(crate) fn window(call: &Call<'_>) -> Result<Window> {

@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: analytics and reviews — the metrics office.metrics computes and how period reviews are produced"
-last_validated: 2026-10-26
+last_validated: 2026-10-27
 ---
 
 # Spec: Analytics and reviews
@@ -31,7 +31,12 @@ other metrics as small tiles, and a "what got automated" list linking each
 conversion to its proposal ([web-app.md](./web-app.md)). Seeded demo
 history is labelled *simulated* on screen; the metrics themselves never
 distinguish seeded from real records, so the label is the honesty
-mechanism.
+mechanism. The Library records how far that history runs as
+`demo.simulated_until` (a `YYYY-MM-DD` date, set by the demo seeder and
+changed with `office.config-set`). `office.metrics` returns it as
+`simulated_until` when it is set and omits it otherwise. The app labels
+points dated on or before `simulated_until` as simulated; records stay
+unmarked.
 
 ## Reviews
 

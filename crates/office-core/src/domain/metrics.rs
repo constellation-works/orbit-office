@@ -105,7 +105,8 @@ fn digits(text: &str) -> Option<i64> {
         .flatten()
 }
 
-fn date_seconds(text: &str) -> Option<i64> {
+/// Seconds at UTC midnight of a real `YYYY-MM-DD` date.
+pub(crate) fn date_seconds(text: &str) -> Option<i64> {
     if text.len() != 10 || text.as_bytes()[4] != b'-' || text.as_bytes()[7] != b'-' {
         return None;
     }
