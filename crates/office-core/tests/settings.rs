@@ -152,7 +152,11 @@ thresholds:
   unused_days: 30
 open_weights_endpoint: null
 ";
-    assert_eq!(Settings::from_yaml(yaml).unwrap(), Settings::default());
+    let expected = Settings {
+        packs: vec!["meetings".into()],
+        ..Settings::default()
+    };
+    assert_eq!(Settings::from_yaml(yaml).unwrap(), expected);
 }
 
 #[test]
@@ -602,4 +606,36 @@ fn whole_block_updates_preserve_checks_only_when_endpoint_and_model_are_unchange
         .expect("block");
     assert_eq!(unchecked.capabilities, None);
     assert_eq!(unchecked.verified_at, None);
+}
+
+#[test]
+fn video_defaults_and_cost_bounds() {
+    let defaults = Settings::default();
+    assert_eq!(defaults.packs, ["kt", "meetings"]);
+    let encoded = serde_json::to_value(&defaults).unwrap();
+    assert_eq!(encoded["video"]["max_frames_per_hour"], 120);
+    assert_eq!(encoded["video"]["scene_threshold"], 0.3);
+    for (key, value) in [
+        ("video.max_frames_per_hour", json!(0)),
+        ("video.max_frames_per_hour", json!(601)),
+        ("video.scene_threshold", json!(0.049)),
+        ("video.scene_threshold", json!(0.951)),
+        ("costs.image", json!(-0.1)),
+        ("costs.currency", json!("dollars")),
+    ] {
+        let error = defaults.with_setting(key, value).unwrap_err();
+        assert_eq!(error.code(), "invalid_library_setting");
+        assert!(error.to_string().contains(key));
+    }
+    let configured = defaults
+        .with_setting("costs.image", json!(0.01))
+        .unwrap()
+        .with_setting("costs.currency", json!("USD"))
+        .unwrap()
+        .with_setting("packs", json!(["kt", "meetings"]))
+        .unwrap();
+    assert_eq!(
+        Settings::from_yaml(&configured.to_yaml().unwrap()).unwrap(),
+        configured
+    );
 }

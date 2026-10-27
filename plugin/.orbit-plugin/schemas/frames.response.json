@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.frames response",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "frames_read": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "calls": {
+      "type": "object",
+      "properties": {
+        "audio": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "extract": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "audio",
+        "frames",
+        "extract"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "id",
+    "path",
+    "frames_read",
+    "calls"
+  ],
+  "additionalProperties": false
+}

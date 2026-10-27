@@ -202,3 +202,27 @@ then publishes with one directory rename. Existing staging or published
 files are accepted only when their bytes are identical to the decision. A conflicting existing file preserves both it and
 the journal for diagnosis. Replaying after commit does not duplicate the
 commit. Companion Markdown files remain outside the document index.
+
+### Video plans and derived files
+
+Video plans and call reservations update `sources/**/source.md` under the same
+writer lock. A revision comparison refuses a stale writer with `plan_changed`.
+Version-5 `video` journals bind the updated source and its `frames.md` and
+`frames/<index>.png` companion bytes. Recovery validates the source ledger,
+companion names and physical path containment before replaying files, indexing
+and committing; older versions and artifact bundles retain their existing
+validation. The PNGs remain ignored and are excluded from the video commit.
+Only source Markdown and `frames.md` are committed by a frame result.
+
+The index still has one row per source ID. Reading/indexing its `source.md`
+appends the bodies of sibling `frames.md` and `chapters.md` to the indexed body.
+These companions do not create independent document IDs. Reindex reproduces
+the same combined row; symlinked or unreadable companions refuse the scan instead
+of dropping searchable content. Generic `write_document` still accepts only
+primary indexed documents; video writes publish companions through their
+journaled operation.
+
+Initialization writes `original.*` and `frames/` in a new `.gitignore`. On an
+existing Library, it appends a missing `frames/` line while preserving all
+existing bytes (adding a separating newline when needed), commits the update,
+and is a no-op on the next call. It refuses a symlink at this fixed root path.

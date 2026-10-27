@@ -4,6 +4,7 @@
 //! `private:company`.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use office_common::Sensitivity;
 use office_core::domain::endpoint::{EndpointKind, ModelRoute};
@@ -15,9 +16,13 @@ use office_core::{Error, Result};
 use serde_json::{Value, json};
 
 /// A models fake with explicit canned answers and no host I/O.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct FakeModels {
-    calls: RefCell<Vec<office_common::Sensitivity>>,
+    /// Local media metadata returned by analysis; never records an inference.
+    pub video_analysis: Option<office_core::domain::source::video::VideoAnalysis>,
+    /// PNG bytes returned by local extraction.
+    pub video_png: Vec<u8>,
+    calls: Rc<RefCell<Vec<office_common::Sensitivity>>>,
     /// Transcript returned by `transcribe`.
     pub transcript: Transcript,
     /// Value returned by `extract`.
@@ -27,7 +32,8 @@ pub struct FakeModels {
     /// What `check_private_route` returns; `None` refuses it as
     /// `private_endpoint_unconfigured`.
     pub route_check: Option<RouteCheck>,
-    checks: RefCell<usize>,
+    checks: Rc<RefCell<usize>>,
+    image_failure: Rc<RefCell<Option<usize>>>,
 }
 
 impl FakeModels {
@@ -48,6 +54,12 @@ impl FakeModels {
             extracted: json!({}),
             ..Self::default()
         }
+    }
+
+    /// Refuse the image request at this zero-based call-log index after recording it.
+    /// Clones share this setting, allowing deterministic partial-failure tests.
+    pub fn fail_image_call_at(&self, index: usize) {
+        *self.image_failure.borrow_mut() = Some(index);
     }
 
     /// Sensitivities of every call so far, in order.
@@ -79,6 +91,22 @@ impl FakeModels {
 }
 
 impl Models for FakeModels {
+    fn analyze_video(
+        &self,
+        _bytes: &[u8],
+        _threshold: &serde_json::Number,
+    ) -> Result<office_core::domain::source::video::VideoAnalysis> {
+        self.video_analysis.clone().ok_or_else(|| {
+            office_core::domain::source::video::refusal(
+                "media_unavailable",
+                "fixture media metadata absent",
+            )
+        })
+    }
+    fn video_frame(&self, _bytes: &[u8], _time_ms: u64) -> Result<Vec<u8>> {
+        Ok(self.video_png.clone())
+    }
+
     fn transcribe(&self, request: &TranscribeRequest) -> Result<Routed<Transcript>> {
         Ok(self.routed(request.sensitivity, self.transcript.clone()))
     }
@@ -87,12 +115,27 @@ impl Models for FakeModels {
         Ok(self.routed(request.sensitivity, self.extracted.clone()))
     }
 
+    fn read_planned_image(
+        &self,
+        request: &ImageRequest,
+        _settings_digest: &str,
+    ) -> Result<Routed<ImageReading>> {
+        self.read_image(request)
+    }
     fn read_image(&self, request: &ImageRequest) -> Result<Routed<ImageReading>> {
         let reading = self.reading.clone().unwrap_or(ImageReading {
             text: "fake reading".into(),
             fields: json!({}),
         });
-        Ok(self.routed(request.sensitivity, reading))
+        let routed = self.routed(request.sensitivity, reading);
+        if *self.image_failure.borrow() == Some(self.calls.borrow().len() - 1) {
+            return Err(Error::Model {
+                code: "model_unavailable",
+                message: "fixture image request failed".into(),
+                retryable: false,
+            });
+        }
+        Ok(routed)
     }
 
     fn check_private_route(&self) -> Result<RouteCheck> {

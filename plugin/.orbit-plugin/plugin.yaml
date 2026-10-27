@@ -96,24 +96,24 @@ spec:
     #   input_schema: { $ref: schemas/transcribe.request.json }
     #   output_schema: { $ref: schemas/transcribe.response.json }
 
-    # - name: video-plan
-    #   description: >-
-    #     Plan a video source's processing: duration, deduplicated
-    #     keyframes, model-call counts and a cost estimate; confirm it with
-    #     the digest the user saw.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/video-plan.request.json }
-    #   output_schema: { $ref: schemas/video-plan.response.json }
+    - name: video-plan
+      description: >-
+        Plan a video source's processing: duration, deduplicated
+        keyframes, model-call counts and a cost estimate; confirm it with
+        the digest the user saw.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/video-plan.request.json }
+      output_schema: { $ref: schemas/video-plan.response.json }
 
-    # - name: frames
-    #   description: >-
-    #     Extract a confirmed video's planned keyframes and read each with
-    #     Muse Spark image input; run only by the KT routine.
-    #   execution_kind: mutating
-    #   mcp_scope: none
-    #   input_schema: { $ref: schemas/frames.request.json }
-    #   output_schema: { $ref: schemas/frames.response.json }
+    - name: frames
+      description: >-
+        Extract a confirmed video's planned keyframes and read each with
+        Muse Spark image input; run only by the KT routine.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/frames.request.json }
+      output_schema: { $ref: schemas/frames.response.json }
 
     # - name: extract
     #   description: >-

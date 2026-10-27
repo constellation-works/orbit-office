@@ -35,12 +35,56 @@ pub struct Settings {
     pub retention: BTreeMap<String, Option<u32>>,
     /// Default sensitivity for each source kind.
     pub sensitivity: BTreeMap<String, Sensitivity>,
-    /// Enabled packs (`meetings`, `receipts`).
+    /// Enabled packs (`kt`, `meetings`, `receipts`).
     pub packs: Vec<String>,
+    /// Video keyframe selection bounds.
+    pub video: VideoSettings,
+    /// Optional preview rates; absent rates never become a fabricated price.
+    pub costs: Costs,
     /// Signal policy thresholds.
     pub thresholds: SignalThresholds,
     /// The private route's endpoint; absent means private material is refused.
     pub open_weights: Option<OpenWeights>,
+}
+
+/// Validated video policy. Decimal settings keep their JSON number type
+/// through settings serialization and validation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct VideoSettings {
+    /// Maximum frames per hour, 1 through 600.
+    pub max_frames_per_hour: u32,
+    /// Scene-change threshold, 0.05 through 0.95.
+    pub scene_threshold: serde_json::Number,
+}
+impl Default for VideoSettings {
+    fn default() -> Self {
+        Self {
+            max_frames_per_hour: 120,
+            scene_threshold: serde_json::Number::from_f64(0.3).unwrap_or_else(|| 0.into()),
+        }
+    }
+}
+/// Optional per-unit rates for the cost preview.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct Costs {
+    /// Three-letter uppercase currency code.
+    pub currency: Option<String>,
+    /// Price per minute transcribed.
+    pub audio_minute: Option<serde_json::Number>,
+    /// Price per frame read.
+    pub image: Option<serde_json::Number>,
+    /// Price per thousand estimated text tokens.
+    pub text_1k_tokens: Option<serde_json::Number>,
+}
+fn number(value: &Value, key: &str, min: f64, max: f64) -> Result<serde_json::Number> {
+    let n = value
+        .as_number()
+        .filter(|n| {
+            n.as_f64()
+                .is_some_and(|n| n.is_finite() && (min..=max).contains(&n))
+        })
+        .ok_or_else(|| invalid(key, "expected a finite number within the documented bounds"))?;
+    Ok(n.clone())
 }
 
 /// The one private endpoint the user chose (specs/models-and-privacy.md,
@@ -118,7 +162,9 @@ impl Default for Settings {
                 .iter()
                 .map(|kind| ((*kind).into(), Sensitivity::Normal))
                 .collect(),
-            packs: vec!["meetings".into()],
+            packs: vec!["kt".into(), "meetings".into()],
+            video: VideoSettings::default(),
+            costs: Costs::default(),
             thresholds: SignalThresholds {
                 repetition_count: 3,
                 window_days: 30,
@@ -164,7 +210,7 @@ impl Settings {
             defaults.thresholds.new_subject_count,
             defaults.thresholds.unused_days
         ));
-        out.push_str("open_weights: null\n");
+        out.push_str("video:\n  max_frames_per_hour: 120\n  scene_threshold: 0.3\ncosts:\n  currency: null\n  audio_minute: null\n  image: null\n  text_1k_tokens: null\nopen_weights: null\n");
         out.push_str(&format!("scripts:\n  timeout_seconds: {}\n  log_bytes: {}\n  output_files: {}\n  output_file_bytes: {}\n", defaults.scripts.timeout_seconds, defaults.scripts.log_bytes, defaults.scripts.output_files, defaults.scripts.output_file_bytes));
         out
     }
@@ -191,7 +237,15 @@ impl Settings {
         }
         let target = match key.split_once('.') {
             Some((section, name))
-                if ["retention", "sensitivity", "thresholds", "scripts"].contains(&section) =>
+                if [
+                    "retention",
+                    "sensitivity",
+                    "thresholds",
+                    "scripts",
+                    "video",
+                    "costs",
+                ]
+                .contains(&section) =>
             {
                 encoded
                     .get_mut(section)
@@ -299,8 +353,8 @@ impl TryFrom<Value> for Settings {
                     for item in list {
                         let pack = item
                             .as_str()
-                            .filter(|p| ["meetings", "receipts"].contains(p))
-                            .ok_or_else(|| invalid(key, "expected meetings or receipts"))?;
+                            .filter(|p| ["kt", "meetings", "receipts"].contains(p))
+                            .ok_or_else(|| invalid(key, "expected kt, meetings or receipts"))?;
                         if !seen.insert(pack) {
                             return Err(invalid(key, "duplicate pack"));
                         }
@@ -336,6 +390,55 @@ impl TryFrom<Value> for Settings {
                                 settings.thresholds.unused_days = positive(value, &dotted, 36500)?
                             }
                             _ => return Err(invalid(&dotted, "unknown threshold")),
+                        }
+                    }
+                }
+                "video" => {
+                    let items = value
+                        .as_object()
+                        .ok_or_else(|| invalid(key, "expected a mapping"))?;
+                    for (name, value) in items {
+                        let key = format!("video.{name}");
+                        match name.as_str() {
+                            "max_frames_per_hour" => {
+                                settings.video.max_frames_per_hour = positive(value, &key, 600)?
+                            }
+                            "scene_threshold" => {
+                                settings.video.scene_threshold = number(value, &key, 0.05, 0.95)?
+                            }
+                            _ => return Err(invalid(&key, "unknown video setting")),
+                        }
+                    }
+                }
+                "costs" => {
+                    let items = value
+                        .as_object()
+                        .ok_or_else(|| invalid(key, "expected a mapping"))?;
+                    for (name, value) in items {
+                        let key = format!("costs.{name}");
+                        match name.as_str() {
+                            "currency" => {
+                                settings.costs.currency = if value.is_null() {
+                                    None
+                                } else {
+                                    Some(value.as_str().filter(|code| code.len() == 3 && code.bytes().all(|c| c.is_ascii_uppercase()))
+                                    .ok_or_else(|| invalid(&key, "expected a three-letter uppercase ISO 4217 code or null"))?.into())
+                                }
+                            }
+                            "audio_minute" | "image" | "text_1k_tokens" => {
+                                let rate = if value.is_null() {
+                                    None
+                                } else {
+                                    Some(number(value, &key, 0.0, f64::MAX)?)
+                                };
+                                match name.as_str() {
+                                    "audio_minute" => settings.costs.audio_minute = rate,
+                                    "image" => settings.costs.image = rate,
+                                    "text_1k_tokens" => settings.costs.text_1k_tokens = rate,
+                                    _ => return Err(invalid(&key, "unknown cost setting")),
+                                }
+                            }
+                            _ => return Err(invalid(&key, "unknown cost setting")),
                         }
                     }
                 }

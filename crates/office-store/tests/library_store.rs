@@ -2331,3 +2331,156 @@ fn artifact_bundle_refusals_leave_files_index_and_commits_unchanged() {
     assert!(!state.join("library.pending-write.json").exists());
     assert!(!root.join(a.path().unwrap()).exists());
 }
+
+#[test]
+fn derived_video_text_is_indexed_under_the_source_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let library = dir.path().join("library");
+    initialize(&library);
+    let parent = "sources/2026/10/src-20261028-acme-qbr";
+    write(&library, &format!("{parent}/source.md"), MEETING);
+    write(
+        &library,
+        &format!("{parent}/frames.md"),
+        "[00:00:10] Quasar rotation panel #frame=00:00:10",
+    );
+    write(
+        &library,
+        &format!("{parent}/chapters.md"),
+        "Neutrino maintenance chapter",
+    );
+    let store = LibraryStore::open(&library, &dir.path().join("state")).unwrap();
+    assert_eq!(store.reindex().unwrap(), 1);
+    for phrase in ["Quasar", "Neutrino"] {
+        let hits = store.search(phrase, &SearchFilter::default()).unwrap();
+        assert_eq!(hits.len(), 1, "{phrase}");
+        assert_eq!(hits[0].id, "src-20261028-acme-qbr");
+    }
+}
+#[test]
+fn video_result_journal_recovers_markdown_image_budget_and_source_index_together() {
+    use office_core::domain::endpoint::ModelRoute;
+    use office_core::domain::source::{sha256_hex, video};
+    use office_core::ports::{CaptureSourceRequest, DerivedBy, Library};
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let state_dir = dir.path().join("state");
+    let upload = dir.path().join("video.mp4");
+    std::fs::write(&upload, b"video").unwrap();
+    let store = LibraryStore::open(&root, &state_dir).unwrap();
+    let captured = store
+        .capture_source(&CaptureSourceRequest {
+            upload_path: Some(upload.to_string_lossy().into()),
+            captured_at: "1970-01-01T00:00:00Z".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    let source = store.read_video(&captured.id).unwrap();
+    let plan = video::plan(
+        &source,
+        &video::VideoAnalysis {
+            duration_ms: 60000,
+            has_audio: false,
+            candidates: vec![video::VideoFrame {
+                time_ms: 10000,
+                score: 800000,
+                dhash: 0,
+            }],
+        },
+        &store.settings().unwrap(),
+        "normal",
+    )
+    .unwrap();
+    store
+        .mutate_video(
+            &captured.id,
+            &sha256_hex(source.markdown.as_bytes()),
+            video::VideoMutation::Plan {
+                plan: Box::new(plan.clone()),
+                confirm_digest: None,
+                at: "1970-01-01T00:00:00Z".into(),
+            },
+        )
+        .unwrap();
+    let source = store.read_video(&captured.id).unwrap();
+    store
+        .mutate_video(
+            &captured.id,
+            &sha256_hex(source.markdown.as_bytes()),
+            video::VideoMutation::Plan {
+                plan: Box::new(plan.clone()),
+                confirm_digest: Some(plan.digest.clone()),
+                at: "1970-01-01T00:00:00Z".into(),
+            },
+        )
+        .unwrap();
+    let source = store.read_video(&captured.id).unwrap();
+    store
+        .mutate_video(
+            &captured.id,
+            &sha256_hex(source.markdown.as_bytes()),
+            video::VideoMutation::Reserve {
+                digest: plan.digest.clone(),
+                index: 0,
+            },
+        )
+        .unwrap();
+    let source = store.read_video(&captured.id).unwrap();
+    let write = video::apply(
+        &source,
+        &store.settings().unwrap(),
+        video::VideoMutation::Frame {
+            digest: plan.digest,
+            index: 0,
+            image: b"PNG fixture".to_vec(),
+            text: "Quasar recovered frame".into(),
+            derived_by: DerivedBy {
+                route: ModelRoute::Hosted,
+                model: "fixture".into(),
+            },
+        },
+    )
+    .unwrap();
+    let files = write
+        .files
+        .into_iter()
+        .map(|(path, bytes)| office_core::domain::artifact::ArtifactFile { path, bytes })
+        .collect::<Vec<_>>();
+    let decision = serde_json::json!({"version":5,"kind":"video","root":root.canonicalize().unwrap(),"relative":source.path,"text":write.markdown,"token":"777-222","bundle":files});
+    std::fs::write(
+        state_dir.join("library.pending-write.json"),
+        serde_json::to_vec(&decision).unwrap(),
+    )
+    .unwrap();
+    drop(store);
+    let recovered = LibraryStore::open(&root, &state_dir).unwrap();
+    let source = recovered.read_video(&captured.id).unwrap();
+    let state = video::state(&source.markdown).unwrap().unwrap();
+    assert_eq!(state.frames_read, 1);
+    assert_eq!(state.calls.frames, 1);
+    let parent = Path::new(&source.path).parent().unwrap();
+    assert_eq!(
+        std::fs::read(root.join(parent).join("frames/0000.png")).unwrap(),
+        b"PNG fixture"
+    );
+    assert_eq!(
+        recovered
+            .search("Quasar", &SearchFilter::default())
+            .unwrap()[0]
+            .id,
+        captured.id
+    );
+    assert!(!state_dir.join("library.pending-write.json").exists());
+    let mut unsafe_decision = decision;
+    unsafe_decision["bundle"][0]["path"] = "../escape.png".into();
+    std::fs::write(
+        state_dir.join("library.pending-write.json"),
+        serde_json::to_vec(&unsafe_decision).unwrap(),
+    )
+    .unwrap();
+    drop(recovered);
+    assert!(LibraryStore::open(&root, &state_dir).is_err());
+    assert!(state_dir.join("library.pending-write.json").exists());
+    assert!(!root.join(parent).join("../escape.png").exists());
+}
