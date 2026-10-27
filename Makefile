@@ -1,4 +1,4 @@
-.PHONY: help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-check plugin-export install clean
+.PHONY: help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-check plugin-export plugin-check install clean
 
 CARGO ?= cargo
 # Every build uses the committed Cargo.lock as is; a stale lock fails instead
@@ -174,3 +174,24 @@ app-check: app-deps
 
 plugin-export:
 	$(MAKE) -C plugin export
+
+# Per-candidate plugin validation (ORB-19099): export HEAD to a temp dir and
+# run `orbit plugin validate` on the merged result, so a broken plugin tree
+# fails the candidate instead of every later task. Warnings pass; errors fail.
+# Without `orbit` on PATH this warns (same shape as `missing_tool`) and exits
+# 0 even under CI=true, so GitHub CI (which lacks the binary) stays usable.
+# Not part of `ci`/`ci-fast`: CI cannot run it without the binary.
+plugin-check:
+	@if ! command -v orbit >/dev/null 2>&1; then \
+		echo "warning: orbit not installed; continuing without the plugin check (CI requires it)." >&2; \
+		echo "         install: npm install -g @orbit-tools/cli@0.34.0" >&2; \
+		exit 0; \
+	fi; \
+	set -eu; \
+	parent=$$(mktemp -d "$${TMPDIR:-/tmp}/office-plugin-check.XXXXXX"); \
+	out="$$parent/export"; \
+	trap 'rm -rf "$$parent"' EXIT HUP INT TERM; \
+	$(MAKE) -C plugin export OUT="$$out"; \
+	status=0; orbit plugin validate "$$out" || status=$$?; \
+	rm -rf "$$parent"; trap - EXIT HUP INT TERM; \
+	exit $$status
