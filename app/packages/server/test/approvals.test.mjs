@@ -144,7 +144,7 @@ test("a proposal's detail is the reviewed text and the digest of its exact bytes
   const api = await serve(t, fakeClient());
   const result = await api.get("/api/approvals/detail?key=T-page");
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body, { kind: "proposal", key: "T-page", preview: "# Ingest service\n\nWho runs it and how.", sha256: PROPOSAL_SHA });
+  assert.deepEqual(result.body, { kind: "proposal", key: "T-page", preview: "# Ingest service\n\nWho runs it and how.", sha256: PROPOSAL_SHA, shareable: false, conflict: false });
   assert.equal((await api.get("/api/approvals/detail?key=T-mine")).status, 409, "a personal to-do has no approval detail");
   assert.equal((await api.get("/api/approvals/detail?key=../x")).status, 400);
   assert.equal((await api.get("/api/approvals/detail?key=T-page&extra=1")).status, 400);
@@ -267,4 +267,56 @@ test("malformed bodies and unknown tasks are refused before any write", async (t
   assert.equal((await api.post("/api/approvals/approve", { key: "T-mine" })).status, 409);
   assert.deepEqual(names(state, "office."), []);
   assert.deepEqual(names(state, "orbit.task.update"), []);
+});
+
+const SHARED_UPDATE = JSON.stringify({ kind: "knowledge_update", page: "dom-client-acme", markdown: "# Acme\n\nBob's update.", shareable: true });
+const SHARED_CONFLICT = JSON.stringify({ kind: "shared_conflict", page: "dom-client-acme", shared_path: "knowledge/clients/dom-client-acme.md", shared_blob: "b".repeat(40), markdown: "# Acme\n\nTheirs.", own_sha256: "c".repeat(64) });
+
+function sharedClient() {
+  const state = fakeClient();
+  state.tasks.push(
+    { id: "T-update", title: "Acme", status: "proposed", tags: ["proposal", "proposal:knowledge_update", "shared-library"], artifacts: [{ path: "proposal.json" }] },
+    { id: "T-conflict", title: "Acme", status: "proposed", tags: ["proposal", "proposal:shared_conflict", "shared-library"], artifacts: [{ path: "proposal.json" }] },
+  );
+  const base = state.client.callTool;
+  state.client.callTool = async (name, input) => {
+    if (name === "orbit.task.artifact.get" && input.id === "T-update") { state.calls.push({ name, input }); return { id: input.id, path: input.path, encoding: "utf8", content: SHARED_UPDATE }; }
+    if (name === "orbit.task.artifact.get" && input.id === "T-conflict") { state.calls.push({ name, input }); return { id: input.id, path: input.path, encoding: "utf8", content: SHARED_CONFLICT }; }
+    return base(name, input);
+  };
+  return state;
+}
+
+test("a proposal carrying shareable says so, and a shared conflict is marked as one", async (t) => {
+  const api = await serve(t, sharedClient());
+  const update = await api.get("/api/approvals/detail?key=T-update");
+  assert.equal(update.status, 200);
+  assert.equal(update.body.shareable, true);
+  assert.equal(update.body.conflict, false);
+  assert.equal(update.body.sha256, createHash("sha256").update(SHARED_UPDATE).digest("hex"));
+  const conflict = await api.get("/api/approvals/detail?key=T-conflict");
+  assert.equal(conflict.body.conflict, true);
+  assert.equal(conflict.body.shareable, false);
+});
+
+test("Use theirs and Keep mine call office.proposal-accept with the chosen resolution; a bad choice is refused first", async (t) => {
+  const state = sharedClient();
+  const api = await serve(t, state);
+  const sha256 = createHash("sha256").update(SHARED_CONFLICT).digest("hex");
+  assert.deepEqual(await api.post("/api/approvals/accept", { key: "T-conflict", sha256, choice: "theirs" }), { status: 200, body: { ok: true } });
+  assert.deepEqual(state.calls.at(-1), { name: "office.proposal-accept", input: { id: "T-conflict", sha256, choice: "theirs" } });
+  state.tasks.find((task) => task.id === "T-conflict").status = "proposed";
+  assert.deepEqual(await api.post("/api/approvals/accept", { key: "T-conflict", sha256, choice: "mine" }), { status: 200, body: { ok: true } });
+  assert.deepEqual(state.calls.at(-1), { name: "office.proposal-accept", input: { id: "T-conflict", sha256, choice: "mine" } });
+
+  state.calls.length = 0;
+  for (const choice of ["both", "", null, 1]) {
+    assert.equal((await api.post("/api/approvals/accept", { key: "T-conflict", sha256, choice })).status, 400, String(choice));
+  }
+  assert.deepEqual(state.calls, []);
+
+  state.failures["office.proposal-accept"] = "invalid_argument";
+  const refused = await api.post("/api/approvals/accept", { key: "T-conflict", sha256 });
+  assert.deepEqual(refused, { status: 409, body: { error: "accept_refused", reason: "invalid_argument" } });
+  assert.deepEqual(state.calls.map(({ input }) => input), [{ id: "T-conflict", sha256 }], "no choice is sent when none was given");
 });

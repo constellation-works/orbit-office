@@ -156,6 +156,75 @@ export interface PrivateRouteSaved {
   check: PrivateRouteCheck;
 }
 
+/** The team shared library block of the Library settings (`shared`). */
+export interface SharedLibraryBlock {
+  /** `ssh://`, scp-style, HTTPS without user information, or an absolute repository path. */
+  remote: string;
+  branch: string;
+  /** This member's lowercase kebab-case name, recorded on what they share. */
+  member: string;
+}
+
+/** Why a sync left a document out, as a refusal code the screen says in words. */
+export interface SharedSkipped {
+  phase: "pull" | "push";
+  /** The document's name in words, derived from its id or path; never the id itself. */
+  name: string;
+  reason: string;
+}
+
+/** One finished `office.library-sync`, in counts of documents. */
+export interface SharedSync {
+  synced_at: string;
+  /** Documents this sync pushed to the shared library. */
+  shared: number;
+  /** Documents this sync stopped sharing. */
+  removed: number;
+  /** New or changed documents this sync received from colleagues. */
+  received: number;
+  /** Incoming updates filed for review. */
+  incoming: number;
+  /** Pages changed here and in the shared library. */
+  conflicts: number;
+  skipped: SharedSkipped[];
+}
+
+/** The latest sync the app ran: its result, or when and why it failed. */
+export type SharedSyncOutcome =
+  | { ok: true; sync: SharedSync }
+  | { ok: false; at: string; reason: string };
+
+/** `GET /api/settings/shared-library`. */
+export interface SharedLibraryStatus {
+  shared: SharedLibraryBlock | null;
+  last_sync: SharedSyncOutcome | null;
+}
+
+/** Whether the hourly `office-shared-sync` routine is on, off, or can't be read. */
+export type SharedRoutineState = "on" | "off" | "unavailable";
+
+/** `POST /api/settings/shared-library`: saved with `office.config-set`. */
+export interface SharedLibrarySaved {
+  shared: SharedLibraryBlock;
+  routine: SharedRoutineState;
+}
+
+/** `GET /api/settings/shared-library/last-sync`: the app's memory only, no Orbit call. */
+export interface SharedLastSync {
+  last_sync: SharedSyncOutcome | null;
+}
+
+/** `POST /api/library/share`: `office.share-set`, after the `also` documents, sources first. */
+export interface ShareRequest {
+  id: string;
+  shareable: boolean;
+  /** Documents to share first (**Share these too**). Only with `shareable: true`. */
+  also?: string[];
+}
+export interface ShareResult { shareable: boolean }
+/** A cited document that must be shared first. The id is for the request only. */
+export interface ShareDocument { id: string; title: string }
+
 /** Work shown on Today. Keys identify items for the UI, never display labels. */
 export interface TodayItem {
   key: string;
@@ -185,6 +254,8 @@ export interface TodayNeed extends TodayItem {
   kind: TodayNeedKind;
   /** The card this proposal belongs to, or null when it stands alone. */
   group: TodayNeedGroup | null;
+  /** From the shared library: a colleague's update, or a page changed on both sides. */
+  shared?: "incoming" | "conflict";
 }
 
 export interface TodayResult extends TodayItem {
@@ -266,6 +337,10 @@ export type ApprovalDetail =
     preview: string;
     /** SHA-256 of the exact proposal the preview shows; accept binds to it. */
     sha256: string;
+    /** Accepting also shares the page with the team. */
+    shareable: boolean;
+    /** A page changed here and in the shared library: accept takes a `choice`. */
+    conflict: boolean;
   }
   | {
     kind: "approval" | "script_output";
@@ -296,8 +371,11 @@ export interface SendBackRequest { key: string; comment: string }
 /** `POST /api/approvals/dismiss`: reject a proposal, script output or draft. */
 export interface DismissRequest { key: string; reason?: string }
 
+/** How a shared-library conflict is settled: their version, or the user's own. */
+export type ConflictChoice = "theirs" | "mine";
+
 /** `POST /api/approvals/accept`: `office.proposal-accept`, called once. */
-export interface AcceptRequest { key: string; sha256: string }
+export interface AcceptRequest { key: string; sha256: string; choice?: ConflictChoice }
 
 /** `POST /api/approvals/accept-all`: accept each proposal in turn. */
 export interface AcceptAllRequest { proposals: AcceptRequest[] }
@@ -326,6 +404,10 @@ export interface SourceView {
   title: string;
   text: string;
   sensitivity: "normal" | "private";
+  /** Whether the user shares this source with the team. */
+  shareable: boolean;
+  /** The member who shared it, or null for the user's own source. */
+  shared_by: string | null;
   media_type: string | null;
   route_labels: string[];
   cited_by: Array<{ id: string; title: string; kind: string }>;

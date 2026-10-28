@@ -6,7 +6,8 @@
  *   installed app holds no operator authority. A refused promote changes
  *   nothing, so the task stays waiting for review.
  * - Send back: `review` to `backlog` with the user's comment.
- * - Accept: `office.proposal-accept` once, bound to the digest the user saw.
+ * - Accept: `office.proposal-accept` once, bound to the digest the user saw;
+ *   a shared-library conflict also carries the user's `choice` (theirs or mine).
  * - Dismiss: the task is rejected; a gateway draft is never sent.
  * - Send: `gateway.http-send` with the draft id and the digest shown. A lost
  *   reply is `outcome_unknown`, never a failure, and is never retried.
@@ -20,6 +21,7 @@ import type {
   AcceptAllResult,
   ApprovalDetail,
   ApproveResult,
+  ConflictChoice,
   GatewaySendResult,
   TodayNeedKind,
 } from "@orbit-office/contracts";
@@ -207,11 +209,14 @@ export async function loadDetail(client: ApprovalClient, key: string): Promise<A
   switch (task.kind) {
     case "proposal": {
       const bytes = await artifactBytes(client, key, "proposal.json");
+      const payload = json(bytes);
       return {
         kind: "proposal",
         key,
-        preview: proposalPreview(json(bytes)),
+        preview: proposalPreview(payload),
         sha256: createHash("sha256").update(bytes).digest("hex"),
+        shareable: payload.shareable === true,
+        conflict: payload.kind === "shared_conflict",
       };
     }
     case "approval":
@@ -318,9 +323,16 @@ export async function dismiss(client: ApprovalClient, key: string, reason: strin
   }, "dismiss_refused");
 }
 
-/** Exactly one `office.proposal-accept` call; the tool checks the task and digest. */
-export async function accept(client: ApprovalClient, key: string, sha256: string): Promise<void> {
-  await step(client, "office.proposal-accept", { id: key, sha256 }, "accept_refused");
+export function isChoice(value: unknown): value is ConflictChoice {
+  return value === "theirs" || value === "mine";
+}
+
+/**
+ * Exactly one `office.proposal-accept` call; the tool checks the task and
+ * digest, and requires `choice` for a shared-library conflict only.
+ */
+export async function accept(client: ApprovalClient, key: string, sha256: string, choice?: ConflictChoice): Promise<void> {
+  await step(client, "office.proposal-accept", choice === undefined ? { id: key, sha256 } : { id: key, sha256, choice }, "accept_refused");
 }
 
 /** Each in turn; a refusal is reported and the rest still run, so earlier accepts stand. */

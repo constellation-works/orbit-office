@@ -54,7 +54,7 @@ Source: spec §12. The one-call envelope is
 | `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, page templates (no pages), index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
 | `office.config-set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
 | `office.reindex` | mutating | **none** | Rebuild the SQLite index from the Library |
-| `office.status` | read_only | workspace | Library and index health, and the private endpoint as `open_weights` or null (also a panel) |
+| `office.status` | read_only | workspace | Library and index health, the private endpoint as `open_weights` or null, and the shared library block as `shared` or null (also a panel) |
 
 Rules:
 

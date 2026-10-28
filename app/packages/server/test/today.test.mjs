@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 
 import { createTodayFeature } from "../dist/features/today/index.js";
-import { approvalTasks, fakeTodayClient, now, todayTasks } from "./today-fixture.mjs";
+import { approvalTasks, fakeTodayClient, now, sharedTasks, todayTasks } from "./today-fixture.mjs";
 
 async function endpoint(t, client) {
   const feature = createTodayFeature({ client, now: () => now });
@@ -127,4 +127,16 @@ test("a dismissed or accepted proposal leaves Needs you", async (t) => {
   const get = await endpoint(t, fakeTodayClient(rows).client);
   const keys = (await (await get()).json()).needs_you.map(({ key }) => key);
   for (const key of ["onboard-1", "onboard-2", "draft", "script"]) assert.ok(!keys.includes(key), key);
+});
+
+test("a shared-library sync's updates and conflicts share one card, each marked for its actions", async (t) => {
+  const get = await endpoint(t, fakeTodayClient(sharedTasks()).client);
+  const body = await (await get()).json();
+  const group = { key: "shared-library", title: "Changes from the shared library" };
+  assert.deepEqual(body.needs_you.map(({ key, group, shared }) => [key, group, shared]), [
+    ["suggestion", null, undefined],
+    ["shared-conflict", group, "conflict"],
+    ["shared-update", group, "incoming"],
+    ["onboard-1", { key: "onboarding", title: "Set up your Library" }, undefined],
+  ]);
 });

@@ -38,5 +38,12 @@ export const style = `
 .settings .capability-notes li { margin:8px 0; }
 .settings .settings-attribution { color:var(--private); font-weight:500; margin-top:20px; }
 .settings .settings-field input.settings-url { overflow-wrap:anywhere; }
+.settings .settings-field input[aria-invalid="true"] { border-color:var(--danger); }
+.settings .settings-offer { margin:0 0 16px; }
+.settings .settings-offer:empty { display:none; }
+.settings .settings-offer p { color:var(--fg-dim); }
+.settings .settings-sync h3 { font-size:15px; margin:0 0 8px; }
+.settings .settings-sync-status { color:var(--fg); margin:0 0 14px; }
+.settings .settings-sync .settings-hint { margin-top:12px; }
 @media(max-width:600px) { .settings-fields { grid-template-columns:1fr; } .settings-form { padding:20px; } .settings .settings-heading { align-items:flex-start; flex-direction:column; } }
 `;

@@ -91,7 +91,9 @@ export function createSourcesFeature(options: SourcesOptions): Feature {
       if (!Array.isArray(data.cited_by) || !Array.isArray(data.chapters) || !Array.isArray(data.frames) || !Array.isArray(data.gotchas) || typeof data.task_citers_available !== "boolean" || typeof data.cited_by_truncated !== "boolean" || !["normal", "private"].includes(string(data.sensitivity))) throw new Refusal(502, "invalid_output");
       const view: SourceView = {
         id: id(data.id), kind: string(data.kind), title: string(data.title), text: string(data.text),
-        sensitivity: data.sensitivity as SourceView["sensitivity"], media_type: typeof data.media_type === "string" ? data.media_type : null,
+        sensitivity: data.sensitivity as SourceView["sensitivity"], shareable: data.shareable === true,
+        shared_by: typeof data.shared_by === "string" ? data.shared_by : null,
+        media_type: typeof data.media_type === "string" ? data.media_type : null,
         route_labels: [...new Set(routes.map(value => value === "hosted" ? "Hosted" : label))],
         cited_by: data.cited_by as SourceView["cited_by"], chapters: data.chapters as SourceView["chapters"],
         frames: data.frames as SourceView["frames"], gotchas: data.gotchas as SourceView["gotchas"],

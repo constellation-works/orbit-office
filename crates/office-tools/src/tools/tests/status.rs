@@ -325,3 +325,52 @@ fn status_returns_a_settings_refusal_instead_of_a_missing_endpoint() {
     .expect_err("invalid settings are not reported as no endpoint");
     assert_eq!(error.code(), "invalid_library_setting");
 }
+
+#[test]
+fn status_reports_the_configured_shared_library_block() {
+    let input = Map::new();
+    let context = Map::new();
+    let mut library = office_testkit::fakes::FakeLibrary::initialized();
+    library.settings = office_core::domain::settings::Settings {
+        shared: Some(office_core::domain::sharing::SharedSettings {
+            remote: "git@github.com:acme-team/team-library.git".into(),
+            branch: "main".into(),
+            member: "daniel".into(),
+        }),
+        ..office_core::domain::settings::Settings::default()
+    };
+    let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
+        library: Box::new(library),
+        models: Box::new(office_testkit::fakes::FakeModels::new()),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
+        clock: Box::new(office_testkit::fakes::FakeClock(
+            std::time::SystemTime::UNIX_EPOCH,
+        )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
+        selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
+    };
+    let output = run(&Call {
+        ports: &ports,
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(
+        output["shared"],
+        json!({
+            "remote": "git@github.com:acme-team/team-library.git",
+            "branch": "main",
+            "member": "daniel",
+        })
+    );
+    // Unconfigured is null, like the private endpoint.
+    let output = run(&Call {
+        ports: &office_testkit::fakes::PortsBuilder::default().build(),
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(output["shared"], json!(null));
+}

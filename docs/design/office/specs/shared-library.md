@@ -18,8 +18,8 @@ sync that pushes and pulls on a schedule. Here the `shareable` field makes
 the sync mechanical, so it is a deterministic tool, not an agent loop.
 
 The approval field, `office.share-set`, pure shared view, validated settings,
-the read-only shared layer, `office.library-sync`, its routine and the demo are
-implemented. The app section below describes separately planned work.
+the read-only shared layer, `office.library-sync`, its routine, the demo and
+the app section below are implemented.
 
 ## The loop
 
@@ -315,7 +315,12 @@ path; reads route it to the clone, and ordinary document writes refuse it.
   checks them against the shared layer the same way (`unresolved_cite`
   otherwise).
 - **Reads.** `office.search` gains `layer` (`own` | `shared`; both by
-  default), and hits carry `layer` and `shared_by`. `office.knowledge-show`,
+  default), and hits carry `layer` and `shared_by`. `office.knowledge-list`
+  and `office.artifact-list` rows and `office.source-show` also carry
+  `shareable` (artifact-show and knowledge-show already return the document's
+  own field), and `office.status` reports the configured block as `shared`
+  (`{remote, branch, member}`, or null when unconfigured or the Library is
+  not initialized), so the app can label and connect without reading files. `office.knowledge-show`,
   `office.knowledge-list`, `office.source-show` and `office.artifact-show`
   read shared documents and add the same two fields (`page.layer` and
   `page.shared_by` in knowledge-show; top-level fields in source-show and
@@ -367,6 +372,32 @@ the app).
   as one card per sync. The sync files proposals for the first two; the app
   builds the skipped card from the result's `skipped` list, since the tool
   files no separate task for it.
+
+Built as follows ([web-app.md](./web-app.md#shared-library-implementation)):
+
+- Settings saves the whole block with `office.config-set` (`key: "shared"`).
+  A refused field is named (the address, the branch or the member name) and
+  its value is never repeated. After a save, when the `office-shared-sync`
+  routine is off, the section offers **Turn on hourly sync**, which toggles it
+  through `orbit.routine.control`.
+- **Sync now** runs `office.library-sync` with `{}` under a six-minute
+  deadline, one at a time from the app. Counts are documents, not files
+  ("Shared 2, received 3, 3 need you"); a failure is its refusal code in plain
+  words. The app keeps the latest result it ran in memory only, so a sync run
+  by the routine is reflected in Needs you through its proposals, not in the
+  counts, and the counts are gone after an app restart.
+- The switch refuses in plain words: private documents can't be shared, and
+  `share_cites_unshared` lists the cited documents by title with **Share
+  these too**, which shares them (sources, then outputs, then pages) before
+  the document. Stopping shows the copies-and-history warning first.
+- Proposals carry no sync id, so Needs you shows one **Changes from the
+  shared library** card for every open proposal tagged `shared-library`
+  (incoming updates with Accept and Dismiss; conflicts with **Use theirs** and
+  **Keep mine**, which call `office.proposal-accept` with that `choice`), plus
+  the skipped documents of the app's latest sync until **Got it**. A proposal
+  with `shareable: true` shows "Will be shared with the team".
+- The Library setup step **Connect a shared library** is shown first while
+  no block is configured and opens `?settings=shared-library#settings`.
 
 ## Demo
 

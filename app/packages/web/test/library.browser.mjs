@@ -21,7 +21,8 @@ test("Library renders fixture search, pages, outputs and setup on desktop and ph
     throw new Error(`unexpected ${name}`);
   } };
   const route = createLibraryFeature(client).routes[0]; const fallback = createHandler();
-  const server = createServer((request, response) => { if (request.url.startsWith("/api/library")) void route.handle(request, response); else fallback(request, response); });
+  // Screens other than Today render only once the Library is ready; never ask the real Orbit.
+  const server = createServer((request, response) => { if (request.url === "/api/setup") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "ready" })); } else if (request.url.startsWith("/api/library")) void route.handle(request, response); else fallback(request, response); });
   t.after(() => new Promise((done) => server.close(done))); await new Promise((done) => server.listen(0, "127.0.0.1", done));
   const page = await browser.newPage(); const errors = []; page.on("pageerror", (error) => errors.push(error.message));
   const dir = process.env.LIBRARY_SCREENSHOTS_DIR; if (dir) await mkdir(dir, { recursive: true });

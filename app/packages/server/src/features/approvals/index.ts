@@ -16,6 +16,7 @@ import {
   ApprovalError,
   type ApprovalClient,
   dismiss,
+  isChoice,
   isDigest,
   isTaskKey,
   loadDetail,
@@ -143,8 +144,9 @@ export function createApprovalsFeature({ client, approver = defaultApprover }: A
       }),
       route("POST", "/api/approvals/accept", async (request) => {
         const body = await readBody(request);
-        closed(body, ["key", "sha256"]);
-        await accept(client, key(body), digest(body));
+        closed(body, ["key", "sha256", "choice"]);
+        if (body.choice !== undefined && !isChoice(body.choice)) throw new ApprovalError(400, "invalid_input");
+        await accept(client, key(body), digest(body), body.choice);
         return { ok: true };
       }),
       route("POST", "/api/approvals/accept-all", async (request) => {

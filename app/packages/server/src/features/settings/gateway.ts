@@ -5,7 +5,7 @@ export class SettingsError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
-    readonly details: { route_saved?: true } = {},
+    readonly details: { route_saved?: true; field?: string; reason?: string } = {},
   ) { super(code); }
 }
 

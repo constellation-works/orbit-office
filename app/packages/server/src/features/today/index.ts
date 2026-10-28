@@ -69,12 +69,17 @@ function words(value: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** The one card a shared-library sync's proposals share. */
+export const SHARED_LIBRARY_GROUP: TodayNeedGroup = { key: "shared-library", title: "Changes from the shared library" };
+
 /**
- * Onboarding proposals share one card. Bootstrap proposals are grouped by
- * their `subject:<name>` tag within a phase, or by the phase without one.
+ * Onboarding proposals share one card, and so do the shared library's
+ * incoming updates and conflicts. Bootstrap proposals are grouped by their
+ * `subject:<name>` tag within a phase, or by the phase without one.
  */
 function needGroup(task: Task, kind: TodayNeed["kind"]): TodayNeedGroup | null {
   if (kind !== "proposal") return null;
+  if (task.tags.includes("shared-library")) return SHARED_LIBRARY_GROUP;
   if (task.tags.includes("onboarding")) return { key: "onboarding", title: "Set up your Library" };
   const phase = task.tags.find((tag) => tag.startsWith("bootstrap:"))?.slice("bootstrap:".length);
   if (phase === undefined || phase === "") return null;
@@ -154,7 +159,11 @@ export function createTodayFeature({ client, now = () => new Date() }: TodayOpti
           for (const task of active.tasks) {
             if (!["proposed", "backlog", "in-progress", "review", "blocked", "someday"].includes(task.status)) continue;
             const kind = needKind(task);
-            if (kind !== undefined) snapshot.needs_you.push({ ...item(task), kind, group: needGroup(task, kind) });
+            if (kind !== undefined) {
+              const need: TodayNeed = { ...item(task), kind, group: needGroup(task, kind) };
+              if (need.group === SHARED_LIBRARY_GROUP) need.shared = task.tags.includes("proposal:shared_conflict") ? "conflict" : "incoming";
+              snapshot.needs_you.push(need);
+            }
             if (task.status === "in-progress" && task.tags.includes("owner:agent") && !task.tags.includes("owner:you")) {
               snapshot.agents_working_on.push(item(task));
             }

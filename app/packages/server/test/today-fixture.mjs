@@ -59,3 +59,14 @@ export function approvalTasks() {
     task("personal", "Send your feedback on the plan", "backlog", ["owner:you"]),
   ];
 }
+
+/** A shared-library sync's proposals: one colleague's update and one page changed on both sides. */
+export function sharedTasks() {
+  const cluster = "proposal-cluster:5f0c2a";
+  return [
+    task("suggestion", "Turn meeting notes into a weekly brief", "proposed", ["proposal", "proposal:auto_task"]),
+    task("shared-update", "When the Lantern spool stalls", "proposed", ["proposal", "proposal:knowledge_update", "shared-library", cluster]),
+    task("shared-conflict", "Acme", "proposed", ["proposal", "proposal:shared_conflict", "shared-library", cluster]),
+    task("onboard-1", "How your team works", "proposed", ["proposal", "proposal:knowledge_add", "onboarding"]),
+  ];
+}

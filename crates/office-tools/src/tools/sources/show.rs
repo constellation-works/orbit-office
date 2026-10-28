@@ -116,6 +116,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "span": span,
         "anchor": resolved_anchor,
         "sensitivity": view.sensitivity,
+        "shareable": record.shareable,
         "sha256": view.sha256,
         "bytes": view.bytes,
         "media_type": view.media_type,

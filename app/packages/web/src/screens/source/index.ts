@@ -5,6 +5,7 @@ import { ApiError, capturePaste, getSource, getSourceCitation, markSourcePrivate
 import { sourceHref } from "../../api/source-location.js";
 import { anchorTarget, clock, droppedFiles, seconds, supportedFile } from "./model.js";
 import { styles } from "./style.js";
+import { sharedLabel, shareSwitch } from "../../ui/index.js";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ""): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag); node.textContent = text; return node;
@@ -131,13 +132,21 @@ function drawSource(source: SourceView, root: HTMLElement): void {
   const timer = window.setInterval(() => { if (!section.isConnected) window.clearInterval(timer); else void refresh(); }, 5000);
   for (const label of source.route_labels) { const badge = el("span", label); badge.className = "pill"; section.append(badge); }
   if (!source.route_labels.length) section.append(el("p", "No model processing recorded."));
+  const sharedLine = el("p"); sharedLine.className = "source-sharing"; const sharing = el("div");
+  // Marking a source private also stops sharing it, so both redraw from `source`.
+  const drawSharing = (): void => {
+    const label = sharedLabel(source.shared_by, source.shareable); sharedLine.replaceChildren(...(label ? [label] : []));
+    if (source.shared_by === null) sharing.replaceChildren(shareSwitch({ id: source.id, noun: "this source", shareable: source.shareable, private: source.sensitivity === "private", onChange: (next) => { source.shareable = next; drawSharing(); } }));
+  };
+  drawSharing();
   if (source.sensitivity === "private") section.append(el("p", "Marked private"));
   else {
     const status = el("p"); const mark = button("Mark private", () => {
       mark.disabled = true;
-      void markSourcePrivate(source.id).then(() => { if (section.isConnected) { source.sensitivity = "private"; mark.textContent = "Marked private"; status.textContent = "Future processing uses only your chosen endpoint."; } }).catch(error => { if (section.isConnected) { status.textContent = message(error); mark.disabled = false; } });
+      void markSourcePrivate(source.id).then(() => { if (section.isConnected) { source.sensitivity = "private"; source.shareable = false; mark.textContent = "Marked private"; status.textContent = "Future processing uses only your chosen endpoint."; drawSharing(); } }).catch(error => { if (section.isConnected) { status.textContent = message(error); mark.disabled = false; } });
     }); section.append(mark, status);
   }
+  section.append(sharedLine, sharing);
   const columns = el("div"); columns.className = "source-columns";
   const original = el("div"); original.className = "source-original"; original.append(el("h2", "Original"));
   const mime = source.media_type ?? ""; let player: HTMLMediaElement | undefined;

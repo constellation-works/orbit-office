@@ -1,6 +1,7 @@
 /**
- * Settings: agent CLI, the private route, gateway connections (with the
- * device-code sign-in for oauth2_device ones) and redacted API call history.
+ * Settings: agent CLI, the private route, the team shared library, gateway
+ * connections (with the device-code sign-in for oauth2_device ones) and
+ * redacted API call history.
  *
  * Built: reports whether the install script has registered Orbit MCP with
  * the user's agent CLI (docs/design/office/specs/web-app.md#delivery).
@@ -16,6 +17,7 @@ import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
 import { auditRow, connection, connectionInput, count, object, SettingsError, signInInput, signInPoll, signInStarted, toolData } from "./gateway.js";
 import { privateRouteInput, readPrivateRoute, savePrivateRoute } from "./private-route.js";
 import { isSlot, SecretError, writeSecret, type SecretOptions } from "./secret.js";
+import { enableSharedSync, readSharedLibrary, saveSharedLibrary, sharedLibraryInput, SharedSyncMemory } from "./shared-library.js";
 
 function sendSettings(_request: IncomingMessage, response: ServerResponse): void {
   const body: SettingsStatus = { agentCli: agentCliStatus() };
@@ -46,8 +48,21 @@ async function readBody(request: IncomingMessage): Promise<unknown> {
   catch { throw new SettingsError(400, "invalid_input"); }
 }
 
+export interface SettingsOptions {
+  /**
+   * Runs `office.library-sync`, whose git fetch and push can take minutes:
+   * the routine allows six. Defaults to `client`.
+   */
+  syncClient?: Pick<OrbitToolClient, "callTool">;
+}
+
+/** A sync runs each git command under a two-minute deadline; allow the routine's six. */
+const SYNC_TIMEOUT_MS = 360_000;
+
 /** Bound to one shared Orbit client; writes are never cached or automatically retried. */
-export function createSettingsFeature(client: OrbitToolClient, secretOptions: SecretOptions = {}): Feature {
+export function createSettingsFeature(client: OrbitToolClient, secretOptions: SecretOptions = {}, options: SettingsOptions = {}): Feature {
+  const syncClient = options.syncClient ?? client;
+  const memory = new SharedSyncMemory();
   // A put and its slot writes must not interleave with another browser tab.
   // Refuse concurrent writes instead of retaining a queue of credentials.
   let writing = false;
@@ -107,6 +122,33 @@ export function createSettingsFeature(client: OrbitToolClient, secretOptions: Se
       try { return await savePrivateRoute(client, input, secretOptions); }
       finally { writing = false; }
     }),
+    route("GET", "/api/settings/shared-library", async () => readSharedLibrary(client, memory)),
+    route("POST", "/api/settings/shared-library", async (request) => {
+      const input = sharedLibraryInput(await readBody(request));
+      if (writing) throw new SettingsError(503, "settings_busy");
+      writing = true;
+      try { return await saveSharedLibrary(client, input); }
+      finally { writing = false; }
+    }),
+    route("POST", "/api/settings/shared-library/routine", async (request) => {
+      const body = await readBody(request);
+      if (!object(body) || Object.keys(body).some((key) => key !== "enabled") || body.enabled !== true) throw new SettingsError(400, "invalid_input");
+      await enableSharedSync(client);
+      return { ok: true };
+    }),
+    route("POST", "/api/settings/shared-library/sync", async (request) => {
+      const body = await readBody(request);
+      if (!object(body) || Object.keys(body).length > 0) throw new SettingsError(400, "invalid_input");
+      return memory.sync(syncClient);
+    }),
+    // Memory only, no Orbit call: Today reads it on every poll.
+    route("GET", "/api/settings/shared-library/last-sync", async () => ({ last_sync: memory.last })),
+    route("POST", "/api/settings/shared-library/dismiss-skipped", async (request) => {
+      const body = await readBody(request);
+      if (!object(body) || Object.keys(body).length > 0) throw new SettingsError(400, "invalid_input");
+      memory.dismissSkipped();
+      return { ok: true };
+    }),
     route("GET", "/api/settings/api-calls", async () => {
       const data = toolData(await client.callTool("gateway.audit-list", { limit: 100 }));
       if (!Array.isArray(data.records)) throw new SettingsError(502, "invalid_gateway_data");
@@ -115,4 +157,6 @@ export function createSettingsFeature(client: OrbitToolClient, secretOptions: Se
   ] };
 }
 
-export const feature: Feature = createSettingsFeature(createOrbitClient());
+export const feature: Feature = createSettingsFeature(createOrbitClient(), {}, {
+  syncClient: createOrbitClient({ maxConcurrent: 1, timeoutMs: SYNC_TIMEOUT_MS }),
+});

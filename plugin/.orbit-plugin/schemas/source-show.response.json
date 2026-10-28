@@ -38,6 +38,10 @@
     "sensitivity": {
       "type": "string"
     },
+    "shareable": {
+      "type": "boolean",
+      "description": "Sharing approval; false for shared-layer sources, which carry shared_by instead."
+    },
     "sha256": {
       "type": [
         "string",
@@ -363,6 +367,7 @@
     "span",
     "anchor",
     "sensitivity",
+    "shareable",
     "sha256",
     "bytes",
     "media_type",

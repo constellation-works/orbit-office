@@ -40,7 +40,8 @@
               "normal",
               "private"
             ]
-          }
+          },
+          "shareable": {"type": "boolean", "description": "Sharing approval; false for shared-layer pages, which carry shared_by instead."}
         },
         "required": [
           "layer",
@@ -50,7 +51,8 @@
           "title",
           "summary",
           "status",
-          "sensitivity"
+          "sensitivity",
+          "shareable"
         ],
         "additionalProperties": false
       }
