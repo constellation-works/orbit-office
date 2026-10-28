@@ -160,7 +160,7 @@ mkdir -p "$state"
 printf '%s\n' "$*" >> "$state/orbit.log"
 case "${1:-} ${2:-}" in
     "--version ")
-        printf 'orbit %s\n' "${STUB_ORBIT_VERSION:-0.34.0}" ;;
+        printf 'orbit %s\n' "${STUB_ORBIT_VERSION:-0.37.0}" ;;
     "plugin list")
         case " $* " in
             *" --json "*)
@@ -174,7 +174,7 @@ for (const name of ["office", "gateway", "cloudcli"]) {
   if (!present("plugin-added" + suffix)) continue;
   const host = present("plugin-active" + suffix);
   const toggle = fs.existsSync(path.join(cwd, ".orbit", "enabled-" + name));
-  rows.push({name, host_enabled: host, workspace_toggle: toggle || null,
+  rows.push({name, install_path: path.dirname(process.env.STUB_MANIFEST), host_enabled: host, workspace_toggle: toggle || null,
     permissions: ["fs", "network", ...(name === "cloudcli" ? [] : ["orbit_tools"])].map(grant => ({grant, granted: host}))});
 }
 process.stdout.write(JSON.stringify(rows));
@@ -572,7 +572,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
     env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
         STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
-        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" \
+        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.37.0}" \
         STUB_UV_ARCHIVE="$FIXTURE" \
         STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
         STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" \
@@ -607,7 +607,7 @@ run_install_piped() {
         (cd "$_cwd" && cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
             STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
             STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
-            STUB_ORBIT_VERSION=0.34.0 STUB_UV_ARCHIVE="$FIXTURE" \
+            STUB_ORBIT_VERSION=0.37.0 STUB_UV_ARCHIVE="$FIXTURE" \
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
@@ -619,7 +619,7 @@ run_install_piped() {
         (cd "$_cwd" && cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
             STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
             STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
-            STUB_ORBIT_VERSION=0.34.0 STUB_UV_ARCHIVE="$FIXTURE" \
+            STUB_ORBIT_VERSION=0.37.0 STUB_UV_ARCHIVE="$FIXTURE" \
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
@@ -659,7 +659,7 @@ run_install_standalone() { # run_install_standalone <home> <env...> -- <args...>
     env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
         STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
-        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.34.0}" \
+        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.37.0}" \
         STUB_UV_ARCHIVE="$FIXTURE" \
         STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
         STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" \
@@ -797,6 +797,7 @@ check "office init ignores the Library" grep -qxF /library/ "$WS2/.gitignore"
 check "office init fills repo-local git name" git -C "$WS2" config --local user.name
 check "office init fills repo-local git email" git -C "$WS2" config --local user.email
 check "office init registers selected folder" grep -qxF "$WS2" "$STUB_STATE/workspace-roots"
+check "office init applies workspace presets" sh -c 'grep -F "workspace init --preset " "$1" >/dev/null && grep -F "workspace init --force --preset " "$1" >/dev/null' sh "$STUB_STATE/orbit.log"
 check "office init enables office in selected folder" test -f "$WS2/.orbit/enabled-office"
 check "office init enables gateway in selected folder" test -f "$WS2/.orbit/enabled-gateway"
 check "office init scaffolds the selected Library" test -f "$WS2/library/.office/config.yaml"
@@ -1058,14 +1059,14 @@ else
     ok "older Orbit stops the script"
 fi
 check "older Orbit prints the upgrade command" \
-    grep -q "npm install -g @orbit-tools/cli@0.34.0" "$OUT_OLD"
+    grep -q "npm install -g @orbit-tools/cli@0.37.0" "$OUT_OLD"
 check "older Orbit: no workspace created" test ! -e "$HOME2/orbit"
 
 HOME3="$ROOT/home3"; mkdir -p "$HOME3"
 # Reset plugin stub state so this fresh HOME installs cleanly.
 rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled"
 OUT_NEW="$ROOT/out-new.txt"
-run_install "$HOME3" STUB_ORBIT_VERSION=0.35.0 -- > "$OUT_NEW" 2>&1 \
+run_install "$HOME3" STUB_ORBIT_VERSION=0.38.0 -- > "$OUT_NEW" 2>&1 \
     || { cat "$OUT_NEW" >&2; fail "newer Orbit continues"; }
 ok "newer Orbit continues"
 check "newer Orbit warns" grep -qi "newer" "$OUT_NEW"
@@ -1419,7 +1420,7 @@ OUT_MISS="$ROOT/out-missing.txt"
     || { cat "$OUT_MISS" >&2; fail "missing Orbit install exits 0"; }
 ok "missing Orbit: npm installs it and the install completes"
 check "missing Orbit: npm got the tested package" \
-    grep -q "install -g @orbit-tools/cli@0.34.0" "$STUB_STATE/npm.log"
+    grep -q "install -g @orbit-tools/cli@0.37.0" "$STUB_STATE/npm.log"
 check "missing Orbit: stub orbit created by npm" test -x "$BIN2/orbit"
 check "missing Orbit: tools/bin/uv installed from the archive" \
     test -x "$HOME5/$TOOLS_REL/bin/uv"
@@ -2077,7 +2078,7 @@ chmod +x "$CUSTOM_BIN"/*
 ln -s "$(command -v node)" "$CUSTOM_BIN/node"
 cat > "$CUSTOM_BIN/orbit" <<STUB
 #!/usr/bin/env node
-if (process.argv[2] === "--version") { process.stdout.write("orbit 0.34.0\n"); process.exit(0); }
+if (process.argv[2] === "--version") { process.stdout.write("orbit 0.37.0\n"); process.exit(0); }
 const { spawnSync } = require("child_process");
 const r = spawnSync("/bin/sh", ["$BIN/orbit", ...process.argv.slice(2)], { stdio: "inherit" });
 process.exit(r.status === null ? 1 : r.status);

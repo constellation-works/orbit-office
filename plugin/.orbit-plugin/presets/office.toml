@@ -1,0 +1,8 @@
+name = "office"
+
+[seeding]
+routines = "none"
+auto_tasks = "none"
+
+[enable]
+routines = ["office-office-daily-digest", "office-office-kt-inbox", "office-office-signals"]
