@@ -110,18 +110,33 @@ fn private_dir(path: &Path) -> Result<()> {
         .map_err(|_| storage("create plugin state"))
 }
 
-fn refuse_symlinks(path: &Path) -> Result<()> {
-    let mut at = PathBuf::new();
-    for part in path.components() {
-        at.push(part);
-        match std::fs::symlink_metadata(&at) {
-            Ok(meta) if meta.file_type().is_symlink() => {
-                return Err(storage("resolve plugin state"));
-            }
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(storage("resolve plugin state")),
-        }
+fn refuse_symlink_at(path: &Path) -> Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(storage("resolve plugin state")),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(storage("resolve plugin state")),
+    }
+}
+
+/// Refuse a symlink at `root` (the host-supplied plugin state) or at any
+/// component below it in `path` (STD-05 R9). Ancestors above `root` are
+/// host infrastructure the OS resolves — on macOS `/var` is a symlink to
+/// `/private/var` and `$TMPDIR` lives beneath it — so containment is
+/// decided from `root` down, over the components this store creates
+/// (STD-05 R6). `path` must be `root` itself or joined beneath it.
+fn refuse_symlinks(root: &Path, path: &Path) -> Result<()> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| storage("resolve plugin state"))?;
+    refuse_symlink_at(root)?;
+    let mut at = root.to_path_buf();
+    for part in relative.components() {
+        let Component::Normal(name) = part else {
+            return Err(storage("resolve plugin state"));
+        };
+        at.push(name);
+        refuse_symlink_at(&at)?;
     }
     Ok(())
 }
@@ -164,10 +179,10 @@ impl SharedStore {
     }
 
     fn ensure_dir(&self) -> Result<PathBuf> {
-        refuse_symlinks(&self.state)?;
+        refuse_symlinks(&self.state, &self.state)?;
         private_dir(&self.state)?;
         let dir = self.dir();
-        refuse_symlinks(&dir)?;
+        refuse_symlinks(&self.state, &dir)?;
         private_dir(&dir)?;
         Ok(dir)
     }
@@ -196,7 +211,7 @@ impl SharedStore {
     fn ensure_clone(&self) -> Result<()> {
         self.ensure_dir()?;
         let repo = self.repo();
-        refuse_symlinks(&repo.join(".git"))?;
+        refuse_symlinks(&self.state, &repo.join(".git"))?;
         match std::fs::symlink_metadata(repo.join(".git")) {
             Ok(meta) if meta.is_dir() => return Ok(()),
             Ok(_) => return Err(storage("open clone")),
@@ -258,7 +273,7 @@ impl SharedStore {
 
     fn stage(&self, writes: &[(String, Vec<u8>)]) -> Result<Vec<String>> {
         let staging = self.repo().join(".git/office-staging");
-        refuse_symlinks(&staging)?;
+        refuse_symlinks(&self.state, &staging)?;
         let _ = std::fs::remove_dir_all(&staging);
         private_dir(&staging)?;
         let mut blobs = Vec::new();
@@ -303,7 +318,7 @@ impl SharedRepository for SharedStore {
             return Ok(());
         }
         let path = self.ensure_dir()?.join("sync.lock");
-        refuse_symlinks(&path)?;
+        refuse_symlinks(&self.state, &path)?;
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true).truncate(false);
         #[cfg(unix)]
@@ -323,7 +338,7 @@ impl SharedRepository for SharedStore {
 
     fn state(&self) -> Result<Option<SyncState>> {
         let path = self.state_path();
-        refuse_symlinks(&path)?;
+        refuse_symlinks(&self.state, &path)?;
         let file = match File::open(&path) {
             Ok(file) => file,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -347,7 +362,7 @@ impl SharedRepository for SharedStore {
     fn save_state(&self, state: &SyncState) -> Result<()> {
         self.ensure_dir()?;
         let path = self.state_path();
-        refuse_symlinks(&path)?;
+        refuse_symlinks(&self.state, &path)?;
         let bytes = serde_json::to_vec_pretty(state).map_err(|_| storage("write sync state"))?;
         write_atomic(&path, &bytes).map_err(|_| storage("write sync state"))
     }
@@ -355,7 +370,7 @@ impl SharedRepository for SharedStore {
     fn reset(&self) -> Result<()> {
         self.ensure_dir()?;
         let repo = self.repo();
-        refuse_symlinks(&repo)?;
+        refuse_symlinks(&self.state, &repo)?;
         match std::fs::remove_dir_all(&repo) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

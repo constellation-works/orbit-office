@@ -120,7 +120,11 @@ impl Team {
 
 /// An initialized workspace sharing as `member`, with a git identity.
 fn member(team: &Team, member: &str) -> Env {
-    let env = Env::new();
+    member_in(Env::new(), team, member)
+}
+
+/// An initialized workspace in `env` sharing as `member`, with a git identity.
+fn member_in(env: Env, team: &Team, member: &str) -> Env {
     std::fs::create_dir_all(env.workspace.join("home")).unwrap();
     std::fs::write(
         env.workspace.join("home/.gitconfig"),
@@ -369,6 +373,72 @@ fn two_workspaces_push_and_pull_with_isolated_git_and_skip_invalid_files() {
     assert!(
         !message.contains("gone.git") && !message.contains("fatal"),
         "{message}"
+    );
+}
+
+/// A symlinked ancestor above plugin state is host infrastructure (on
+/// macOS `/var` -> `/private/var`, with `$TMPDIR` beneath it), not a state
+/// symlink: sync resolves through it instead of refusing.
+#[cfg(unix)]
+#[test]
+fn sync_works_when_a_state_ancestor_is_a_symlink() {
+    let team = Team::new();
+    let mut env = Env::new();
+    let root = env.workspace.parent().unwrap().to_path_buf();
+    std::os::unix::fs::symlink(&root, root.join("state-alias")).unwrap();
+    env.state = root.join("state-alias").join("plugin_state");
+    let alice = member_in(env, &team, "alice");
+    alice_documents(&alice);
+    let first = run(&alice, "office.library-sync", json!({}), &[]);
+    assert_eq!(first["ok"], true, "{first}");
+    let source = format!("members/alice/{SOURCE_DIR}");
+    assert_eq!(
+        first["output"]["pushed"],
+        json!([
+            PAGE,
+            format!("{source}/frames.md"),
+            format!("{source}/source.md")
+        ]),
+        "{first}"
+    );
+}
+
+/// Plugin state itself reached through a symlink is refused (STD-05 R9).
+#[cfg(unix)]
+#[test]
+fn sync_refuses_when_plugin_state_itself_is_a_symlink() {
+    let team = Team::new();
+    let env = Env::new();
+    let real_state = env.workspace.parent().unwrap().join("real-plugin-state");
+    std::fs::create_dir_all(&real_state).unwrap();
+    std::os::unix::fs::symlink(&real_state, &env.state).unwrap();
+    let alice = member_in(env, &team, "alice");
+    alice_documents(&alice);
+    let refused = run(&alice, "office.library-sync", json!({}), &[]);
+    assert_eq!(refused["ok"], false, "{refused}");
+    assert_eq!(
+        refused["error"]["code"], "shared_storage_failed",
+        "{refused}"
+    );
+}
+
+/// A symlink below plugin state (here `shared/`) is refused (STD-05 R9).
+#[cfg(unix)]
+#[test]
+fn sync_refuses_when_a_component_below_plugin_state_is_a_symlink() {
+    let team = Team::new();
+    let alice = member(&team, "alice");
+    alice_documents(&alice);
+    let first = run(&alice, "office.library-sync", json!({}), &[]);
+    assert_eq!(first["ok"], true, "{first}");
+    let shared = alice.state.join("shared");
+    std::fs::remove_dir_all(&shared).unwrap();
+    std::os::unix::fs::symlink("/etc", &shared).unwrap();
+    let refused = run(&alice, "office.library-sync", json!({}), &[]);
+    assert_eq!(refused["ok"], false, "{refused}");
+    assert_eq!(
+        refused["error"]["code"], "shared_storage_failed",
+        "{refused}"
     );
 }
 
