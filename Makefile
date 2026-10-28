@@ -1,4 +1,4 @@
-.PHONY: help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-check plugin-export plugin-check install clean
+.PHONY: help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-audit app-check plugin-export plugin-check install clean
 
 CARGO ?= cargo
 # Every build uses the committed Cargo.lock as is; a stale lock fails instead
@@ -152,6 +152,11 @@ app-typecheck: app-deps
 
 app-test: app-deps
 	npm --prefix app test
+
+# Advisory gate (STD-05 R24): fail on known npm advisories in
+# app/package-lock.json. Mirrors the audit step in .github/workflows/ci.yml.
+app-audit: app-deps
+	npm --prefix app audit --audit-level=moderate
 
 # ---------------------------------------------------------------------------
 # Install
