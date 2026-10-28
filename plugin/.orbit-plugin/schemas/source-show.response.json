@@ -3,6 +3,8 @@
   "title": "office.source-show response",
   "type": "object",
   "properties": {
+    "layer": {"type": "string", "enum": ["own", "shared"]},
+    "shared_by": {"type": ["string", "null"], "description": "Sharing member; null for own documents."},
     "id": {
       "type": "string"
     },
@@ -351,6 +353,8 @@
   },
   "required": [
     "id",
+    "layer",
+    "shared_by",
     "kind",
     "title",
     "path",

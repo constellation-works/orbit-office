@@ -23,7 +23,7 @@ fn list_and_show_history_read_committed_documents_without_writing() {
     assert_eq!(listed["ok"], true, "{listed}");
     assert_eq!(
         listed["output"],
-        json!({"pages":[{"id":"dom-topic-history","template":"topic","title":"Latest","summary":"A page","status":"current","sensitivity":"normal"}],"missing_templates":[]})
+        json!({"pages":[{"layer":"own","shared_by":null,"id":"dom-topic-history","template":"topic","title":"Latest","summary":"A page","status":"current","sensitivity":"normal"}],"missing_templates":[]})
     );
     let absent = env.tool("office.knowledge-list", json!({"template":"systems"}));
     assert_eq!(

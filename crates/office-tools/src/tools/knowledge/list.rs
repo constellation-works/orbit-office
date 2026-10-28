@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use office_core::domain::knowledge::Page;
+use office_core::domain::knowledge::{DocumentRecord, Page};
 use office_core::domain::template::{BUNDLED, Template};
 use office_core::ports::LibraryText;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
@@ -47,11 +47,18 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let mut pages = library
         .knowledge_pages()?
         .iter()
-        .map(|file| Ok(Page::from_markdown(markdown(file)?)?.model_view()))
+        .map(|file| {
+            let text = markdown(file)?;
+            let record = DocumentRecord::from_markdown(std::path::Path::new(&file.path), text);
+            Ok((Page::from_markdown(text)?.model_view(), record))
+        })
         .collect::<Result<Vec<_>>>()?;
-    pages.sort_by(|a, b| a.id.cmp(&b.id));
+    pages.sort_by(|a, b| a.0.id.cmp(&b.0.id).then_with(|| a.1.path.cmp(&b.1.path)));
     // Presence is computed on the full corpus, before the caller's filter.
-    let present: BTreeSet<_> = pages.iter().filter_map(|p| p.template.as_deref()).collect();
+    let present: BTreeSet<_> = pages
+        .iter()
+        .filter_map(|(p, _)| p.template.as_deref())
+        .collect();
     let mut missing = Vec::new();
     for file in library.templates()? {
         if !BUNDLED
@@ -75,10 +82,12 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .collect();
     let pages: Vec<_> = pages
         .iter()
-        .filter(|p| filter.is_none_or(|name| p.template.as_deref() == Some(name)))
-        .map(|p| {
+        .filter(|(p, _)| filter.is_none_or(|name| p.template.as_deref() == Some(name)))
+        .map(|(p, record)| {
             json!({
                 "id": p.id,
+                "layer": record.layer,
+                "shared_by": record.shared_by,
                 "template": p.template,
                 "title": p.title,
                 "summary": p.summary,

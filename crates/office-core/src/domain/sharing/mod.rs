@@ -301,3 +301,112 @@ pub fn shared_view(
     output.push_str(rest);
     Ok(output)
 }
+
+/// Validate an untrusted clone document against the Library's metadata and layout.
+/// The returned record uses a `shared/` virtual path and qualified evidence ids.
+/// Invalid/private documents never enter the index or the file enumerations.
+pub fn shared_document(relative: &str, markdown: &str) -> Result<DocumentRecord> {
+    use crate::domain::knowledge::{DocumentKind, Page};
+    use std::path::Path;
+    let (header, _) = frontmatter::split(markdown)?;
+    let fields = frontmatter::parse(header)?;
+    let value = |key: &str| {
+        fields
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value)
+    };
+    let member = value("shared_by")
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid("shared_by", "expected a member name"))?;
+    settings::validate_member(member)?;
+    if value("sensitivity").is_some_and(|value| value.as_str() != Some("normal")) {
+        return Err(SharingError::Private.into());
+    }
+    flag(&fields)?;
+    let record = DocumentRecord::from_markdown(Path::new(&format!("shared/{relative}")), markdown);
+    let local = crate::domain::knowledge::local_document_path(&record.path);
+    let id = value("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid("id", "required"))?;
+    if value("title")
+        .and_then(Value::as_str)
+        .is_none_or(|s| s.trim().is_empty())
+    {
+        return Err(invalid("title", "required"));
+    }
+    for key in ["tags", "cites", "related", "contributors"] {
+        if let Some(value) = value(key) {
+            let items = value
+                .as_array()
+                .ok_or_else(|| invalid(key, "expected a list of strings"))?;
+            if !items.iter().all(Value::is_string) {
+                return Err(invalid(key, "expected a list of strings"));
+            }
+            if key == "contributors" {
+                for item in items {
+                    settings::validate_member(
+                        item.as_str()
+                            .ok_or_else(|| invalid(key, "expected member names"))?,
+                    )?;
+                }
+            }
+        }
+    }
+    let expected = match record.kind {
+        DocumentKind::Domain | DocumentKind::Runbook => {
+            let page = Page::from_markdown(markdown)?;
+            page.check_base_rules()?;
+            page.citations()?;
+            // The shared view carries no personal pointers, even if an upstream
+            // file was hand-edited instead of produced by shared_view.
+            if page.refs.iter().any(|r| {
+                matches!(
+                    r.target,
+                    crate::domain::knowledge::RefTarget::Contact
+                        | crate::domain::knowledge::RefTarget::Path
+                )
+            }) {
+                return Err(invalid(
+                    "refs",
+                    "shared pages cannot contain contact or path refs",
+                ));
+            }
+            page.path()
+        }
+        DocumentKind::Artifact => {
+            let artifact = crate::domain::artifact::Artifact::from_markdown(markdown)?;
+            format!("members/{member}/{}", artifact.path()?)
+        }
+        DocumentKind::Source => {
+            let citation = parse_citation(id)
+                .filter(|c| {
+                    c.kind == DocumentKind::Source && c.anchor.is_none() && !c.id.contains('/')
+                })
+                .ok_or_else(|| invalid("id", "expected a source id"))?;
+            let date = citation
+                .id
+                .strip_prefix("src-")
+                .and_then(|s| s.get(..8))
+                .filter(|date| date.bytes().all(|b| b.is_ascii_digit()))
+                .ok_or_else(|| invalid("id", "expected a dated source id"))?;
+            if value("kind")
+                .and_then(Value::as_str)
+                .and_then(crate::domain::source::SourceKind::parse)
+                .is_none()
+            {
+                return Err(invalid("kind", "expected a source kind"));
+            }
+            crate::domain::source::parse_source_participants(markdown)?;
+            format!(
+                "members/{member}/sources/{}/{}/{id}/source.md",
+                &date[..4],
+                &date[4..6]
+            )
+        }
+    };
+    if relative != expected || local.is_empty() {
+        return Err(invalid("path", "document is outside the shared layout"));
+    }
+    Ok(record)
+}

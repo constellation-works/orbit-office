@@ -13,6 +13,7 @@
       "items": {
         "type": "object",
         "properties": {
+          "layer": {"type": "string", "enum": ["own", "shared"]},
           "id": { "type": "string" },
           "kind": { "type": "string", "enum": ["source", "domain", "runbook", "artifact"] },
           "library_path": { "type": "string", "description": "Relative to the Library." },
@@ -23,7 +24,7 @@
             "description": "Why it was picked: a template attach policy, a runbook the task names, the task's source, an example in its series, an index search hit, or a page related to another pick."
           }
         },
-        "required": ["id", "kind", "library_path", "artifact_path", "reason"],
+        "required": ["layer", "id", "kind", "library_path", "artifact_path", "reason"],
         "additionalProperties": false
       }
     },

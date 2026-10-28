@@ -408,7 +408,7 @@ impl Artifact {
     /// Bind loaded metadata to its canonical Library location.
     pub fn from_document(relative: &str, text: &str) -> Result<Self> {
         let artifact = Self::from_markdown(text)?;
-        if artifact.path()? != relative {
+        if artifact.path()? != crate::domain::knowledge::local_document_path(relative) {
             return Err(invalid("path"));
         }
         Ok(artifact)
@@ -425,6 +425,12 @@ impl Artifact {
             let version: u32 = version.parse().map_err(|_| invalid("version"))?;
             fields.insert("version".into(), Value::from(version));
         }
+        if fields.remove("shared_by").is_some() {
+            fields
+                .entry("sensitivity")
+                .or_insert(Value::String("normal".into()));
+        }
+        fields.remove("contributors");
         let artifact: Self =
             serde_json::from_value(Value::Object(fields)).map_err(|_| invalid("frontmatter"))?;
         artifact.validate()?;

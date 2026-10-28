@@ -9,6 +9,8 @@
       "items": {
         "type": "object",
         "properties": {
+          "layer": {"type": "string", "enum": ["own", "shared"]},
+          "shared_by": {"type": ["string", "null"], "description": "Sharing member; null for own documents."},
           "id": {
             "type": "string"
           },
@@ -41,6 +43,8 @@
           }
         },
         "required": [
+          "layer",
+          "shared_by",
           "id",
           "template",
           "title",

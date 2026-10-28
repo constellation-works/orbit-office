@@ -280,8 +280,8 @@ shareable: true                # optional; pushed to the shared library (shared-
   2. **Template**, when the page names one ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)).
   3. **Base rules:** the id prefix matches the type; `refs` only on domain pages, and `performable` (`agent` | `you`) and `submission` (`system`, `via: draft | gateway`, and `connection` for a gateway) only on runbooks; each ref has a `label`, exactly one target, and optionally `authoritative: true` and `as_of` (`account` is `system:key`, `artifact` an `art-` id, a `url` carries no credentials); no email address or phone number in the body (`contact_in_body`); at most 1,200 words of body (`page_too_long`); and a page tagged `policy`, or with a section whose `##` heading ends in `[policy]`, needs an `authoritative` ref and an `as_of` on that ref or the page (`policy_without_source`; [library-bootstrap.md](./library-bootstrap.md#page-rules)).
   4. **Sharing approval:** a boolean `shareable` defaults to false; true refuses private documents and unshared own citations (frontmatter, inline and artifact refs) before publication ([shared-library.md](./shared-library.md#the-shareable-field)).
-  5. **Citations** (`unresolved_cite`): every frontmatter `cites` entry and every inline `[id#anchor]` (several may share brackets, separated by `;` or `,`) names an indexed document of the kind its prefix says (`src-`, `dom-`, `rb-`, `art-`), never the page itself. A member-qualified citation (`<member>/<id>`) parses here; resolution needs the separately planned shared layer ([shared-library.md](./shared-library.md#the-shared-layer)). A source cite needs an anchor present in that source's body: `t=hh:mm:ss` from the first speaker turn's timestamp to the last's, `L<n>` or `L<n>-<m>` within the body's lines (counted after the frontmatter, surrounding blank lines trimmed), or `slide=<n>`/`page=<n>` naming a `Slide <n>`/`Page <n>` heading. `frame=` and `chapter=` anchors are refused until `frames.md` and `chapters.md` are readable through the Library port. Other documents are cited without an anchor. Refs are pointers and are never resolved.
-- **Reads:** `office.knowledge-show` (`{"id": "<page id>"}`, `page_not_found` otherwise) returns the page's model view, since it is visible to agents ([knowledge-templates.md](./knowledge-templates.md#contact-details)), and its back-links: the indexed sources, pages and artifacts whose frontmatter `cites` (bare or anchored) or `related` name it, each with `via: [cites, related]`. The model view is `office_core::domain::knowledge::Page::model_view`; `PageView::to_markdown` renders it for task attachments.
+  5. **Citations** (`unresolved_cite`): every frontmatter `cites` entry and every inline `[id#anchor]` (several may share brackets, separated by `;` or `,`) names an indexed document of the kind its prefix says (`src-`, `dom-`, `rb-`, `art-`), never the page itself. A member-qualified citation (`<member>/<id>`) resolves against the read-only shared layer, or against the own document when the member equals `shared.member` ([shared-library.md](./shared-library.md#the-shared-layer)). A source cite needs an anchor present in that source's body: `t=hh:mm:ss` from the first speaker turn's timestamp to the last's, `L<n>` or `L<n>-<m>` within the body's lines (counted after the frontmatter, surrounding blank lines trimmed), or `slide=<n>`/`page=<n>` naming a `Slide <n>`/`Page <n>` heading. `frame=` and `chapter=` anchors are refused until `frames.md` and `chapters.md` are readable through the Library port. Other documents are cited without an anchor. Refs are pointers and are never resolved.
+- **Reads:** `office.knowledge-show` (`{"id": "<page id>"}`, `page_not_found` otherwise) returns the page's model view, since it is visible to agents ([knowledge-templates.md](./knowledge-templates.md#contact-details)), and its back-links: the indexed sources, pages and artifacts whose frontmatter `cites` (bare or anchored) or `related` name it, each with `via: [cites, related]`. The model view is `office_core::domain::knowledge::Page::model_view`; `PageView::to_markdown` renders it for task attachments. The page carries `layer` and `shared_by`; a plain id prefers the own page, falling back to the shared page. `<member>/<id>` explicitly selects a shared page, or the own document for the configured member. `office.knowledge-list` includes both copies when present, each with the same fields. `office.source-show` and `office.artifact-show` return top-level `layer` and `shared_by`. Own documents always report `shared_by: null`.
 - **Listing:** `office.knowledge-list` takes `{}` or `{"template":"<template name>"}`.
   It returns every matching page in `pages`, sorted by id, with `id`, nullable
   `template`, `title`, `summary`, `status` and `sensitivity`. It has no search
@@ -365,7 +365,7 @@ refuses a second report for the same key. Other artifacts omit this field.
 **Rules by kind:**
 
 - **`draft`** (an email or message for someone else) records `sent_at` once the user sends it. In the hackathon build, sending copies the draft to the clipboard.
-- **`script`** is never run because it was promoted. A script runs only as a step of a routine or auto-task whose accepted proposal named it. That step pins the artifact version by `sha256` and runs inside Orbit's sandbox. That step calls `office.script-run`, which runs it with the install's pinned Python in its own run directory, offline, with dependencies fetched once at approval, and files its outputs for review ([scripts.md](./scripts.md)). Changing the script means a new version and a new proposal.
+- **`script`** in the shared layer is always refused by `office.script-run`; it must first be copied into the user's Library through a proposal. An own script is never run because it was promoted. A script runs only as a step of a routine or auto-task whose accepted proposal named it. That step pins the artifact version by `sha256` and runs inside Orbit's sandbox. That step calls `office.script-run`, which runs it with the install's pinned Python in its own run directory, offline, with dependencies fetched once at approval, and files its outputs for review ([scripts.md](./scripts.md)). Changing the script means a new version and a new proposal.
 - **`review`** holds the generated reviews ([analytics-and-reviews.md](./analytics-and-reviews.md)).
 - **`report`** in the series `digest-daily` is the daily digest, the one artifact promoted without review (`approved.by: routine`; [sessions.md](./sessions.md#daily-digest)).
 - **`data`** (csv, json) records its schema in the summary, so later tasks can use it without opening it.
@@ -415,7 +415,8 @@ The shared domain refuses routine approval with
 `artifact_routine_approval_refused` unless both kind `report` and series
 `digest-daily` match, including when loading artifact frontmatter.
 
-`office.artifact-show` takes `{"id":"art-YYYYMMDD-<slug>"}` and returns the
+`office.artifact-show` takes `{"id":"art-YYYYMMDD-<slug>"}` or a member-qualified
+artifact id (`<member>/art-YYYYMMDD-<slug>`) and returns the
 complete artifact metadata, its Library-relative `path`, file `name`/`path`
 pairs, `series_history` newest version first, and indexed `backlinks` with
 the same shape as knowledge-show. For a `report` or `review`, it also
@@ -469,7 +470,9 @@ document's date is its `occurred_at`, else `captured_at`, else
 documents. An empty or blank query, an unknown kind, a malformed date or
 `since` after `until` is refused with `invalid_argument`. Hits carry `id`,
 `kind`, `title`, `path`, a `snippet`, `layer` and, for shared documents,
-`shared_by`.
+`shared_by` (`null` for own documents). Source and artifact hits from the
+clone have member-qualified ids; shared page hits keep their subject id.
+Shared paths start with `shared/` and address the clone under plugin state.
 
 **`office.attach`** (mutating, workspace) takes `{"task": "<id>"}` and
 copies at most 8 Library files into that task as task artifacts at
@@ -514,8 +517,8 @@ is staged in the Library's `.office/attach/` (never indexed or committed),
 put with `orbit.task.artifact.put`, and its staging file removed
 ([decision](../4_decisions.md#office-attach-stages-its-copies-inside-the-library)).
 A last artifact, `office-attach.json`, records the task, `library_commit`
-and the attached files; the response carries the same, plus `omitted` and
-`skipped`. With `dry_run: true` the call returns the selection and copies
+and the attached files, including each file's `layer` (`own` or `shared`); the
+response carries the same, plus `omitted` and `skipped`. With `dry_run: true` the call returns the selection and copies
 nothing; without `task`, a dry run with `text` or `tags` previews a
 selection without reading any task.
 

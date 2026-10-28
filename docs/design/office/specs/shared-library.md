@@ -17,8 +17,8 @@ This is how Daniel already works: one shared knowledge base, his own, and a
 sync that pushes and pulls on a schedule. Here the `shareable` field makes
 the sync mechanical, so it is a deterministic tool, not an agent loop.
 
-The approval field, `office.share-set`, pure shared view and validated settings
-are implemented. Sync, the shared read layer, routine, app and demo sections
+The approval field, `office.share-set`, pure shared view, validated settings and
+the read-only shared layer are implemented. Sync, routine, app and demo sections
 below describe separately planned work.
 
 ## The loop
@@ -243,11 +243,21 @@ completed work and the previous sync state intact.
 
 ## The shared layer
 
-Planned separately; qualified citations parse in this increment but need this
-layer to resolve.
+Implemented independently of sync against `{{plugin_state}}/shared/repo/`.
+`office.reindex` rebuilds both layers in one index transaction. A missing clone
+contributes no rows and is never created by a read. Invalid frontmatter, invalid
+page rules, private documents, symlinks, special files and paths outside the
+shared repository layout are skipped. Each document requires a valid `shared_by`;
+evidence paths must agree with that member. Shared pages with contact or local
+path refs are refused, since the shared view removes those pointers. Source
+rows include valid regular frames, chapters, summary and digest sidecars in
+their searchable body; invalid or linked companions contribute nothing.
 
 The index (`plugin_state/index.sqlite`) holds a second, read-only layer for
-the clone. Every row records `layer: shared` and `shared_by`.
+the clone. Every row records `layer` and `shared_by`; own rows have `layer: own`
+and `shared_by: null`. Shared rows coexist with own copies of the same page.
+Response paths use the virtual prefix `shared/` followed by the clone-relative
+path; reads route it to the clone, and ordinary document writes refuse it.
 
 - **Ids.** A plain page id (`dom-client-acme`) resolves to the user's own
   page, else the shared one. A qualified `<member>/<id>` resolves to the
@@ -259,14 +269,23 @@ the clone. Every row records `layer: shared` and `shared_by`.
 - **Reads.** `office.search` gains `layer` (`own` | `shared`; both by
   default), and hits carry `layer` and `shared_by`. `office.knowledge-show`,
   `office.knowledge-list`, `office.source-show` and `office.artifact-show`
-  read shared documents and add the same two fields. Shared pages are
+  read shared documents and add the same two fields (`page.layer` and
+  `page.shared_by` in knowledge-show; top-level fields in source-show and
+  artifact-show). Shared source/artifact ids include the member; page ids
+  remain subject ids. Artifact series history stays within the same layer
+  and sharing member. Shared pages are
   already in their shared view, so no contact value is ever returned.
 - **Attach.** `office.attach` picks from both layers, preferring the user's
   own copy of a page, and records each file's layer in `office-attach.json`.
 - **Bootstrap.** Consolidation treats shared pages as existing pages, so it
   proposes updates to them rather than new duplicates, and setup progress
   counts them toward the phases they cover
-  ([library-bootstrap.md](./library-bootstrap.md)).
+  ([library-bootstrap.md](./library-bootstrap.md)). Each phase reports a
+  `shared` count of pages matching its digest subjects or tagged
+  `bootstrap:<phase>`. Own copies take precedence, so each subject counts once.
+  Accepting an update against a shared-only page checks the reviewed shared
+  digest and an absent own destination under the writer lock, then writes an
+  own copy with `shareable: true`; the clone remains unchanged.
 - **Never run.** A shared `script` artifact is never run. `office.script-run`
   accepts only artifacts in the user's own Library, so a colleague's script
   runs only after the user copies it in through a new proposal.

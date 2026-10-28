@@ -83,6 +83,9 @@ mod library_reads;
 #[path = "video_pipeline/mod.rs"]
 mod video_pipeline;
 
+#[path = "shared_library/mod.rs"]
+mod shared_library;
+
 struct Env {
     _dir: tempfile::TempDir,
     workspace: PathBuf,

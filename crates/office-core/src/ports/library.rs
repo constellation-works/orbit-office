@@ -19,7 +19,8 @@ pub struct InitOutcome {
     pub created: Vec<String>,
 }
 
-/// One Markdown file read from the Library, by its Library-relative path.
+/// One Markdown file read from either layer, by its virtual Library path.
+/// A `shared/` prefix addresses the read-only clone under plugin state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LibraryText {
     /// Library-relative path, forward slashes.
@@ -184,7 +185,9 @@ pub trait Library {
         Err(Error::LibraryUnavailable)
     }
     /// One indexed document by id (with its body, cites and related), if
-    /// present. Does not wait for the writer lock.
+    /// present. Plain page ids prefer own copies; `<member>/<id>` addresses
+    /// shared evidence/pages, or own documents for the configured member.
+    /// Does not wait for the writer lock.
     fn get(&self, _id: &str) -> Result<Option<DocumentRecord>> {
         Err(Error::LibraryUnavailable)
     }
@@ -193,7 +196,7 @@ pub trait Library {
     fn backlinks(&self, _id: &str) -> Result<Vec<Backlink>> {
         Err(Error::LibraryUnavailable)
     }
-    /// Every knowledge page file (`knowledge/**/*.md`), in path order.
+    /// Every own and valid shared knowledge page, in virtual path order.
     fn knowledge_pages(&self) -> Result<Vec<LibraryText>> {
         Err(Error::LibraryUnavailable)
     }
@@ -294,7 +297,8 @@ pub trait Library {
     fn initialize(&self, _library_dir: Option<&str>) -> Result<InitOutcome> {
         Err(Error::LibraryUnavailable)
     }
-    /// Rebuild the index from the files; returns the indexed document count.
+    /// Rebuild both layers from files; a missing clone is empty. Returns the
+    /// total indexed document count, including own and shared copies.
     fn reindex(&self) -> Result<u32> {
         Err(Error::LibraryUnavailable)
     }

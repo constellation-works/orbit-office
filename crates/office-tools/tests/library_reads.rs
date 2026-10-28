@@ -242,6 +242,12 @@ fn every_show_returns_bounded_history_and_preserves_omitted_and_false_responses(
 struct WithoutHistory(FakeLibrary);
 
 impl Library for WithoutHistory {
+    fn get(
+        &self,
+        id: &str,
+    ) -> office_core::Result<Option<office_core::domain::knowledge::DocumentRecord>> {
+        self.0.get(id)
+    }
     fn read_text(&self, path: &Path) -> office_core::Result<String> {
         self.0.read_text(path)
     }

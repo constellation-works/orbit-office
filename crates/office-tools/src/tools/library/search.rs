@@ -6,7 +6,7 @@
 //! `until` are inclusive and exclude undated documents. An empty query is
 //! refused: this tool finds material, it does not list the Library.
 
-use office_core::domain::knowledge::{DocumentKind, SearchFilter};
+use office_core::domain::knowledge::{DocumentKind, LibraryLayer, SearchFilter};
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Map, Value, json};
@@ -20,7 +20,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         mcp_scope: McpScope::Workspace,
     },
     &[
-        "query", "kind", "template", "tag", "series", "since", "until", "limit",
+        "query", "layer", "kind", "template", "tag", "series", "since", "until", "limit",
     ],
     run,
 );
@@ -67,7 +67,17 @@ fn run(call: &Call<'_>) -> Result<Value> {
                 ))
             })?,
     };
+    let layer = optional_text(input, "layer")?
+        .map(|value| match value.as_str() {
+            "own" => Ok(LibraryLayer::Own),
+            "shared" => Ok(LibraryLayer::Shared),
+            _ => Err(Error::InvalidArgument(
+                "search layer must be own or shared".into(),
+            )),
+        })
+        .transpose()?;
     let filter = SearchFilter {
+        layer,
         kind,
         tag: optional_text(input, "tag")?,
         series: optional_text(input, "series")?,
@@ -85,6 +95,8 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .map(|hit| {
             json!({
                 "id": hit.id,
+                "layer": hit.layer,
+                "shared_by": hit.shared_by,
                 "kind": hit.kind,
                 "title": hit.title,
                 "path": hit.path,

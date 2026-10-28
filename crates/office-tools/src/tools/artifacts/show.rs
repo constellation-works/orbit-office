@@ -31,39 +31,42 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .input
         .get("id")
         .and_then(Value::as_str)
-        .filter(|id| valid_id(id))
+        .filter(|id| {
+            valid_id(id.rsplit('/').next().unwrap_or_default())
+                && office_core::domain::knowledge::parse_citation(id)
+                    .is_some_and(|c| c.anchor.is_none())
+        })
         .ok_or_else(|| {
             Error::InvalidArgument("artifact-show id must be art-YYYYMMDD-<slug>".into())
         })?;
     let library = &call.ports.library;
     let documents = library.artifact_documents()?;
-    let (path, text) = documents
-        .iter()
-        .find_map(|file| {
-            let text = file.markdown.as_deref()?;
-            (DocumentRecord::from_markdown(Path::new(&file.path), text).id == id)
-                .then_some((&file.path, text))
-        })
-        .ok_or(ArtifactError::NotFound)?;
-    let artifact = Artifact::from_document(path, text)?;
+    let record = library.get(id)?.ok_or(ArtifactError::NotFound)?;
+    let path = &record.path;
+    let text = library.read_text(Path::new(path))?;
+    let artifact = Artifact::from_document(path, &text)?;
     let mut history = Vec::new();
     for file in &documents {
         let text = file.markdown.as_deref().ok_or(ArtifactError::Invalid {
             field: "frontmatter",
         })?;
-        let record = DocumentRecord::from_markdown(Path::new(&file.path), text);
-        if record.series.as_deref() == Some(&artifact.series) {
+        let version_record = DocumentRecord::from_markdown(Path::new(&file.path), text);
+        if version_record.series.as_deref() == Some(&artifact.series)
+            && version_record.layer == record.layer
+            && version_record.shared_by == record.shared_by
+        {
             let version = Artifact::from_document(&file.path, text)?;
-            history.push(version);
+            history.push((version, version_record));
         }
     }
-    history.sort_by(|a, b| b.version.cmp(&a.version).then_with(|| a.id.cmp(&b.id)));
-    let series_history = history
-        .iter()
-        .map(|a| {
-            Ok(json!({"id":a.id,"version":a.version,"supersedes":a.supersedes,"path":a.path()?}))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    history.sort_by(|a, b| {
+        b.0.version
+            .cmp(&a.0.version)
+            .then_with(|| a.1.id.cmp(&b.1.id))
+    });
+    let series_history: Vec<_> = history.iter().map(|(artifact, record)| {
+        json!({"id":record.id,"version":artifact.version,"supersedes":artifact.supersedes,"path":record.path})
+    }).collect();
     let dir = path
         .strip_suffix("/artifact.md")
         .ok_or(ArtifactError::Invalid { field: "path" })?;
@@ -95,7 +98,8 @@ fn run(call: &Call<'_>) -> Result<Value> {
             }
         }
     }
-    let mut output = json!({"artifact":artifact,"path":path,"files":files,"series_history":series_history,"backlinks":library.backlinks(id)?,"truncated":truncated});
+    let mut output = json!({"layer":record.layer,"shared_by":record.shared_by,"artifact":artifact,"path":path,"files":files,"series_history":series_history,"backlinks":library.backlinks(id)?,"truncated":truncated});
+    output["artifact"]["id"] = json!(record.id);
     if let Some(body) = body {
         output["body"] = json!(body);
     }
