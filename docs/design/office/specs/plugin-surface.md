@@ -27,7 +27,9 @@ Source: spec §12. The one-call envelope is
 | `office.calendar-list` | read_only | workspace | Events in a range, each with its prep artifact, captured sources and matched person pages; attendee emails never returned |
 | `office.meeting-prep` | mutating | **none** | Write a cited prep brief artifact for each meeting starting within the lead time; run only by the `office-meeting-prep` routine ([calendar.md](./calendar.md#prep-officemeeting-prep)) |
 | `office.source-show` | read_only | workspace | Return source text, available summary, provenance, citing documents/tasks and chapters; optional document selection (`source` or `summary`), anchor, history and capped original/frame media ([library.md](./library.md#sources)) |
-| `office.source-set-sensitivity` | mutating | **none** | Set source sensitivity under the writer lock; refuse private-to-normal |
+| `office.source-set-sensitivity` | mutating | **none** | Set source sensitivity under the writer lock; refuse private-to-normal; `private` also unshares |
+| `office.share-set` | mutating | **none** | Mark a source, page or artifact `shareable` (the user's approval for it to reach the shared library); refuse private documents and pages citing unshared ones ([shared-library.md](./shared-library.md#the-shareable-field)) |
+| `office.library-sync` | mutating | workspace | Pull the team's shared library into the read-only shared layer, file incoming updates and conflicts as proposals, then push the shareable documents' shared view ([shared-library.md](./shared-library.md#officelibrary-sync)) |
 | `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, template, tag, series and date |
 | `office.knowledge-show` | read_only | workspace | Read a page and its back-links |
 | `office.knowledge-write` | mutating | **none** | Create or update a page; validate frontmatter, cites and its template ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)); commit |
@@ -126,6 +128,7 @@ Activities have no schedule switch. Definitions load only when listed in
   - `office-calendar-sync`: every 15 minutes, seeded disabled; `office.calendar-sync` ([calendar.md](./calendar.md)).
   - `office-meeting-prep`: every 15 minutes (`*/15 * * * *`), seeded disabled. Targets `job:office-meeting-prep`, whose sole deterministic step inlines `plugin.tool_call` with `config.tool: office.meeting-prep`, `input: {}`. Writes one report per eligible event key.
   - `office-meeting-inbox`: every 15 minutes, seeded disabled with the `meetings` pack; its deterministic job calls `office.extract` with `{profile: meeting}` and no id to transcribe empty audio captures, extract and save `summary.md` for each unsummarized meeting. Existing summaries are skipped.
+  - `office-shared-sync`: every 60 minutes, seeded disabled; `office.library-sync` ([shared-library.md](./shared-library.md#routine)).
   - `office-signals`: daily.
   - `office-daily-digest`: daily at `5 0 * * *`, seeded disabled. Targets `job:office-daily-digest`, whose sole step inlines a deterministic `plugin.tool_call` activity (`config.tool: office.digest`). The routine and job are registered in `spec.definitions`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).
 - **Auto-tasks:**
@@ -156,7 +159,7 @@ outward-facing action.
   every read. Secrets are never in it.
 - **Permissions** (`spec.permissions`, granted at `orbit plugin enable`):
   - fs read and write on `{{workspace}}/library` and `{{plugin_state}}`.
-  - network `any`, the only setting that reaches remote hosts. The plugin calls only `api.meta.ai` and the one private endpoint the user configured ([models-and-privacy.md](./models-and-privacy.md#the-private-route)).
+  - network `any`, the only setting that reaches remote hosts. The plugin calls only `api.meta.ai` and the one private endpoint the user configured ([models-and-privacy.md](./models-and-privacy.md#the-private-route)), and its `git` child reaches only the shared library's configured remote ([shared-library.md](./shared-library.md#transport)).
   - `orbit_tools`: the callbacks listed above.
   - Secrets: `meta_api_key` and `open_weights_token` (`spec.secrets`).
 - **Required programs:** `spec.requires.programs: [git, ffmpeg, ffprobe, uv, pdftotext]` (`pdftotext` is optional: without it PDFs are refused with `converter_unavailable`), plus

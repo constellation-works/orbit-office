@@ -1,7 +1,7 @@
 ---
 title: office — Overview
 owner: daniel
-last_updated: 2026-10-27
+last_updated: 2026-10-28
 last_validated: 2026-10-26
 status: Draft
 stage: building
@@ -120,6 +120,7 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 | Analytics and generated reviews | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) | [ORB-18724] done |
 | Web app screens and rules | [specs/web-app.md](./specs/web-app.md) | [ORB-18727] done, [ORB-18728] done |
 | Calendar: read-only sync, meeting prep, capture after the meeting | [specs/calendar.md](./specs/calendar.md) | [ORB-19191], [ORB-19192], [ORB-19193], [ORB-19194], [ORB-19195] done |
+| Shared library: `shareable` documents synced with one team repository | [specs/shared-library.md](./specs/shared-library.md) | [ORB-19417], [ORB-19418], [ORB-19419], [ORB-19421] |
 | Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-18723] done |
 | Models and privacy routing | [specs/models-and-privacy.md](./specs/models-and-privacy.md) | [ORB-18712] done |
 | Hackathon compliance, demo and build plan | [specs/delivery.md](./specs/delivery.md) | [ORB-16585] |
@@ -138,13 +139,16 @@ Library bootstrap for a new role (document capture, digest per source, consolida
 review generation over seeded history.
 
 **Should:** meetings from `.vtt` transcripts and pasted notes; receipts pack; daily digest (session brief and decision log are Must, with the orchestrator); open-weight routing for
-`private` sources; selection sharing; proposal dismissal memory.
+`private` sources; selection sharing; proposal dismissal memory; the shared library (`shareable` documents synced with one team repository, so a new joiner inherits the team's knowledge; [specs/shared-library.md](./specs/shared-library.md)).
 
 **Pitch slide only:** bills pack; email triage, social content, groceries,
 lectures, photo organizer, glasses diary; encrypted sync; paid routine packs.
 
-**Non-goals for the event:** multi-user or teams, mobile, sending real
-email or making purchases, hardware, changes to Orbit core.
+**Non-goals for the event:** accounts, permissions or shared writes
+beyond the shared library's sync
+([decision](./4_decisions.md#teams-share-through-one-shared-library-synced-from-a-shareable-field)),
+mobile, sending real email or making purchases, hardware, changes to Orbit
+core.
 
 ## Task References
 
@@ -165,5 +169,9 @@ email or making purchases, hardware, changes to Orbit core.
 - [ORB-19194] — built capture from a calendar event and the meeting inbox routine.
 - [ORB-19195] — built the Calendar screen, server feature and Today card.
 - [ORB-18728] — built the To-dos screen and its server feature.
+- [ORB-19417] — builds the `shareable` field, `office.share-set`, the shared view and the `shared` settings.
+- [ORB-19418] — builds `office.library-sync`, its routine and the two-workspace demo.
+- [ORB-19419] — builds the shared layer: index, qualified citations, reads, attach and bootstrap.
+- [ORB-19421] — builds the app's shared-library settings, labels, share switch and Needs you cards.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

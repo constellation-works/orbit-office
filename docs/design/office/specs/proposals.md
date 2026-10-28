@@ -21,6 +21,7 @@ Source: spec §7.
 | `knowledge_update` | Applies a diff to an existing page |
 | `runbook_from_friction` | Writes or edits a runbook so a recurring friction stops happening |
 | `retire` | Marks a page `retired` or disables an auto-task nobody uses |
+| `shared_conflict` | Filed by `office.library-sync` when the user's copy of a shared page and the shared copy both changed: **Use theirs** writes the shared version, **Keep mine** pushes the user's on the next sync ([shared-library.md](./shared-library.md#officelibrary-sync)) |
 
 ## Signals
 

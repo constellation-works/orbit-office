@@ -1145,6 +1145,73 @@ external event.
   - a prep model call per meeting, capped per run.
   Recurrence rules outside the subset show their first instance only.
 
+## Teams share through one shared library, synced from a shareable field
+
+**Recorded:** 2026-10-28
+**Code anchors:** [specs/shared-library.md](./specs/shared-library.md)
+
+### Context
+
+A new joiner rebuilds the team's knowledge from the same onboarding pages
+and KT videos everyone before them already processed. Daniel already works
+around this: he keeps one shared knowledge base beside his own, and a sync
+pushes and pulls between them on a schedule. The overview listed
+"multi-user or teams" as a non-goal for the event. The alternatives
+considered:
+
+- **The shared repository as the Library.** Every write would be shared,
+  including private sources, 1:1 notes and receipts, and every edit would
+  risk a merge.
+- **Peer Libraries**, each member pulling every colleague's export. Every
+  id and citation would need a per-member namespace, and joining means
+  adding a remote for each person.
+- **Export and import as sources.** A colleague's pages would arrive as
+  copies, so a subject would fork into one page per member.
+- **An agent-run sync skill**, as at work. With the field in place, nothing
+  in the sync needs judgment, and an activity's system of record is its
+  durable artifact, not an agent's message.
+- **Going through `gateway`.** The gateway carries HTTP API calls with a
+  secret per connection. Git is a different transport, and the user's own
+  git credentials already cover it.
+
+### Decision
+
+- **One shared library per workspace**, a git repository with a remote,
+  alongside each member's own Library. Pages are shared by subject;
+  sources and artifacts stay under the member who shared them and are
+  cited as `<member>/<id>`.
+- **`shareable` is the approval.** Only `office.share-set` (MCP-hidden) and
+  accepted proposals set it. `private` documents and documents citing
+  unshared ones are refused. Every byte the sync pushes was already
+  approved: by capture, by an accepted proposal or by promotion.
+- **The sync is a deterministic tool**, `office.library-sync`. It pushes a
+  shared view (no contact or path refs) and pulls into a read-only layer.
+  Changes to the user's own copy of a page arrive as proposals, never as
+  writes.
+- **Git is the third outward path**, after model inference and the gateway.
+  It reaches only the configured remote, with an allowlisted environment,
+  restricted protocols and no hooks.
+- **The teams non-goal is narrowed** to accounts, permissions and shared
+  writes outside this sync. This revises the overview's non-goal list and
+  the calendar decision's rule that only model inference leaves the
+  machine outside the gateway.
+
+### Consequences
+
+- A new joiner connects, syncs and inherits the team's pages, runbooks and
+  KT readings, and bootstrap only fills the gaps.
+- Colleagues' text is untrusted input, like any source: it is validated on
+  pull, quoted as data in model inputs, and a shared script never runs.
+- Cost:
+  - a second index layer that every read tool and the citation check must
+    resolve;
+  - a member-qualified citation form;
+  - a git transport outside the gateway's audit, recorded only in the
+    shared repository's history and the sync result;
+  - a conflict proposal kind;
+  - one routine.
+  Unsharing can't recall copies colleagues already synced, or the history.
+
 ## Template decisions not carried over
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.

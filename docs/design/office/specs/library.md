@@ -36,6 +36,12 @@ library/
   rebuildable at any time with `office.reindex`. Reindex rebuilds only
   after a complete scan: a missing layer is empty, and an enumeration
   failure leaves the previous index unchanged.
+- A team's **shared library** is a separate git repository, cloned to
+  `{{plugin_state}}/shared/repo/` and indexed as a read-only `shared` layer
+  beside this one. Documents marked `shareable` are pushed to it, and
+  colleagues' documents are read from it
+  ([shared-library.md](./shared-library.md)).
+
 ## Git
 
 - The Library is its own git repository at `library/`, created by
@@ -137,6 +143,7 @@ origin: "Zoom recording, uploaded"     # free text: "Slack #pricing, pasted"
 participants: [Jane Park (Acme), Daniel]
 event: { key: "<event-key>", series: "<series-uid>" } # event-backed meetings only
 sensitivity: normal      # normal | private
+shareable: false         # pushed to the shared library; never with private (shared-library.md)
 original: { file: original.m4a, sha256: …, bytes: 48211234, media_type: audio/mp4 }
 derived_by: { transcription: { route: hosted, model: muse-voice-transcribe } }   # how the body was produced
 version: 1
@@ -214,6 +221,8 @@ Private-to-normal is refused with `sensitivity_downgrade_refused`, naming
 keys and sensitivity values are refused. Both tools have closed schemas;
 their fixture conformance goldens replay offline with
 `cargo test -p office-tools --lib tools::tests::show --locked`.
+Setting `private` also sets `shareable: false` in the same commit and
+reports `unshared: true` ([shared-library.md](./shared-library.md#the-shareable-field)).
 
 - **Video:** the transcript as for a meeting, plus `frames.md` (frame readings, `#frame=00:12:31`) and `chapters.md` (`#chapter=3`) beside it ([kt-videos.md](./kt-videos.md#library-shape)).
 - **Meeting:** one paragraph per speaker turn, prefixed with `[hh:mm:ss] Speaker:`, paragraphs separated by a blank line. The anchor is `#t=00:12:31`. The transcribe tool gives text-only replies stable positional timestamps within each chunk (see [kt-videos.md](./kt-videos.md#built-tool-contracts)); reported timestamps are shifted by the chunk offset. A chunk that reported turns contributes those turns, not a second copy of its text.
@@ -258,6 +267,7 @@ related: [rb-client-qbr-prep, dom-client-acme, dom-person-jane-park]
 updated_at: 2026-10-28T15:10:00-04:00
 last_verified: 2026-10-28
 status: current                # current | stale | retired
+shareable: true                # optional; pushed to the shared library (shared-library.md)
 ```
 
 - Claims in the body carry inline citations, for example `[src-…#t=00:12:31]`. The Source screen resolves these anchors in `/?source=<id>#t=hh:mm:ss` links. Line, frame and chapter fragments use the same query-selected screen.
@@ -266,10 +276,10 @@ status: current                # current | stale | retired
 - **Pointers** (files, links, contacts, templates, accounts) live in a domain page's `refs`, on the page about their subject, for example Jane Park's email on `dom-person-jane-park`. Each ref has one `path`, `url`, `contact`, `account` (`system:key`, such as `jira:ACME`) or `artifact` target. Never secrets. Contact values never reach a model ([knowledge-templates.md](./knowledge-templates.md#contact-details)).
 - Knowledge may cite artifacts as well as sources, for example a research report's findings folded into a domain page. The artifact's own `cites` keep the chain back to evidence.
 - **Writes** go through `office.knowledge-write` (`{"markdown": "<the whole page>"}`), which is hidden from MCP ([plugin-surface.md](./plugin-surface.md)). It writes `knowledge/domain/<id>.md` or `knowledge/runbooks/<id>.md`, replacing an existing page with that id, and commits once. A claim's extent is not machine-readable, so "every claim cites" is enforced by resolving every citation a page makes, not by refusing uncited sentences; the skill and the proposal review keep claims cited (user-authored pages may have none). Every check runs first, so a refusal writes and commits nothing. In order:
-  1. **Frontmatter** (`invalid_frontmatter`, naming the field, never its value): only the fields above plus `sensitivity`, `as_of`, `performable` and `submission`; `id` is `dom-<slug>` or `rb-<slug>` and `title` is required; `type`, when present, is `domain` or `runbook` (else the id prefix decides); `status` is `current`, `stale` or `retired`; dates are `YYYY-MM-DD`; `related` holds page ids. The supported YAML is a flat mapping of plain or quoted scalars, inline `[…]` and `{…}` collections, indented block lists (of scalars, flow mappings or `key: value` items), one level of indented mapping (`submission`) and comments.
+  1. **Frontmatter** (`invalid_frontmatter`, naming the field, never its value): only the fields above plus `sensitivity`, `shareable`, `as_of`, `performable` and `submission`; `id` is `dom-<slug>` or `rb-<slug>` and `title` is required; `type`, when present, is `domain` or `runbook` (else the id prefix decides); `status` is `current`, `stale` or `retired`; dates are `YYYY-MM-DD`; `related` holds page ids. The supported YAML is a flat mapping of plain or quoted scalars, inline `[…]` and `{…}` collections, indented block lists (of scalars, flow mappings or `key: value` items), one level of indented mapping (`submission`) and comments.
   2. **Template**, when the page names one ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)).
   3. **Base rules:** the id prefix matches the type; `refs` only on domain pages, and `performable` (`agent` | `you`) and `submission` (`system`, `via: draft | gateway`, and `connection` for a gateway) only on runbooks; each ref has a `label`, exactly one target, and optionally `authoritative: true` and `as_of` (`account` is `system:key`, `artifact` an `art-` id, a `url` carries no credentials); no email address or phone number in the body (`contact_in_body`); at most 1,200 words of body (`page_too_long`); and a page tagged `policy`, or with a section whose `##` heading ends in `[policy]`, needs an `authoritative` ref and an `as_of` on that ref or the page (`policy_without_source`; [library-bootstrap.md](./library-bootstrap.md#page-rules)).
-  4. **Citations** (`unresolved_cite`): every frontmatter `cites` entry and every inline `[id#anchor]` (several may share brackets, separated by `;` or `,`) names an indexed document of the kind its prefix says (`src-`, `dom-`, `rb-`, `art-`), never the page itself. A source cite needs an anchor present in that source's body: `t=hh:mm:ss` from the first speaker turn's timestamp to the last's, `L<n>` or `L<n>-<m>` within the body's lines (counted after the frontmatter, surrounding blank lines trimmed), or `slide=<n>`/`page=<n>` naming a `Slide <n>`/`Page <n>` heading. `frame=` and `chapter=` anchors are refused until `frames.md` and `chapters.md` are readable through the Library port. Other documents are cited without an anchor. Refs are pointers and are never resolved.
+  4. **Citations** (`unresolved_cite`): every frontmatter `cites` entry and every inline `[id#anchor]` (several may share brackets, separated by `;` or `,`) names an indexed document of the kind its prefix says (`src-`, `dom-`, `rb-`, `art-`), never the page itself. A member-qualified citation (`<member>/<id>`) names a document in the shared layer ([shared-library.md](./shared-library.md#the-shared-layer)). A source cite needs an anchor present in that source's body: `t=hh:mm:ss` from the first speaker turn's timestamp to the last's, `L<n>` or `L<n>-<m>` within the body's lines (counted after the frontmatter, surrounding blank lines trimmed), or `slide=<n>`/`page=<n>` naming a `Slide <n>`/`Page <n>` heading. `frame=` and `chapter=` anchors are refused until `frames.md` and `chapters.md` are readable through the Library port. Other documents are cited without an anchor. Refs are pointers and are never resolved.
 - **Reads:** `office.knowledge-show` (`{"id": "<page id>"}`, `page_not_found` otherwise) returns the page's model view, since it is visible to agents ([knowledge-templates.md](./knowledge-templates.md#contact-details)), and its back-links: the indexed sources, pages and artifacts whose frontmatter `cites` (bare or anchored) or `related` name it, each with `via: [cites, related]`. The model view is `office_core::domain::knowledge::Page::model_view`; `PageView::to_markdown` renders it for task attachments.
 - **Listing:** `office.knowledge-list` takes `{}` or `{"template":"<template name>"}`.
   It returns every matching page in `pages`, sorted by id, with `id`, nullable
@@ -336,6 +346,7 @@ series: acme-renewal-research   # groups versions of the same deliverable
 version: 1
 supersedes: null
 sensitivity: normal      # the strictest of what it cites
+shareable: false         # optional; pushed to the shared library (shared-library.md)
 tags: [client:acme]
 ```
 
@@ -448,15 +459,16 @@ with time".
 **`office.search`** (read-only, workspace) is full-text search over the
 index: `{"query": "<terms>"}` plus any of `kind` (`source`, `domain`,
 `runbook`, `artifact`), `template` (pages that name it), `tag`, `series`,
-`since` and `until` (`YYYY-MM-DD`, inclusive), and `limit` (1–100, default
-20). Each term must match, as a prefix, in a document's title, summary,
+`since` and `until` (`YYYY-MM-DD`, inclusive), `layer` (`own` or `shared`;
+both when omitted) and `limit` (1–100, default 20). Each term must match, as a prefix, in a document's title, summary,
 body or tags. Every filter narrows the results before the limit. A
 document's date is its `occurred_at`, else `captured_at`, else
 `updated_at`, else `last_verified`, else the date in a dated id
 (`src-YYYYMMDD-…`, `art-YYYYMMDD-…`); a date filter excludes undated
 documents. An empty or blank query, an unknown kind, a malformed date or
 `since` after `until` is refused with `invalid_argument`. Hits carry `id`,
-`kind`, `title`, `path` and a `snippet`.
+`kind`, `title`, `path`, a `snippet`, `layer` and, for shared documents,
+`shared_by`.
 
 **`office.attach`** (mutating, workspace) takes `{"task": "<id>"}` and
 copies at most 8 Library files into that task as task artifacts at
@@ -482,6 +494,9 @@ skipping repeats:
    its tags.
 6. Pages `related` to a page already picked.
 
+Each step also picks from the shared layer, and the user's own copy of a
+page wins over the shared one
+([shared-library.md](./shared-library.md#the-shared-layer)).
 Search hits and related pages exclude domain pages whose template attaches
 `never` (goals, rhythm). A knowledge page is copied as its model view
 (`PageView::to_markdown`), so no `contact` ref value is attached; sources

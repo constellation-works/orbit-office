@@ -36,11 +36,13 @@ Source: spec §9.
 - **Selections from private objects carry no quote** ([selection-sharing.md](./selection-sharing.md)); the agent re-reads through the tools so the routing applies.
 - **Secrets.** The Meta API key and the private route's token (`open_weights_token`) are stored with `orbit plugin secret set office <name>`, never in config or the Library. Knowledge pages never hold secrets; `refs` name files, links, contacts, accounts and artifacts only.
 - **Contact details never reach a model.** Model inputs and task attachments carry a page's model view, in which each `contact` ref keeps its label and loses its value; page bodies may not contain email addresses or phone numbers ([knowledge-templates.md](./knowledge-templates.md#contact-details)).
-- **Other people's words.** Pasted chats contain third parties' messages. They stay local, and the demo uses synthetic content only.
+- **Other people's words.** Pasted chats contain third parties' messages. They stay local unless the user marks the source shareable, which sends them only to the team's shared library ([shared-library.md](./shared-library.md)). The demo uses synthetic content only.
 
 The plugin's network grant is `any` (the only setting that reaches remote
 hosts), but the code calls only `api.meta.ai` (hosted) and the one
-configured private endpoint. Any other host is refused before a socket
+configured private endpoint. Its `git` child reaches only the shared
+library's configured remote, carrying only documents marked `shareable`
+([shared-library.md](./shared-library.md#transport)). Any other host is refused before a socket
 opens. That restriction is a code rule, reviewed, not a sandbox setting.
 
 ## The private route
