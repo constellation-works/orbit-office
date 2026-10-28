@@ -1,10 +1,10 @@
 /**
  * The Calendar screen's reading of the snapshot, with no DOM: the week, each
- * meeting's state in words, where blocks and routine marks sit, and the
- * rail's count of today's meetings still without notes.
+ * meeting's and scheduled to-do's state in words, where blocks and routine
+ * marks sit, and the rail's count of today's meetings still without notes.
  * Times are this computer's local time, like the Routines screen's.
  */
-import type { CalendarMeeting, CalendarRoutine } from "@orbit-office/contracts";
+import type { CalendarMeeting, CalendarRoutine, CalendarTask } from "@orbit-office/contracts";
 
 import { cronFires, scheduleWords } from "../../ui/schedule.js";
 
@@ -38,8 +38,11 @@ export function allDayDate(iso: string): Date {
   return new Date(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
 }
 
+/** Anything drawn on the grid: a meeting, or a scheduled to-do's slot. */
+export interface Timed { start: string; end: string; all_day: boolean }
+
 /** Whether a meeting shows on `day`: overlapping it for timed ones, by date for all-day ones. */
-export function onDay(meeting: CalendarMeeting, day: Date): boolean {
+export function onDay(meeting: Timed, day: Date): boolean {
   if (meeting.all_day) {
     const first = allDayDate(meeting.start).getTime();
     const last = allDayDate(meeting.end).getTime();
@@ -99,8 +102,8 @@ function minutesInto(day: Date, iso: string): number {
   return Math.min(1440, Math.max(0, (Date.parse(iso) - startOfDay(day).getTime()) / 60_000));
 }
 
-/** The hours drawn: always 08:00–18:00, widened to the earliest and latest meeting. */
-export function hourRange(meetings: readonly CalendarMeeting[], days: readonly Date[]): { first: number; last: number } {
+/** The hours drawn: always 08:00–18:00, widened to the earliest and latest meeting or scheduled to-do. */
+export function hourRange(meetings: readonly Timed[], days: readonly Date[]): { first: number; last: number } {
   let first = 8; let last = 18;
   for (const day of days) {
     for (const meeting of meetings) {
@@ -112,14 +115,14 @@ export function hourRange(meetings: readonly CalendarMeeting[], days: readonly D
   return { first, last: Math.max(last, first + 1) };
 }
 
-export interface Placed { meeting: CalendarMeeting; from: number; to: number; lane: number; lanes: number }
+export interface Placed<T extends Timed> { item: T; from: number; to: number; lane: number; lanes: number }
 
-/** Timed meetings on one day, side by side where they overlap. */
-export function placeDay(meetings: readonly CalendarMeeting[], day: Date): Placed[] {
-  const items = meetings.filter(meeting => !meeting.all_day && onDay(meeting, day))
-    .map(meeting => ({ meeting, from: minutesInto(day, meeting.start), to: Math.max(minutesInto(day, meeting.end), minutesInto(day, meeting.start) + 15), lane: 0, lanes: 1 }))
+/** Timed meetings and scheduled to-dos on one day, side by side where they overlap. */
+export function placeDay<T extends Timed>(entries: readonly T[], day: Date): Array<Placed<T>> {
+  const items = entries.filter(entry => !entry.all_day && onDay(entry, day))
+    .map(item => ({ item, from: minutesInto(day, item.start), to: Math.max(minutesInto(day, item.end), minutesInto(day, item.start) + 15), lane: 0, lanes: 1 }))
     .sort((a, b) => a.from - b.from || b.to - a.to);
-  let cluster: Placed[] = []; let clusterEnd = -1;
+  let cluster: Array<Placed<T>> = []; let clusterEnd = -1;
   const close = (): void => { const lanes = Math.max(...cluster.map(item => item.lane)) + 1; for (const item of cluster) item.lanes = lanes; };
   for (const item of items) {
     if (item.from >= clusterEnd && cluster.length > 0) { close(); cluster = []; }
@@ -129,6 +132,55 @@ export function placeDay(meetings: readonly CalendarMeeting[], day: Date): Place
   }
   if (cluster.length > 0) close();
   return items;
+}
+
+/** A scheduled to-do's block runs this long from its time; the to-do itself has no end. */
+export const TASK_BLOCK_MINUTES = 30;
+/** Starting more than this after its time reads "Started HH:MM" rather than "Running". */
+export const LATE_MINUTES = 5;
+
+/** A scheduled to-do placed on the grid like a meeting. */
+export interface TaskSlot extends Timed { task: CalendarTask }
+
+export function taskSlot(task: CalendarTask): TaskSlot {
+  const start = Date.parse(task.not_before);
+  return { task, start: task.not_before, end: new Date(start + TASK_BLOCK_MINUTES * 60_000).toISOString(), all_day: false };
+}
+
+/** When the to-do started, if that was more than {@link LATE_MINUTES} after its time; otherwise null. */
+export function startedLate(task: CalendarTask): Date | null {
+  if (task.started_at === null) return null;
+  const started = Date.parse(task.started_at);
+  if (Number.isNaN(started) || started - Date.parse(task.not_before) <= LATE_MINUTES * 60_000) return null;
+  return new Date(started);
+}
+
+/**
+ * A scheduled to-do's state in words: "Not approved" while proposed,
+ * "Scheduled" while it waits, "Running" (or "Started 09:42" when it started
+ * late), "Ready for review" and "Done".
+ */
+export function taskState(task: CalendarTask): MeetingState {
+  switch (task.state) {
+    case "not_approved": return { words: "Not approved", tone: "attention" };
+    case "scheduled": return { words: "Scheduled", tone: "neutral" };
+    case "running": {
+      const late = startedLate(task);
+      return { words: late === null ? "Running" : `Started ${clock(late)}`, tone: "working" };
+    }
+    case "review": return { words: "Ready for review", tone: "attention" };
+    case "done": return { words: "Done", tone: "done" };
+  }
+}
+
+/** Every word a scheduled block shows besides its title: its state, a late start, and whose it is. */
+export function taskWords(task: CalendarTask): string[] {
+  const late = startedLate(task);
+  return [
+    taskState(task).words,
+    ...(late !== null && task.state !== "running" ? [`Started ${clock(late)}`] : []),
+    task.owner === "you" ? "For you" : "For an agent",
+  ];
 }
 
 /** `office-daily-digest` reads as "Office daily digest", as on the Routines screen. */

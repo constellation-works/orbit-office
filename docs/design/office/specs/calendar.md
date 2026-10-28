@@ -261,6 +261,53 @@ Office adds no scheduler of its own.
   beside the scheduled time ("Scheduled 09:00, started 09:42").
 - **Your own to-dos** (`owner:you`) can carry a time too. They only appear on
   the calendar; nothing dispatches them.
+- **New to-dos with a time** come from the orchestrator, which passes
+  `not_before` to `orbit.task.add`. The app has no create form; it schedules
+  to-dos that already exist.
+
+### Scheduled-task implementation
+
+- **The write:** `POST /api/todos/schedule` takes exactly
+  `{id, not_before}`, where `not_before` is an RFC 3339 instant with an
+  offset, or null to clear. Any other key is refused. The server reads the
+  task first:
+  - one without an `owner:you` or `owner:agent` tag is `not_found` (404);
+  - one that is terminal, or not `proposed`, `backlog`, `someday` or
+    `blocked`, is `not_schedulable` (409): once started, its time no longer
+    changes;
+  - otherwise it calls `orbit.task.update {id, not_before}`, sending `""` to
+    clear. The status never moves.
+- **The picker** is a `datetime-local` input read in this computer's time
+  zone, named under it ("In this computer's time zone, Europe/London."). It
+  suggests tomorrow at 09:00 and refuses a time already past. It sends the
+  instant in UTC.
+- **The words:** "Scheduled Fri 09:00" within the coming week, and
+  "Scheduled Fri 13 Nov 09:00" further off or already past.
+- **The dispatch pass** lists `not_before` with the backlog. It holds a task
+  until `not_before` is at or before its clock, and ships it on the first
+  pass after that time. An unreadable `not_before` fails the listing, the
+  same as any other malformed row.
+- **The calendar read:** `orbit.task.list` with `not_before_from` and
+  `not_before_until` set to the week, the fields `id`, `title`, `status`,
+  `tags`, `not_before` and `history`, and a limit of 200. Orbit's bounds are
+  inclusive, so the server drops a task exactly at `until`. Only tasks with
+  an owner tag are shown, and rejected and archived tasks are hidden.
+  A failed, truncated or malformed read keeps the meetings and sets
+  `scheduled_unavailable`. The legend then says the scheduled to-dos could
+  not be read.
+- **States**, from the status, the start time and the last `started` history
+  entry:
+
+  | Status | Words |
+  |---|---|
+  | `proposed`, `someday` | "Not approved" |
+  | `backlog`, `blocked` | "Scheduled" |
+  | `in-progress` | "Running", or "Started 09:42" when it started more than 5 minutes late |
+  | `review` | "Ready for review" |
+  | `done` | "Done" |
+
+  A late start that is no longer running also reads "Started 09:42" beside its
+  state. Each block also says "For you" or "For an agent".
 
 ## Settings
 
@@ -297,11 +344,15 @@ both show on the Routines screen.
   schedule reading as the Routines screen, hollow when paused. They are
   shown, not edited: a mark opens Routines. The schedule reader moves from
   `screens/routines/schedule.ts` into `ui/` so both screens share it.
-- **Scheduled tasks** are blocks at their `not_before` time, read with
-  `orbit.task.list`'s date-range filter. Their state is in words:
-  "Scheduled", "Not approved" (still proposed), "Running", "Done", or
-  "Started 09:42" when they started late. Opening one shows the task, with
-  **Reschedule** and **Clear schedule**.
+- **Scheduled tasks** are 30-minute blocks at their `not_before` time,
+  dashed to tell them from meetings, read with `orbit.task.list`'s
+  date-range filter. Their state is in words:
+  "Scheduled", "Not approved" (still proposed), "Running", "Ready for
+  review", "Done", or "Started 09:42" when they started late
+  ([states](#scheduled-task-implementation)). Opening one shows a panel with
+  the time, the start, who it is for and who starts it. While it has not
+  started, the panel offers **Reschedule** (the same picker as To-dos) and
+  **Clear schedule**. **Open To-dos** links to the list.
 - **Opening a meeting** shows a panel:
   - when, where, and whether the meeting is online;
   - attendees, each linked to their person page where one matched;
@@ -322,7 +373,9 @@ both show on the Routines screen.
   - a week with no meetings, said in words.
 
 Server: `GET /api/calendar?from&until` calls `office.calendar-list`,
-`orbit.auto_task.list` and `orbit.task.list` with the `not_before` range. `POST /api/calendar/sync` calls
+`orbit.auto_task.list` and `orbit.task.list` with the `not_before` range. It
+adds `tasks` and `scheduled_unavailable` to the view. Reschedule and Clear
+use the to-do write, `POST /api/todos/schedule`. `POST /api/calendar/sync` calls
 `office.calendar-sync`. `POST /api/calendar/capture` stages the upload and
 calls `office.capture` with `event_key`.
 

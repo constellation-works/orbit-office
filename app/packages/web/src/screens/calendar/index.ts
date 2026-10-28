@@ -1,21 +1,24 @@
 /**
  * Calendar: the user's week as the agents see it (docs/design/office/specs/
  * calendar.md, "App"). A week from Monday at desktop widths and one day at a
- * time on a phone; meetings as blocks with their state in words; the
- * routines' runs as marks in each day's margin. The calendar is read only:
- * nothing here writes back to it.
+ * time on a phone; meetings and scheduled to-dos as blocks with their state
+ * in words; the routines' runs as marks in each day's margin. The calendar
+ * itself is read only: nothing here writes back to it. A scheduled to-do's
+ * time is Orbit's, and its panel can move or clear it.
  */
-import type { CalendarMeeting, CalendarRoutine, CalendarView } from "@orbit-office/contracts";
+import type { CalendarMeeting, CalendarRoutine, CalendarTask, CalendarView } from "@orbit-office/contracts";
 
-import { ApiError, getCalendar, syncCalendar } from "../../api/client.js";
+import { ApiError, getCalendar, scheduleTodo, syncCalendar } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
 import { card, errorState, requestRailRefresh } from "../../ui/index.js";
+import { pickerStyles } from "../../ui/when.js";
 import {
   addDays, clock, dayRuns, hourRange, meetingState, onDay, placeDay, routineTitle, sameDay, stateWords,
-  syncedWords, weekLabel, weekStart,
+  syncedWords, taskSlot, taskState, taskWords, weekLabel, weekStart, type TaskSlot,
 } from "./model.js";
 import { meetingPanel } from "./panel.js";
 import { styles } from "./style.js";
+import { taskPanel } from "./task.js";
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = "", className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -53,6 +56,22 @@ function block(meeting: CalendarMeeting, now: Date, lead: number, open: (meeting
   return node;
 }
 
+/** One scheduled to-do's block: title, its state and whose it is in words, and its time. */
+function taskBlock(task: CalendarTask, open: (task: CalendarTask) => void): HTMLButtonElement {
+  const node = element("button", "", "calendar-meeting calendar-task");
+  node.type = "button";
+  node.dataset.tone = taskState(task).tone;
+  node.dataset.task = "true";
+  const words = taskWords(task);
+  node.title = [task.title, ...words].join(" · ");
+  const inner = element("span", "", "calendar-meeting-inner");
+  inner.append(element("span", task.title, "calendar-meeting-title"), element("span", words.join(" · "), "calendar-meeting-state"),
+    element("span", `To-do · ${clock(new Date(task.not_before))}`, "calendar-meeting-meta"));
+  node.append(inner);
+  node.addEventListener("click", () => open(task));
+  return node;
+}
+
 /** Marks for one routine on one day, in that day's margin; each opens Routines. */
 function marks(routine: CalendarRoutine, day: Date, first: number, last: number): HTMLElement[] {
   const runs = dayRuns(routine, day);
@@ -83,14 +102,18 @@ interface State {
   week: Date;
   /** The day a phone shows, 0 (Monday) to 6. */
   day: number;
-  /** The meeting whose panel is open. */
+  /** The meeting (by key) or scheduled to-do (`task:<id>`) whose panel is open. */
   open: string | null;
 }
 
-function grid(view: CalendarView, state: State, now: Date, open: (meeting: CalendarMeeting) => void): HTMLElement {
+/** The open-panel key of a scheduled to-do; meeting keys never start with it. */
+const taskKey = (task: CalendarTask): string => `task:${task.id}`;
+
+function grid(view: CalendarView, state: State, now: Date, open: (meeting: CalendarMeeting) => void, openTask: (task: CalendarTask) => void): HTMLElement {
   const days = Array.from({ length: 7 }, (_, index) => addDays(state.week, index));
   const lead = view.prep_lead_minutes;
-  const { first, last } = hourRange(view.meetings, days);
+  const slots = view.tasks.map(taskSlot);
+  const { first, last } = hourRange([...view.meetings, ...slots], days);
   const allDayRows = Math.max(1, ...days.map(day => view.meetings.filter(meeting => meeting.all_day && onDay(meeting, day)).length));
   const table = element("div", "", "calendar-grid");
   table.style.setProperty("--hours", String(last - first));
@@ -123,8 +146,9 @@ function grid(view: CalendarView, state: State, now: Date, open: (meeting: Calen
     margin.setAttribute("aria-label", "Routine runs");
     for (const routine of view.routines) margin.append(...marks(routine, day, first, last));
     const events = element("div", "", "calendar-events");
-    for (const placed of placeDay(view.meetings, day)) {
-      const node = block(placed.meeting, now, lead, open);
+    for (const placed of placeDay<CalendarMeeting | TaskSlot>([...view.meetings, ...slots], day)) {
+      const entry = placed.item;
+      const node = "task" in entry ? taskBlock(entry.task, openTask) : block(entry, now, lead, open);
       const top = Math.max(0, placed.from - first * 60);
       const bottom = Math.min((last - first) * 60, placed.to - first * 60);
       node.style.top = `calc(${(top / 60).toFixed(4)} * var(--hour))`;
@@ -154,16 +178,18 @@ function grid(view: CalendarView, state: State, now: Date, open: (meeting: Calen
 export interface CalendarScreenOptions {
   load?: (from: Date, until: Date) => Promise<CalendarView>;
   sync?: () => Promise<unknown>;
+  /** Set a to-do's scheduled start, or clear it with null. */
+  schedule?: (id: string, notBefore: string | null) => Promise<unknown>;
   now?: () => Date;
 }
 
-export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, now = () => new Date() }: CalendarScreenOptions = {}): Screen {
+export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, schedule = scheduleTodo, now = () => new Date() }: CalendarScreenOptions = {}): Screen {
   async function render(root: HTMLElement): Promise<void> {
     const page = element("section", "", "calendar");
-    const style = element("style", styles);
+    const style = element("style", styles + pickerStyles);
     const header = element("header", "", "calendar-header");
     const titles = element("div");
-    titles.append(element("h1", "Calendar"), element("p", "Your meetings with their prep and notes, and the routines that run. Read from your calendar; nothing is written back.", "intro"));
+    titles.append(element("h1", "Calendar"), element("p", "Your meetings with their prep and notes, the to-dos scheduled for a time, and the routines that run. Read from your calendar; nothing is written back.", "intro"));
     const syncLine = element("div", "", "calendar-sync");
     const syncState = element("span");
     syncState.setAttribute("role", "status");
@@ -194,6 +220,16 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
       panel = meetingPanel(meeting, {
         now: now(), leadMinutes: shown?.prep_lead_minutes ?? 120, close: closePanel,
         captured: async key => { state.open = key; requestRailRefresh(); await refresh(); },
+      });
+      page.append(panel);
+      panel.querySelector<HTMLButtonElement>(".calendar-close")?.focus();
+    }
+    function openTaskPanel(task: CalendarTask): void {
+      panel?.remove();
+      state.open = taskKey(task);
+      panel = taskPanel(task, {
+        now: now(), close: closePanel,
+        schedule: async (id, notBefore) => { await schedule(id, notBefore); await refresh(); },
       });
       page.append(panel);
       panel.querySelector<HTMLButtonElement>(".calendar-close")?.focus();
@@ -273,18 +309,22 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
         empty.setAttribute("role", "status");
         parts.push(empty);
       }
-      parts.push(grid(view, state, time, openPanel));
+      parts.push(grid(view, state, time, openPanel, openTaskPanel));
       const legend = element("p", "", "calendar-legend");
       const routines = element("a", "Open Routines");
       routines.href = "#routines";
       legend.append(element("span", "Marks in each day’s margin are routine runs:"), element("span", "will run", "calendar-key"),
         element("span", "paused, skipped", "calendar-key calendar-key--paused"), routines);
       if (view.routines_unavailable) legend.append(element("span", "Some routines could not be read, so their runs are not shown."));
+      if (view.scheduled_unavailable) legend.append(element("span", "Some scheduled to-dos could not be read, so not all of them are shown."));
       parts.push(legend);
       body.replaceChildren(...parts);
       if (state.open !== null) {
         const meeting = view.meetings.find(item => item.key === state.open);
-        if (meeting === undefined) closePanel(); else openPanel(meeting);
+        const task = view.tasks.find(item => taskKey(item) === state.open);
+        if (meeting !== undefined) openPanel(meeting);
+        else if (task !== undefined) openTaskPanel(task);
+        else closePanel();
       }
     }
 

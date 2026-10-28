@@ -2,7 +2,7 @@
 import type {
   AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
-  SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount,
+  SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoScheduled,
 } from "@orbit-office/contracts";
 
 export class ApiError extends Error {
@@ -95,6 +95,11 @@ export function savePrivateRoute(input: PrivateRouteWrite): Promise<PrivateRoute
 /** POST JSON and read the JSON answer, with the same error path as {@link getJson}. */
 export function postJson<T>(path: string, body: unknown): Promise<T> {
   return requestJson<T>(path, body);
+}
+
+/** Set an open to-do's scheduled start (an RFC 3339 instant), or clear it with null. */
+export function scheduleTodo(id: string, notBefore: string | null): Promise<TodoScheduled> {
+  return postJson<TodoScheduled>("/api/todos/schedule", { id, not_before: notBefore });
 }
 
 /** What a Needs-you card shows before the user acts on it. */

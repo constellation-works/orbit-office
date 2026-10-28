@@ -89,6 +89,11 @@ a.calendar-cite { color:var(--accent); }
 .calendar-drop input { position:absolute; width:1px; height:1px; opacity:0; }
 .calendar-drop-choose { color:var(--accent); text-decoration:underline; }
 .calendar-status:empty { display:none; }
+.calendar-task { border-style:dashed; border-left-style:solid; background:var(--bg-elev); }
+.calendar-task[data-tone="neutral"] { border-left-color:var(--accent); }
+.calendar-task-actions { display:flex; flex-direction:column; gap:8px; margin-top:6px; }
+.calendar-task-buttons { display:flex; flex-wrap:wrap; gap:8px; }
+.calendar-open-todos { align-self:flex-start; margin-top:6px; }
 @media (max-width: 820px) {
   .calendar { --gutter:48px; }
   .calendar-days { display:flex; }

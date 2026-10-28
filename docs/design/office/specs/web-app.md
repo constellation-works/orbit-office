@@ -28,7 +28,10 @@ Source: spec §13.1–§13.2 and §13.4.
   (review-only). It runs as a login service (launchd or a systemd user
   unit), so dispatch continues while the browser is closed. A listing Orbit
   does not return in the expected shape fails the pass and submits nothing;
-  it never reads as an empty queue.
+  it never reads as an empty queue. A task whose `not_before` is still in
+  the future is held, not submitted: Orbit would refuse it as
+  `task_scheduled`. It is submitted on the first pass after that time
+  ([calendar.md](./calendar.md#scheduled-tasks)).
 - Live status comes from polling Orbit every few seconds. There is no event bus.
 
 ## Screens
@@ -132,9 +135,10 @@ carries its `approval-actions` (below).
 ### Calendar implementation
 
 Calendar, its server feature and Today's Next meeting card are built
-([ORB-19195]); scheduled-task blocks are [ORB-19216]'s. The shared contracts
-are `CalendarView`, `CalendarMeeting`, `CalendarRoutine`, `CalendarSynced`,
-`MeetingNotes` and `MeetingOutcome` in `app/packages/contracts`.
+([ORB-19195]), and so are the scheduled-task blocks ([ORB-19216]). The shared
+contracts are `CalendarView`, `CalendarMeeting`, `CalendarRoutine`,
+`CalendarTask`, `CalendarSynced`, `MeetingNotes` and `MeetingOutcome` in
+`app/packages/contracts`.
 
 - **`GET /api/calendar?from&until`** takes two RFC 3339 instants at most 42
   days apart (any other parameter is refused) and calls
@@ -147,6 +151,11 @@ are `CalendarView`, `CalendarMeeting`, `CalendarRoutine`, `CalendarSynced`,
   are the shipped set the Routines screen lists (the definition reader now
   lives in `server/src/orbit/definitions.ts`, shared by both features); a
   failed routine read keeps the meetings and sets `routines_unavailable`.
+  Scheduled to-dos come from `orbit.task.list` over the same range
+  (`not_before_from`/`not_before_until`) as `tasks`, each with its title,
+  time, owner, state and last start. A failed, truncated or malformed read
+  keeps the meetings and sets `scheduled_unavailable`
+  ([calendar.md](./calendar.md#scheduled-task-implementation)).
   `prep_lead_minutes` is the configuration default, 120: no tool reads the
   configured value back yet.
 - **`POST /api/calendar/sync`** calls `office.calendar-sync` with `{}`.
@@ -182,6 +191,11 @@ transcript** (paste, pick or drop a file). The states are "Connect your
 calendar" (never synced, linking to Settings), "Last synced HH:MM, the latest
 sync failed" above the last snapshot, and "No meetings this week." "Sync now"
 sits beside the last sync time.
+Scheduled to-dos are dashed 30-minute blocks at their time, with "To-do ·
+HH:MM", their state in words and "For you" or "For an agent". One opens a
+panel with the time, the start, the owner and who starts it, plus
+**Reschedule** and **Clear schedule** until it has started. Both actions go
+through `POST /api/todos/schedule`, and then the week is read again.
 
 The rail lists Calendar under Work between Today and To-dos, with a plain
 count of today's past meetings that have no notes (hidden at zero or on a
@@ -190,7 +204,8 @@ its time and place, and "Prep ready" linking to its panel
 (`?meeting=<key>#calendar`, cleared once read); it rereads every minute and
 is hidden when nothing is left today or the calendar cannot be read.
 `web/test/calendar.browser.mjs` covers the week, the day view, the panel,
-capture and the three states at 1440px and 375px.
+capture, the three states and the scheduled to-dos (blocks, Reschedule,
+Clear and a failed read) at 1440px and 375px.
 
 ### Source implementation
 
@@ -268,6 +283,18 @@ output, or a gateway draft's connection, method, URL, body and digest.
 To-dos are built ([ORB-18728]). `GET /api/todos` lists You and Agents
 columns; each to-do shows its source and attached knowledge, and the user
 can close their own. An agent to-do has no close action.
+
+Each to-do also carries `scheduled` (its `not_before`, or null) and
+`schedulable` (its status is `proposed`, `backlog`, `someday` or `blocked`).
+A scheduled one reads "Scheduled Fri 09:00". A schedulable one offers
+**Schedule…**, or **Reschedule…** and **Clear schedule** once it has a time.
+Schedule… opens the shared picker from `ui/when.ts`. The poll pauses while
+the picker is open, so a reread cannot close it. `POST /api/todos/schedule`
+takes `{id, not_before}` (null clears) and writes it with
+`orbit.task.update`. Its refusals are `invalid_input` (400), `not_found`
+(404), `not_schedulable` (409) and `unavailable` (502).
+`web/test/todos.browser.mjs` covers schedule, reschedule, cancel and clear
+at 1440px and 375px.
 
 ## Look
 
@@ -348,7 +375,7 @@ Spark Open" only when a block is configured.
 - [ORB-18798] — builds the Settings connections and API calls views.
 - [ORB-18841] — builds the Settings private route and the Muse Spark Open attribution.
 - [ORB-19195] — builds the Calendar screen, `/api/calendar*`, the rail entry and Today's Next meeting card.
-- [ORB-19216] — builds scheduled tasks on the calendar.
+- [ORB-19216] — builds scheduled tasks on the calendar, the To-dos Schedule… picker, `POST /api/todos/schedule` and the dispatch pass's wait.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 

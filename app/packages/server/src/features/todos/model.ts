@@ -6,6 +6,10 @@
  *
  * `done` is reachable only from `review`, so closing a to-do walks the
  * legal lifecycle instead of asking Orbit for a jump it will refuse.
+ *
+ * A to-do's scheduled start is Orbit's `not_before`. It can be set or
+ * cleared until something starts the to-do: once it is running or in
+ * review, the time no longer holds anything back.
  */
 import type { TodoItem, TodoList } from "@orbit-office/contracts";
 
@@ -21,6 +25,10 @@ const ACRONYMS = new Set(["api", "pdf", "qbr", "url"]);
 const SOURCE_ID = /^src-\d{8}-(.+)$/;
 const ARTIFACT_ID = /^art-\d{8}-(.+)$/;
 const TASK_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+/** An RFC 3339 instant with an offset, as Orbit's `not_before` takes it. */
+const INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+/** Statuses nothing has started yet, so a scheduled start still holds. */
+const SCHEDULABLE = new Set(["proposed", "backlog", "someday", "blocked"]);
 
 interface ParsedTask {
   id: string;
@@ -31,11 +39,26 @@ interface ParsedTask {
   createdAt: string | null;
   summary: string;
   artifacts: string[];
+  notBefore: string | null;
 }
 
 /** True for an Orbit task id the close route is willing to pass through. */
 export function isTaskId(id: string): boolean {
   return TASK_ID.test(id);
+}
+
+/** True for an RFC 3339 instant with an offset that names a real date and time (no 30 February). */
+export function isInstant(value: string): boolean {
+  const parts = INSTANT.exec(value);
+  if (parts === null || Number.isNaN(Date.parse(value))) return false;
+  const [year, month, day, hour, minute, second] = parts.slice(1, 7).map(Number) as [number, number, number, number, number, number];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day && hour < 24 && minute < 60 && second < 60;
+}
+
+/** True when a to-do in `status` can still take or lose a scheduled start. */
+export function isSchedulable(status: string): boolean {
+  return SCHEDULABLE.has(status);
 }
 
 /**
@@ -92,19 +115,20 @@ export function todoColumns(
   };
 }
 
-/** Fields the close path needs from an `orbit.task.show` payload. */
+/** Fields the close and schedule paths need from an `orbit.task.show` payload. */
 export interface ShownTask {
   id: string;
   status: string;
   tags: readonly string[];
   summary: string;
+  terminal: boolean;
 }
 
-/** Read the fields the close path needs from an `orbit.task.show` payload. */
+/** Read the fields the close and schedule paths need from an `orbit.task.show` payload. */
 export function parseShownTask(row: unknown): ShownTask | null {
   const task = parseTask(row);
   if (task === null) return null;
-  return { id: task.id, status: task.status, tags: task.tags, summary: task.summary };
+  return { id: task.id, status: task.status, tags: task.tags, summary: task.summary, terminal: task.terminal };
 }
 
 function parseTask(row: unknown): ParsedTask | null {
@@ -123,6 +147,7 @@ function parseTask(row: unknown): ParsedTask | null {
     createdAt: typeof record.created_at === "string" ? record.created_at : null,
     summary: typeof record.execution_summary === "string" ? record.execution_summary : "",
     artifacts: artifactPaths(record.artifacts),
+    notBefore: typeof record.not_before === "string" && !Number.isNaN(Date.parse(record.not_before)) ? record.not_before : null,
   };
 }
 
@@ -166,6 +191,8 @@ function toItem(task: ParsedTask, closable: boolean): TodoItem {
     source: sourceLabel(task),
     knowledge: knowledgeLabels(task),
     closable,
+    scheduled: task.notBefore,
+    schedulable: isSchedulable(task.status),
   };
 }
 

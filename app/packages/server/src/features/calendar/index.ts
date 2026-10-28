@@ -1,7 +1,8 @@
 /**
  * The Calendar screen's data: the read-only meeting snapshot beside the
- * routines that run, "Sync now", and notes or a transcript captured from one
- * meeting (docs/design/office/specs/calendar.md, "App"). Every read and write
+ * routines that run and the to-dos scheduled for a time, "Sync now", and
+ * notes or a transcript captured from one meeting
+ * (docs/design/office/specs/calendar.md, "App"). Every read and write
  * goes through Office and Orbit tools; uploads are staged the way Source
  * stages them, inside the workspace, owner-only, and removed after capture.
  */
@@ -10,7 +11,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
 import type {
-  CalendarAttendee, CalendarMeeting, CalendarRoutine, CalendarSynced, CalendarView, CapturedSource, MeetingOutcome,
+  CalendarAttendee, CalendarMeeting, CalendarRoutine, CalendarSynced, CalendarTask, CalendarTaskState, CalendarView, CapturedSource,
+  MeetingOutcome,
 } from "@orbit-office/contracts";
 
 import type { Feature, Route } from "../../http/types.js";
@@ -131,6 +133,44 @@ function meeting(value: unknown): CalendarMeeting {
   };
 }
 
+/** Orbit statuses as a scheduled task's state; rejected and archived ones leave the calendar. */
+const TASK_STATES: Readonly<Record<string, CalendarTaskState>> = {
+  proposed: "not_approved", someday: "not_approved", backlog: "scheduled", blocked: "scheduled",
+  "in-progress": "running", review: "review", done: "done",
+};
+/** The fields a scheduled block needs; `history` carries when it started. */
+const TASK_FIELDS = ["id", "title", "status", "tags", "not_before", "history"];
+/** More scheduled to-dos than this in one range reads as `scheduled_unavailable`. */
+const MAX_TASKS = 200;
+
+/** When the task last started: its latest move into `in_progress` in its history. */
+function startedAt(history: unknown): string | null {
+  if (!Array.isArray(history)) return null;
+  let at: string | null = null;
+  for (const entry of history) {
+    if (!isRow(entry) || typeof entry.at !== "string" || Number.isNaN(Date.parse(entry.at))) continue;
+    if (entry.event === "started" || entry.to_status === "in_progress" || entry.to_status === "in-progress") at = entry.at;
+  }
+  return at;
+}
+
+/**
+ * One `orbit.task.list` row as a scheduled block, or null for a row the
+ * calendar leaves out: not a to-do, settled without being done, or at the
+ * range's end (Orbit's bounds are inclusive, the calendar's end is not).
+ */
+function scheduledTask(value: unknown, until: string): CalendarTask | null {
+  const task = row(value);
+  const id = text(task.id); const status = text(task.status); const notBefore = text(task.not_before);
+  if (Number.isNaN(Date.parse(notBefore))) throw new Refusal(502, "invalid_output");
+  const tags = Array.isArray(task.tags) ? task.tags : [];
+  const owner = tags.includes("owner:you") ? "you" : tags.includes("owner:agent") ? "agent" : null;
+  const state = TASK_STATES[status];
+  if (owner === null || state === undefined || Date.parse(notBefore) >= Date.parse(until)) return null;
+  const title = typeof task.title === "string" && task.title.trim() !== "" ? task.title.trim() : "Untitled to-do";
+  return { id, title, not_before: notBefore, owner, state, started_at: startedAt(task.history) };
+}
+
 function firedAt(value: unknown): string | null {
   if (!isRow(value) || typeof value.at !== "string") return null;
   if (value.kind !== undefined && value.kind !== "fired") return null;
@@ -191,6 +231,28 @@ export function createCalendarFeature(options: CalendarOptions): Feature {
       }
     } else unavailable = true;
     return { routines: result, unavailable };
+  }
+
+  /**
+   * To-dos scheduled in the range, through `orbit.task.list`'s `not_before`
+   * range. A failed or partial read keeps the meetings and says so.
+   */
+  async function scheduled(from: string, until: string): Promise<{ tasks: CalendarTask[]; unavailable: boolean }> {
+    let value: unknown;
+    try {
+      value = await client.callTool("orbit.task.list", { not_before_from: from, not_before_until: until, fields: TASK_FIELDS, limit: MAX_TASKS });
+    } catch { return { tasks: [], unavailable: true }; }
+    const list = Array.isArray(value) ? { tasks: value, truncated: false } : isRow(value) ? value : null;
+    if (list === null || !Array.isArray(list.tasks)) return { tasks: [], unavailable: true };
+    let unavailable = list.truncated === true;
+    const tasks: CalendarTask[] = [];
+    for (const entry of list.tasks) {
+      try {
+        const task = scheduledTask(entry, until);
+        if (task !== null) tasks.push(task);
+      } catch { unavailable = true; }
+    }
+    return { tasks: tasks.sort((a, b) => Date.parse(a.not_before) - Date.parse(b.not_before)), unavailable };
   }
 
   async function capture(input: Row): Promise<CapturedSource> {
@@ -256,11 +318,12 @@ export function createCalendarFeature(options: CalendarOptions): Feature {
       const from = instant(params.get("from")); const until = instant(params.get("until"));
       const span = Date.parse(until) - Date.parse(from);
       if (span <= 0 || span > MAX_RANGE_MS) throw new Refusal(400, "invalid_input");
-      const [listing, schedule] = await Promise.all([
+      const [listing, schedule, tasks] = await Promise.all([
         call("office.calendar-list", { from, until, include_cancelled: true }).catch((error: unknown) => {
           throw error instanceof Refusal && error.status === 409 ? new Refusal(502, "calendar_unavailable") : error;
         }),
         routines(),
+        scheduled(from, until),
       ]);
       if (!Array.isArray(listing.events)) throw new Refusal(502, "invalid_output");
       const synced = listing.synced_at === null ? null : text(listing.synced_at);
@@ -269,6 +332,7 @@ export function createCalendarFeature(options: CalendarOptions): Feature {
         from, until, synced_at: synced, sync_failed: listing.last_error !== null, prep_lead_minutes: options.prepLeadMinutes ?? 120,
         meetings: listing.events.map(meeting).sort((a, b) => Date.parse(a.start) - Date.parse(b.start)),
         routines: schedule.routines, routines_unavailable: schedule.unavailable,
+        tasks: tasks.tasks, scheduled_unavailable: tasks.unavailable,
       };
       reply(response, 200, view);
     }),

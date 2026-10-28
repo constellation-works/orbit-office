@@ -217,6 +217,10 @@ export interface TodoItem {
   knowledge: string[];
   /** True only for the user's own to-dos, which offer a close action. */
   closable: boolean;
+  /** The scheduled start (`not_before`, RFC 3339), or null when it has none. */
+  scheduled: string | null;
+  /** True while nothing has started it, so **Schedule…** can set or clear the time. */
+  schedulable: boolean;
 }
 
 /** `GET /api/todos`: the You and Agents columns. */
@@ -226,6 +230,17 @@ export interface TodoList {
   /** True when Orbit had more matching to-dos than this list includes. */
   more: boolean;
 }
+
+/**
+ * `POST /api/todos/schedule`: set an open to-do's scheduled start, or clear
+ * it with null. Answers {@link TodoScheduled}.
+ */
+export interface TodoScheduleRequest {
+  id: string;
+  /** An RFC 3339 instant with an offset, or null to clear the schedule. */
+  not_before: string | null;
+}
+export interface TodoScheduled { ok: true; scheduled: string | null }
 
 /** Generated review bodies returned by GET /api/review. */
 export interface ReviewItem {
@@ -399,6 +414,26 @@ export interface CalendarRoutine {
   last_fired_at: string | null;
 }
 
+/**
+ * Where a scheduled task stands, read from its Orbit status: `not_approved`
+ * is still proposed (or parked), `scheduled` is waiting for its time.
+ */
+export type CalendarTaskState = "not_approved" | "scheduled" | "running" | "review" | "done";
+
+/** A to-do with a scheduled start in the range, from `orbit.task.list`'s `not_before` range. */
+export interface CalendarTask {
+  /** Used only to reschedule or clear it. The screen must not render it. */
+  id: string;
+  title: string;
+  /** The scheduled start, RFC 3339. */
+  not_before: string;
+  /** `you` is never dispatched; `agent` is shipped by the dispatch pass once the time comes. */
+  owner: "you" | "agent";
+  state: CalendarTaskState;
+  /** When it last started, from its history, or null while it has not. */
+  started_at: string | null;
+}
+
 /** `GET /api/calendar?from&until`: meetings in the range and the routines that run. */
 export interface CalendarView {
   from: string;
@@ -413,6 +448,10 @@ export interface CalendarView {
   routines: CalendarRoutine[];
   /** Scheduled routines this connection may not read; auto-tasks are still listed. */
   routines_unavailable: boolean;
+  /** To-dos whose scheduled start falls in the range, by start. */
+  tasks: CalendarTask[];
+  /** True when the scheduled to-dos could not all be read; the meetings still show. */
+  scheduled_unavailable: boolean;
 }
 
 /** `POST /api/calendar/sync`: how many meetings the snapshot now holds. */

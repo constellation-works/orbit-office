@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { screen } from '../dist/screens/calendar/index.js';
-import { dayRuns, hourRange, meetingState, meetingsWithoutNotes, placeDay, stateWords, weekStart } from '../dist/screens/calendar/model.js';
+import {
+  dayRuns, hourRange, meetingState, meetingsWithoutNotes, placeDay, stateWords, taskSlot, taskState, taskWords, weekStart,
+} from '../dist/screens/calendar/model.js';
 import { upcoming } from '../dist/screens/today/next-meeting.js';
 import { navigableScreens } from '../dist/router.js';
 
@@ -59,7 +61,32 @@ test('hours always show 08:00–18:00, widen to the meetings, and overlaps sit s
   assert.deepEqual(hourRange([], days), { first: 8, last: 18 });
   assert.deepEqual(hourRange([meeting('Early', at(26, 7, 30), at(26, 8)), meeting('Late', at(27, 18), at(27, 19, 15))], days), { first: 7, last: 20 });
   const placed = placeDay([meeting('A', at(29, 13), at(29, 14)), meeting('B', at(29, 13, 30), at(29, 14, 30)), meeting('C', at(29, 15), at(29, 16))], at(29, 0));
-  assert.deepEqual(placed.map(p => [p.meeting.title, p.lane, p.lanes]), [['A', 0, 2], ['B', 1, 2], ['C', 0, 1]]);
+  assert.deepEqual(placed.map(p => [p.item.title, p.lane, p.lanes]), [['A', 0, 2], ['B', 1, 2], ['C', 0, 1]]);
+});
+
+function task(title, notBefore, state, extra = {}) {
+  return { id: `T-${title}`, title, not_before: notBefore.toISOString(), owner: 'agent', state, started_at: null, ...extra };
+}
+
+test('scheduled to-dos read their state in words, a late start by its time', () => {
+  const words = item => taskWords(item).join(' · ');
+  assert.equal(words(task('Numbers', at(30, 9), 'scheduled')), 'Scheduled · For an agent');
+  assert.equal(words(task('Renewal', at(29, 10), 'not_approved')), 'Not approved · For an agent');
+  assert.equal(words(task('Venue', at(29, 15), 'scheduled', { owner: 'you' })), 'Scheduled · For you');
+  assert.equal(words(task('Board', at(28, 11), 'running', { started_at: at(28, 11, 1).toISOString() })), 'Running · For an agent', 'a minute after the time is on time');
+  assert.equal(words(task('Pricing', at(28, 9), 'running', { started_at: at(28, 9, 42).toISOString() })), 'Started 09:42 · For an agent');
+  assert.equal(words(task('Expenses', at(27, 8), 'done', { started_at: at(27, 8, 0).toISOString() })), 'Done · For an agent');
+  assert.equal(words(task('Late done', at(27, 8), 'done', { started_at: at(27, 9, 15).toISOString() })), 'Done · Started 09:15 · For an agent');
+  assert.equal(words(task('Review', at(27, 8), 'review')), 'Ready for review · For an agent');
+  assert.equal(taskState(task('Renewal', at(29, 10), 'not_approved')).tone, 'attention');
+});
+
+test('a scheduled to-do sits at its time beside the meetings, widening the hours when it must', () => {
+  const early = taskSlot(task('Early', at(28, 6, 30), 'scheduled'));
+  assert.equal(Date.parse(early.end) - Date.parse(early.start), 30 * 60_000);
+  assert.deepEqual(hourRange([early], [at(28, 0)]), { first: 6, last: 18 });
+  const placed = placeDay([meeting('Design', at(28, 9), at(28, 9, 45)), taskSlot(task('Pricing', at(28, 9), 'running'))], at(28, 0));
+  assert.deepEqual(placed.map(p => ['task' in p.item ? p.item.task.title : p.item.title, p.lane, p.lanes]), [['Design', 0, 2], ['Pricing', 1, 2]]);
 });
 
 test('routine runs come from the shared schedule reader: marks, bands for frequent ones, none for events', () => {

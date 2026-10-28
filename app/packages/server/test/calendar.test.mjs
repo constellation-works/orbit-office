@@ -63,6 +63,57 @@ test('a populated range lists meetings with linked attendees and the shipped rou
   assert.ok(f.calls.some(c => c.name === 'orbit.auto_task.list'));
 });
 
+test('scheduled to-dos in the range come from orbit.task.list with the not_before range, with their state and start', async t => {
+  const f = await serve(t);
+  const { status, body } = await f.get(week);
+  assert.equal(status, 200);
+  const read = f.calls.find(c => c.name === 'orbit.task.list' && c.input.not_before_from !== undefined);
+  assert.deepEqual(read.input, { not_before_from: weekStart, not_before_until: weekEnd, fields: ['id', 'title', 'status', 'tags', 'not_before', 'history'], limit: 200 });
+  assert.deepEqual(body.tasks.map(task => [task.title, task.state, task.owner, task.started_at]), [
+    ['File the expense report', 'done', 'agent', '2026-10-27T08:00:20Z'],
+    ['Refresh the pricing sheet', 'running', 'agent', '2026-10-28T09:42:10Z'],
+    ['Prepare the board pack', 'running', 'agent', '2026-10-28T11:00:40Z'],
+    ['Draft the renewal summary', 'not_approved', 'agent', null],
+    ['Call the venue', 'scheduled', 'you', null],
+    ['Send the weekly numbers', 'scheduled', 'agent', null],
+  ], 'sorted by time; rejected tasks, tasks that are not to-dos and next week are left out');
+  assert.equal(body.tasks.find(task => task.title === 'Call the venue').not_before, '2026-10-29T15:00:00Z');
+  assert.equal(body.scheduled_unavailable, false);
+});
+
+test('a to-do scheduled at the very end of the range belongs to the next one', async t => {
+  const f = await serve(t, { tasks: [{ id: 'EDGE-1', title: 'Monday first thing', status: 'backlog', tags: ['owner:agent'], not_before: weekEnd, history: [] }] });
+  const { body } = await f.get(week);
+  assert.deepEqual(body.tasks, []);
+  assert.equal(body.scheduled_unavailable, false);
+});
+
+test('an Orbit that cannot read the not_before range keeps the meetings and says the scheduled to-dos are missing', async t => {
+  const f = await serve(t, { scheduledDenied: true });
+  const { status, body } = await f.get(week);
+  assert.equal(status, 200);
+  assert.equal(body.meetings.length, 9);
+  assert.deepEqual(body.tasks, []);
+  assert.equal(body.scheduled_unavailable, true);
+});
+
+test('a malformed scheduled row is dropped and reported, never guessed at', async t => {
+  const f = await serve(t, { tasks: [
+    { id: 'BAD-1', title: 'No time', status: 'backlog', tags: ['owner:agent'], not_before: '2026-10-29T08:00:00Z', history: [] },
+    { id: 'OK-1', title: 'Fine', status: 'backlog', tags: ['owner:you'], not_before: '2026-10-29T09:00:00Z', history: [] },
+  ] });
+  // The first row comes back from the range read with a time no one can read.
+  const original = f.client.callTool;
+  f.client.callTool = async (name, input) => {
+    const value = await original(name, input);
+    if (name === 'orbit.task.list' && input.not_before_from !== undefined) value.tasks[0].not_before = 'Friday';
+    return value;
+  };
+  const { body } = await f.get(week);
+  assert.deepEqual(body.tasks.map(task => task.title), ['Fine']);
+  assert.equal(body.scheduled_unavailable, true);
+});
+
 test('a never-synced snapshot reads synced_at null, distinct from a synced empty week', async t => {
   const never = await serve(t, { synced_at: null, events: [] });
   const first = await never.get(week);

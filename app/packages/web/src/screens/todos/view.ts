@@ -1,15 +1,31 @@
 /**
  * Draw the To-dos screen. Visible text is plain words: the task id stays
- * in the close handler and is never written into the page.
+ * in the close and schedule handlers and is never written into the page.
  */
 import type { TodoItem, TodoList } from "@orbit-office/contracts";
 
 import { card, emptyState, provenanceLink } from "../../ui/index.js";
+import { pickerStyles, scheduledWords, schedulePicker } from "../../ui/when.js";
 
 export interface TodoDrawOptions {
   /** Kept attached so a poll can tell that the screen is still showing. */
   marker?: HTMLElement;
   onClose?: (id: string) => void;
+  /** Set a scheduled start (an RFC 3339 instant) or clear it with null. Without it, no schedule actions show. */
+  onSchedule?: (id: string, notBefore: string | null) => Promise<void>;
+  /** The to-do whose picker is open, or null. */
+  editing?: string | null;
+  /** Open the picker on a to-do, or close it with null. */
+  onEdit?: (id: string | null) => void;
+  /** The clock scheduled times are read against. Default now. */
+  now?: Date;
+}
+
+interface ScheduleActions {
+  onSchedule: (id: string, notBefore: string | null) => Promise<void>;
+  onEdit: (id: string | null) => void;
+  editing: string | null;
+  now: Date;
 }
 
 const STYLE = `
@@ -33,6 +49,10 @@ const STYLE = `
 .todos-column .primary-action { min-height: 36px; font-size: 13px; }
 .todos-more { margin-top: 20px; }
 .todos-marker { display: none; }
+.todos-schedule { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.card-content p.todos-when { margin: 0; font-size: 12px; padding: 3px 7px; border-radius: 4px; background: var(--highlight-bg); color: var(--fg); }
+.todos-schedule-action { min-height: 32px; padding: 4px 10px; font-size: 12px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--fg); cursor: pointer; }
+.todos-schedule-action:hover { background: var(--bg-hover); }
 @media (max-width: 720px) {
   .todos-columns { grid-template-columns: minmax(0, 1fr); }
 }
@@ -51,7 +71,10 @@ export function modelFromPayload(payload: unknown): TodoList | null {
 /** Draw the two columns into `root`. */
 export function drawTodoScreen(root: HTMLElement, model: TodoList, options: TodoDrawOptions = {}): void {
   const style = document.createElement("style");
-  style.textContent = STYLE;
+  style.textContent = STYLE + pickerStyles;
+  const schedule: ScheduleActions | undefined = options.onSchedule === undefined || options.onEdit === undefined
+    ? undefined
+    : { onSchedule: options.onSchedule, onEdit: options.onEdit, editing: options.editing ?? null, now: options.now ?? new Date() };
 
   const page = document.createElement("section");
   page.className = "todos";
@@ -63,8 +86,8 @@ export function drawTodoScreen(root: HTMLElement, model: TodoList, options: Todo
   const columns = document.createElement("div");
   columns.className = "todos-columns";
   columns.append(
-    column("you", "You", "Close these when you are finished.", model.you, options.onClose),
-    column("agents", "Agents", "These stay with the agents.", model.agents, options.onClose),
+    column("you", "You", "Close these when you are finished.", model.you, options.onClose, schedule),
+    column("agents", "Agents", "These stay with the agents.", model.agents, options.onClose, schedule),
   );
   page.append(heading, intro, columns);
   if (model.more) {
@@ -86,6 +109,7 @@ function column(
   lede: string,
   items: readonly TodoItem[],
   onClose: ((id: string) => void) | undefined,
+  schedule: ScheduleActions | undefined,
 ): HTMLElement {
   const section = document.createElement("section");
   section.className = `todos-column todos-column--${kind}`;
@@ -103,14 +127,20 @@ function column(
     section.append(empty);
     return section;
   }
-  for (const item of items) section.append(todoCard(item, onClose));
+  for (const item of items) section.append(todoCard(item, onClose, schedule));
   return section;
 }
 
-function todoCard(item: TodoItem, onClose: ((id: string) => void) | undefined): HTMLElement {
+function todoCard(
+  item: TodoItem,
+  onClose: ((id: string) => void) | undefined,
+  schedule: ScheduleActions | undefined,
+): HTMLElement {
   const content = document.createElement("div");
   content.className = "card-content";
   content.append(sourceBlock(item.source), knowledgeBlock(item.knowledge));
+  const when = scheduleBlock(item, schedule);
+  if (when !== null) content.append(when);
   const action = item.closable && onClose !== undefined ? closeButton(item.id, onClose) : undefined;
   return action === undefined ? card(item.title, content) : card(item.title, content, action);
 }
@@ -155,6 +185,57 @@ function knowledgeBlock(knowledge: readonly string[]): HTMLElement {
   return block;
 }
 
+/**
+ * The scheduled time in words, and **Schedule…** (or **Reschedule…** and
+ * **Clear schedule**) while nothing has started the to-do. The open picker
+ * takes the actions' place.
+ */
+function scheduleBlock(item: TodoItem, schedule: ScheduleActions | undefined): HTMLElement | null {
+  const now = schedule?.now ?? new Date();
+  const canSchedule = schedule !== undefined && item.schedulable;
+  if (item.scheduled === null && !canSchedule) return null;
+  const block = document.createElement("section");
+  block.className = "todos-schedule";
+  block.setAttribute("aria-label", "Schedule");
+  if (item.scheduled !== null) {
+    const words = document.createElement("p");
+    words.className = "todos-when";
+    words.textContent = scheduledWords(item.scheduled, now);
+    block.append(words);
+  }
+  if (!canSchedule) return block;
+  if (schedule.editing === item.id) {
+    block.append(schedulePicker({
+      initial: item.scheduled,
+      now,
+      save: (instant) => schedule.onSchedule(item.id, instant),
+      cancel: () => schedule.onEdit(null),
+      failed: () => "The time could not be saved. Try again in a moment.",
+    }));
+    return block;
+  }
+  block.append(scheduleButton(item.scheduled === null ? "Schedule…" : "Reschedule…", () => schedule.onEdit(item.id)));
+  if (item.scheduled !== null) {
+    const clear = scheduleButton("Clear schedule", () => {
+      if (clear.disabled) return;
+      clear.disabled = true;
+      clear.textContent = "Clearing";
+      void schedule.onSchedule(item.id, null).catch(() => undefined);
+    });
+    block.append(clear);
+  }
+  return block;
+}
+
+function scheduleButton(label: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "todos-schedule-action";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
 function closeButton(id: string, onClose: (id: string) => void): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
@@ -182,6 +263,10 @@ function itemsFrom(value: unknown): TodoItem[] | null {
     if (!Array.isArray(record.knowledge) || record.knowledge.some((entry) => typeof entry !== "string")) {
       return null;
     }
+    if (record.scheduled !== null && (typeof record.scheduled !== "string" || Number.isNaN(Date.parse(record.scheduled)))) {
+      return null;
+    }
+    if (typeof record.schedulable !== "boolean") return null;
     const knowledge: string[] = [];
     for (const entry of record.knowledge) {
       if (typeof entry === "string") knowledge.push(entry);
@@ -192,6 +277,8 @@ function itemsFrom(value: unknown): TodoItem[] | null {
       source: typeof record.source === "string" ? record.source : null,
       knowledge,
       closable: record.closable,
+      scheduled: typeof record.scheduled === "string" ? record.scheduled : null,
+      schedulable: record.schedulable,
     });
   }
   return items;

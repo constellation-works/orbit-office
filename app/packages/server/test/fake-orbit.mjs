@@ -7,7 +7,9 @@
  * `orbit.task.list`, `orbit.task.show` and `orbit.task.update` from
  * `<state>/tasks.json` when present (updates are written back), artifacts from
  * `<state>/artifacts.json` (`{task: {path: text}}`), and records `orbit run
- * ship` ids in `<state>/ship.log`. Behaviour knobs arrive through the
+ * ship` ids in `<state>/ship.log`. Like Orbit, ship refuses a task whose
+ * `not_before` is after `FAKE_ORBIT_NOW` (default the real clock) as
+ * `task_scheduled` and ships nothing. Behaviour knobs arrive through the
  * environment the client is given: `FAKE_ORBIT_STATE`, plus per-call
  * `delayMs` / `hang` / `fail` fields in the tool input.
  */
@@ -113,6 +115,7 @@ async function main() {
         if (tool === "orbit.task.update") {
           if (typeof input.status === "string") task.status = input.status;
           if (typeof input.execution_summary === "string") task.execution_summary = input.execution_summary;
+          if (typeof input.not_before === "string") task.not_before = input.not_before === "" ? null : input.not_before;
           if (typeof input.comment === "string") task.comments = [...(task.comments ?? []), input.comment];
           writeFileSync(join(state, "tasks.json"), JSON.stringify(tasks));
         }
@@ -247,6 +250,18 @@ process.stdout.write(JSON.stringify({ ok: true, tool, input }) + "\\n");
   if (args[0] === "run" && args[1] === "ship") {
     const shipDelay = Number(process.env.FAKE_ORBIT_SHIP_DELAY_MS ?? 0);
     if (shipDelay > 0) await sleep(shipDelay);
+    let stored = [];
+    try { stored = JSON.parse(readFileSync(join(state, "tasks.json"), "utf8")); } catch {}
+    const now = Date.parse(process.env.FAKE_ORBIT_NOW ?? new Date().toISOString());
+    const held = args.slice(2).find((id) => {
+      const task = Array.isArray(stored) ? stored.find((row) => row.id === id) : undefined;
+      return typeof task?.not_before === "string" && Date.parse(task.not_before) > now;
+    });
+    if (held !== undefined) {
+      process.stderr.write(JSON.stringify({ error: "task " + held + " is scheduled for later", code: "task_scheduled" }) + "\\n");
+      process.exitCode = 1;
+      return;
+    }
     appendFileSync(join(state, "ship.log"), JSON.stringify(args.slice(2)) + "\\n");
     process.stdout.write("shipped\\n");
     return;
