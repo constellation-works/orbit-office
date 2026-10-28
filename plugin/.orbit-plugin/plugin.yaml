@@ -166,6 +166,15 @@ spec:
       input_schema: { $ref: schemas/source-set-sensitivity.request.json }
       output_schema: { $ref: schemas/source-set-sensitivity.response.json }
 
+    # ---- sharing ----
+
+    - name: share-set
+      description: Set or clear explicit sharing approval on a Library document; private documents and unshared own citations are refused.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/share-set.request.json }
+      output_schema: { $ref: schemas/share-set.response.json }
+
     # ---- knowledge ----
 
     - name: knowledge-list

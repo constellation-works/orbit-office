@@ -751,6 +751,8 @@ pub struct SourceMeta {
     pub title: String,
     /// Documented item: sensitivity.
     pub sensitivity: String,
+    /// Sharing approval (absent means false).
+    pub shareable: bool,
     /// Documented item: sha256.
     pub sha256: Option<String>,
     /// Documented item: bytes.
@@ -819,6 +821,7 @@ pub fn parse_source_participants(text: &str) -> Result<Vec<String>> {
 #[must_use]
 pub fn parse_source_meta(text: &str) -> SourceMeta {
     let mut meta = SourceMeta {
+        shareable: crate::domain::sharing::shareable(text).unwrap_or(false),
         version: 1,
         ..SourceMeta::default()
     };

@@ -124,6 +124,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "shareable": {
+          "type": "boolean",
+          "description": "Sharing approval; absent on older Library files means false."
         }
       },
       "required": [
@@ -140,7 +144,8 @@
         "version",
         "supersedes",
         "sensitivity",
-        "tags"
+        "tags",
+        "shareable"
       ],
       "additionalProperties": false
     },
@@ -260,18 +265,38 @@
           "items": {
             "type": "object",
             "properties": {
-              "commit": { "type": "string" },
-              "time": { "type": "string", "format": "date-time" },
-              "summary": { "type": "string" }
+              "commit": {
+                "type": "string"
+              },
+              "time": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "summary": {
+                "type": "string"
+              }
             },
-            "required": ["commit", "time", "summary"],
+            "required": [
+              "commit",
+              "time",
+              "summary"
+            ],
             "additionalProperties": false
           }
         },
-        "total": { "type": "integer", "minimum": 0 },
-        "truncated": { "type": "boolean" }
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
       },
-      "required": ["revisions", "total", "truncated"],
+      "required": [
+        "revisions",
+        "total",
+        "truncated"
+      ],
       "additionalProperties": false
     }
   },

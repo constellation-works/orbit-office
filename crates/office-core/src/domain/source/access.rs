@@ -234,9 +234,15 @@ pub fn with_sensitivity(markdown: &str, sensitivity: &str) -> Result<String> {
             "sensitivity cannot change from private to normal",
         ));
     }
+    let markdown = if sensitivity == "private" {
+        crate::domain::sharing::with_shareable(markdown, false)?
+    } else {
+        markdown.to_string()
+    };
     if current == sensitivity {
-        return Ok(markdown.to_string());
+        return Ok(markdown);
     }
+    let markdown = markdown.as_str();
     // split has validated the delimiters and parse has refused duplicate keys.
     let (header, _) = frontmatter::split(markdown)?;
     let next = if old.is_some() {

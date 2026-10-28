@@ -1,0 +1,39 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: share_set_refuses_missing_document
+    tool: share-set
+    input: {"id":"src-missing-sharing-fixture","shareable":true}
+    expect:
+      error: {"code":"document_not_found"}
+  - name: share_set_refuses_unknown_field
+    tool: share-set
+    input: {"id":"src-missing-sharing-fixture","shareable":true,"override":true}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: share_set_refuses_non_boolean
+    tool: share-set
+    input: {"id":"src-missing-sharing-fixture","shareable":"true"}
+    expect:
+      error: {"code":"invalid_argument"}
+  # knowledge-show.yaml seeded these two pages. Leave approval cleared.
+  - name: share_set_refuses_an_unshared_own_page_citation
+    tool: share-set
+    input: {"id":"dom-client-acme","shareable":true}
+    expect:
+      error: {"code":"share_cites_unshared"}
+  - name: share_set_approves_a_page
+    tool: share-set
+    input: {"id":"dom-user","shareable":true}
+    expect:
+      output: {"id":"dom-user","path":"knowledge/domain/dom-user.md","shareable":true}
+  - name: share_set_repeat_is_a_noop
+    tool: share-set
+    input: {"id":"dom-user","shareable":true}
+    expect:
+      output: {"id":"dom-user","path":"knowledge/domain/dom-user.md","shareable":true}
+  - name: share_set_clears_approval
+    tool: share-set
+    input: {"id":"dom-user","shareable":false}
+    expect:
+      output: {"id":"dom-user","path":"knowledge/domain/dom-user.md","shareable":false}

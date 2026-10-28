@@ -290,6 +290,7 @@ fn proposal_script_dependencies_are_prepared_before_any_automation_mutation() {
         let (mut ports, orbit) = fixture();
         let artifact = Artifact::approved(
             ArtifactManifest {
+                shareable: false,
                 event_key: None,
                 kind: ArtifactKind::Script,
                 title: "Script".into(),
@@ -534,4 +535,113 @@ fn proposal_accept_requires_the_exact_reviewed_payload_digest() {
 
 fn approval(payload: &Value) -> Value {
     json!({"id":"proposal-fixture","sha256":office_core::domain::source::sha256_hex(payload.to_string().as_bytes())})
+}
+
+#[test]
+fn shareable_knowledge_proposals_recheck_approval_at_acceptance() {
+    use std::path::Path;
+    for kind in ["knowledge_add", "knowledge_update"] {
+        for approved in [true, false] {
+            let (ports, orbit) = fixture();
+            let source = "---\nid: src-proof\ntitle: Proof\n---\nLine one.\n";
+            ports
+                .library
+                .write_document(Path::new("sources/2026/10/src-proof/source.md"), source)
+                .unwrap();
+            if approved {
+                ports.library.set_shareable("src-proof", true).unwrap();
+            }
+            let markdown = "---\nid: dom-approved\ntitle: Approved\ncites: [src-proof#L1]\n---\nKnowledge [src-proof#L1].\n";
+            let mut payload = json!({"kind":kind,"markdown":markdown,"shareable":true});
+            if kind == "knowledge_update" {
+                let original = "---\nid: dom-approved\ntitle: Original\n---\nOriginal.\n";
+                ports
+                    .library
+                    .write_document(Path::new("knowledge/domain/dom-approved.md"), original)
+                    .unwrap();
+                payload["base_sha256"] =
+                    json!(office_core::domain::source::sha256_hex(original.as_bytes()));
+            }
+            let head = ports.library.head_commit().unwrap();
+            accept_replies(&orbit, &payload);
+            if approved {
+                reserve(&orbit);
+                close(&orbit);
+            }
+            let response = call(&ports, "office.proposal-accept", approval(&payload));
+            if approved {
+                assert_eq!(response["ok"], true, "{response}");
+                assert!(
+                    ports
+                        .library
+                        .get("dom-approved")
+                        .unwrap()
+                        .unwrap()
+                        .shareable
+                );
+                assert_eq!(
+                    ports
+                        .library
+                        .read_text(Path::new("knowledge/domain/dom-approved.md"))
+                        .unwrap(),
+                    office_core::domain::sharing::with_shareable(markdown, true).unwrap()
+                );
+            } else {
+                assert_eq!(
+                    response["error"]["code"], "share_cites_unshared",
+                    "{response}"
+                );
+                assert_eq!(ports.library.head_commit().unwrap(), head);
+                assert_eq!(orbit.calls().len(), 2, "no reservation on refusal");
+            }
+        }
+    }
+}
+
+#[test]
+fn proposal_draft_materializes_shareable_true_in_the_reviewed_markdown() {
+    let (ports, orbit) = fixture();
+    orbit.push_response(Ok(json!({"tasks":[],"truncated":false})));
+    orbit.push_response(Ok(json!({"id":"proposal-fixture","status":"proposed"})));
+    orbit.push_response(Ok(json!({})));
+    let response = call(
+        &ports,
+        "office.proposal-create",
+        json!({
+            "title":"Shared page", "description":"Approve sharing", "evidence":["task-evidence"],
+            "payload":{"kind":"knowledge_add","page":{"id":"dom-shared-draft","title":"Shared draft","body":"Approved knowledge.","shareable":true}}
+        }),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    let text = ports
+        .library
+        .read_text(std::path::Path::new("proposals/proposal-fixture.md"))
+        .unwrap();
+    let payload = text
+        .split("```json\n")
+        .nth(1)
+        .unwrap()
+        .split("\n```")
+        .next()
+        .unwrap();
+    let payload: Value = serde_json::from_str(payload).unwrap();
+    let markdown = payload["markdown"].as_str().unwrap();
+    assert!(
+        office_core::domain::knowledge::Page::from_markdown(markdown)
+            .unwrap()
+            .shareable
+    );
+    accept_replies(&orbit, &payload);
+    reserve(&orbit);
+    close(&orbit);
+    let response = call(&ports, "office.proposal-accept", approval(&payload));
+    assert_eq!(response["ok"], true, "{response}");
+    assert!(
+        ports
+            .library
+            .get("dom-shared-draft")
+            .unwrap()
+            .unwrap()
+            .shareable
+    );
 }

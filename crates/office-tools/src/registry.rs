@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 
 use crate::tools::{
     artifacts, bootstrap, calendar, insights, knowledge, library, proposals, scripts, selection,
-    sessions, sources, status,
+    sessions, sharing, sources, status,
 };
 
 /// What a handler receives: the tool's validated input and Orbit's call context.
@@ -95,6 +95,7 @@ static TOOLS: &[Tool] = &[
     sources::extract::TOOL,
     sources::show::TOOL,
     sources::set_sensitivity::TOOL,
+    sharing::share_set::TOOL,
     // knowledge (specs/library.md)
     knowledge::list::TOOL,
     knowledge::show::TOOL,

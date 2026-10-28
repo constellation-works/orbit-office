@@ -193,6 +193,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         }
         let at = format_rfc3339_utc(call.ports.clock.now());
         let manifest = ArtifactManifest {
+            shareable: false,
             kind: ArtifactKind::Report,
             title: format!("Meeting prep {}", clean(&event.title, &contacts)),
             summary: String::new(),

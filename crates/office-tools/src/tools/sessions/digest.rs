@@ -209,6 +209,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
     }
     let at = format_rfc3339_utc(call.ports.clock.now());
     let manifest = ArtifactManifest {
+        shareable: false,
         event_key: None,
         kind: ArtifactKind::Report,
         title: format!("Daily digest {day}"),

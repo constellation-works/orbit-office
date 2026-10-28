@@ -11,6 +11,7 @@ pub(crate) mod proposals;
 pub(crate) mod scripts;
 pub(crate) mod selection;
 pub(crate) mod sessions;
+pub(crate) mod sharing;
 pub(crate) mod sources;
 pub(crate) mod status;
 

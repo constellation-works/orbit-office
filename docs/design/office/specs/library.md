@@ -36,7 +36,7 @@ library/
   rebuildable at any time with `office.reindex`. Reindex rebuilds only
   after a complete scan: a missing layer is empty, and an enumeration
   failure leaves the previous index unchanged.
-- A team's **shared library** is a separate git repository, cloned to
+- A team's **shared library** (sync and read layer planned separately) is a separate git repository, cloned to
   `{{plugin_state}}/shared/repo/` and indexed as a read-only `shared` layer
   beside this one. Documents marked `shareable` are pushed to it, and
   colleagues' documents are read from it
@@ -213,7 +213,7 @@ They never create lock state. Private media follows
 
 `office.source-set-sensitivity` (mutating, `mcp_scope: none`) takes
 `{"id":"<source-id>","sensitivity":"private"}` or `normal` and returns
-`id`, `path` and `sensitivity`. Under the writer lock it updates the current
+`id`, `path`, `sensitivity` and `unshared`. Under the writer lock it updates the current
 source's sensitivity, preserves unrelated metadata and body, reindexes and
 commits once. Repeating the current value changes nothing and makes no commit.
 Private-to-normal is refused with `sensitivity_downgrade_refused`, naming
@@ -221,8 +221,8 @@ Private-to-normal is refused with `sensitivity_downgrade_refused`, naming
 keys and sensitivity values are refused. Both tools have closed schemas;
 their fixture conformance goldens replay offline with
 `cargo test -p office-tools --lib tools::tests::show --locked`.
-Setting `private` also sets `shareable: false` in the same commit and
-reports `unshared: true` ([shared-library.md](./shared-library.md#the-shareable-field)).
+Setting `private` clears an existing true `shareable` field in the same commit and
+reports `unshared: true` when approval was revoked (otherwise false) ([shared-library.md](./shared-library.md#the-shareable-field)).
 
 - **Video:** the transcript as for a meeting, plus `frames.md` (frame readings, `#frame=00:12:31`) and `chapters.md` (`#chapter=3`) beside it ([kt-videos.md](./kt-videos.md#library-shape)).
 - **Meeting:** one paragraph per speaker turn, prefixed with `[hh:mm:ss] Speaker:`, paragraphs separated by a blank line. The anchor is `#t=00:12:31`. The transcribe tool gives text-only replies stable positional timestamps within each chunk (see [kt-videos.md](./kt-videos.md#built-tool-contracts)); reported timestamps are shifted by the chunk offset. A chunk that reported turns contributes those turns, not a second copy of its text.
@@ -279,7 +279,8 @@ shareable: true                # optional; pushed to the shared library (shared-
   1. **Frontmatter** (`invalid_frontmatter`, naming the field, never its value): only the fields above plus `sensitivity`, `shareable`, `as_of`, `performable` and `submission`; `id` is `dom-<slug>` or `rb-<slug>` and `title` is required; `type`, when present, is `domain` or `runbook` (else the id prefix decides); `status` is `current`, `stale` or `retired`; dates are `YYYY-MM-DD`; `related` holds page ids. The supported YAML is a flat mapping of plain or quoted scalars, inline `[…]` and `{…}` collections, indented block lists (of scalars, flow mappings or `key: value` items), one level of indented mapping (`submission`) and comments.
   2. **Template**, when the page names one ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)).
   3. **Base rules:** the id prefix matches the type; `refs` only on domain pages, and `performable` (`agent` | `you`) and `submission` (`system`, `via: draft | gateway`, and `connection` for a gateway) only on runbooks; each ref has a `label`, exactly one target, and optionally `authoritative: true` and `as_of` (`account` is `system:key`, `artifact` an `art-` id, a `url` carries no credentials); no email address or phone number in the body (`contact_in_body`); at most 1,200 words of body (`page_too_long`); and a page tagged `policy`, or with a section whose `##` heading ends in `[policy]`, needs an `authoritative` ref and an `as_of` on that ref or the page (`policy_without_source`; [library-bootstrap.md](./library-bootstrap.md#page-rules)).
-  4. **Citations** (`unresolved_cite`): every frontmatter `cites` entry and every inline `[id#anchor]` (several may share brackets, separated by `;` or `,`) names an indexed document of the kind its prefix says (`src-`, `dom-`, `rb-`, `art-`), never the page itself. A member-qualified citation (`<member>/<id>`) names a document in the shared layer ([shared-library.md](./shared-library.md#the-shared-layer)). A source cite needs an anchor present in that source's body: `t=hh:mm:ss` from the first speaker turn's timestamp to the last's, `L<n>` or `L<n>-<m>` within the body's lines (counted after the frontmatter, surrounding blank lines trimmed), or `slide=<n>`/`page=<n>` naming a `Slide <n>`/`Page <n>` heading. `frame=` and `chapter=` anchors are refused until `frames.md` and `chapters.md` are readable through the Library port. Other documents are cited without an anchor. Refs are pointers and are never resolved.
+  4. **Sharing approval:** a boolean `shareable` defaults to false; true refuses private documents and unshared own citations (frontmatter, inline and artifact refs) before publication ([shared-library.md](./shared-library.md#the-shareable-field)).
+  5. **Citations** (`unresolved_cite`): every frontmatter `cites` entry and every inline `[id#anchor]` (several may share brackets, separated by `;` or `,`) names an indexed document of the kind its prefix says (`src-`, `dom-`, `rb-`, `art-`), never the page itself. A member-qualified citation (`<member>/<id>`) parses here; resolution needs the separately planned shared layer ([shared-library.md](./shared-library.md#the-shared-layer)). A source cite needs an anchor present in that source's body: `t=hh:mm:ss` from the first speaker turn's timestamp to the last's, `L<n>` or `L<n>-<m>` within the body's lines (counted after the frontmatter, surrounding blank lines trimmed), or `slide=<n>`/`page=<n>` naming a `Slide <n>`/`Page <n>` heading. `frame=` and `chapter=` anchors are refused until `frames.md` and `chapters.md` are readable through the Library port. Other documents are cited without an anchor. Refs are pointers and are never resolved.
 - **Reads:** `office.knowledge-show` (`{"id": "<page id>"}`, `page_not_found` otherwise) returns the page's model view, since it is visible to agents ([knowledge-templates.md](./knowledge-templates.md#contact-details)), and its back-links: the indexed sources, pages and artifacts whose frontmatter `cites` (bare or anchored) or `related` name it, each with `via: [cites, related]`. The model view is `office_core::domain::knowledge::Page::model_view`; `PageView::to_markdown` renders it for task attachments.
 - **Listing:** `office.knowledge-list` takes `{}` or `{"template":"<template name>"}`.
   It returns every matching page in `pages`, sorted by id, with `id`, nullable
@@ -525,3 +526,5 @@ Frictions stay Orbit records (`orbit.friction.add` /
 friction body (source ids, task ids) and a `runbook` field when a runbook
 fixes it. Re-implementing frictions in the plugin would duplicate a core
 record.
+
+Sharing approval is available through `office.share-set`; it changes only the field, commits once and makes repeated values a no-op. The artifact promotion manifest also accepts optional boolean `shareable` (default false), under the same privacy and citation rules. See [Shared Library](./shared-library.md) for the pure shared view and settings.

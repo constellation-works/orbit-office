@@ -93,6 +93,9 @@ pub struct Step {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PageDraft {
+    /// Sharing approval, checked at creation and again at acceptance.
+    #[serde(default)]
+    pub shareable: bool,
     /// Canonical domain or runbook id.
     pub id: String,
     /// Page title.
@@ -122,6 +125,13 @@ pub enum Payload {
     },
     /// Create a page.
     KnowledgeAdd {
+        /// Optional sharing approval applied to the reviewed page.
+        #[serde(
+            default,
+            deserialize_with = "sharing_flag",
+            skip_serializing_if = "Option::is_none"
+        )]
+        shareable: Option<bool>,
         /// Draft to materialize at creation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         page: Option<PageDraft>,
@@ -131,6 +141,13 @@ pub enum Payload {
     },
     /// Replace exactly the reviewed page revision.
     KnowledgeUpdate {
+        /// Optional sharing approval applied to the reviewed page.
+        #[serde(
+            default,
+            deserialize_with = "sharing_flag",
+            skip_serializing_if = "Option::is_none"
+        )]
+        shareable: Option<bool>,
         /// Complete replacement.
         markdown: String,
         /// SHA-256 of the current Markdown.
@@ -152,6 +169,12 @@ pub enum Payload {
     },
 }
 
+fn sharing_flag<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<bool>, D::Error> {
+    bool::deserialize(deserializer).map(Some)
+}
+
 /// Targets retirement can affect.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -170,6 +193,32 @@ pub enum RetireTarget {
     },
 }
 impl Payload {
+    /// Apply an explicit proposal approval to its materialized Markdown.
+    /// This pure normalization runs at creation and again after digest validation
+    /// at acceptance, so direct reviewed payloads honor the same field.
+    pub fn apply_sharing(&mut self) -> crate::Result<()> {
+        match self {
+            Self::KnowledgeAdd {
+                markdown: Some(markdown),
+                shareable: Some(value),
+                ..
+            }
+            | Self::KnowledgeUpdate {
+                markdown,
+                shareable: Some(value),
+                ..
+            } => {
+                *markdown = crate::domain::sharing::with_shareable(markdown, *value)?;
+            }
+            Self::KnowledgeAdd { .. }
+            | Self::KnowledgeUpdate { .. }
+            | Self::AutoTask { .. }
+            | Self::RunbookFromFriction { .. }
+            | Self::Retire { .. } => {}
+        }
+        Ok(())
+    }
+
     /// Stable kind independent of payload shape.
     #[must_use]
     pub fn kind(&self) -> ProposalKind {

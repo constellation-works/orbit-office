@@ -83,3 +83,28 @@ tests:
     input: {"key": "calendar.typo", "value": 1}
     expect:
       error: {code: unknown_library_setting}
+  - name: shared_config_stores_the_closed_block
+    tool: config-set
+    input: {"key":"shared","value":{"remote":"git@example.invalid:team/library.git","branch":"main","member":"fixture-member"}}
+    expect:
+      output: {"path":".office/config.yaml","key":"shared"}
+  - name: shared_config_refuses_remote_credentials
+    tool: config-set
+    input: {"key":"shared.remote","value":"https://fixture-secret@example.invalid/team.git"}
+    expect:
+      error: {"code":"invalid_library_setting"}
+  - name: shared_config_refuses_an_unsupported_remote
+    tool: config-set
+    input: {"key":"shared.remote","value":"ftp://example.invalid/team.git"}
+    expect:
+      error: {"code":"invalid_library_setting"}
+  - name: shared_config_refuses_an_invalid_member
+    tool: config-set
+    input: {"key":"shared.member","value":"Fixture_Member"}
+    expect:
+      error: {"code":"invalid_library_setting"}
+  - name: shared_config_clears_the_block
+    tool: config-set
+    input: {"key":"shared","value":null}
+    expect:
+      output: {"path":".office/config.yaml","key":"shared"}

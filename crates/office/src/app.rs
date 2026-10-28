@@ -351,6 +351,9 @@ impl RealLibrary {
 }
 
 impl Library for RealLibrary {
+    fn set_shareable(&self, id: &str, shareable: bool) -> office_core::Result<DocumentRecord> {
+        Ok(self.store()?.set_shareable(id, shareable)?)
+    }
     fn source_media(
         &self,
         id: &str,
@@ -362,7 +365,7 @@ impl Library for RealLibrary {
         &self,
         id: &str,
         sensitivity: &str,
-    ) -> office_core::Result<office_core::ports::SourceView> {
+    ) -> office_core::Result<office_core::ports::SensitivityOutcome> {
         <LibraryStore as Library>::set_source_sensitivity(&self.store()?, id, sensitivity)
     }
     fn write_reviewed_page(

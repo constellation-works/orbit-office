@@ -14,12 +14,16 @@
         "normal",
         "private"
       ]
+    },
+    "unshared": {
+      "type": "boolean"
     }
   },
   "required": [
     "id",
     "path",
-    "sensitivity"
+    "sensitivity",
+    "unshared"
   ],
   "additionalProperties": false
 }

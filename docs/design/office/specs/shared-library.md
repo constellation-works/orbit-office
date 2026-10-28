@@ -17,6 +17,10 @@ This is how Daniel already works: one shared knowledge base, his own, and a
 sync that pushes and pulls on a schedule. Here the `shareable` field makes
 the sync mechanical, so it is a deterministic tool, not an agent loop.
 
+The approval field, `office.share-set`, pure shared view and validated settings
+are implemented. Sync, the shared read layer, routine, app and demo sections
+below describe separately planned work.
+
 ## The loop
 
 1. **Mark.** The user marks a source, page or artifact shareable, or
@@ -41,11 +45,17 @@ Sources (`source.md`), knowledge pages and artifacts (`artifact.md`) take
 `path` and `shareable`. It is the user's approval action, so agents can't
 call it. Under the writer lock it rewrites the one field, preserves the
 rest of the document, reindexes and commits once. Repeating the current
-value changes nothing and makes no commit. It refuses:
+value changes nothing and makes no commit. Clearing an absent field is already
+false and is a no-op. Existing scalar whitespace, comments and line endings
+are retained; an absent true field is inserted before the closing delimiter.
+Malformed explicit citations refuse `invalid_frontmatter` rather than escaping
+approval. The SQLite index records approval; migration 3 backfills existing rows from
+Markdown with a durable rescan marker. It refuses:
 
 - `share_private_refused`, naming `sensitivity`, for a `private` document;
 - `share_cites_unshared`, listing the cited document ids that are not
-  shareable, for a page or artifact whose `cites`, inline citations or
+  shareable (sorted, distinct own ids without anchors; missing targets fail
+  closed), for a document whose `cites`, inline citations or
   `artifact` refs name an own document that is not shareable. The app
   offers **Share these too**, which calls `share-set` for each, sources
   first;
@@ -58,16 +68,23 @@ synced keep their copy and that the repository's history keeps it too.
 **Interactions:**
 
 - `office.source-set-sensitivity` to `private` also sets `shareable: false`
-  in the same commit, and its result reports `unshared: true`.
+  in the same commit when approval was true; its result reports `unshared: true`
+  exactly when this call revoked sharing, otherwise false.
 - A `knowledge_add` or `knowledge_update` proposal may carry
-  `"shareable": true` when every document the page cites is shareable, or
-  when the page is already shared. The proposal shows "Will be shared with
+  `"shareable": true` when every own document the page cites is shareable. The proposal shows "Will be shared with
   the team", and acceptance writes the field with the page. The skill has
   the orchestrator suggest it for pages about the team's systems, clients
   and processes, never for the user's own pages (the `user`, `goals`,
   `rhythm` and `standing-directions` templates).
 - `office.artifact-promote` takes an optional `shareable` in the manifest
   under the same citation rule.
+
+`knowledge_add` and `knowledge_update` payloads accept optional boolean
+`shareable`; when supplied it sets the field in their reviewed Markdown.
+Draft pages also accept it. Creation and acceptance validate approval, and
+publication checks current cited files again under the writer lock.
+`office.knowledge-write` accepts the boolean field and applies the same rule.
+An existing sharing flag never bypasses the citation check.
 
 ## Settings
 
@@ -85,6 +102,12 @@ shared:
   `https://` URL without user information, or an absolute local path. Any
   other form, or a URL that carries credentials, is refused at load with
   `invalid_library_setting` naming `shared.remote`, never its value.
+- The block requires all three fields; null also means unconfigured.
+  `office.config-set` accepts the whole block, or `shared.remote`,
+  `shared.branch` and `shared.member` after a complete block exists.
+  Unknown block keys refuse `invalid_library_setting`. The branch must be
+  a safe git branch name. Member names have single internal hyphens and
+  ASCII lowercase letters or digits.
 - No block means no sharing: `office.library-sync` refuses with
   `shared_not_configured`, and nothing else changes.
 - Changing `remote` or `member` after a sync deletes the local clone and
@@ -120,20 +143,26 @@ shared:
 
 ### The shared view of a document
 
-A push writes the document's **shared view**, never the file as it is:
+`office_core::domain::sharing::shared_view` is pure: Markdown, a member name,
+a current-sharing predicate and an already-shared predicate produce canonical
+frontmatter and a body whose text outside citations stays verbatim. Private
+input refuses `share_private_refused`. A future push writes this document's
+**shared view**, never the file as it is:
 
 - `contact` refs and `path` refs are dropped. Colleagues keep their own
   contacts, and a local path means nothing on another machine.
 - `artifact` refs to artifacts that are not shareable are dropped.
 - Own source and artifact citations are qualified with the member
   (`src-…` → `daniel/src-…`), in frontmatter and inline. Citations that are
-  already qualified are unchanged.
+  already qualified are unchanged. Retained artifact refs are also qualified.
 - `related` keeps only pages that are shareable or already shared.
 - `sensitivity` and `shareable` are dropped (everything shared is `normal`).
   `shared_by` is set to the member, and `contributors` gains the member if
   absent.
 
 ## `office.library-sync`
+
+Planned separately.
 
 Mutating, `mcp_scope: workspace`: the orchestrator may run it when the user
 asks, because it only moves documents the user already approved for
@@ -213,6 +242,9 @@ completed work and the previous sync state intact.
   documents the user marked shareable.
 
 ## The shared layer
+
+Planned separately; qualified citations parse in this increment but need this
+layer to resolve.
 
 The index (`plugin_state/index.sqlite`) holds a second, read-only layer for
 the clone. Every row records `layer: shared` and `shared_by`.

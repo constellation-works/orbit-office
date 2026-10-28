@@ -237,6 +237,22 @@ impl FakeLibrary {
 }
 
 impl Library for FakeLibrary {
+    fn set_shareable(&self, id: &str, shareable: bool) -> Result<DocumentRecord> {
+        use office_core::domain::sharing::{self, SharingError};
+        self.ready()?;
+        let record = self.get(id)?.ok_or(SharingError::DocumentNotFound)?;
+        let path = Path::new(&record.path);
+        let markdown = self.read_text(path)?;
+        let next = sharing::with_shareable(&markdown, shareable)?;
+        if shareable {
+            sharing::validate_sharing(&next, |id| self.get(id))?;
+        }
+        if next == markdown {
+            return Ok(record);
+        }
+        self.write_document(path, &next)
+    }
+
     fn write_reviewed_page(
         &self,
         relative: &Path,
@@ -381,16 +397,25 @@ impl Library for FakeLibrary {
             content,
         })
     }
-    fn set_source_sensitivity(&self, id: &str, sensitivity: &str) -> Result<SourceView> {
+    fn set_source_sensitivity(
+        &self,
+        id: &str,
+        sensitivity: &str,
+    ) -> Result<office_core::ports::SensitivityOutcome> {
         let source = self.read_source(id)?;
         let markdown = self.read_text(Path::new(&source.path))?;
+        let unshared =
+            sensitivity == "private" && office_core::domain::sharing::shareable(&markdown)?;
         let next = office_core::domain::source::access::with_sensitivity(&markdown, sensitivity)?;
         if next != markdown {
             self.write_document(Path::new(&source.path), &next)?;
             let updated = self.read_source(id)?;
             self.sources.borrow_mut().insert(id.into(), updated);
         }
-        self.read_source(id)
+        Ok(office_core::ports::SensitivityOutcome {
+            source: self.read_source(id)?,
+            unshared,
+        })
     }
     fn read_media(&self, id: &str) -> Result<office_core::domain::source::video::VideoSource> {
         use office_core::domain::source::video::{VideoSource, refusal};
@@ -630,6 +655,9 @@ impl Library for FakeLibrary {
 
     fn write_document(&self, relative: &Path, text: &str) -> Result<DocumentRecord> {
         self.ready()?;
+        if DocumentRecord::from_markdown(relative, text).shareable {
+            office_core::domain::sharing::validate_sharing(text, |id| self.get(id))?;
+        }
         let mut record = DocumentRecord::from_markdown(relative, text);
         if record.kind == DocumentKind::Source
             && let Some(digest) = self.bootstrap_digests.borrow().get(&record.id)

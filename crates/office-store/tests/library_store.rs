@@ -2277,7 +2277,7 @@ fn a_version_one_index_migrates_and_open_fills_template_and_date() {
         .expect("reopen")
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("version");
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
 }
 
 #[test]
@@ -2291,7 +2291,7 @@ fn a_version_two_index_with_null_template_and_date_backfills_on_open() {
     write(
         &library,
         "knowledge/domain/dom-person-jane.md",
-        "---\nid: dom-person-jane\ntemplate: person\ntitle: Jane\nupdated_at: 2026-10-20T10:00:00Z\n---\nRenewal owner.\n",
+        "---\nid: dom-person-jane\ntemplate: person\ntitle: Jane\nupdated_at: 2026-10-20T10:00:00Z\nshareable: true\n---\nRenewal owner.\n",
     );
     std::fs::create_dir_all(&state).expect("state");
     {
@@ -2332,10 +2332,15 @@ fn a_version_two_index_with_null_template_and_date_backfills_on_open() {
         .expect("search");
     let ids: Vec<&str> = hits.iter().map(|hit| hit.id.as_str()).collect();
     assert_eq!(ids, ["dom-person-jane"]);
+    assert!(
+        store.get("dom-person-jane").unwrap().unwrap().shareable,
+        "migration 3 backfills sharing from Markdown"
+    );
     // A second open must not loop: the backfill marker is cleared.
     drop(store);
     let store = LibraryStore::open(&library, &state).expect("second open");
     assert_eq!(store.document_count().expect("count"), 1);
+    assert!(store.get("dom-person-jane").unwrap().unwrap().shareable);
 }
 
 #[test]
@@ -2882,4 +2887,261 @@ fn meeting_prep_duplicate_candidates_are_keyed_under_the_library_writer_lock() {
             .code(),
         "artifact_routine_approval_refused"
     );
+}
+
+#[test]
+fn sharing_updates_all_document_kinds_with_one_commit_and_no_other_byte_changes() {
+    use office_core::ports::Library;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let store = LibraryStore::open(&root, &dir.path().join("state")).unwrap();
+    for (id, path) in [
+        ("src-shared", "sources/2026/10/src-shared/source.md"),
+        ("dom-shared", "knowledge/domain/dom-shared.md"),
+        (
+            "art-20261028-shared",
+            "artifacts/2026/10/art-20261028-shared/artifact.md",
+        ),
+    ] {
+        let text = format!(
+            "---\r\nid: {id}\r\ntitle: Keep  spacing # comment\r\nsensitivity: normal\r\n---\r\nBody  bytes.\r\n"
+        );
+        store.write_document(Path::new(path), &text).unwrap();
+        let original_head = store.head_commit().unwrap();
+        let shared = store.set_shareable(id, true).unwrap();
+        assert!(shared.shareable);
+        let first_head = store.head_commit().unwrap();
+        assert_ne!(first_head, original_head);
+        assert_eq!(store.history(Path::new(path)).unwrap().len(), 2);
+        assert_eq!(
+            std::fs::read_to_string(root.join(path)).unwrap(),
+            text.replace("---\r\nBody", "shareable: true\r\n---\r\nBody")
+        );
+        assert!(store.get(id).unwrap().unwrap().shareable);
+        store.set_shareable(id, true).unwrap();
+        assert_eq!(store.head_commit().unwrap(), first_head);
+        store.set_shareable(id, false).unwrap();
+        let cleared_head = store.head_commit().unwrap();
+        assert_ne!(cleared_head, first_head);
+        assert_eq!(store.history(Path::new(path)).unwrap().len(), 3);
+        assert_eq!(
+            std::fs::read_to_string(root.join(path)).unwrap(),
+            text.replace("---\r\nBody", "shareable: false\r\n---\r\nBody")
+        );
+        assert!(!store.get(id).unwrap().unwrap().shareable);
+        store.set_shareable(id, false).unwrap();
+        assert_eq!(store.head_commit().unwrap(), cleared_head);
+    }
+    let source = "sources/2026/10/src-shared/source.md";
+    store.set_shareable("src-shared", true).unwrap();
+    let count = store.history(Path::new(source)).unwrap().len();
+    let outcome = Library::set_source_sensitivity(&store, "src-shared", "private").unwrap();
+    assert!(outcome.unshared);
+    assert_eq!(outcome.source.sensitivity, "private");
+    assert!(!store.get("src-shared").unwrap().unwrap().shareable);
+    assert_eq!(store.history(Path::new(source)).unwrap().len(), count + 1);
+    let head = store.head_commit().unwrap();
+    assert!(
+        !Library::set_source_sensitivity(&store, "src-shared", "private")
+            .unwrap()
+            .unshared
+    );
+    assert_eq!(store.head_commit().unwrap(), head);
+}
+
+#[test]
+fn sharing_refusals_do_not_write_or_commit_and_use_latest_cited_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let store = LibraryStore::open(&root, &dir.path().join("state")).unwrap();
+    let source_path = Path::new("sources/2026/10/src-proof/source.md");
+    let evidence = "---\nid: src-proof\ntitle: Proof\n---\nLine.\n";
+    store.write_document(source_path, evidence).unwrap();
+    let path = Path::new("knowledge/domain/dom-sharing.md");
+    let page = "---\nid: dom-sharing\ntitle: Sharing\ncites: [src-proof#L1]\nrefs: [{label: Output, artifact: art-20261028-unshared}]\n---\nBody [src-inline#L1; src-proof#L1].\n";
+    store.write_document(path, page).unwrap();
+    let head = store.head_commit().unwrap();
+    let error = store.set_shareable("dom-sharing", true).unwrap_err();
+    assert_eq!(error.code(), "share_cites_unshared");
+    assert_eq!(
+        error.to_string(),
+        "cites unshared own documents: art-20261028-unshared, src-inline, src-proof"
+    );
+    assert_eq!(store.head_commit().unwrap(), head);
+    assert_eq!(std::fs::read_to_string(root.join(path)).unwrap(), page);
+    assert!(!store.get("dom-sharing").unwrap().unwrap().shareable);
+    assert_eq!(
+        store.set_shareable("dom-missing", true).unwrap_err().code(),
+        "document_not_found"
+    );
+    let private = "---\nid: dom-private\ntitle: Private\nsensitivity: private\n---\nBody.\n";
+    store
+        .write_document(Path::new("knowledge/domain/dom-private.md"), private)
+        .unwrap();
+    let head = store.head_commit().unwrap();
+    let error = store.set_shareable("dom-private", true).unwrap_err();
+    assert_eq!(error.code(), "share_private_refused");
+    assert!(error.to_string().contains("sensitivity"));
+    assert_eq!(store.head_commit().unwrap(), head);
+    // The index says shared; an external edit revokes it before approval.
+    store.set_shareable("src-proof", true).unwrap();
+    std::fs::write(root.join(source_path), evidence).unwrap();
+    let only_proof =
+        "---\nid: dom-proof\ntitle: Proof\nshareable: true\ncites: [src-proof#L1]\n---\nBody.\n";
+    let head = store.head_commit().unwrap();
+    assert_eq!(
+        store
+            .write_reviewed_page(Path::new("knowledge/domain/dom-proof.md"), only_proof, None)
+            .unwrap_err()
+            .code(),
+        "share_cites_unshared"
+    );
+    assert_eq!(store.head_commit().unwrap(), head);
+    assert!(!root.join("knowledge/domain/dom-proof.md").exists());
+}
+
+#[test]
+fn source_processing_preserves_sharing_approval_in_file_and_index() {
+    use office_core::domain::{endpoint::ModelRoute, source::sha256_hex};
+    use office_core::ports::{CaptureSourceRequest, DerivedBy, Library};
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let store = LibraryStore::open(&root, &dir.path().join("state")).unwrap();
+    let captured = store
+        .capture_source(&CaptureSourceRequest {
+            captured_at: "2026-10-28T00:00:00Z".into(),
+            kind: Some("meeting".into()),
+            title: Some("Shared meeting".into()),
+            text: Some("Original transcript".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    store.set_shareable(&captured.id, true).unwrap();
+    let markdown = store.read_text(Path::new(&captured.path)).unwrap();
+    Library::write_source_processing(
+        &store,
+        &captured.id,
+        &sha256_hex(markdown.as_bytes()),
+        Some("Updated transcript"),
+        &DerivedBy {
+            route: ModelRoute::Hosted,
+            model: "fixture".into(),
+        },
+        &[],
+    )
+    .unwrap();
+    assert!(
+        office_core::domain::sharing::shareable(
+            &store.read_text(Path::new(&captured.path)).unwrap()
+        )
+        .unwrap()
+    );
+    assert!(store.get(&captured.id).unwrap().unwrap().shareable);
+    store.reindex().unwrap();
+    assert!(store.get(&captured.id).unwrap().unwrap().shareable);
+}
+
+#[test]
+fn sharing_reports_a_deleted_indexed_document_as_missing_and_a_missing_cite_as_unshared() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let store = LibraryStore::open(&root, &dir.path().join("state")).unwrap();
+    let path = Path::new("sources/2026/10/src-deleted/source.md");
+    store
+        .write_document(
+            path,
+            "---\nid: src-deleted\ntitle: Deleted\nshareable: true\n---\nBody.\n",
+        )
+        .unwrap();
+    let page_path = Path::new("knowledge/domain/dom-deleted.md");
+    store
+        .write_document(
+            page_path,
+            "---\nid: dom-deleted\ntitle: Deleted evidence\ncites: [src-deleted#L1]\n---\nBody.\n",
+        )
+        .unwrap();
+    std::fs::remove_file(root.join(path)).unwrap();
+    let head = store.head_commit().unwrap();
+    assert_eq!(
+        store
+            .set_shareable("src-deleted", false)
+            .unwrap_err()
+            .code(),
+        "document_not_found"
+    );
+    assert_eq!(
+        store.set_shareable("dom-deleted", true).unwrap_err().code(),
+        "share_cites_unshared"
+    );
+    assert_eq!(store.head_commit().unwrap(), head);
+}
+
+#[test]
+fn artifact_publication_checks_sharing_before_any_bundle_write() {
+    use office_core::domain::artifact::{
+        Approval, Approver, Artifact, ArtifactFile, ArtifactManifest, Producer,
+    };
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("library");
+    initialize(&root);
+    let store = LibraryStore::open(&root, &dir.path().join("state")).unwrap();
+    store
+        .write_document(
+            Path::new("sources/2026/10/src-cited/source.md"),
+            "---\nid: src-cited\ntitle: Cited evidence\n---\nLine.\n",
+        )
+        .unwrap();
+    let manifest: ArtifactManifest = serde_json::from_value(json!({"kind":"report","title":"Shared artifact","series":"shared-artifact","files":["report.md"],"cites":["src-cited#L1"],"shareable":true})).unwrap();
+    let artifact = Artifact::approved(
+        manifest,
+        "fixture-task".into(),
+        Producer {
+            crew: None,
+            runbook: None,
+            at: None,
+        },
+        Approval {
+            by: Approver::User,
+            at: "2026-10-28T00:00:00Z".into(),
+            edited: false,
+        },
+    )
+    .unwrap();
+    let files = [ArtifactFile {
+        path: "report.md".into(),
+        bytes: b"Approved report".to_vec(),
+    }];
+    let head = store.head_commit().unwrap();
+    assert_eq!(
+        store
+            .promote_artifact(&artifact, &files)
+            .unwrap_err()
+            .code(),
+        "share_cites_unshared"
+    );
+    assert_eq!(store.head_commit().unwrap(), head);
+    assert!(!root.join(artifact.path().unwrap()).exists());
+    store.set_shareable("src-cited", true).unwrap();
+    let published = store.promote_artifact(&artifact, &files).unwrap();
+    let path = published.path().unwrap();
+    assert!(
+        Artifact::from_markdown(&store.read_text(Path::new(&path)).unwrap())
+            .unwrap()
+            .shareable
+    );
+    assert!(store.get(&published.id).unwrap().unwrap().shareable);
+    assert_eq!(store.history(Path::new(&path)).unwrap().len(), 1);
+    let mut private = artifact;
+    private.sensitivity = office_core::ports::Sensitivity::Private;
+    let head = store.head_commit().unwrap();
+    assert_eq!(
+        store.promote_artifact(&private, &files).unwrap_err().code(),
+        "share_private_refused"
+    );
+    assert_eq!(store.head_commit().unwrap(), head);
 }

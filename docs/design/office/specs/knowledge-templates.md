@@ -241,3 +241,5 @@ Templates also shape the proposals that follow. The signals are in
 - **Declared cadence:** a `rhythm` entry with a deliverable that no routine
   or auto-task covers → an `auto_task` proposal, before the repetition
   signal would have fired.
+
+A page's sharing approval is independent of its template. `Page::model_view` and its Markdown attachments retain `shareable: true` so an approved page does not lose that field when used as a proposal draft. Absent or false means unshared. Sharing still requires the [citation and sensitivity checks](./shared-library.md#the-shareable-field).

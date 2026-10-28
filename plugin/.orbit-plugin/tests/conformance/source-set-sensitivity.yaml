@@ -6,7 +6,7 @@ tests:
     tool: source-set-sensitivity
     input: {"id":"src-19700101-source-view","sensitivity":"private"}
     expect:
-      output: {"id":"src-19700101-source-view","path":"sources/1970/01/src-19700101-source-view/source.md","sensitivity":"private"}
+      output: {"id":"src-19700101-source-view","path":"sources/1970/01/src-19700101-source-view/source.md","sensitivity":"private","unshared":false}
   - name: source_set_sensitivity_refuses_private_downgrade
     tool: source-set-sensitivity
     input: {"id":"src-19700101-source-view","sensitivity":"normal"}

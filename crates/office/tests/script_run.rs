@@ -52,6 +52,7 @@ print(json.dumps(result))
         }
         let artifact = Artifact::approved(
             ArtifactManifest {
+                shareable: false,
                 event_key: None,
                 kind,
                 title: "Fixture script".into(),

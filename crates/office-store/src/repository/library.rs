@@ -639,10 +639,58 @@ impl LibraryStore {
         self.write_document_locked(relative, text)
     }
 
+    /// Resolve the current file rather than relying on an indexed approval flag.
+    /// An externally deleted or renamed identity is absent, even if still indexed.
+    fn current_document_locked(&self, id: &str) -> Result<Option<DocumentRecord>> {
+        let Some(indexed) = self.index.get(id)? else {
+            return Ok(None);
+        };
+        match self.files.read_document(Path::new(&indexed.path)) {
+            Ok(record) => Ok((record.id == id).then_some(record)),
+            Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Resolve approval from current files, while the caller owns the writer lock.
+    fn validate_sharing_locked(&self, text: &str) -> Result<()> {
+        if !DocumentRecord::from_markdown(Path::new(""), text).shareable {
+            return Ok(());
+        }
+        office_core::domain::sharing::validate_sharing(text, |id| {
+            Ok(self.current_document_locked(id)?)
+        })?;
+        Ok(())
+    }
+
+    /// Change only the sharing field with no commit for a repeated value.
+    pub fn set_shareable(&self, id: &str, shareable: bool) -> Result<DocumentRecord> {
+        use office_core::domain::sharing::{self, SharingError};
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        self.require_initialized()?;
+        let current = self
+            .current_document_locked(id)?
+            .ok_or(office_core::Error::from(SharingError::DocumentNotFound))?;
+        let relative = Path::new(&current.path);
+        let markdown = self.files.read_text(relative)?;
+        let next = sharing::with_shareable(&markdown, shareable)?;
+        if shareable {
+            self.validate_sharing_locked(&next)?;
+        }
+        if next == markdown {
+            return Ok(current);
+        }
+        self.write_document_locked(relative, &next)
+    }
+
     fn write_document_locked(&self, relative: &Path, text: &str) -> Result<DocumentRecord> {
         self.require_initialized()?;
         self.files.validate_document_path(relative)?;
         self.validate_identity(&DocumentRecord::from_markdown(relative, text))?;
+        self.validate_sharing_locked(text)?;
         let relative = relative.to_str().ok_or_else(|| Error::UnsafePath {
             kind: "document",
             value: relative.display().to_string(),
@@ -736,6 +784,7 @@ impl LibraryStore {
         let relative = artifact.path().map_err(office_core::Error::from)?;
         let text = artifact.to_markdown().map_err(office_core::Error::from)?;
         self.validate_identity(&DocumentRecord::from_markdown(Path::new(&relative), &text))?;
+        self.validate_sharing_locked(&text)?;
         let pending = self.decide(
             WriteKind::Artifact,
             &relative,
@@ -1932,6 +1981,9 @@ fn dir_is_empty(path: &Path) -> bool {
 }
 
 impl office_core::ports::Library for LibraryStore {
+    fn set_shareable(&self, id: &str, shareable: bool) -> office_core::Result<DocumentRecord> {
+        Ok(Self::set_shareable(self, id, shareable)?)
+    }
     fn write_reviewed_page(
         &self,
         relative: &Path,
@@ -2149,16 +2201,21 @@ impl office_core::ports::Library for LibraryStore {
         &self,
         id: &str,
         sensitivity: &str,
-    ) -> office_core::Result<SourceView> {
+    ) -> office_core::Result<office_core::ports::SensitivityOutcome> {
         let _lock = WriterLock::acquire(&self.state)?;
         self.recover()?;
         let source = self.read_source(id)?;
         let markdown = self.files.read_text(Path::new(&source.path))?;
+        let unshared =
+            sensitivity == "private" && office_core::domain::sharing::shareable(&markdown)?;
         let next = office_core::domain::source::access::with_sensitivity(&markdown, sensitivity)?;
         if next != markdown {
             self.write_document_locked(Path::new(&source.path), &next)?;
         }
-        self.read_source(id)
+        Ok(office_core::ports::SensitivityOutcome {
+            source: self.read_source(id)?,
+            unshared,
+        })
     }
     fn read_media(
         &self,

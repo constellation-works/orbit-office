@@ -30,6 +30,9 @@ fn run(call: &Call<'_>) -> Result<Value> {
             "sensitivity must be normal or private".into(),
         ));
     }
-    let source = call.ports.library.set_source_sensitivity(id, sensitivity)?;
-    Ok(json!({"id":source.id,"path":source.path,"sensitivity":source.sensitivity}))
+    let outcome = call.ports.library.set_source_sensitivity(id, sensitivity)?;
+    let source = outcome.source;
+    Ok(
+        json!({"id":source.id,"path":source.path,"sensitivity":source.sensitivity,"unshared":outcome.unshared}),
+    )
 }
