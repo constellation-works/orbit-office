@@ -1,0 +1,5 @@
+name = "office-bootstrap"
+
+[seeding]
+routines = "none"
+auto_tasks = "none"
