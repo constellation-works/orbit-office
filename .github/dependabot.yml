@@ -1,5 +1,5 @@
-# Advisory monitoring and pin updates for every dependency ecosystem in the
-# repository (STD-05 R23, R24): crates through Cargo.lock, and the CI actions
+# Advisory monitoring and pin updates for the Rust and CI-action ecosystems
+# (STD-05 R23, R24): crates through Cargo.lock, and the CI actions
 # pinned by SHA in .github/workflows/. Updates target the integration branch.
 version: 2
 updates:
