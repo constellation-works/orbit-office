@@ -174,7 +174,7 @@ for (const name of ["office", "gateway", "cloudcli"]) {
   if (!present("plugin-added" + suffix)) continue;
   const host = present("plugin-active" + suffix);
   const toggle = fs.existsSync(path.join(cwd, ".orbit", "enabled-" + name));
-  rows.push({name, host_enabled: host, workspace_toggle: toggle || null,
+  rows.push({name, install_path: path.dirname(process.env.STUB_MANIFEST), host_enabled: host, workspace_toggle: toggle || null,
     permissions: ["fs", "network", ...(name === "cloudcli" ? [] : ["orbit_tools"])].map(grant => ({grant, granted: host}))});
 }
 process.stdout.write(JSON.stringify(rows));
@@ -797,6 +797,7 @@ check "office init ignores the Library" grep -qxF /library/ "$WS2/.gitignore"
 check "office init fills repo-local git name" git -C "$WS2" config --local user.name
 check "office init fills repo-local git email" git -C "$WS2" config --local user.email
 check "office init registers selected folder" grep -qxF "$WS2" "$STUB_STATE/workspace-roots"
+check "office init applies workspace presets" sh -c 'grep -F "workspace init --preset " "$1" >/dev/null && grep -F "workspace init --force --preset " "$1" >/dev/null' sh "$STUB_STATE/orbit.log"
 check "office init enables office in selected folder" test -f "$WS2/.orbit/enabled-office"
 check "office init enables gateway in selected folder" test -f "$WS2/.orbit/enabled-gateway"
 check "office init scaffolds the selected Library" test -f "$WS2/library/.office/config.yaml"

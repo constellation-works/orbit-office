@@ -55,7 +55,7 @@ The standalone [`office init [path]` command](./install.md#office-init-path)
 creates or repairs the workspace and calls `orbit tool run office.init` after
 setting up git, registering the workspace and enabling its plugins. The install
 script calls that same installed launcher; users run `office init` directly for
-a second workspace or a repair. The app also calls `office.init` as the user from Today via `POST /api/setup` when `GET /api/setup` reports a missing Library. Disabled plugins and unregistered workspaces require `office init` instead. The plugin tool remains Library-only.
+a second workspace or a repair. Fresh workspaces use the office preset to suppress Orbit developer defaults and enable the daily digest, KT inbox and signals routines; existing registered workspaces are not migrated. The app also calls `office.init` as the user from Today via `POST /api/setup` when `GET /api/setup` reports a missing Library. Disabled plugins and unregistered workspaces require `office init` instead. The plugin tool remains Library-only.
 
 `office.init` (mutating, `mcp_scope: none`) does, in order:
 

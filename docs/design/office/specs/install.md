@@ -20,27 +20,19 @@ Linux), never inside the workspace. The tools the script installs for agents (`u
 pinned Python) go in `~/.local/share/orbit-office/tools` on both systems, a path with no
 spaces, so script shebangs that name the interpreter keep working.
 
-## Office workspace preset (pending Orbit support)
+## Office workspace preset
 
-Orbit Office is a distribution of Orbit: an app built on Orbit as its engine.
-Installation assembles the app and the `office`, `gateway` and optional `cloudcli`
-component plugins. The office workspace preset is follow-up work that depends on
-Orbit's workspace-presets contract; this change only filters the app's Routines view.
-
-Once Orbit's workspace-presets support is available, the distribution will ship
-an office preset in the supported format. It must select `seeding.routines: none`
-and `seeding.auto_tasks: none`, enable `office-daily-digest`, `office-kt-inbox` and
-`office-signals` by name, and leave `office-bootstrap` under the confirmation
-rules in [library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation).
-`office init` and this installer must apply that preset through Orbit's workspace
-initialization interface. A fresh temporary workspace must then demonstrate that
-no Orbit shipped developer routines or auto-tasks were seeded and that the
-selected office definitions are enabled.
-
-**Blocked on Orbit's preset contract.** There is no preset file or preset
-application in the current installer. Initialization still uses ordinary Orbit
-workspace defaults. Do not replace the missing policy by deleting those defaults
-one by one. This section describes pending work, not an available install option.
+The office plugin ships `presets/office-bootstrap.toml` and `presets/office.toml`.
+For a new workspace, `office init` first registers with the bootstrap preset,
+which suppresses Orbit's shipped routine and auto-task defaults. After consent and
+plugin enablement seed the office definitions, it applies the office preset with
+`orbit workspace init --force --preset`, enabling `office-daily-digest`,
+`office-kt-inbox`, and `office-signals`. `office-bootstrap` remains disabled until
+the confirmation rules in [library-bootstrap.md](./library-bootstrap.md#batch-preview-and-confirmation) apply.
+The installer uses the same launcher. A completed setup is not reapplied on a
+repeat run, so later user changes to routine enablement are preserved. Existing
+registered workspaces are not migrated; the Routines screen retains its name
+filter for them. Orbit must support `workspace init --preset`.
 
 ## Installation steps
 
@@ -88,7 +80,7 @@ one by one. This section describes pending work, not an available install option
    already a repository; writes `.gitignore` with `/library/`; makes the first commit if
    the repository has none (Orbit's runs need a commit to create worktrees from). If git
    has no `user.name`/`user.email`, it sets a repo-local identity from the login name. Then
-   `orbit workspace init` if the folder is not yet registered. A non-empty folder that is
+   `orbit workspace init --preset` with the bootstrap preset if the folder is not yet registered. A non-empty folder that is
    not already an office workspace is refused, never adopted. This installer owns a folder
    only when the install state records `workspace_path` for that path, or when the only
    top-level entries are `.git`, `.gitignore`, and `.orbit`, and `.gitignore` has a line
@@ -222,7 +214,7 @@ The command does these steps in order:
    line, fill missing repo-local git identity fields from the login name, and
    make the first commit if absent. Preserve existing commits and identity.
 3. Read `orbit workspace list --json` and register the exact folder with
-   `orbit workspace init` when absent; an old marker or `.orbit` directory
+   `orbit workspace init --preset` with the bootstrap preset when absent; an old marker or `.orbit` directory
    alone never substitutes for registration. Record ownership in install state.
 4. Enable installed `office` and `gateway`, plus `cloudcli` when installed,
    with the manifest grants from step 5. Print grants and ask once when setup
@@ -232,7 +224,9 @@ The command does these steps in order:
    than global install markers. Record host grants when needed, then enable
    the selected workspace with `--scope workspace` to seed its definitions;
    a workspace toggle never receives host-only grant flags.
-5. Always call `orbit tool run office.init --json --full --input '{}'` in
+5. For a newly registered office workspace, apply the office preset after plugin
+   seeding; a repeat setup leaves the operator's later routine choices alone.
+6. Always call `orbit tool run office.init --json --full --input '{}'` in
    that workspace, interpreting stdout, stderr, exit status and error codes
    exactly as step 7 above. `already_initialized` is success. Re-running a
    complete setup changes no workspace or install-state bytes. Always asking

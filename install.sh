@@ -1211,6 +1211,12 @@ function main() {
   for (const name of ["office", "gateway"]) {
     if (!installed.some((plugin) => plugin.name === name)) fail("plugin '" + name + "' is not installed; run install.sh first");
   }
+  const officePlugin = installed.find((plugin) => plugin.name === "office");
+  if (!officePlugin?.install_path) fail("office plugin has no installed path; reinstall it");
+  const presetDir = path.join(officePlugin.install_path, "presets");
+  const bootstrapPreset = path.join(presetDir, "office-bootstrap.toml");
+  const officePreset = path.join(presetDir, "office.toml");
+  for (const preset of [bootstrapPreset, officePreset]) if (!exists(preset)?.isFile()) fail("office preset missing: " + preset + "; reinstall the office plugin");
   const plugins = ["office", "gateway", ...(installed.some((plugin) => plugin.name === "cloudcli") ? ["cloudcli"] : [])];
   say("==> 4 workspace");
   fs.mkdirSync(workspace, { recursive: true, mode: 0o700 });
@@ -1235,8 +1241,9 @@ function main() {
   } else say("workspace: first commit already done");
   const registrations = json("orbit", ["workspace", "list", "--json"], workspace);
   if (!registrations.some((row) => typeof row.repo_root === "string" && resolvePhysical(row.repo_root) === workspace && row.status === "active")) {
-    run("orbit", ["workspace", "init"], workspace);
-    say("workspace: registered with orbit workspace init");
+    mark("preset_pending=" + workspace);
+    run("orbit", ["workspace", "init", "--preset", bootstrapPreset], workspace);
+    say("workspace: registered with office seeding policy");
   } else say("workspace: already registered (" + workspace + ")");
   mark("workspace_path=" + workspace);
   say("==> 5 workspace plugins");
@@ -1268,6 +1275,11 @@ function main() {
     if (row.workspace_toggle !== true) run("orbit", ["plugin", "enable", name, "--scope", "workspace", "--workspace", workspace], workspace);
     mark(name === "office" ? "plugin_enabled" : "plugin." + name + ".enabled");
     say("plugin: already enabled or repaired (" + name + ", " + workspace + ")");
+  }
+  if (has("preset_pending=" + workspace) && !has("preset_applied=" + workspace)) {
+    run("orbit", ["workspace", "init", "--force", "--preset", officePreset], workspace);
+    mark("preset_applied=" + workspace);
+    say("workspace: office preset applied");
   }
   say("==> 7 scaffold");
   const result = run("orbit", ["tool", "run", "office.init", "--json", "--full", "--input", "{}", "--workspace", workspace], workspace, false);

@@ -93,8 +93,9 @@ that the count covers auto-tasks only. Other listing failures refuse the snapsho
 Toggling a scheduled routine first observes its current enabled state and target,
 then passes those to Orbit's guarded control. Auto-task switches continue to use
 `orbit.auto_task.update`. No hidden name can be toggled through this screen's API.
-The workspace preset that suppresses developer defaults at initialization remains
-follow-up work; see [install.md](./install.md#office-workspace-preset-pending-orbit-support).
+Fresh office workspaces suppress Orbit developer defaults through the
+[office preset](./install.md#office-workspace-preset). The name filter remains
+for existing workspaces and custom definitions outside the shipped components.
 
 ### Today implementation
 
