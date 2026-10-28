@@ -34,6 +34,6 @@ test("setup routes report health, initialize once per request, and translate ref
     state.error = new OrbitExitError("office.status", 1, null, message);
     const result = await (await fetch(url)).json();
     assert.equal(result.state, expected);
-    assert.match(result.fix, /office init/);
+    assert.match(result.fix, /orbit-office init/);
   }
 });

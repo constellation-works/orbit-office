@@ -23,7 +23,7 @@ spaces, so script shebangs that name the interpreter keep working.
 ## Office workspace preset
 
 The office plugin ships `presets/office-bootstrap.toml` and `presets/office.toml`.
-For a new workspace, `office init` first registers with the bootstrap preset,
+For a new workspace, `orbit-office init` first registers with the bootstrap preset,
 which suppresses Orbit's shipped routine and auto-task defaults. After consent and
 plugin enablement seed the office definitions, it applies the office preset with
 `orbit workspace init --force --preset`, enabling `office-daily-digest`,
@@ -76,7 +76,7 @@ filter for them. Orbit must support `workspace init --preset`.
    `npm install -g @orbit-tools/cli@0.37.0`. An existing Orbit is never upgraded or
    downgraded: an older one stops the script with the command to upgrade, and a newer one
    continues with a warning.
-4. **Git and the workspace.** Delegated to the installed `office init` command below. It creates `~/orbit` and runs `git init -b main` if it is not
+4. **Git and the workspace.** Delegated to the installed `orbit-office init` command below. It creates `~/orbit` and runs `git init -b main` if it is not
    already a repository; writes `.gitignore` with `/library/`; makes the first commit if
    the repository has none (Orbit's runs need a commit to create worktrees from). If git
    has no `user.name`/`user.email`, it sets a repo-local identity from the login name. Then
@@ -94,7 +94,7 @@ filter for them. Orbit must support `workspace init --preset`.
    must be available from the repository remote and `cargo` is required. An explicit local
    office source or bundle must already contain an executable `bin/office-bin`; a missing
    backend or failed build stops before office is recorded as added or enabled. Then
-   workspace enablement through `office init` using `orbit plugin enable office` with the grants the manifest requests (`fs`, `network`, `orbit_tools`), after printing them and
+   workspace enablement through `orbit-office init` using `orbit plugin enable office` with the grants the manifest requests (`fs`, `network`, `orbit_tools`), after printing them and
    asking once. A grant left out leaves the plugin inactive, and `office.init` is then refused.
    The question needs a terminal on stdin. A piped install without one (piped stdin is
    the script itself, for example) prints the grants and enables the plugin without asking,
@@ -117,7 +117,7 @@ filter for them. Orbit must support `workspace init --preset`.
    (`open_weights_token`) prints only `secrets: open_weights_token skipped (optional)`,
    with no command; set it later with `orbit plugin secret set office open_weights_token`.
    Values supplied through the environment are still stored in either case.
-7. **Scaffold.** Delegated to the same `office init` invocation, which runs `orbit tool run office.init --json --full`: the Library's layout, git
+7. **Scaffold.** Delegated to the same `orbit-office init` invocation, which runs `orbit tool run office.init --json --full`: the Library's layout, git
    repository, config, `.gitignore` and index, then the first Library commit. The CLI exits 0
    and prints the tool's output object on stdout. That object has no top-level `ok`. The step
    is done for that object, including a retry that prints `{"already_initialized": true, "created": []}`
@@ -180,25 +180,28 @@ filter for them. Orbit must support `workspace init --preset`.
    on re-run and changes nothing; a partial one is repaired by supplying the bundle
    again, and without one the failure names the concrete missing entrypoint.
 
-## `office init [path]`
+## `orbit-office init [path]`
 
-`install.sh` installs a standalone human launcher at `~/.local/bin/office` and
+`install.sh` installs a standalone human launcher at `~/.local/bin/orbit-office` and
 calls that installed command for steps 4, workspace enablement in 5, and 7.
 Machine setup still installs Python, Orbit and plugin exports, stores secrets,
-registers the agent CLI and provisions the app. `office init` installs none of
+registers the agent CLI and provisions the app. `orbit-office init` installs none of
 those. Add `~/.local/bin` to your PATH if your shell does not already include it;
 the installer prints the absolute launcher path and does not edit shell profiles.
 The launcher is embedded in the installer, so a piped install needs no extra
 script download. It needs Node, git, Orbit, and the already added plugins.
+The launcher is named `orbit-office`, not `office`: `office` is the plugin's Rust
+exec backend binary (`make install` puts it in `~/.cargo/bin`), and one name on
+PATH for both would hide one of them.
 
-Run `office init` for `~/orbit`, `office init ~/another-office` for a second
+Run `orbit-office init` for `~/orbit`, `orbit-office init ~/another-office` for a second
 workspace, or either again to repair setup. `ORBIT_OFFICE_HOME` supplies the
 path default when set; an explicit path wins. Relative paths resolve from the
 calling directory. `ORBIT_OFFICE_DATA_DIR` selects the same install-state folder
-as the installer. `office init --yes [path]` skips the consent question.
-`office --help` and `office init --help` describe the same command.
+as the installer. `orbit-office init --yes [path]` skips the consent question.
+`orbit-office --help` and `orbit-office init --help` describe the same command.
 
-The installer adds the machine plugins first, then calls `office init` once
+The installer adds the machine plugins first, then calls `orbit-office init` once
 for steps 4, 5 and 7, before prompting for secrets in step 6. The numbers above
 name the responsibilities rather than their execution order.
 
@@ -238,7 +241,7 @@ A tool failure prints the office error code read from its JSON output, or
 `unreadable` when no code can be recovered. Earlier successful setup is retained
 for repair on the next run; a scaffold failure records no success marker.
 
-## `office open [path]`
+## `orbit-office open [path]`
 
 Open the app for a workspace in the default browser.
 
@@ -247,7 +250,7 @@ Arguments: an optional workspace `path`. Without a path, the workspace is
 service is bound to (`ORBIT_OFFICE_WORKSPACE` in its launchd plist or
 systemd unit), otherwise the last `workspace_path` recorded in install
 state, otherwise `~/orbit`. Relative paths resolve from the calling
-directory, as for `office init`.
+directory, as for `orbit-office init`.
 
 The app service is the login service from step 9: the launchd agent
 `com.orbit-office.app` (plist under `~/Library/LaunchAgents/`) on macOS,
@@ -277,17 +280,17 @@ Behaviour, in order:
 Exit codes: **0** the URL was opened, **1** no service installed, a
 workspace mismatch, a start failure or a browser failure, **2** invalid
 arguments (more than one path, an unknown option, an empty path).
-`office open --help` prints the `open` usage. Starting the service and
+`orbit-office open --help` prints the `open` usage. Starting the service and
 opening the browser are the only effects; no workspace files change.
 
-## `office status [path] [--json]`
+## `orbit-office status [path] [--json]`
 
 Report, in plain words, whether everything the app needs is wired for
 one workspace. It changes nothing: it never starts the service, never
 opens a browser and never writes to the workspace.
 
 Arguments: an optional workspace `path` (same defaulting as
-`office open`) and `--json`. Unknown options, a second path or an empty
+`orbit-office open`) and `--json`. Unknown options, a second path or an empty
 path exit **2**.
 
 The report covers, in this order:
@@ -309,7 +312,7 @@ The report covers, in this order:
   (endpoint, model, kind and label), or `not configured`. The private
   route is optional: not configuring one is reported but is not a
   failure, and its token likewise appears only as `set`/`unset`.
-- **App service** — whether the login service (as in `office open`) is
+- **App service** — whether the login service (as in `orbit-office open`) is
   installed, whether it is running, and the app URL
   `http://localhost:<port>/` it serves.
 - **Agent CLI** — whether an Orbit MCP registration is present in the
@@ -363,26 +366,28 @@ Each missing prerequisite is a problem with its fix command:
 
 | Problem | Fix named in the report |
 | --- | --- |
-| Workspace not registered | `office init <path>` |
-| `office` or `gateway` plugin not enabled | `office init <path>` |
-| Library not initialized | `office init <path>` |
+| Workspace not registered | `orbit-office init <path>` |
+| `office` or `gateway` plugin not enabled | `orbit-office init <path>` |
+| Library not initialized | `orbit-office init <path>` |
 | Meta API key unset | `orbit plugin secret set office meta_api_key` |
 | App service not installed | `install.sh` |
-| App service stopped | `office open <path>` |
+| App service stopped | `orbit-office open <path>` |
 | Agent CLI registration missing | `install.sh` |
 
-`office status --help` prints the `status` usage.
+`orbit-office status --help` prints the `status` usage.
 
-The installer refuses to replace an unrelated `~/.local/bin/office`. It records
+The installer refuses to replace an unrelated `~/.local/bin/orbit-office`. It records
 `launcher_path` only when it creates the launcher, updates an owned launcher on
 reinstall, and keeps an identical pre-existing launcher unclaimed. Uninstall
 removes that path only with the creation receipt and a matching recorded SHA-256; an unrecorded or
 user-modified launcher is kept. Reinstall refuses to overwrite a modified launcher.
+A reinstall over an older install that recorded `~/.local/bin/office` removes
+that file under the same receipt-and-digest rule, then installs `orbit-office`.
 It keeps workspace ownership records for all workspaces initialized by this
 command. `--purge --home DIR` still applies only to the selected owned workspace.
 
 The summary lists what was created, where, and the uninstall command
-(`install.sh --uninstall`). Uninstall removes the service, the MCP entry and its deny rules, the plugins, its recorded `office` launcher and the
+(`install.sh --uninstall`). Uninstall removes the service, the MCP entry and its deny rules, the plugins, its recorded `orbit-office` launcher and the
 `tools` folder (`uv` and its Python, which nothing else uses). For skills it removes only a
 skill recorded in `agent-skills-<agent>.txt` whose tree still matches its recorded digest;
 a pre-existing same-named skill, a skill the user edited after copying, and any unrecorded

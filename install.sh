@@ -782,8 +782,33 @@ launcher_digest() {
     node -e 'const fs = require("fs"), crypto = require("crypto"); process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"));' "$1"
 }
 
+# Before the rename the launcher was ~/.local/bin/office, which shadowed or was
+# shadowed by the plugin's `office` exec backend binary on PATH.
+LEGACY_LAUNCHER="$HOME/.local/bin/office"
+
+# Remove a launcher only when install-state recorded it and its bytes still
+# match the recorded digest; a changed or unrecorded file is kept.
+remove_recorded_launcher() {
+    _rl_path="$1"; _rl_label="$2"
+    if state_has "launcher_path=$_rl_path"; then
+        if [ -f "$_rl_path" ] && [ ! -L "$_rl_path" ] \
+            && _rl_digest=$(launcher_digest "$_rl_path" 2>/dev/null) \
+            && state_has "launcher_digest=$_rl_digest"; then
+            rm -f "$_rl_path"
+            state_clear "launcher_digest=$_rl_digest"
+            say "$_rl_label: removed the office launcher ($_rl_path)"
+        elif [ -e "$_rl_path" ] || [ -L "$_rl_path" ]; then
+            warn "$_rl_label: kept changed launcher path $_rl_path"
+        fi
+        state_clear "launcher_path=$_rl_path"
+    elif [ "$_rl_label" = uninstall ] && [ -e "$_rl_path" ]; then
+        say "uninstall: kept any unrecorded office launcher ($_rl_path)"
+    fi
+}
+
 step_launcher() {
-    LAUNCHER="$HOME/.local/bin/office"
+    remove_recorded_launcher "$LEGACY_LAUNCHER" launcher
+    LAUNCHER="$HOME/.local/bin/orbit-office"
     mkdir -p "$DATA_DIR"
     _candidate="$DATA_DIR/office-launcher.$$"
     _launcher_created=0
@@ -796,7 +821,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { spawnSync } = require("node:child_process");
-const help = `Usage: office <command> [path] [options]
+const help = `Usage: orbit-office <command> [path] [options]
 
 Commands:
   init [path] [--yes]   Create or repair an office workspace and its Library
@@ -813,18 +838,18 @@ installed for init.
 Options:
   --yes       (init) Enable plugins without the consent question
   --json      (status) Print one JSON object instead of plain words
-  -h, --help  Show this help (or one command's help, e.g. office status --help)
+  -h, --help  Show this help (or one command's help, e.g. orbit-office status --help)
 
 Exit codes: 0 success, 1 setup/health/tool failure, 2 usage error.
 
 Examples:
-  office init
-  office init ~/another-office --yes
-  office open
-  office status
-  office status ~/another-office --json
+  orbit-office init
+  orbit-office init ~/another-office --yes
+  orbit-office open
+  orbit-office status
+  orbit-office status ~/another-office --json
 `;
-const initHelp = `Usage: office init [path] [--yes]
+const initHelp = `Usage: orbit-office init [path] [--yes]
 
 Create or repair an office workspace and its Library.
 Default path: ~/orbit (or ORBIT_OFFICE_HOME). Plugins must already be installed.
@@ -838,21 +863,21 @@ Existing non-empty folders are refused unless owned by office setup.
 Exit codes: 0 success, 1 setup/tool failure, 2 usage error.
 
 Examples:
-  office init
-  office init ~/another-office --yes
+  orbit-office init
+  orbit-office init ~/another-office --yes
 `;
-const openHelp = `Usage: office open [path]
+const openHelp = `Usage: orbit-office open [path]
 
 Open the app for a workspace in the default browser. Starts the installed
 app service first when it is stopped. Without a service, exits 1 naming
-install.sh. Default path: the installed workspace (see office --help).
+install.sh. Default path: the installed workspace (see orbit-office --help).
 
 Options:
   -h, --help  Show this help
 
 Exit codes: 0 opened, 1 no service/mismatch/start or browser failure, 2 usage.
 `;
-const statusHelp = `Usage: office status [path] [--json]
+const statusHelp = `Usage: orbit-office status [path] [--json]
 
 Report workspace registration, office/gateway enablement, Library health
 (from office.status), Meta API key presence, the private route, the app
@@ -875,7 +900,7 @@ if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
   process.exit(0);
 }
 const command = args.shift();
-if (!["init", "open", "status"].includes(command)) fail("expected 'office init', 'office open' or 'office status'; use --help", 2);
+if (!["init", "open", "status"].includes(command)) fail("expected 'orbit-office init', 'orbit-office open' or 'orbit-office status'; use --help", 2);
 let yes = false;
 let jsonOutput = false;
 let target;
@@ -1063,7 +1088,7 @@ function collectStatus(workspace) {
       registered = Array.isArray(rows) && rows.some((row) => row && typeof row.repo_root === "string" && resolvePhysical(row.repo_root) === workspace && row.status === "active");
     } catch (_) {}
   }
-  if (!registered) add("workspace", "workspace is not registered: " + workspace, "office init " + workspace);
+  if (!registered) add("workspace", "workspace is not registered: " + workspace, "orbit-office init " + workspace);
   const enabled = { office: false, gateway: false };
   const pluginResult = runOptional("orbit", ["plugin", "list", "--json", "--workspace", workspace], cwd);
   if (!pluginResult.error && pluginResult.status === 0) {
@@ -1075,7 +1100,7 @@ function collectStatus(workspace) {
       }
     } catch (_) {}
   }
-  for (const name of ["office", "gateway"]) if (!enabled[name]) add("plugin_" + name, "plugin '" + name + "' is not enabled in this workspace", "office init " + workspace);
+  for (const name of ["office", "gateway"]) if (!enabled[name]) add("plugin_" + name, "plugin '" + name + "' is not enabled in this workspace", "orbit-office init " + workspace);
   let tool = null;
   const toolResult = runOptional("orbit", ["tool", "run", "office.status", "--json", "--input", "{}", "--workspace", workspace], cwd);
   if (!toolResult.error && toolResult.status === 0) {
@@ -1089,7 +1114,7 @@ function collectStatus(workspace) {
     ...(tool.library.pages_off_template !== undefined ? { pages_off_template: tool.library.pages_off_template } : {}),
     ...(tool.library.template_invalid !== undefined ? { template_invalid: tool.library.template_invalid } : {}),
   } : { initialized: false, documents: 0 };
-  if (!library.initialized) add("library", "Library is not initialized (not scaffolded)", "office init " + workspace);
+  if (!library.initialized) add("library", "Library is not initialized (not scaffolded)", "orbit-office init " + workspace);
   let meta = tool && tool.secrets && typeof tool.secrets.meta_api_key === "string" ? tool.secrets.meta_api_key : null;
   if (meta !== "set" && meta !== "unset") {
     meta = "unset";
@@ -1113,7 +1138,7 @@ function collectStatus(workspace) {
   const privateRoute = tool && tool.open_weights !== undefined ? tool.open_weights : null;
   const svc = serviceInfo();
   if (!svc.installed) add("app_service", "app service is not installed", "install.sh");
-  else if (!svc.running) add("app_service", "app service is not running", "office open " + workspace);
+  else if (!svc.running) add("app_service", "app service is not running", "orbit-office open " + workspace);
   const agentRegistered = agentCliRegistered();
   if (!agentRegistered) add("agent_cli", "agent CLI registration is missing (no Orbit MCP entry)", "install.sh");
   return {
@@ -2308,21 +2333,8 @@ do_uninstall() {
             state_clear "plugin.$_plugin.exported"
         fi
     done
-    _launcher="$HOME/.local/bin/office"
-    if state_has "launcher_path=$_launcher"; then
-        if [ -f "$_launcher" ] && [ ! -L "$_launcher" ] \
-            && _current_digest=$(launcher_digest "$_launcher" 2>/dev/null) \
-            && state_has "launcher_digest=$_current_digest"; then
-            rm -f "$_launcher"
-            state_clear "launcher_digest=$_current_digest"
-            say "uninstall: removed the office launcher ($_launcher)"
-        elif [ -e "$_launcher" ] || [ -L "$_launcher" ]; then
-            warn "uninstall: kept changed launcher path $_launcher"
-        fi
-        state_clear "launcher_path=$_launcher"
-    else
-        say "uninstall: kept any unrecorded office launcher ($_launcher)"
-    fi
+    remove_recorded_launcher "$HOME/.local/bin/orbit-office" uninstall
+    remove_recorded_launcher "$LEGACY_LAUNCHER" uninstall
     # tools/ is not the data folder. On Linux the data folder is its
     # parent; on macOS they are different trees. Remove only tools/.
     case "$TOOLS_DIR" in
@@ -2389,7 +2401,7 @@ step_agent
 step_app
 
 step "summary"
-say "summary: office     $LAUNCHER (add $HOME/.local/bin to PATH if needed)"
+say "summary: launcher   $LAUNCHER (add $HOME/.local/bin to PATH if needed)"
 say "summary: workspace  $WORKSPACE"
 say "summary: library    $WORKSPACE/library"
 say "summary: data       $DATA_DIR"

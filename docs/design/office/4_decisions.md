@@ -1278,10 +1278,10 @@ Library writer lock, and proposal records have a version-8 Library journal.
 ## Machine installation and workspace initialization are separate
 
 **Recorded:** 2026-10-27
-**Code anchors:** `install.sh`; [specs/install.md](./specs/install.md#office-init-path)
+**Code anchors:** `install.sh`; [specs/install.md](./specs/install.md#orbit-office-init-path)
 
 The installer owns machine provisioning: toolchains, plugin installation,
-secrets, agent integration and the app service. A small installed `office`
+secrets, agent integration and the app service. A small installed `orbit-office`
 launcher owns `init [path]`: git, workspace registration, plugin enablement and
 the Library initializer. The installer calls that launcher so repairs and
 second workspaces follow the same implementation. Embed its source once in the
@@ -1294,6 +1294,11 @@ serves Orbit's one-call JSON envelope and runs only after a plugin is enabled;
 a human command must be able to create the workspace before that point.
 `office.init` remains the Library-only tool. No `open` or `status` command is
 introduced.
+
+**Renamed 2026-10-28:** the launcher is `orbit-office`. The exec backend binary
+kept the name `office`, and a launcher of the same name on PATH showed the
+backend's help instead of `init` (Daniel's call: rename the launcher, keep the
+backend).
 
 **Deviation: STD-03@2 §R6, §R8 and §R9.** Like the existing machine installer,
 setup is a sequential repair procedure across git, Orbit and local receipts,

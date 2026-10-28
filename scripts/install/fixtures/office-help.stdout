@@ -1,4 +1,4 @@
-Usage: office <command> [path] [options]
+Usage: orbit-office <command> [path] [options]
 
 Commands:
   init [path] [--yes]   Create or repair an office workspace and its Library
@@ -15,13 +15,13 @@ installed for init.
 Options:
   --yes       (init) Enable plugins without the consent question
   --json      (status) Print one JSON object instead of plain words
-  -h, --help  Show this help (or one command's help, e.g. office status --help)
+  -h, --help  Show this help (or one command's help, e.g. orbit-office status --help)
 
 Exit codes: 0 success, 1 setup/health/tool failure, 2 usage error.
 
 Examples:
-  office init
-  office init ~/another-office --yes
-  office open
-  office status
-  office status ~/another-office --json
+  orbit-office init
+  orbit-office init ~/another-office --yes
+  orbit-office open
+  orbit-office status
+  orbit-office status ~/another-office --json

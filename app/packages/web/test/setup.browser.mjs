@@ -66,7 +66,7 @@ test("Library setup works at desktop and phone widths", { timeout: 60000 }, asyn
     for (const failure of ["disabled", "unregistered"]) {
       state.failure = failure;
       await page.reload();
-      await page.getByText(/Run office init in your workspace/).waitFor();
+      await page.getByText(/Run orbit-office init in your workspace/).waitFor();
       assert.equal(await page.getByRole("button", { name: "Set up" }).count(), 0);
     }
   }

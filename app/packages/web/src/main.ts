@@ -68,7 +68,7 @@ async function drawScreen(root: HTMLElement): Promise<void> {
   }
   let setup: SetupStatus;
   try { setup = await getJson<SetupStatus>("/api/setup"); }
-  catch { setup = { state: "unavailable", reason: "Office could not check your Library.", fix: "Run office init in your workspace." }; }
+  catch { setup = { state: "unavailable", reason: "Office could not check your Library.", fix: "Run orbit-office init in your workspace." }; }
   if (generation !== screenGeneration) return;
   if (setup.state === "ready") { await screen.render(root); return; }
   if (screen.id !== "today") {
@@ -111,13 +111,13 @@ async function drawScreen(root: HTMLElement): Promise<void> {
           requestRailRefresh();
           void drawScreen(root);
         } else {
-          message.textContent = `${result.reason ?? "Setup could not finish."} ${result.fix ?? "Run office init in your workspace."}`;
+          message.textContent = `${result.reason ?? "Setup could not finish."} ${result.fix ?? "Run orbit-office init in your workspace."}`;
           if (button !== undefined && result.state !== "plugin_disabled" && result.state !== "workspace_unregistered") button.disabled = false;
           else button?.remove();
         }
       }).catch(() => {
         if (generation !== screenGeneration) return;
-        message.textContent = "Setup could not finish. Run office init in your workspace, then try again.";
+        message.textContent = "Setup could not finish. Run orbit-office init in your workspace, then try again.";
         if (button !== undefined) button.disabled = false;
       });
     });

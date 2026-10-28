@@ -114,16 +114,16 @@ function setupOutput(value: unknown): Record<string, unknown> {
 function setupFailure(error: unknown): SetupStatus {
   const detail = error instanceof SetupRefusal ? error.code : error instanceof OrbitExitError ? error.stderr.toLowerCase() : "";
   if (/plugin.*(not enabled|disabled|not found)|unknown tool.*office|tool not found: office\.|tool.*office.*not found/.test(detail)) {
-    return { state: "plugin_disabled", reason: "The Office plugin is not enabled for this workspace.", fix: "Run office init in your workspace." };
+    return { state: "plugin_disabled", reason: "The Office plugin is not enabled for this workspace.", fix: "Run orbit-office init in your workspace." };
   }
   if (/workspace.*(not registered|unregistered|unknown|not found)|unknown workspace|no workspace|no workspaces registered/.test(detail)) {
-    return { state: "workspace_unregistered", reason: "This workspace is not registered with Orbit.", fix: "Run office init in your workspace." };
+    return { state: "workspace_unregistered", reason: "This workspace is not registered with Orbit.", fix: "Run orbit-office init in your workspace." };
   }
-  if (detail === "git_missing") return { state: "unavailable", reason: "Git is not available to create the Library.", fix: "Install Git and run office init." };
-  if (/^library_git_/.test(detail)) return { state: "unavailable", reason: "Git could not prepare the Library.", fix: "Check Git in your workspace and run office init." };
-  if (/^index_/.test(detail)) return { state: "unavailable", reason: "Office could not prepare the Library index.", fix: "Run office init in your workspace." };
-  if (/permission|access_denied|write_root|io_error|unsafe_path|library_dir_outside/.test(detail)) return { state: "unavailable", reason: "Office could not write the Library.", fix: "Check the workspace permissions and run office init." };
-  return { state: "unavailable", reason: "Office could not set up the Library.", fix: "Run office init in your workspace, then try again." };
+  if (detail === "git_missing") return { state: "unavailable", reason: "Git is not available to create the Library.", fix: "Install Git and run orbit-office init." };
+  if (/^library_git_/.test(detail)) return { state: "unavailable", reason: "Git could not prepare the Library.", fix: "Check Git in your workspace and run orbit-office init." };
+  if (/^index_/.test(detail)) return { state: "unavailable", reason: "Office could not prepare the Library index.", fix: "Run orbit-office init in your workspace." };
+  if (/permission|access_denied|write_root|io_error|unsafe_path|library_dir_outside/.test(detail)) return { state: "unavailable", reason: "Office could not write the Library.", fix: "Check the workspace permissions and run orbit-office init." };
+  return { state: "unavailable", reason: "Office could not set up the Library.", fix: "Run orbit-office init in your workspace, then try again." };
 }
 
 export interface TodayOptions {

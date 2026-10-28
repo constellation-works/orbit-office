@@ -679,7 +679,7 @@ assert_home_scope() { # files stay under the workspace, data/tools, service, MCP
     (cd "$_home" && find . \( -type f -o -type l \) | sort) | while IFS= read -r _f; do
         case "$_f" in
             ./orbit|./orbit/*) ;;
-            ./.local/bin/office) ;;
+            ./.local/bin/orbit-office) ;;
             ./.local/share/orbit-office|./.local/share/orbit-office/*) ;;
             ./.config/systemd|./.config/systemd/*) ;;
             ./.claude|./.claude/*) ;;
@@ -721,7 +721,7 @@ OUT1="$ROOT/out1.txt"
 run_install "$HOME1" -- > "$OUT1" 2>&1 || { cat "$OUT1" >&2; fail "first install exits 0"; }
 ok "first install exits 0"
 SNAP1="$ROOT/snap1.txt"; snapshot "$HOME1" > "$SNAP1"
-check "installer creates the standalone office launcher" test -x "$HOME1/.local/bin/office"
+check "installer creates the standalone office launcher" test -x "$HOME1/.local/bin/orbit-office"
 check "workspace is a git repo" test -d "$HOME1/orbit/.git"
 check "workspace registered (.orbit)" test -d "$HOME1/orbit/.orbit"
 check "library scaffolded" test -f "$HOME1/orbit/library/.office/config.yaml"
@@ -786,7 +786,7 @@ run_office() { # run_office <home> <args...>
         STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
         STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" STUB_INIT_FIXTURES="$INIT_FIXTURES" \
-        ORBIT_OFFICE_OS="${OFFICE_TEST_OS:-linux}" ORBIT_OFFICE_HOME="${OFFICE_TEST_HOME:-}" "$_office_home/.local/bin/office" "$@" < /dev/null
+        ORBIT_OFFICE_OS="${OFFICE_TEST_OS:-linux}" ORBIT_OFFICE_HOME="${OFFICE_TEST_HOME:-}" "$_office_home/.local/bin/orbit-office" "$@" < /dev/null
 }
 WS2="$ROOT/second workspace"
 run_office "$HOME1" init "$WS2" --yes > "$ROOT/office-second" 2>&1 \
@@ -849,11 +849,11 @@ run_office "$HOME1" --help > "$ROOT/office-help" 2>&1
 if [ "${UPDATE_GOLDENS:-0}" = 1 ]; then cp "$ROOT/office-help" "$SCRIPT_DIR/fixtures/office-help.stdout"; fi
 check "office help matches its shipped golden" cmp -s "$ROOT/office-help" "$SCRIPT_DIR/fixtures/office-help.stdout"
 run_office "$HOME1" init --help > "$ROOT/office-init-help" 2>&1
-check "office init help names init usage" grep -qF "Usage: office init" "$ROOT/office-init-help"
+check "office init help names init usage" grep -qF "Usage: orbit-office init" "$ROOT/office-init-help"
 run_office "$HOME1" open --help > "$ROOT/office-open-help" 2>&1
-check "office open help names open usage" grep -qF "Usage: office open" "$ROOT/office-open-help"
+check "office open help names open usage" grep -qF "Usage: orbit-office open" "$ROOT/office-open-help"
 run_office "$HOME1" status --help > "$ROOT/office-status-help" 2>&1
-check "office status help names status usage" grep -qF "Usage: office status" "$ROOT/office-status-help"
+check "office status help names status usage" grep -qF "Usage: orbit-office status" "$ROOT/office-status-help"
 if run_office "$HOME1" bogus > "$ROOT/office-usage" 2>&1; then fail "office rejects unknown commands";
 else _usage_rc=$?; check "office usage exits 2" test "$_usage_rc" -eq 2; fi
 
@@ -903,13 +903,13 @@ ok "office status --json shape"
 mv "$HOME1/orbit/library" "$ROOT/saved-healthy-library"
 if run_office "$HOME1" status > "$ROOT/status-no-library" 2>&1; then fail "status without Library exits non-zero"; else ok "status without Library exits non-zero"; fi
 check "status names missing Library" grep -F "Library is not initialized" "$ROOT/status-no-library"
-check "status names Library fix" grep -F "fix: office init $HOME1/orbit" "$ROOT/status-no-library"
+check "status names Library fix" grep -F "fix: orbit-office init $HOME1/orbit" "$ROOT/status-no-library"
 mv "$ROOT/saved-healthy-library" "$HOME1/orbit/library"
 
 rm -f "$HOME1/orbit/.orbit/enabled-office"
 if run_office "$HOME1" status > "$ROOT/status-plugin-off" 2>&1; then fail "status with plugin disabled exits non-zero"; else ok "status with plugin disabled exits non-zero"; fi
 check "status names disabled office plugin" grep -F "plugin 'office' is not enabled" "$ROOT/status-plugin-off"
-check "status names plugin fix" grep -F "fix: office init $HOME1/orbit" "$ROOT/status-plugin-off"
+check "status names plugin fix" grep -F "fix: orbit-office init $HOME1/orbit" "$ROOT/status-plugin-off"
 : > "$HOME1/orbit/.orbit/enabled-office"
 
 rm -f "$STUB_STATE/secret.meta_api_key"
@@ -922,7 +922,7 @@ check "status without key leaks no secret" sh -c '! grep -qF "stub-secret-value-
 rm -f "$STUB_STATE/svc-active"
 if run_office "$HOME1" status > "$ROOT/status-stopped" 2>&1; then fail "status with app stopped exits non-zero"; else ok "status with app stopped exits non-zero"; fi
 check "status names stopped app service" grep -F "app service is not running" "$ROOT/status-stopped"
-check "status names stopped fix" grep -F "fix: office open $HOME1/orbit" "$ROOT/status-stopped"
+check "status names stopped fix" grep -F "fix: orbit-office open $HOME1/orbit" "$ROOT/status-stopped"
 check "status does not start stopped service" test ! -e "$STUB_STATE/svc-active"
 
 # open starts a stopped but installed service, then opens the URL.
@@ -960,7 +960,7 @@ ok "office open loads launchd service (macos)"
 check "office open macos loaded the agent" test -f "$STUB_STATE/launchd-loaded"
 check "office open macos opened URL" grep -qxF "http://localhost:4317/" "$STUB_STATE/browser.log"
 rm -f "$HOME1/Library/LaunchAgents/com.orbit-office.app.plist"
-check "office launcher is recorded as created" grep -qxF "launcher_path=$HOME1/.local/bin/office" "$HOME1/.local/share/orbit-office/install-state"
+check "office launcher is recorded as created" grep -qxF "launcher_path=$HOME1/.local/bin/orbit-office" "$HOME1/.local/share/orbit-office/install-state"
 
 # ---------------------------------------------------------------------------
 # 14. Piped curl-to-sh: no secret is stored from the script text itself
@@ -1097,7 +1097,7 @@ check "uninstall removes the plugin (stub)" test ! -e "$STUB_STATE/plugin-added"
 check "uninstall keeps the workspace" test -d "$HOME1/orbit"
 check "uninstall keeps the Library" test -d "$HOME1/orbit/library"
 check "uninstall removes tools" test ! -e "$HOME1/$TOOLS_REL"
-check "uninstall removes installer-owned launcher" test ! -e "$HOME1/.local/bin/office"
+check "uninstall removes installer-owned launcher" test ! -e "$HOME1/.local/bin/orbit-office"
 
 OUT_PURGE="$ROOT/out-purge.txt"
 run_install "$HOME1" -- --purge > "$OUT_PURGE" 2>&1 \
@@ -1109,23 +1109,37 @@ check "purge removes the workspace" test ! -e "$HOME1/orbit"
 UNOWNED_HOME="$ROOT/unowned-launcher-home"
 mkdir -p "$UNOWNED_HOME/.local/bin"
 # Copy a launcher from an installed home (HOME3 is the newer-Orbit installation).
-cp "$HOME3/.local/bin/office" "$UNOWNED_HOME/.local/bin/office"
+cp "$HOME3/.local/bin/orbit-office" "$UNOWNED_HOME/.local/bin/orbit-office"
 run_install "$UNOWNED_HOME" -- > "$ROOT/unowned-install" 2>&1 \
     || { cat "$ROOT/unowned-install" >&2; fail "install reuses identical unowned launcher"; }
 check "installer does not claim pre-existing launcher" sh -c '! grep -q "^launcher_path=" "$1"' sh "$UNOWNED_HOME/.local/share/orbit-office/install-state"
 run_install "$UNOWNED_HOME" -- --uninstall > "$ROOT/unowned-uninstall" 2>&1 \
     || { cat "$ROOT/unowned-uninstall" >&2; fail "uninstall with unowned launcher succeeds"; }
-check "uninstall keeps unrecorded launcher" test -x "$UNOWNED_HOME/.local/bin/office"
+check "uninstall keeps unrecorded launcher" test -x "$UNOWNED_HOME/.local/bin/orbit-office"
 MODIFIED_HOME="$ROOT/modified-launcher-home"; mkdir -p "$MODIFIED_HOME"
 run_install "$MODIFIED_HOME" -- > "$ROOT/modified-install" 2>&1 \
     || { cat "$ROOT/modified-install" >&2; fail "install before launcher edit"; }
-printf '// user addition\n' >> "$MODIFIED_HOME/.local/bin/office"
-cp "$MODIFIED_HOME/.local/bin/office" "$ROOT/modified-office-before"
+printf '// user addition\n' >> "$MODIFIED_HOME/.local/bin/orbit-office"
+cp "$MODIFIED_HOME/.local/bin/orbit-office" "$ROOT/modified-office-before"
 if run_install "$MODIFIED_HOME" -- > "$ROOT/modified-reinstall" 2>&1; then fail "reinstall must preserve modified launcher";
 else ok "reinstall refuses to overwrite modified launcher"; fi
 run_install "$MODIFIED_HOME" -- --uninstall > "$ROOT/modified-uninstall" 2>&1 \
     || { cat "$ROOT/modified-uninstall" >&2; fail "uninstall keeps edited launcher"; }
-check "uninstall preserves edited launcher bytes" cmp -s "$MODIFIED_HOME/.local/bin/office" "$ROOT/modified-office-before"
+check "uninstall preserves edited launcher bytes" cmp -s "$MODIFIED_HOME/.local/bin/orbit-office" "$ROOT/modified-office-before"
+# An install from before the rename recorded ~/.local/bin/office; reinstall
+# moves ownership to orbit-office and removes the old file only if unchanged.
+LEGACY_HOME="$ROOT/legacy-launcher-home"; mkdir -p "$LEGACY_HOME"
+run_install "$LEGACY_HOME" -- > "$ROOT/legacy-install" 2>&1 \
+    || { cat "$ROOT/legacy-install" >&2; fail "install before legacy launcher simulation"; }
+_legacy_state="$LEGACY_HOME/.local/share/orbit-office/install-state"
+mv "$LEGACY_HOME/.local/bin/orbit-office" "$LEGACY_HOME/.local/bin/office"
+sed "s#^launcher_path=.*#launcher_path=$LEGACY_HOME/.local/bin/office#" "$_legacy_state" > "$_legacy_state.tmp" && mv "$_legacy_state.tmp" "$_legacy_state"
+run_install "$LEGACY_HOME" -- > "$ROOT/legacy-reinstall" 2>&1 \
+    || { cat "$ROOT/legacy-reinstall" >&2; fail "reinstall over legacy launcher"; }
+check "reinstall removes recorded legacy launcher" test ! -e "$LEGACY_HOME/.local/bin/office"
+check "reinstall installs orbit-office launcher" test -x "$LEGACY_HOME/.local/bin/orbit-office"
+check "reinstall records orbit-office launcher" grep -qxF "launcher_path=$LEGACY_HOME/.local/bin/orbit-office" "$_legacy_state"
+check "reinstall forgets legacy launcher path" sh -c '! grep -qF "launcher_path=$1" "$2"' sh "$LEGACY_HOME/.local/bin/office" "$_legacy_state"
 
 
 # ---------------------------------------------------------------------------
