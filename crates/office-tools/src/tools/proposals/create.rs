@@ -37,6 +37,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
     }
     let cluster = proposal::cluster(input.payload.kind(), &input.evidence)?;
     materialize(call, &mut input.payload, &input.evidence)?;
+    input.payload.apply_sharing()?;
     validate_payload(call, &input.payload)?;
     let listed = call.ports.orbit.task_list(&object(json!({
         "tag":cluster,"status":"rejected","limit":1000,
@@ -140,7 +141,7 @@ pub(crate) fn object(value: Value) -> Result<Map<String, Value>> {
 
 fn materialize(call: &Call<'_>, payload: &mut Payload, evidence: &[String]) -> Result<()> {
     match payload {
-        Payload::KnowledgeAdd { page, markdown }
+        Payload::KnowledgeAdd { page, markdown, .. }
         | Payload::RunbookFromFriction { page, markdown } => {
             match (page.take(), markdown.as_ref()) {
                 (Some(draft), None) => *markdown = Some(render(call, &draft, evidence)?),
@@ -229,10 +230,11 @@ fn render(call: &Call<'_>, draft: &PageDraft, evidence: &[String]) -> Result<Str
         .map(|name| format!("template: {}\n", json!(name)))
         .unwrap_or_default();
     Ok(format!(
-        "---\nid: {}\ntitle: {}\n{template}cites: {}\nsensitivity: {sensitivity}\n---\n{body}\n\nEvidence:\n{}\n",
+        "---\nid: {}\ntitle: {}\n{template}cites: {}\nshareable: {}\nsensitivity: {sensitivity}\n---\n{body}\n\nEvidence:\n{}\n",
         json!(draft.id),
         json!(draft.title),
         json!(cites),
+        draft.shareable,
         evidence
             .iter()
             .map(|id| format!("- {id}"))
@@ -245,7 +247,7 @@ fn render(call: &Call<'_>, draft: &PageDraft, evidence: &[String]) -> Result<Str
 pub(crate) fn validate_payload(call: &Call<'_>, payload: &Payload) -> Result<()> {
     match payload {
         Payload::AutoTask { definition } => definition.validate(),
-        Payload::KnowledgeAdd { page, markdown }
+        Payload::KnowledgeAdd { page, markdown, .. }
         | Payload::RunbookFromFriction { page, markdown } => {
             if page.is_some() {
                 return Err(proposal::invalid("materialized proposal page"));
@@ -270,6 +272,7 @@ pub(crate) fn validate_payload(call: &Call<'_>, payload: &Payload) -> Result<()>
         Payload::KnowledgeUpdate {
             markdown,
             base_sha256,
+            ..
         } => {
             let page = validate_page(call, markdown)?;
             check_revision(call, &page.id, base_sha256).map(|_| ())
@@ -333,6 +336,7 @@ pub(crate) fn validate_page(call: &Call<'_>, markdown: &str) -> Result<Page> {
             .collect();
         page.check_template(&files, &page_files)?;
     }
+    office_core::domain::sharing::validate_sharing(markdown, |id| call.ports.library.get(id))?;
     page.check_base_rules()?;
     page.resolve_citations(|id| call.ports.library.get(id))?;
     Ok(page)

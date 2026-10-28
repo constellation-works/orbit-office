@@ -681,3 +681,52 @@ fn video_defaults_and_cost_bounds() {
         configured
     );
 }
+
+#[test]
+fn shared_block_is_closed_and_validated_on_yaml_reads_and_deserialization() {
+    let block = json!({"remote":"ssh://git@example.invalid/team.git","branch":"main","member":"member-one"});
+    let settings: Settings = serde_json::from_value(json!({"shared":block})).unwrap();
+    assert_eq!(
+        Settings::from_yaml(&settings.to_yaml().unwrap()).unwrap(),
+        settings
+    );
+    for (key, value) in [
+        (
+            "remote",
+            json!("ssh://git:fixture-secret@example.invalid/team.git"),
+        ),
+        ("remote", json!("https://@example.invalid/team.git")),
+        ("remote", json!("file:///srv/team.git")),
+        ("remote", json!("relative/team.git")),
+        ("remote", json!("ext::fixture-secret")),
+        ("member", json!("a".repeat(33))),
+        ("member", json!("a--b")),
+        ("branch", json!("bad..branch")),
+        ("unknown", json!("fixture-secret")),
+    ] {
+        let mut invalid = block.clone();
+        invalid[key] = value.clone();
+        let result = Settings::from_yaml(&json!({"shared":invalid}).to_string());
+        let error = result.unwrap_err();
+        assert_eq!(error.code(), "invalid_library_setting");
+        assert!(error.to_string().contains(&format!("shared.{key}")));
+        assert!(!error.to_string().contains("fixture-secret"));
+        assert!(serde_json::from_value::<Settings>(json!({"shared":invalid})).is_err());
+    }
+}
+
+#[test]
+fn shared_remotes_accept_local_spaces_and_scp_absolute_paths() {
+    for remote in [
+        "/srv/shared library.git",
+        "git@example.invalid:/srv/library.git",
+    ] {
+        let settings = Settings::default()
+            .with_setting(
+                "shared",
+                json!({"remote":remote,"branch":"main","member":"member"}),
+            )
+            .unwrap();
+        assert_eq!(settings.shared.unwrap().remote, remote);
+    }
+}

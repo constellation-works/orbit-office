@@ -103,3 +103,48 @@ fn demo_simulated_until_writes_a_date_and_refuses_anything_else_naming_the_field
         "{response}"
     );
 }
+
+#[test]
+fn shared_settings_roundtrip_and_redact_invalid_remote_or_member_values() {
+    let ports = PortsBuilder::default().build();
+    let block = json!({"remote":"git@example.invalid:team/library.git","branch":"main","member":"jane-park"});
+    assert_eq!(
+        call(&ports, json!({"key":"shared","value":block}))["ok"],
+        true
+    );
+    let saved = ports.library.settings().unwrap();
+    assert_eq!(saved.shared.as_ref().unwrap().member, "jane-park");
+    for (key, value) in [
+        (
+            "shared.remote",
+            "https://fixture-secret@example.invalid/team.git",
+        ),
+        ("shared.remote", "ftp://example.invalid/team.git"),
+        ("shared.remote", "ext::sh -c fixture-secret"),
+        ("shared.member", "Jane_Park"),
+    ] {
+        let response = call(&ports, json!({"key":key,"value":value}));
+        assert_eq!(
+            response["error"]["code"], "invalid_library_setting",
+            "{response}"
+        );
+        let message = response["error"]["message"].as_str().unwrap();
+        assert!(message.contains(key), "{response}");
+        assert!(!message.contains(value), "{response}");
+        assert_eq!(ports.library.settings().unwrap(), saved);
+    }
+    for remote in [
+        "ssh://git@example.invalid/team.git",
+        "https://example.invalid/team.git",
+        "/srv/shared/team.git",
+    ] {
+        assert_eq!(
+            call(&ports, json!({"key":"shared.remote","value":remote}))["ok"],
+            true
+        );
+        assert_eq!(
+            ports.library.settings().unwrap().shared.unwrap().remote,
+            remote
+        );
+    }
+}

@@ -84,6 +84,11 @@ pub fn not_initialized_error() -> Error {
 /// An adapter must override all operations; defaults support contexts that have
 /// no Library (for example the status-only dispatch scaffold).
 pub trait Library {
+    /// Update only sharing approval under the writer lock. Refusals and repeats
+    /// write nothing; success reindexes and commits exactly once.
+    fn set_shareable(&self, _id: &str, _shareable: bool) -> Result<DocumentRecord> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Commit a non-indexed proposal record under `proposals/`. Other paths
     /// are refused. This does not change knowledge or source enumeration.
     fn write_proposal(&self, _relative: &Path, _text: &str) -> Result<()> {
@@ -278,7 +283,7 @@ pub trait Library {
     /// Rewrite sensitivity under the writer lock; private cannot become normal.
     /// Preserve unrelated source metadata, reindex and commit once; no-op updates
     /// do not commit. A refusal leaves the source, index and history unchanged.
-    fn set_source_sensitivity(&self, _id: &str, _sensitivity: &str) -> Result<SourceView> {
+    fn set_source_sensitivity(&self, _id: &str, _sensitivity: &str) -> Result<SensitivityOutcome> {
         Err(Error::LibraryUnavailable)
     }
     /// Scaffold the Library (layout, git, config, `.gitignore`, index, one
@@ -396,4 +401,13 @@ pub struct SourceView {
     pub media_type: Option<String>,
     /// The version.
     pub version: u32,
+}
+
+/// Source privacy update and whether it revoked sharing in the same commit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SensitivityOutcome {
+    /// Source after the atomic update.
+    pub source: SourceView,
+    /// True only when this call cleared sharing approval.
+    pub unshared: bool,
 }

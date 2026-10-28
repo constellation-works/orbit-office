@@ -1429,3 +1429,27 @@ automatic repetition; partial transcription has its own completion receipt.
 Neither condition permits silently accepting partial evidence or duplicating
 to-dos. The disabled 15-minute routine is included with the meetings pack, like
 the KT routine; enabling it remains the onboarding/user choice.
+
+## Sharing approval owns its narrow manifest additions
+
+**Recorded:** 2026-10-28
+**Code anchors:** `office-core/src/domain/sharing`, `office-tools/src/tools/sharing`,
+`office-store/src/repository/library.rs`; [shared-library.md](./specs/shared-library.md).
+
+This feature owns its new tool family declaration, `tools/sharing/mod.rs`,
+registry row, `share-set` manifest block, schemas and conformance fixture,
+following the calendar's narrow manifest-ownership precedent. These are
+necessary to ship a callable tool with a closed contract, not a general
+exception for unrelated registry or manifest changes. No crate or dependency
+edge is added.
+
+Approval checks run both at tool validation and inside the store's writer
+lock, against current cited Markdown rather than stale indexed flags.
+`share-set` rewrites only its scalar; absence already means false, so clearing
+an absent field is a no-op. The sensitivity outcome carries whether that
+atomic update revoked sharing, rather than guessing from a read before locking.
+Migration 3 records a durable rescan obligation for existing rows; a fresh,
+empty index incurs no backfill write. Unconfigured shared settings are omitted
+from canonical settings serialization, preserving existing budget fingerprints.
+Shared view projection is pure; sync, credentials, transport and the read-only
+shared layer remain separate work.

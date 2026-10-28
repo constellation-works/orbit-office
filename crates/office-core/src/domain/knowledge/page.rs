@@ -37,6 +37,7 @@ const FIELDS: &[&str] = &[
     "last_verified",
     "status",
     "sensitivity",
+    "shareable",
     "as_of",
     "performable",
     "submission",
@@ -175,6 +176,8 @@ pub struct Page {
     pub status: PageStatus,
     /// Sensitivity (`normal` when absent).
     pub sensitivity: Sensitivity,
+    /// Explicit approval to reach the shared Library.
+    pub shareable: bool,
     /// The date the page's policy content is current as of, `YYYY-MM-DD`.
     pub as_of: Option<String>,
     /// Who performs a runbook.
@@ -275,6 +278,7 @@ impl Page {
             last_verified,
             status,
             sensitivity,
+            shareable: crate::domain::sharing::shareable(markdown)?,
             as_of,
             performable,
             submission,
@@ -515,6 +519,7 @@ impl Page {
             last_verified: self.last_verified.clone(),
             status: self.status,
             sensitivity: self.sensitivity,
+            shareable: self.shareable,
             as_of: self.as_of.clone(),
             performable: self.performable,
             submission: self.submission.clone(),
@@ -572,6 +577,9 @@ pub struct PageView {
     pub status: PageStatus,
     /// Sensitivity.
     pub sensitivity: Sensitivity,
+    /// Sharing approval retained in model attachments when true.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub shareable: bool,
     /// Policy currency date.
     pub as_of: Option<String>,
     /// Who performs a runbook.
@@ -644,6 +652,9 @@ impl PageView {
         };
         line("status", quote(status));
         line("sensitivity", quote(self.sensitivity.as_str()));
+        if self.shareable {
+            line("shareable", "true".into());
+        }
         for (key, value) in [
             ("updated_at", &self.updated_at),
             ("last_verified", &self.last_verified),
@@ -714,7 +725,15 @@ pub fn parse_citation(text: &str) -> Option<Citation> {
     if anchor.is_some_and(|a| a.is_empty() || a.contains(char::is_whitespace)) {
         return None;
     }
-    let (prefix, slug) = id.split_once('-')?;
+    let local = if let Some((member, local)) = id.split_once('/') {
+        if member.is_empty() || member.len() > 32 || !is_slug(member) {
+            return None;
+        }
+        local
+    } else {
+        id
+    };
+    let (prefix, slug) = local.split_once('-')?;
     let kind = match prefix {
         "src" => DocumentKind::Source,
         "dom" => DocumentKind::Domain,
@@ -786,7 +805,7 @@ pub fn resolve_anchor(body: &str, anchor: &str) -> std::result::Result<(), &'sta
 
 /// `[id#anchor]` citations in a body: bracketed text whose every `;`- or
 /// `,`-separated item parses as a citation.
-fn inline_citations(body: &str) -> Vec<String> {
+pub(crate) fn inline_citations(body: &str) -> Vec<String> {
     let mut found = Vec::new();
     let mut rest = body;
     while let Some(open) = rest.find('[') {

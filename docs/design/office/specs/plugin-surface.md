@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: plugin surface — the office tools, their MCP visibility, shipped definitions, config and permissions"
-last_validated: 2026-10-26
+last_validated: 2026-10-28
 ---
 
 # Spec: Plugin surface
@@ -29,7 +29,7 @@ Source: spec §12. The one-call envelope is
 | `office.source-show` | read_only | workspace | Return source text, available summary, provenance, citing documents/tasks and chapters; optional document selection (`source` or `summary`), anchor, history and capped original/frame media ([library.md](./library.md#sources)) |
 | `office.source-set-sensitivity` | mutating | **none** | Set source sensitivity under the writer lock; refuse private-to-normal; `private` also unshares |
 | `office.share-set` | mutating | **none** | Mark a source, page or artifact `shareable` (the user's approval for it to reach the shared library); refuse private documents and pages citing unshared ones ([shared-library.md](./shared-library.md#the-shareable-field)) |
-| `office.library-sync` | mutating | workspace | Pull the team's shared library into the read-only shared layer, file incoming updates and conflicts as proposals, then push the shareable documents' shared view ([shared-library.md](./shared-library.md#officelibrary-sync)) |
+| `office.library-sync` (planned separately; not advertised) | mutating | workspace | Pull the team's shared library into the read-only shared layer, file incoming updates and conflicts as proposals, then push the shareable documents' shared view ([shared-library.md](./shared-library.md#officelibrary-sync)) |
 | `office.search` | read_only | workspace | FTS over sources, knowledge and artifacts, with filters by kind, template, tag, series and date |
 | `office.knowledge-show` | read_only | workspace | Read a page and its back-links |
 | `office.knowledge-write` | mutating | **none** | Create or update a page; validate frontmatter, cites and its template ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)); commit |
@@ -128,7 +128,7 @@ Activities have no schedule switch. Definitions load only when listed in
   - `office-calendar-sync`: every 15 minutes, seeded disabled; `office.calendar-sync` ([calendar.md](./calendar.md)).
   - `office-meeting-prep`: every 15 minutes (`*/15 * * * *`), seeded disabled. Targets `job:office-meeting-prep`, whose sole deterministic step inlines `plugin.tool_call` with `config.tool: office.meeting-prep`, `input: {}`. Writes one report per eligible event key.
   - `office-meeting-inbox`: every 15 minutes, seeded disabled with the `meetings` pack; its deterministic job calls `office.extract` with `{profile: meeting}` and no id to transcribe empty audio captures, extract and save `summary.md` for each unsummarized meeting. Existing summaries are skipped.
-  - `office-shared-sync`: every 60 minutes, seeded disabled; `office.library-sync` ([shared-library.md](./shared-library.md#routine)).
+  - Planned separately: `office-shared-sync`, every 60 minutes, seeded disabled; `office.library-sync` ([shared-library.md](./shared-library.md#routine)).
   - `office-signals`: daily.
   - `office-daily-digest`: daily at `5 0 * * *`, seeded disabled. Targets `job:office-daily-digest`, whose sole step inlines a deterministic `plugin.tool_call` activity (`config.tool: office.digest`). The routine and job are registered in `spec.definitions`; no agent, crew or task ([sessions.md](./sessions.md#daily-digest)).
 - **Auto-tasks:**
@@ -266,6 +266,7 @@ values):
 `office.config-set` takes exactly `{"key":"retention.meeting","value":30}`.
 The value is typed JSON, not a YAML string. Supported keys are
 `retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>`, `packs`, `demo.simulated_until`,
+`shared`, `shared.remote`, `shared.branch`, `shared.member`,
 `open_weights.<endpoint|model|kind|label>` and the whole `open_weights` block
 (a mapping of those four keys, or null), using the kinds, threshold names and
 bounds above. `demo.simulated_until` is a `YYYY-MM-DD` date, or null to clear it.
@@ -342,3 +343,9 @@ The calendar-sync job inlines a single deterministic call, and its routine is
 seeded disabled every 15 minutes.
 See [calendar.md](./calendar.md#callback-and-snapshot-implementation) for bounds,
 timezone/recurrence rules, callback grants and persistence semantics.
+
+### Sharing approval and settings
+
+`office.share-set` takes exactly `id` and boolean `shareable`, returning `id`, `path` and `shareable`. Private approval and unshared own evidence refuse `share_private_refused` and `share_cites_unshared`; a missing id refuses `document_not_found`. Repeats write nothing. `office.source-set-sensitivity` additionally returns boolean `unshared`, true only when the call revoked approval.
+
+The closed `shared` Library setting requires `remote`, `branch` and `member`, or null to unconfigure. Its leaves require an existing complete block. Every read validates it; invalid remotes and members refuse `invalid_library_setting` naming the key without echoing the value. See [Shared Library settings](./shared-library.md#settings) for accepted remote forms and member bounds. Sync and the shared read layer are planned separately.

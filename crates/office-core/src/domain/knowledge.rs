@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::path::Path;
 
 pub(crate) mod frontmatter;
+pub(crate) use page::inline_citations;
 pub use page::withhold_contacts;
 mod page;
 
@@ -72,6 +73,9 @@ pub struct DocumentRecord {
     pub series: Option<String>,
     /// Frontmatter `sensitivity` (`normal` when absent).
     pub sensitivity: String,
+    /// Sharing approval; absent frontmatter defaults to false.
+    #[serde(default)]
+    pub shareable: bool,
     /// Path relative to the Library root, forward slashes.
     pub path: String,
     /// The document body (after the frontmatter), indexed for search.
@@ -204,6 +208,7 @@ fn parse_document_fields(
         tags: Vec::new(),
         series: None,
         sensitivity: "normal".to_string(),
+        shareable: false,
         path: relative.to_string_lossy().replace('\\', "/"),
         body: body.trim().to_string(),
         cites: Vec::new(),
@@ -229,6 +234,7 @@ fn parse_document_fields(
                     record.summary = value;
                 }
             }
+            "shareable" => record.shareable = value.as_bool() == Some(true),
             "tags" => record.tags = value_list(value),
             "series" => {
                 record.series = value_string(value)
@@ -289,6 +295,7 @@ fn parse_document_lenient(text: &str, relative: &Path) -> DocumentRecord {
         tags: Vec::new(),
         series: None,
         sensitivity: "normal".to_string(),
+        shareable: false,
         path: relative.to_string_lossy().replace('\\', "/"),
         body: body.trim().to_string(),
         cites: Vec::new(),
@@ -321,6 +328,7 @@ fn parse_document_lenient(text: &str, relative: &Path) -> DocumentRecord {
         list_key = None;
         match key {
             "id" => record.id = scalar(value),
+            "shareable" => record.shareable = scalar(value) == "true",
             "title" => record.title = scalar(value),
             "summary" => record.summary = scalar(value),
             "tags" => {

@@ -173,3 +173,7 @@ operator-owned definitions. The proposal kind set therefore has no `routine`;
 repetition proposes `auto_task`, acceptance creates an auto-task, and unused
 automation retirement disables an auto-task. Shipped disabled routine/job
 pairs are plugin definitions rather than proposal kinds.
+
+### Sharing approval on knowledge proposals
+
+`knowledge_add` and `knowledge_update` payloads accept optional boolean `shareable`, applied to the materialized Markdown at creation and acceptance. A `knowledge_add` page draft also accepts optional boolean `shareable` (absent false); creation materializes it into reviewed Markdown. Add and update Markdown may carry the same field. Acceptance rechecks the private-document and own-citation sharing rules before reserving the proposal; publication rechecks current cited files under the writer lock. A refusal writes no page or acceptance receipt. See [sharing approval](./shared-library.md#the-shareable-field).

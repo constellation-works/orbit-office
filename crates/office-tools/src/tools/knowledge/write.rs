@@ -57,6 +57,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
             .collect();
         page.check_template(&template_files, &page_files)?;
     }
+    office_core::domain::sharing::validate_sharing(markdown, |id| library.get(id))?;
     page.check_base_rules()?;
     page.resolve_citations(|id| library.get(id))?;
 

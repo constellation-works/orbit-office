@@ -66,11 +66,12 @@ fn run(call: &Call<'_>) -> Result<Value> {
             "proposal payload differs from the reviewed digest; review it again",
         ));
     }
-    let payload: Payload = serde_json::from_slice(&bytes)
+    let mut payload: Payload = serde_json::from_slice(&bytes)
         .map_err(|_| proposal::invalid("closed proposal.json payload"))?;
     if !tags.contains(&json!(format!("proposal:{}", payload.kind().as_str()))) {
         return Err(proposal::invalid("matching proposal kind tag"));
     }
+    payload.apply_sharing()?;
     validate_payload(call, &payload)?;
     if let Payload::AutoTask { definition } = &payload {
         for step in &definition.steps {
@@ -169,6 +170,7 @@ fn apply(call: &Call<'_>, payload: &Payload) -> Result<Value> {
         Payload::KnowledgeUpdate {
             markdown,
             base_sha256,
+            ..
         } => {
             let page = Page::from_markdown(markdown)?;
             check_revision(call, &page.id, base_sha256)?;

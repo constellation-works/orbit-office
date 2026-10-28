@@ -132,7 +132,7 @@ impl IndexStore {
         let mut stmt = conn
             .prepare(
                 "SELECT id, kind, title, summary, tags, series, sensitivity, path, body,
-                        template, date
+                        template, date, shareable
                  FROM documents WHERE id = ?1",
             )
             .map_err(|e| Error::sqlite(&self.path, "prepare get", e))?;
@@ -353,8 +353,8 @@ fn insert_document(conn: &Connection, document: &DocumentRecord, path: &Path) ->
     })?;
     conn.execute(
         "INSERT INTO documents
-             (id, kind, title, summary, tags, series, sensitivity, path, body, template, date)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             (id, kind, title, summary, tags, series, sensitivity, path, body, template, date, shareable)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             document.id,
             document.kind.as_str(),
@@ -367,6 +367,7 @@ fn insert_document(conn: &Connection, document: &DocumentRecord, path: &Path) ->
             document.body,
             document.template,
             document.date,
+            document.shareable,
         ],
     )
     .map_err(|e| Error::sqlite(path, "insert document", e))?;
@@ -444,6 +445,9 @@ fn record_from_row(row: &rusqlite::Row<'_>, path: &Path) -> Result<DocumentRecor
         body: row
             .get(8)
             .map_err(|e| Error::sqlite(path, "read body", e))?,
+        shareable: row
+            .get(11)
+            .map_err(|e| Error::sqlite(path, "read shareable", e))?,
         cites: Vec::new(),
         related: Vec::new(),
         template: row

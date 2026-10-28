@@ -14,6 +14,7 @@ pub mod script;
 pub mod selection;
 pub mod session;
 pub mod settings;
+pub mod sharing;
 pub mod signals;
 pub mod source;
 pub mod template;

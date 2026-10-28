@@ -12,7 +12,7 @@ pub use calendar::{Calendar, UnavailableCalendar};
 pub use clock::Clock;
 pub use library::{
     CaptureSourceRequest, ConversationEntry, InitOutcome, Library, LibraryHealth, LibraryText,
-    SourceOutcome, SourceView, not_initialized_error,
+    SensitivityOutcome, SourceOutcome, SourceView, not_initialized_error,
 };
 pub use models::{
     DerivedBy, ExtractRequest, ImageReading, ImageRequest, ModelTier, Models, RouteCheck,

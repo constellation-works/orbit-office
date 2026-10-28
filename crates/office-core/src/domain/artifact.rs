@@ -158,6 +158,9 @@ pub struct ArtifactManifest {
     /// Explicit sensitivity; promotion also inherits cited sensitivity.
     #[serde(default)]
     pub sensitivity: Sensitivity,
+    /// Explicit sharing approval; older artifacts default to false.
+    #[serde(default)]
+    pub shareable: bool,
 }
 
 impl ArtifactManifest {
@@ -211,6 +214,9 @@ pub struct Artifact {
     pub supersedes: Option<String>,
     /// Strictest cited sensitivity.
     pub sensitivity: Sensitivity,
+    /// Explicit sharing approval; older artifacts default to false.
+    #[serde(default)]
+    pub shareable: bool,
     /// Calendar event identity for meeting preparation, absent on older artifacts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event_key: Option<String>,
@@ -253,6 +259,7 @@ impl Artifact {
             version: 1,
             supersedes: None,
             sensitivity: manifest.sensitivity,
+            shareable: manifest.shareable,
             tags: manifest.tags,
             event_key: manifest.event_key,
         };
@@ -425,7 +432,7 @@ impl Artifact {
     }
 }
 
-fn yaml_value(value: &Value) -> String {
+pub(crate) fn yaml_value(value: &Value) -> String {
     match value {
         Value::Object(map) => format!(
             "{{ {} }}",

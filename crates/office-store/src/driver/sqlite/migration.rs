@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::error::{Error, Result};
 
 /// The newest schema this build understands.
-pub(crate) const SUPPORTED_SCHEMA: u32 = 2;
+pub(crate) const SUPPORTED_SCHEMA: u32 = 3;
 
 /// One migration step: SQL applied in order.
 struct Migration {
@@ -65,6 +65,12 @@ CREATE INDEX documents_template ON documents(template);
 CREATE INDEX documents_date ON documents(date);
 ",
     },
+    Migration {
+        to: 3,
+        sql: "ALTER TABLE documents ADD COLUMN shareable INTEGER NOT NULL DEFAULT 0 CHECK (shareable IN (0, 1));
+CREATE TABLE IF NOT EXISTS index_backfill_pending (id INTEGER PRIMARY KEY CHECK (id = 1));
+INSERT OR IGNORE INTO index_backfill_pending (id) SELECT 1 WHERE EXISTS (SELECT 1 FROM documents);",
+    },
 ];
 
 /// Bring `conn` up to [`SUPPORTED_SCHEMA`], refusing a newer database.
@@ -118,7 +124,7 @@ fn record_backfill_marker(conn: &mut Connection, path: &Path, found: u32) -> Res
          );",
     )
     .map_err(|e| Error::sqlite(path, "create backfill marker", e))?;
-    let owed = if found == 1 {
+    let owed = if found == 1 || found == 2 {
         true
     } else if found == SUPPORTED_SCHEMA && !marker_existed {
         conn.query_row(

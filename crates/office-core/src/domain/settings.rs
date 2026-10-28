@@ -30,6 +30,9 @@ const KINDS: &[&str] = &[
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Value")]
 pub struct Settings {
+    /// Optional team shared Library, validated on every read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared: Option<super::sharing::SharedSettings>,
     /// Read-only calendar policy; no credentials.
     pub calendar: super::calendar::CalendarSettings,
     /// Bounds for approved offline scripts.
@@ -175,6 +178,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             calendar: Default::default(),
+            shared: None,
             retention: KINDS
                 .iter()
                 .map(|kind| {
@@ -267,6 +271,21 @@ impl Settings {
         // Normalize public, caller-constructed settings through the disk boundary
         // first, including policy defaults for missing per-kind entries.
         let mut encoded = encode(&Self::try_from(encode(self)?)?)?;
+        if key == "shared" {
+            encoded["shared"] = value;
+            return Self::try_from(encoded);
+        }
+        if let Some(name) = key.strip_prefix("shared.") {
+            if !["remote", "branch", "member"].contains(&name) {
+                return Err(invalid(key, "unknown shared key"));
+            }
+            let map = encoded
+                .get_mut("shared")
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| invalid(key, "set the whole shared block first"))?;
+            map.insert(name.into(), value);
+            return Self::try_from(encoded);
+        }
         if key == "open_weights" || key.starts_with("open_weights.") {
             set_open_weights(&mut encoded, key, value)?;
             return Self::try_from(encoded);
@@ -504,6 +523,7 @@ impl TryFrom<Value> for Settings {
                         }
                     }
                 }
+                "shared" => settings.shared = super::sharing::SharedSettings::parse(value)?,
                 "calendar" => {
                     settings.calendar = super::calendar::CalendarSettings::parse(value)?;
                 }

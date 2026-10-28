@@ -447,3 +447,46 @@ fn proposed_script_output_can_be_explicitly_promoted_without_executor_pickup() {
     );
     assert_eq!(response["ok"], true, "{response}");
 }
+
+#[test]
+fn promotion_manifest_sharing_requires_approved_citations_and_normal_sensitivity() {
+    use std::path::Path;
+    for (approved, sensitivity, code) in [
+        (true, "normal", None),
+        (false, "normal", Some("share_cites_unshared")),
+        (true, "private", Some("share_private_refused")),
+    ] {
+        let orbit = FakeOrbit::default();
+        let ports = ports(orbit.clone());
+        ports
+            .library
+            .write_document(
+                Path::new("sources/1970/01/src-proof/source.md"),
+                "---\nid: src-proof\ntitle: Proof\n---\nLine.\n",
+            )
+            .unwrap();
+        if approved {
+            ports.library.set_shareable("src-proof", true).unwrap();
+        }
+        let head = ports.library.head_commit().unwrap();
+        orbit.push_response(Ok(json!({"id":"fixture-task","status":"review","artifacts":[{"path":"artifact-manifest.json"},{"path":"report.md"}]})));
+        orbit.push_response(Ok(json!({"content":json!({"kind":"report","title":"Shared output","files":["report.md"],"series":"shared-output","cites":["src-proof#L1"],"shareable":true,"sensitivity":sensitivity}).to_string()})));
+        orbit.push_response(Ok(json!({"content":"Report."})));
+        let response = call(
+            &ports,
+            "office.artifact-promote",
+            json!({"task":"fixture-task"}),
+        );
+        if let Some(code) = code {
+            assert_eq!(response["error"]["code"], code, "{response}");
+            assert_eq!(ports.library.head_commit().unwrap(), head);
+            assert!(ports.library.artifact_documents().unwrap().is_empty());
+        } else {
+            assert_eq!(response["ok"], true, "{response}");
+            let id = response["output"]["id"].as_str().unwrap();
+            assert!(ports.library.get(id).unwrap().unwrap().shareable);
+            let shown = call(&ports, "office.artifact-show", json!({"id":id}));
+            assert_eq!(shown["output"]["artifact"]["shareable"], true);
+        }
+    }
+}

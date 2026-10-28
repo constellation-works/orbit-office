@@ -26,7 +26,8 @@
               "target": { "type": "string", "enum": ["path", "url", "contact", "account", "artifact"] },
               "value": { "type": ["string", "null"], "description": "Null for every contact." },
               "authoritative": { "type": "boolean" },
-              "as_of": { "type": ["string", "null"] }
+              "shareable": { "type": "boolean", "description": "Sharing approval; omitted when false." },
+        "as_of": { "type": ["string", "null"] }
             },
             "required": ["label", "target", "value", "authoritative", "as_of"],
             "additionalProperties": false
