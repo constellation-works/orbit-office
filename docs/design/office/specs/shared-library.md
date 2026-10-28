@@ -17,9 +17,9 @@ This is how Daniel already works: one shared knowledge base, his own, and a
 sync that pushes and pulls on a schedule. Here the `shareable` field makes
 the sync mechanical, so it is a deterministic tool, not an agent loop.
 
-The approval field, `office.share-set`, pure shared view, validated settings and
-the read-only shared layer are implemented. Sync, routine, app and demo sections
-below describe separately planned work.
+The approval field, `office.share-set`, pure shared view, validated settings,
+the read-only shared layer, `office.library-sync`, its routine and the demo are
+implemented. The app section below describes separately planned work.
 
 ## The loop
 
@@ -110,8 +110,8 @@ shared:
   ASCII lowercase letters or digits.
 - No block means no sharing: `office.library-sync` refuses with
   `shared_not_configured`, and nothing else changes.
-- Changing `remote` or `member` after a sync deletes the local clone and
-  its sync state on the next sync, which then starts fresh. Documents
+- Changing `remote`, `branch` or `member` after a sync deletes the local
+  clone and its sync state on the next sync, which then starts fresh. Documents
   already pushed under the old member name stay in the shared library.
 
 ## The shared repository
@@ -136,17 +136,16 @@ shared:
   of the Library's git. A new joiner gets transcripts, frame readings,
   chapters, digests and summaries, but not the media files.
 - The local clone lives at `{{plugin_state}}/shared/repo/`, inside the
-  plugin's existing grant. Sync state (per path: the blob last seen in the
-  shared library and the digest of the own document pushed for it) is
+  plugin's existing grant. Sync state is
   `{{plugin_state}}/shared/state.json`, owner-only and written atomically
-  (STD-03@2 §R5).
+  (STD-03@2 §R5; [Sync state](#sync-state)).
 
 ### The shared view of a document
 
 `office_core::domain::sharing::shared_view` is pure: Markdown, a member name,
 a current-sharing predicate and an already-shared predicate produce canonical
 frontmatter and a body whose text outside citations stays verbatim. Private
-input refuses `share_private_refused`. A future push writes this document's
+input refuses `share_private_refused`. A push writes this document's
 **shared view**, never the file as it is:
 
 - `contact` refs and `path` refs are dropped. Colleagues keep their own
@@ -162,73 +161,118 @@ input refuses `share_private_refused`. A future push writes this document's
 
 ## `office.library-sync`
 
-Planned separately.
-
 Mutating, `mcp_scope: workspace`: the orchestrator may run it when the user
 asks, because it only moves documents the user already approved for
 sharing. Input: `{}` or any of `{"direction": "both" | "pull" | "push",
-"dry_run": false}`. The default is `both`.
+"dry_run": false}`. The default is `both`. Unknown keys refuse
+`invalid_argument`.
 
-1. **Settings.** Reads the `shared` block, else `shared_not_configured`.
-2. **Clone or fetch.** Clones the branch into `repo/` when it is missing,
-   else fetches and fast-forwards. The clone is the tool's own: local
-   commits left by a failed push are discarded (`reset --hard` to the
-   fetched branch), because the next push is recomputed from the Library.
-   A repository without `.office-shared.yaml` at format 1 is refused with
-   `shared_layout_invalid`, except an empty repository, which the first
-   push initializes.
-3. **Pull.** For every path that changed upstream since the last sync:
-   - It validates the file with the Library's own frontmatter and page
-     rules. A file that fails, a symlink or special file, a path outside
-     the layout, or a document marked `private` is listed in `skipped` and
-     never indexed.
-   - It reindexes the shared layer (below).
-   - **Incoming update.** When the user has an own copy of a changed page
-     that is unchanged since the last push, it files a `knowledge_update`
-     proposal that applies the shared version ("Alice updated *Acme* in the
-     shared library"). Accepting it keeps the user's own `contact` and
-     `path` refs and turns citations of the user's own member back into
-     plain ids.
-   - **Conflict.** When both copies changed, it files one conflict
-     proposal showing both versions, with **Use theirs**, **Keep mine** and
-     **Ask an agent to merge** (an agent to-do that drafts a merged page as
-     an ordinary `knowledge_update` proposal). Nothing is pushed for that
-     page until the proposal is resolved. **Keep mine** pushes the user's
-     version over theirs on the next sync; theirs stays in the history.
-   - Both are filed on the proposal record
-     ([proposals.md](./proposals.md#record-and-lifecycle)), the conflict as
-     kind `shared_conflict`, with the page and the shared blob as evidence.
-     Equivalence and dismissal memory therefore apply: a repeated sync
-     files nothing new, and a dismissed incoming update stays dismissed for
-     that blob.
-4. **Push.** It reads the Library at one commit (`HEAD` before and after,
-   retrying once on `library_changed`). For every shareable document:
+1. **Settings and lock.** Reads the `shared` block, else
+   `shared_not_configured`. One sync at a time holds
+   `{{plugin_state}}/shared/sync.lock`; a second refuses
+   `library_writer_busy`. Sync state recorded for another remote, branch or
+   member is discarded with the clone (not in a dry run).
+2. **Fetch.** Creates the clone when it is missing and fetches the branch
+   into its remote-tracking ref without touching the working tree, so a dry
+   run reads every file from git objects. A reachable remote without the
+   branch is an empty shared library. A branch without a regular
+   `.office-shared.yaml` that is exactly `format: 1` is refused with
+   `shared_layout_invalid`; the first push to an empty branch writes it.
+3. **Pull** (directions `both` and `pull`). Every path whose blob differs
+   from the one last seen is listed in `pulled`, or in `skipped` when it is
+   a symlink (`shared_file_linked`), a submodule or other special entry
+   (`shared_file_special`), not UTF-8 text (`shared_file_unreadable`), outside the layout or an artifact file its
+   `artifact.md` does not list (`shared_path_outside_layout`), a companion
+   without a valid document (`shared_document_invalid`), or a page or
+   document the Library's own frontmatter, page, template and privacy rules
+   refuse (that refusal's code, for example `share_private_refused`). Then:
+   - The working tree is checked out at the fetched head (local changes and
+     files discarded; the clone is the tool's own) and both index layers
+     are rebuilt. The shared layer's own validation keeps skipped files out
+     of the index.
+   - **Incoming update.** When the user's own copy of a changed page is
+     shareable and unchanged since this member last pushed or matched it,
+     it files a `knowledge_update` proposal that applies the shared version
+     ("bob updated *Acme* in the shared library"). The proposed Markdown is
+     the shared copy localized: the user's own `contact` and `path` refs
+     are kept, citations of the user's own member become plain ids,
+     `shared_by` is dropped, and the own copy's `shareable` and
+     `sensitivity` are retained.
+   - **Conflict.** When both copies changed, it files one `shared_conflict`
+     proposal carrying the page, the shared path and blob, the localized
+     shared version and the own copy's digest. Nothing is pushed for that
+     page until it is resolved. `office.proposal-accept` takes a required
+     `choice`: `theirs` writes the shared version, as above; `mine` changes
+     no page and records the shared blob as this member's base, so the next
+     sync pushes the user's version over theirs (theirs stays in the
+     history). `choice` is refused for every other kind, and
+     `office.proposal-create` refuses `shared_conflict`.
+   - Both use the proposal record
+     ([proposals.md](./proposals.md#record-and-lifecycle)), tagged
+     `shared-library`, with the page id and `shared:<path>@<blob>` as
+     evidence. An open proposal for the same page and blob is reported with
+     `created: false` instead of being filed again, and dismissal memory
+     applies per blob.
+   - An own copy of a changed page that is no longer shareable stops being
+     this member's: no proposal is filed and nothing is pushed for it.
+   - When the shared copy already equals the user's shared view (ignoring
+     `shared_by` and `contributors`), the page is recorded as matched; this
+     is how an accepted incoming update or **Use theirs** settles.
+4. **Push** (directions `both` and `push`). It reads the Library at one
+   commit (`HEAD` before and after, retrying once, then `library_changed`).
+   For every shareable own document:
    - It checks the document again: `private`, or citing an own document
-     that is no longer shareable, puts it in `skipped` with
-     `share_private_refused` or `share_cites_unshared`, and files one
-     Needs you item for the batch.
-   - It writes the shared view when it differs from the shared copy and the
-     shared copy has not changed since this member last saw it.
+     that is no longer shareable, puts it in `skipped` with phase `push`
+     and `share_private_refused` or `share_cites_unshared`.
+   - A page's shared view goes to `knowledge/…/<id>.md`; a source or
+     artifact's shared view goes under `members/<member>/` at its Library
+     path with its regular companion files (source sidecars `vN.md`,
+     `frames.md`, `chapters.md`, `digest.json`, `summary.md`; the files an
+     artifact lists). `original.*` and `frames/` never leave.
+   - It writes a file when it differs from the shared copy. A page is
+     written only while the shared copy is still the blob this member last
+     pushed, matched or chose **Keep mine** over; otherwise the pending
+     incoming update or conflict decides. Member files are always this
+     member's to overwrite.
    - It removes paths this member pushed whose document is no longer
-     shareable or no longer exists.
+     shareable or no longer exists. A page a colleague has changed since is
+     left to them and forgotten instead.
    - It commits once ("<member>: share 4 documents, remove 1") with the
-     user's own git identity and pushes. A rejected push fetches, recomputes
-     and retries once, then returns `shared_push_rejected`.
-5. **Result.** `pulled`, `pushed`, `removed`, `incoming` and `conflicts` (the
-   proposals filed), `skipped` (id and reason), `commit` (the shared head)
-   and `synced_at`. `dry_run: true` fetches, computes the same lists and
-   changes nothing: no index, state, proposal, commit or push.
+     user's own git identity (`shared_identity_missing` without one) and
+     pushes. A rejected push fetches, recomputes and retries once, then
+     returns `shared_push_rejected`. A push with nothing to write or remove
+     makes no commit.
+5. **Result.** `direction`, `dry_run`, `pulled`, `pushed` and `removed`
+   (shared paths), `incoming` and `conflicts` (`{page, proposal, created}`),
+   `skipped` (`{phase, path, id, reason}`), `commit` (the shared head) and
+   `synced_at`. `dry_run: true` fetches and computes the same lists but
+   changes no index, sync state, proposal, working tree, commit or push;
+   its `synced_at` is null and its proposals are null.
 
 Errors: `shared_not_configured`, `shared_remote_unreachable` (a failed
-clone, fetch or push; names the remote's host, never credentials or git's
-stderr), `shared_push_rejected`, `shared_layout_invalid`,
-`library_writer_busy`. A failure in one phase leaves the other phase's
-completed work and the previous sync state intact.
+fetch or push; names the remote's host, `local` for a path, never
+credentials, paths or git's stderr), `shared_push_rejected`,
+`shared_layout_invalid`, `shared_identity_missing`, `shared_storage_failed`
+(a local clone or state failure, naming only the operation),
+`library_changed`, `library_writer_busy`. The pull's state is saved before
+the push starts, so a push failure keeps the completed pull.
+
+### Sync state
+
+`{{plugin_state}}/shared/state.json` (owner-only, atomic, STD-03@2 §R5)
+records `format: 1`, the `remote`, `branch` and `member` it belongs to,
+the shared `head`, `synced_at`, and per clone-relative path: `seen` (the
+blob the last pull saw), `base` (the blob this member last pushed, matched
+or chose **Keep mine** over) and `own` (the SHA-256 of the own document or
+file when it was pushed or matched; present only for paths this member
+shares). Unknown fields refuse to load.
 
 ### Transport
 
 - Git runs through the shared subprocess supervisor with a 120-second
-  deadline per command, from the plugin's required `git`.
+  deadline per command and bounded output, from the plugin's required
+  `git`. Office's git adapter is `office_store::SharedStore` behind the
+  `office_core::ports::SharedRepository` port; tools never run git.
 - The child environment is an allowlist (STD-05@1): `PATH`, `HOME`,
   `LANG`, `SSH_AUTH_SOCK`, `GIT_TERMINAL_PROMPT=0`. Credentials are the
   user's own git setup (SSH agent or credential helper). Office stores no
@@ -236,7 +280,11 @@ completed work and the previous sync state intact.
 - Every git command runs with `-c protocol.allow=never` plus
   `protocol.ssh.allow`, `protocol.https.allow` and `protocol.file.allow`
   set to `always`, and `-c core.hooksPath=/dev/null`, so the shared
-  repository can't select another transport or run hooks.
+  repository can't select another transport or run hooks. Git drops `-c`
+  settings for a local transport, so a push to a path or `file://` remote
+  also runs that repository's `receive-pack` with `core.hooksPath=/dev/null`.
+  The clone also disables symlink checkout, fsmonitor, commit signing and
+  automatic gc.
 - This is the plugin's one outward path besides model inference and the
   gateway. It reaches only the configured `remote`, and it carries only
   documents the user marked shareable.
@@ -295,10 +343,14 @@ path; reads route it to the clone, and ordinary document writes refuse it.
 
 ## Routine
 
-`office-shared-sync`: every 60 minutes, seeded disabled; a one-step job
-that inlines `plugin.tool_call` with `office.library-sync`, like
-`office-calendar-sync`. When the user saves the `shared` block, the app
-offers to turn it on.
+`office-shared-sync` (`definitions/routines/office-shared-sync.yaml`):
+hourly at `0 * * * *`, seeded `enabled: false`, targeting
+`job:office-shared-sync`. The job has one deterministic step that inlines
+`plugin.tool_call` with `office.library-sync` and `input: {}`, like
+`office-calendar-sync`, with `timeout_seconds: 360` and
+`max_active_runs: 1`. Both are registered in `spec.definitions`. When the
+user saves the `shared` block, the app offers to turn it on (planned with
+the app).
 
 ## App
 
@@ -312,15 +364,24 @@ offers to turn it on.
 - **Library setup:** a **Connect a shared library** step, shown first to a
   new Library, that opens Settings › Shared library.
 - **Needs you:** incoming updates, conflicts and skipped documents, grouped
-  as one card per sync.
+  as one card per sync. The sync files proposals for the first two; the app
+  builds the skipped card from the result's `skipped` list, since the tool
+  files no separate task for it.
 
 ## Demo
 
-Two workspaces on one machine and a bare repository in the demo directory,
-all synthetic. Alice's Library shares its KT pages and the KT video's
-transcript and frame readings. A new joiner's empty Library connects, syncs,
-and answers a question about the system from Alice's pages, with citations
-that open Alice's transcript at the second.
+`demo/synthetic/shared_library.py --root <new dir>` builds two workspaces and
+a bare repository under one new root, all synthetic, through the built
+binary. Alice captures a time-coded Lantern KT transcript, writes a topic
+page and a runbook citing it (plus a scratch page she never shares), marks
+the transcript and the two pages shareable, previews with `dry_run` and
+syncs; a second sync pushes nothing. A new joiner's empty Library connects,
+syncs, and answers "What do I do when the Lantern spool stalls?" from
+Alice's runbook, whose citations (`alice/src-…#t=00:01:10`) open Alice's
+transcript at the second. The script checks each step and writes
+`shared-demo.json`. Frame readings come from the macOS video pipeline, so
+the demo shares a transcript only; pushing and pulling `frames.md` is
+covered by the end-to-end test.
 
 ## Not built
 
@@ -329,8 +390,10 @@ that open Alice's transcript at the second.
 - Accounts or permissions. Who may push is whoever the git host lets push.
 - Erasing a document from the shared history.
 - Sharing originals (video and audio files).
-- Line-by-line merging. A page is replaced whole; **Ask an agent to merge**
-  covers the rest.
+- Line-by-line merging. A page is replaced whole.
+- **Ask an agent to merge** on a conflict. A conflict offers **Use theirs**
+  and **Keep mine**; a merged page can still be filed as an ordinary
+  `knowledge_update` proposal.
 
 ## Task References
 

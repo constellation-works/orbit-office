@@ -20,6 +20,8 @@ pub enum ProposalKind {
     RunbookFromFriction,
     /// Disable an auto-task or retire a page.
     Retire,
+    /// Resolve a page changed both here and in the shared library.
+    SharedConflict,
 }
 impl ProposalKind {
     /// Stable task-tag token.
@@ -31,6 +33,7 @@ impl ProposalKind {
             Self::KnowledgeUpdate => "knowledge_update",
             Self::RunbookFromFriction => "runbook_from_friction",
             Self::Retire => "retire",
+            Self::SharedConflict => "shared_conflict",
         }
     }
 }
@@ -167,6 +170,20 @@ pub enum Payload {
         /// Exact reviewed target.
         target: RetireTarget,
     },
+    /// A page changed both in the user's Library and in the shared library.
+    /// Filed only by `office.library-sync`; accepted with a `choice`.
+    SharedConflict {
+        /// The page id.
+        page: String,
+        /// The page's clone-relative path in the shared library.
+        path: String,
+        /// The shared blob this conflict is about.
+        blob: String,
+        /// Their version, localized as the user's own copy (**Use theirs**).
+        markdown: String,
+        /// SHA-256 of the user's copy when the conflict was filed.
+        base_sha256: String,
+    },
 }
 
 fn sharing_flag<'de, D: serde::Deserializer<'de>>(
@@ -214,7 +231,8 @@ impl Payload {
             | Self::KnowledgeUpdate { .. }
             | Self::AutoTask { .. }
             | Self::RunbookFromFriction { .. }
-            | Self::Retire { .. } => {}
+            | Self::Retire { .. }
+            | Self::SharedConflict { .. } => {}
         }
         Ok(())
     }
@@ -228,6 +246,7 @@ impl Payload {
             Self::KnowledgeUpdate { .. } => ProposalKind::KnowledgeUpdate,
             Self::RunbookFromFriction { .. } => ProposalKind::RunbookFromFriction,
             Self::Retire { .. } => ProposalKind::Retire,
+            Self::SharedConflict { .. } => ProposalKind::SharedConflict,
         }
     }
 }

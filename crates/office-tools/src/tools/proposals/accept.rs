@@ -3,8 +3,10 @@ use super::create::{check_revision, object, validate_payload};
 use crate::registry::{Call, Tool};
 use office_core::domain::artifact::decode_payload;
 use office_core::domain::knowledge::Page;
-use office_core::domain::proposal::{self, Payload, RetireTarget};
+use office_core::domain::proposal::{self, Payload, ProposalKind, RetireTarget};
 use office_core::domain::script::ScriptRequest;
+use office_core::domain::sharing::SharingError;
+use office_core::domain::sharing::sync::SyncState;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Value, json};
@@ -16,7 +18,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::Mutating,
         mcp_scope: McpScope::None,
     },
-    &["id", "sha256"],
+    &["id", "sha256", "choice"],
     run,
 );
 fn run(call: &Call<'_>) -> Result<Value> {
@@ -71,8 +73,38 @@ fn run(call: &Call<'_>) -> Result<Value> {
     if !tags.contains(&json!(format!("proposal:{}", payload.kind().as_str()))) {
         return Err(proposal::invalid("matching proposal kind tag"));
     }
+    let choice = match (call.input.get("choice"), payload.kind()) {
+        (None, kind) if kind != ProposalKind::SharedConflict => None,
+        (Some(Value::String(choice)), ProposalKind::SharedConflict)
+            if choice == "theirs" || choice == "mine" =>
+        {
+            Some(choice.as_str())
+        }
+        (Some(_) | None, _) => {
+            return Err(proposal::invalid(
+                "choice (theirs or mine, only for a shared_conflict)",
+            ));
+        }
+    };
     payload.apply_sharing()?;
-    validate_payload(call, &payload)?;
+    if let Payload::SharedConflict { page, .. } = &payload
+        && choice == Some("mine")
+    {
+        // Keep mine changes no page; the user's copy only has to exist.
+        if call
+            .ports
+            .library
+            .get(page)?
+            .is_none_or(|record| record.layer != office_core::domain::knowledge::LibraryLayer::Own)
+        {
+            return Err(proposal::refused(
+                "proposal_page_missing",
+                "reviewed page is absent",
+            ));
+        }
+    } else {
+        validate_payload(call, &payload)?;
+    }
     if let Payload::AutoTask { definition } = &payload {
         for step in &definition.steps {
             if step.tool == "office.script-run" {
@@ -98,7 +130,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
     {
         return Err(Error::OrbitOutcomeUnknown);
     }
-    let change = apply(call, &payload)?;
+    let change = apply(call, &payload, choice)?;
     let summary = format!(
         "{}{digest}\nUser accepted Office {} proposal. Applied change: {}",
         proposal::APPROVAL_DIGEST_PREFIX,
@@ -138,7 +170,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
     Ok(json!({"id":id,"accepted":true,"change":change}))
 }
 
-fn apply(call: &Call<'_>, payload: &Payload) -> Result<Value> {
+fn apply(call: &Call<'_>, payload: &Payload, choice: Option<&str>) -> Result<Value> {
     match payload {
         Payload::AutoTask { definition } => {
             let added = call.ports.orbit.auto_task_add(&definition.callback()?)?;
@@ -217,8 +249,44 @@ fn apply(call: &Call<'_>, payload: &Payload) -> Result<Value> {
                 Some(base_sha256),
             )
         }
+        Payload::SharedConflict {
+            page,
+            path,
+            blob,
+            markdown,
+            base_sha256,
+        } => {
+            if choice == Some("theirs") {
+                check_revision(call, page, base_sha256)?;
+                return write_page(call, markdown, Some(base_sha256));
+            }
+            keep_mine(call, path, blob)?;
+            Ok(json!({"page":page,"kept":"mine"}))
+        }
     }
 }
+
+/// Record that this member has seen their blob and chose to override it, so
+/// the next sync pushes the user's copy over it. Theirs stays in the history.
+fn keep_mine(call: &Call<'_>, path: &str, blob: &str) -> Result<()> {
+    let settings = call
+        .ports
+        .library
+        .settings()?
+        .shared
+        .ok_or(SharingError::NotConfigured)?;
+    call.ports.shared.lock()?;
+    let mut state = call
+        .ports
+        .shared
+        .state()?
+        .filter(|state| state.belongs_to(&settings))
+        .unwrap_or_else(|| SyncState::fresh(&settings));
+    let entry = state.paths.entry(path.to_string()).or_default();
+    entry.base = Some(blob.to_string());
+    call.ports.shared.save_state(&state)
+}
+
 fn write_page(call: &Call<'_>, markdown: &str, expected: Option<&str>) -> Result<Value> {
     let page = Page::from_markdown(markdown)?;
     let path = if expected.is_some() {

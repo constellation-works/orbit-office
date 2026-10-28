@@ -5,7 +5,8 @@ seeded `enabled: false`; auto-tasks use `dedupe: skip_if_open`. Activities use
 Orbit's schemaVersion 2 Activity envelope and have no schedule switch or dedupe key.
 
 - Routines: `office-kt-inbox` (every 15 minutes), `office-signals` (daily),
-  `office-daily-digest` (daily), `office-bootstrap` (every 15 minutes).
+  `office-daily-digest` (daily), `office-bootstrap` (every 15 minutes),
+  `office-shared-sync` (hourly).
 - Auto-tasks: `office-knowledge-maintenance` (weekly), `office-review` (period end).
 - Activities: `office-agent-todo`.
 
@@ -83,3 +84,11 @@ These are shipped definitions, not proposals for new automation.
 The handler walks all unsummarized meetings, transcribes empty audio captures,
 extracts cited decisions and to-dos, then publishes the summary completion
 marker. No agent loop or crew is involved. The job has `max_active_runs: 1`.
+
+`office-shared-sync` is registered under routines and jobs. The disabled
+hourly routine (`0 * * * *`) targets `job:office-shared-sync`; its one
+deterministic `plugin.tool_call` invokes `office.library-sync` with empty
+input, which pulls the team's shared library and pushes only documents the
+user marked shareable. Incoming updates and conflicts become proposals for
+the user; the job approves nothing. It has `max_active_runs: 1` and creates
+no agent loop, crew or task of its own.

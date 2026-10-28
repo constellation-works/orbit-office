@@ -961,6 +961,78 @@ impl LibraryStore {
         self.files.read_bytes(relative)
     }
 
+    /// The shareable companions of an own source or artifact document:
+    /// regular source sidecars (`vN.md`, `frames.md`, `chapters.md`,
+    /// `digest.json`, `summary.md`) or the artifact's listed files. Originals,
+    /// `frames/` and processing state are never returned; symlinks are refused.
+    pub fn evidence_files(&self, relative: &Path) -> Result<Vec<(String, Vec<u8>)>> {
+        self.read_ready()?;
+        let unsafe_path = || Error::UnsafePath {
+            kind: "shared evidence",
+            value: relative.display().to_string(),
+        };
+        let name = relative
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(unsafe_path)?;
+        let dir = relative.parent().ok_or_else(unsafe_path)?;
+        let names: Vec<String> = match (relative.components().next(), name) {
+            (Some(std::path::Component::Normal(area)), "source.md") if area == "sources" => {
+                let physical = self.library_root().join(dir);
+                self.files.validate_relative_path(dir)?;
+                let mut names = Vec::new();
+                let entries = std::fs::read_dir(&physical)
+                    .map_err(|e| Error::io("list source", &physical, e))?;
+                for entry in entries {
+                    let entry = entry.map_err(|e| Error::io("list source", &physical, e))?;
+                    let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                        continue;
+                    };
+                    let numbered = name
+                        .strip_prefix('v')
+                        .and_then(|n| n.strip_suffix(".md"))
+                        .is_some_and(|n| {
+                            !n.is_empty() && n.len() <= 10 && n.bytes().all(|b| b.is_ascii_digit())
+                        });
+                    if (numbered
+                        || ["frames.md", "chapters.md", "digest.json", "summary.md"]
+                            .contains(&name.as_str()))
+                        && entry.file_type().is_ok_and(|kind| kind.is_file())
+                    {
+                        names.push(name);
+                    }
+                }
+                names
+            }
+            (Some(std::path::Component::Normal(area)), "artifact.md") if area == "artifacts" => {
+                let text = self.files.read_text(relative)?;
+                Artifact::from_markdown(&text)
+                    .map_err(office_core::Error::from)?
+                    .files
+                    .into_iter()
+                    .filter(|name| {
+                        !name.starts_with("original.")
+                            && !name.contains('/')
+                            && name != "artifact.md"
+                    })
+                    .collect()
+            }
+            _ => return Err(unsafe_path()),
+        };
+        let mut files = Vec::new();
+        for name in names {
+            let path = dir.join(&name);
+            if !std::fs::symlink_metadata(self.library_root().join(&path))
+                .is_ok_and(|meta| meta.is_file())
+            {
+                continue;
+            }
+            files.push((name, self.files.read_bytes(&path)?));
+        }
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(files)
+    }
+
     /// Read every artifact frontmatter file, without truncating series history.
     pub fn artifact_documents(&self) -> Result<Vec<LibraryText>> {
         self.read_ready()?;
@@ -2641,6 +2713,9 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn read_artifact_file(&self, relative: &Path) -> office_core::Result<Vec<u8>> {
         Ok(Self::read_artifact_file(self, relative)?)
+    }
+    fn evidence_files(&self, relative: &Path) -> office_core::Result<Vec<(String, Vec<u8>)>> {
+        Ok(Self::evidence_files(self, relative)?)
     }
 
     fn read_document(&self, relative: &Path) -> office_core::Result<DocumentRecord> {

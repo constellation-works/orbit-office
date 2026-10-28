@@ -1,0 +1,7 @@
+schemaVersion: 1
+name: office-shared-sync
+description: Pull and push the team's shared library every hour.
+enabled: false
+trigger:
+  cron: "0 * * * *"
+target: job:office-shared-sync

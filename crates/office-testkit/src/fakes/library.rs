@@ -452,6 +452,28 @@ impl Library for FakeLibrary {
             bytes,
         })
     }
+    fn evidence_files(&self, relative: &Path) -> Result<Vec<(String, Vec<u8>)>> {
+        use office_core::domain::sharing::sync::{SharedPath, classify};
+        let dir = relative.parent().ok_or(Error::LibraryUnavailable)?;
+        let mut files = BTreeMap::new();
+        let texts = self.texts.borrow();
+        let artifacts = self.artifact_files.borrow();
+        let candidates = texts
+            .iter()
+            .map(|(path, text)| (path, text.as_bytes().to_vec()))
+            .chain(artifacts.iter().map(|(path, bytes)| (path, bytes.clone())));
+        for (path, bytes) in candidates {
+            let path = Path::new(path);
+            if path.parent() != Some(dir) || path == relative {
+                continue;
+            }
+            let shared = format!("members/fake/{}", path.to_string_lossy());
+            if let SharedPath::Companion { name, .. } = classify(&shared) {
+                files.insert(name, bytes);
+            }
+        }
+        Ok(files.into_iter().collect())
+    }
     fn source_sidecar(&self, id: &str, name: &str) -> Result<Option<String>> {
         let source = self.get(id)?.ok_or_else(|| {
             office_core::domain::source::video::refusal("source_not_found", "source was not found")

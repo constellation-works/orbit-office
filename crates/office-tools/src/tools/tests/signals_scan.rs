@@ -31,6 +31,7 @@ fn ports_with(
             )),
             calendar: Box::new(office_core::ports::UnavailableCalendar),
             selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+            shared: Box::new(office_testkit::fakes::FakeShared::default()),
         },
         observer,
     )
@@ -103,6 +104,7 @@ fn scan_refuses_an_uninitialized_library() {
         )),
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
     };
     let input = Map::new();
     let context = Map::new();
@@ -133,6 +135,7 @@ fn ports_for(
         clock: Box::new(clock()),
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
     }
 }
 

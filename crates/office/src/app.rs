@@ -11,9 +11,10 @@ use office_core::ports::{
     Clock, InitOutcome, Library, LibraryHealth, LibraryText, Models, Orbit, Ports, Routed,
     Selections,
 };
+use office_core::ports::{SharedRepository, UnavailableShared};
 use office_core::protocol::{self, Context};
 use office_orbit::{CALLBACK_ENV_NAMES, OrbitCallbacks};
-use office_store::LibraryStore;
+use office_store::{LibraryStore, SharedStore};
 use serde_json::Value;
 
 use crate::error::Result;
@@ -485,6 +486,9 @@ impl Library for RealLibrary {
     fn head_commit(&self) -> office_core::Result<Option<String>> {
         Ok(LibraryStore::head_commit(&self.store()?)?)
     }
+    fn evidence_files(&self, relative: &Path) -> office_core::Result<Vec<(String, Vec<u8>)>> {
+        Ok(LibraryStore::evidence_files(&self.store()?, relative)?)
+    }
     fn stage_attachment(&self, name: &str, text: &str) -> office_core::Result<String> {
         <LibraryStore as Library>::stage_attachment(&self.store()?, name, text)
     }
@@ -586,7 +590,20 @@ fn ports(context: &Context, bootstrap_read_only: bool) -> Ports<'_> {
         orbit,
         clock: Box::new(SystemClock),
         selections: Box::new(RealSelections { context }),
+        shared: shared(context),
         calendar: Box::new(RealCalendar { context }),
+    }
+}
+
+/// The shared library clone under `plugin_state/shared/`. Git children get
+/// only the allowlisted environment (STD-05@1).
+fn shared(context: &Context) -> Box<dyn SharedRepository + '_> {
+    match context_state_dir(context) {
+        Some(state) => Box::new(SharedStore::new(
+            state,
+            office_store::git_environment(|name| std::env::var_os(name)),
+        )),
+        None => Box::new(UnavailableShared),
     }
 }
 

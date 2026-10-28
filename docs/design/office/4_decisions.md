@@ -1453,3 +1453,57 @@ empty index incurs no backfill write. Unconfigured shared settings are omitted
 from canonical settings serialization, preserving existing budget fingerprints.
 Shared view projection is pure; sync, credentials, transport and the read-only
 shared layer remain separate work.
+
+## The shared library sync owns its manifest additions and its git port
+
+**Recorded:** 2026-10-28
+**Code anchors:** `office-core/src/domain/sharing/sync.rs`,
+`office-core/src/ports/shared.rs`, `office-store/src/shared.rs`,
+`office-tools/src/tools/sharing/sync.rs`; [shared-library.md](./specs/shared-library.md#officelibrary-sync).
+
+**Manifest ownership.** This feature edits the integrator-owned files it needs
+to ship one callable tool with a closed contract, following the sharing
+approval and calendar precedents: `tools/sharing/mod.rs`, the registry row,
+the `library-sync` block in `plugin.yaml`, the `office-shared-sync` job and
+routine entries in `spec.definitions`, the `library-sync` request/response
+schemas, the `choice` field and `kept` change in the `proposal-accept`
+schemas, and a conformance fixture. It is not a general exception for
+unrelated registry or manifest changes. No crate or dependency edge is added;
+`office-common` gains one supervisor entry point with a caller-chosen deadline.
+
+**Git sits behind a port.** `SharedRepository` (lock, state, reset, fetch,
+read, checkout, push) keeps the tool pure and testable with
+`office_testkit::fakes::FakeShared`; `office_store::SharedStore` is the only
+code that runs git. Fetching only updates a remote-tracking ref and reads go
+through git objects, so `dry_run` never touches the working tree, the index,
+the sync state, proposals or the remote. Pushes build one commit with
+plumbing (`read-tree`, `hash-object`, `update-index`, `commit-tree`) on the
+fetched head and push it by object id, so the working tree never has to be
+merged and a rejection is a plain non-fast-forward.
+
+**Per-path state decides push versus proposal.** Each shared path records the
+blob last seen, the blob last reconciled (`base`: pushed, matched, or
+overridden by **Keep mine**) and the digest of the own document then (`own`).
+A page is pushed only while the shared copy is still `base`; a changed shared
+copy with an unchanged own copy is an incoming `knowledge_update`, and with a
+changed own copy a `shared_conflict`. Matching content (ignoring `shared_by`
+and `contributors`) settles both sides without a push. Member namespaces are
+always this member's to overwrite. Spec reading: "unchanged since the last
+push" is measured against `own`, and a page this member never pushed but holds
+an own copy of counts as changed, so it conflicts rather than overwriting.
+
+**Branch changes reset too.** The spec names remote and member; the state is
+also bound to the branch, because another branch is another shared history.
+
+**Local remotes run no remote hooks.** Git clears `-c` overrides for local
+transports, so a path or `file://` remote's own `receive-pack` hooks would run
+as the user. Pushes to such remotes pass `--receive-pack` with
+`core.hooksPath=/dev/null`; SSH and HTTPS servers run their hooks on the
+server, as intended.
+
+**Deviations from the spec text.** Skipped push documents are reported in the
+result's `skipped` list (with `phase: push`) instead of a separate Needs you
+task; the app (ORB-19421) builds that card. **Ask an agent to merge** is not
+built; a conflict offers **Use theirs** and **Keep mine**. The demo shares a
+transcript without frame readings, because those come only from the macOS
+video pipeline; `frames.md` round trips in the end-to-end test.

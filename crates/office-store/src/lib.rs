@@ -40,3 +40,6 @@ mod tests;
 
 mod calendar;
 pub use calendar::CalendarStore;
+
+mod shared;
+pub use shared::{SharedStore, git_command, git_environment};

@@ -1,6 +1,7 @@
 //! Sharing approval and the pure projection sent to a team's shared Library.
 
 mod settings;
+pub mod sync;
 pub use settings::SharedSettings;
 
 use crate::domain::knowledge::{DocumentRecord, frontmatter, inline_citations, parse_citation};
@@ -23,6 +24,34 @@ pub enum SharingError {
     /// No indexed document has the requested id.
     #[error("document was not found")]
     DocumentNotFound,
+    /// The Library has no `shared` settings block.
+    #[error("no shared library is configured; set the shared block with office.config-set")]
+    NotConfigured,
+    /// A clone, fetch or push failed. Names the host only, never credentials
+    /// or git's own diagnostics.
+    #[error("the shared library at {host} could not be reached")]
+    RemoteUnreachable {
+        /// Host of the configured remote (`local` for a path).
+        host: String,
+    },
+    /// The push was rejected again after one fetch and recompute.
+    #[error("the shared library rejected the push twice; sync again")]
+    PushRejected,
+    /// The shared branch has no `.office-shared.yaml` at format 1.
+    #[error("the shared repository has no .office-shared.yaml at format 1")]
+    LayoutInvalid,
+    /// Another sync holds the shared clone.
+    #[error("another shared library sync is running; retry")]
+    WriterBusy,
+    /// No git identity is configured for the sync commit.
+    #[error("git user.name and user.email are not configured for the shared library commit")]
+    IdentityMissing,
+    /// The local clone or sync state could not be read or written.
+    #[error("shared library {operation} failed")]
+    Storage {
+        /// The local operation that failed.
+        operation: &'static str,
+    },
 }
 
 impl SharingError {
@@ -33,6 +62,13 @@ impl SharingError {
             Self::Private => "share_private_refused",
             Self::CitesUnshared { .. } => "share_cites_unshared",
             Self::DocumentNotFound => "document_not_found",
+            Self::NotConfigured => "shared_not_configured",
+            Self::RemoteUnreachable { .. } => "shared_remote_unreachable",
+            Self::PushRejected => "shared_push_rejected",
+            Self::LayoutInvalid => "shared_layout_invalid",
+            Self::WriterBusy => "library_writer_busy",
+            Self::IdentityMissing => "shared_identity_missing",
+            Self::Storage { .. } => "shared_storage_failed",
         }
     }
 }
@@ -265,8 +301,16 @@ pub fn shared_view(
         ));
     }
     output.push_str("---\n");
-    // The citation scanner defines exactly which bracket groups are citations.
-    // Replace their tokens only inside those groups, preserving punctuation.
+    output.push_str(&rewrite_citations(body, |cite| qualify(cite, member)));
+    Ok(output)
+}
+
+/// Rewrite every inline citation token in `body` through `map`, leaving all
+/// other bytes verbatim. The citation scanner defines exactly which bracket
+/// groups are citations; tokens are replaced only inside those groups,
+/// preserving punctuation.
+pub(crate) fn rewrite_citations(body: &str, map: impl Fn(&str) -> String) -> String {
+    let mut output = String::new();
     let mut rest = body;
     while let Some(open) = rest.find('[') {
         output.push_str(&rest[..open + 1]);
@@ -285,7 +329,7 @@ pub fn shared_view(
                 let text = part.trim().trim_end_matches([';', ',']).trim_end();
                 if let Some(at) = part.find(text) {
                     output.push_str(&part[..at]);
-                    output.push_str(&qualify(text, member));
+                    output.push_str(&map(text));
                     output.push_str(&part[at + text.len()..]);
                 }
             }
@@ -299,7 +343,7 @@ pub fn shared_view(
         }
     }
     output.push_str(rest);
-    Ok(output)
+    output
 }
 
 /// Validate an untrusted clone document against the Library's metadata and layout.

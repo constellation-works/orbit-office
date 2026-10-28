@@ -176,6 +176,14 @@ pub trait Library {
         Err(Error::LibraryUnavailable)
     }
 
+    /// The shareable companions of an own source or artifact document, by
+    /// its Library-relative path: source sidecars (`vN.md`, `frames.md`,
+    /// `chapters.md`, `digest.json`, `summary.md`) or the artifact's listed
+    /// files, as `(file name, bytes)` in name order. Originals, `frames/`
+    /// and processing state are never returned; symlinks are never followed.
+    fn evidence_files(&self, _relative: &Path) -> Result<Vec<(String, Vec<u8>)>> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Read the current document by Library-relative path, without a writer lock.
     fn read_document(&self, _relative: &Path) -> Result<DocumentRecord> {
         Err(Error::LibraryUnavailable)

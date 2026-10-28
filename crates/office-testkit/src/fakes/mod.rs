@@ -7,6 +7,7 @@ mod models;
 mod orbit;
 mod scripts;
 mod selection;
+mod shared;
 
 pub use calendar::FakeCalendar;
 pub use clock::FakeClock;
@@ -15,6 +16,7 @@ pub use models::FakeModels;
 pub use orbit::{FakeOrbit, OrbitCall};
 pub use scripts::FakeScripts;
 pub use selection::FakeSelections;
+pub use shared::FakeShared;
 
 /// Builder for a complete set of fake services.
 pub struct PortsBuilder {
@@ -48,6 +50,7 @@ impl PortsBuilder {
             orbit: Box::new(FakeOrbit::default()),
             clock: Box::new(FakeClock(self.now)),
             selections: Box::new(FakeSelections::default()),
+            shared: Box::new(FakeShared::default()),
         }
     }
 }

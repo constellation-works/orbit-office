@@ -62,6 +62,31 @@ pub fn run_captured_with_stdout_limit(
     Err(Error::ProcessUnsupported)
 }
 
+/// Capture with a caller-selected deadline and stdout budget, for adapters
+/// whose protocol needs longer than the default 30 seconds (for example a
+/// git fetch or push). Stderr keeps the default 512 KiB bound; process-group
+/// cleanup and bounded drains are unchanged.
+#[cfg(unix)]
+pub fn run_captured_with_deadline(
+    command: &mut Command,
+    root: &Path,
+    timeout: Duration,
+    stdout_limit: u64,
+) -> Result<CapturedOutput> {
+    run_captured_bounded(command, root, timeout, stdout_limit, OUTPUT_LIMIT)
+}
+
+/// Unsupported-platform counterpart of the deadline-selected capture.
+#[cfg(not(unix))]
+pub fn run_captured_with_deadline(
+    _command: &mut Command,
+    _root: &Path,
+    _timeout: Duration,
+    _stdout_limit: u64,
+) -> Result<CapturedOutput> {
+    Err(Error::ProcessUnsupported)
+}
+
 /// Run a command with a 30-second deadline, empty stdin, a fresh process group
 /// and concurrent drains limited to 512 KiB per stream (1 MiB total).
 ///

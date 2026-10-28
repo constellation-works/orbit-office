@@ -21,8 +21,20 @@ pub(crate) const TOOL: Tool = Tool::built(
 );
 
 fn run(call: &Call<'_>) -> Result<Value> {
-    let mut input: Create = serde_json::from_value(Value::Object(call.input.clone()))
+    let input: Create = serde_json::from_value(Value::Object(call.input.clone()))
         .map_err(|_| proposal::invalid("closed title, description, evidence, payload and tags"))?;
+    // Conflicts describe the shared clone's state; only the sync files them.
+    if input.payload.kind() == proposal::ProposalKind::SharedConflict {
+        return Err(proposal::invalid(
+            "payload kind (shared_conflict is filed by office.library-sync)",
+        ));
+    }
+    file(call, input)
+}
+
+/// File one proposal: dismissal memory, staged payload, task, artifact and
+/// evidence page. `office.library-sync` files through here too.
+pub(crate) fn file(call: &Call<'_>, mut input: Create) -> Result<Value> {
     if input.title.trim().is_empty()
         || input.description.trim().is_empty()
         || input.tags.iter().any(|tag| {
@@ -151,7 +163,10 @@ fn materialize(call: &Call<'_>, payload: &mut Payload, evidence: &[String]) -> R
                 }
             }
         }
-        Payload::AutoTask { .. } | Payload::KnowledgeUpdate { .. } | Payload::Retire { .. } => {}
+        Payload::AutoTask { .. }
+        | Payload::KnowledgeUpdate { .. }
+        | Payload::Retire { .. }
+        | Payload::SharedConflict { .. } => {}
     }
     Ok(())
 }
@@ -293,6 +308,22 @@ pub(crate) fn validate_payload(call: &Call<'_>, payload: &Payload) -> Result<()>
             Page::from_markdown(&text)?;
             Ok(())
         }
+        Payload::SharedConflict {
+            page,
+            path,
+            blob,
+            markdown,
+            base_sha256,
+        } => {
+            use office_core::domain::sharing::sync::{SharedPath, classify};
+            if classify(path) != (SharedPath::Page { id: page.clone() }) || blob.trim().is_empty() {
+                return Err(proposal::invalid("shared page path and blob"));
+            }
+            if validate_page(call, markdown)?.id != *page {
+                return Err(proposal::invalid("conflict page id"));
+            }
+            check_revision(call, page, base_sha256).map(|_| ())
+        }
     }
 }
 
@@ -312,6 +343,15 @@ pub(crate) fn check_revision(call: &Call<'_>, id: &str, base: &str) -> Result<St
 
 pub(crate) fn validate_page(call: &Call<'_>, markdown: &str) -> Result<Page> {
     let page = Page::from_markdown(markdown)?;
+    check_template(call, &page)?;
+    office_core::domain::sharing::validate_sharing(markdown, |id| call.ports.library.get(id))?;
+    page.check_base_rules()?;
+    page.resolve_citations(|id| call.ports.library.get(id))?;
+    Ok(page)
+}
+
+/// A page that names a template meets its current rules.
+pub(crate) fn check_template(call: &Call<'_>, page: &Page) -> Result<()> {
     if page.template.is_some() {
         let templates = call.ports.library.templates()?;
         let files: Vec<_> = templates
@@ -336,8 +376,5 @@ pub(crate) fn validate_page(call: &Call<'_>, markdown: &str) -> Result<Page> {
             .collect();
         page.check_template(&files, &page_files)?;
     }
-    office_core::domain::sharing::validate_sharing(markdown, |id| call.ports.library.get(id))?;
-    page.check_base_rules()?;
-    page.resolve_citations(|id| call.ports.library.get(id))?;
-    Ok(page)
+    Ok(())
 }
