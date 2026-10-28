@@ -72,6 +72,9 @@ Landed:
 - About templates — [ORB-18760] done; `office.init` installs them — [ORB-18762] done
 - Model adapters and privacy routing — [ORB-18712] done
 - Orbit callback adapter — [ORB-18713] done
+- Artifact show and promote — [ORB-18718] done
+- Synthetic demo data — [ORB-18737] done
+- Gateway install and agent CLI deny rules — [ORB-18799] done
 - `office.signals-scan` — [ORB-18721] done
 - Pinned uv and Python for agents — [ORB-18779] done
 - Gateway GET, connections, redaction, audit — [ORB-18796] done
@@ -95,11 +98,8 @@ Pending or not verified as landed in this checkout:
 
 - `office.capture` and `office.source-show` — [ORB-18714]
 - Knowledge show and write — [ORB-18717]
-- Artifact show and promote — [ORB-18718]
 - Search and attach — [ORB-18719]
 - Agent to-do activity and orchestrator skills — [ORB-18720]
-- Synthetic demo data — [ORB-18737]
-- Gateway install and agent CLI deny rules — [ORB-18799]
 - cloudcli — [ORB-18800]
 - Delete modules still planned at submission — [ORB-18739]
 
@@ -114,7 +114,7 @@ Pending or not verified as landed in this checkout:
 - [ORB-18715] — built `office.transcribe` and `office.extract`.
 - [ORB-18716] — built the KT routine and the kt skill.
 - [ORB-18717] — builds `office.knowledge-show` and `office.knowledge-write`.
-- [ORB-18718] — builds `office.artifact-show` and `office.artifact-promote`.
+- [ORB-18718] — built `office.artifact-show` and `office.artifact-promote`.
 - [ORB-18719] — builds `office.search` and `office.attach`.
 - [ORB-18720] — builds the agent to-do activity and the orchestrator skills.
 - [ORB-18721] — built `office.signals-scan`.
@@ -133,7 +133,7 @@ Pending or not verified as landed in this checkout:
 - [ORB-18734] — built the selection tray, selection feature and prompt hook.
 - [ORB-18735] — built the PWA shell and the settings feature.
 - [ORB-18736] — built the install script.
-- [ORB-18737] — builds synthetic demo data seeded through the tools.
+- [ORB-18737] — built synthetic demo data seeded through the tools.
 - [ORB-18738] — added the app CI job.
 - [ORB-18739] — deletes modules still planned at submission.
 - [ORB-18746] — built `office.session-brief`.
@@ -144,7 +144,7 @@ Pending or not verified as landed in this checkout:
 - [ORB-18781] — built `office.script-run`.
 - [ORB-18796] — built the gateway plugin's connections, GET, redaction and audit.
 - [ORB-18797] — built drafted API writes, approved and sent once.
-- [ORB-18799] — installs the gateway plugins and the agent CLI deny rules.
+- [ORB-18799] — installed the gateway plugins and the agent CLI deny rules.
 - [ORB-18800] — builds the read-only cloudcli plugin.
 - [ORB-18809] — built `office.video-plan` and `office.frames`.
 
