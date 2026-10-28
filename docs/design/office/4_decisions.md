@@ -1221,7 +1221,7 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
 - [ORB-13117] — created the Rust CLI template this workspace was generated from.
 - [ORB-13134] — hardened the template's gates and goldens.
-- [ORB-18729] — builds the source view, upload and paste capture, including citation anchor landing.
+- [ORB-18729] — built the source view, upload and paste capture, including citation anchor landing.
 - [ORB-18796] — built the gateway plugin and found Orbit's verb rule.
 - [ORB-18719] — built `office.search` and `office.attach`, and decided where attach stages its copies.
 
