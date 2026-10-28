@@ -22,6 +22,7 @@ fn ports(orbit: FakeOrbit) -> Ports<'static> {
         clock: Box::new(FakeClock(std::time::SystemTime::UNIX_EPOCH)),
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
     }
 }
 
@@ -276,6 +277,7 @@ fn list_ports(library: FakeLibrary) -> Ports<'static> {
         clock: Box::new(FakeClock(std::time::SystemTime::UNIX_EPOCH)),
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
     }
 }
 

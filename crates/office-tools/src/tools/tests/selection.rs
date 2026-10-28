@@ -38,6 +38,7 @@ fn ports_at(
         clock: Box::new(office_testkit::fakes::FakeClock(now)),
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(selections),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
     }
 }
 

@@ -74,6 +74,7 @@ fn extracted_digest_subject_is_searchable_under_the_source_before_and_after_rein
         clock: Box::new(Offline),
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_core::ports::UnavailableSelections),
+        shared: Box::new(office_core::ports::UnavailableShared),
     };
     let extracted = call(
         &ports,

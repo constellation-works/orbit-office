@@ -96,6 +96,7 @@ static TOOLS: &[Tool] = &[
     sources::show::TOOL,
     sources::set_sensitivity::TOOL,
     sharing::share_set::TOOL,
+    sharing::sync::TOOL,
     // knowledge (specs/library.md)
     knowledge::list::TOOL,
     knowledge::show::TOOL,

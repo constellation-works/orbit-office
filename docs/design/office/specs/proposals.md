@@ -21,7 +21,7 @@ Source: spec §7.
 | `knowledge_update` | Applies a diff to an existing page |
 | `runbook_from_friction` | Writes or edits a runbook so a recurring friction stops happening |
 | `retire` | Marks a page `retired` or disables an auto-task nobody uses |
-| `shared_conflict` | Filed by `office.library-sync` when the user's copy of a shared page and the shared copy both changed: **Use theirs** writes the shared version, **Keep mine** pushes the user's on the next sync ([shared-library.md](./shared-library.md#officelibrary-sync)) |
+| `shared_conflict` | Filed only by `office.library-sync` when the user's copy of a shared page and the shared copy both changed. Acceptance takes `choice`: `theirs` writes the shared version (keeping the user's contact and path refs); `mine` changes no page and pushes the user's version on the next sync ([shared-library.md](./shared-library.md#officelibrary-sync)) |
 
 ## Signals
 
@@ -131,7 +131,14 @@ Payloads are closed tagged objects:
   reviewed page retired while preserving its content.
 
 `office.proposal-accept` takes `id` and `sha256`, the SHA-256 of the exact
-`proposal.json` bytes the user reviewed. Creation returns this digest; a changed
+`proposal.json` bytes the user reviewed, plus `choice` (`theirs` or `mine`),
+which a `shared_conflict` requires and every other kind refuses
+(`invalid_argument`). A `shared_conflict` payload is `{kind, page, path, blob,
+markdown, base_sha256}`: the page id, its shared path and blob, the localized
+shared version and the digest of the user's copy it was computed against.
+**Use theirs** checks that digest and writes `markdown`; **Keep mine** checks
+only that the user's own copy exists, records the blob in the sync state and
+returns `{page, kept: "mine"}`. `office.proposal-create` refuses the kind. Creation returns this digest; a changed
 payload is refused before preparation or mutation. The digest is recorded in
 the acceptance summary, and script execution verifies it before trusting a
 new approval. Legacy approvals without a digest remain readable. Only a task still `proposed` with

@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.library-sync response",
+  "type": "object",
+  "properties": {
+    "direction": {
+      "enum": [
+        "both",
+        "pull",
+        "push"
+      ]
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "pulled": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Shared paths new or changed since the last pull."
+    },
+    "pushed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Shared paths written by this push (would be, in a dry run)."
+    },
+    "removed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "This member's shared paths removed by this push."
+    },
+    "incoming": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string"
+          },
+          "proposal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "page",
+          "proposal",
+          "created"
+        ],
+        "additionalProperties": false
+      },
+      "description": "knowledge_update proposals for changed shared pages the user holds unchanged."
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string"
+          },
+          "proposal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "page",
+          "proposal",
+          "created"
+        ],
+        "additionalProperties": false
+      },
+      "description": "shared_conflict proposals for pages changed on both sides; nothing is pushed for them."
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "enum": [
+              "pull",
+              "push"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Error code of the refusal."
+          }
+        },
+        "required": [
+          "phase",
+          "path",
+          "id",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "commit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The shared branch head after the sync."
+    },
+    "synced_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "RFC 3339 UTC; null in a dry run."
+    }
+  },
+  "required": [
+    "direction",
+    "dry_run",
+    "pulled",
+    "pushed",
+    "removed",
+    "incoming",
+    "conflicts",
+    "skipped",
+    "commit",
+    "synced_at"
+  ],
+  "additionalProperties": false
+}

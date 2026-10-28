@@ -7,6 +7,7 @@ mod models;
 mod orbit;
 mod scripts;
 mod selection;
+mod shared;
 
 pub use calendar::{Calendar, UnavailableCalendar};
 pub use clock::Clock;
@@ -22,6 +23,10 @@ pub use office_common::Sensitivity;
 pub use orbit::Orbit;
 pub use scripts::ScriptRunner;
 pub use selection::{Selections, UnavailableSelections};
+pub use shared::{
+    PushOutcome, PushRequest, SharedFile, SharedFileKind, SharedRepository, SharedSnapshot,
+    UnavailableShared,
+};
 
 /// The services available to a single tool call.
 pub struct Ports<'a> {
@@ -39,4 +44,6 @@ pub struct Ports<'a> {
     pub clock: Box<dyn Clock + 'a>,
     /// The selection tray in plugin state.
     pub selections: Box<dyn Selections + 'a>,
+    /// The team's shared library clone in plugin state.
+    pub shared: Box<dyn SharedRepository + 'a>,
 }

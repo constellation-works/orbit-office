@@ -27,6 +27,7 @@ fn ports(library: FakeLibrary) -> Ports<'static> {
         )),
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
     }
 }
 

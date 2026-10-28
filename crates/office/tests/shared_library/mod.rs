@@ -2,6 +2,8 @@
 use super::Env;
 use serde_json::{Value, json};
 
+mod sync;
+
 fn put(env: &Env, path: &str, text: &str) {
     let path = env.state.join("shared/repo").join(path);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -287,6 +289,7 @@ fn ports(env: &Env, callbacks: Callbacks) -> Ports<'static> {
         clock: Box::new(ClockFixture),
         calendar: Box::new(UnavailableCalendar),
         selections: Box::new(UnavailableSelections),
+        shared: Box::new(office_core::ports::UnavailableShared),
     }
 }
 fn dispatch(ports: &Ports<'_>, tool: &str, input: Value) -> Value {

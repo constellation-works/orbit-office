@@ -11,6 +11,13 @@
       "type": "string",
       "pattern": "^[a-f0-9]{64}$",
       "description": "SHA-256 of the exact proposal.json bytes the user reviewed."
+    },
+    "choice": {
+      "enum": [
+        "theirs",
+        "mine"
+      ],
+      "description": "Required for a shared_conflict and refused otherwise: theirs writes the shared version; mine keeps the user's copy and pushes it on the next sync."
     }
   },
   "required": [

@@ -1,0 +1,24 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: library_sync_refuses_an_unknown_direction
+    tool: library-sync
+    input: {"direction":"sideways"}
+    expect:
+      error: {code: invalid_argument}
+  - name: library_sync_refuses_a_non_boolean_dry_run
+    tool: library-sync
+    input: {"dry_run":"yes"}
+    expect:
+      error: {code: invalid_argument}
+  - name: library_sync_refuses_unknown_input
+    tool: library-sync
+    input: {"remote":"https://example.invalid/team.git"}
+    expect:
+      error: {code: invalid_argument}
+  # config-set.yaml clears the shared block, so no git runs here.
+  - name: library_sync_refuses_without_a_shared_block
+    tool: library-sync
+    input: {"dry_run":true}
+    expect:
+      error: {code: shared_not_configured}

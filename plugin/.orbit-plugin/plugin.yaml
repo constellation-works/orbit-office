@@ -175,6 +175,13 @@ spec:
       input_schema: { $ref: schemas/share-set.request.json }
       output_schema: { $ref: schemas/share-set.response.json }
 
+    - name: library-sync
+      description: Pull the team's shared library into the read-only shared layer, file incoming updates and conflicts as proposals, then push the shareable documents' shared view; dry_run changes nothing.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/library-sync.request.json }
+      output_schema: { $ref: schemas/library-sync.response.json }
+
     # ---- knowledge ----
 
     - name: knowledge-list
@@ -420,8 +427,8 @@ spec:
   definitions:
     auto_tasks: [definitions/auto_tasks/office-review.yaml, definitions/auto_tasks/office-knowledge-maintenance.yaml]
     activities: [definitions/activities/office-agent-todo.yaml]
-    jobs: [definitions/jobs/office-meeting-inbox.yaml, definitions/jobs/office-meeting-prep.yaml, definitions/jobs/office-calendar-sync.yaml, definitions/jobs/office-daily-digest.yaml, definitions/jobs/office-signals.yaml, definitions/jobs/office-kt-inbox.yaml, definitions/jobs/office-bootstrap.yaml]
-    routines: [definitions/routines/office-meeting-inbox.yaml, definitions/routines/office-meeting-prep.yaml, definitions/routines/office-calendar-sync.yaml, definitions/routines/office-daily-digest.yaml, definitions/routines/office-signals.yaml, definitions/routines/office-kt-inbox.yaml, definitions/routines/office-bootstrap.yaml]
+    jobs: [definitions/jobs/office-meeting-inbox.yaml, definitions/jobs/office-meeting-prep.yaml, definitions/jobs/office-calendar-sync.yaml, definitions/jobs/office-daily-digest.yaml, definitions/jobs/office-signals.yaml, definitions/jobs/office-kt-inbox.yaml, definitions/jobs/office-bootstrap.yaml, definitions/jobs/office-shared-sync.yaml]
+    routines: [definitions/routines/office-meeting-inbox.yaml, definitions/routines/office-meeting-prep.yaml, definitions/routines/office-calendar-sync.yaml, definitions/routines/office-daily-digest.yaml, definitions/routines/office-signals.yaml, definitions/routines/office-kt-inbox.yaml, definitions/routines/office-bootstrap.yaml, definitions/routines/office-shared-sync.yaml]
 
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings, skills/kt, skills/bootstrap]
 

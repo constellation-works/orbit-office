@@ -42,6 +42,22 @@
             "path"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page": {
+              "type": "string"
+            },
+            "kept": {
+              "const": "mine"
+            }
+          },
+          "required": [
+            "page",
+            "kept"
+          ],
+          "additionalProperties": false
         }
       ]
     }

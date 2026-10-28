@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.library-sync request",
+  "type": "object",
+  "properties": {
+    "direction": {
+      "enum": [
+        "both",
+        "pull",
+        "push"
+      ],
+      "default": "both",
+      "description": "Pull, push, or both (pull first)."
+    },
+    "dry_run": {
+      "type": "boolean",
+      "default": false,
+      "description": "Report what would change; write no index, state, proposal, commit or push."
+    }
+  },
+  "additionalProperties": false
+}

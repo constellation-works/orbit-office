@@ -90,6 +90,27 @@ hashes and FFmpeg version. Determinism is within that recorded toolchain: changi
 macOS voice assets, font rendering or FFmpeg can change bytes. Run the
 generator twice and compare manifest SHA-256 values when refreshing evidence.
 
+## Shared library: two workspaces
+
+```sh
+cargo build --locked -p office
+python3 demo/synthetic/shared_library.py --root .orbit/tmp/shared-demo
+```
+
+Needs only Python 3, git and the built binary (Linux or macOS). The new root
+holds a bare `team.git` and two workspaces, `alice/` and `joiner/`, each with
+its own fresh home whose `.gitconfig` carries a SIMULATED identity; Office's
+git children read only that home. Alice captures a time-coded Lantern KT
+transcript, writes a topic page and a runbook citing it plus a scratch page
+she never shares, marks the transcript and both pages shareable, previews
+`office.library-sync` with `dry_run`, syncs, and syncs again (nothing is
+pushed). The joiner connects an empty Library, syncs, and answers "What do I
+do when the Lantern spool stalls?" from Alice's runbook; its
+`alice/src-…#t=00:01:10` citations open Alice's transcript at the second.
+Each step is checked; `shared-demo.json` records the answer page, its
+citations and both sync results, and `<workspace>/calls.json` every call.
+Nothing leaves the root and no Orbit task is created.
+
 ## CRM and pending approval
 
 The seed owns and stops its loopback CRM on port 4329 and simulated inference
