@@ -116,7 +116,7 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 | Proposals and their signals | [specs/proposals.md](./specs/proposals.md) | [ORB-18721] done, [ORB-18722] done |
 | Analytics and generated reviews | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) | [ORB-18724] done |
 | Web app screens and rules | [specs/web-app.md](./specs/web-app.md) | [ORB-18727] done, [ORB-18728] done |
-| Calendar: read-only sync, meeting prep, capture after the meeting | [specs/calendar.md](./specs/calendar.md) | [ORB-19191]..[ORB-19195] proposed |
+| Calendar: read-only sync, meeting prep, capture after the meeting | [specs/calendar.md](./specs/calendar.md) | [ORB-19191], [ORB-19192], [ORB-19193], [ORB-19194], [ORB-19195] done |
 | Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-18723] done |
 | Models and privacy routing | [specs/models-and-privacy.md](./specs/models-and-privacy.md) | [ORB-18712] done |
 | Hackathon compliance, demo and build plan | [specs/delivery.md](./specs/delivery.md) | [ORB-16585] |
@@ -156,7 +156,11 @@ email or making purchases, hardware, changes to Orbit core.
 - [ORB-18724] — built metrics, review inputs and the review.
 - [ORB-18725] — built the app server, the Orbit client, static serving and the dispatch pass.
 - [ORB-18727] — built the Today screen and its server feature.
-- [ORB-19191]..[ORB-19195] — build the calendar: gateway schemes, sync, prep, capture from an event, and the screen.
+- [ORB-19191] — built the gateway authentication schemes for calendar feeds and Microsoft Graph.
+- [ORB-19192] — built calendar sync, listing and the event snapshot.
+- [ORB-19193] — built meeting preparation and its routine.
+- [ORB-19194] — built capture from a calendar event and the meeting inbox routine.
+- [ORB-19195] — built the Calendar screen, server feature and Today card.
 - [ORB-18728] — built the To-dos screen and its server feature.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
