@@ -5,7 +5,11 @@
  * running. The office workspace never runs an auto drain, so `owner:you`
  * to-dos are never submitted, and `proposed` tasks are never submitted —
  * only `backlog` tasks carrying `owner:agent` (and not `owner:you`) are
- * selected (docs/design/office/specs/web-app.md).
+ * selected (docs/design/office/specs/web-app.md). A task whose `not_before`
+ * is still in the future waits: Orbit would refuse it as `task_scheduled`,
+ * so the pass leaves it out instead of logging that refusal every 30
+ * seconds, and ships it on its first pass at or after the time
+ * (docs/design/office/specs/calendar.md, "Scheduled tasks").
  */
 import { spawn } from "node:child_process";
 
@@ -19,6 +23,8 @@ export interface DispatchTask {
   id: string;
   status: string;
   tags?: readonly string[];
+  /** The scheduled start (RFC 3339); absent or null when the task has none. */
+  not_before?: string | null;
 }
 
 /** Outcome of one pass. `skipped` is true when a previous pass was running. */
@@ -36,6 +42,8 @@ export interface DispatchPassDeps {
   intervalMs?: number;
   /** Called when a scheduled pass fails. A manual `runOnce` still rejects. */
   onError?: (error: unknown) => void;
+  /** The pass's clock, read once per pass. Default the system clock. */
+  now?: () => Date;
 }
 
 export interface Dispatcher {
@@ -50,13 +58,15 @@ export interface Dispatcher {
 
 /**
  * Select submittable ids: `backlog` only, tagged `owner:agent`, never
- * `owner:you`. Anything else (`proposed`, `owner:you`, untagged) is left alone.
+ * `owner:you`, and never before its `not_before`. Anything else (`proposed`,
+ * `owner:you`, untagged, scheduled later than `now`) is left alone.
  */
-export function selectDispatchIds(tasks: readonly DispatchTask[]): string[] {
+export function selectDispatchIds(tasks: readonly DispatchTask[], now: Date = new Date()): string[] {
   return tasks
     .filter((task) => task.status === "backlog")
     .filter((task) => task.tags?.includes("owner:agent") === true)
     .filter((task) => task.tags?.includes("owner:you") !== true)
+    .filter((task) => task.not_before === undefined || task.not_before === null || Date.parse(task.not_before) <= now.getTime())
     .map((task) => task.id);
 }
 
@@ -74,30 +84,45 @@ export function tasksFromListResult(result: unknown): DispatchTask[] {
   return rows.map((row: unknown, index) => taskFromRow(row, index));
 }
 
-/** One listing row. `id` and `status` are required strings; `tags`, when present, is an array of strings. */
+/**
+ * One listing row. `id` and `status` are required strings; `tags`, when
+ * present, is an array of strings; `not_before`, when present and not null,
+ * is a readable time. A time the pass cannot read fails the listing rather
+ * than shipping a task Orbit is holding.
+ */
 function taskFromRow(row: unknown, index: number): DispatchTask {
   const record = row !== null && typeof row === "object" ? (row as Record<string, unknown>) : undefined;
   if (record === undefined || typeof record.id !== "string" || typeof record.status !== "string") {
     throw invalidListing(`row ${index} without a string id and status`);
   }
+  const task: DispatchTask = { id: record.id, status: record.status };
   const tags = record.tags;
-  if (tags === undefined) return { id: record.id, status: record.status };
-  if (!Array.isArray(tags) || !tags.every((tag): tag is string => typeof tag === "string")) {
-    throw invalidListing(`row ${index} with tags that are not an array of strings`);
+  if (tags !== undefined) {
+    if (!Array.isArray(tags) || !tags.every((tag): tag is string => typeof tag === "string")) {
+      throw invalidListing(`row ${index} with tags that are not an array of strings`);
+    }
+    task.tags = tags;
   }
-  return { id: record.id, status: record.status, tags };
+  const notBefore = record.not_before;
+  if (notBefore !== undefined && notBefore !== null) {
+    if (typeof notBefore !== "string" || Number.isNaN(Date.parse(notBefore))) {
+      throw invalidListing(`row ${index} with a not_before that is not a time`);
+    }
+    task.not_before = notBefore;
+  }
+  return task;
 }
 
 function invalidListing(detail: string): OrbitError {
   return new OrbitError("invalid_output", `orbit.task.list returned ${detail}`);
 }
 
-/** List `backlog` tasks tagged `owner:agent` through the Orbit client. */
+/** List `backlog` tasks tagged `owner:agent`, with their scheduled start, through the Orbit client. */
 export async function listBacklogAgentTasks(client: OrbitToolClient): Promise<DispatchTask[]> {
   const result = await client.callTool("orbit.task.list", {
     status: "backlog",
     tag: "owner:agent",
-    fields: ["id", "status", "tags"],
+    fields: ["id", "status", "tags", "not_before"],
     limit: 200,
   });
   return tasksFromListResult(result);
@@ -246,7 +271,7 @@ export function createDispatchPass(deps: DispatchPassDeps): Dispatcher {
     running = true;
     try {
       const tasks = await deps.listTasks();
-      const ids = selectDispatchIds(tasks);
+      const ids = selectDispatchIds(tasks, deps.now?.() ?? new Date());
       if (ids.length > 0) await deps.ship(ids);
       return { skipped: false, submitted: ids };
     } finally {
@@ -278,6 +303,8 @@ export interface CreateDispatcherOptions extends ShipOptions {
   /** Pass interval. Default {@link DISPATCH_INTERVAL_MS}; `start()` uses it. */
   intervalMs?: number;
   onError?: (error: unknown) => void;
+  /** The pass's clock. Default the system clock. */
+  now?: () => Date;
 }
 
 /** Create the production dispatcher: Orbit client for listing, `orbit run ship` for submitting. */
@@ -287,5 +314,6 @@ export function createDispatcher(options: CreateDispatcherOptions): Dispatcher {
     ship: (ids) => shipTasks(ids, options),
     ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
     ...(options.onError === undefined ? {} : { onError: options.onError }),
+    ...(options.now === undefined ? {} : { now: options.now }),
   });
 }

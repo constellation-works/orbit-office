@@ -130,6 +130,63 @@ test("nothing eligible means no ship invocation", async (t) => {
   assert.equal(shipLog, "");
 });
 
+const SCHEDULED_AT = "2026-11-06T09:00:00Z";
+const BEFORE = new Date("2026-11-06T08:59:30Z");
+const AFTER = new Date("2026-11-06T09:00:30Z");
+const SCHEDULED = [
+  { id: "ORB-S1", status: "backlog", tags: ["owner:agent"], not_before: SCHEDULED_AT },
+  { id: "ORB-S2", status: "backlog", tags: ["owner:agent"], not_before: "2026-11-05T09:00:00Z" },
+  { id: "ORB-S3", status: "backlog", tags: ["owner:agent"], not_before: null },
+  { id: "ORB-S4", status: "backlog", tags: ["owner:you"], not_before: "2026-11-05T09:00:00Z" },
+];
+
+test("selectDispatchIds holds a task until its not_before, then lets it go", () => {
+  assert.deepEqual(selectDispatchIds(SCHEDULED, BEFORE), ["ORB-S2", "ORB-S3"]);
+  assert.deepEqual(selectDispatchIds(SCHEDULED, new Date(SCHEDULED_AT)), ["ORB-S1", "ORB-S2", "ORB-S3"], "at the time is not before it");
+  assert.deepEqual(selectDispatchIds(SCHEDULED, AFTER), ["ORB-S1", "ORB-S2", "ORB-S3"]);
+});
+
+test("a scheduled agent task waits without a refusal, then ships on the first pass after its time", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(() => rm(fake.root, { recursive: true, force: true }));
+  await writeFile(join(fake.state, "tasks.json"), JSON.stringify(SCHEDULED));
+  // The fake's ship refuses a held task as Orbit does; the pass must never reach that refusal.
+  const env = fake.env({ FAKE_ORBIT_NOW: BEFORE.toISOString() });
+  await assert.rejects(shipTasks(["ORB-S1"], { env, timeoutMs: 10_000 }), /task_scheduled/);
+  let clock = BEFORE;
+  const errors = [];
+  const client = createOrbitClient({ timeoutMs: 10_000, env });
+  const dispatcher = createDispatcher({ client, env, timeoutMs: 10_000, now: () => clock, onError: (error) => errors.push(error) });
+
+  assert.deepEqual(await dispatcher.runOnce(), { skipped: false, submitted: ["ORB-S2", "ORB-S3"] });
+  assert.deepEqual(await dispatcher.runOnce(), { skipped: false, submitted: ["ORB-S2", "ORB-S3"] }, "every pass before the time leaves it out");
+  clock = AFTER;
+  const afterEnv = fake.env({ FAKE_ORBIT_NOW: AFTER.toISOString() });
+  const later = createDispatcher({ client, env: afterEnv, timeoutMs: 10_000, now: () => clock, onError: (error) => errors.push(error) });
+  assert.deepEqual(await later.runOnce(), { skipped: false, submitted: ["ORB-S1", "ORB-S2", "ORB-S3"] });
+  assert.deepEqual(errors, []);
+
+  const shipLog = (await readFile(join(fake.state, "ship.log"), "utf8"))
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(shipLog, [["ORB-S2", "ORB-S3"], ["ORB-S2", "ORB-S3"], ["ORB-S1", "ORB-S2", "ORB-S3"]]);
+  const listCall = (await readFile(join(fake.state, "invocations.log"), "utf8"))
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line))
+    .find((args) => args[2] === "orbit.task.list");
+  assert.deepEqual(JSON.parse(listCall[listCall.indexOf("--input") + 1]).fields, ["id", "status", "tags", "not_before"]);
+});
+
+test("a not_before the pass cannot read fails the listing and ships nothing", async () => {
+  const error = await rejectionOf(
+    listBacklogAgentTasks(listingClient({ tasks: [{ id: "ORB-1", status: "backlog", tags: ["owner:agent"], not_before: "Friday at nine" }] })),
+  );
+  assert.ok(error instanceof OrbitError);
+  assert.equal(error.code, "invalid_output");
+});
+
 /** A client whose `orbit.task.list` answers with `output`, as the Orbit CLI would print it. */
 function listingClient(output) {
   return { callTool: async () => output };

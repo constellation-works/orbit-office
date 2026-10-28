@@ -19,6 +19,8 @@ export type {
   CalendarMeeting,
   CalendarRoutine,
   CalendarSynced,
+  CalendarTask,
+  CalendarTaskState,
   CalendarView,
   ConnectionInput,
   ConnectionSaved,
@@ -60,6 +62,8 @@ export type {
   TodayResult,
   TodoItem,
   TodoList,
+  TodoScheduled,
+  TodoScheduleRequest,
 } from "./api.js";
 export type { BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView } from "./api.js";
 export type { SelectionInput, SelectionCount } from "./api.js";

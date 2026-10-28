@@ -93,6 +93,17 @@ end-of-session summary.** Keep the log and handoff current while working.
    criteria, context and permitted tools are ready, the app's dispatch pass
    submits eligible work. Do not dispatch workflows, assign crews or
    manage hosts from this skill. Record the action in the conversation log.
+6. **Schedule a to-do for a date** when the user names one ("send the weekly
+   numbers on Friday at 9"). Pass `not_before` to `orbit.task.add`, or to
+   `orbit.task.update` for an existing to-do. It is an RFC 3339 instant with
+   the user's UTC offset, such as `2026-10-30T09:00:00+01:00`. The user's
+   time zone is this computer's local one. Ask when the day or time is
+   ambiguous, and never guess a past time. Read the time back in words
+   ("Friday 30 October at 09:00"). An `owner:agent` to-do starts on the
+   first dispatch pass after that time, once it is ready, and only while
+   this computer is on. An `owner:you` to-do only shows on the Calendar and
+   in To-dos. `not_before: ""` clears the time. Scheduling never changes a
+   status: approval still applies.
 
 For a runbook marked `performable: agent`, attach it to an agent to-do.
 The agent follows its inputs, cited steps and “Done when” up to submission.

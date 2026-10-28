@@ -116,6 +116,8 @@ const MODEL = {
       source: "Customer Call",
       knowledge: ["Process New Meetings", "Pricing Notes"],
       closable: true,
+      scheduled: null,
+      schedulable: false,
     },
     {
       id: "ORB-YOU-2",
@@ -123,6 +125,8 @@ const MODEL = {
       source: null,
       knowledge: ["Receipt Checklist"],
       closable: true,
+      scheduled: null,
+      schedulable: false,
     },
   ],
   agents: [
@@ -132,6 +136,8 @@ const MODEL = {
       source: "Customer Call",
       knowledge: ["Pricing Notes"],
       closable: false,
+      scheduled: null,
+      schedulable: false,
     },
     {
       id: "ORB-AG-2",
@@ -139,6 +145,8 @@ const MODEL = {
       source: "Monday Standup",
       knowledge: [],
       closable: false,
+      scheduled: null,
+      schedulable: false,
     },
   ],
   more: false,
@@ -265,8 +273,108 @@ test("polling intervals are cleared after navigation away", async () => {
   }
 });
 
+// Local times, so the words hold in any time zone the suite runs in.
+const FRIDAY_NINE = new Date(2026, 9, 30, 9, 0);
+const WEDNESDAY = new Date(2026, 9, 28, 11, 30);
+const SCHEDULING = {
+  you: [{ ...MODEL.you[0], scheduled: FRIDAY_NINE.toISOString(), schedulable: true }],
+  agents: [
+    { ...MODEL.agents[0], scheduled: null, schedulable: true },
+    { ...MODEL.agents[1], scheduled: new Date(2026, 9, 28, 9, 0).toISOString(), schedulable: false },
+  ],
+  more: false,
+};
+const buttonsIn = (node) => collect(node, (child) => child.tagName === "BUTTON");
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("a scheduled to-do reads its time in words, with Schedule… on yours and an agent's alike", () => {
+  const root = connectedRoot();
+  drawTodoScreen(root, SCHEDULING, { now: WEDNESDAY, onSchedule: async () => undefined, onEdit: () => undefined });
+  const you = byClass(root, "todos-column--you")[0];
+  const agents = byClass(root, "todos-column--agents")[0];
+  assert.deepEqual(byClass(you, "todos-when").map((node) => node.textContent), [`Scheduled ${FRIDAY_NINE.toLocaleDateString(undefined, { weekday: "short" })} 09:00`]);
+  assert.deepEqual(buttonsIn(you).map((button) => button.textContent), ["Reschedule…", "Clear schedule"]);
+  assert.deepEqual(buttonsIn(agents).map((button) => button.textContent), ["Schedule…"], "a running agent to-do keeps its time and offers no schedule action");
+  assert.equal(byClass(agents, "todos-when").length, 1);
+  assert.equal(root.textContent.includes("ORB-"), false);
+  const later = new Date(2026, 10, 13, 9, 0);
+  const far = connectedRoot();
+  drawTodoScreen(far, { you: [{ ...SCHEDULING.you[0], scheduled: later.toISOString() }], agents: [], more: false }, { now: WEDNESDAY });
+  assert.match(byClass(far, "todos-when")[0].textContent, /^Scheduled \S+ 13 Nov 09:00$|^Scheduled \S+ Nov 13 09:00$/, "further off, the date is said too");
+});
+
+test("Schedule… opens a picker in this computer's time zone, holds the poll, and saves and clears through the app server", async () => {
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  let poll;
+  globalThis.setInterval = (callback) => {
+    poll = callback;
+    return { unref() {} };
+  };
+  globalThis.clearInterval = () => undefined;
+  const calls = [];
+  globalThis.fetch = async (path, options = {}) => {
+    calls.push({ path, options });
+    if (path === "/api/todos/schedule") return new Response(JSON.stringify({ ok: true, scheduled: null }));
+    return new Response(JSON.stringify(SCHEDULING));
+  };
+  try {
+    const root = connectedRoot();
+    await screen.render(root);
+    const agents = () => byClass(root, "todos-column--agents")[0];
+    buttonsIn(agents())[0].click();
+    const form = byClass(agents(), "schedule-picker")[0];
+    assert.ok(form, "the picker opens in the card");
+    const input = collect(form, (node) => node.tagName === "INPUT")[0];
+    assert.equal(input.type, "datetime-local");
+    assert.match(byClass(form, "schedule-picker-note")[0].textContent, /^In this computer's time zone/);
+
+    const gets = calls.length;
+    poll();
+    await flush();
+    assert.equal(calls.length, gets, "the poll leaves an open picker alone");
+
+    input.value = "2099-10-30T09:00";
+    form.listeners.submit[0]({ preventDefault() {} });
+    await flush();
+    await flush();
+    const set = calls.find((call) => call.path === "/api/todos/schedule");
+    assert.equal(set.options.method, "POST");
+    assert.deepEqual(JSON.parse(set.options.body), { id: "ORB-AG-1", not_before: new Date(2099, 9, 30, 9, 0).toISOString().replace(".000Z", "Z") });
+    assert.equal(byClass(root, "schedule-picker").length, 0, "the picker closes once saved");
+
+    const clear = buttonsIn(byClass(root, "todos-column--you")[0]).find((button) => button.textContent === "Clear schedule");
+    clear.click();
+    await flush();
+    const cleared = calls.filter((call) => call.path === "/api/todos/schedule").at(-1);
+    assert.deepEqual(JSON.parse(cleared.options.body), { id: "ORB-YOU-1", not_before: null });
+    root.replaceChildren();
+  } finally {
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+  }
+});
+
+test("the picker refuses an empty or past time without writing", async () => {
+  let saved = 0;
+  const root = connectedRoot();
+  drawTodoScreen(root, SCHEDULING, { now: WEDNESDAY, editing: "ORB-AG-1", onSchedule: async () => { saved += 1; }, onEdit: () => undefined });
+  const form = byClass(root, "schedule-picker")[0];
+  const input = collect(form, (node) => node.tagName === "INPUT")[0];
+  const status = byClass(form, "schedule-picker-status")[0];
+  input.value = "";
+  form.listeners.submit[0]({ preventDefault() {} });
+  assert.equal(status.textContent, "Choose a date and a time.");
+  input.value = "2026-10-27T09:00";
+  form.listeners.submit[0]({ preventDefault() {} });
+  assert.equal(status.textContent, "Choose a time that is still to come.");
+  assert.equal(saved, 0);
+});
+
 test("a payload that is not a to-do list is refused", () => {
   assert.equal(modelFromPayload({ you: [], agents: [{ title: "Missing pieces" }] }), null);
+  assert.equal(modelFromPayload({ you: [{ ...MODEL.you[0], scheduled: "Friday" }], agents: [] }), null);
+  assert.equal(modelFromPayload({ you: [{ ...MODEL.you[0], schedulable: undefined }], agents: [] }), null);
   const root = connectedRoot();
   drawTodoScreen(root, { you: [], agents: [], more: true });
   assert.match(root.textContent, /All clear/);

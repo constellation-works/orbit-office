@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { createOrbitClient } from "../dist/orbit/client.js";
 import { createTodoFeature, feature } from "../dist/features/todos/index.js";
 import { CLOSED_FROM_TODOS, closePlan, todoColumns } from "../dist/features/todos/model.js";
-import { closeTodo, loadTodos, TodoCloseError } from "../dist/features/todos/service.js";
+import { closeTodo, loadTodos, scheduleTodo, TodoCloseError } from "../dist/features/todos/service.js";
 
 const YOU = {
   id: "ORB-YOU-1",
@@ -85,6 +85,7 @@ function client(tasks, { failOn } = {}) {
         if (task && typeof input.execution_summary === "string") {
           task.execution_summary = input.execution_summary;
         }
+        if (task && typeof input.not_before === "string") task.not_before = input.not_before === "" ? null : input.not_before;
         return task ?? null;
       }
       throw new Error(`unexpected ${name}`);
@@ -153,6 +154,49 @@ test("columns put your to-dos and the agents' in plain words", () => {
   assert.equal(visible.includes("ORB-99"), false);
   assert.equal(visible.includes("owner:"), false);
   assert.equal(visible.includes("backlog"), false);
+});
+
+test("a to-do carries its scheduled time and whether it can still be scheduled", () => {
+  const list = todoColumns(
+    [{ ...YOU, not_before: "2026-10-30T09:00:00Z" }],
+    [AGENT, { ...AGENT, id: "ORB-AG-2", status: "proposed", not_before: null }],
+    false,
+  );
+  assert.equal(list.you[0].scheduled, "2026-10-30T09:00:00Z");
+  assert.equal(list.you[0].schedulable, true);
+  assert.deepEqual(list.agents.map((item) => [item.id, item.scheduled, item.schedulable]), [
+    ["ORB-AG-1", null, false],
+    ["ORB-AG-2", null, true],
+  ], "an agent to-do already running keeps its time; one not yet approved can take one");
+});
+
+test("scheduling sets and clears not_before on yours and an agent's, and refuses what has started", async () => {
+  const waiting = { ...AGENT, id: "ORB-AG-3", status: "backlog" };
+  const orbit = client([YOU, AGENT, waiting, DONE, { ...YOU, id: "ORB-PLAIN", tags: ["office"] }]);
+  assert.equal(await scheduleTodo(orbit, waiting.id, "2026-10-30T09:00:00+01:00"), "2026-10-30T09:00:00+01:00");
+  assert.equal(await scheduleTodo(orbit, YOU.id, "2026-10-30T08:00:00Z"), "2026-10-30T08:00:00Z");
+  assert.equal(await scheduleTodo(orbit, YOU.id, null), null);
+  const updates = orbit.calls.filter((call) => call.name === "orbit.task.update").map((call) => call.input);
+  assert.deepEqual(updates, [
+    { id: waiting.id, not_before: "2026-10-30T09:00:00+01:00" },
+    { id: YOU.id, not_before: "2026-10-30T08:00:00Z" },
+    { id: YOU.id, not_before: "" },
+  ], "a clear is the empty string Orbit reads as clear; no status moves");
+
+  const refusals = [
+    [AGENT.id, "2026-10-30T09:00:00Z", "not_schedulable"],
+    [DONE.id, "2026-10-30T09:00:00Z", "not_schedulable"],
+    ["ORB-PLAIN", "2026-10-30T09:00:00Z", "not_found"],
+    ["ORB-NOPE", "2026-10-30T09:00:00Z", "not_found"],
+    [YOU.id, "Friday at nine", "invalid_input"],
+    [YOU.id, "2026-10-30T09:00", "invalid_input"],
+    [YOU.id, "2026-02-30T09:00:00Z", "invalid_input"],
+    ["../etc", "2026-10-30T09:00:00Z", "invalid_input"],
+  ];
+  for (const [id, at, code] of refusals) {
+    await assert.rejects(scheduleTodo(orbit, id, at), (error) => error instanceof TodoCloseError && error.code === code, `${id} ${at}`);
+  }
+  assert.equal(orbit.calls.filter((call) => call.name === "orbit.task.update").length, 3, "a refusal sends no update");
 });
 
 test("closing walks a backlog to-do to done and refuses an agent to-do", async () => {
@@ -237,6 +281,33 @@ test("the routes list and close through the Orbit client", async () => {
   assert.equal(bad.json().error, "invalid_input");
 });
 
+test("the schedule route sets and clears a time, refusing unknown keys and started to-dos", async () => {
+  const orbit = client([YOU, AGENT]);
+  const schedule = createTodoFeature(orbit).routes.find((route) => route.path === "/api/todos/schedule");
+  assert.equal(schedule.method, "POST");
+  const set = responseCapture();
+  await schedule.handle(postRequest({ id: YOU.id, not_before: "2026-10-30T09:00:00Z" }), set);
+  assert.equal(set.status, 200);
+  assert.deepEqual(set.json(), { ok: true, scheduled: "2026-10-30T09:00:00Z" });
+  const cleared = responseCapture();
+  await schedule.handle(postRequest({ id: YOU.id, not_before: null }), cleared);
+  assert.deepEqual(cleared.json(), { ok: true, scheduled: null });
+
+  for (const [body, status, code] of [
+    [{ id: YOU.id, not_before: "2026-10-30T09:00:00Z", status: "done" }, 400, "invalid_input"],
+    [{ id: YOU.id }, 400, "invalid_input"],
+    [{ id: YOU.id, not_before: 1_793_000_000 }, 400, "invalid_input"],
+    [{ id: AGENT.id, not_before: "2026-10-30T09:00:00Z" }, 409, "not_schedulable"],
+  ]) {
+    const refused = responseCapture();
+    await schedule.handle(postRequest(body), refused);
+    assert.equal(refused.status, status, JSON.stringify(body));
+    assert.equal(refused.json().error, code);
+  }
+  const updates = orbit.calls.filter((call) => call.name === "orbit.task.update").map((call) => call.input);
+  assert.deepEqual(updates, [{ id: YOU.id, not_before: "2026-10-30T09:00:00Z" }, { id: YOU.id, not_before: "" }]);
+});
+
 test("the Orbit client subprocess moves an owner:you to-do to done", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "todos-orbit-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -288,6 +359,17 @@ test("the Orbit client subprocess moves an owner:you to-do to done", async (t) =
     .map((line) => JSON.parse(line))
     .filter((args) => args[2] === "orbit.task.update");
   assert.equal(afterRefuse.length, updates.length);
+
+  // Schedule and clear an agent to-do that has not started, through the same subprocess.
+  const waiting = JSON.parse(await readFile(join(state, "tasks.json"), "utf8"));
+  waiting.push({ ...AGENT, id: "ORB-AG-WAIT", status: "backlog", not_before: null });
+  await writeFile(join(state, "tasks.json"), JSON.stringify(waiting));
+  await scheduleTodo(orbit, "ORB-AG-WAIT", "2026-10-30T09:00:00Z");
+  const scheduled = await loadTodos(orbit);
+  assert.equal(scheduled.agents.find((item) => item.id === "ORB-AG-WAIT").scheduled, "2026-10-30T09:00:00Z");
+  await scheduleTodo(orbit, "ORB-AG-WAIT", null);
+  const unscheduled = await loadTodos(orbit);
+  assert.equal(unscheduled.agents.find((item) => item.id === "ORB-AG-WAIT").scheduled, null);
 });
 
 const FAKE_ORBIT = `#!/usr/bin/env node
@@ -323,6 +405,7 @@ if (tool === "orbit.task.update") {
   if (typeof input.status === "string") task.status = input.status;
   if (input.status === "done") task.terminal = true;
   if (typeof input.execution_summary === "string") task.execution_summary = input.execution_summary;
+  if (typeof input.not_before === "string") task.not_before = input.not_before === "" ? null : input.not_before;
   writeFileSync(join(state, "tasks.json"), JSON.stringify(tasks));
   process.stdout.write(JSON.stringify(task) + "\\n");
   process.exit(0);

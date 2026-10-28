@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createCalendarFeature } from '../dist/features/calendar/index.js';
 import { createSourcesFeature } from '../dist/features/sources/index.js';
+import { createTodoFeature } from '../dist/features/todos/index.js';
 import { createHandler } from '../dist/http/router.js';
 
 /** Wednesday of the synthetic week, mid-morning. */
@@ -76,6 +77,30 @@ export function autoTaskRows() {
   ];
 }
 
+const started = at => [{ at: '2026-10-20T10:00:00Z', event: 'created', to_status: 'proposed' }, { at, event: 'started', from_status: 'backlog', to_status: 'in_progress' }];
+/**
+ * To-dos with a scheduled start (`not_before`): every state the calendar
+ * names, one started late, one of the user's own, and rows the calendar must
+ * leave out (rejected, not a to-do, next week).
+ */
+export function scheduledTasks() {
+  return [
+    { id: 'FIXTURE-21', title: 'Send the weekly numbers', status: 'backlog', tags: ['owner:agent'], not_before: '2026-10-30T09:00:00Z', history: [] },
+    { id: 'FIXTURE-22', title: 'Draft the renewal summary', status: 'proposed', tags: ['owner:agent'], not_before: '2026-10-29T10:00:00Z', history: [] },
+    { id: 'FIXTURE-23', title: 'Refresh the pricing sheet', status: 'in-progress', tags: ['owner:agent'], not_before: '2026-10-28T09:00:00Z', history: started('2026-10-28T09:42:10Z') },
+    { id: 'FIXTURE-24', title: 'File the expense report', status: 'done', tags: ['owner:agent'], not_before: '2026-10-27T08:00:00Z', history: started('2026-10-27T08:00:20Z') },
+    { id: 'FIXTURE-25', title: 'Call the venue', status: 'backlog', tags: ['owner:you'], not_before: '2026-10-29T15:00:00Z', history: [] },
+    { id: 'FIXTURE-26', title: 'Prepare the board pack', status: 'in-progress', tags: ['owner:agent'], not_before: '2026-10-28T11:00:00Z', history: started('2026-10-28T11:00:40Z') },
+    { id: 'FIXTURE-27', title: 'Withdrawn idea', status: 'rejected', tags: ['owner:agent'], not_before: '2026-10-28T12:00:00Z', history: [] },
+    { id: 'FIXTURE-28', title: 'Not a to-do', status: 'backlog', tags: ['office'], not_before: '2026-10-28T12:00:00Z', history: [] },
+    { id: 'FIXTURE-29', title: 'Next week', status: 'backlog', tags: ['owner:agent'], not_before: '2026-11-03T09:00:00Z', history: [] },
+  ];
+}
+
+function project(task, fields) {
+  return Array.isArray(fields) ? Object.fromEntries(fields.map(field => [field, task[field] ?? null])) : task;
+}
+
 const overlaps = (event, from, until) => Date.parse(event.start) < Date.parse(until) && Date.parse(event.end) > Date.parse(from);
 
 /**
@@ -87,7 +112,8 @@ export function fakeCalendarClient(overrides = {}) {
     synced_at: '2026-10-28T10:15:00Z', last_error: null, events: calendarEvents(), syncs: 0, syncError: null,
     routinesDenied: false,
     sources: new Map([['src-20261026-weekly-sync', { id: 'src-20261026-weekly-sync', kind: 'meeting', title: 'Weekly sync', text: 'Notes', summary: 'We agreed the renewal terms and the November date.' }]]),
-    tasks: [{ id: 'FIXTURE-7', title: 'Send the renewal draft', status: 'backlog', tags: ['owner:you', 'source:src-20261026-weekly-sync'] }],
+    tasks: [{ id: 'FIXTURE-7', title: 'Send the renewal draft', status: 'backlog', tags: ['owner:you', 'source:src-20261026-weekly-sync'] }, ...scheduledTasks()],
+    scheduledDenied: false,
     ...overrides,
   };
   const calls = []; const captures = [];
@@ -120,8 +146,22 @@ export function fakeCalendarClient(overrides = {}) {
         return { artifact: { id: input.id, title: 'Meeting prep Acme QBR' }, body: '## context\n\n- Renewal is due in November [src-20261026-weekly-sync#L2, dom-jane-park]\n\n## suggested questions\n\n- Which terms changed? [src-20261026-weekly-sync#L4]\n' };
       case 'office.knowledge-show':
         return { page: { title: input.id === 'dom-jane-park' ? 'Jane Park' : 'Sam Lee', body: 'Finance lead at Acme.' } };
-      case 'orbit.task.list':
-        return { tasks: state.tasks.filter(task => task.tags.includes(input.tag)), truncated: false };
+      case 'orbit.task.list': {
+        if (input.not_before_from === undefined) return { tasks: state.tasks.filter(task => task.tags.includes(input.tag)), truncated: false };
+        // An Orbit without `not_before` refuses the range keys as unknown.
+        if (state.scheduledDenied) throw Object.assign(new Error('unknown input key not_before_from'), { code: 'exit_nonzero' });
+        const from = Date.parse(input.not_before_from); const until = Date.parse(input.not_before_until);
+        const rows = state.tasks.filter(task => typeof task.not_before === 'string' && Date.parse(task.not_before) >= from && Date.parse(task.not_before) <= until);
+        return { tasks: rows.map(task => project(task, input.fields)), total: rows.length, truncated: false };
+      }
+      case 'orbit.task.show':
+        return project(state.tasks.find(task => task.id === input.id) ?? {}, input.fields);
+      case 'orbit.task.update': {
+        const task = state.tasks.find(item => item.id === input.id);
+        if (!task) throw Object.assign(new Error('task not found'), { code: 'exit_nonzero' });
+        if (typeof input.not_before === 'string') task.not_before = input.not_before === '' ? null : input.not_before;
+        return task;
+      }
       case 'orbit.auto_task.list':
         return autoTaskRows();
       case 'orbit.routine.control':
@@ -144,15 +184,18 @@ export async function scratchDir() {
 const EMPTY_TODAY = { needs_you: [], agents_working_on: [], done_today: [], truncated: false, completion_dates_unavailable: 0 };
 
 /**
- * A loopback server for the browser suite: the production calendar and
- * source features on the fake client, the built UI, and fixture answers for
+ * A loopback server for the browser suite: the production calendar, source
+ * and to-do features on the fake client, the built UI, and fixture answers for
  * every other API, so the browser never reaches the user's Orbit.
  */
 export async function calendarServer(t, overrides = {}) {
   const root = await mkdtemp(join(await scratchDir(), 'calendar-browser-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const fake = fakeCalendarClient(overrides);
-  const features = [createCalendarFeature({ client: fake.client, workspaceRoot: root }), createSourcesFeature({ client: fake.client, workspaceRoot: root })];
+  const features = [
+    createCalendarFeature({ client: fake.client, workspaceRoot: root }), createSourcesFeature({ client: fake.client, workspaceRoot: root }),
+    createTodoFeature(fake.client),
+  ];
   const routes = features.flatMap(feature => feature.routes);
   const fallback = createHandler();
   const server = createServer((req, res) => {
