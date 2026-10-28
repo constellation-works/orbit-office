@@ -1,10 +1,11 @@
-/** Today: the user's next steps and the actions on them, live agent work and openable outcomes. */
-import type { Today, TodayItem, TodayNeed, TodayResult } from "@orbit-office/contracts";
+/** Today: the next meeting, the user's next steps and the actions on them, live agent work and openable outcomes. */
+import type { CalendarMeeting, Today, TodayItem, TodayNeed, TodayResult } from "@orbit-office/contracts";
 
 import { getJson } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
 import { card, emptyState, errorState, pill, provenanceLink, tile, tileRow } from "../../ui/index.js";
 import { ApprovalControls, serverApprovals, type ApprovalApi } from "./approvals.js";
+import { nextMeetingCard, todaysMeetings, upcoming } from "./next-meeting.js";
 
 function paragraph(text: string): HTMLParagraphElement {
   const element = document.createElement("p");
@@ -181,11 +182,16 @@ export interface TodayScreenOptions {
   approvals?: ApprovalApi;
   /** Poll after the last request settles, so requests never overlap. */
   pollIntervalMs?: number;
+  /** Today's remaining meetings for the Next meeting card; tests pass their own. */
+  meetings?: (now: Date) => Promise<CalendarMeeting[]>;
+  /** How often the Next meeting card rereads the calendar. */
+  meetingIntervalMs?: number;
 }
 
 /** The production screen and browser tests use the same renderer and polling lifecycle. */
 export function createTodayScreen({
   load = () => getJson<Today>("/api/today"), approvals = serverApprovals, pollIntervalMs = 5_000,
+  meetings = todaysMeetings, meetingIntervalMs = 60_000,
 }: TodayScreenOptions = {}): Screen {
   return {
     id: "today",
@@ -198,6 +204,10 @@ export function createTodayScreen({
       heading.textContent = "Today";
       const intro = paragraph("Your next steps and the work moving forward.");
       intro.className = "intro";
+      const nextSlot = document.createElement("div");
+      nextSlot.className = "today-next-slot";
+      nextSlot.hidden = true;
+      nextSlot.setAttribute("aria-busy", "true");
       const uploadSlot = document.createElement("div");
       uploadSlot.dataset.slot = "drop-zone";
       const feedback = document.createElement("div");
@@ -210,7 +220,7 @@ export function createTodayScreen({
       const content = document.createElement("div");
       content.append(paragraph("Gathering your work…"));
       content.setAttribute("aria-busy", "true");
-      view.append(heading, intro, uploadSlot, feedback, outcome, content);
+      view.append(heading, intro, nextSlot, uploadSlot, feedback, outcome, content);
       root.replaceChildren(view);
       let previous: string | undefined;
       let shown: Today | undefined;
@@ -267,6 +277,24 @@ export function createTodayScreen({
           if (root.contains(view) && view.isConnected) window.setTimeout(() => { void refresh(); }, pollIntervalMs);
         }
       }
+      /** The card follows the calendar; a failed read hides it rather than showing stale times. */
+      async function nextMeeting(): Promise<void> {
+        if (!root.contains(view) || !view.isConnected) return;
+        const now = new Date();
+        try {
+          const next = upcoming(await meetings(now), now);
+          if (!root.contains(view) || !view.isConnected) return;
+          nextSlot.replaceChildren(...(next === null ? [] : [nextMeetingCard(next, now)]));
+          nextSlot.hidden = next === null;
+        } catch {
+          nextSlot.replaceChildren();
+          nextSlot.hidden = true;
+        } finally {
+          nextSlot.setAttribute("aria-busy", "false");
+          if (root.contains(view) && view.isConnected) window.setTimeout(() => { void nextMeeting(); }, meetingIntervalMs);
+        }
+      }
+      void nextMeeting();
       await refresh();
     },
   };

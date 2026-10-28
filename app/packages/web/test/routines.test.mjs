@@ -8,6 +8,7 @@ test("routines are navigable and schedules use plain language", () => {
   assert.equal(scheduleWords({ every_minutes: 4320 }), "Every 3 days");
   assert.equal(scheduleWords({ cron: "30 7 * * 1" }), "Every Monday at 07:30");
   assert.equal(scheduleWords({ cron: "0 9 1 * *" }), "Every month on day 1 at 09:00");
+  assert.equal(scheduleWords({ cron: "*/15 * * * *" }), "Every 15 minutes");
   assert.equal(scheduleWords({ deliveries_landed: { threshold: 3, max_wait_minutes: 360 } }), "After 3 deliveries or up to 360 minutes");
   assert.equal(scheduleWords({ cron: "0 9 1,15 * *" }), "Scheduled for minute 0, hour 9, day of the month 1 or day of the month 15, every month, every day of the week");
 });

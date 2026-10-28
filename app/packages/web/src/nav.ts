@@ -7,7 +7,7 @@ import type { ScreenId } from "@orbit-office/contracts";
 
 import type { Screen } from "./screen.js";
 
-type Icon = "today" | "todos" | "library" | "insights" | "automation" | "settings";
+type Icon = "today" | "calendar" | "todos" | "library" | "insights" | "automation" | "settings";
 
 interface RailItem {
   /** The screen the item opens. A parent without its own screen opens its first child. */
@@ -23,7 +23,7 @@ interface RailGroup {
 }
 
 const RAIL: readonly RailGroup[] = [
-  { label: "Work", items: [{ screen: "today", icon: "today" }, { screen: "todos", icon: "todos" }] },
+  { label: "Work", items: [{ screen: "today", icon: "today" }, { screen: "calendar", icon: "calendar" }, { screen: "todos", icon: "todos" }] },
   { label: "Knowledge", items: [{ screen: "library", icon: "library", children: ["source"] }] },
   { label: "Observe", items: [{ screen: "insights", icon: "insights", children: ["review"] }] },
   {
@@ -37,6 +37,7 @@ const RAIL: readonly RailGroup[] = [
 
 const ICON_PATHS: Record<Icon, readonly string[]> = {
   today: ["M10 6.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z", "M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5M4.7 4.7l1 1M14.3 14.3l1 1M4.7 15.3l1-1M14.3 5.7l1-1"],
+  calendar: ["M4 5h12v11.5H4z", "M4 8.5h12M7.5 3v3.5M12.5 3v3.5"],
   todos: ["M3.5 5.5l1.5 1.5 2.5-2.5M10.5 6h6M3.5 12.5l1.5 1.5 2.5-2.5M10.5 13h6"],
   library: ["M4 4h5a2 2 0 0 1 2 2v10a2 2 0 0 0-2-2H4z", "M16 4h-5a2 2 0 0 0-2 2v10a2 2 0 0 1 2-2h5z"],
   insights: ["M5 16v-6M10 16V4M15 16V8", "M2.5 16.5h15"],

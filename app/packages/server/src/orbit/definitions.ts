@@ -1,11 +1,16 @@
 /**
+ * Which routines and auto-tasks the app shows, and the paged routine listing.
+ * Shared by the Routines and Calendar features, so both list the same set.
+ *
  * Display membership comes from the shipped component trees, never workspace
- * state or guessed prefixes. Read once when the feature starts.
+ * state or guessed prefixes. Read once when a feature starts.
  * App bundles carry the same manifest/definition trees under app/plugins/.
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import type { OrbitToolClient } from "./client.js";
 
 export interface DefinitionNames {
   routines: ReadonlySet<string>;
@@ -13,11 +18,12 @@ export interface DefinitionNames {
 }
 
 export function defaultPluginRoots(): readonly string[] {
-  const source = new URL("../../../../../../", import.meta.url);
+  // From `packages/server/{src,dist}/orbit/` up to the repository root.
+  const source = new URL("../../../../../", import.meta.url);
   if (existsSync(new URL("plugin/.orbit-plugin/plugin.yaml", source))) {
     return ["plugin/.orbit-plugin/", "gateway/plugins/gateway/.orbit-plugin/"].map(path => fileURLToPath(new URL(path, source)));
   }
-  const bundle = new URL("../../../../../plugins/", import.meta.url);
+  const bundle = new URL("../../../../plugins/", import.meta.url);
   return ["office/.orbit-plugin/", "gateway/.orbit-plugin/"].map(path => fileURLToPath(new URL(path, bundle)));
 }
 
@@ -89,4 +95,32 @@ export function readDefinitionNames(pluginRoots: readonly string[]): DefinitionN
     }
   }
   return names;
+}
+
+function object(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Every scheduled routine, page by page; a malformed page fails the whole listing. */
+export async function routineListing(client: Pick<OrbitToolClient, "callTool">): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await client.callTool("orbit.routine.control", { action: "list", offset, limit: 50 });
+    if (!object(page) || !Array.isArray(page.items) || !object(page.pagination) ||
+        !Array.isArray(page.notes) || page.notes.length > 0) throw new Error("invalid routine listing");
+    for (const row of page.items) {
+      if (!object(row) || typeof row.name !== "string" || typeof row.description !== "string" ||
+          typeof row.enabled !== "boolean" || typeof row.effective !== "boolean" ||
+          typeof row.target !== "string" || !object(row.schedule)) throw new Error("invalid routine listing");
+      rows.push(row);
+    }
+    const next = page.pagination.next_offset;
+    if (next === null) return rows;
+    if (typeof next !== "number" || !Number.isSafeInteger(next) || next !== offset + page.items.length || next <= offset) {
+      throw new Error("invalid routine pagination");
+    }
+    offset = next;
+    if (offset >= 10000) throw new Error("routine listing exceeds snapshot limit");
+  }
 }

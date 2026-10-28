@@ -1,7 +1,8 @@
 /**
  * Schedules in plain words, and when a schedule fires next. Cron is read in
  * this computer's local time zone, which is the zone the scheduler on the
- * same computer evaluates it in.
+ * same computer evaluates it in. Shared by Routines (the next hour) and
+ * Calendar (the runs in each day's margin), so both read a schedule alike.
  */
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -16,6 +17,8 @@ export function scheduleWords(schedule: Record<string, unknown>): string {
   }
   if (typeof schedule.cron === "string") {
     const [minute, hour, day, month, weekday] = schedule.cron.split(" ");
+    const everyMinutes = /^\*\/(\d+)$/.exec(minute ?? "");
+    if (everyMinutes && hour === "*" && day === "*" && month === "*" && weekday === "*") return `Every ${everyMinutes[1]} minutes`;
     if (minute && hour && day && month && weekday && /^\d+$/.test(minute)) {
       const time = /^\d+$/.test(hour) ? ` at ${hour.padStart(2, "0")}:${minute.padStart(2, "0")}` : "";
       if (day === "*" && month === "*" && weekday === "*" && time) return `Every day${time}`;

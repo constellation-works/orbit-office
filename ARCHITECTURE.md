@@ -132,10 +132,11 @@ app/packages/
   server/src/
     main.ts          composition only
     http/            router.ts (every feature, integrator-owned), guard.ts, static.ts, types.ts
-    orbit/           the `orbit tool run --json` client
+    orbit/           the `orbit tool run --json` client, and the shipped routine and
+                     auto-task names with the routine listing (shared by routines and calendar)
     dispatch/        the 30-second dispatch pass
-    features/<f>/    one folder per feature: today, sources, todos, approvals, routines,
-                     library, insights, review, selection, settings
+    features/<f>/    one folder per feature: today, calendar, sources, todos, approvals,
+                     routines, library, insights, review, selection, settings
   web/
     static/          index.html, demo.html, manifest.webmanifest, icons/, fonts/, style.css
     src/
@@ -145,8 +146,9 @@ app/packages/
       screen.ts      the Screen contract
       api/           typed fetch helpers
       ui/            shared pieces (cards, pills, tiles, provenance links, primary actions)
-      screens/<s>/   one folder per screen: today, source, todos, routines, library,
-                     insights, review
+                     and the schedule reader Routines and Calendar share
+      screens/<s>/   one folder per screen: today, calendar, source, todos, routines,
+                     library, insights, review, settings
 ```
 
 A feature or screen is a module exporting one constant with `status: "planned"` until it is
