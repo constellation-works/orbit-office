@@ -1086,7 +1086,8 @@ function collectStatus(workspace) {
   const add = (check, problem, fix) => problems.push({ check, problem, fix });
   const cwd = exists(workspace) ? workspace : process.env.HOME;
   let registered = false;
-  const wsResult = runOptional("orbit", ["workspace", "list", "--json"], cwd);
+  // As in init: no <workspace>/.orbit means not registered.
+  const wsResult = exists(path.join(workspace, ".orbit")) ? runOptional("orbit", ["workspace", "list", "--json"], cwd) : { status: 1 };
   if (!wsResult.error && wsResult.status === 0) {
     try {
       const rows = JSON.parse(wsResult.stdout);
@@ -1269,7 +1270,10 @@ function main() {
     run("git", ["commit", "-m", "Initial commit"], workspace);
     say("workspace: made the first commit");
   } else say("workspace: first commit already done");
-  const registrations = json("orbit", ["workspace", "list", "--json"], workspace);
+  // `orbit workspace init` creates <workspace>/.orbit, so a folder without
+  // one is not registered. Asking Orbit from such a folder can fail before
+  // registration (a read-only join with no binding), so skip the query.
+  const registrations = exists(path.join(workspace, ".orbit")) ? json("orbit", ["workspace", "list", "--json"], workspace) : [];
   if (!registrations.some((row) => typeof row.repo_root === "string" && resolvePhysical(row.repo_root) === workspace && row.status === "active")) {
     mark("preset_pending=" + workspace);
     run("orbit", ["workspace", "init", "--preset", bootstrapPreset], workspace);

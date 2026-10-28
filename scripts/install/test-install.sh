@@ -288,6 +288,11 @@ JSON
         grep -qxF "$PWD" "$state/workspace-roots" 2>/dev/null || printf '%s\n' "$PWD" >> "$state/workspace-roots"
         printf 'initialized\n' ;;
     "workspace list")
+        # STUB_LIST_UNBOUND_FAILS=1 mimics an Orbit host where a read-only
+        # command from a folder with no .orbit fails before registration.
+        if [ "${STUB_LIST_UNBOUND_FAILS:-0}" = 1 ] && [ ! -d .orbit ]; then
+            printf '{"error":"workspace error: read-only generation join needs an existing task-registry binding","code":"workspace_error"}\n'; exit 1
+        fi
         case " $* " in
             *" --json "*) node - "$state/workspace-roots" <<'JSON'
 const fs = require("fs"), file = process.argv[2];
@@ -1167,6 +1172,12 @@ INSTALL_FROM_CWD=1 run_install "$CWD_HOME" -- > "$ROOT/cwd-install" 2>&1 \
 ok "sh install.sh from the clone root exits 0"
 check "sh install.sh from the clone root adds the office plugin" test -e "$STUB_STATE/plugin-added"
 check "sh install.sh from the clone root does not ask for a clone" sh -c '! grep -qF "needs a clone" "$1"' sh "$ROOT/cwd-install"
+# A host where `orbit workspace list` fails from an unregistered folder.
+UNBOUND_HOME="$ROOT/unbound-list-home"; mkdir -p "$UNBOUND_HOME"
+run_install "$UNBOUND_HOME" STUB_LIST_UNBOUND_FAILS=1 -- > "$ROOT/unbound-install" 2>&1 \
+    || { cat "$ROOT/unbound-install" >&2; fail "install where workspace list needs a binding exits 0"; }
+ok "install where workspace list needs a binding exits 0"
+check "install where workspace list needs a binding registers the workspace" grep -qxF "$UNBOUND_HOME/orbit" "$STUB_STATE/workspace-roots"
 
 
 # ---------------------------------------------------------------------------
