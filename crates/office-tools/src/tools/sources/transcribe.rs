@@ -16,7 +16,7 @@ pub(crate) const TOOL: Tool = Tool::built(
     &["id", "duration_seconds", "language"],
     run,
 );
-fn run(call: &Call<'_>) -> Result<Value> {
+pub(super) fn run(call: &Call<'_>) -> Result<Value> {
     let id = required_string(call, "id")?;
     let language = call
         .input
@@ -121,7 +121,16 @@ fn run(call: &Call<'_>) -> Result<Value> {
             &sha256_hex(current.as_bytes()),
             Some(&format!("{}\n", blocks.join("\n\n"))),
             &reply.derived_by,
-            &[],
+            &if meta.kind == "meeting" {
+                vec![(
+                    "transcript-state.json".into(),
+                    json!({"complete": index + 1 == count})
+                        .to_string()
+                        .into_bytes(),
+                )]
+            } else {
+                vec![]
+            },
         )?;
     }
     Ok(json!({"id":id,"path":latest.path,"version":latest.version,"noop":false,"chunks":count}))

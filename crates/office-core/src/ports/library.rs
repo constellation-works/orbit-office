@@ -338,6 +338,8 @@ pub struct CaptureSourceRequest {
     pub occurred_at: Option<String>,
     /// The participants.
     pub participants: Vec<String>,
+    /// Calendar identity copied by event-backed capture.
+    pub event: Option<crate::domain::source::SourceEvent>,
     /// Source tags, such as `bootstrap:orientation`.
     pub tags: Vec<String>,
     /// The sensitivity.

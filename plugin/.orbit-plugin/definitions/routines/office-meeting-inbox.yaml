@@ -1,0 +1,7 @@
+schemaVersion: 1
+name: office-meeting-inbox
+description: Summarize captured meeting notes and transcripts, transcribing audio first when needed.
+enabled: false
+trigger:
+  cron: "*/15 * * * *"
+target: job:office-meeting-inbox

@@ -637,6 +637,16 @@ impl Library for FakeLibrary {
             record.body.push_str("\n\n");
             record.body.push_str(&digest.to_string());
         }
+        if record.kind == DocumentKind::Source {
+            let summary_path = relative
+                .with_file_name("summary.md")
+                .to_string_lossy()
+                .to_string();
+            if let Some(summary) = self.texts.borrow().get(&summary_path) {
+                record.body.push_str("\n\n");
+                record.body.push_str(summary);
+            }
+        }
         if let Some(existing) = self
             .documents
             .borrow()
@@ -991,6 +1001,13 @@ impl Library for FakeLibrary {
             })?;
             transcript_body = Some(vtt_to_body(&text)?);
         }
+        if transcript_body.is_none() && upload_ext == "vtt" {
+            let bytes = upload_bytes.as_deref().unwrap_or_default();
+            let text = std::str::from_utf8(bytes).map_err(|_| {
+                office_core::Error::InvalidArgument("upload must be UTF-8 WebVTT".into())
+            })?;
+            transcript_body = Some(vtt_to_body(text)?);
+        }
         let explicit_kind = match &request.kind {
             Some(k) => Some(SourceKind::parse(k).ok_or_else(|| Error::Library {
                 code: "invalid_source_kind",
@@ -1066,7 +1083,8 @@ impl Library for FakeLibrary {
                 None,
             )
         };
-        if let Some(sha_value) = &sha
+        if request.event.is_none()
+            && let Some(sha_value) = &sha
             && let Some(existing) = self
                 .sources
                 .borrow()
@@ -1180,6 +1198,7 @@ impl Library for FakeLibrary {
             origin: request.origin.as_deref(),
             occurred_at: request.occurred_at.as_deref(),
             participants: &request.participants,
+            event: request.event.as_ref(),
             tags: &request.tags,
             sensitivity,
             original: match (&sha, bytes_len, &media_type) {

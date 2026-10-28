@@ -1360,6 +1360,13 @@ impl LibraryStore {
             })?;
             transcript_body = Some(vtt_to_body(&text)?);
         }
+        if transcript_body.is_none() && upload_ext == "vtt" {
+            let bytes = upload_bytes.as_deref().unwrap_or_default();
+            let text = std::str::from_utf8(bytes).map_err(|_| {
+                office_core::Error::InvalidArgument("upload must be UTF-8 WebVTT".into())
+            })?;
+            transcript_body = Some(vtt_to_body(text)?);
+        }
         let converted = if transcript_body.is_none() {
             upload_bytes
                 .as_ref()
@@ -1523,7 +1530,9 @@ impl LibraryStore {
                 None,
             )
         };
-        if let Some(sha_value) = &sha {
+        if request.event.is_none()
+            && let Some(sha_value) = &sha
+        {
             for (path, text) in &existing {
                 let meta = parse_source_meta(text);
                 let text_sha = sha256_hex(normalize_text(&source_body(text)).as_bytes());
@@ -1623,6 +1632,7 @@ impl LibraryStore {
             origin: request.origin.as_deref(),
             occurred_at: request.occurred_at.as_deref(),
             participants: &request.participants,
+            event: request.event.as_ref(),
             tags: &request.tags,
             sensitivity,
             original: match (&original_name, &sha, bytes_len, &media_type) {
