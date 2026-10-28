@@ -193,9 +193,9 @@ JSON
         _source=${3:?}
         case "$_source" in
             git+*)
-                case " $* " in *" --allow-build "*) ;; *) exit 1 ;; esac
-                [ "${STUB_BUILD_FAIL:-0}" != 1 ] || { printf "stub: build failed\n" >&2; exit 1; }
-                _plugin=office ;;
+                # Real Orbit needs .orbit-plugin/ at the repository root; this
+                # repository keeps it under plugin/, so a git+ source fails.
+                printf 'stub: git+ source has no plugin at its root\n' >&2; exit 1 ;;
             *)
                 if [ ! -f "$_source/.orbit-plugin/plugin.yaml" ]; then
                     printf 'stub: local plugin source must be an export\n' >&2; exit 1
@@ -494,6 +494,22 @@ printf 'uv on PATH must not be used\n' >&2
 exit 99
 STUB
 
+# cargo stub: records the commit it builds and writes a fake office binary
+# into --target-dir, so the clone path is exercised without compiling Rust.
+cat > "$BIN/cargo" <<'STUB'
+#!/bin/sh
+[ "${STUB_BUILD_FAIL:-0}" != 1 ] || { printf "stub: build failed\n" >&2; exit 1; }
+_target=""
+while [ $# -gt 0 ]; do
+    case "$1" in --target-dir) _target="$2"; shift 2 ;; *) shift ;; esac
+done
+[ -n "$_target" ] || exit 1
+printf 'build %s\n' "$(git rev-parse HEAD)" >> "$STUB_STATE/cargo.log"
+mkdir -p "$_target/release"
+printf '#!/bin/sh\nexit 0\n' > "$_target/release/office"
+chmod +x "$_target/release/office"
+STUB
+chmod +x "$BIN/cargo"
 chmod +x "$BIN/orbit" "$BIN/npm" "$BIN/systemctl" "$BIN/launchctl" "$BIN/ffmpeg" \
     "$BIN/curl" "$BIN/tar" "$BIN/uv" "$BIN/open" "$BIN/xdg-open"
 
@@ -1437,7 +1453,7 @@ check "adoption keeps the partial .orbit" test -d "$REPAIR/.orbit"
 
 BIN2="$ROOT/bin-no-orbit"
 mkdir -p "$BIN2"
-for _stub in npm systemctl launchctl ffmpeg curl tar uv; do cp "$BIN/$_stub" "$BIN2/$_stub"; done
+for _stub in npm systemctl launchctl ffmpeg curl tar uv cargo; do cp "$BIN/$_stub" "$BIN2/$_stub"; done
 chmod +x "$BIN2"/*
 HOME5="$ROOT/home5"; mkdir -p "$HOME5"
 OUT_MISS="$ROOT/out-missing.txt"
@@ -1782,7 +1798,9 @@ SAVED_INSTALL_SH="$INSTALL_SH"; INSTALL_SH="$CLONE/install.sh"
 run_install "$CLONE_HOME" -- > "$ROOT/clone-out" 2>&1 \
     || { cat "$ROOT/clone-out" >&2; fail "fresh clone install exits 0"; }
 INSTALL_SH="$SAVED_INSTALL_SH"
-check "fresh clone uses pinned build path" grep -F "plugin add git+https://github.com/constellation-works/orbit-office.git#$(git -C "$CLONE" rev-parse HEAD) --allow-build" "$STUB_STATE/orbit.log"
+check "fresh clone builds office at the clone HEAD" grep -qxF "build $(git -C "$CLONE" rev-parse HEAD)" "$STUB_STATE/cargo.log"
+check "fresh clone adds the built office export" grep -F "plugin add $CLONE_HOME/.local/share/orbit-office/plugins/office" "$STUB_STATE/orbit.log"
+check "fresh clone export carries an executable backend" test -x "$CLONE_HOME/.local/share/orbit-office/plugins/office/.orbit-plugin/bin/office-bin"
 check "fresh clone reaches scaffold" test -f "$CLONE_HOME/orbit/library/.office/config.yaml"
 
 # An explicitly supplied local source must be a prepared export, and remains
@@ -1815,8 +1833,8 @@ check "failed build leaves no scaffold" sh -c '! grep -Eq "^(plugin_added|plugin
 SOURCE_HOME="$ROOT/source-home"; mkdir -p "$SOURCE_HOME"
 run_install "$SOURCE_HOME" -- --from-source > "$ROOT/source-out" 2>&1 \
     || { cat "$ROOT/source-out" >&2; fail "from-source install exits 0"; }
-check "source office install binds the actual worktree commit" \
-    grep -F "git+https://github.com/constellation-works/orbit-office.git#$(git -C "$SCRIPT_DIR/../.." rev-parse HEAD) --allow-build" "$STUB_STATE/orbit.log"
+check "source office install builds the actual worktree commit" \
+    grep -qxF "build $(git -C "$SCRIPT_DIR/../.." rev-parse HEAD)" "$STUB_STATE/cargo.log"
 
 snapshot "$SOURCE_HOME" > "$ROOT/source-snapshot"
 run_install "$SOURCE_HOME" -- --from-source > "$ROOT/source-out2" 2>&1 \
@@ -2096,7 +2114,7 @@ done
 CUSTOM_PREFIX="$ROOT/custom-prefix"
 CUSTOM_BIN="$CUSTOM_PREFIX/bin"
 mkdir -p "$CUSTOM_BIN"
-for _stub in npm systemctl launchctl ffmpeg curl tar uv; do
+for _stub in npm systemctl launchctl ffmpeg curl tar uv cargo; do
     cp "$BIN/$_stub" "$CUSTOM_BIN/$_stub"
 done
 chmod +x "$CUSTOM_BIN"/*
@@ -2317,7 +2335,7 @@ if [ ! -e "$HIDE_BASE/.done" ]; then
     : > "$HIDE_BASE/.done"
 fi
 BIN_NOSYS="$ROOT/bin-no-sys"; mkdir -p "$BIN_NOSYS"
-for _stub in orbit npm launchctl ffmpeg curl tar uv; do cp "$BIN/$_stub" "$BIN_NOSYS/$_stub"; done
+for _stub in orbit npm launchctl ffmpeg curl tar uv cargo; do cp "$BIN/$_stub" "$BIN_NOSYS/$_stub"; done
 chmod +x "$BIN_NOSYS"/*
 HOME_SVC_MISSING="$ROOT/home-svc-missing"; mkdir -p "$HOME_SVC_MISSING"
 rm -f "$STUB_STATE/svc-enabled" "$STUB_STATE/svc-active"
@@ -2384,7 +2402,7 @@ check "launchd repair restores the loaded state" test -f "$STUB_STATE/launchd-lo
 
 # --- launchd: missing manager stops, leaves no marker, retry completes ---
 BIN_NOLAUNCH="$ROOT/bin-no-launch"; mkdir -p "$BIN_NOLAUNCH"
-for _stub in orbit npm systemctl ffmpeg curl tar uv; do cp "$BIN/$_stub" "$BIN_NOLAUNCH/$_stub"; done
+for _stub in orbit npm systemctl ffmpeg curl tar uv cargo; do cp "$BIN/$_stub" "$BIN_NOLAUNCH/$_stub"; done
 chmod +x "$BIN_NOLAUNCH"/*
 HOME_L_MISSING="$ROOT/home-launchd-missing"; mkdir -p "$HOME_L_MISSING"
 L_MISSING_DATA="$HOME_L_MISSING/custom-data"

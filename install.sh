@@ -13,7 +13,6 @@ set -eu
 TESTED_ORBIT_VERSION="0.37.0"
 ORBIT_NPM_PACKAGE="@orbit-tools/cli@0.37.0"
 PLUGIN_NAME="office"
-REPO_GIT_URL="https://github.com/constellation-works/orbit-office.git"
 DEFAULT_PORT="4317"
 
 # Pinned agent toolchain (spec step 2). The four archive digests were
@@ -49,8 +48,8 @@ Options:
   --home DIR       Workspace folder (default: ~/orbit)
   --yes            Skip the plugin-enable consent question
   --with-cloudcli  Also install the optional cloudcli plugin
-  --from-source    Install office from the pinned git+ source (needs
-                   cargo) instead of a local/prebuilt export
+  --from-source    Build office from this clone's HEAD (needs cargo)
+                   instead of using a prebuilt export
   --agent NAME     Agent CLI to register: claude (default) or codex
   --port PORT      App port (default: 4317, or $ORBIT_OFFICE_PORT)
   --uninstall      Remove the service, MCP entry, added deny rules,
@@ -1417,6 +1416,35 @@ try {
 NODE
 }
 
+# Build office from the clone's HEAD into the same layout `make -C plugin
+# export` produces. Orbit's git+ sources need `.orbit-plugin/` at the
+# repository root, and this repository keeps it under plugin/, so office is
+# built here and added as a directory. A throwaway local clone pins HEAD and
+# keeps uncommitted and untracked files out of the export.
+office_export() {
+    _oe_out="$DATA_DIR/plugins/office"
+    command -v cargo >/dev/null 2>&1 \
+        || die "building the office plugin needs cargo (install Rust from https://rustup.rs), or set ORBIT_OFFICE_PLUGIN_BUNDLE"
+    [ ! -e "$_oe_out" ] || die "incomplete plugin export; move aside $_oe_out and retry"
+    _oe_rev=$(git -C "$SCRIPT_DIR" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) \
+        || die "--from-source needs a clone; otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE"
+    _oe_work=$(mktemp -d "${TMPDIR:-/tmp}/office-plugin-build.XXXXXX") || return 1
+    say "plugin: building office from $_oe_rev (cargo build --release; this takes a few minutes)"
+    if git clone --quiet --no-hardlinks --no-checkout "$SCRIPT_DIR" "$_oe_work/source" \
+        && git -C "$_oe_work/source" checkout --quiet --detach "$_oe_rev" \
+        && (cd "$_oe_work/source" && cargo build --release --locked -p office --target-dir "$_oe_work/target") \
+        && mkdir -p "$DATA_DIR/plugins" \
+        && cp -R "$_oe_work/source/plugin" "$_oe_out.build-$$" \
+        && cp "$_oe_work/target/release/office" "$_oe_out.build-$$/.orbit-plugin/bin/office-bin" \
+        && chmod 755 "$_oe_out.build-$$/.orbit-plugin/bin/office-bin" \
+        && mv "$_oe_out.build-$$" "$_oe_out"; then
+        rm -rf "$_oe_work"
+        return 0
+    fi
+    rm -rf "$_oe_work" "$_oe_out.build-$$"
+    return 1
+}
+
 step_plugin() {
     step "5 plugin"
     if [ -n "${ORBIT_OFFICE_PLUGIN_BUNDLE:-}" ]; then
@@ -1430,7 +1458,6 @@ step_plugin() {
         if plugin_is_listed "$_plugin" || state_has "$_added"; then
             say "plugin: already added ($_plugin)"
         else
-            _allow_build=0
             if [ -n "${ORBIT_OFFICE_PLUGIN_BUNDLE:-}" ]; then
                 _source="$ORBIT_OFFICE_PLUGIN_BUNDLE/$_plugin"
                 [ -f "$_source/.orbit-plugin/plugin.yaml" ] || die "missing $_plugin export in ORBIT_OFFICE_PLUGIN_BUNDLE"
@@ -1448,25 +1475,19 @@ step_plugin() {
                 if [ -z "$SCRIPT_DIR" ] || [ ! -e "$SCRIPT_DIR/.git" ]; then
                     die "--from-source needs a clone; otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE"
                 fi
-                _ref=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null) \
-                    || die "--from-source needs a clone; otherwise set ORBIT_OFFICE_PLUGIN_BUNDLE"
-                _source="git+$REPO_GIT_URL#$_ref"
-                _allow_build=1
+                _source="$DATA_DIR/plugins/office"
+                # Reuse a completed export when add failed on an earlier run.
+                if ! state_has "plugin.office.exported"; then
+                    office_export || die "could not build the office plugin from $SCRIPT_DIR"
+                    state_mark "plugin.office.exported"
+                fi
             else
                 _source="$PLUGIN_SRC"
             fi
-            if [ "$_plugin" = office ]; then
-                case "$_source" in
-                    git+*) ;;
-                    *) [ -x "$_source/.orbit-plugin/bin/office-bin" ] \
-                        || die "office plugin export lacks executable bin/office-bin: $_source" ;;
-                esac
+            if [ "$_plugin" = office ] && [ ! -x "$_source/.orbit-plugin/bin/office-bin" ]; then
+                die "office plugin export lacks executable bin/office-bin: $_source"
             fi
-            if [ "$_allow_build" -eq 1 ]; then
-                orbit plugin add "$_source" --allow-build
-            else
-                orbit plugin add "$_source"
-            fi
+            orbit plugin add "$_source"
             state_mark "$_added"
             say "plugin: added $_plugin from $_source"
         fi

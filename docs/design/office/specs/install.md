@@ -88,10 +88,14 @@ filter for them. Orbit must support `workspace init --preset`.
    A `.orbit` directory or a `library` entry on its own, or a path that merely
    appears in `orbit workspace list`, is not ownership.
 5. **Plugin.** `orbit plugin add` from the prebuilt export attached to the orbit-office
-   release (a local directory install, so no Rust toolchain is needed); `--from-source`
-   uses the pinned `git+` source and needs `cargo`. A clone whose local plugin lacks an
-   executable backend also uses `git+` at the clone HEAD with `--allow-build`; the commit
-   must be available from the repository remote and `cargo` is required. An explicit local
+   release (a local directory install, so no Rust toolchain is needed). `--from-source`,
+   and a clone whose local plugin lacks an executable backend, build office from the
+   clone's HEAD and need `cargo`: a throwaway local clone of that commit runs
+   `cargo build --release --locked -p office`, and the result is laid out as
+   `make -C plugin export` would (`plugin/` plus `bin/office-bin`) under the data folder,
+   then added as a directory. Orbit's `git+` sources need `.orbit-plugin/` at the
+   repository root, which this repository does not have. Uncommitted changes are not
+   built. A completed build is reused on a re-run until uninstall. An explicit local
    office source or bundle must already contain an executable `bin/office-bin`; a missing
    backend or failed build stops before office is recorded as added or enabled. Then
    workspace enablement through `orbit-office init` using `orbit plugin enable office` with the grants the manifest requests (`fs`, `network`, `orbit_tools`), after printing them and
