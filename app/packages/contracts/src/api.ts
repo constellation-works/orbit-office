@@ -4,6 +4,7 @@ export type Status = "built" | "planned";
 /** Server features, one folder each under `server/src/features/`. */
 export type FeatureName =
   | "today"
+  | "calendar"
   | "sources"
   | "todos"
   | "approvals"
@@ -17,6 +18,7 @@ export type FeatureName =
 /** Web screens, one folder each under `web/src/screens/`. */
 export type ScreenId =
   | "today"
+  | "calendar"
   | "source"
   | "todos"
   | "routines"
@@ -347,3 +349,84 @@ export interface SelectionCount { count: number }
 /** Library setup status and the result of an explicit setup action. */
 export interface SetupStatus { state: "ready" | "missing" | "plugin_disabled" | "workspace_unregistered" | "unavailable"; reason?: string; fix?: string }
 export interface SetupResult { created: string[]; already_initialized: boolean }
+
+/** One attendee on a meeting: name and response only, never an address. */
+export interface CalendarAttendee {
+  name: string;
+  /** As the calendar reports it, for example `accepted` or `needsAction`. */
+  response: string;
+  /** The Library person page this attendee matched, or null. */
+  person: { id: string; title: string } | null;
+}
+
+/**
+ * One meeting instance from the read-only calendar snapshot
+ * (`office.calendar-list`). `key` identifies the instance for capture; the
+ * screen never renders it.
+ */
+export interface CalendarMeeting {
+  key: string;
+  title: string;
+  /** RFC 3339 instants. All-day events start and end at UTC midnight. */
+  start: string;
+  end: string;
+  all_day: boolean;
+  status: "confirmed" | "tentative" | "cancelled";
+  /** Empty when the invite names no place. */
+  location: string;
+  /** True when the invite has a join link; the link itself is never stored. */
+  online: boolean;
+  organizer: string;
+  attendees: CalendarAttendee[];
+  /** Matched person pages no attendee name accounts for. */
+  people: Array<{ id: string; title: string }>;
+  /** Untrusted invite text; the screen shows it only as quoted text. */
+  agenda: string;
+  private: boolean;
+  /** The prep brief's artifact id, or null while none is written. */
+  prep: string | null;
+  /** Notes or a transcript captured from this meeting (the first in Library order), or null. */
+  capture: { source: string; summarized: boolean } | null;
+}
+
+/** A routine's schedule as the Routines screen reads it, for the calendar's margin marks. */
+export interface CalendarRoutine {
+  kind: "auto_task" | "routine";
+  name: string;
+  schedule: Record<string, unknown>;
+  enabled: boolean;
+  /** When it last fired, for interval schedules; null when it never has. */
+  last_fired_at: string | null;
+}
+
+/** `GET /api/calendar?from&until`: meetings in the range and the routines that run. */
+export interface CalendarView {
+  from: string;
+  until: string;
+  /** Null until the calendar has synced once; a synced, empty week reads a time. */
+  synced_at: string | null;
+  /** True when the latest sync failed; the meetings are the last good snapshot. */
+  sync_failed: boolean;
+  /** Minutes before a meeting that its prep brief is written. */
+  prep_lead_minutes: number;
+  meetings: CalendarMeeting[];
+  routines: CalendarRoutine[];
+  /** Scheduled routines this connection may not read; auto-tasks are still listed. */
+  routines_unavailable: boolean;
+}
+
+/** `POST /api/calendar/sync`: how many meetings the snapshot now holds. */
+export interface CalendarSynced { events: number; skipped: number; synced_at: string }
+
+/** `POST /api/calendar/capture` with JSON: pasted notes for one meeting. */
+export interface MeetingNotes { event_key: string; text: string }
+
+/** `GET /api/calendar/meeting?source=<id>`: what a captured meeting produced. */
+export interface MeetingOutcome {
+  /** `summary.md`, or null until the meeting inbox has summarized it. */
+  summary: string | null;
+  /** To-dos filed from this meeting, in plain words. */
+  todos: Array<{ title: string; owner: "you" | "agent" | null; done: boolean }>;
+  /** True when Orbit had more to-dos than listed. */
+  more: boolean;
+}

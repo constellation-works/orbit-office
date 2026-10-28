@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: web app — screens, rules, its authority as the user's console, and delivery as an installable PWA"
-last_validated: 2026-10-26
+last_validated: 2026-10-27
 ---
 
 # Spec: Web app
@@ -129,6 +129,69 @@ An empty `drop-zone` slot reserves the upload integration point; uploading
 remains a separate feature. Each Needs-you card except the user's own to-dos
 carries its `approval-actions` (below).
 
+### Calendar implementation
+
+Calendar, its server feature and Today's Next meeting card are built
+([ORB-19195]); scheduled-task blocks are [ORB-19216]'s. The shared contracts
+are `CalendarView`, `CalendarMeeting`, `CalendarRoutine`, `CalendarSynced`,
+`MeetingNotes` and `MeetingOutcome` in `app/packages/contracts`.
+
+- **`GET /api/calendar?from&until`** takes two RFC 3339 instants at most 42
+  days apart (any other parameter is refused) and calls
+  `office.calendar-list` with `include_cancelled: true`, beside
+  `orbit.auto_task.list` and the routine listing. Meetings come back sorted by
+  start; attendees carry name and response, linked to the matched person page
+  whose title is their name, and the other matched pages are listed apart.
+  `synced_at: null` means never synced; `sync_failed` says the latest sync
+  failed over the last good snapshot (its code stays on the server). Routines
+  are the shipped set the Routines screen lists (the definition reader now
+  lives in `server/src/orbit/definitions.ts`, shared by both features); a
+  failed routine read keeps the meetings and sets `routines_unavailable`.
+  `prep_lead_minutes` is the configuration default, 120: no tool reads the
+  configured value back yet.
+- **`POST /api/calendar/sync`** calls `office.calendar-sync` with `{}`.
+  `calendar_unconfigured` is a 409; any other refusal is `sync_failed`.
+- **`POST /api/calendar/capture`** takes `{event_key, text}` as JSON, or a
+  file as `application/octet-stream` with `?event_key&name`
+  (`.vtt`, `.txt`, `.md`, `.wav`, `.mp3`, `.m4a`, `.webm`). Files are staged
+  as Source stages them: owner-only inside `ORBIT_OFFICE_WORKSPACE`, bounded
+  to 256 MiB, removed after capture. Either way it calls `office.capture`
+  with `event_key`; an unknown key is a 404 `unknown_event` and creates
+  nothing.
+- **`GET /api/calendar/meeting?source=<id>`** reads a captured meeting's
+  `summary.md` through `office.source-show` and its to-dos through
+  `orbit.task.list` tagged `source:<id>`, as titles, owners and done state.
+
+The screen draws Monday to Sunday above 820px and one day at a time below,
+with a day picker that starts on today. Hours run 08:00–18:00, widened to the
+week's earliest and latest meeting; all-day events sit in a strip above, and a
+red line marks the current time. A block shows its title, its state in words
+and its time: "Prep ready", "Prep at HH:MM" (the start less the lead,
+rounded up to the prep routine's quarter hour), "Prep on its way",
+"Happening now", "Add notes", "Notes added", "Summary saved", "Cancelled"
+(title struck through), "Tentative" and "Private". Colour only repeats the
+words. Routine runs are marks in each day's margin from `ui/schedule.ts`
+(moved from the Routines screen, which imports it too), hollow when paused;
+more than 24 runs a day draw as one band. Every mark opens Routines.
+Opening a meeting shows a panel with when, where and whether it is online,
+the organizer, attendees (a matched one opens their page's text), the agenda
+as quoted text, the prep brief from `/api/sources/citation` with each
+`src-…` citation a Source link and each page citation its title, and, after
+the meeting, the notes link, summary and to-dos, then **Add notes or
+transcript** (paste, pick or drop a file). The states are "Connect your
+calendar" (never synced, linking to Settings), "Last synced HH:MM, the latest
+sync failed" above the last snapshot, and "No meetings this week." "Sync now"
+sits beside the last sync time.
+
+The rail lists Calendar under Work between Today and To-dos, with a plain
+count of today's past meetings that have no notes (hidden at zero or on a
+failed read). Today's Next meeting card shows the meeting now or next today,
+its time and place, and "Prep ready" linking to its panel
+(`?meeting=<key>#calendar`, cleared once read); it rereads every minute and
+is hidden when nothing is left today or the calendar cannot be read.
+`web/test/calendar.browser.mjs` covers the week, the day view, the panel,
+capture and the three states at 1440px and 375px.
+
 ### Source implementation
 
 Source is built. It accepts files, folder drops and pasted text; single uploads
@@ -225,7 +288,8 @@ never literal colours:
 - **Rail**: screens in labelled groups (Work, Knowledge, Observe, Manage),
   each with an icon; a screen can nest under a parent (Library › Source,
   Insights › Review, Automation › Routines). Counts sit at the right: routines
-  on of total, and Today's waiting cards as an amber pill. A failed read hides
+  on of total, today's past meetings without notes beside Calendar, and
+  Today's waiting cards as an amber pill. A failed read hides
   a count rather than showing 0. The layout lives in `web/src/nav.ts`.
 - **Table rows** (Routines): a header row of column labels over hairline
   rows; on a phone each row stacks and every cell carries its label.
@@ -283,6 +347,8 @@ Spark Open" only when a block is configured.
 - [ORB-18735] — built the PWA shell and the settings feature's agent-CLI read.
 - [ORB-18798] — builds the Settings connections and API calls views.
 - [ORB-18841] — builds the Settings private route and the Muse Spark Open attribution.
+- [ORB-19195] — builds the Calendar screen, `/api/calendar*`, the rail entry and Today's Next meeting card.
+- [ORB-19216] — builds scheduled tasks on the calendar.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 

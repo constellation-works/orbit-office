@@ -6,10 +6,10 @@
 import type { Screen } from "../../screen.js";
 import { ApiError, getJson, postJson } from "../../api/client.js";
 import { requestRailRefresh } from "../../ui/index.js";
-import { eventDriven, firesInNextHour, nextFire, scheduleWords } from "./schedule.js";
+import { eventDriven, firesInNextHour, nextFire, scheduleWords } from "../../ui/schedule.js";
 import { styles } from "./style.js";
 
-export { scheduleWords } from "./schedule.js";
+export { scheduleWords } from "../../ui/schedule.js";
 
 interface LastFire { kind: "fired" | "skipped"; at: string; task_status: string | null; run_state?: string }
 interface Routine {

@@ -52,11 +52,15 @@ const SHELL_ASSETS: readonly string[] = [
   "/ui/state.js",
   "/ui/attribution.js",
   "/ui/events.js",
+  "/ui/schedule.js",
+  "/screens/calendar/index.js",
+  "/screens/calendar/model.js",
+  "/screens/calendar/panel.js",
+  "/screens/calendar/style.js",
   "/screens/insights/index.js",
   "/screens/library/index.js",
   "/screens/review/index.js",
   "/screens/routines/index.js",
-  "/screens/routines/schedule.js",
   "/screens/routines/style.js",
   "/screens/settings/index.js",
   "/screens/settings/editor.js",
@@ -68,12 +72,13 @@ const SHELL_ASSETS: readonly string[] = [
   "/screens/source/style.js",
   "/screens/today/approvals.js",
   "/screens/today/index.js",
+  "/screens/today/next-meeting.js",
   "/screens/todos/index.js",
   "/screens/todos/view.js",
 ];
 
 /** Cache name for the shell. Bump when the shell's bytes change. */
-const SHELL_CACHE = "office-shell-v6";
+const SHELL_CACHE = "office-shell-v7";
 
 /**
  * True for live-data paths, which the worker must never cache. A `.js`

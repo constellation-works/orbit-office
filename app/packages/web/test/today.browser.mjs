@@ -21,6 +21,11 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   const server = createServer((request, response) => {
     if (request.url === "/api/setup") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "ready" })); }
     else if (request.url === "/api/today") void route.handle(request, response);
+    // A calendar with nothing left today: the Next meeting card stays hidden.
+    else if (request.url.startsWith("/api/calendar?")) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ from: "", until: "", synced_at: now.toISOString(), sync_failed: false, prep_lead_minutes: 120, meetings: [], routines: [], routines_unavailable: false }));
+    }
     else fallback(request, response);
   });
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -44,6 +49,8 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   assert.match(await working.innerText(), /Preparing the research notes/);
   assert.match(await done.innerText(), /A clearer plan for the week/);
   assert.equal(await page.locator('[data-slot="drop-zone"]').count(), 1);
+  await page.locator('.today-next-slot[aria-busy="false"]').waitFor({ state: "attached" });
+  assert.equal(await page.locator(".today-next").count(), 0);
   assert.equal(await needs.locator('[data-slot="approval-actions"]').count(), 2);
   await done.getByText("Open result", { exact: true }).click();
   await done.getByRole("link", { name: "About this work" }).click();

@@ -2,11 +2,11 @@
 
 The local web app (TypeScript), installable as a PWA so it opens in its
 own window: a local server plus a single-page UI in plain words — Today,
-To-dos, Routines, Library, Insights, Review. No ids, crews, runs or raw
+Calendar, To-dos, Routines, Library, Insights, Review. No ids, crews, runs or raw
 statuses are ever shown. There is no Chat screen: conversation happens in
 the user's agent CLI.
 
-**Status: Today, To-dos, Routines, Library, Insights, Review, Source and Settings are built, as is the app server.** Today is the landing screen, backed by `GET /api/today`. To-dos shows your open to-dos and the agents' in two
+**Status: Today, Calendar, To-dos, Routines, Library, Insights, Review, Source and Settings are built, as is the app server.** Today is the landing screen, backed by `GET /api/today`. To-dos shows your open to-dos and the agents' in two
 columns. Each one names its source and its attached knowledge, in plain words.
 Closing one of yours marks it done through Orbit; an agent's to-do has no close
 action. Planned server features mount no routes; every listed screen is now built.
@@ -66,9 +66,11 @@ layout is in `../ARCHITECTURE.md` ("Web app").
 - `packages/contracts/` — types shared by server and web.
 - `packages/server/` — `main.ts` (composition), `http/` (`router.ts`,
   `guard.ts`, `static.ts`, `types.ts`), `orbit/` (the `orbit tool run
-  --json` client), `dispatch/` (the 30-second pass), `features/<f>/`.
+  --json` client and the shipped routine names), `dispatch/` (the 30-second
+  pass), `features/<f>/`.
 - `packages/web/` — `static/index.html`, `src/router.ts`, `src/nav.ts` (the rail), `src/screen.ts`,
-  `src/api/`, `src/ui/`, `src/screens/<s>/`.
+  `src/api/`, `src/ui/` (including `schedule.ts`, the schedule reader Routines
+  and Calendar share), `src/screens/<s>/`.
 - `tests/` — the root suite (`http-router.test.ts`, run by `npm test`). Its
   `tsconfig.json` is a project reference of the root, so `npm run check`
   type-checks it too.
@@ -177,3 +179,42 @@ SOURCE_SCREENSHOTS_DIR="$PWD/.orbit/tmp/screenshots" node --test app/packages/we
 
 This fixture suite exercises the production screen and HTTP feature without
 calling a live Library or Orbit, and captures desktop and 375px views.
+
+## Calendar
+
+Calendar sits under Work between Today and To-dos. It shows the week from
+Monday at desktop widths and one day at a time on a phone (a day picker starts
+on today), with the hours 08:00–18:00 widened to the week's meetings, an
+all-day strip and a current-time line. Each meeting block says its state in
+words ("Prep ready", "Prep at HH:MM", "Add notes", "Summary saved",
+"Cancelled" struck through, "Private"); routine runs are marks in each day's
+margin, hollow when paused, and open Routines. A meeting opens a panel with
+when and where, attendees linked to their person pages, the agenda as quoted
+text, the cited prep brief and, after the meeting, the notes, summary and
+to-dos and **Add notes or transcript** (paste, or pick or drop a `.vtt`,
+`.txt`, `.md` or audio file). A calendar that never synced shows "Connect your
+calendar", a failed sync "Last synced HH:MM, the latest sync failed" over the
+last snapshot, and an empty week says so. The rail counts today's past meetings
+without notes, and Today shows a Next meeting card while a meeting is left
+today.
+
+The server reads `office.calendar-list`, `orbit.auto_task.list` and the routine
+listing for `GET /api/calendar?from&until`, calls `office.calendar-sync` for
+`POST /api/calendar/sync`, stages a paste or upload and calls `office.capture`
+with `event_key` for `POST /api/calendar/capture`, and reads a captured
+meeting's summary and to-dos for `GET /api/calendar/meeting?source=<id>`. The
+spec is `docs/design/office/specs/web-app.md` ("Calendar implementation").
+
+After building, run the Calendar browser suite from the repository root with
+the verified browser kit:
+
+```sh
+. "$ORBIT_BROWSER_KIT_ENV"
+CALENDAR_SCREENSHOTS_DIR="$PWD/.orbit/tmp/screenshots" node --test app/packages/web/test/calendar.browser.mjs
+```
+
+It runs the production screen, calendar and source features on a fixture Orbit
+client (`packages/server/test/calendar-fixture.mjs`, a synthetic week in UTC
+with the clock fixed), covering the week, the day view, the meeting panel,
+capture, the three states and Today's card at 1440px and 375px with no
+horizontal overflow.

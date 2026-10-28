@@ -159,8 +159,8 @@ test("a standalone app reads the shipped trees in its bundle without a source ch
   await mkdir(featureDir, { recursive: true });
   await mkdir(orbitDir, { recursive: true });
   await writeFile(join(app, "package.json"), '{"type":"module"}');
-  for (const file of ["index.js", "definitions.js"]) await cp(new URL(`../dist/features/routines/${file}`, import.meta.url), join(featureDir, file));
-  await cp(new URL("../dist/orbit/client.js", import.meta.url), join(orbitDir, "client.js"));
+  await cp(new URL("../dist/features/routines/index.js", import.meta.url), join(featureDir, "index.js"));
+  for (const file of ["client.js", "definitions.js"]) await cp(new URL(`../dist/orbit/${file}`, import.meta.url), join(orbitDir, file));
   for (const [index, name] of ["office", "gateway"].entries()) {
     const target = join(app, "plugins", name, ".orbit-plugin");
     await mkdir(target, { recursive: true });

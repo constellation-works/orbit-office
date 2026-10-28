@@ -6,7 +6,7 @@ import { navigableScreens, SCREENS, screenForHash } from "../dist/router.js";
 test("every scaffolded screen is present, in navigation order", () => {
   assert.deepEqual(
     SCREENS.map((screen) => screen.id),
-    ["today", "todos", "routines", "library", "insights", "review", "source", "settings"],
+    ["today", "calendar", "todos", "routines", "library", "insights", "review", "source", "settings"],
   );
 });
 

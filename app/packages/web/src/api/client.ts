@@ -1,6 +1,6 @@
 /** Typed access to the app server, with one error path. */
 import type {
-  AcceptAllResult, AcceptRequest, ApprovalDetail, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
+  AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
   SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount,
 } from "@orbit-office/contracts";
@@ -159,4 +159,24 @@ export function putSelection(input: SelectionInput): Promise<{ ok: true }> {
 }
 export function clearSelections(): Promise<{ ok: true }> {
   return postJson("/api/selection", { clear: true });
+}
+
+/** Meetings overlapping `[from, until)` and the routines that run; at most 42 days. */
+export function getCalendar(from: Date, until: Date): Promise<CalendarView> {
+  return getJson<CalendarView>(`/api/calendar?${new URLSearchParams({ from: from.toISOString(), until: until.toISOString() })}`);
+}
+/** "Sync now": read the calendar once and replace the snapshot. */
+export function syncCalendar(): Promise<CalendarSynced> {
+  return postJson<CalendarSynced>("/api/calendar/sync", {});
+}
+/** Pasted notes become a meeting source linked to the event. */
+export function captureMeetingNotes(eventKey: string, text: string): Promise<CapturedSource> {
+  return postJson<CapturedSource>("/api/calendar/capture", { event_key: eventKey, text });
+}
+/** A dropped `.vtt`, text or audio file, through the same staging as Source uploads. */
+export function captureMeetingFile(eventKey: string, file: File): Promise<CapturedSource> {
+  return requestJson<CapturedSource>(`/api/calendar/capture?${new URLSearchParams({ event_key: eventKey, name: file.name })}`, undefined, file);
+}
+export function getMeetingOutcome(source: string): Promise<MeetingOutcome> {
+  return getJson<MeetingOutcome>(`/api/calendar/meeting?${new URLSearchParams({ source })}`);
 }

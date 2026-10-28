@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Feature } from "../../http/types.js";
 import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
-import { defaultPluginRoots, readDefinitionNames, type DefinitionNames } from "./definitions.js";
+import { defaultPluginRoots, readDefinitionNames, routineListing, type DefinitionNames } from "../../orbit/definitions.js";
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -29,29 +29,6 @@ function lastFire(value: unknown): { kind: "fired" | "skipped"; at: string; task
   return { kind: value.kind, at: value.at, task_status: typeof value.task_status === "string" ? value.task_status : null };
 }
 const kinds = ["video", "meeting", "chat", "email", "doc", "receipt", "bill", "conversation", "note"];
-
-async function routineListing(client: OrbitToolClient): Promise<Record<string, unknown>[]> {
-  const rows: Record<string, unknown>[] = [];
-  let offset = 0;
-  for (;;) {
-    const page = await client.callTool("orbit.routine.control", { action: "list", offset, limit: 50 });
-    if (!object(page) || !Array.isArray(page.items) || !object(page.pagination) ||
-        !Array.isArray(page.notes) || page.notes.length > 0) throw new Error("invalid routine listing");
-    for (const row of page.items) {
-      if (!object(row) || typeof row.name !== "string" || typeof row.description !== "string" ||
-          typeof row.enabled !== "boolean" || typeof row.effective !== "boolean" ||
-          typeof row.target !== "string" || !object(row.schedule)) throw new Error("invalid routine listing");
-      rows.push(row);
-    }
-    const next = page.pagination.next_offset;
-    if (next === null) return rows;
-    if (typeof next !== "number" || !Number.isSafeInteger(next) || next !== offset + page.items.length || next <= offset) {
-      throw new Error("invalid routine pagination");
-    }
-    offset = next;
-    if (offset >= 10000) throw new Error("routine listing exceeds snapshot limit");
-  }
-}
 
 export function createRoutinesFeature(client: OrbitToolClient, options: { pluginRoots?: readonly string[] } = {}): Feature {
   let names: DefinitionNames | undefined;

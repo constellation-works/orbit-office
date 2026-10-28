@@ -7,10 +7,11 @@
 import type { SetupResult, SetupStatus, Today } from "@orbit-office/contracts";
 
 import { screenHash } from "./api/source-location.js";
-import { getJson, getPrivateRoute, postJson } from "./api/client.js";
+import { getCalendar, getJson, getPrivateRoute, postJson } from "./api/client.js";
 import { drawRail, setRailCount } from "./nav.js";
 import { registerServiceWorker } from "./pwa/register.js";
 import { navigableScreens, screenForHash } from "./router.js";
+import { meetingsWithoutNotes, startOfDay } from "./screens/calendar/model.js";
 import { PRIVATE_ROUTE_EVENT, RAIL_REFRESH_EVENT, applyFooter, card, requestRailRefresh } from "./ui/index.js";
 
 registerServiceWorker();
@@ -21,8 +22,10 @@ function drawNav(nav: HTMLElement): void {
 }
 
 /**
- * Counts beside the rail entries: how many routines are on, and how many
- * cards wait on you today. A failed read hides the count; it never shows 0.
+ * Counts beside the rail entries: how many routines are on, how many cards
+ * wait on you today, and how many of today's past meetings have no notes yet
+ * (a plain count, not an alert). A failed read hides the count; it never
+ * shows 0.
  */
 async function loadCounts(nav: HTMLElement): Promise<void> {
   await Promise.all([
@@ -42,6 +45,14 @@ async function loadCounts(nav: HTMLElement): Promise<void> {
         setRailCount(nav, "today", cards > 0 ? String(cards) : null, true);
       })
       .catch(() => setRailCount(nav, "today", null)),
+    (async () => {
+      const now = new Date();
+      const day = startOfDay(now);
+      const view = await getCalendar(day, new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1));
+      if (!Array.isArray(view.meetings)) throw new Error("malformed calendar");
+      const count = meetingsWithoutNotes(view.meetings, now);
+      setRailCount(nav, "calendar", count > 0 ? String(count) : null);
+    })().catch(() => setRailCount(nav, "calendar", null)),
   ]);
 }
 

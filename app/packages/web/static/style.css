@@ -276,6 +276,9 @@ h3 { font-size: 15px; font-weight: 500; }
 /* Today */
 .today .card-content { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .today .state h2 { font-size: 14px; }
+.today-next-slot { max-width: 520px; margin: 0 0 24px; }
+.today-next-meeting { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.today-next-meeting p { margin: 0; }
 .today-split { display: flex; flex-wrap: wrap; gap: 24px; }
 .today-split > .today-section { flex: 1 1 380px; min-width: 0; }
 .today-working .card-grid, .today-done .card-grid {
