@@ -568,8 +568,12 @@ run_install() { # run_install <home> <extra env...> -- <args...>
     # --yes unless the caller sets NO_YES=1 (the non-interactive case).
     _yes="--yes"
     [ -z "${NO_YES:-}" ] || _yes=""
+    # INSTALL_FROM_CWD=1 runs the documented `sh install.sh` from the clone
+    # root, so $0 carries no directory.
+    _script="$INSTALL_SH"; _run_dir="."
+    if [ "${INSTALL_FROM_CWD:-0}" = 1 ]; then _script=install.sh; _run_dir=$(dirname -- "$INSTALL_SH"); fi
     # shellcheck disable=SC2086
-    env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
+    (cd "$_run_dir" && env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
         STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
         STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.37.0}" \
@@ -580,7 +584,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
         STUB_ORBIT_SRC="$BIN/orbit" \
         ORBIT_OFFICE_OS=linux \
         $_uv_env $_py_env $_envs \
-        sh "$INSTALL_SH" $_yes "$@" < /dev/null
+        sh "$_script" $_yes "$@" < /dev/null)
 }
 
 # Run the documented curl-to-sh form: install.sh itself is the shell's
@@ -1140,6 +1144,13 @@ check "reinstall removes recorded legacy launcher" test ! -e "$LEGACY_HOME/.loca
 check "reinstall installs orbit-office launcher" test -x "$LEGACY_HOME/.local/bin/orbit-office"
 check "reinstall records orbit-office launcher" grep -qxF "launcher_path=$LEGACY_HOME/.local/bin/orbit-office" "$_legacy_state"
 check "reinstall forgets legacy launcher path" sh -c '! grep -qF "launcher_path=$1" "$2"' sh "$LEGACY_HOME/.local/bin/office" "$_legacy_state"
+# `sh install.sh` from the clone root finds the clone's plugin sources.
+CWD_HOME="$ROOT/cwd-install-home"; mkdir -p "$CWD_HOME"
+INSTALL_FROM_CWD=1 run_install "$CWD_HOME" -- > "$ROOT/cwd-install" 2>&1 \
+    || { cat "$ROOT/cwd-install" >&2; fail "sh install.sh from the clone root exits 0"; }
+ok "sh install.sh from the clone root exits 0"
+check "sh install.sh from the clone root adds the office plugin" test -e "$STUB_STATE/plugin-added"
+check "sh install.sh from the clone root does not ask for a clone" sh -c '! grep -qF "needs a clone" "$1"' sh "$ROOT/cwd-install"
 
 
 # ---------------------------------------------------------------------------

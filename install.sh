@@ -247,7 +247,13 @@ case "$0" in
             SCRIPT_DIR=$(CDPATH='' cd -- "$_dir" 2>/dev/null && pwd) || SCRIPT_DIR=""
         fi
         ;;
-    *) ;;
+    *)
+        # `sh install.sh` from the clone root: $0 has no slash but names this
+        # file. A curl pipe's $0 is the shell, never a copy of the installer.
+        if [ -f "$0" ] && grep -q '^OFFICE_LAUNCHER$' "$0" 2>/dev/null; then
+            SCRIPT_DIR=$(pwd) || SCRIPT_DIR=""
+        fi
+        ;;
 esac
 
 # The app/plugin sources exist only in a clone, not in a curl pipe.
