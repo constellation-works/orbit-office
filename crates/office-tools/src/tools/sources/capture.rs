@@ -16,6 +16,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         mcp_scope: McpScope::Workspace,
     },
     &[
+        "event_key",
         "kind",
         "title",
         "text",
@@ -126,7 +127,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
             ));
         }
     };
-    let request = CaptureSourceRequest {
+    let mut request = CaptureSourceRequest {
         kind: string_field(call, "kind")?,
         title: string_field(call, "title")?,
         text,
@@ -139,6 +140,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         origin: string_field(call, "origin")?,
         occurred_at: string_field(call, "occurred_at")?,
         participants,
+        event: None,
         tags: match call.input.get("tags") {
             None | Some(Value::Null) => Vec::new(),
             Some(Value::Array(items)) => items
@@ -157,6 +159,31 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         },
         sensitivity: string_field(call, "sensitivity")?,
     };
+    if let Some(key) = string_field(call, "event_key")? {
+        if request.append_to.is_some() || !request.entries.is_empty() {
+            return Err(Error::InvalidArgument(
+                "event_key cannot be combined with conversation entries or append_to".into(),
+            ));
+        }
+        let (snapshot, _) = call.ports.calendar.load()?;
+        let event = snapshot
+            .events
+            .iter()
+            .find(|event| event.key == key)
+            .ok_or(Error::Library {
+                code: "unknown_event",
+                message: "no calendar event has this key; sync the calendar first".into(),
+            })?;
+        request.kind = Some("meeting".into());
+        request.title = Some(event.title.clone());
+        request.occurred_at = Some(event.start.clone());
+        request.participants = event.attendees.iter().map(|a| a.name.clone()).collect();
+        request.sensitivity = Some(event.sensitivity.clone());
+        request.event = Some(office_core::domain::source::SourceEvent {
+            key: event.key.clone(),
+            series: event.series.clone(),
+        });
+    }
     if request.append_to.is_none()
         && request.text.is_none()
         && request.upload_path.is_none()

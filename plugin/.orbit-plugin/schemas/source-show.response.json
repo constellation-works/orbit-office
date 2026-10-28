@@ -325,6 +325,7 @@
         "additionalProperties": false
       }
     },
+    "summary": { "type": ["string", "null"] },
     "gotchas": {
       "type": "array",
       "items": {

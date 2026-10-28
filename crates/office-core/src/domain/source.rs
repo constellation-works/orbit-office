@@ -731,6 +731,15 @@ fn split_vtt_speaker(raw: &str) -> (Option<String>, String) {
     (None, raw.to_string())
 }
 
+/// Calendar identity attached to a meeting; several sources may share it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SourceEvent {
+    /// Stable occurrence key from the calendar snapshot.
+    pub key: String,
+    /// Calendar series UID.
+    pub series: String,
+}
+
 /// Parsed source frontmatter fields the index record does not carry.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SourceMeta {
@@ -921,6 +930,8 @@ pub fn processing_file_name(name: &str) -> bool {
     name == "extract-result.json"
         || name == "chapters.md"
         || name == "digest.json"
+        || name == "summary.md"
+        || name == "transcript-state.json"
         || numbered("v", ".md")
         || numbered("extract-window-", ".json")
 }
@@ -1022,6 +1033,8 @@ pub struct RenderSource<'a> {
     pub occurred_at: Option<&'a str>,
     /// Documented item: participants.
     pub participants: &'a [String],
+    /// Calendar occurrence and series, absent for ordinary capture.
+    pub event: Option<&'a SourceEvent>,
     /// Source tags, serialized as quoted block-list items.
     pub tags: &'a [String],
     /// Documented item: sensitivity.
@@ -1063,6 +1076,13 @@ pub fn render_source(input: &RenderSource<'_>) -> String {
                 .map(|item| serde_json::json!(item).to_string())
                 .collect::<Vec<_>>()
                 .join(", ")
+        ));
+    }
+    if let Some(event) = input.event {
+        out.push_str(&format!(
+            "event: {{ key: {}, series: {} }}\n",
+            yaml_quote(&event.key),
+            yaml_quote(&event.series)
         ));
     }
     out.push_str(&format!("sensitivity: {}\n", input.sensitivity.as_str()));

@@ -20,8 +20,22 @@
     }
   },
   "required": [
-    "id",
     "profile"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "id"
+      ]
+    },
+    {
+      "properties": {
+        "profile": {
+          "const": "meeting"
+        }
+      }
+    }
+  ],
+  "description": "Meeting profile without id runs the meeting inbox. With id it saves summary.md and to-dos; task is optional for meeting and adds a result artifact when supplied."
 }

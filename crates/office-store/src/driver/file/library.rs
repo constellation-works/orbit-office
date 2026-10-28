@@ -399,7 +399,7 @@ impl LibraryFs {
                 kind: "source",
                 value: relative.display().to_string(),
             })?;
-            for name in ["frames.md", "chapters.md"] {
+            for name in ["frames.md", "chapters.md", "summary.md"] {
                 let companion = parent.join(name);
                 self.validate_relative_path(&companion)?;
                 match std::fs::read_to_string(self.root.join(&companion)) {

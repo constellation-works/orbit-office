@@ -76,3 +76,10 @@ candidates without filing or approving proposals. The weekly
 `dedupe: skip_if_open`) is registered under auto_tasks. It asks an agent to
 review evidence and file knowledge proposals, leaving approval to the user.
 These are shipped definitions, not proposals for new automation.
+
+`office-meeting-inbox` is registered under routines and jobs. Its disabled
+15-minute routine targets `job:office-meeting-inbox`; the single deterministic
+`plugin.tool_call` invokes `office.extract` with `{profile: meeting}` and no id.
+The handler walks all unsummarized meetings, transcribes empty audio captures,
+extracts cited decisions and to-dos, then publishes the summary completion
+marker. No agent loop or crew is involved. The job has `max_active_runs: 1`.
