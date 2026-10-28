@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use office_core::domain::knowledge::{DocumentRecord, Page, page_kind_for_id};
+use office_core::domain::knowledge::{Page, parse_citation};
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Value, json};
@@ -30,27 +30,34 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .input
         .get("id")
         .and_then(Value::as_str)
-        .filter(|id| page_kind_for_id(id).is_some())
+        .filter(|id| {
+            parse_citation(id).is_some_and(|c| {
+                c.anchor.is_none()
+                    && matches!(
+                        c.kind,
+                        office_core::domain::knowledge::DocumentKind::Domain
+                            | office_core::domain::knowledge::DocumentKind::Runbook
+                    )
+            })
+        })
         .ok_or_else(|| {
             Error::InvalidArgument("knowledge-show id must be dom-<slug> or rb-<slug>".into())
         })?;
     let library = &call.ports.library;
-    let pages = library.knowledge_pages()?;
-    let (path, markdown) = pages
-        .iter()
-        .find_map(|file| {
-            let markdown = file.markdown.as_deref()?;
-            (DocumentRecord::from_markdown(Path::new(&file.path), markdown).id == id)
-                .then_some((file.path.as_str(), markdown))
-        })
+    let record = library
+        .get(id)?
         .ok_or_else(|| Error::PageNotFound { id: id.into() })?;
-    let mut view = Page::from_markdown(markdown)?.model_view();
+    let path = record.path.as_str();
+    let markdown = library.read_text(Path::new(path))?;
+    let mut view = Page::from_markdown(&markdown)?.model_view();
     view.path = path.to_string();
     let backlinks = library.backlinks(id)?;
     let mut output = json!({
         "page": view,
         "backlinks": backlinks,
     });
+    output["page"]["layer"] = json!(record.layer);
+    output["page"]["shared_by"] = json!(record.shared_by);
     if history {
         crate::history::append(library.as_ref(), Path::new(path), &mut output)?;
     }

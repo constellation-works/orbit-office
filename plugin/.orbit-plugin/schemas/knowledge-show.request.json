@@ -5,8 +5,8 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^(dom|rb)-[a-z0-9]+(-[a-z0-9]+)*$",
-      "description": "The page id: dom-<slug> (About) or rb-<slug> (How-to)."
+      "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*/)?(dom|rb)-[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Plain page id (own first, then shared), or <member>/<id> for a shared page or your own configured member."
     },
     "history": { "type": "boolean", "default": false, "description": "Include up to 50 newest-first document revisions with total and truncation status. Omitted or false leaves the response unchanged." }
   },

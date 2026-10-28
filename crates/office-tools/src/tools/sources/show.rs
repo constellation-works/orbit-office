@@ -50,6 +50,10 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
     };
     let view = call.ports.library.read_source(&id)?;
     let markdown = call.ports.library.read_text(Path::new(&view.path))?;
+    let record = office_core::domain::knowledge::DocumentRecord::from_markdown(
+        Path::new(&view.path),
+        &markdown,
+    );
     let derived_by = access::derived_by(&markdown)?;
     let chapters = call
         .ports
@@ -102,6 +106,8 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
     let body = span.clone().unwrap_or_else(|| selected_body.clone());
     let mut output = json!({
         "id": view.id,
+        "layer": record.layer,
+        "shared_by": record.shared_by,
         "kind": view.kind,
         "title": view.title,
         "path": view.path,

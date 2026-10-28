@@ -304,10 +304,13 @@ impl Library for FakeLibrary {
                 digest: self.bootstrap_digests.borrow().get(&id).cloned(),
             });
         }
+        let mut seen = std::collections::BTreeSet::new();
         for file in self.knowledge_pages()? {
-            snapshot
-                .pages
-                .insert(file.path, file.markdown.ok_or(Error::LibraryUnavailable)?);
+            let markdown = file.markdown.ok_or(Error::LibraryUnavailable)?;
+            let id = DocumentRecord::from_markdown(Path::new(&file.path), &markdown).id;
+            if seen.insert(id) {
+                snapshot.pages.insert(file.path, markdown);
+            }
         }
         Ok(snapshot)
     }
@@ -633,7 +636,10 @@ impl Library for FakeLibrary {
             .texts
             .borrow()
             .iter()
-            .filter(|(path, _)| path.starts_with("artifacts/") && path.ends_with("/artifact.md"))
+            .filter(|(path, _)| {
+                office_core::domain::knowledge::local_document_path(path).starts_with("artifacts/")
+                    && path.ends_with("/artifact.md")
+            })
             .map(|(path, text)| LibraryText {
                 path: path.clone(),
                 markdown: Some(text.clone()),
@@ -675,11 +681,10 @@ impl Library for FakeLibrary {
                 record.body.push_str(summary);
             }
         }
-        if let Some(existing) = self
-            .documents
-            .borrow()
-            .values()
-            .find(|doc| doc.id == record.id && doc.path != record.path)
+        if let Some(existing) =
+            self.documents.borrow().values().find(|doc| {
+                doc.id == record.id && doc.layer == record.layer && doc.path != record.path
+            })
         {
             return Err(Error::Library {
                 code: "library_document_conflict",
@@ -726,6 +731,7 @@ impl Library for FakeLibrary {
                 query
                     .split_whitespace()
                     .all(|term| haystack.contains(&term.to_lowercase()))
+                    && filter.layer.is_none_or(|layer| doc.layer == layer)
                     && filter.kind.is_none_or(|kind| doc.kind == kind)
                     && filter.tag.as_ref().is_none_or(|tag| doc.tags.contains(tag))
                     && filter
@@ -747,6 +753,8 @@ impl Library for FakeLibrary {
             })
             .take(filter.limit.unwrap_or(20))
             .map(|doc| SearchHit {
+                layer: doc.layer,
+                shared_by: doc.shared_by.clone(),
                 id: doc.id.clone(),
                 kind: doc.kind,
                 title: doc.title.clone(),
@@ -757,13 +765,31 @@ impl Library for FakeLibrary {
     }
 
     fn get(&self, id: &str) -> Result<Option<DocumentRecord>> {
+        use office_core::domain::knowledge::{LibraryLayer, page_kind_for_id};
         self.ready()?;
-        Ok(self
-            .documents
-            .borrow()
-            .values()
-            .find(|doc| doc.id == id)
-            .cloned())
+        let docs = self.documents.borrow();
+        let own = |id: &str| {
+            docs.values()
+                .find(|doc| doc.id == id && doc.layer == LibraryLayer::Own)
+                .cloned()
+        };
+        let shared = |id: &str| {
+            docs.values()
+                .find(|doc| doc.id == id && doc.layer == LibraryLayer::Shared)
+                .cloned()
+        };
+        if let Some((member, local)) = id.split_once('/') {
+            if self.settings()?.shared.is_some_and(|s| s.member == member) {
+                return Ok(own(local));
+            }
+            return Ok(shared(if page_kind_for_id(local).is_some() {
+                local
+            } else {
+                id
+            })
+            .filter(|doc| doc.shared_by.as_deref() == Some(member)));
+        }
+        Ok(own(id).or_else(|| shared(id)))
     }
 
     fn backlinks(&self, id: &str) -> Result<Vec<Backlink>> {
@@ -805,7 +831,9 @@ impl Library for FakeLibrary {
             .texts
             .borrow()
             .iter()
-            .filter(|(path, _)| path.starts_with("knowledge/"))
+            .filter(|(path, _)| {
+                office_core::domain::knowledge::local_document_path(path).starts_with("knowledge/")
+            })
             .map(|(path, markdown)| LibraryText {
                 path: path.clone(),
                 markdown: Some(markdown.clone()),

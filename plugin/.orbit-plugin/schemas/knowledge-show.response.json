@@ -8,6 +8,8 @@
       "type": "object",
       "description": "The page as a model may see it: every contact ref keeps its label and has a null value, and any email address or phone number in the body reads [contact withheld].",
       "properties": {
+        "layer": {"type": "string", "enum": ["own", "shared"]},
+        "shared_by": {"type": ["string", "null"], "description": "Sharing member; null for own documents."},
         "id": { "type": "string" },
         "type": { "type": "string", "enum": ["domain", "runbook"] },
         "path": { "type": "string", "description": "Relative to the Library." },
@@ -26,7 +28,6 @@
               "target": { "type": "string", "enum": ["path", "url", "contact", "account", "artifact"] },
               "value": { "type": ["string", "null"], "description": "Null for every contact." },
               "authoritative": { "type": "boolean" },
-              "shareable": { "type": "boolean", "description": "Sharing approval; omitted when false." },
         "as_of": { "type": ["string", "null"] }
             },
             "required": ["label", "target", "value", "authoritative", "as_of"],
@@ -37,6 +38,7 @@
         "updated_at": { "type": ["string", "null"] },
         "last_verified": { "type": ["string", "null"] },
         "status": { "type": "string", "enum": ["current", "stale", "retired"] },
+        "shareable": { "type": "boolean", "description": "Sharing approval; omitted when false." },
         "sensitivity": { "type": "string", "enum": ["normal", "private"] },
         "as_of": { "type": ["string", "null"] },
         "performable": { "type": ["string", "null"], "enum": ["agent", "you", null] },
@@ -52,7 +54,7 @@
         },
         "body": { "type": "string" }
       },
-      "required": ["id", "type", "path", "template", "title", "aliases", "summary", "tags", "cites", "refs", "related", "updated_at", "last_verified", "status", "sensitivity", "as_of", "performable", "submission", "body"],
+      "required": ["id", "layer", "shared_by", "type", "path", "template", "title", "aliases", "summary", "tags", "cites", "refs", "related", "updated_at", "last_verified", "status", "sensitivity", "as_of", "performable", "submission", "body"],
       "additionalProperties": false
     },
     "backlinks": {

@@ -36,6 +36,8 @@ pub struct Phase {
     pub proposed: usize,
     /// Knowledge proposals accepted (done).
     pub accepted: usize,
+    /// Shared pages covering phase subjects or explicitly tagged for this phase.
+    pub shared: usize,
     /// Knowledge proposals dismissed (rejected).
     pub dismissed: usize,
     /// Subjects deferred by the new-page cap.
@@ -157,7 +159,8 @@ pub fn compute(
             let kind = match template {
                 None => true,
                 Some("runbook") => {
-                    path.starts_with("knowledge/runbooks/")
+                    crate::domain::knowledge::local_document_path(path)
+                        .starts_with("knowledge/runbooks/")
                         || fields.get("template").and_then(Value::as_str) == Some("runbook")
                 }
                 Some(template) => fields.get("template").and_then(Value::as_str) == Some(template),
@@ -232,6 +235,16 @@ pub fn compute(
                         .or_default()
                         .insert(id.into());
                 }
+            }
+        }
+        for (path, fields, names) in &page_names {
+            if path.starts_with("shared/")
+                && (strings(fields.get("tags"))?.contains(&format!("bootstrap:{phase_name}"))
+                    || names
+                        .iter()
+                        .any(|name| subject_sources.contains_key(&identity(name))))
+            {
+                report.shared += 1;
             }
         }
         for (subject, ids) in subject_sources {

@@ -2277,7 +2277,7 @@ fn a_version_one_index_migrates_and_open_fills_template_and_date() {
         .expect("reopen")
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("version");
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
 }
 
 #[test]

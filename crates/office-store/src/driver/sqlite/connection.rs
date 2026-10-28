@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
+use office_core::domain::knowledge::LibraryLayer;
+
 use crate::contracts::{Backlink, DocumentKind, DocumentRecord, LinkKind, SearchFilter, SearchHit};
 use crate::driver::sqlite::migration;
 use crate::error::{Error, Result};
@@ -120,7 +122,7 @@ impl IndexStore {
         if let Some(id) = previous {
             delete_document(&tx, &id, &self.path)?;
         }
-        delete_document(&tx, &document.id, &self.path)?;
+        delete_document(&tx, &index_id(document), &self.path)?;
         insert_document(&tx, document, &self.path)?;
         tx.commit()
             .map_err(|e| Error::sqlite(&self.path, "commit upsert", e))
@@ -131,8 +133,8 @@ impl IndexStore {
         let conn = self.lock()?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, title, summary, tags, series, sensitivity, path, body,
-                        template, date, shareable
+                "SELECT document_id, kind, title, summary, tags, series, sensitivity, path, body,
+                        template, date, shareable, layer, shared_by
                  FROM documents WHERE id = ?1",
             )
             .map_err(|e| Error::sqlite(&self.path, "prepare get", e))?;
@@ -161,6 +163,11 @@ impl IndexStore {
             &self.path,
         )?;
         Ok(Some(record))
+    }
+
+    /// Resolve a shared page or member-qualified source/artifact.
+    pub(crate) fn get_shared(&self, id: &str) -> Result<Option<DocumentRecord>> {
+        self.get(&format!("shared/{id}"))
     }
 
     /// Number of indexed documents.
@@ -199,20 +206,21 @@ impl IndexStore {
                    AND (?4 IS NULL OR d.series = ?4)
                    AND (?5 IS NULL OR d.template = ?5)
                    AND (?6 IS NULL OR (d.date IS NOT NULL AND d.date >= ?6))
-                   AND (?7 IS NULL OR (d.date IS NOT NULL AND d.date <= ?7))";
+                   AND (?7 IS NULL OR (d.date IS NOT NULL AND d.date <= ?7))
+                   AND (?9 IS NULL OR d.layer = ?9)";
         let listing = query.split_whitespace().next().is_none();
         let sql = if listing {
             format!(
-                "SELECT d.id, d.kind, d.title, d.path, substr(d.body, 1, 120)
+                "SELECT d.document_id, d.kind, d.title, d.path, substr(d.body, 1, 120), d.layer, d.shared_by
                  FROM documents d
                  WHERE ?1 IS NULL AND {FILTERS}
-                 ORDER BY d.id
+                 ORDER BY d.document_id, d.layer
                  LIMIT ?8"
             )
         } else {
             format!(
-                "SELECT d.id, d.kind, d.title, d.path,
-                        snippet(documents_fts, 3, '<b>', '</b>', '…', 12)
+                "SELECT d.document_id, d.kind, d.title, d.path,
+                        snippet(documents_fts, 3, '<b>', '</b>', '…', 12), d.layer, d.shared_by
                  FROM documents_fts
                  JOIN documents d ON d.id = documents_fts.id
                  WHERE documents_fts MATCH ?1
@@ -235,9 +243,16 @@ impl IndexStore {
                     filter.since,
                     filter.until,
                     limit,
+                    filter.layer.map(LibraryLayer::as_str),
                 ],
                 |row| {
                     Ok(SearchHit {
+                        layer: if row.get::<_, String>(5)? == "shared" {
+                            LibraryLayer::Shared
+                        } else {
+                            LibraryLayer::Own
+                        },
+                        shared_by: row.get(6)?,
                         id: row.get(0)?,
                         kind: DocumentKind::parse(&row.get::<_, String>(1)?)
                             .unwrap_or(DocumentKind::Source),
@@ -259,7 +274,7 @@ impl IndexStore {
         let conn = self.lock()?;
         let mut stmt = conn
             .prepare(
-                "SELECT d.id, d.kind, d.title, d.path, l.by_cite, l.by_link
+                "SELECT d.document_id, d.kind, d.title, d.path, l.by_cite, l.by_link
                  FROM (
                      SELECT doc_id,
                             max(by_cite) AS by_cite,
@@ -343,7 +358,15 @@ fn set_owner_only(path: &Path, is_dir: bool) {
     let _ = (path, is_dir);
 }
 
+fn index_id(document: &DocumentRecord) -> String {
+    match document.layer {
+        LibraryLayer::Own => document.id.clone(),
+        LibraryLayer::Shared => format!("shared/{}", document.id),
+    }
+}
+
 fn insert_document(conn: &Connection, document: &DocumentRecord, path: &Path) -> Result<()> {
+    let key = index_id(document);
     let tags = serde_json::to_string(&document.tags).map_err(|e| {
         Error::sqlite(
             path,
@@ -353,10 +376,10 @@ fn insert_document(conn: &Connection, document: &DocumentRecord, path: &Path) ->
     })?;
     conn.execute(
         "INSERT INTO documents
-             (id, kind, title, summary, tags, series, sensitivity, path, body, template, date, shareable)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             (id, kind, title, summary, tags, series, sensitivity, path, body, template, date, shareable, document_id, layer, shared_by)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
-            document.id,
+            key,
             document.kind.as_str(),
             document.title,
             document.summary,
@@ -368,13 +391,16 @@ fn insert_document(conn: &Connection, document: &DocumentRecord, path: &Path) ->
             document.template,
             document.date,
             document.shareable,
+            document.id,
+            document.layer.as_str(),
+            document.shared_by,
         ],
     )
     .map_err(|e| Error::sqlite(path, "insert document", e))?;
     conn.execute(
         "INSERT INTO documents_fts (id, title, summary, body, tags) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
-            document.id,
+            key,
             document.title,
             document.summary,
             document.body,
@@ -385,14 +411,14 @@ fn insert_document(conn: &Connection, document: &DocumentRecord, path: &Path) ->
     for target in &document.cites {
         conn.execute(
             "INSERT OR IGNORE INTO cites (doc_id, target) VALUES (?1, ?2)",
-            params![document.id, target],
+            params![key, target],
         )
         .map_err(|e| Error::sqlite(path, "insert citation", e))?;
     }
     for target in &document.related {
         conn.execute(
             "INSERT OR IGNORE INTO links (from_id, to_id) VALUES (?1, ?2)",
-            params![document.id, target],
+            params![key, target],
         )
         .map_err(|e| Error::sqlite(path, "insert link", e))?;
     }
@@ -420,6 +446,18 @@ fn record_from_row(row: &rusqlite::Row<'_>, path: &Path) -> Result<DocumentRecor
         )
     })?;
     Ok(DocumentRecord {
+        layer: if row
+            .get::<_, String>(12)
+            .map_err(|e| Error::sqlite(path, "read layer", e))?
+            == "shared"
+        {
+            LibraryLayer::Shared
+        } else {
+            LibraryLayer::Own
+        },
+        shared_by: row
+            .get(13)
+            .map_err(|e| Error::sqlite(path, "read shared member", e))?,
         id: row.get(0).map_err(|e| Error::sqlite(path, "read id", e))?,
         kind: DocumentKind::parse(
             &row.get::<_, String>(1)

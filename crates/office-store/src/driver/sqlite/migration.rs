@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::error::{Error, Result};
 
 /// The newest schema this build understands.
-pub(crate) const SUPPORTED_SCHEMA: u32 = 3;
+pub(crate) const SUPPORTED_SCHEMA: u32 = 4;
 
 /// One migration step: SQL applied in order.
 struct Migration {
@@ -69,6 +69,15 @@ CREATE INDEX documents_date ON documents(date);
         to: 3,
         sql: "ALTER TABLE documents ADD COLUMN shareable INTEGER NOT NULL DEFAULT 0 CHECK (shareable IN (0, 1));
 CREATE TABLE IF NOT EXISTS index_backfill_pending (id INTEGER PRIMARY KEY CHECK (id = 1));
+INSERT OR IGNORE INTO index_backfill_pending (id) SELECT 1 WHERE EXISTS (SELECT 1 FROM documents);",
+    },
+    Migration {
+        to: 4,
+        sql: "ALTER TABLE documents ADD COLUMN document_id TEXT;
+UPDATE documents SET document_id = id;
+ALTER TABLE documents ADD COLUMN layer TEXT NOT NULL DEFAULT 'own' CHECK (layer IN ('own', 'shared'));
+ALTER TABLE documents ADD COLUMN shared_by TEXT;
+CREATE UNIQUE INDEX documents_identity ON documents(layer, document_id);
 INSERT OR IGNORE INTO index_backfill_pending (id) SELECT 1 WHERE EXISTS (SELECT 1 FROM documents);",
     },
 ];

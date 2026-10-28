@@ -38,6 +38,8 @@ const FIELDS: &[&str] = &[
     "status",
     "sensitivity",
     "shareable",
+    "shared_by",
+    "contributors",
     "as_of",
     "performable",
     "submission",
@@ -216,6 +218,17 @@ impl Page {
                 .filter(|value| !value.is_null())
         };
 
+        if let Some(member) = text(get("shared_by"), "shared_by")?
+            && (member.len() > 32 || !is_slug(&member))
+        {
+            return Err(invalid("shared_by", "expected a member name"));
+        }
+        if list(get("contributors"), "contributors")?
+            .iter()
+            .any(|member| member.len() > 32 || !is_slug(member))
+        {
+            return Err(invalid("contributors", "expected member names"));
+        }
         let id = text(get("id"), "id")?.ok_or_else(|| invalid("id", "required"))?;
         let prefix_kind = page_kind_for_id(&id)
             .ok_or_else(|| invalid("id", "expected dom-<slug> or rb-<slug>"))?;
@@ -409,6 +422,9 @@ impl Page {
                     }
                 }));
             };
+            if record.id == self.id {
+                return Err(refuse("a page cannot cite itself"));
+            }
             if record.kind != citation.kind {
                 return Err(refuse("the id names a different kind of document"));
             }

@@ -15,7 +15,7 @@ use office_core::domain::source::{
 use office_core::ports::{CaptureSourceRequest, SourceOutcome, SourceView};
 use serde::{Deserialize, Serialize};
 
-use office_core::domain::knowledge::DocumentKind;
+use office_core::domain::knowledge::{DocumentKind, LibraryLayer};
 use office_core::domain::template::{KnowledgePage, TemplateFile, assess_templates};
 use office_core::ports::{InitOutcome, LibraryHealth, LibraryText};
 
@@ -616,7 +616,12 @@ impl LibraryStore {
         // Scan before rebuild. `rebuild` deletes every indexed row in one
         // transaction, so an incomplete walk must return here and leave the
         // previous index in place.
-        let documents = self.files.scan_documents()?;
+        let mut documents = self.files.scan_documents()?;
+        documents.extend(
+            self.shared_documents()?
+                .into_iter()
+                .map(|(record, _)| record),
+        );
         let count = u32::try_from(documents.len()).map_err(|e| {
             Error::io(
                 "count Library documents",
@@ -626,6 +631,130 @@ impl LibraryStore {
         })?;
         self.index.rebuild(&documents)?;
         Ok(count)
+    }
+
+    /// The clone is optional. Reject links in every component from plugin state.
+    fn shared_files(&self) -> Result<Option<LibraryFs>> {
+        let state = LibraryFs::new(self.state.clone());
+        match state.validate_relative_path(Path::new("shared/repo")) {
+            Ok(()) => {}
+            Err(Error::UnsafePath { .. }) => return Ok(None),
+            Err(error) => return Err(error),
+        }
+        let root = self.state.join("shared/repo");
+        match std::fs::symlink_metadata(&root) {
+            Ok(metadata) if metadata.is_dir() => Ok(Some(LibraryFs::new(root))),
+            Ok(_) => Ok(None),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(Error::io("inspect shared clone", root, error)),
+        }
+    }
+
+    fn shared_documents(&self) -> Result<Vec<(DocumentRecord, String)>> {
+        use office_core::domain::knowledge::{Page, PageFile};
+        let Some(files) = self.shared_files()? else {
+            return Ok(Vec::new());
+        };
+        let candidates = files.shared_documents()?;
+        let templates = self.files.read_templates()?;
+        let templates: Vec<_> = templates
+            .iter()
+            .map(|file| TemplateFile {
+                path: &file.relative,
+                markdown: file.markdown.as_deref(),
+            })
+            .collect();
+        let own = self.files.read_knowledge_markdown()?;
+        let pages: Vec<_> = own
+            .iter()
+            .map(|(path, markdown)| PageFile { path, markdown })
+            .chain(
+                candidates
+                    .iter()
+                    .filter(|(record, _)| {
+                        matches!(record.kind, DocumentKind::Domain | DocumentKind::Runbook)
+                    })
+                    .map(|(record, markdown)| PageFile {
+                        path: &record.path,
+                        markdown,
+                    }),
+            )
+            .collect();
+        let mut accepted = Vec::new();
+        for (record, markdown) in &candidates {
+            if matches!(record.kind, DocumentKind::Domain | DocumentKind::Runbook)
+                && Page::from_markdown(markdown)?
+                    .check_template(&templates, &pages)
+                    .is_err()
+            {
+                continue;
+            }
+            accepted.push((record.clone(), markdown.clone()));
+        }
+        Ok(accepted)
+    }
+
+    /// Revalidate shared bytes on reads: stale index rows cannot expose a newly
+    /// private, malformed or redirected file before the next reindex.
+    fn shared_text(&self, path: &str) -> Result<String> {
+        let relative = path
+            .strip_prefix("shared/")
+            .ok_or_else(|| Error::UnsafePath {
+                kind: "shared document",
+                value: path.into(),
+            })?;
+        let files = self.shared_files()?.ok_or(office_core::Error::Library {
+            code: "document_not_found",
+            message: "shared clone is absent".into(),
+        })?;
+        let text = files.read_shared_text(Path::new(relative))?;
+        office_core::domain::sharing::shared_document(relative, &text)?;
+        Ok(text)
+    }
+
+    fn shared_companion(&self, relative: &Path) -> Result<Vec<u8>> {
+        let path = relative.to_str().ok_or_else(|| Error::UnsafePath {
+            kind: "shared companion",
+            value: relative.display().to_string(),
+        })?;
+        let local = path
+            .strip_prefix("shared/")
+            .ok_or(office_core::Error::LibraryUnavailable)?;
+        let parts: Vec<_> = local.splitn(7, '/').collect();
+        if parts.len() != 7 {
+            return Err(Error::UnsafePath {
+                kind: "shared companion",
+                value: path.into(),
+            });
+        }
+        let directory = parts[..6].join("/");
+        let name = parts[6];
+        let document = if parts[2] == "sources" {
+            "source.md"
+        } else {
+            "artifact.md"
+        };
+        let text = self.shared_text(&format!("shared/{directory}/{document}"))?;
+        if document == "source.md" {
+            office_core::domain::source::access::validate_sidecar(name)?;
+        } else if !Artifact::from_markdown(&text)
+            .map_err(office_core::Error::from)?
+            .files
+            .iter()
+            .any(|file| file == name)
+        {
+            return Err(Error::UnsafePath {
+                kind: "shared companion",
+                value: path.into(),
+            });
+        }
+        let files = self
+            .shared_files()?
+            .ok_or(office_core::Error::LibraryUnavailable)?;
+        let local = path
+            .strip_prefix("shared/")
+            .ok_or(office_core::Error::LibraryUnavailable)?;
+        files.read_shared_bytes(Path::new(local))
     }
 
     /// Decide, write, index and commit a document under one OS writer lock.
@@ -710,6 +839,33 @@ impl LibraryStore {
         let _lock = WriterLock::acquire(&self.state)?;
         self.recover()?;
         self.require_initialized()?;
+        let shared_copy;
+        let own_path;
+        let (relative, text, expected) = if relative.starts_with("shared") {
+            let reviewed = self.shared_text(&relative.to_string_lossy())?;
+            let page = office_core::domain::knowledge::Page::from_markdown(text)?;
+            own_path = page.path();
+            if office_core::domain::knowledge::Page::from_markdown(&reviewed)?.id != page.id
+                || expected.is_none_or(|hash| sha256_hex(reviewed.as_bytes()) != hash)
+                || self.index.get(&page.id)?.is_some()
+                || self
+                    .files
+                    .root()
+                    .join(&own_path)
+                    .try_exists()
+                    .map_err(|e| Error::io("inspect own copy", &own_path, e))?
+            {
+                return Err(office_core::domain::proposal::refused(
+                    "proposal_revision_changed",
+                    "shared page or own destination changed before publication",
+                )
+                .into());
+            }
+            shared_copy = office_core::domain::sharing::with_shareable(text, true)?;
+            (Path::new(&own_path), shared_copy.as_str(), None)
+        } else {
+            (relative, text, expected)
+        };
         self.files.validate_document_path(relative)?;
         let current = match self.files.read_text(relative) {
             Ok(text) => Some(text),
@@ -799,13 +955,16 @@ impl LibraryStore {
     /// One artifact companion file's exact bytes, by Library-relative path.
     pub fn read_artifact_file(&self, relative: &Path) -> Result<Vec<u8>> {
         self.read_ready()?;
+        if relative.starts_with("shared") {
+            return self.shared_companion(relative);
+        }
         self.files.read_bytes(relative)
     }
 
     /// Read every artifact frontmatter file, without truncating series history.
     pub fn artifact_documents(&self) -> Result<Vec<LibraryText>> {
         self.read_ready()?;
-        Ok(self
+        let mut files: Vec<_> = self
             .files
             .read_artifact_markdown()?
             .into_iter()
@@ -813,7 +972,18 @@ impl LibraryStore {
                 path,
                 markdown: Some(markdown),
             })
-            .collect())
+            .collect();
+        files.extend(
+            self.shared_documents()?
+                .into_iter()
+                .filter(|(record, _)| record.kind == DocumentKind::Artifact)
+                .map(|(record, markdown)| LibraryText {
+                    path: record.path,
+                    markdown: Some(markdown),
+                }),
+        );
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(files)
     }
 
     fn validate_bundle(&self, pending: &PendingWrite) -> Result<()> {
@@ -1224,6 +1394,10 @@ impl LibraryStore {
     /// Read a current document from disk, without waiting for the writer lock.
     pub fn read_document(&self, relative: &Path) -> Result<DocumentRecord> {
         self.read_ready()?;
+        if relative.starts_with("shared") {
+            let text = self.shared_text(&relative.to_string_lossy())?;
+            return Ok(DocumentRecord::from_markdown(relative, &text));
+        }
         self.files.validate_document_path(relative)?;
         self.files.read_document(relative)
     }
@@ -1231,7 +1405,52 @@ impl LibraryStore {
     /// One indexed document by id, if present. Does not wait for the writer lock.
     pub fn get(&self, id: &str) -> Result<Option<DocumentRecord>> {
         self.read_ready()?;
-        self.index.get(id)
+        let record = if let Some((member, local)) = id.split_once('/') {
+            if self
+                .settings()?
+                .shared
+                .as_ref()
+                .is_some_and(|settings| settings.member == member)
+            {
+                self.index.get(local)?
+            } else {
+                let record = if office_core::domain::knowledge::page_kind_for_id(local).is_some() {
+                    self.index.get_shared(local)?
+                } else {
+                    self.index.get_shared(id)?
+                };
+                record.filter(|record| record.shared_by.as_deref() == Some(member))
+            }
+        } else {
+            self.index.get(id)?.or(self.index.get_shared(id)?)
+        };
+        match record {
+            Some(record) if record.layer == LibraryLayer::Shared => {
+                match self.shared_text(&record.path) {
+                    Ok(text) => {
+                        let mut current =
+                            DocumentRecord::from_markdown(Path::new(&record.path), &text);
+                        if current.kind == DocumentKind::Source
+                            && let Some(files) = self.shared_files()?
+                        {
+                            let relative = Path::new(&record.path)
+                                .strip_prefix("shared")
+                                .map_err(|_| office_core::Error::LibraryUnavailable)?;
+                            files.shared_source_body(relative, &mut current)?;
+                        }
+                        Ok(Some(current))
+                    }
+                    Err(Error::Settings(_)) => Ok(None),
+                    Err(Error::Io { source, .. })
+                        if source.kind() == std::io::ErrorKind::NotFound =>
+                    {
+                        Ok(None)
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+            own => Ok(own),
+        }
     }
 
     /// Indexed documents that cite or relate to `id`. No writer-lock wait.
@@ -1244,7 +1463,7 @@ impl LibraryStore {
     /// source of truth) without waiting for the writer lock.
     pub fn knowledge_pages(&self) -> Result<Vec<LibraryText>> {
         self.read_ready()?;
-        Ok(self
+        let mut files: Vec<_> = self
             .files
             .read_knowledge_markdown()?
             .into_iter()
@@ -1252,7 +1471,20 @@ impl LibraryStore {
                 path,
                 markdown: Some(markdown),
             })
-            .collect())
+            .collect();
+        files.extend(
+            self.shared_documents()?
+                .into_iter()
+                .filter(|(record, _)| {
+                    matches!(record.kind, DocumentKind::Domain | DocumentKind::Runbook)
+                })
+                .map(|(record, markdown)| LibraryText {
+                    path: record.path,
+                    markdown: Some(markdown),
+                }),
+        );
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(files)
     }
 
     /// Every current source file, in path order, without a search limit.
@@ -1300,6 +1532,16 @@ impl LibraryStore {
     /// Newest-first commits touching this document. No writer-lock wait.
     pub fn history(&self, relative: &Path) -> Result<Vec<Revision>> {
         self.read_ready()?;
+        if relative.starts_with("shared") {
+            self.shared_text(&relative.to_string_lossy())?;
+            let files = self
+                .shared_files()?
+                .ok_or(office_core::Error::LibraryUnavailable)?;
+            let local = relative
+                .strip_prefix("shared")
+                .map_err(|_| office_core::Error::LibraryUnavailable)?;
+            return Git::new(files.root(), &self.state).history(&local.to_string_lossy());
+        }
         self.files.validate_document_path(relative)?;
         let relative = relative.to_str().ok_or_else(|| Error::UnsafePath {
             kind: "document",
@@ -1730,6 +1972,28 @@ impl LibraryStore {
     /// Read one source by id.
     pub fn read_source(&self, id: &str) -> office_core::Result<SourceView> {
         self.read_ready().map_err(office_core::Error::from)?;
+        if let Some(record) = self.get(id)? {
+            if record.kind != DocumentKind::Source {
+                return Err(office_core::Error::Library {
+                    code: "source_not_found",
+                    message: "id is not a source".into(),
+                });
+            }
+            let text = self.read_text(Path::new(&record.path))?;
+            let meta = parse_source_meta(&text);
+            return Ok(SourceView {
+                id: record.id,
+                kind: meta.kind,
+                title: meta.title,
+                path: record.path,
+                body: source_body(&text).trim_end_matches('\n').to_string(),
+                sensitivity: record.sensitivity,
+                sha256: meta.sha256,
+                bytes: meta.bytes,
+                media_type: meta.media_type,
+                version: meta.version,
+            });
+        }
         let existing = self.source_views().map_err(office_core::Error::from)?;
         let Some((path, text)) = existing
             .iter()
@@ -1762,6 +2026,9 @@ impl LibraryStore {
     /// A document's current Markdown, frontmatter included. No writer-lock wait.
     pub fn read_text(&self, relative: &Path) -> Result<String> {
         self.read_ready()?;
+        if relative.starts_with("shared") {
+            return self.shared_text(&relative.to_string_lossy());
+        }
         self.files.validate_document_path(relative)?;
         self.files.read_text(relative)
     }
@@ -2029,6 +2296,7 @@ impl office_core::ports::Library for LibraryStore {
                 digest: value,
             });
         }
+        let mut seen_pages = std::collections::BTreeSet::new();
         for page in self.knowledge_pages()? {
             let markdown = page.markdown.ok_or_else(|| {
                 office_core::domain::source::video::refusal(
@@ -2036,7 +2304,10 @@ impl office_core::ports::Library for LibraryStore {
                     "page is unreadable",
                 )
             })?;
-            snapshot.pages.insert(page.path, markdown);
+            let id = DocumentRecord::from_markdown(Path::new(&page.path), &markdown).id;
+            if seen_pages.insert(id) {
+                snapshot.pages.insert(page.path, markdown);
+            }
         }
         if let Some(text) = self
             .files
@@ -2259,6 +2530,22 @@ impl office_core::ports::Library for LibraryStore {
         office_core::domain::source::access::validate_sidecar(name)?;
         let source = self.read_source(id)?;
         let relative = Path::new(&source.path).with_file_name(name);
+        if relative.starts_with("shared") {
+            return match self.shared_companion(&relative) {
+                Ok(bytes) => {
+                    String::from_utf8(bytes)
+                        .map(Some)
+                        .map_err(|_| office_core::Error::Library {
+                            code: "library_document_unreadable",
+                            message: "shared sidecar is not UTF-8".into(),
+                        })
+                }
+                Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+                    Ok(None)
+                }
+                Err(error) => Err(error.into()),
+            };
+        }
         self.files.validate_relative_path(&relative)?;
         match std::fs::read_to_string(self.library_root().join(relative)) {
             Ok(text) => Ok(Some(text)),

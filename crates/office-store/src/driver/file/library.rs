@@ -434,6 +434,31 @@ impl LibraryFs {
         Ok(record)
     }
 
+    /// Read a regular shared file only; never open a FIFO or device.
+    pub(crate) fn read_shared_bytes(&self, relative: &Path) -> Result<Vec<u8>> {
+        self.validate_relative_path(relative)?;
+        let path = self.root.join(relative);
+        let metadata = std::fs::symlink_metadata(&path)
+            .map_err(|e| Error::io("inspect shared file", &path, e))?;
+        if !metadata.is_file() {
+            return Err(Error::UnsafePath {
+                kind: "regular shared file",
+                value: relative.display().to_string(),
+            });
+        }
+        self.read_bytes(relative)
+    }
+
+    pub(crate) fn read_shared_text(&self, relative: &Path) -> Result<String> {
+        String::from_utf8(self.read_shared_bytes(relative)?).map_err(|e| {
+            Error::io(
+                "read shared text",
+                self.root.join(relative),
+                std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+            )
+        })
+    }
+
     /// Write one document atomically at a Library-relative path. Every
     /// component of the path is validated first, so a caller-supplied id
     /// can never write outside the Library.
@@ -543,6 +568,93 @@ impl LibraryFs {
             documents.push(self.read_document(relative)?);
         }
         Ok(documents)
+    }
+
+    /// Scan a clone without following links or admitting out-of-layout files.
+    /// The clone root itself is checked by the caller against plugin state.
+    pub(crate) fn shared_documents(&self) -> Result<Vec<(DocumentRecord, String)>> {
+        let mut paths = Vec::new();
+        for layer in ["knowledge", "members"] {
+            if let Ok(metadata) = std::fs::symlink_metadata(self.root.join(layer))
+                && !metadata.is_dir()
+            {
+                continue;
+            }
+            collect_optional_layer(&self.root.join(layer), &mut paths, &[])?;
+        }
+        paths.sort();
+        let mut documents = Vec::new();
+        for path in paths {
+            let Ok(relative) = path.strip_prefix(&self.root) else {
+                continue;
+            };
+            // Invalid names/symlinks are skipped before reading any bytes.
+            match self.validate_relative_path(relative) {
+                Ok(()) => {}
+                Err(Error::UnsafePath { .. }) => continue,
+                Err(error) => return Err(error),
+            }
+            let markdown = match self.read_shared_text(relative) {
+                Ok(text) => text,
+                Err(Error::Io { source, .. })
+                    if source.kind() == std::io::ErrorKind::InvalidData =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            if let Ok(mut record) = office_core::domain::sharing::shared_document(
+                &relative.to_string_lossy(),
+                &markdown,
+            ) {
+                if record.kind == office_core::domain::knowledge::DocumentKind::Source {
+                    self.shared_source_body(relative, &mut record)?;
+                }
+                documents.push((record, markdown));
+            }
+        }
+        Ok(documents)
+    }
+
+    /// Index only valid regular text sidecars beside shared evidence. Invalid,
+    /// linked or missing companions contribute nothing, never their target bytes.
+    pub(crate) fn shared_source_body(
+        &self,
+        relative: &Path,
+        record: &mut DocumentRecord,
+    ) -> Result<()> {
+        use office_core::domain::{
+            bootstrap,
+            source::{access, source_body},
+        };
+        for name in ["frames.md", "chapters.md", "summary.md", "digest.json"] {
+            let text = match self.read_shared_text(&relative.with_file_name(name)) {
+                Ok(text) => text,
+                Err(Error::UnsafePath { .. }) => continue,
+                Err(Error::Io { source, .. })
+                    if matches!(
+                        source.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::InvalidData
+                    ) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            let valid = match name {
+                "frames.md" => access::frames(&text).is_ok(),
+                "chapters.md" => access::chapters(&text).is_ok(),
+                "digest.json" => serde_json::from_str::<serde_json::Value>(&text)
+                    .is_ok_and(|value| bootstrap::digest(&value).is_ok()),
+                "summary.md" => true,
+                _ => false,
+            };
+            if valid {
+                record.body.push_str("\n\n");
+                record.body.push_str(&source_body(&text));
+            }
+        }
+        Ok(())
     }
 
     /// True when every bundled template path already exists. An existing
@@ -751,7 +863,7 @@ fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>, stems: &[&str]) -> Resul
                 continue;
             }
             collect_markdown(&path, out, stems)?;
-        } else if markdown_selected(&path, stems) {
+        } else if file_type.is_file() && markdown_selected(&path, stems) {
             out.push(path);
         }
     }

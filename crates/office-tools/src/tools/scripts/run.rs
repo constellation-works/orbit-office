@@ -2,7 +2,7 @@
 
 use crate::registry::{Call, Tool};
 use office_core::domain::artifact::{Artifact, ArtifactKind, decode_payload};
-use office_core::domain::knowledge::DocumentRecord;
+use office_core::domain::knowledge::{DocumentRecord, LibraryLayer};
 use office_core::domain::script::{ScriptError, ScriptExecution, ScriptPreparation, ScriptRequest};
 use office_core::ports::Ports;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
@@ -28,7 +28,8 @@ fn script(ports: &Ports<'_>, request: &ScriptRequest) -> Result<(ScriptPreparati
             .iter()
             .find(|doc| {
                 doc.markdown.as_deref().is_some_and(|text| {
-                    DocumentRecord::from_markdown(Path::new(&doc.path), text).id == id
+                    let record = DocumentRecord::from_markdown(Path::new(&doc.path), text);
+                    record.layer == LibraryLayer::Own && record.id == id
                 })
             })
             .ok_or(ScriptError::NotApproved)?;

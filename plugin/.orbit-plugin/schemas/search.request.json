@@ -10,10 +10,11 @@
       "pattern": "\\S",
       "description": "Search terms; each must match (as a prefix) in the title, summary, body or tags. An empty or blank query is refused with invalid_argument."
     },
+    "layer": { "type": "string", "enum": ["own", "shared"], "description": "Only this ownership layer; omitted searches both." },
     "kind": {
       "type": "string",
       "enum": ["source", "domain", "runbook", "artifact"],
-      "description": "Only documents of this Library layer."
+      "description": "Only documents of this kind."
     },
     "template": {
       "type": "string",

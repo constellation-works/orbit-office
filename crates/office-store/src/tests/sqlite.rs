@@ -5,6 +5,8 @@ use crate::driver::sqlite::connection::IndexStore;
 
 fn document(id: &str, title: &str, body: &str) -> DocumentRecord {
     DocumentRecord {
+        layer: office_core::domain::knowledge::LibraryLayer::Own,
+        shared_by: None,
         shareable: false,
         id: id.to_string(),
         kind: DocumentKind::Domain,

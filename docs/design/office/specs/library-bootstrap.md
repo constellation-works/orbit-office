@@ -200,8 +200,8 @@ confirmed batch: the digests (and the KT steps for videos), then
 
 `office.bootstrap-status` (read_only, `workspace`) reports per phase: sources
 captured, digested, in the consolidation pass, pages proposed, accepted and
-dismissed, the overflow waiting, and **gaps**. Gaps are computed, not
-guessed:
+dismissed, shared pages covering the phase, the overflow waiting, and **gaps**.
+Gaps are computed, not guessed:
 
 - a subject cited by three or more sources with no page;
 - a procedure seen in a `process` source with no accepted runbook (for
@@ -311,7 +311,10 @@ truncated task list rather than reporting partial counts. Knowledge proposals
 tagged `bootstrap:<phase>`, `proposal`, and `proposal:knowledge_add` or
 `proposal:knowledge_update` count as proposed until decided, accepted at `done`,
 and dismissed at `rejected`. Consolidating and overflow counts come from the
-phase ledger, with zero before a runner has recorded any work.
+phase ledger, with zero before a runner has recorded any work. The additive
+`shared` count includes shared pages whose titles/aliases match digest subjects
+in that phase or whose tags include `bootstrap:<phase>`. Shared pages also close
+the same gaps as own pages; an own copy takes precedence over its shared copy.
 
 Gap kinds are `subject_without_page`, `procedure_without_runbook`,
 `owner_without_person` and `policy_without_current_as_of`, each with a
@@ -330,6 +333,10 @@ layout, and refuses an abandoned write pending recovery by a mutating operation.
 `office.batch-plan` list mode). Optional `requested: ["Subject name"]` explicitly
 requests those subjects and bypasses the new About page's source-count bar. It
 reads stored digests; caller-supplied digests or page targets are not accepted.
+Its existing-page corpus includes shared pages, with own copies taking precedence.
+A shared-only match yields a `knowledge_update` with the shared Markdown digest,
+not a duplicate `knowledge_add`. Accepting it writes a shareable own copy after
+checking that the reviewed shared bytes and absent own destination still match.
 Every source in the confirmed plan must have a digest. Earlier phases enrich
 matching subjects, but never create an unrelated candidate in this batch.
 

@@ -22,6 +22,8 @@ tests:
     expect:
       output:
         page:
+          layer: own
+          shared_by: null
           id: dom-user
           type: domain
           path: knowledge/domain/dom-user.md
@@ -59,7 +61,7 @@ tests:
     tool: knowledge-list
     input: {"template":"user"}
     expect:
-      output: {"pages":[{"id":"dom-user","template":"user","title":"Dee","summary":"","status":"current","sensitivity":"normal"}],"missing_templates":[]}
+      output: {"pages":[{"layer":"own","shared_by":null,"id":"dom-user","template":"user","title":"Dee","summary":"","status":"current","sensitivity":"normal"}],"missing_templates":[]}
   - name: knowledge_show_refuses_non_boolean_history
     tool: knowledge-show
     input: {"id":"dom-user","history":"true"}

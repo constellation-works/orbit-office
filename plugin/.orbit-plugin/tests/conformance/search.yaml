@@ -10,7 +10,9 @@ tests:
       output:
         count: 1
         hits:
-          - id: dom-user
+          - layer: own
+            shared_by: null
+            id: dom-user
             kind: domain
             title: Dee
             path: knowledge/domain/dom-user.md
@@ -28,5 +30,15 @@ tests:
   - name: search_refuses_unknown_input
     tool: search
     input: {query: operations, date: "2026-10-01"}
+    expect:
+      error: {code: invalid_argument}
+  - name: search_shared_layer_is_empty_without_a_clone
+    tool: search
+    input: {query: operations, layer: shared}
+    expect:
+      output: {count: 0, hits: []}
+  - name: search_refuses_an_unknown_layer
+    tool: search
+    input: {query: operations, layer: team}
     expect:
       error: {code: invalid_argument}

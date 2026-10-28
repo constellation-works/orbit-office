@@ -17,7 +17,7 @@ pub use page::{
     resolve_anchor,
 };
 
-/// Which Library layer a document belongs to.
+/// Which kind of document the Library holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentKind {
@@ -56,12 +56,52 @@ impl DocumentKind {
     }
 }
 
+/// Whether a document is owned locally or read from the team clone.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LibraryLayer {
+    /// The user's writable Library.
+    #[default]
+    Own,
+    /// The read-only shared clone.
+    Shared,
+}
+impl LibraryLayer {
+    /// Stable index and response token.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Own => "own",
+            Self::Shared => "shared",
+        }
+    }
+}
+
+/// The canonical Library path inside a shared virtual path, or the own path.
+/// Shared paths are `shared/knowledge/…` or `shared/members/<member>/…`.
+#[must_use]
+pub fn local_document_path(path: &str) -> &str {
+    let Some(shared) = path.strip_prefix("shared/") else {
+        return path;
+    };
+    shared
+        .strip_prefix("members/")
+        .and_then(|rest| rest.split_once('/').map(|(_, path)| path))
+        .unwrap_or(shared)
+}
+
 /// One indexed Library document, as read from its Markdown file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DocumentRecord {
+    /// Read/write ownership boundary.
+    #[serde(default)]
+    pub layer: LibraryLayer,
+    /// Sharing member; always absent on own documents.
+    #[serde(default)]
+    pub shared_by: Option<String>,
     /// `src-…`, `dom-…`, `rb-…` or `art-…`.
     pub id: String,
-    /// Which Library layer it belongs to.
+    /// Its document kind.
     pub kind: DocumentKind,
     /// Frontmatter `title` (falls back to the id).
     pub title: String,
@@ -96,7 +136,9 @@ pub struct DocumentRecord {
 /// nothing; filters apply before the limit.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SearchFilter {
-    /// Only this Library layer.
+    /// Only own or shared documents; absent searches both.
+    pub layer: Option<LibraryLayer>,
+    /// Only this document kind.
     pub kind: Option<DocumentKind>,
     /// Only documents carrying this tag.
     pub tag: Option<String>,
@@ -115,13 +157,17 @@ pub struct SearchFilter {
 /// One search hit: the document and why it matched.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SearchHit {
+    /// Document ownership.
+    pub layer: LibraryLayer,
+    /// Sharing member, absent for own hits.
+    pub shared_by: Option<String>,
     /// The matching document (without its body).
     pub id: String,
-    /// Its Library layer.
+    /// Its document kind.
     pub kind: DocumentKind,
     /// Its title.
     pub title: String,
-    /// Its path relative to the Library root.
+    /// Its virtual Library path.
     pub path: String,
     /// A short excerpt around the first match.
     pub snippet: String,
@@ -172,7 +218,24 @@ impl DocumentRecord {
     /// Unknown frontmatter remains in the source Markdown, which is the truth.
     #[must_use]
     pub fn from_markdown(relative: &Path, text: &str) -> Self {
-        parse_document(text, relative)
+        let path = relative.to_string_lossy();
+        let local = local_document_path(&path);
+        let mut record = parse_document(text, Path::new(local));
+        record.path = path.replace('\\', "/");
+        if path.starts_with("shared/") {
+            record.layer = LibraryLayer::Shared;
+            record.shared_by = frontmatter::split(text)
+                .ok()
+                .and_then(|(header, _)| frontmatter::parse(header).ok())
+                .and_then(|fields| fields.into_iter().find(|(key, _)| key == "shared_by"))
+                .and_then(|(_, value)| value.as_str().map(str::to_owned));
+            if matches!(record.kind, DocumentKind::Source | DocumentKind::Artifact)
+                && let Some(member) = &record.shared_by
+            {
+                record.id = format!("{member}/{}", record.id);
+            }
+        }
+        record
     }
 }
 
@@ -201,6 +264,8 @@ fn parse_document_fields(
     relative: &Path,
 ) -> DocumentRecord {
     let mut record = DocumentRecord {
+        layer: LibraryLayer::Own,
+        shared_by: None,
         id: String::new(),
         kind: kind_for_path(relative),
         title: String::new(),
@@ -288,6 +353,8 @@ fn parse_document_lenient(text: &str, relative: &Path) -> DocumentRecord {
     let kind = kind_for_path(relative);
 
     let mut record = DocumentRecord {
+        layer: LibraryLayer::Own,
+        shared_by: None,
         id: String::new(),
         kind,
         title: String::new(),

@@ -16,6 +16,7 @@
               "process"
             ]
           },
+          "shared": {"type": "integer", "minimum": 0, "description": "Shared pages covering phase subjects or tagged bootstrap:<phase>."},
           "captured": {
             "type": "integer",
             "minimum": 0
@@ -78,6 +79,7 @@
         },
         "required": [
           "phase",
+          "shared",
           "captured",
           "digested",
           "consolidating",

@@ -5,7 +5,7 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^art-[0-9]{8}-[a-z0-9]+(?:-[a-z0-9]+)*$"
+      "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*/)?art-[0-9]{8}-[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
     "history": { "type": "boolean", "default": false, "description": "Include up to 50 newest-first document revisions with total and truncation status. Omitted or false leaves the response unchanged." }
   },

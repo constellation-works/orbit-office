@@ -100,6 +100,7 @@ struct Pick {
     id: String,
     kind: DocumentKind,
     path: String,
+    layer: office_core::domain::knowledge::LibraryLayer,
     reason: Reason,
     text: String,
 }
@@ -135,6 +136,11 @@ impl Selection<'_> {
             id: id.to_string(),
             kind: known.page.kind,
             path: known.path.clone(),
+            layer: if known.path.starts_with("shared/") {
+                office_core::domain::knowledge::LibraryLayer::Shared
+            } else {
+                office_core::domain::knowledge::LibraryLayer::Own
+            },
             reason,
             text: view.to_markdown(),
         });
@@ -154,6 +160,7 @@ impl Selection<'_> {
             id: record.id.clone(),
             kind: record.kind,
             path: record.path.clone(),
+            layer: record.layer,
             reason,
             text,
         });
@@ -238,14 +245,11 @@ fn run(call: &Call<'_>) -> Result<Value> {
                     .template
                     .as_ref()
                     .and_then(|name| policies.get(name).copied());
-                pages.insert(
-                    page.id.clone(),
-                    KnownPage {
-                        path: file.path,
-                        page,
-                        policy,
-                    },
-                );
+                pages.entry(page.id.clone()).or_insert(KnownPage {
+                    path: file.path,
+                    page,
+                    policy,
+                });
             }
             Ok(None) => skipped.push(json!({ "path": file.path, "code": "unreadable" })),
             Err(error) => skipped.push(json!({ "path": file.path, "code": error.code() })),
@@ -376,6 +380,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .map(|pick| {
             json!({
                 "id": pick.id,
+                "layer": pick.layer,
                 "kind": pick.kind,
                 "library_path": pick.path,
                 "artifact_path": format!("{CONTEXT_DIR}/{}", pick.path),

@@ -10,13 +10,15 @@
       "items": {
         "type": "object",
         "properties": {
+          "layer": {"type": "string", "enum": ["own", "shared"]},
+          "shared_by": {"type": ["string", "null"], "description": "Sharing member; null for own documents."},
           "id": { "type": "string" },
           "kind": { "type": "string", "enum": ["source", "domain", "runbook", "artifact"] },
           "title": { "type": "string" },
           "path": { "type": "string", "description": "Relative to the Library." },
           "snippet": { "type": "string", "description": "A short excerpt of the body around the first match." }
         },
-        "required": ["id", "kind", "title", "path", "snippet"],
+        "required": ["layer", "shared_by", "id", "kind", "title", "path", "snippet"],
         "additionalProperties": false
       }
     }
