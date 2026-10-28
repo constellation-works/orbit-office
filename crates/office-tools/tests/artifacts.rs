@@ -309,10 +309,12 @@ fn seed_list_fixtures(library: &FakeLibrary) {
         ),
     ] {
         let path = format!("artifacts/{}/{}/{}/artifact.md", &id[4..8], &id[8..10], id);
+        // One shareable output, so the listing reports sharing approval per row.
+        let shareable = id == "art-20261002-alpha-data";
         library
             .write_document(
                 std::path::Path::new(&path),
-                &format!("---\nid: {id}\nkind: {kind}\ntitle: {title}\nsummary: Fixture\nfiles: [report.md]\ntask: fixture-task\nproduced_by: {{ crew: fixture-crew, at: \"2026-09-01T00:00:00Z\" }}\napproved: {{ by: user, at: \"{approved}\", edited: false }}\ncites: []\nseries: {series}\nversion: 1\nsensitivity: {sensitivity}\ntags: []\n---\n"),
+                &format!("---\nid: {id}\nkind: {kind}\ntitle: {title}\nsummary: Fixture\nfiles: [report.md]\ntask: fixture-task\nproduced_by: {{ crew: fixture-crew, at: \"2026-09-01T00:00:00Z\" }}\napproved: {{ by: user, at: \"{approved}\", edited: false }}\ncites: []\nseries: {series}\nversion: 1\nsensitivity: {sensitivity}\nshareable: {shareable}\ntags: []\n---\n"),
             )
             .unwrap();
     }
@@ -353,8 +355,9 @@ fn artifact_list_filters_sorts_newest_first_and_bounds_with_total_and_truncated(
     assert_eq!(all["output"]["truncated"], false);
     assert_eq!(
         all["output"]["artifacts"][0],
-        json!({"id":"art-20261003-beta-report","kind":"report","series":"beta","title":"Beta report","approved_at":"2026-10-03T10:00:00Z","sensitivity":"private"})
+        json!({"id":"art-20261003-beta-report","kind":"report","series":"beta","title":"Beta report","approved_at":"2026-10-03T10:00:00Z","sensitivity":"private","shareable":false})
     );
+    assert_eq!(all["output"]["artifacts"][1]["shareable"], true);
     let by_kind = call(&ports, "office.artifact-list", json!({"kind":"report"}));
     let ids: Vec<_> = by_kind["output"]["artifacts"]
         .as_array()

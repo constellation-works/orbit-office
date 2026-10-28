@@ -38,7 +38,7 @@ Source: spec §13.1–§13.2 and §13.4.
 
 | Screen | Content |
 |---|---|
-| **Today** | Library setup card when missing; otherwise Next meeting (time and prep, hidden when the day's meetings are over), Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
+| **Today** | Library setup card when missing; otherwise Next meeting (time and prep, hidden when the day's meetings are over), Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; a shared-library sync's updates, conflicts and skipped documents as one card; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
 | **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
 | **Calendar** | Week view (day view on a phone) of the user's meetings, read only from Outlook or an ICS feed, with each meeting's prep and capture state in words and the routines' runs as margin marks, and tasks scheduled for a date as blocks; a meeting opens its attendees, agenda, cited prep brief and **Add notes or transcript** ([calendar.md](./calendar.md#app)) |
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge, and its scheduled time when it has one; **Schedule…** sets or clears the time ([calendar.md](./calendar.md#scheduled-tasks)) |
@@ -365,6 +365,42 @@ words (a refused audio probe says that private videos can't be transcribed).
 (`open_weights`, or null). The footer and the section show "Built with Muse
 Spark Open" only when a block is configured.
 
+### Shared library implementation
+
+Built ([ORB-19421]); the behaviour is in
+[shared-library.md](./shared-library.md#app). The settings feature serves:
+
+- `GET /api/settings/shared-library` — `shared` from `office.status` (or
+  null) and the latest sync the app ran (`last_sync`, or null).
+- `POST /api/settings/shared-library` — the closed `{remote, branch, member}`
+  block, saved with `office.config-set` under the settings write lock. A
+  refusal answers `invalid_input` with only the `field`; the answer carries the
+  `office-shared-sync` routine's state (`on`, `off` or `unavailable`).
+- `POST /api/settings/shared-library/routine` — `{"enabled": true}` only;
+  turns the routine on through `orbit.routine.control` with the observed
+  `expected_enabled`.
+- `POST /api/settings/shared-library/sync` — `{}`; one `office.library-sync`
+  at a time on a client with a six-minute timeout. It answers document counts
+  (`shared`, `removed`, `received`, `incoming`, `conflicts`) and the skipped
+  documents by name and reason code, or `sync_failed` with a closed `reason`
+  (the tool's refusal code, `sync_timeout`, or `unknown`).
+- `GET /api/settings/shared-library/last-sync` and
+  `POST /api/settings/shared-library/dismiss-skipped` — the in-memory latest
+  sync, which Today reads on every poll, and clearing its skipped list.
+
+The library feature adds `POST /api/library/share` (`{id, shareable, also?}`)
+for the user's own documents: it calls `office.share-set` for each `also` id,
+sources first, then the document. `share_cites_unshared` answers the cited
+documents with their titles (`documents`), at most 20; other refusals answer
+their `reason`. The overview adds `shared: {configured}` (or null when
+`office.status` can't be read), and document reads accept member-qualified
+ids. Approvals pass an optional `choice` (`theirs` or `mine`) to
+`office.proposal-accept`, and a proposal's detail reports `shareable` and
+`conflict`. Today marks shared-library proposals `shared: "incoming"` or
+`"conflict"` and groups them under the `shared-library` key. The label, the
+switch and the sync wording live in `web/src/ui/share.ts`, shared by Library,
+Source, Settings and Today.
+
 ## Task References
 
 - [ORB-18711] — builds `office.config-set` for Library settings.
@@ -376,6 +412,7 @@ Spark Open" only when a block is configured.
 - [ORB-18841] — builds the Settings private route and the Muse Spark Open attribution.
 - [ORB-19195] — builds the Calendar screen, `/api/calendar*`, the rail entry and Today's Next meeting card.
 - [ORB-19216] — builds scheduled tasks on the calendar, the To-dos Schedule… picker, `POST /api/todos/schedule` and the dispatch pass's wait.
+- [ORB-19421] — builds Settings › Shared library, the sharing labels and switch, and the shared-library card in Needs you.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 

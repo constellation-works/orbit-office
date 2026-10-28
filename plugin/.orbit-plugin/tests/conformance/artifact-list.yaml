@@ -12,17 +12,17 @@ tests:
     tool: artifact-list
     input: {"kind":"report"}
     expect:
-      output: {"artifacts":[{"id":"art-20261003-beta-report","kind":"report","series":"beta","title":"Beta report","approved_at":"2026-10-03T10:00:00Z","sensitivity":"private"},{"id":"art-20261001-alpha-report","kind":"report","series":"alpha","title":"Alpha report","approved_at":"2026-10-01T10:00:00Z","sensitivity":"normal"}],"total":2,"truncated":false}
+      output: {"artifacts":[{"id":"art-20261003-beta-report","kind":"report","series":"beta","title":"Beta report","approved_at":"2026-10-03T10:00:00Z","sensitivity":"private","shareable":false},{"id":"art-20261001-alpha-report","kind":"report","series":"alpha","title":"Alpha report","approved_at":"2026-10-01T10:00:00Z","sensitivity":"normal","shareable":false}],"total":2,"truncated":false}
   - name: artifact_list_filtered_by_series
     tool: artifact-list
     input: {"series":"alpha"}
     expect:
-      output: {"artifacts":[{"id":"art-20261002-alpha-data","kind":"data","series":"alpha","title":"Alpha data","approved_at":"2026-10-02T10:00:00Z","sensitivity":"normal"},{"id":"art-20261001-alpha-report","kind":"report","series":"alpha","title":"Alpha report","approved_at":"2026-10-01T10:00:00Z","sensitivity":"normal"}],"total":2,"truncated":false}
+      output: {"artifacts":[{"id":"art-20261002-alpha-data","kind":"data","series":"alpha","title":"Alpha data","approved_at":"2026-10-02T10:00:00Z","sensitivity":"normal","shareable":true},{"id":"art-20261001-alpha-report","kind":"report","series":"alpha","title":"Alpha report","approved_at":"2026-10-01T10:00:00Z","sensitivity":"normal","shareable":false}],"total":2,"truncated":false}
   - name: artifact_list_truncated_beyond_limit
     tool: artifact-list
     input: {"limit":2}
     expect:
-      output: {"artifacts":[{"id":"art-20261003-beta-report","kind":"report","series":"beta","title":"Beta report","approved_at":"2026-10-03T10:00:00Z","sensitivity":"private"},{"id":"art-20261002-alpha-data","kind":"data","series":"alpha","title":"Alpha data","approved_at":"2026-10-02T10:00:00Z","sensitivity":"normal"}],"total":3,"truncated":true}
+      output: {"artifacts":[{"id":"art-20261003-beta-report","kind":"report","series":"beta","title":"Beta report","approved_at":"2026-10-03T10:00:00Z","sensitivity":"private","shareable":false},{"id":"art-20261002-alpha-data","kind":"data","series":"alpha","title":"Alpha data","approved_at":"2026-10-02T10:00:00Z","sensitivity":"normal","shareable":true}],"total":3,"truncated":true}
   - name: artifact_list_refuses_unknown_kind
     tool: artifact-list
     input: {"kind":"bogus"}

@@ -1,10 +1,11 @@
 /** Settings sections. Navigation registration belongs to the integrator. */
 import type { ConnectionWrite, SettingsApiCalls, SettingsConnection } from "@orbit-office/contracts";
-import { ApiError, getApiCalls, getConnections, getPrivateRoute, getSettings, putConnection } from "../../api/client.js";
+import { ApiError, getApiCalls, getConnections, getPrivateRoute, getSettings, getSharedLibrary, putConnection } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
 import { PRIVATE_ROUTE_EVENT, card, emptyState, errorState, pill } from "../../ui/index.js";
 import { connectionEditor } from "./editor.js";
 import { mountPrivateRoute } from "./private.js";
+import { mountSharedLibrary } from "./shared.js";
 import { signInPanel } from "./signin.js";
 import { style } from "./style.js";
 
@@ -47,6 +48,18 @@ function saveMessage(error: unknown): string {
   return "Could not confirm the save. Refresh connections before trying again.";
 }
 
+type Section = "Connections" | "API calls" | "Private route" | "Shared library";
+
+/** `?settings=shared-library#settings` opens that section; the query is then dropped. */
+function linkedSection(): Section | undefined {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("settings") !== "shared-library") return undefined;
+  params.delete("settings");
+  const query = params.toString();
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}${query === "" ? "" : `?${query}`}${window.location.hash}`);
+  return "Shared library";
+}
+
 async function render(root: HTMLElement): Promise<void> {
   const view = document.createElement("div"); view.className = "settings";
   const css = text("style", style);
@@ -58,20 +71,23 @@ async function render(root: HTMLElement): Promise<void> {
   const alive = (): boolean => root.contains(view) && view.isConnected;
   const connectionsTab = button("Connections", () => { void showConnections(); });
   const privateTab = button("Private route", () => { void showPrivate(); });
+  const sharedTab = button("Shared library", () => { void showShared(); });
   const callsTab = button("API calls", () => { void showCalls(); });
   function setTabsDisabled(disabled: boolean): void {
     connectionsTab.disabled = disabled;
     privateTab.disabled = disabled;
+    sharedTab.disabled = disabled;
     callsTab.disabled = disabled;
   }
-  tabs.append(connectionsTab, privateTab, callsTab);
-  view.append(text("h1", "Settings"), text("p", "Manage your API access, the private route, and what was called."), tabs, content, cli);
+  tabs.append(connectionsTab, privateTab, sharedTab, callsTab);
+  view.append(text("h1", "Settings"), text("p", "Manage your API access, the private route, the team's shared library, and what was called."), tabs, content, cli);
   root.replaceChildren(css, view);
 
-  function select(section: "Connections" | "API calls" | "Private route"): number {
+  function select(section: Section): number {
     generation += 1;
     connectionsTab.setAttribute("aria-pressed", String(section === "Connections"));
     privateTab.setAttribute("aria-pressed", String(section === "Private route"));
+    sharedTab.setAttribute("aria-pressed", String(section === "Shared library"));
     callsTab.setAttribute("aria-pressed", String(section === "API calls"));
     content.setAttribute("aria-label", section); content.replaceChildren(text("p", "Loading…")); return generation;
   }
@@ -164,6 +180,24 @@ async function render(root: HTMLElement): Promise<void> {
     } catch { if (current(token)) failed("The private route is unavailable", () => { void showPrivate(); }); }
   }
 
+  async function showShared(): Promise<void> {
+    const token = select("Shared library");
+    try {
+      const data = await getSharedLibrary();
+      if (!current(token)) return;
+      mountSharedLibrary(content, {
+        data,
+        busy: () => busy,
+        setBusy(value: boolean) { busy = value; setTabsDisabled(value); },
+        alive: () => current(token),
+      });
+    } catch {
+      if (current(token)) {
+        content.replaceChildren(errorState("The shared library settings are unavailable", "Check that Orbit and Office are available, then try again."), button("Try again", () => { void showShared(); }));
+      }
+    }
+  }
+
   async function showCalls(): Promise<void> {
     const token = select("API calls");
     try {
@@ -175,7 +209,9 @@ async function render(root: HTMLElement): Promise<void> {
   }
   const status = getSettings().then((data) => { if (alive()) cli.textContent = `${data.agentCli.cli}: ${data.agentCli.connected ? "connected" : "not connected"}`; })
     .catch(() => { if (alive()) cli.textContent = "Agent CLI connection unavailable."; });
-  await showConnections(); await status;
+  if (linkedSection() === "Shared library") await showShared();
+  else await showConnections();
+  await status;
 }
 
 /** The screen sorts independently so any valid fixture ordering renders newest first. */

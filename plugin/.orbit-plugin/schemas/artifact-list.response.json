@@ -20,9 +20,10 @@
           "sensitivity": {
             "type": "string",
             "enum": ["normal", "private"]
-          }
+          },
+          "shareable": { "type": "boolean", "description": "Sharing approval with the team's shared library." }
         },
-        "required": ["id", "kind", "series", "title", "approved_at", "sensitivity"],
+        "required": ["id", "kind", "series", "title", "approved_at", "sensitivity", "shareable"],
         "additionalProperties": false
       }
     },

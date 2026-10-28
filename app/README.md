@@ -45,8 +45,17 @@ show failures and empty states separately, and use the shared dark theme
 at desktop and phone widths. The Settings endpoints are
 `GET /api/settings/connections`, `POST /api/settings/connections/put`,
 `POST /api/settings/connections/sign-in`, `POST /api/settings/connections/sign-in/poll`,
-`GET /api/settings/private-route`, `POST /api/settings/private-route` and
+`GET /api/settings/private-route`, `POST /api/settings/private-route`,
+`GET /api/settings/shared-library`, `POST /api/settings/shared-library`,
+`POST /api/settings/shared-library/routine`, `POST /api/settings/shared-library/sync`,
+`GET /api/settings/shared-library/last-sync`, `POST /api/settings/shared-library/dismiss-skipped` and
 `GET /api/settings/api-calls`; `GET /api/settings` still reports the agent CLI.
+Shared library saves the `shared` block with `office.config-set`, naming a
+refused field but never its value, offers to turn on the hourly
+`office-shared-sync` routine, and runs **Sync now** as one `office.library-sync`
+(counts in documents, failures in plain words). The latest sync the app ran is
+kept in server memory only; `?settings=shared-library#settings` opens the
+section (docs/design/office/specs/web-app.md, "Shared library implementation").
 Private route saves the `open_weights` block with `office.config-set`, then runs
 `office.private-route-check` once. Its token goes only to
 `orbit plugin secret set office open_weights_token` on stdin. The footer and the
@@ -152,6 +161,23 @@ npm start       # run the built server
 ```
 
 Library searches and browses pages, outputs and setup progress through Office read tools. Outputs show the latest 100 matches, with kind and exact series filters and a notice when more exist. Person pages show Library document back-links; task links await a supported citation read. Page and artifact history comes from the show tools.
+
+Shared documents carry "Shared · from <member>" and the user's own shareable
+ones "Shared". Page, output and source views of the user's own documents have
+a **Share with the team** switch backed by `POST /api/library/share`
+(`office.share-set`); it confirms before stopping and offers **Share these
+too** for unshared cited documents. Library setup shows **Connect a shared
+library** first while none is configured. Needs you groups the shared
+library's updates, conflicts (**Use theirs**, **Keep mine**) and the last
+sync's skipped documents into one card. The cross-screen browser suite answers
+every Orbit call in memory and captures Settings › Shared library, a shared
+page with the switch and the Needs-you card at 1440px and 375px (the app has
+one dark theme):
+
+```bash
+. "$ORBIT_BROWSER_KIT_ENV"
+SHARED_LIBRARY_SCREENSHOTS_DIR="$PWD/.orbit/tmp/screenshots" node --test app/packages/web/test/shared-library.browser.mjs
+```
 
 
 ## Source capture and citation links

@@ -1,8 +1,9 @@
 /**
  * The Needs-you actions on Today: approve or send back reviewed work, keep or
  * dismiss a script's files, accept or dismiss proposals (alone or a whole
- * card), and approve or dismiss a request to another system. Messages are
- * plain words; tool codes are never shown.
+ * card), settle the shared library's incoming updates and conflicts, and
+ * approve or dismiss a request to another system. Messages are plain words;
+ * tool codes are never shown.
  */
 import type {
   AcceptAllResult,
@@ -10,7 +11,9 @@ import type {
   ApprovalDetail,
   ApprovalOk,
   ApproveResult,
+  ConflictChoice,
   GatewaySendResult,
+  SharedSkipped,
   TodayNeed,
 } from "@orbit-office/contracts";
 
@@ -24,6 +27,7 @@ import {
   sendBack,
   sendDraft,
 } from "../../api/client.js";
+import { skippedReason } from "../../ui/index.js";
 
 /** The server calls the controls make. Tests pass their own. */
 export interface ApprovalApi {
@@ -31,7 +35,8 @@ export interface ApprovalApi {
   approve(key: string): Promise<ApproveResult>;
   sendBack(key: string, comment: string): Promise<ApprovalOk>;
   dismiss(key: string, reason?: string): Promise<ApprovalOk>;
-  accept(key: string, sha256: string): Promise<ApprovalOk>;
+  /** `choice` settles a shared-library conflict; other proposals take none. */
+  accept(key: string, sha256: string, choice?: ConflictChoice): Promise<ApprovalOk>;
   acceptAll(proposals: AcceptRequest[]): Promise<AcceptAllResult>;
   send(key: string, sha256: string): Promise<GatewaySendResult>;
 }
@@ -59,6 +64,8 @@ const REASONS: Record<string, string> = {
   proposal_closed: "It was already accepted or dismissed.",
   proposal_payload_changed: "It changed after you saw it. Review it again.",
   proposal_page_missing: "The page it changes is no longer there.",
+  share_cites_unshared: "It cites a document you haven’t shared yet. Share that one first.",
+  share_private_refused: "The page is marked private, so it can’t be shared.",
   draft_changed: "The request changed after you saw it, so nothing was sent. Review it again.",
   draft_dismissed: "The request was dismissed, so nothing was sent.",
   draft_not_pending: "The request was already sent or is being sent. It is never sent twice.",
@@ -196,8 +203,11 @@ export class ApprovalControls {
     details.dataset.key = `${key}-preview`;
     const summary = element("summary", undefined, label);
     summary.dataset.focus = `${key}-preview`;
-    const body = this.fill(key, element("div"), (detail) =>
-      detail.kind === "proposal" ? [element("pre", "approval-text", detail.preview)] : []);
+    const body = this.fill(key, element("div"), (detail) => {
+      if (detail.kind !== "proposal") return [];
+      const text = element("pre", "approval-text", detail.preview);
+      return detail.shareable ? [element("p", "approval-shared", "Will be shared with the team"), text] : [text];
+    });
     details.append(summary, body);
     return details;
   }
@@ -420,5 +430,97 @@ export class ApprovalControls {
     const all = this.actions(groupKey, acceptAll);
     for (const control of all.querySelectorAll("button")) control.disabled = keys.some((key) => this.busy.has(key)) || this.busy.has(groupKey);
     return [pages, all, this.message(groupKey)];
+  }
+
+  /**
+   * The shared library's card: colleagues' updates to accept or dismiss,
+   * pages changed on both sides to settle with **Use theirs** or **Keep
+   * mine**, and the documents the last sync left out.
+   */
+  sharedGroup(items: readonly TodayNeed[], skipped: readonly SharedSkipped[], dismissSkipped: () => Promise<void>): HTMLElement[] {
+    const incoming = items.filter((item) => item.shared !== "conflict");
+    const conflicts = items.filter((item) => item.shared === "conflict");
+    const parts: HTMLElement[] = [element("p", undefined, [
+      incoming.length > 0 ? `${incoming.length} ${incoming.length === 1 ? "update" : "updates"} from colleagues` : "",
+      conflicts.length > 0 ? `${conflicts.length} ${conflicts.length === 1 ? "page" : "pages"} changed here and in the shared library` : "",
+      skipped.length > 0 ? `${skipped.length} ${skipped.length === 1 ? "document" : "documents"} left out of the last sync` : "",
+    ].filter(Boolean).join(", ") + ".")];
+    if (incoming.length > 0) {
+      const list = element("ul", "approval-pages");
+      list.setAttribute("aria-label", "Updates from colleagues");
+      for (const item of incoming) {
+        const accept = button("Accept", true, () => { void this.run([item.key], async () => {
+          try {
+            const detail = await this.detail(item.key);
+            if (detail.kind !== "proposal") return;
+            await this.api.accept(item.key, detail.sha256);
+            this.announce("done", `Accepted the update to “${item.title}”.`);
+          } catch (error) {
+            const stale = error instanceof ApiError && error.reason === "proposal_payload_changed";
+            this.fail(item.key, problem(error, `Couldn’t accept the update to “${item.title}”.`), stale);
+          }
+        }); });
+        const page = element("li", "approval-page");
+        page.dataset.key = item.key;
+        page.append(
+          element("h4", undefined, item.title),
+          this.preview(item.key, "Review the update"),
+          this.actions(item.key, accept, this.dismissButton(item, "Dismiss", `Dismissed the update to “${item.title}”.`)),
+          this.message(item.key),
+        );
+        list.append(page);
+      }
+      parts.push(element("h4", "approval-shared-heading", "Updates from colleagues"), list);
+    }
+    if (conflicts.length > 0) {
+      const list = element("ul", "approval-pages");
+      list.setAttribute("aria-label", "Changed on both sides");
+      for (const item of conflicts) {
+        const settle = (choice: ConflictChoice, label: string, done: string): HTMLButtonElement =>
+          button(label, choice === "theirs", () => { void this.run([item.key], async () => {
+            try {
+              const detail = await this.detail(item.key);
+              if (detail.kind !== "proposal") return;
+              await this.api.accept(item.key, detail.sha256, choice);
+              this.announce("done", done);
+            } catch (error) {
+              const stale = error instanceof ApiError && error.reason === "proposal_payload_changed";
+              this.fail(item.key, problem(error, `Couldn’t settle “${item.title}”.`), stale);
+            }
+          }); });
+        const page = element("li", "approval-page");
+        page.dataset.key = item.key;
+        page.append(
+          element("h4", undefined, item.title),
+          element("p", undefined, "You and a colleague both changed this page. Keep one version; the other stays in the shared library’s history."),
+          this.preview(item.key, "Compare their version"),
+          this.actions(item.key,
+            settle("theirs", "Use theirs", `Used the shared version of “${item.title}”.`),
+            settle("mine", "Keep mine", `Kept your version of “${item.title}”. It goes to the team on your next sync.`)),
+          this.message(item.key),
+        );
+        list.append(page);
+      }
+      parts.push(element("h4", "approval-shared-heading", "Changed on both sides"), list);
+    }
+    if (skipped.length > 0) {
+      const key = "shared-library-skipped";
+      const list = element("ul", "approval-skipped");
+      list.setAttribute("aria-label", "Left out of the last sync");
+      for (const entry of skipped) {
+        const row = element("li");
+        row.append(element("strong", undefined, entry.name), ` ${entry.phase === "push" ? "wasn’t shared" : "wasn’t received"}. ${skippedReason(entry.reason)}`);
+        list.append(row);
+      }
+      const done = button("Got it", false, () => { void this.run([key], async () => {
+        try {
+          await dismissSkipped();
+        } catch (error) {
+          this.fail(key, problem(error, "Couldn’t clear this list."));
+        }
+      }); });
+      parts.push(element("h4", "approval-shared-heading", "Left out of the last sync"), list, this.actions(key, done), this.message(key));
+    }
+    return parts;
   }
 }

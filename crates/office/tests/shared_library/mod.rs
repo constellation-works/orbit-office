@@ -175,6 +175,81 @@ fn shared_index_resolution_citations_and_own_precedence() {
 }
 
 #[test]
+fn list_and_source_reads_report_sharing_approval_and_status_reports_the_block() {
+    let env = Env::new();
+    output(&env, "office.init", json!({}));
+    assert_eq!(
+        output(&env, "office.status", json!({}))["shared"],
+        Value::Null
+    );
+    output(
+        &env,
+        "office.config-set",
+        json!({"key":"shared","value":{"remote":"/fixture/team.git","branch":"main","member":"me"}}),
+    );
+    assert_eq!(
+        output(&env, "office.status", json!({}))["shared"],
+        json!({"remote":"/fixture/team.git","branch":"main","member":"me"})
+    );
+    let source = output(
+        &env,
+        "office.capture",
+        json!({"kind":"note","title":"Fixture note","text":"Shareable evidence."}),
+    );
+    let id = source["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        output(&env, "office.source-show", json!({"id":id}))["shareable"],
+        false
+    );
+    output(&env, "office.share-set", json!({"id":id,"shareable":true}));
+    assert_eq!(
+        output(&env, "office.source-show", json!({"id":id}))["shareable"],
+        true
+    );
+    output(
+        &env,
+        "office.knowledge-write",
+        json!({"markdown":"---\nid: dom-own-shared\ntitle: Own shared\nshareable: true\n---\n## Overview\nShared by me.\n"}),
+    );
+    output(
+        &env,
+        "office.knowledge-write",
+        json!({"markdown":"---\nid: dom-own-private\ntitle: Own kept\n---\n## Overview\nKept here.\n"}),
+    );
+    put(
+        &env,
+        "knowledge/domain/dom-fixture.md",
+        &page("dom-fixture", "Shared fixture"),
+    );
+    output(&env, "office.reindex", json!({}));
+    let listed = output(&env, "office.knowledge-list", json!({}));
+    let rows: Vec<(String, String, bool)> = listed["pages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["id"].as_str().unwrap().to_string(),
+                row["layer"].as_str().unwrap().to_string(),
+                row["shareable"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert!(
+        rows.contains(&("dom-own-shared".into(), "own".into(), true)),
+        "{listed}"
+    );
+    assert!(
+        rows.contains(&("dom-own-private".into(), "own".into(), false)),
+        "{listed}"
+    );
+    assert!(
+        rows.contains(&("dom-fixture".into(), "shared".into(), false)),
+        "{listed}"
+    );
+}
+
+#[test]
 fn missing_shared_clone_is_empty() {
     let env = Env::new();
     output(&env, "office.init", json!({}));

@@ -93,6 +93,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
                 "summary": p.summary,
                 "status": p.status,
                 "sensitivity": p.sensitivity,
+                "shareable": record.shareable,
             })
         })
         .collect();

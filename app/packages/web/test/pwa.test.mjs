@@ -49,7 +49,7 @@ await import("../dist/pwa/sw.js");
 /** Fresh stub environment; `seed` pre-fills the shell cache like an install. */
 function useWorkerEnv({ seed = [], fetchImpl } = {}) {
   const addedAll = [];
-  const stores = new Map([["office-shell-v8", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
+  const stores = new Map([["office-shell-v9", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
   Object.defineProperty(globalThis, "self", {
     value: {
       location: { origin: "http://office.test" },
@@ -131,6 +131,7 @@ const SHELL = [
   "/ui/events.js",
   "/ui/schedule.js",
   "/ui/when.js",
+  "/ui/share.js",
   "/screens/calendar/index.js",
   "/screens/calendar/model.js",
   "/screens/calendar/panel.js",
@@ -145,6 +146,7 @@ const SHELL = [
   "/screens/settings/editor.js",
   "/screens/settings/style.js",
   "/screens/settings/private.js",
+  "/screens/settings/shared.js",
   "/screens/settings/signin.js",
   "/screens/source/index.js",
   "/screens/source/model.js",
@@ -222,7 +224,7 @@ test("activate drops old caches and keeps the current shell", async () => {
   let waited = null;
   listeners.activate({ waitUntil: (promise) => { waited = promise; } });
   await waited;
-  assert.deepEqual([...stores.keys()], ["office-shell-v8"]);
+  assert.deepEqual([...stores.keys()], ["office-shell-v9"]);
 });
 
 test("live-data requests are left to the network, never answered from cache", async () => {
@@ -261,11 +263,11 @@ test("other same-origin requests go to the network and are not stored", async ()
     fetchImpl: async () => new Response("live"),
   });
   const listeners = workerListeners;
-  const before = stores.get("office-shell-v8").size;
+  const before = stores.get("office-shell-v9").size;
   const { event, answered } = fetchEvent("http://office.test/demo.html");
   listeners.fetch(event);
   assert.equal(await (await answered()).text(), "live");
-  assert.equal(stores.get("office-shell-v8").size, before);
+  assert.equal(stores.get("office-shell-v9").size, before);
 });
 
 test("a failed navigation falls back to the cached shell", async () => {

@@ -57,7 +57,7 @@ export async function sourceServer(t) {
   const server = createServer((req, res) => {
     const route = feature.routes.find(r => r.method === req.method && r.path === req.url.split('?')[0]);
     if (route) void route.handle(req, res);
-    else if (req.url.startsWith('/api/') && !req.url.endsWith('.js')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(req.url === '/api/today' ? { needs_you: [], agents_working_on: [], done_today: [], truncated: false, completion_dates_unavailable: 0 } : { route: null, token: 'unset' })); }
+    else if (req.url.startsWith('/api/') && !req.url.endsWith('.js')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(req.url === '/api/today' ? { needs_you: [], agents_working_on: [], done_today: [], truncated: false, completion_dates_unavailable: 0 } : req.url === '/api/setup' ? { state: 'ready' } : { route: null, token: 'unset' })); }
     else fallback(req, res);
   });
   await new Promise(done => server.listen(0, '127.0.0.1', done)); t.after(() => new Promise(done => server.close(done)));

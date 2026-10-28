@@ -25,6 +25,7 @@ tests:
           pages_off_template: 0
           template_invalid: []
         open_weights: null
+        shared: null
   - name: status_refuses_unknown_input
     tool: status
     input: {"verbose": true}

@@ -3,6 +3,7 @@ import type {
   AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
   SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoScheduled,
+  ConflictChoice, ShareDocument, SharedLastSync, SharedLibraryBlock, SharedLibrarySaved, SharedLibraryStatus, SharedSync, ShareRequest, ShareResult,
 } from "@orbit-office/contracts";
 
 export class ApiError extends Error {
@@ -12,6 +13,10 @@ export class ApiError extends Error {
     readonly routeSaved = false,
     /** A tool's refusal code the server passed on, for a plain-words message. */
     readonly reason?: string,
+    /** The settings field a refusal names; never its value. */
+    readonly field?: string,
+    /** Cited documents to share first (`share_cites_unshared`). */
+    readonly documents: ShareDocument[] = [],
   ) {
     super(`app server answered ${status} (${code})`);
     this.name = "ApiError";
@@ -41,7 +46,13 @@ async function requestJson<T>(path: string, body?: unknown, upload?: Blob): Prom
     const routeSaved = typeof body === "object" && body !== null && "route_saved" in body && body.route_saved === true;
     const reason = typeof body === "object" && body !== null && "reason" in body && typeof body.reason === "string"
       ? body.reason : undefined;
-    throw new ApiError(response.status, code, routeSaved, reason);
+    const field = typeof body === "object" && body !== null && "field" in body && typeof body.field === "string"
+      ? body.field : undefined;
+    const documents = typeof body === "object" && body !== null && "documents" in body && Array.isArray(body.documents)
+      ? (body.documents as unknown[]).filter((item): item is ShareDocument => typeof item === "object" && item !== null &&
+        "id" in item && typeof item.id === "string" && "title" in item && typeof item.title === "string")
+      : [];
+    throw new ApiError(response.status, code, routeSaved, reason, field, documents);
   }
   try {
     return (await response.json()) as T;
@@ -92,6 +103,41 @@ export function savePrivateRoute(input: PrivateRouteWrite): Promise<PrivateRoute
   return requestJson<PrivateRouteSaved>("/api/settings/private-route", input);
 }
 
+/** The team shared library block, or null, and the latest sync the app ran. */
+export function getSharedLibrary(): Promise<SharedLibraryStatus> {
+  return getJson<SharedLibraryStatus>("/api/settings/shared-library");
+}
+
+/** Save the whole block with `office.config-set`; a refusal names its field only. */
+export function saveSharedLibrary(input: SharedLibraryBlock): Promise<SharedLibrarySaved> {
+  return requestJson<SharedLibrarySaved>("/api/settings/shared-library", input);
+}
+
+/** Turn on the hourly `office-shared-sync` routine. */
+export function enableSharedSync(): Promise<{ ok: true }> {
+  return requestJson<{ ok: true }>("/api/settings/shared-library/routine", { enabled: true });
+}
+
+/** **Sync now**: one `office.library-sync`, in counts of documents. */
+export function syncSharedLibrary(): Promise<SharedSync> {
+  return requestJson<SharedSync>("/api/settings/shared-library/sync", {});
+}
+
+/** The latest sync the app ran, from the server's memory. */
+export function getLastSharedSync(): Promise<SharedLastSync> {
+  return getJson<SharedLastSync>("/api/settings/shared-library/last-sync");
+}
+
+/** The skipped documents were read: Needs you stops listing them. */
+export function dismissSharedSkipped(): Promise<{ ok: true }> {
+  return requestJson<{ ok: true }>("/api/settings/shared-library/dismiss-skipped", {});
+}
+
+/** Share a document with the team or stop sharing it (`office.share-set`). */
+export function shareDocument(input: ShareRequest): Promise<ShareResult> {
+  return requestJson<ShareResult>("/api/library/share", input);
+}
+
 /** POST JSON and read the JSON answer, with the same error path as {@link getJson}. */
 export function postJson<T>(path: string, body: unknown): Promise<T> {
   return requestJson<T>(path, body);
@@ -120,8 +166,9 @@ export function dismissNeed(key: string, reason?: string): Promise<ApprovalOk> {
   return postJson<ApprovalOk>("/api/approvals/dismiss", reason === undefined ? { key } : { key, reason });
 }
 
-export function acceptProposal(key: string, sha256: string): Promise<ApprovalOk> {
-  return postJson<ApprovalOk>("/api/approvals/accept", { key, sha256 });
+/** Accept a proposal; a shared-library conflict also names whose version wins. */
+export function acceptProposal(key: string, sha256: string, choice?: ConflictChoice): Promise<ApprovalOk> {
+  return postJson<ApprovalOk>("/api/approvals/accept", choice === undefined ? { key, sha256 } : { key, sha256, choice });
 }
 
 export function acceptProposals(proposals: AcceptRequest[]): Promise<AcceptAllResult> {

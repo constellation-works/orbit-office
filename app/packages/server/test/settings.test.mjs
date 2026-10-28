@@ -15,6 +15,7 @@ import {
 import { createHandler } from "../dist/http/router.js";
 import { createSettingsFeature } from "../dist/features/settings/index.js";
 import { checkLoopbackRequest } from "../dist/http/guard.js";
+import { OrbitExitError, OrbitTimeoutError } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
 import { gatewayFixtures } from "./settings-fixture.mjs";
 
@@ -820,4 +821,212 @@ test("a refused private-route config-set does not write the token or check", { t
   assert.ok(!response.body.includes("secret.example"));
   assert.ok(!response.body.includes("not-written"));
   assert.deepEqual(calls, ["office.config-set"]);
+});
+
+// Shared library: every test drives the feature's own routes over HTTP with an
+// in-memory Orbit client. No router, no real HOME, no git.
+
+const sharedBlock = { remote: "git@github.com:acme-team/team-library.git", branch: "main", member: "daniel" };
+
+function routineRow(effective) {
+  return { name: "office-shared-sync", description: "Sync the shared library", enabled: effective, effective, target: "plugin:office", schedule: { every_minutes: 60 } };
+}
+
+function routinePage(rows) {
+  return { items: rows, pagination: { next_offset: null }, notes: [] };
+}
+
+/** A finished `office.library-sync` result: three paths of one source, one page, one incoming update. */
+const syncResult = {
+  direction: "both", dry_run: false,
+  pulled: ["knowledge/clients/dom-client-acme.md", "knowledge/runbooks/rb-lantern-spool.md"],
+  pushed: [
+    "members/daniel/sources/2026/10/src-20261028-lantern-kt/source.md",
+    "members/daniel/sources/2026/10/src-20261028-lantern-kt/v1.md",
+    "knowledge/topics/dom-lantern.md",
+  ],
+  removed: [],
+  incoming: [{ page: "dom-client-acme", proposal: "task-1", created: true }],
+  conflicts: [],
+  skipped: [{ phase: "push", path: "knowledge/topics/dom-scratch-notes.md", id: "dom-scratch-notes", reason: "share_cites_unshared" }],
+  commit: "0123456789abcdef0123456789abcdef01234567",
+  synced_at: "2026-10-28T09:00:00Z",
+};
+
+async function sharedServer(t, client, options = {}) {
+  const feature = createSettingsFeature(client, {}, options);
+  const server = createServer((req, res) => {
+    if (!checkLoopbackRequest(req).ok) { res.writeHead(403); res.end(); return; }
+    const route = feature.routes.find((item) => item.method === req.method && item.path === req.url);
+    if (route) void route.handle(req, res); else { res.writeHead(404); res.end(); }
+  });
+  t.after(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  const headers = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/json" };
+  return {
+    get: (path) => request(port, { path, headers: { host: headers.host } }),
+    post: (path, body) => request(port, { method: "POST", path, headers, body: JSON.stringify(body) }),
+  };
+}
+
+test("saving the shared library calls office.config-set with the shared block and offers the hourly routine", { timeout: 5000 }, async (t) => {
+  const calls = [];
+  let shared = null;
+  let effective = false;
+  const app = await sharedServer(t, { async callTool(name, input) {
+    calls.push([name, input]);
+    if (name === "office.status") return { ok: true, output: { initialized: true, shared } };
+    if (name === "office.config-set") { shared = input.value; return { ok: true, output: { path: ".office/config.yaml", key: "shared" } }; }
+    if (name === "orbit.routine.control" && input.action === "list") return routinePage([routineRow(effective)]);
+    if (name === "orbit.routine.control" && input.action === "toggle") { effective = input.enabled; return { name: input.name, enabled: input.enabled }; }
+    throw new Error(name);
+  } });
+
+  const before = await app.get("/api/settings/shared-library");
+  assert.equal(before.status, 200);
+  assert.deepEqual(JSON.parse(before.body), { shared: null, last_sync: null });
+
+  const saved = await app.post("/api/settings/shared-library", sharedBlock);
+  assert.equal(saved.status, 200);
+  assert.deepEqual(JSON.parse(saved.body), { shared: sharedBlock, routine: "off" });
+  assert.deepEqual(calls.find(([name]) => name === "office.config-set"), ["office.config-set", { key: "shared", value: sharedBlock }]);
+
+  const enabled = await app.post("/api/settings/shared-library/routine", { enabled: true });
+  assert.equal(enabled.status, 200);
+  const toggle = calls.find(([name, input]) => name === "orbit.routine.control" && input.action === "toggle");
+  assert.deepEqual(toggle[1], { action: "toggle", name: "office-shared-sync", expected_enabled: false, enabled: true, target: "plugin:office" });
+
+  const after = await app.get("/api/settings/shared-library");
+  assert.deepEqual(JSON.parse(after.body).shared, sharedBlock);
+  const again = await app.post("/api/settings/shared-library", sharedBlock);
+  assert.equal(JSON.parse(again.body).routine, "on");
+});
+
+test("a refused remote names the field and never echoes its value", { timeout: 5000 }, async (t) => {
+  const calls = [];
+  const app = await sharedServer(t, { async callTool(name) {
+    calls.push(name);
+    if (name === "office.config-set") {
+      return { ok: false, error: { code: "invalid_library_setting", message: "shared.remote is not an accepted remote: https://alice:hunter2@git.example/team.git" } };
+    }
+    throw new Error(name);
+  } });
+  const remote = "https://alice:hunter2@git.example/team.git";
+  const response = await app.post("/api/settings/shared-library", { ...sharedBlock, remote });
+  assert.equal(response.status, 400);
+  assert.deepEqual(JSON.parse(response.body), { error: "invalid_input", field: "remote" });
+  assert.ok(!response.body.includes("hunter2"));
+  assert.ok(!response.body.includes("git.example"));
+  assert.deepEqual(calls, ["office.config-set"]);
+});
+
+test("a malformed member or an unknown key is refused before any tool call", { timeout: 5000 }, async (t) => {
+  const calls = [];
+  const app = await sharedServer(t, { async callTool(name) { calls.push(name); throw new Error(name); } });
+  const member = await app.post("/api/settings/shared-library", { ...sharedBlock, member: "Daniel Kim" });
+  assert.equal(member.status, 400);
+  assert.deepEqual(JSON.parse(member.body), { error: "invalid_input", field: "member" });
+  const extra = await app.post("/api/settings/shared-library", { ...sharedBlock, token: "x" });
+  assert.deepEqual(JSON.parse(extra.body), { error: "invalid_input" });
+  const routine = await app.post("/api/settings/shared-library/routine", { enabled: false });
+  assert.equal(routine.status, 400);
+  const sync = await app.post("/api/settings/shared-library/sync", { direction: "push" });
+  assert.equal(sync.status, 400);
+  assert.deepEqual(calls, []);
+});
+
+test("Sync now calls office.library-sync and reports document counts, remembered for Today", { timeout: 5000 }, async (t) => {
+  const syncCalls = [];
+  const app = await sharedServer(t, { async callTool(name) {
+    if (name === "office.status") return { ok: true, output: { shared: sharedBlock } };
+    throw new Error(name);
+  } }, { syncClient: { async callTool(name, input) { syncCalls.push([name, input]); return { ok: true, output: syncResult }; } } });
+
+  const response = await app.post("/api/settings/shared-library/sync", {});
+  assert.equal(response.status, 200);
+  const sync = {
+    synced_at: "2026-10-28T09:00:00Z", shared: 2, removed: 0, received: 2, incoming: 1, conflicts: 0,
+    skipped: [{ phase: "push", name: "Scratch notes", reason: "share_cites_unshared" }],
+  };
+  assert.deepEqual(JSON.parse(response.body), sync);
+  assert.deepEqual(syncCalls, [["office.library-sync", {}]]);
+  assert.ok(!response.body.includes("dom-scratch-notes"));
+
+  const last = await app.get("/api/settings/shared-library/last-sync");
+  assert.deepEqual(JSON.parse(last.body), { last_sync: { ok: true, sync } });
+  const status = await app.get("/api/settings/shared-library");
+  assert.deepEqual(JSON.parse(status.body), { shared: sharedBlock, last_sync: { ok: true, sync } });
+
+  assert.equal((await app.post("/api/settings/shared-library/dismiss-skipped", {})).status, 200);
+  const dismissed = await app.get("/api/settings/shared-library/last-sync");
+  assert.deepEqual(JSON.parse(dismissed.body), { last_sync: { ok: true, sync: { ...sync, skipped: [] } } });
+});
+
+test("an unreachable shared library is reported as its reason, without git's diagnostics", { timeout: 5000 }, async (t) => {
+  let now = 0;
+  const app = await sharedServer(t, { async callTool(name) { throw new Error(name); } }, { syncClient: { async callTool() {
+    now += 1;
+    if (now === 1) return { ok: false, error: { code: "shared_remote_unreachable", message: "could not reach git.example: fatal: Authentication failed for alice" } };
+    throw new OrbitExitError("office.library-sync", 1, null, `${JSON.stringify({ error: { code: "shared_remote_unreachable", message: "could not reach git.example" } })}\n`);
+  } } });
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await app.post("/api/settings/shared-library/sync", {});
+    assert.equal(response.status, 409);
+    assert.deepEqual(JSON.parse(response.body), { error: "sync_failed", reason: "shared_remote_unreachable" });
+    assert.ok(!response.body.includes("git.example"));
+    assert.ok(!response.body.includes("alice"));
+  }
+  const last = JSON.parse((await app.get("/api/settings/shared-library/last-sync")).body).last_sync;
+  assert.equal(last.ok, false);
+  assert.equal(last.reason, "shared_remote_unreachable");
+  assert.ok(!Number.isNaN(Date.parse(last.at)));
+});
+
+test("a sync that times out, an unknown refusal and a second concurrent sync are each reported in a closed reason", { timeout: 5000 }, async (t) => {
+  let entered;
+  const gate = new Promise((resolve) => { entered = resolve; });
+  let release;
+  const waiting = new Promise((resolve) => { release = resolve; });
+  let calls = 0;
+  const app = await sharedServer(t, { async callTool(name) { throw new Error(name); } }, { syncClient: { async callTool() {
+    calls += 1;
+    if (calls === 1) { entered(); await waiting; throw new OrbitTimeoutError("office.library-sync", 360000); }
+    return { ok: false, error: { code: "fixture_internal_code", message: "do-not-forward" } };
+  } } });
+  const first = app.post("/api/settings/shared-library/sync", {});
+  try {
+    await gate;
+    const second = await app.post("/api/settings/shared-library/sync", {});
+    assert.equal(second.status, 409);
+    assert.deepEqual(JSON.parse(second.body), { error: "sync_failed", reason: "library_writer_busy" });
+  } finally { release(); }
+  assert.deepEqual(JSON.parse((await first).body), { error: "sync_failed", reason: "sync_timeout" });
+  const unknown = await app.post("/api/settings/shared-library/sync", {});
+  assert.deepEqual(JSON.parse(unknown.body), { error: "sync_failed", reason: "unknown" });
+  assert.ok(!unknown.body.includes("do-not-forward"));
+  assert.equal(calls, 2);
+});
+
+test("a dry-run or malformed sync result is not reported as a finished sync", { timeout: 5000 }, async (t) => {
+  const app = await sharedServer(t, { async callTool(name) { throw new Error(name); } }, { syncClient: { async callTool() {
+    return { ok: true, output: { ...syncResult, dry_run: true, synced_at: null } };
+  } } });
+  const response = await app.post("/api/settings/shared-library/sync", {});
+  assert.equal(response.status, 502);
+  assert.deepEqual(JSON.parse(response.body), { error: "sync_failed", reason: "unknown" });
+});
+
+test("an unreadable routine listing is reported as unavailable, and turning it on refuses", { timeout: 5000 }, async (t) => {
+  const app = await sharedServer(t, { async callTool(name) {
+    if (name === "office.config-set") return { ok: true, output: { path: ".office/config.yaml", key: "shared" } };
+    if (name === "orbit.routine.control") return routinePage([]);
+    throw new Error(name);
+  } });
+  const saved = await app.post("/api/settings/shared-library", sharedBlock);
+  assert.equal(JSON.parse(saved.body).routine, "unavailable");
+  const enabled = await app.post("/api/settings/shared-library/routine", { enabled: true });
+  assert.equal(enabled.status, 502);
+  assert.deepEqual(JSON.parse(enabled.body), { error: "routine_unavailable" });
 });

@@ -92,6 +92,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
                 "title": a.title,
                 "approved_at": a.approved.at,
                 "sensitivity": a.sensitivity.as_str(),
+                "shareable": a.shareable,
             })
         })
         .collect();

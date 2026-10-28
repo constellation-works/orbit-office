@@ -341,6 +341,11 @@ h3 { font-size: 15px; font-weight: 500; }
 .approval-pages { list-style: none; margin: 0; padding: 0; width: 100%; }
 .approval-page { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; border-top: 1px solid var(--hair); }
 .approval-page h4 { margin: 0; font-size: 14px; font-weight: 500; }
+.approval-shared { margin: 0 0 8px; color: var(--working); font-size: 13px; font-weight: 500; }
+.approval-shared-heading { margin: 18px 0 0; color: var(--fg-dim); font-size: 13px; font-weight: 600; }
+.approval-skipped { margin: 8px 0 0; padding-left: 1.2rem; color: var(--fg-dim); font-size: 14px; }
+.approval-skipped li { margin: 6px 0; }
+.approval-skipped strong { color: var(--fg); font-weight: 500; }
 @media (max-width: 600px) { .today-working-line { flex-direction: column; align-items: flex-start; gap: 8px; } }
 
 /* Library browsing and setup */
@@ -368,7 +373,82 @@ h3 { font-size: 15px; font-weight: 500; }
   margin: 12px 0;
 }
 .library section p { margin: 6px 0; color: var(--fg-dim); }
+.library-entry { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; }
+.library-sharing:empty { display: none; }
+.library .library-connect { border-color: var(--border-strong); }
+.library-connect-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  margin-top: 6px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.library-connect-link:hover { background: var(--accent-hover); }
 .library-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+
+/* Sharing with the team: the label and the switch (ui/share.ts) */
+.pill.pill--shared { background: var(--working-bg); color: var(--working); }
+.share {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 12px 0;
+}
+.share-switch { display: flex; align-items: center; gap: 12px; min-height: 44px; font-weight: 600; color: var(--fg); cursor: pointer; }
+.share-switch input {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 22px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: background .15s;
+}
+.share-switch input::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--fg);
+  transition: transform .15s;
+}
+.share-switch input:checked { background: var(--accent); }
+.share-switch input:checked::before { transform: translateX(18px); background: var(--on-accent); }
+.share-switch input:focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
+.share-switch input:disabled { opacity: .55; cursor: default; }
+.share-hint { margin: 2px 0 0; color: var(--fg-mute); font-size: 13px; }
+.share-panel { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hair); }
+.share-panel:empty { display: none; }
+.share-panel p { margin: 0; color: var(--fg-dim); font-size: 14px; }
+.share-panel[data-tone="danger"] p { color: var(--danger); }
+.share-panel ul { margin: 8px 0 0; padding-left: 1.2rem; color: var(--fg); font-size: 14px; }
+.share-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.share button {
+  min-height: 40px;
+  margin: 0;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  font-size: 14px;
+  cursor: pointer;
+}
+.share button:hover { background: var(--bg-hover); }
+.share button[data-primary] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.share button:disabled { opacity: .65; cursor: default; }
 
 /* Routines (the table and the next-hour strip are in screens/routines/style.ts) */
 .routines-retention {

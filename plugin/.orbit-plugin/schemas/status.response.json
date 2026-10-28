@@ -74,9 +74,25 @@
           "additionalProperties": false
         }
       ]
+    },
+    "shared": {
+      "description": "The configured team shared library, or null when none is configured. The remote never carries credentials.",
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "remote": { "type": "string", "description": "ssh://, scp-style, HTTPS without user information, or an absolute repository path." },
+            "branch": { "type": "string" },
+            "member": { "type": "string", "description": "This member's lowercase kebab-case name, recorded as shared_by." }
+          },
+          "required": ["remote", "branch", "member"],
+          "additionalProperties": false
+        }
+      ]
     }
   },
-  "required": ["version", "secrets", "library", "open_weights"],
+  "required": ["version", "secrets", "library", "open_weights", "shared"],
   "additionalProperties": false,
   "$defs": {
     "presence": { "type": "string", "enum": ["set", "unset"] }
