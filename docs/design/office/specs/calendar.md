@@ -456,13 +456,13 @@ above; unknown leaves and other types refuse the update.
 ## Task References
 
 - [ORB-19191] — adds the gateway's `secret_path` and `oauth2_device` schemes.
-- [ORB-19192] — builds `office.calendar-sync`, `office.calendar-list` and the snapshot.
-- [ORB-19193] — builds `office.meeting-prep` and its routine.
-- [ORB-19194] — builds capture from an event and the `office-meeting-inbox` routine.
-- [ORB-19195] — builds the Calendar screen, its server feature and Today's card.
-- [ORB-19216] — builds the Schedule… picker, scheduled tasks on the calendar and the dispatch pass's wait; needs an Orbit release with ws_orbit [ORB-19214] and [ORB-19215].
-- [ORB-19214] — builds Orbit's `not_before` field and its admission hold (ws_orbit).
-- [ORB-19215] — builds Orbit's date-range list filter and surfaces (ws_orbit).
+- [ORB-19192] — built `office.calendar-sync`, `office.calendar-list` and the snapshot.
+- [ORB-19193] — built `office.meeting-prep` and its routine.
+- [ORB-19194] — built capture from an event and the `office-meeting-inbox` routine.
+- [ORB-19195] — built the Calendar screen, its server feature and Today's card.
+- [ORB-19216] — built the Schedule… picker, scheduled tasks on the calendar and the dispatch pass's wait; needs an Orbit release with ws_orbit [ORB-19214] and [ORB-19215].
+- [ORB-19214] — built Orbit's `not_before` field and its admission hold (ws_orbit).
+- [ORB-19215] — built Orbit's date-range list filter and surfaces (ws_orbit).
 
 ### Meeting-prep implementation contract
 

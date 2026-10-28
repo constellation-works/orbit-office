@@ -36,7 +36,7 @@ library/
   rebuildable at any time with `office.reindex`. Reindex rebuilds only
   after a complete scan: a missing layer is empty, and an enumeration
   failure leaves the previous index unchanged.
-- A team's **shared library** (sync and read layer planned separately) is a separate git repository, cloned to
+- A team's **shared library** is a separate git repository, cloned to
   `{{plugin_state}}/shared/repo/` and indexed as a read-only `shared` layer
   beside this one. Documents marked `shareable` are pushed to it, and
   colleagues' documents are read from it

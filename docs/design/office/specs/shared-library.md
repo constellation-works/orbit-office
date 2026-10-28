@@ -354,8 +354,7 @@ hourly at `0 * * * *`, seeded `enabled: false`, targeting
 `plugin.tool_call` with `office.library-sync` and `input: {}`, like
 `office-calendar-sync`, with `timeout_seconds: 360` and
 `max_active_runs: 1`. Both are registered in `spec.definitions`. When the
-user saves the `shared` block, the app offers to turn it on (planned with
-the app).
+user saves the `shared` block, the app offers to turn it on.
 
 ## App
 
@@ -428,7 +427,7 @@ covered by the end-to-end test.
 
 ## Task References
 
-- [ORB-19417] — builds the `shareable` field, `office.share-set`, the shared view and the `shared` settings.
-- [ORB-19418] — builds `office.library-sync`, its routine and the demo repository.
-- [ORB-19419] — builds the shared layer: index, qualified citations, reads, attach and bootstrap.
-- [ORB-19421] — builds the app: Settings › Shared library, labels, the share switch and Needs you cards.
+- [ORB-19417] — built the `shareable` field, `office.share-set`, the shared view and the `shared` settings.
+- [ORB-19418] — built `office.library-sync`, its routine and the demo repository.
+- [ORB-19419] — built the shared layer: index, qualified citations, reads, attach and bootstrap.
+- [ORB-19421] — built the app: Settings › Shared library, labels, the share switch and Needs you cards.

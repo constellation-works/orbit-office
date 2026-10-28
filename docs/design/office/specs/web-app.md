@@ -403,16 +403,16 @@ Source, Settings and Today.
 
 ## Task References
 
-- [ORB-18711] — builds `office.config-set` for Library settings.
+- [ORB-18711] — built `office.config-set` for Library settings.
 - [ORB-18727] — built the Today screen and `GET /api/today`.
 - [ORB-18728] — built the To-dos screen and `GET /api/todos`.
 - [ORB-18733] — built the Needs-you approval actions and `/api/approvals/*`.
 - [ORB-18735] — built the PWA shell and the settings feature's agent-CLI read.
-- [ORB-18798] — builds the Settings connections and API calls views.
-- [ORB-18841] — builds the Settings private route and the Muse Spark Open attribution.
-- [ORB-19195] — builds the Calendar screen, `/api/calendar*`, the rail entry and Today's Next meeting card.
-- [ORB-19216] — builds scheduled tasks on the calendar, the To-dos Schedule… picker, `POST /api/todos/schedule` and the dispatch pass's wait.
-- [ORB-19421] — builds Settings › Shared library, the sharing labels and switch, and the shared-library card in Needs you.
+- [ORB-18798] — built the Settings connections and API calls views.
+- [ORB-18841] — built the Settings private route and the Muse Spark Open attribution.
+- [ORB-19195] — built the Calendar screen, `/api/calendar*`, the rail entry and Today's Next meeting card.
+- [ORB-19216] — built scheduled tasks on the calendar, the To-dos Schedule… picker, `POST /api/todos/schedule` and the dispatch pass's wait.
+- [ORB-19421] — built Settings › Shared library, the sharing labels and switch, and the shared-library card in Needs you.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 

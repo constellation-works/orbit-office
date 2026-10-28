@@ -115,12 +115,12 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 | Plugin tool surface, definitions, config, permissions | [specs/plugin-surface.md](./specs/plugin-surface.md) | [ORB-16585] |
 | Library persistence (`office-store`, after `orbit-store`) | [specs/store.md](./specs/store.md) | [ORB-18709] done, [ORB-18710] done |
 | Exec envelope contract | [specs/output-contract.md](./specs/output-contract.md) | [ORB-16585] |
-| Orchestrator skill, tools and guardrails | [specs/orchestrator.md](./specs/orchestrator.md) | [ORB-18720] |
+| Orchestrator skill, tools and guardrails | [specs/orchestrator.md](./specs/orchestrator.md) | [ORB-18720] done |
 | Proposals and their signals | [specs/proposals.md](./specs/proposals.md) | [ORB-18721] done, [ORB-18722] done |
 | Analytics and generated reviews | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) | [ORB-18724] done |
 | Web app screens and rules | [specs/web-app.md](./specs/web-app.md) | [ORB-18727] done, [ORB-18728] done |
-| Calendar: read-only sync, meeting prep, capture after the meeting | [specs/calendar.md](./specs/calendar.md) | [ORB-19191], [ORB-19192], [ORB-19193], [ORB-19194], [ORB-19195] done |
-| Shared library: `shareable` documents synced with one team repository | [specs/shared-library.md](./specs/shared-library.md) | [ORB-19417], [ORB-19418], [ORB-19419], [ORB-19421] |
+| Calendar: read-only sync, meeting prep, capture after the meeting | [specs/calendar.md](./specs/calendar.md) | [ORB-19191] done, [ORB-19192] done, [ORB-19193] done, [ORB-19194] done, [ORB-19195] done |
+| Shared library: `shareable` documents synced with one team repository | [specs/shared-library.md](./specs/shared-library.md) | [ORB-19417] done, [ORB-19418] done, [ORB-19419] done, [ORB-19421] done |
 | Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-18723] done |
 | Models and privacy routing | [specs/models-and-privacy.md](./specs/models-and-privacy.md) | [ORB-18712] done |
 | Hackathon compliance, demo and build plan | [specs/delivery.md](./specs/delivery.md) | [ORB-16585] |
@@ -156,7 +156,7 @@ core.
 - [ORB-18709] — built the Library store adapter with the writer lock, git and settings.
 - [ORB-18710] — built `office.init`, `office.reindex` and Library health.
 - [ORB-18712] — built the Meta and Baseten model adapters with privacy routing.
-- [ORB-18720] — builds the agent to-do activity and the orchestrator skills.
+- [ORB-18720] — built the agent to-do activity and the orchestrator skills.
 - [ORB-18721] — built `office.signals-scan`.
 - [ORB-18722] — built proposal create and accept, with the signals routine.
 - [ORB-18723] — built `office.selection-get` and `office.selection-put`.
@@ -169,9 +169,9 @@ core.
 - [ORB-19194] — built capture from a calendar event and the meeting inbox routine.
 - [ORB-19195] — built the Calendar screen, server feature and Today card.
 - [ORB-18728] — built the To-dos screen and its server feature.
-- [ORB-19417] — builds the `shareable` field, `office.share-set`, the shared view and the `shared` settings.
-- [ORB-19418] — builds `office.library-sync`, its routine and the two-workspace demo.
-- [ORB-19419] — builds the shared layer: index, qualified citations, reads, attach and bootstrap.
-- [ORB-19421] — builds the app's shared-library settings, labels, share switch and Needs you cards.
+- [ORB-19417] — built the `shareable` field, `office.share-set`, the shared view and the `shared` settings.
+- [ORB-19418] — built `office.library-sync`, its routine and the two-workspace demo.
+- [ORB-19419] — built the shared layer: index, qualified citations, reads, attach and bootstrap.
+- [ORB-19421] — built the app's shared-library settings, labels, share switch and Needs you cards.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

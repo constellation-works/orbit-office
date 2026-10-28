@@ -94,13 +94,14 @@ Landed:
 - Daily digest — [ORB-18747] done
 - Script runner — [ORB-18781] done
 
+- `office.capture` and `office.source-show` — [ORB-18714] done
+- Knowledge show and write — [ORB-18717] done
+- Search and attach — [ORB-18719] done
+- Agent to-do activity and orchestrator skills — [ORB-18720] done
+- cloudcli — [ORB-18800] done
+
 Pending or not verified as landed in this checkout:
 
-- `office.capture` and `office.source-show` — [ORB-18714]
-- Knowledge show and write — [ORB-18717]
-- Search and attach — [ORB-18719]
-- Agent to-do activity and orchestrator skills — [ORB-18720]
-- cloudcli — [ORB-18800]
 - Delete modules still planned at submission — [ORB-18739]
 
 ## Task References
@@ -110,13 +111,13 @@ Pending or not verified as landed in this checkout:
 - [ORB-18710] — built `office.init`, `office.reindex` and Library health.
 - [ORB-18712] — built the Meta and Baseten model adapters with privacy routing.
 - [ORB-18713] — built the Orbit callback adapter.
-- [ORB-18714] — builds `office.capture` and `office.source-show`.
+- [ORB-18714] — built `office.capture` and `office.source-show`.
 - [ORB-18715] — built `office.transcribe` and `office.extract`.
 - [ORB-18716] — built the KT routine and the kt skill.
-- [ORB-18717] — builds `office.knowledge-show` and `office.knowledge-write`.
+- [ORB-18717] — built `office.knowledge-show` and `office.knowledge-write`.
 - [ORB-18718] — built `office.artifact-show` and `office.artifact-promote`.
-- [ORB-18719] — builds `office.search` and `office.attach`.
-- [ORB-18720] — builds the agent to-do activity and the orchestrator skills.
+- [ORB-18719] — built `office.search` and `office.attach`.
+- [ORB-18720] — built the agent to-do activity and the orchestrator skills.
 - [ORB-18721] — built `office.signals-scan`.
 - [ORB-18722] — built proposal create and accept, with the signals routine.
 - [ORB-18723] — built `office.selection-get` and `office.selection-put`.
@@ -145,7 +146,7 @@ Pending or not verified as landed in this checkout:
 - [ORB-18796] — built the gateway plugin's connections, GET, redaction and audit.
 - [ORB-18797] — built drafted API writes, approved and sent once.
 - [ORB-18799] — installed the gateway plugins and the agent CLI deny rules.
-- [ORB-18800] — builds the read-only cloudcli plugin.
+- [ORB-18800] — built the read-only cloudcli plugin.
 - [ORB-18809] — built `office.video-plan` and `office.frames`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
