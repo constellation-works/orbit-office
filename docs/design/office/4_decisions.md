@@ -181,6 +181,49 @@ app has no Chat screen.
   skill discovery and prompt hooks are day-1 checks, and the selection
   pull rule must work without any hook.
 
+## The installer registers Muse Code with `--agent muse`
+
+**Recorded:** 2026-10-29 · [ORB-19751]
+**Code anchors:** `install.sh` (`--agent` validation, the `muse` agent case, `edit_muse_settings`, `step_agent`, the uninstall dispatch); `scripts/install/test-install.sh` §23; [specs/install.md](./specs/install.md)
+
+### Context
+
+Muse Code is the default orchestrator provider and the demo provider
+([The orchestrator is the user's agent CLI, not a built agent](#the-orchestrator-is-the-users-agent-cli-not-a-built-agent)),
+and `orbit-office status` already recognised an Orbit MCP entry in
+`${XDG_CONFIG_HOME:-~/.config}/muse/settings.json`. But `install.sh
+--agent` accepted only `claude` (its default) or `codex`, so the default
+provider could only be registered by hand, while `2_design.md` claimed
+the install script wrote the Muse entry. The alternative was a docs-only
+correction demoting Muse Code to manual setup.
+
+### Decision
+
+Add `--agent muse`, rather than correcting the docs down. The installer
+keeps `claude` as its own `--agent` default and registers one CLI per
+run: `claude`, `codex` or `muse`. For Muse Code it splices
+`mcpServers.orbit` (`orbit mcp serve`, with the generated `PATH`) into
+`${XDG_CONFIG_HOME:-~/.config}/muse/settings.json`, preserving every
+other byte and setting, keeping a `.bak`, and recording ownership in
+`<data>/muse-mcp.json` so uninstall removes only an installer-owned
+entry and keeps a pre-existing identical one. Office skills are copied
+to `$HOME/.agents/skills` under the same recorded-ownership rule as the
+other CLIs. Muse Code has no per-command shell deny settings, so no
+deny rules are written and the summary reports that, as it does for
+Codex. "Default" is now pinned in both senses: Muse Code is the default
+orchestrator provider; `claude` is the installer's `--agent` default.
+
+### Consequences
+
+- The documented default provider is installable by the script that
+  claims to register it, and `install.sh --help`, `specs/install.md`,
+  `specs/orchestrator.md`, `2_design.md` and the orchestrator skill's
+  setup reference agree on the registered CLIs and both defaults.
+- Cost: a third settings editor in `install.sh` (the Muse JSON splice,
+  beside the Claude and Codex paths) and its harness coverage, and Muse
+  users get no installer-written deny rules, only the skill's gateway
+  instruction.
+
 ## Approval is enforced by tool visibility, not by instructions
 
 **Recorded:** 2026-10-26

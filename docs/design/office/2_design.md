@@ -64,9 +64,13 @@ office workspace preset supplies configuration and automation defaults
   orchestrator cannot see. It never reads `.orbit/` directly. Orbit's HTTP
   API is not used, because it belongs to Orbit's own dashboard (spec §18.3).
 - **Orchestrator:** the user's agent CLI, not code in this repo. Setup
-  registers Orbit's MCP server with it at agent authority. For Muse Code
-  this means an `mcpServers` entry in its `settings.json`, written by the
-  install script because `orbit mcp init` has no Muse target (spec §18.6).
+  registers Orbit's MCP server with it at agent authority. The installer
+  registers one CLI per run: Claude Code by default, or Codex or Muse Code
+  with `--agent codex` or `--agent muse`. For Muse Code this means an
+  `mcpServers` entry in its `settings.json`
+  (`${XDG_CONFIG_HOME:-~/.config}/muse/settings.json`), written by the
+  install script with `--agent muse` because `orbit mcp init` has no Muse
+  target ([install spec](./specs/install.md), [decision](./4_decisions.md#the-installer-registers-muse-code-with---agent-muse)).
   The plugin's `office-orchestrator` skill tells it how to run the
   operation. What this project builds for the orchestrator is the skill,
   the tool surface and its guardrails:

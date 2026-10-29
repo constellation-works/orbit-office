@@ -146,8 +146,22 @@ filter for them. Orbit must support `workspace init --preset`.
    also adds deny rules for direct shell use of `curl`, `wget`, `http`, `aws` and `gcloud`,
    so API and cloud calls go through the gateway ([gateway.md](./gateway.md#agent-cli-deny-rules)),
    and lists them in the summary. Rules the user already has are kept, and uninstall
-   removes only the ones it added. With `--agent claude|codex` it registers the other CLI
-   instead. A CLI with no per-command deny rules is reported as such.
+   removes only the ones it added. With `--agent claude|codex|muse` it registers the other CLI
+   instead (`claude` is the installer's default; Muse Code is the default
+   orchestrator provider, registered with `--agent muse`). A CLI with no per-command deny rules is reported as such.
+   Muse Code gets the Orbit MCP entry (`orbit mcp serve`, with the same
+   generated `PATH`) spliced into `mcpServers` in
+   `${XDG_CONFIG_HOME:-$HOME/.config}/muse/settings.json` — the file
+   `orbit-office status` reads — without reformatting other settings,
+   keeping the original bytes in a sibling `.bak`, and recording whether
+   the entry (and a created `mcpServers` container) is installer-owned in
+   `<data>/muse-mcp.json`; uninstall removes it only when that receipt
+   proves ownership, so a pre-existing identical entry is kept. Office
+   skills are copied to `$HOME/.agents/skills` under the same recorded-
+   ownership rule as the other CLIs. Muse Code has no per-command shell
+   deny settings to write, so the summary reports that instead of claiming
+   those calls are blocked. Invalid JSON, duplicate keys, incompatible
+   field types and unsafe settings/receipt files stop the edit.
    Claude gets `Bash(curl *)`, `Bash(wget *)`, `Bash(http *)`, `Bash(aws *)` and
    `Bash(gcloud *)` in `settings.json`'s `permissions.deny` (under
    `$CLAUDE_CONFIG_DIR` when set, otherwise `~/.claude/settings.json`), using the

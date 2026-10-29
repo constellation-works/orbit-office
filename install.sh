@@ -50,7 +50,7 @@ Options:
   --with-cloudcli  Also install the optional cloudcli plugin
   --from-source    Build office from this clone's HEAD (needs cargo)
                    instead of using a prebuilt export
-  --agent NAME     Agent CLI to register: claude (default) or codex
+  --agent NAME     Agent CLI to register: claude (default), codex or muse
   --port PORT      App port (default: 4317, or $ORBIT_OFFICE_PORT)
   --uninstall      Remove the service, MCP entry, added deny rules,
                    plugins and tools (uv and Python); keeps the
@@ -79,6 +79,8 @@ Environment:
                              accepted with a warning for one release
   CLAUDE_CONFIG_DIR          Claude Code config directory (default: HOME);
                              its .claude.json holds the MCP entry
+  XDG_CONFIG_HOME            Muse Code config root (default: ~/.config);
+                             its muse/settings.json holds the MCP entry
   ORBIT_OFFICE_OS            Platform override (macos or linux)
   ORBIT_OFFICE_ARCH          Architecture override (x86_64 or arm64)
   ORBIT_OFFICE_UV_URL        Fetch this uv archive instead of the
@@ -110,7 +112,7 @@ while [ $# -gt 0 ]; do
         --from-source) FROM_SOURCE=1; shift ;;
         --with-cloudcli) WITH_CLOUDCLI=1; shift ;;
         --agent)
-            [ $# -ge 2 ] || die "--agent needs claude or codex"
+            [ $# -ge 2 ] || die "--agent needs claude, codex or muse"
             AGENT="$2"; shift 2 ;;
         --agent=*) AGENT=${1#--agent=}; shift ;;
         --port)
@@ -125,8 +127,8 @@ while [ $# -gt 0 ]; do
 done
 
 case "$AGENT" in
-    claude|codex) ;;
-    *) die "--agent must be claude or codex (got: $AGENT)" ;;
+    claude|codex|muse) ;;
+    *) die "--agent must be claude, codex or muse (got: $AGENT)" ;;
 esac
 case "$PORT" in
     ''|*[!0-9]*) die "--port must be a number (got: $PORT)" ;;
@@ -362,6 +364,17 @@ case "$AGENT" in
         CLAUDE_CONFIG_FILE="$_claude_config_dir/.claude.json"
         ;;
     codex) AGENT_SETTINGS="$HOME/.codex/config.toml"; SKILLS_DIR="$HOME/.codex/skills" ;;
+    muse)
+        # Muse Code reads MCP servers from mcpServers in its settings.json
+        # under $XDG_CONFIG_HOME (the status reader checks exactly that
+        # file); its user skills live in $HOME/.agents/skills. It has no
+        # per-command shell deny settings, so no deny rules are written.
+        if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+            AGENT_SETTINGS="$XDG_CONFIG_HOME/muse/settings.json"
+        else
+            AGENT_SETTINGS="$HOME/.config/muse/settings.json"
+        fi
+        SKILLS_DIR="$HOME/.agents/skills" ;;
 esac
 SKILLS_RECEIPT="$DATA_DIR/agent-skills-$AGENT.txt"
 
@@ -1973,6 +1986,216 @@ remove_mcp_codex() {
     say "agent: removed the Orbit MCP entry from $_file"
 }
 
+# Muse Code settings: one JSON file holding mcpServers beside the user's
+# other settings. Same splice discipline as the Claude editor: validate
+# the whole document, edit only the mcpServers.orbit bytes, keep a .bak,
+# and record ownership in muse-mcp.json so uninstall removes only an
+# entry this installer wrote (a pre-existing identical entry is kept).
+edit_muse_settings() {
+    SETTINGS_FILE="$AGENT_SETTINGS" SETTINGS_RECEIPT="$DATA_DIR/muse-mcp.json" \
+    SETTINGS_MODE="$1" ORBIT_OFFICE_AGENT_PATH="$AGENT_PATH" node <<'NODE'
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const settingsFile = process.env.SETTINGS_FILE;
+const receiptFile = process.env.SETTINGS_RECEIPT;
+const installing = process.env.SETTINGS_MODE === "install";
+const object = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+function regular(p) {
+  try {
+    const stat = fs.statSync(p);
+    if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o002) !== 0) {
+      throw new Error("expected an owned regular file without world write access");
+    }
+    return true;
+  } catch (e) {
+    if (e.code === "ENOENT") return false;
+    throw e;
+  }
+}
+function write(p, text) {
+  regular(p);
+  let dest = p;
+  try {
+    if (fs.lstatSync(p).isSymbolicLink()) dest = fs.realpathSync(p);
+  } catch (e) {
+    if (e.code !== "ENOENT") throw e;
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+  const tmp = dest + "." + crypto.randomBytes(12).toString("hex");
+  try {
+    const fd = fs.openSync(tmp, "wx", 0o600);
+    try { fs.writeFileSync(fd, text); fs.fsyncSync(fd); }
+    finally { fs.closeSync(fd); }
+    fs.renameSync(tmp, dest);
+  } finally {
+    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+  }
+}
+function makeDoc(original) {
+  const doc = { text: original };
+  doc.tree = function () {
+    if (!object(JSON.parse(doc.text))) throw new Error("settings must be an object");
+    let pos = 0;
+    const text = doc.text;
+    const ws = () => { while (/\s/.test(text[pos] || "x")) pos++; };
+    function string() {
+      const start = pos++;
+      while (text[pos] !== '"') { if (text[pos] === "\\") pos++; pos++; }
+      pos++;
+      return JSON.parse(text.slice(start, pos));
+    }
+    function value() {
+      ws();
+      const start = pos;
+      const kind = text[pos];
+      const entries = [];
+      if (kind === "{" || kind === "[") {
+        const close = kind === "{" ? "}" : "]";
+        pos++; ws();
+        const keys = new Set();
+        while (text[pos] !== close) {
+          const entryStart = pos;
+          let key;
+          if (kind === "{") {
+            key = string(); ws(); pos++;
+            if (keys.has(key)) throw new Error("duplicate key");
+            keys.add(key);
+          }
+          const node = value();
+          entries.push({ key, start: entryStart, end: node.end, node });
+          ws();
+          if (text[pos] === close) break;
+          pos++; ws();
+        }
+        pos++;
+      } else if (kind === '"') {
+        string();
+      } else {
+        while (pos < text.length && !/[\s,}\]]/.test(text[pos])) pos++;
+      }
+      return { start, end: pos, kind, entries };
+    }
+    return value();
+  };
+  doc.locate = function (keys) {
+    let node = doc.tree();
+    for (const key of keys) {
+      if (node.kind !== "{") throw new Error("expected object");
+      const entry = node.entries.find((e) => e.key === key);
+      if (!entry) return undefined;
+      node = entry.node;
+    }
+    return node;
+  };
+  doc.splice = function (start, end, added) { doc.text = doc.text.slice(0, start) + added + doc.text.slice(end); };
+  doc.append = function (node, encoded) {
+    const last = node.entries.at(-1);
+    const offset = last ? last.end : node.start + 1;
+    doc.splice(offset, offset, (last ? "," : "") + encoded);
+  };
+  doc.set = function (keys, value) {
+    const parent = doc.locate(keys.slice(0, -1));
+    const key = keys.at(-1);
+    const entry = parent.entries.find((e) => e.key === key);
+    const encoded = JSON.stringify(value, null, 2);
+    if (entry) doc.splice(entry.node.start, entry.node.end, encoded);
+    else doc.append(parent, JSON.stringify(key) + ": " + encoded);
+  };
+  doc.removeEntry = function (parent, index) {
+    const entry = parent.entries[index];
+    if (index > 0) doc.splice(parent.entries[index - 1].end, entry.end, "");
+    else if (parent.entries.length > 1) doc.splice(entry.start, parent.entries[1].start, "");
+    else doc.splice(entry.start, entry.end, "");
+  };
+  doc.remove = function (keys) {
+    const parent = doc.locate(keys.slice(0, -1));
+    if (!parent) return;
+    const index = parent.entries.findIndex((e) => e.key === keys.at(-1));
+    if (index >= 0) doc.removeEntry(parent, index);
+  };
+  doc.ensureObject = function (keys, containers) {
+    const node = doc.locate(keys);
+    if (node) {
+      if (node.kind !== "{") throw new Error("expected object");
+      return;
+    }
+    doc.set(keys, {});
+    containers.push(keys.join("."));
+  };
+  return doc;
+}
+try {
+  let receipt = { owned: false, containers: [] };
+  const receiptExisted = regular(receiptFile);
+  if (receiptExisted) receipt = JSON.parse(fs.readFileSync(receiptFile, "utf8"));
+  if (!object(receipt) || typeof receipt.owned !== "boolean" || !Array.isArray(receipt.containers) ||
+      receipt.containers.some((p) => p !== "mcpServers")) {
+    throw new Error("invalid muse receipt");
+  }
+  const existed = regular(settingsFile);
+  const raw = existed ? fs.readFileSync(settingsFile, "utf8") : "{}\n";
+  const original = raw.trim() === "" ? "{}\n" : raw;
+  const doc = makeDoc(original);
+  if (!installing && !existed) {
+    if (receiptExisted) fs.unlinkSync(receiptFile);
+    process.exit(0);
+  }
+  doc.tree();
+  if (installing) {
+    const desired = { command: "orbit", args: ["mcp", "serve"], env: { PATH: process.env.ORBIT_OFFICE_AGENT_PATH } };
+    const prior = doc.locate(["mcpServers", "orbit"]);
+    const priorMatches = prior &&
+      JSON.stringify(JSON.parse(doc.text.slice(prior.start, prior.end))) === JSON.stringify(desired);
+    if (!priorMatches) receipt.owned = true;
+    doc.ensureObject(["mcpServers"], receipt.containers);
+    const orbit = doc.locate(["mcpServers", "orbit"]);
+    if (!orbit || JSON.stringify(JSON.parse(doc.text.slice(orbit.start, orbit.end))) !== JSON.stringify(desired)) {
+      doc.set(["mcpServers", "orbit"], desired);
+    }
+  } else if (receipt.owned) {
+    doc.remove(["mcpServers", "orbit"]);
+    for (const key of [...receipt.containers].reverse()) {
+      const keys = key.split(".");
+      const node = doc.locate(keys);
+      if (node && node.entries.length === 0) doc.remove(keys);
+    }
+  }
+  doc.tree();
+  if (installing) {
+    const serialized = JSON.stringify(receipt) + "\n";
+    if (!receiptExisted || fs.readFileSync(receiptFile, "utf8") !== serialized) write(receiptFile, serialized);
+  }
+  if (doc.text !== original) {
+    if (existed && !regular(settingsFile + ".bak")) {
+      fs.writeFileSync(settingsFile + ".bak", original, { flag: "wx", mode: 0o600 });
+    }
+    write(settingsFile, doc.text);
+  } else if (!existed && installing) {
+    write(settingsFile, doc.text);
+  }
+  if (!installing && regular(receiptFile)) fs.unlinkSync(receiptFile);
+} catch (_) {
+  process.stderr.write("agent settings update refused; existing JSON and ownership receipt must be valid regular files\n");
+  process.exit(1);
+}
+NODE
+}
+
+register_mcp_muse() {
+    edit_muse_settings install || die "agent: could not update $AGENT_SETTINGS (check JSON, types and file permissions)"
+    state_mark "agent_registered"
+    say "agent: already configured (Orbit MCP entry in $AGENT_SETTINGS)"
+}
+
+remove_mcp_muse() {
+    if edit_muse_settings uninstall; then
+        say "agent: removed the owned Orbit MCP entry from $AGENT_SETTINGS"
+    else
+        warn "agent: could not remove owned entries from $AGENT_SETTINGS; leaving them in place and continuing uninstall"
+    fi
+}
+
 # Skill ownership (STD-03@2 §R29): a matching name is not ownership.
 # The receipt at $SKILLS_RECEIPT holds one "<name> <sha256>" line per
 # skill this installer itself copied, where the digest covers every
@@ -2130,6 +2353,7 @@ step_agent() {
     case "$AGENT" in
         claude) register_mcp_claude ;;
         codex) register_mcp_codex ;;
+        muse) register_mcp_muse ;;
     esac
     # Office skills from the plugin tree, when this run has one.
     if [ -n "$PLUGIN_SRC" ] && [ -d "$PLUGIN_SRC/.orbit-plugin/skills" ]; then
@@ -2436,6 +2660,7 @@ do_uninstall() {
     case "$AGENT" in
         claude) remove_mcp_claude ;;
         codex) remove_mcp_codex ;;
+        muse) remove_mcp_muse ;;
     esac
     # Skills this installer copied in, proven by the receipt, never by
     # a same-named directory in the current plugin tree.
@@ -2546,6 +2771,8 @@ say "summary: tools      $TOOLS_DIR"
 say "summary: plugins    $INSTALL_PLUGINS"
 if [ "$AGENT" = "claude" ]; then
     say "summary: deny rules Bash(curl *), Bash(wget *), Bash(http *), Bash(aws *), Bash(gcloud *)"
+elif [ "$AGENT" = "muse" ]; then
+    say "summary: deny rules unavailable for Muse Code shell calls; it has no per-command deny settings to write"
 else
     say "summary: deny rules unavailable for sandboxed Codex shell calls; its execpolicy rules apply outside the sandbox only"
 fi
