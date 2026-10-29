@@ -4,6 +4,7 @@ import type { SetupStatus, Today, TodayItem, TodayNeed, TodayNeedGroup } from "@
 import type { Feature } from "../../http/types.js";
 import { createOrbitClient, OrbitExitError } from "../../orbit/client.js";
 import type { OrbitToolClient } from "../../orbit/client.js";
+import { logRouteFailure, safeOrbitCode } from "../../orbit/diagnostics.js";
 
 interface Task {
   id: string;
@@ -181,10 +182,15 @@ export function createTodayFeature({ client, now = () => new Date() }: TodayOpti
           response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
           response.end(JSON.stringify(snapshot));
         } catch (error) {
+          logRouteFailure("/api/today", "orbit.task.list", error);
+          const orbitCode = error instanceof TodayDataError ? undefined : safeOrbitCode(error);
           response.writeHead(error instanceof TodayDataError ? 502 : 503, {
             "content-type": "application/json", "cache-control": "no-store",
           });
-          response.end(JSON.stringify({ error: error instanceof TodayDataError ? "invalid_today_data" : "today_unavailable" }));
+          response.end(JSON.stringify({
+            error: error instanceof TodayDataError ? "invalid_today_data" : "today_unavailable",
+            ...(orbitCode !== undefined ? { code: orbitCode } : {}),
+          }));
         }
       },
     },
