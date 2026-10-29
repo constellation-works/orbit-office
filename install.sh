@@ -1233,6 +1233,7 @@ function collectStatus(workspace) {
   const privateRoute = tool && tool.open_weights !== undefined ? tool.open_weights : null;
   const svc = serviceInfo();
   if (!svc.installed) add("app_service", "app service is not installed", "install.sh");
+  else if (svc.boundWorkspace && svc.boundWorkspace !== workspace) add("app_service", "app service serves " + svc.boundWorkspace + " not " + workspace, "install.sh --home " + workspace);
   else if (!svc.running) add("app_service", "app service is not running", "orbit-office open " + workspace);
   const agentRegistered = agentCliRegistered();
   if (!agentRegistered) add("agent_cli", "agent CLI registration is missing (no Orbit MCP entry)", "install.sh");

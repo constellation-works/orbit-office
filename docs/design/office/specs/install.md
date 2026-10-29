@@ -330,8 +330,9 @@ The report covers, in this order:
   route is optional: not configuring one is reported but is not a
   failure, and its token likewise appears only as `set`/`unset`.
 - **App service** — whether the login service (as in `orbit-office open`) is
-  installed, whether it is running, and the app URL
-  `http://localhost:<port>/` it serves.
+  installed, whether it is bound to the requested workspace, whether it is
+  running, and the app URL `http://localhost:<port>/` it serves. A service
+  bound to a different workspace is a failure naming the bound workspace.
 - **App service log** — on macOS, the owner-only (0600) `app.log` file under
   the per-user data folder that the launchd agent's `StandardOutPath` and
   `StandardErrorPath` write to (printed as `App service log: <path>` and as
@@ -393,6 +394,7 @@ Each missing prerequisite is a problem with its fix command:
 | Library not initialized | `orbit-office init <path>` |
 | Meta API key unset | `orbit plugin secret set office meta_api_key` |
 | App service not installed | `install.sh` |
+| App service bound to another workspace | `install.sh --home <path>` |
 | App service stopped | `orbit-office open <path>` |
 | Agent CLI registration missing | `install.sh` |
 

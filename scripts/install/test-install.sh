@@ -63,10 +63,11 @@
 #      service is re-enabled on the next run. Stubs only; no host service
 #      is touched.
 #  21. office status/open: healthy plain and --json reports, one missing
-#      prerequisite at a time (Library, plugin, Meta key, stopped app)
-#      naming its fix, no secret value in output, open starting a stopped
-#      installed service via stub managers and a stub browser, and the
-#      missing-service install.sh error (linux and macos service shapes).
+#      prerequisite at a time (Library, plugin, Meta key, stopped app,
+#      app bound to another workspace) naming its fix, no secret value
+#      in output, open starting a stopped installed service via stub
+#      managers and a stub browser, and the missing-service install.sh
+#      error (linux and macos service shapes).
 #  22. an fnm_multishells node symlink on PATH resolves to the stable
 #      node in both service units, with no fnm_multishells entry in the
 #      unit PATH; a non-symlink fnm_multishells wrapper as the only node
@@ -983,6 +984,42 @@ run_office "$HOME1" open "$HOME1/orbit" > "$ROOT/open-explicit" 2>&1 || { cat "$
 ok "office open accepts explicit path"
 check "office open explicit path opens URL" grep -qxF "http://localhost:4317/" "$STUB_STATE/browser.log"
 if run_office "$HOME1" status --json "$HOME1/orbit" extra > "$ROOT/status-usage2" 2>&1; then fail "office status rejects two paths"; else _rc=$?; check "office status two paths exits 2" test "$_rc" -eq 2; fi
+# Bound-workspace mismatch: the service is bound to ~/orbit, so status for
+# a different registered workspace must fail naming the bound workspace.
+grep -qxF "$WS2" "$STUB_STATE/workspace-roots" 2>/dev/null || printf '%s\n' "$WS2" >> "$STUB_STATE/workspace-roots"
+: > "$WS2/.orbit/enabled-office"
+: > "$WS2/.orbit/enabled-gateway"
+: > "$STUB_STATE/secret.meta_api_key"
+: > "$STUB_STATE/svc-active"
+if run_office "$HOME1" status "$WS2" > "$ROOT/status-mismatch" 2>&1; then fail "office status for another workspace exits non-zero"; else ok "office status for another workspace exits non-zero"; fi
+check "status mismatch names bound workspace" grep -F "app service serves $HOME1/orbit not $WS2" "$ROOT/status-mismatch"
+check "status mismatch names install.sh --home fix" grep -F "fix: install.sh --home $WS2" "$ROOT/status-mismatch"
+check "status mismatch is not OK" sh -c '! grep -qxF "Status: OK" "$1"' sh "$ROOT/status-mismatch"
+if run_office "$HOME1" status --json "$WS2" > "$ROOT/status-mismatch.json" 2> "$ROOT/status-mismatch.json.err"; then fail "office status --json for another workspace exits non-zero"; else ok "office status --json for another workspace exits non-zero"; fi
+check "status --json mismatch stderr is empty" test ! -s "$ROOT/status-mismatch.json.err"
+node - "$ROOT/status-mismatch.json" "$HOME1/orbit" "$WS2" <<'NODE' || fail "office status --json mismatch shape"
+const fs = require("fs");
+const [file, bound, other] = process.argv.slice(2);
+const lines = fs.readFileSync(file, "utf8").trim().split("\n");
+if (lines.length !== 1) process.exit(1);
+const r = JSON.parse(lines[0]);
+if (r.workspace !== other || r.workspace_registered !== true) process.exit(1);
+if (r.plugins.office !== true || r.plugins.gateway !== true) process.exit(1);
+if (!r.library.initialized) process.exit(1);
+if (r.meta_api_key !== "set") process.exit(1);
+if (!r.app_service.installed || !r.app_service.running) process.exit(1);
+if (r.app_service.workspace !== bound) process.exit(1);
+if (r.ok !== false || !Array.isArray(r.problems)) process.exit(1);
+const row = r.problems.find((entry) => entry && entry.check === "app_service");
+if (!row) process.exit(1);
+if (!String(row.problem).includes(bound) || !String(row.problem).includes(other)) process.exit(1);
+if (row.fix !== "install.sh --home " + other) process.exit(1);
+if (fs.readFileSync(file, "utf8").includes("stub-secret-value")) process.exit(1);
+NODE
+ok "office status --json mismatch shape"
+run_office "$HOME1" status "$HOME1/orbit" > "$ROOT/status-bound" 2>&1 || { cat "$ROOT/status-bound" >&2; fail "office status for bound workspace stays OK"; }
+ok "office status for bound workspace stays OK"
+check "status for bound workspace prints Status OK" grep -qxF "Status: OK" "$ROOT/status-bound"
 # macOS service shape: launchd plist + launchctl stubs.
 mkdir -p "$HOME1/Library/LaunchAgents"
 printf '%s\n' '<?xml version="1.0"?>' '<plist><dict><key>Label</key><string>com.orbit-office.app</string><key>EnvironmentVariables</key>' "<dict><key>PORT</key><string>4317</string><key>HOST</key><string>127.0.0.1</string><key>ORBIT_OFFICE_WORKSPACE</key><string>$HOME1/orbit</string></dict></dict></plist>" > "$HOME1/Library/LaunchAgents/com.orbit-office.app.plist"
