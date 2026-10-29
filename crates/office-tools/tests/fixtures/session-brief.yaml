@@ -1,0 +1,30 @@
+# Empty Orbit and Library snapshots are provided by the offline public-dispatch
+# runner in crates/office-tools/tests/session_brief.rs. No network or secrets.
+# Extra-workspace cases set brief.task_workspaces via the brief_workspaces line
+# and queue orbit.task.list replies via the orbit line ("__error__" refuses).
+# With no extra workspaces the first case is the unchanged pre-feature output.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: session_brief_empty_workspace
+    tool: session-brief
+    input: {}
+    expect:
+      output: {"sections":[{"kind":"since","items":[],"total":0,"truncated":false},{"kind":"waiting_on_you","items":[],"total":0,"truncated":false},{"kind":"agents_working_on","items":[],"total":0,"truncated":false},{"kind":"open_questions","items":[],"total":0,"truncated":false},{"kind":"last_session","items":[],"total":0,"truncated":false}]}
+  - name: session_brief_refuses_unknown_input
+    tool: session-brief
+    input: {"invent":true}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: session_brief_extra_workspace_merges_with_workspace_field
+    brief_workspaces: ["ws_extra"]
+    orbit: [{"tasks":[],"total":0,"truncated":false},{"tasks":[{"id":"ext-review","title":"Ext review","status":"review","tags":[],"created_at":"2026-10-27T08:00:00Z","updated_at":"2026-10-27T09:00:00Z","history":[],"job_run_id":null}],"total":1,"truncated":false}]
+    input: {}
+    expect:
+      output: {"sections":[{"kind":"since","items":[],"total":0,"truncated":false},{"kind":"waiting_on_you","items":[{"id":"ext-review","link":"orbit://task/ext-review","text":"Ext review","time":"2026-10-27T08:00:00Z","entry_kind":null,"status":"review","template":null,"workspace":"ws_extra"}],"total":1,"truncated":false},{"kind":"agents_working_on","items":[],"total":0,"truncated":false},{"kind":"open_questions","items":[],"total":0,"truncated":false},{"kind":"last_session","items":[],"total":0,"truncated":false}]}
+  - name: session_brief_unavailable_extra_workspace_is_one_item
+    brief_workspaces: ["ws_down"]
+    orbit: [{"tasks":[],"total":0,"truncated":false},"__error__"]
+    input: {}
+    expect:
+      output: {"sections":[{"kind":"since","items":[],"total":0,"truncated":false},{"kind":"waiting_on_you","items":[],"total":0,"truncated":false},{"kind":"agents_working_on","items":[],"total":0,"truncated":false},{"kind":"workspace_unavailable","items":[{"id":"ws_down","link":"orbit://workspace/ws_down","text":"ws_down","time":null,"entry_kind":null,"status":"workspace_unavailable","template":null,"workspace":"ws_down"}],"total":1,"truncated":false},{"kind":"open_questions","items":[],"total":0,"truncated":false},{"kind":"last_session","items":[],"total":0,"truncated":false}]}

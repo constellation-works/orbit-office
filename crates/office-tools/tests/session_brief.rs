@@ -481,8 +481,7 @@ fn invalid_or_unreadable_library_records_are_not_silently_omitted() {
 
 #[test]
 fn conformance_golden_replays_success_and_refusal_through_public_dispatch() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../plugin/.orbit-plugin/tests/conformance/session-brief.yaml");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/session-brief.yaml");
     let golden = std::fs::read_to_string(path).unwrap();
     let mut input = None;
     let mut brief_workspaces: Vec<String> = Vec::new();
