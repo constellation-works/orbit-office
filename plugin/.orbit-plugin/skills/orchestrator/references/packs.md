@@ -110,16 +110,19 @@ Refusals to respect:
   retry. Read the error and saved result, check `orbit.task.list` for the
   source's to-dos, and tell the user.
 
-**Split the to-dos.** Extraction files each to-do as an Orbit task tagged
-`owner:you` or `owner:agent` and `source:<id>`. It does not attach context
-or add `no-diff-expected`. So after a summary:
+**Split the to-dos.** Extraction files every to-do as an Orbit task tagged
+`owner:you` and `source:<id>`, whatever owner the model suggested. That
+suggestion survives only as a hint in the structured result. Extraction
+never files `owner:agent`: it does not attach context, add acceptance
+criteria or add `no-diff-expected`, and the agent activity refuses agent
+to-dos without those. So after a summary:
 
 1. Read the filed to-dos (`orbit.task.list`, tag `source:<id>`).
-2. Keep a to-do `owner:agent` only when an attached runbook or a clear,
-   permitted tool path can produce it, and it is not outward-facing. Otherwise
-   move it to `owner:you`, with a draft where useful.
-3. For each agent to-do, add acceptance criteria and `no-diff-expected`, and
-   run `office.attach` before it becomes ready ([tasks.md](tasks.md)).
+2. Promote a to-do to `owner:agent` only when an attached runbook or a clear,
+   permitted tool path can produce it, and it is not outward-facing. Leave
+   the rest `owner:you`, with a draft where useful.
+3. For each promoted to-do, add acceptance criteria and `no-diff-expected`,
+   and run `office.attach` before it becomes ready ([tasks.md](tasks.md)).
 4. Tell the user in two lists: "for you" and "for agents". A message, invite
    or reply in either list stays a draft for the user to send.
 

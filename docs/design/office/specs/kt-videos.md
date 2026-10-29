@@ -313,5 +313,8 @@ an omitted task (no task artifact), and omitting `id` runs the deterministic
 meeting inbox ([calendar.md](./calendar.md#capture-after-the-meeting)).
 Summary decisions cite the original transcript/notes anchors; summary line
 selection uses `office.source-show` with `document: summary`. Filed tasks
-carry `owner:<owner>` and `source:<id>` tags. When `task` is supplied, either
+always carry `owner:you` and `source:<id>` tags: the model's `owner` is a
+hint in the structured result only, never the filed tag. Only the
+orchestrator promotes a filed to-do to `owner:agent`, adding acceptance
+criteria, `no-diff-expected` and attached context. When `task` is supplied, either
 profile attaches its full structured output.

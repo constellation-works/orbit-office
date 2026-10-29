@@ -225,8 +225,9 @@ job that inlines a deterministic `plugin.tool_call`
   Use `office.source-show` with `document: summary` and a `#L…` anchor to
   select and validate summary lines. Summary text is indexed under the source
   id and survives reindex. The extraction's
-  `to_dos` are filed as they are today, tagged `owner:<owner>` and
-  `source:<id>` ([kt-videos.md](./kt-videos.md)). A partial transcription
+  `to_dos` are filed as they are today, always tagged `owner:you` and
+  `source:<id>` ([kt-videos.md](./kt-videos.md)); the model's suggested
+  owner is a hint in the structured result only. A partial transcription
   records `transcript-state.json`; an incomplete state refuses summarization
   as `transcription_incomplete`. Extraction persists `extract-result.json`
   before filing to-dos and publishes `summary.md` only after filing succeeds.
