@@ -162,7 +162,7 @@ outward-facing action.
   - network `any`, the only setting that reaches remote hosts. The plugin calls only `api.meta.ai` and the one private endpoint the user configured ([models-and-privacy.md](./models-and-privacy.md#the-private-route)), and its `git` child reaches only the shared library's configured remote ([shared-library.md](./shared-library.md#transport)).
   - `orbit_tools`: the callbacks listed above.
   - Secrets: `meta_api_key` and `open_weights_token` (`spec.secrets`).
-- **Required programs:** `spec.requires.programs: [git, ffmpeg, ffprobe, uv, pdftotext]` (`pdftotext` is optional: without it PDFs are refused with `converter_unavailable`), plus
+- **Required programs:** `spec.requires.programs: [git, ffmpeg, ffprobe, uv, pdftotext, ssh]` (`pdftotext` is optional: without it PDFs are refused with `converter_unavailable`), plus
   `cargo` under `spec.build` for source-built installs. Programs are
   resolved against the operator's `PATH` when the plugin is enabled, and
   that path is the one granted. `ffmpeg` splits long audio for

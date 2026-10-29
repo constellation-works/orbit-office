@@ -13,7 +13,7 @@ spec:
     orbit: ">=0.34.0 <1.0.0"
     host_api: 1
     platforms: [linux, macos]
-    programs: [git, ffmpeg, ffprobe, pdftotext]
+    programs: [git, ffmpeg, ffprobe, pdftotext, ssh]
 
   # Built from source at install time (git+ pinned sources only); a local
   # directory install uses the prebuilt output from `make export` instead.

@@ -169,10 +169,19 @@ exactly one item to an additive `workspace_unavailable` section (present
 only when non-empty, after *Agents working on*): the item's `id`, `text`
 and `workspace` name the selector, its link is
 `orbit://workspace/<selector>`, and its `status` is
-`workspace_unavailable`. A sleeping or foreign host therefore shows as one
-named line, not a blank session start. Cross-host federated selectors
-depend on Orbit routing the callback to that host; where Orbit refuses
-them, the same `workspace_unavailable` item reports it.
+`workspace_unavailable`. A sleeping host therefore shows as one
+named line, not a blank session start.
+
+Cross-host selectors (`hm_…/<workspace>`) naming a registered remote host
+are routed by Orbit to that host: on 2026-10-28 `orbit tool run
+orbit.task.list` with `hm_9ca6004473492f06/ws_orbit` from the Mac returned
+box tasks (see ORB-19706 for the plugin callback contract). Every failure
+yields the same single `workspace_unavailable` item, including an unlisted
+host, an unreachable route (sleeping or otherwise unreachable host,
+refused callback), or a missing program grant (`ssh` must be listed in
+`spec.requires.programs` and granted at `orbit plugin enable` so the
+callback can reach the remote host; adding it requires upgrading and
+re-enabling the plugin).
 
 ## Daily digest
 
