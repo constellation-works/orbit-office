@@ -14,7 +14,7 @@
  * `delayMs` / `hang` / `fail` fields in the tool input.
  */
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -280,7 +280,8 @@ void main();
  * PATH. Caller owns cleanup via `t.after` or manual removal.
  */
 export async function installFakeOrbit() {
-  const root = await mkdtemp(join(tmpdir(), "fake-orbit-"));
+  // Match process.cwd() in children when macOS temp paths traverse symlinks.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fake-orbit-")));
   const bin = join(root, "bin");
   const state = join(root, "state");
   mkdirSync(bin, { recursive: true });
