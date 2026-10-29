@@ -15,6 +15,7 @@ import type { Feature } from "../../http/types.js";
 import { agentCliStatus } from "./agent-cli.js";
 import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
 import { auditRow, connection, connectionInput, count, object, SettingsError, signInInput, signInPoll, signInStarted, toolData } from "./gateway.js";
+import { logRouteFailure, safeOrbitCode } from "../../orbit/diagnostics.js";
 import { privateRouteInput, readPrivateRoute, savePrivateRoute } from "./private-route.js";
 import { isSlot, SecretError, writeSecret, type SecretOptions } from "./secret.js";
 import { enableSharedSync, readSharedLibrary, saveSharedLibrary, sharedLibraryInput, SharedSyncMemory } from "./shared-library.js";
@@ -67,30 +68,46 @@ export function createSettingsFeature(client: OrbitToolClient, secretOptions: Se
   // Refuse concurrent writes instead of retaining a queue of credentials.
   let writing = false;
   function route(method: "GET" | "POST", path: string,
-    action: (request: IncomingMessage) => Promise<unknown>): Feature["routes"][number] {
+    action: (request: IncomingMessage) => Promise<unknown>, tool?: string): Feature["routes"][number] {
     return { method, path, async handle(request, response) {
       try { send(response, 200, await action(request)); }
       catch (error) {
-        // No error messages, child streams, request bodies or tool output are logged.
-        if (error instanceof SettingsError) send(response, error.status, { error: error.code, ...error.details });
+        // One redacted diagnostic line per failed gateway call: route, tool
+        // and typed kind / safe orbit code only. No error messages, child
+        // streams, request bodies or tool output are logged.
+        if (error instanceof SettingsError) {
+          const orbitCode = error.orbitCode ?? safeOrbitCode(error);
+          const logTool = error.tool ?? tool;
+          const toolFailure = orbitCode !== undefined ||
+            ["gateway_unavailable", "invalid_gateway_data", "sign_in_failed", "invalid_connection", "no_free_slot", "unknown_connection", "sign_in_not_started"].includes(error.code);
+          if (logTool !== undefined && toolFailure) logRouteFailure(path, logTool, error);
+          send(response, error.status, {
+            error: error.code, ...error.details,
+            ...(orbitCode !== undefined && error.code === "gateway_unavailable" && orbitCode !== error.code ? { code: orbitCode } : {}),
+          });
+        }
         else if (error instanceof SecretError) send(response, 502, { error: error.code, connection_saved: true });
-        else send(response, 502, { error: "gateway_unavailable" });
+        else {
+          const orbitCode = safeOrbitCode(error);
+          if (tool !== undefined) logRouteFailure(path, tool, error);
+          send(response, 502, { error: "gateway_unavailable", ...(orbitCode !== undefined ? { code: orbitCode } : {}) });
+        }
       }
     } };
   }
   return { name: "settings", status: "built", routes: [
     { method: "GET", path: "/api/settings", handle: sendSettings },
     route("GET", "/api/settings/connections", async () => {
-      const data = toolData(await client.callTool("gateway.connection-list", {}));
+      const data = toolData(await client.callTool("gateway.connection-list", {}), "gateway.connection-list");
       if (!Array.isArray(data.connections)) throw new SettingsError(502, "invalid_gateway_data");
       return { connections: data.connections.map(connection), free_slots: count(data.free_slots) };
-    }),
+    }, "gateway.connection-list"),
     route("POST", "/api/settings/connections/put", async (request) => {
       if (writing) throw new SettingsError(503, "settings_busy");
       writing = true;
       try {
         const { secret, ...input } = connectionInput(await readBody(request));
-        const data = toolData(await client.callTool("gateway.connection-put", input));
+        const data = toolData(await client.callTool("gateway.connection-put", input), "gateway.connection-put");
         const saved = connection(data.connection);
         if (typeof data.created !== "boolean" || !object(data.connection) || saved.name !== input.name ||
             !(data.released_slot === null || isSlot(data.released_slot)) ||
@@ -103,17 +120,17 @@ export function createSettingsFeature(client: OrbitToolClient, secretOptions: Se
         }
         return { connection: saved, created: data.created };
       } finally { writing = false; }
-    }),
+    }, "gateway.connection-put"),
     // The device-code sign-in. The refresh token reaches the slot through
     // Orbit inside the gateway call; no response here ever carries it.
     route("POST", "/api/settings/connections/sign-in", async (request) => {
       const name = signInInput(await readBody(request));
-      return signInStarted(toolData(await client.callTool("gateway.oauth-device-start", { connection: name })), name);
-    }),
+      return signInStarted(toolData(await client.callTool("gateway.oauth-device-start", { connection: name }), "gateway.oauth-device-start"), name);
+    }, "gateway.oauth-device-start"),
     route("POST", "/api/settings/connections/sign-in/poll", async (request) => {
       const name = signInInput(await readBody(request));
-      return signInPoll(toolData(await client.callTool("gateway.oauth-device-poll", { connection: name })), name);
-    }),
+      return signInPoll(toolData(await client.callTool("gateway.oauth-device-poll", { connection: name }), "gateway.oauth-device-poll"), name);
+    }, "gateway.oauth-device-poll"),
     route("GET", "/api/settings/private-route", async () => readPrivateRoute(client)),
     route("POST", "/api/settings/private-route", async (request) => {
       const input = privateRouteInput(await readBody(request));
@@ -150,10 +167,10 @@ export function createSettingsFeature(client: OrbitToolClient, secretOptions: Se
       return { ok: true };
     }),
     route("GET", "/api/settings/api-calls", async () => {
-      const data = toolData(await client.callTool("gateway.audit-list", { limit: 100 }));
+      const data = toolData(await client.callTool("gateway.audit-list", { limit: 100 }), "gateway.audit-list");
       if (!Array.isArray(data.records)) throw new SettingsError(502, "invalid_gateway_data");
       return { records: data.records.map(auditRow).sort((a, b) => Date.parse(b.time) - Date.parse(a.time)), skipped: count(data.skipped) };
-    }),
+    }, "gateway.audit-list"),
   ] };
 }
 

@@ -990,6 +990,7 @@ printf '%s\n' '<?xml version="1.0"?>' '<plist><dict><key>Label</key><string>com.
 OFFICE_TEST_OS=macos run_office "$HOME1" status > "$ROOT/status-macos" 2>&1 || { cat "$ROOT/status-macos" >&2; fail "office status reads launchd service"; }
 ok "office status reads launchd service (macos)"
 check "status macos reports running URL" grep -F "App service: running at http://localhost:4317/" "$ROOT/status-macos"
+check "status macos prints the service log path" grep -F "App service log: $HOME1/Library/Application Support/orbit-office/app.log" "$ROOT/status-macos"
 rm -f "$STUB_STATE/launchd-loaded" "$STUB_STATE/browser.log"
 OFFICE_TEST_OS=macos run_office "$HOME1" open > "$ROOT/open-macos" 2>&1 || { cat "$ROOT/open-macos" >&2; fail "office open loads launchd service"; }
 ok "office open loads launchd service (macos)"
@@ -1598,6 +1599,10 @@ MAC_TOOLS="$HOME8/$TOOLS_REL"
 check "launchd plist written" test -f "$PLIST"
 check "launchd PATH starts with tools/bin" grep -F "<key>PATH</key><string>$MAC_TOOLS/bin:" "$PLIST"
 check "launchd WorkingDirectory is the bound workspace" grep -F "<key>WorkingDirectory</key><string>$HOME8/orbit</string>" "$PLIST"
+check "launchd StandardOutPath is the service log" grep -F "<key>StandardOutPath</key><string>$HOME8/custom-data/app.log</string>" "$PLIST"
+check "launchd StandardErrorPath is the service log" grep -F "<key>StandardErrorPath</key><string>$HOME8/custom-data/app.log</string>" "$PLIST"
+check "service log file exists under the data dir" test -f "$HOME8/custom-data/app.log"
+check "service log file is owner-only 0600" sh -c '[ "$(stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null)" = "600" ]' sh "$HOME8/custom-data/app.log"
 check "macos tools path is the literal share path" test -x "$MAC_TOOLS/bin/uv"
 check "macos data dir override is honoured" test -f "$HOME8/custom-data/install-state"
 check "macos data dir is not the tools dir" test ! -e "$HOME8/custom-data/tools"

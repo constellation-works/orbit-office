@@ -173,6 +173,9 @@ filter for them. Orbit must support `workspace init --preset`.
    are blocked.
 9. **App.** Provisions and verifies the app, then installs it as a login service (a launchd
    agent on macOS, a systemd user unit on Linux), then opens `http://localhost:<port>`,
+   On macOS the launchd agent sends stdout and stderr (`StandardOutPath`/`StandardErrorPath`)
+   to the owner-only (0600) log file `app.log` under the per-user data folder; on Linux the
+   systemd journal already captures the service output. `orbit-office status` prints the log path.
    where the browser offers to install it as a PWA. In a clone the app is built from the
    adjacent `app/` tree (`npm run build` whenever `packages/server/dist/main.js` is missing
    or unrunnable, whatever an earlier marker claims). Without an adjacent tree,
@@ -329,6 +332,10 @@ The report covers, in this order:
 - **App service** — whether the login service (as in `orbit-office open`) is
   installed, whether it is running, and the app URL
   `http://localhost:<port>/` it serves.
+- **App service log** — on macOS, the owner-only (0600) `app.log` file under
+  the per-user data folder that the launchd agent's `StandardOutPath` and
+  `StandardErrorPath` write to (printed as `App service log: <path>` and as
+  `app_service.log_path` with `--json`); on Linux, the systemd journal command.
 - **Agent CLI** — whether an Orbit MCP registration is present in the
   agent CLI's user config (Claude Code's `.claude.json`, the Muse
   settings file, or Codex's `config.toml`, matching the app's
@@ -345,6 +352,7 @@ Library: initialized (12 documents)
 Meta API key: set
 Private route: not configured (optional)
 App service: running at http://localhost:4317/
+App service log: /home/user/Library/Application Support/orbit-office/app.log
 Agent CLI: registered
 Status: OK
 ```
@@ -361,7 +369,7 @@ and no other text:
   "secrets": { "meta_api_key": "set" },
   "meta_api_key": "set",
   "private_route": null,
-  "app_service": { "installed": true, "running": true, "url": "http://localhost:4317/", "port": 4317, "workspace": "/home/user/orbit" },
+  "app_service": { "installed": true, "running": true, "url": "http://localhost:4317/", "port": 4317, "workspace": "/home/user/orbit", "log_path": "/home/user/Library/Application Support/orbit-office/app.log" },
   "agent_cli": { "registered": true },
   "ok": true,
   "problems": []

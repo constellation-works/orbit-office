@@ -1030,3 +1030,62 @@ test("an unreadable routine listing is reported as unavailable, and turning it o
   assert.equal(enabled.status, 502);
   assert.deepEqual(JSON.parse(enabled.body), { error: "routine_unavailable" });
 });
+
+test("a failed gateway call logs one redacted line and returns the safe orbit code", async (t) => {
+  const lines = [];
+  const original = console.error;
+  console.error = (line) => lines.push(String(line));
+  t.after(() => { console.error = original; });
+  const secret = "child-secret-must-not-leak";
+  const feature = createSettingsFeature({ async callTool() {
+    throw new OrbitExitError("gateway.connection-list", 3, null, `${secret} stdout\n{"error":"private diagnostic ${secret}","code":"workspace_not_found"}\n${secret} stderr`);
+  } });
+  const server = createServer((req, res) => {
+    if (!checkLoopbackRequest(req).ok) { res.writeHead(403); res.end(); return; }
+    const route = feature.routes.find((item) => item.method === req.method && item.path === req.url);
+    if (route) void route.handle(req, res); else { res.writeHead(404); res.end(); }
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => { console.error = original; server.closeAllConnections(); server.close(done); }));
+  const { port } = server.address();
+  const headers = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}` };
+  const res = await request(port, { path: "/api/settings/connections", headers });
+  console.error = original;
+  assert.equal(res.status, 502);
+  assert.deepEqual(JSON.parse(res.body), { error: "gateway_unavailable", code: "workspace_not_found" });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /route=\/api\/settings\/connections/);
+  assert.match(lines[0], /tool=gateway\.connection-list/);
+  assert.match(lines[0], /kind=exit_nonzero/);
+  assert.match(lines[0], /code=workspace_not_found/);
+  assert.ok(!lines[0].includes(secret), "log line must not contain child stdout/stderr");
+  assert.ok(!lines[0].includes("private diagnostic"), "log line must not contain the orbit error message");
+  assert.ok(!res.body.includes(secret));
+});
+
+test("a gateway ok:false refusal logs its code without its message", async (t) => {
+  const lines = [];
+  const original = console.error;
+  console.error = (line) => lines.push(String(line));
+  t.after(() => { console.error = original; });
+  const feature = createSettingsFeature({ async callTool() {
+    return { ok: false, error: { code: "backend_error", message: "private diagnostic with secret-value" } };
+  } });
+  const server = createServer((req, res) => {
+    if (!checkLoopbackRequest(req).ok) { res.writeHead(403); res.end(); return; }
+    const route = feature.routes.find((item) => item.method === req.method && item.path === req.url);
+    if (route) void route.handle(req, res); else { res.writeHead(404); res.end(); }
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => { console.error = original; server.closeAllConnections(); server.close(done); }));
+  const { port } = server.address();
+  const headers = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}` };
+  const res = await request(port, { path: "/api/settings/connections", headers });
+  console.error = original;
+  assert.equal(res.status, 502);
+  assert.deepEqual(JSON.parse(res.body), { error: "gateway_unavailable", code: "backend_error" });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /tool=gateway\.connection-list/);
+  assert.match(lines[0], /code=backend_error/);
+  assert.ok(!lines[0].includes("secret-value") && !lines[0].includes("private diagnostic"));
+});

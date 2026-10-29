@@ -310,6 +310,7 @@ validate_agent_path
 SERVICE_NAME="orbit-office"
 SYSTEMD_UNIT="$HOME/.config/systemd/user/orbit-office.service"
 LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.orbit-office.app.plist"
+SERVICE_LOG="$DATA_DIR/app.log"
 
 SCRIPT_DIR=""
 case "$0" in
@@ -959,7 +960,7 @@ const statusHelp = `Usage: orbit-office status [path] [--json]
 
 Report workspace registration, office/gateway enablement, Library health
 (from office.status), Meta API key presence, the private route, the app
-service and its URL, and agent CLI registration. Changes nothing.
+service and its URL, its log path, and agent CLI registration. Changes nothing.
 
 Options:
   --json      Print one JSON object with the same facts
@@ -1106,6 +1107,7 @@ function serviceInfo() {
   const installed = Boolean(exists(file) && exists(file).isFile());
   let port = Number(process.env.ORBIT_OFFICE_PORT || 4317) || 4317;
   let bound = null;
+  let logPath = null;
   if (installed) {
     let text = "";
     try { text = fs.readFileSync(file, "utf8"); } catch (_) {}
@@ -1114,6 +1116,8 @@ function serviceInfo() {
       if (pm && Number(pm[1])) port = Number(pm[1]);
       const wm = /<key>ORBIT_OFFICE_WORKSPACE<\/key>\s*<string>([^<]*)<\/string>/.exec(text);
       if (wm) bound = xmlUnescape(wm[1]);
+      const lm = /<key>Standard(?:Out|Error)Path<\/key>\s*<string>([^<]*)<\/string>/.exec(text);
+      logPath = lm ? xmlUnescape(lm[1]) : path.join(dataDir(), "app.log");
     } else {
       const pm = /Environment="?PORT=([0-9]+)"?/.exec(text);
       if (pm) port = Number(pm[1]);
@@ -1126,7 +1130,7 @@ function serviceInfo() {
     const result = macos ? runOptional("launchctl", ["list", "com.orbit-office.app"], process.env.HOME) : runOptional("systemctl", ["--user", "is-active", "orbit-office.service"], process.env.HOME);
     running = !result.error && result.status === 0;
   }
-  return { installed, running, file, macos, port, boundWorkspace: bound ? resolvePhysical(bound) : null, url: "http://localhost:" + port + "/" };
+  return { installed, running, file, macos, port, boundWorkspace: bound ? resolvePhysical(bound) : null, url: "http://localhost:" + port + "/", logPath, log_path: logPath, log_file: logPath };
 }
 function defaultWorkspace() {
   if (target) return path.resolve(target);
@@ -1237,7 +1241,7 @@ function collectStatus(workspace) {
     plugins: { office: enabled.office, gateway: enabled.gateway },
     library, secrets: { meta_api_key: meta }, meta_api_key: meta,
     private_route: privateRoute,
-    app_service: { installed: svc.installed, running: svc.running, url: svc.url, port: svc.port, workspace: svc.boundWorkspace },
+    app_service: { installed: svc.installed, running: svc.running, url: svc.url, port: svc.port, workspace: svc.boundWorkspace, log_path: svc.logPath, log_file: svc.logPath, service_log: svc.logPath },
     app: { installed: svc.installed, running: svc.running, url: svc.url },
     agent_cli: { registered: agentRegistered },
     ok: problems.length === 0, problems,
@@ -1261,6 +1265,8 @@ function statusMain() {
     if (!report.app_service.installed) lines.push("App service: not installed");
     else if (report.app_service.running) lines.push("App service: running at " + report.app_service.url);
     else lines.push("App service: stopped (installed; not running) — " + report.app_service.url);
+    if (report.app_service.log_path) lines.push("App service log: " + report.app_service.log_path);
+    else if (report.app_service.installed) lines.push("App service log: journalctl --user -u orbit-office.service");
     lines.push("Agent CLI: " + (report.agent_cli.registered ? "registered" : "not registered"));
     if (report.ok) lines.push("Status: OK");
     else {
@@ -2232,7 +2238,12 @@ step_app() {
     # (percent is doubled to escape systemd specifiers).
     _workspace_xml=$(printf '%s' "$WORKSPACE" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
     _workspace_systemd=$(printf '%s' "$WORKSPACE" | sed -e 's/\\/\\\\/g' -e 's/%/%%/g' -e 's/"/\\"/g')
+    _service_log="$SERVICE_LOG"
+    _service_log_xml=$(printf '%s' "$_service_log" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
     if [ "$OS" = "macos" ]; then
+        mkdir -p "$DATA_DIR"
+        [ -f "$_service_log" ] || (umask 077; : > "$_service_log")
+        chmod 600 "$_service_log"
         if write_if_changed "$LAUNCHD_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -2244,6 +2255,8 @@ step_app() {
   <key>EnvironmentVariables</key>
   <dict><key>PORT</key><string>$PORT</string><key>HOST</key><string>127.0.0.1</string><key>PATH</key><string>$AGENT_PATH</string><key>ORBIT_OFFICE_WORKSPACE</key><string>$_workspace_xml</string></dict>
   <key>WorkingDirectory</key><string>$_workspace_xml</string>
+  <key>StandardOutPath</key><string>$_service_log_xml</string>
+  <key>StandardErrorPath</key><string>$_service_log_xml</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
 </dict>

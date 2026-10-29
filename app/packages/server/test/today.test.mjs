@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { createTodayFeature } from "../dist/features/today/index.js";
-import { createOrbitClient } from "../dist/orbit/client.js";
+import { createOrbitClient, OrbitExitError } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
 import { approvalTasks, fakeTodayClient, now, sharedTasks, todayTasks } from "./today-fixture.mjs";
 
@@ -173,4 +173,29 @@ test("a shared-library sync's updates and conflicts share one card, each marked 
     ["shared-update", group, "incoming"],
     ["onboard-1", { key: "onboarding", title: "Set up your Library" }, undefined],
   ]);
+});
+
+test("a failed Today call logs one redacted line and returns the safe orbit code", async (t) => {
+  const lines = [];
+  const original = console.error;
+  console.error = (line) => lines.push(String(line));
+  t.after(() => { console.error = original; });
+  const secret = "child-secret-must-not-leak";
+  const get = await endpoint(t, {
+    async pollTool() {
+      throw new OrbitExitError("orbit.task.list", 3, null, `${secret} stdout\n{"error":"private diagnostic ${secret}","code":"workspace_not_found"}\n${secret} stderr`);
+    },
+  });
+  const response = await get();
+  console.error = original;
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "today_unavailable", code: "workspace_not_found" });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /route=\/api\/today/);
+  assert.match(lines[0], /tool=orbit\.task\.list/);
+  assert.match(lines[0], /kind=exit_nonzero/);
+  assert.match(lines[0], /code=workspace_not_found/);
+  assert.match(lines[0], /exit_code=3/);
+  assert.ok(!lines[0].includes(secret), "log line must not contain child stdout/stderr");
+  assert.ok(!lines[0].includes("private diagnostic"), "log line must not contain the orbit error message");
 });

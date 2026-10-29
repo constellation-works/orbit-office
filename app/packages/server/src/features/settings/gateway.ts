@@ -6,7 +6,11 @@ export class SettingsError extends Error {
     readonly status: number,
     readonly code: string,
     readonly details: { route_saved?: true; field?: string; reason?: string } = {},
+    /** Diagnostic only: the gateway tool that failed and Orbit's safe refusal code. Never a message. */
+    readonly diagnostic: { tool?: string | undefined; orbitCode?: string | undefined } = {},
   ) { super(code); }
+  get tool(): string | undefined { return this.diagnostic.tool; }
+  get orbitCode(): string | undefined { return this.diagnostic.orbitCode; }
 }
 
 export function object(value: unknown): value is Record<string, unknown> {
@@ -51,17 +55,22 @@ export function signInInput(value: unknown): string {
   return value.name;
 }
 
+const SAFE_ORBIT_CODE = /^[a-z][a-z0-9_]{0,63}$/;
+
 /** Tool execution failures can include arbitrary diagnostics; only known codes cross HTTP. */
-export function toolData(value: unknown): Record<string, unknown> {
-  if (!object(value)) throw new SettingsError(502, "invalid_gateway_data");
+export function toolData(value: unknown, tool?: string): Record<string, unknown> {
+  if (!object(value)) throw new SettingsError(502, "invalid_gateway_data", {}, { tool });
   if (value.ok === false) {
-    const code = object(value.error) ? value.error.code : undefined;
-    if (code === "invalid_connection" || code === "invalid_argument") throw new SettingsError(400, "invalid_connection");
-    if (code === "no_free_slot") throw new SettingsError(409, "no_free_slot");
-    if (code === "unknown_connection") throw new SettingsError(404, "unknown_connection");
-    if (code === "device_flow_missing") throw new SettingsError(409, "sign_in_not_started");
-    if (code === "auth_failed") throw new SettingsError(502, "sign_in_failed");
-    throw new SettingsError(502, "gateway_unavailable");
+    const rawCode = object(value.error) ? value.error.code : undefined;
+    const code = typeof rawCode === "string" ? rawCode : undefined;
+    const orbitCode = code !== undefined && SAFE_ORBIT_CODE.test(code) ? code : undefined;
+    const diag = { tool, orbitCode };
+    if (code === "invalid_connection" || code === "invalid_argument") throw new SettingsError(400, "invalid_connection", {}, diag);
+    if (code === "no_free_slot") throw new SettingsError(409, "no_free_slot", {}, diag);
+    if (code === "unknown_connection") throw new SettingsError(404, "unknown_connection", {}, diag);
+    if (code === "device_flow_missing") throw new SettingsError(409, "sign_in_not_started", {}, diag);
+    if (code === "auth_failed") throw new SettingsError(502, "sign_in_failed", {}, diag);
+    throw new SettingsError(502, "gateway_unavailable", {}, diag);
   }
   // Orbit's tool CLI returns the tool payload; tolerate the exec envelope as well.
   return value.ok === true && object(value.output) ? value.output : value;
