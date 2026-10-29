@@ -32,11 +32,12 @@ and move on.
 2. **Capture it.** Capture each file or pasted item as its own source with
    `office.capture`, tagged `bootstrap:<phase>`. Keep the returned source
    ids; every later claim cites a source anchor.
-3. **Show the batch preview.** Call `office.batch-plan` with the `phase`
-   and show the user the counts, the model calls and the cost estimate (or
-   the counts with rates unset) before anything runs. Confirm only with
-   the digest the user saw; if the plan moved, show the new preview
-   instead of proceeding. No step makes more calls than the confirmed
+3. **Send the user to the batch preview.** The app's Source screen shows
+   the phase's counts, model calls and cost estimate (or the counts with
+   rates unset) before anything runs, and the user confirms it there with
+   Process. `office.batch-plan` is not exposed to you: never preview or
+   confirm a batch yourself. If the plan moved, the app shows the new
+   preview. No step makes more calls than the confirmed
    plan allows, and careful calls past the estimate need a second,
    smaller confirmation.
 4. **Let the routine run.** The `office-bootstrap` routine (every 15
