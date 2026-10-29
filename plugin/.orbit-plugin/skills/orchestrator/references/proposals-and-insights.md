@@ -91,8 +91,7 @@ waiting for the user.
   `{type: "page", id, base_sha256}`.
 
 There is no `routine` kind. Orbit cannot create routines from a proposal, so
-recurring work is always proposed as an `auto_task`. (The scan's response
-schema still lists `routine`; the code never emits it.) `shared_conflict`
+recurring work is always proposed as an `auto_task`. `shared_conflict`
 proposals are filed only by the shared-library sync; you cannot file one.
 
 `knowledge_add` and `knowledge_update` take an optional `shareable` flag. Set
