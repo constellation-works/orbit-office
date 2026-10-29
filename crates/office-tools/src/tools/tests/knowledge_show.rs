@@ -87,6 +87,43 @@ fn show_withholds_contact_values_and_keeps_their_labels() {
 }
 
 #[test]
+fn show_withholds_the_body_of_a_private_page() {
+    let library = FakeLibrary::initialized();
+    library
+        .write_document(
+            Path::new("knowledge/domain/dom-private-topic.md"),
+            "---\nid: dom-private-topic\ntemplate: topic\ntitle: Private topic\nsensitivity: private\n---\n## Overview\nBody holds page-private-marker.\n",
+        )
+        .expect("seed private page");
+    let ports = Ports {
+        library: Box::new(library),
+        ..ports()
+    };
+    let response = show(&ports, json!({ "id": "dom-private-topic" }));
+    assert_eq!(response["ok"], json!(true), "{response}");
+    assert_eq!(
+        response["output"]["content_withheld"],
+        json!(true),
+        "{response}"
+    );
+    assert_eq!(response["output"]["page"]["body"], json!(""), "{response}");
+    assert_eq!(
+        response["output"]["page"]["sensitivity"],
+        json!("private"),
+        "{response}"
+    );
+    assert_eq!(
+        response["output"]["page"]["title"],
+        json!("Private topic"),
+        "{response}"
+    );
+    assert!(
+        !response.to_string().contains("page-private-marker"),
+        "private page body leaked: {response}"
+    );
+}
+
+#[test]
 fn show_refuses_an_unknown_page_and_a_non_page_id() {
     let ports = ports();
     let missing = show(&ports, json!({ "id": "dom-absent" }));

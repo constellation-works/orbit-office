@@ -16,9 +16,11 @@
           "kind": { "type": "string", "enum": ["source", "domain", "runbook", "artifact"] },
           "title": { "type": "string" },
           "path": { "type": "string", "description": "Relative to the Library." },
-          "snippet": { "type": "string", "description": "A short excerpt of the body around the first match." }
+          "snippet": { "type": "string", "description": "A short excerpt of the body around the first match." },
+          "sensitivity": { "type": "string", "enum": ["normal", "private"] },
+          "content_withheld": { "type": "boolean", "description": "Present and true only for a private hit: the snippet is withheld (empty); metadata only is returned." }
         },
-        "required": ["layer", "shared_by", "id", "kind", "title", "path", "snippet"],
+        "required": ["layer", "shared_by", "id", "kind", "title", "path", "snippet", "sensitivity"],
         "additionalProperties": false
       }
     }

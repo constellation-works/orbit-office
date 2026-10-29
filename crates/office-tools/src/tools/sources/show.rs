@@ -1,4 +1,11 @@
 //! `office.source-show`: Return a source, optionally at an anchor.
+//!
+//! A `private` source returns metadata only (id, kind, title, path,
+//! sensitivity, provenance and citers): its body, span, summary sidecar and
+//! chapter/frame/gotcha text are withheld from every caller of this
+//! MCP-visible tool, marked `content_withheld: true` (the private-content
+//! decision in docs/design/office/4_decisions.md). Media payloads keep
+//! their separate private-route gating in the Library adapter.
 
 use std::path::Path;
 
@@ -104,6 +111,21 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         None => (None, None),
     };
     let body = span.clone().unwrap_or_else(|| selected_body.clone());
+    // Private content never leaves through this tool (see the module docs):
+    // body-derived fields are emptied and only metadata is returned.
+    let withheld = view.sensitivity == "private";
+    let (body, span, summary, chapters, frames, gotchas) = if withheld {
+        (
+            String::new(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+    } else {
+        (body, span, summary, chapters, frames, gotchas)
+    };
     let mut output = json!({
         "id": view.id,
         "layer": record.layer,
@@ -130,6 +152,9 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "gotchas": gotchas,
         "summary": summary,
     });
+    if withheld {
+        output["content_withheld"] = json!(true);
+    }
     if let Some(selection) = media {
         let media = call.ports.library.source_media(&id, &selection)?;
         let too_large = media.content.is_none();

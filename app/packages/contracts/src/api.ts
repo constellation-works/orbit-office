@@ -432,6 +432,8 @@ export interface SourceView {
   kind: string;
   title: string;
   text: string;
+  /** True for a private source: the tool withheld its text; metadata only. */
+  content_withheld: boolean;
   sensitivity: "normal" | "private";
   /** Whether the user shares this source with the team. */
   shareable: boolean;

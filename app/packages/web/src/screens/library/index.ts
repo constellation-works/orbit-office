@@ -72,6 +72,7 @@ async function render(root: HTMLElement): Promise<void> {
       sharing(page, id, data, item);
       if (str(item.summary)) page.append(el("p", str(item.summary)));
       const body = str(item.body ?? data.body); if (body) { const content = el("p"); content.className = "library-body"; citations(content, body); page.append(content); }
+      if (data.content_withheld === true) page.append(el("p", "This document is private, so its text is withheld here. It is only processed on your chosen private endpoint."));
       const refs = rows(item.refs); if (refs.length) { page.append(el("h2", "References")); for (const ref of refs) { const p = el("p", str(ref.label)); const value = str(ref.value); if (str(ref.target) === "url" && /^https?:\/\//i.test(value)) { const a = document.createElement("a"); a.href = value; a.textContent = " Open reference"; a.rel = "noreferrer"; p.append(a); } else if (str(ref.target) === "artifact" && value) { p.append(documentButton(value, "Open output")); } else if (value && ["path", "account"].includes(str(ref.target))) { p.append(document.createTextNode(`: ${value}`)); } page.append(p); } }
       const cites = Array.isArray(item.cites) ? item.cites : []; if (cites.length) { page.append(el("h2", "Sources")); for (const cite of cites) if (typeof cite === "string") page.append(documentButton(cite, "View source")); }
       const links = rows(data.backlinks); page.append(el("h2", "Linked from")); if (!links.length) page.append(el("p", "No linked documents yet.")); for (const link of links) page.append(documentButton(str(link.id), str(link.title)));
@@ -114,7 +115,7 @@ async function render(root: HTMLElement): Promise<void> {
   }
   async function search(query: string): Promise<void> {
     const page = layout("Search results");
-    try { const data = await request(`?view=search&query=${encodeURIComponent(query)}`); if (!alive() || !page.isConnected) return; const hits = rows(data.hits); if (!hits.length) page.append(el("p", "No results found.")); for (const hit of hits) { const row = el("div"); row.append(entry(hit), el("p", str(hit.snippet))); page.append(row); } } catch { if (alive() && page.isConnected) page.append(errorState("Search unavailable", "Try again in a moment.")); }
+    try { const data = await request(`?view=search&query=${encodeURIComponent(query)}`); if (!alive() || !page.isConnected) return; const hits = rows(data.hits); if (!hits.length) page.append(el("p", "No results found.")); for (const hit of hits) { const row = el("div"); row.append(entry(hit), el("p", hit.content_withheld === true ? "Private — snippet withheld." : str(hit.snippet))); page.append(row); } } catch { if (alive() && page.isConnected) page.append(errorState("Search unavailable", "Try again in a moment.")); }
   }
   await overview();
 }

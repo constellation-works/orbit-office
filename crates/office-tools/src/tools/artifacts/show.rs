@@ -1,4 +1,9 @@
 //! Read an artifact's complete provenance, files, series and citing documents.
+//!
+//! A `private` artifact returns metadata only: its body companion is never
+//! read out, and the output is marked `content_withheld: true`, so private
+//! artifact text never reaches a caller of this MCP-visible tool (the
+//! private-content decision in docs/design/office/4_decisions.md).
 
 use std::path::Path;
 
@@ -78,10 +83,12 @@ fn run(call: &Call<'_>) -> Result<Value> {
     // The body is the first Markdown companion of a report or review, as
     // written (citations stay inline). Other kinds, a companion that is
     // not valid UTF-8 (a binary artifact), or no Markdown companion
-    // return no body.
+    // return no body. A private artifact's body is withheld entirely.
+    let withheld = artifact.sensitivity.as_str() == "private" || record.sensitivity == "private";
     let mut body: Option<String> = None;
     let mut truncated = false;
-    if matches!(artifact.kind, ArtifactKind::Report | ArtifactKind::Review)
+    if !withheld
+        && matches!(artifact.kind, ArtifactKind::Report | ArtifactKind::Review)
         && let Some(name) = artifact.files.iter().find(|name| name.ends_with(".md"))
     {
         let bytes = library.read_artifact_file(Path::new(&format!("{dir}/{name}")))?;
@@ -100,6 +107,9 @@ fn run(call: &Call<'_>) -> Result<Value> {
     }
     let mut output = json!({"layer":record.layer,"shared_by":record.shared_by,"artifact":artifact,"path":path,"files":files,"series_history":series_history,"backlinks":library.backlinks(id)?,"truncated":truncated});
     output["artifact"]["id"] = json!(record.id);
+    if withheld {
+        output["content_withheld"] = json!(true);
+    }
     if let Some(body) = body {
         output["body"] = json!(body);
     }

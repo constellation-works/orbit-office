@@ -17,6 +17,7 @@ tests:
             title: Dee
             path: knowledge/domain/dom-user.md
             snippet: "## Name\nDee\n\n## Role\n<b>Operations</b> lead."
+            sensitivity: normal
   - name: search_template_filter_narrows_to_nothing
     tool: search
     input: {query: operations, template: client}

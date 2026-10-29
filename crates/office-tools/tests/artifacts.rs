@@ -120,6 +120,29 @@ fn artifact_show_returns_the_text_body_of_a_report() {
 }
 
 #[test]
+fn artifact_show_withholds_the_body_of_a_private_artifact() {
+    let orbit = FakeOrbit::default();
+    orbit.push_response(Ok(
+        json!({"id":"fixture-task","status":"review","crew":"fixture-crew",
+        "updated_at":"1970-01-01T00:00:00Z", "artifacts":[
+            {"path":"artifact-manifest.json"}, {"path":"report.md"}]}),
+    ));
+    orbit.push_response(Ok(json!({"content":json!({"kind":"report","title":"Private report",
+        "summary":"A fixture", "files":["report.md"], "series":"private-report", "cites":[], "tags":[], "sensitivity":"private"}).to_string()})));
+    orbit.push_response(Ok(
+        json!({"content":"Body holds artifact-private-marker.\n"}),
+    ));
+    let output = promote_and_show(&orbit);
+    assert_eq!(output["artifact"]["sensitivity"], "private", "{output}");
+    assert_eq!(output["content_withheld"], true, "{output}");
+    assert!(output.get("body").is_none(), "{output}");
+    assert!(
+        !output.to_string().contains("artifact-private-marker"),
+        "private artifact body leaked: {output}"
+    );
+}
+
+#[test]
 fn artifact_show_truncates_a_body_past_the_byte_limit() {
     let orbit = FakeOrbit::default();
     seed_custom(

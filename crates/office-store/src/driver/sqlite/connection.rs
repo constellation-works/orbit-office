@@ -211,7 +211,7 @@ impl IndexStore {
         let listing = query.split_whitespace().next().is_none();
         let sql = if listing {
             format!(
-                "SELECT d.document_id, d.kind, d.title, d.path, substr(d.body, 1, 120), d.layer, d.shared_by
+                "SELECT d.document_id, d.kind, d.title, d.path, substr(d.body, 1, 120), d.layer, d.shared_by, d.sensitivity
                  FROM documents d
                  WHERE ?1 IS NULL AND {FILTERS}
                  ORDER BY d.document_id, d.layer
@@ -220,7 +220,7 @@ impl IndexStore {
         } else {
             format!(
                 "SELECT d.document_id, d.kind, d.title, d.path,
-                        snippet(documents_fts, 3, '<b>', '</b>', '…', 12), d.layer, d.shared_by
+                        snippet(documents_fts, 3, '<b>', '</b>', '…', 12), d.layer, d.shared_by, d.sensitivity
                  FROM documents_fts
                  JOIN documents d ON d.id = documents_fts.id
                  WHERE documents_fts MATCH ?1
@@ -259,6 +259,7 @@ impl IndexStore {
                         title: row.get(2)?,
                         path: row.get(3)?,
                         snippet: row.get(4)?,
+                        sensitivity: row.get(7)?,
                     })
                 },
             )

@@ -135,6 +135,57 @@ fn each_filter_narrows_the_hits() {
 }
 
 #[test]
+fn a_private_hit_is_listed_without_its_snippet() {
+    let library = FakeLibrary::initialized();
+    library
+        .write_document(
+            Path::new("sources/2026/10/src-20261028-secret/source.md"),
+            "---\nid: src-20261028-secret\nkind: note\ntitle: Secret note\nsensitivity: private\n---\nBody holds quixotic-private-marker.\n",
+        )
+        .expect("seed private document");
+    library
+        .write_document(
+            Path::new("sources/2026/10/src-20261028-open/source.md"),
+            "---\nid: src-20261028-open\nkind: note\ntitle: Open note\nsensitivity: normal\n---\nBody holds quixotic-open-marker.\n",
+        )
+        .expect("seed normal document");
+    let ports = Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
+        library: Box::new(library),
+        models: Box::new(FakeModels::new()),
+        orbit: Box::new(FakeOrbit::default()),
+        clock: Box::new(FakeClock(std::time::SystemTime::UNIX_EPOCH)),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
+        selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
+    };
+    let response = search(&ports, json!({ "query": "quixotic" }));
+    assert_eq!(response["ok"], json!(true), "{response}");
+    assert!(
+        !response.to_string().contains("quixotic-private-marker"),
+        "private snippet leaked: {response}"
+    );
+    assert!(
+        response.to_string().contains("quixotic-open-marker"),
+        "normal snippet missing: {response}"
+    );
+    let hits = response["output"]["hits"].as_array().expect("hits");
+    let private_hit = hits
+        .iter()
+        .find(|hit| hit["id"] == "src-20261028-secret")
+        .expect("private hit listed");
+    assert_eq!(private_hit["sensitivity"], "private", "{response}");
+    assert_eq!(private_hit["content_withheld"], true, "{response}");
+    assert_eq!(private_hit["snippet"], "", "{response}");
+    let open_hit = hits
+        .iter()
+        .find(|hit| hit["id"] == "src-20261028-open")
+        .expect("normal hit listed");
+    assert_eq!(open_hit["sensitivity"], "normal", "{response}");
+    assert!(open_hit.get("content_withheld").is_none(), "{response}");
+}
+
+#[test]
 fn an_empty_or_blank_query_is_refused() {
     let ports = ports();
     for input in [
