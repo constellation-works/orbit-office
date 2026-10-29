@@ -25,6 +25,7 @@ import { join } from "node:path";
 const state = process.env.FAKE_ORBIT_STATE ?? ".";
 const args = process.argv.slice(2);
 appendFileSync(join(state, "invocations.log"), JSON.stringify(args) + "\\n");
+appendFileSync(join(state, "cwds.log"), JSON.stringify(process.cwd()) + "\\n");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -289,6 +290,9 @@ export async function installFakeOrbit() {
   chmodSync(executable, 0o755);
   const env = (extra = {}) => ({
     ...process.env,
+    // A real workspace dir as the default binding: the client spawns
+    // every child with this as cwd and refuses a missing/non-dir binding.
+    ORBIT_OFFICE_WORKSPACE: root,
     ...extra,
     PATH: `${bin}:${process.env.PATH ?? ""}`,
     FAKE_ORBIT_STATE: state,

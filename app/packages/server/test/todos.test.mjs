@@ -327,6 +327,7 @@ test("the Orbit client subprocess moves an owner:you to-do to done", async (t) =
     ...process.env,
     PATH: `${bin}:${process.env.PATH ?? ""}`,
     FAKE_ORBIT_STATE: state,
+    ORBIT_OFFICE_WORKSPACE: root,
   };
   const orbit = createOrbitClient({ env, timeoutMs: 10_000 });
 

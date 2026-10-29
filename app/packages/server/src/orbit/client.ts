@@ -19,13 +19,16 @@
  *
  * Workspace binding: the installed app receives its workspace as the
  * `ORBIT_OFFICE_WORKSPACE` environment variable (install.sh service
- * templates; the absolute path recorded as `workspace_path`). Tools that
+ * templates; the absolute path recorded as `workspace_path`). Every
+ * subprocess is spawned with `cwd` set to that binding, so tool routing
+ * never depends on the service's own cwd (launchd starts services in
+ * `/`). A missing binding, or one that is not a directory, fails every
+ * call with {@link OrbitWorkspaceError} and spawns nothing. Tools that
  * require an explicit workspace selector (see
  * {@link WORKSPACE_REQUIRING_TOOLS}: `orbit.routine.control`,
- * `orbit.auto_task.mint`, and auto-task listing and updates) get `workspace: <binding>` injected into their
- * input when the caller did not supply one. All other tools are sent unchanged, so callers
- * that rely on cwd discovery (for example to-dos calling
- * `orbit.task.list`) keep working. No code here reads `.orbit/`.
+ * `orbit.auto_task.mint`, and auto-task listing and updates) also get
+ * `workspace: <binding>` injected into their input when the caller did
+ * not supply one. No code here reads `.orbit/`.
  *
  * Authority: the binding names the workspace and grants no operator
  * capability. No `ORBIT_OPERATOR` or other authority variable is put in
@@ -44,6 +47,7 @@
  * no capability is granted here.
  */
 import { spawn } from "node:child_process";
+import { statSync } from "node:fs";
 
 /** Machine-readable failure kind carried by every {@link OrbitError}. */
 export type OrbitErrorCode =
@@ -55,7 +59,8 @@ export type OrbitErrorCode =
   | "invalid_output"
   | "output_too_large"
   | "not_permitted"
-  | "unknown_auto_task";
+  | "unknown_auto_task"
+  | "workspace_unavailable";
 
 /** Base class for every failure of the Orbit client. */
 export class OrbitError extends Error {
@@ -105,6 +110,30 @@ export class OrbitQueueFullError extends OrbitError {
   ) {
     super("queue_full", `orbit tool ${toolName} refused: ${maxQueued} calls are already waiting`);
     this.name = "OrbitQueueFullError";
+  }
+}
+
+/** Why the workspace binding cannot be used as a subprocess cwd. */
+export type OrbitWorkspaceReason = "missing" | "not_directory";
+
+/**
+ * The `ORBIT_OFFICE_WORKSPACE` binding is unset or is not a directory, so
+ * no subprocess was spawned: running from the service's cwd would resolve
+ * the wrong workspace (launchd starts services in `/`).
+ */
+export class OrbitWorkspaceError extends OrbitError {
+  constructor(
+    readonly toolName: string,
+    readonly workspace: string | undefined,
+    readonly reason: OrbitWorkspaceReason,
+  ) {
+    super(
+      "workspace_unavailable",
+      reason === "missing"
+        ? `orbit tool ${toolName} cannot run: ${WORKSPACE_ENV} is not set`
+        : `orbit tool ${toolName} cannot run: ${WORKSPACE_ENV} is not a directory: ${workspace ?? ""}`,
+    );
+    this.name = "OrbitWorkspaceError";
   }
 }
 
@@ -209,8 +238,10 @@ export interface OrbitClientOptions {
    * Installed-workspace binding: the absolute workspace path delivered as
    * `ORBIT_OFFICE_WORKSPACE` by install.sh. Default: that variable from
    * `env` (or `process.env`). An explicit value overrides the environment;
-   * an empty value is treated as unset. Used only for
-   * {@link WORKSPACE_REQUIRING_TOOLS}; see the module docstring.
+   * an empty value is treated as unset. Every subprocess runs with this
+   * path as its `cwd`; a missing or non-directory value makes every call
+   * reject with {@link OrbitWorkspaceError}. It is also the `workspace`
+   * selector injected for {@link WORKSPACE_REQUIRING_TOOLS}.
    */
   workspace?: string;
   /** Captured-output byte ceiling per stream. Default 10 MiB. */
@@ -254,8 +285,8 @@ export const WORKSPACE_ENV = "ORBIT_OFFICE_WORKSPACE";
 
 /**
  * Tools that require an explicit `workspace` selector in their input.
- * Only these receive the installed-workspace binding; every other tool
- * is sent exactly as the caller wrote it.
+ * Only these receive the installed-workspace binding as an input field;
+ * every tool's subprocess runs with the binding as its `cwd`.
  */
 export const WORKSPACE_REQUIRING_TOOLS: ReadonlySet<string> = new Set([
   "orbit.routine.control",
@@ -434,9 +465,34 @@ export function createOrbitClient(options: OrbitClientOptions = {}): OrbitToolCl
     });
   }
 
+  /** The cwd every subprocess must run in, or a typed refusal to spawn. */
+  function requireWorkspaceCwd(name: string): string {
+    if (workspaceBinding === undefined) {
+      throw new OrbitWorkspaceError(name, undefined, "missing");
+    }
+    let isDirectory = false;
+    try {
+      isDirectory = statSync(workspaceBinding).isDirectory();
+    } catch {
+      isDirectory = false;
+    }
+    if (!isDirectory) {
+      throw new OrbitWorkspaceError(name, workspaceBinding, "not_directory");
+    }
+    return workspaceBinding;
+  }
+
   function execute(name: string, input: Record<string, unknown>): Promise<unknown> {
     return new Promise<unknown>((resolve, reject) => {
+      let cwd: string;
+      try {
+        cwd = requireWorkspaceCwd(name);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
       const child = spawn(command, ["tool", "run", name, "--json", ...(name === "office.init" ? ["--full"] : []), "--input", JSON.stringify(input)], {
+        cwd,
         env,
         stdio: ["ignore", "pipe", "pipe"],
         // Own process group so a timeout can signal the whole tree (STD-03 R11/R12).

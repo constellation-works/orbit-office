@@ -2167,6 +2167,7 @@ step_app() {
   <array><string>$_node_bin</string><string>$_server_js</string></array>
   <key>EnvironmentVariables</key>
   <dict><key>PORT</key><string>$PORT</string><key>HOST</key><string>127.0.0.1</string><key>PATH</key><string>$AGENT_PATH</string><key>ORBIT_OFFICE_WORKSPACE</key><string>$_workspace_xml</string></dict>
+  <key>WorkingDirectory</key><string>$_workspace_xml</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
 </dict>
