@@ -922,6 +922,9 @@ for (const arg of args) {
 if (!process.env.HOME) fail("HOME is not set");
 if (target === "") fail("workspace path must not be empty", 2);
 process.umask(0o077);
+function officeWorkspaceName(workspace) {
+  return "office-" + path.basename(workspace);
+}
 function exists(file) {
   try { return fs.lstatSync(file); }
   catch (error) { if (error.code === "ENOENT") return null; throw error; }
@@ -1276,7 +1279,10 @@ function main() {
   const registrations = exists(path.join(workspace, ".orbit")) ? json("orbit", ["workspace", "list", "--json"], workspace) : [];
   if (!registrations.some((row) => typeof row.repo_root === "string" && resolvePhysical(row.repo_root) === workspace && row.status === "active")) {
     mark("preset_pending=" + workspace);
-    run("orbit", ["workspace", "init", "--preset", bootstrapPreset], workspace);
+    // Orbit names a workspace after its folder, so ~/orbit would claim
+    // `ws_orbit` and collide with a code workspace of that name. Office
+    // workspaces get their own prefix.
+    run("orbit", ["workspace", "init", "--preset", bootstrapPreset, "--name", officeWorkspaceName(workspace)], workspace);
     say("workspace: registered with office seeding policy");
   } else say("workspace: already registered (" + workspace + ")");
   mark("workspace_path=" + workspace);
@@ -1311,7 +1317,7 @@ function main() {
     say("plugin: already enabled or repaired (" + name + ", " + workspace + ")");
   }
   if (has("preset_pending=" + workspace) && !has("preset_applied=" + workspace)) {
-    run("orbit", ["workspace", "init", "--force", "--preset", officePreset], workspace);
+    run("orbit", ["workspace", "init", "--force", "--preset", officePreset, "--name", officeWorkspaceName(workspace)], workspace);
     mark("preset_applied=" + workspace);
     say("workspace: office preset applied");
   }

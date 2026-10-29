@@ -823,6 +823,7 @@ check "office init fills repo-local git name" git -C "$WS2" config --local user.
 check "office init fills repo-local git email" git -C "$WS2" config --local user.email
 check "office init registers selected folder" grep -qxF "$WS2" "$STUB_STATE/workspace-roots"
 check "office init applies workspace presets" sh -c 'grep -F "workspace init --preset " "$1" >/dev/null && grep -F "workspace init --force --preset " "$1" >/dev/null' sh "$STUB_STATE/orbit.log"
+check "office init names the workspace office-<folder>" sh -c 'grep -F "workspace init --preset " "$1" | grep -qF -- "--name office-$2" && grep -F "workspace init --force --preset " "$1" | grep -qF -- "--name office-$2"' sh "$STUB_STATE/orbit.log" "$(basename "$WS2")"
 check "office init enables office in selected folder" test -f "$WS2/.orbit/enabled-office"
 check "office init enables gateway in selected folder" test -f "$WS2/.orbit/enabled-gateway"
 check "office init scaffolds the selected Library" test -f "$WS2/library/.office/config.yaml"
