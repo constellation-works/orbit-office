@@ -23,5 +23,4 @@ impl Error {
     }
 }
 
-/// `Result` with this crate's [`Error`].
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
