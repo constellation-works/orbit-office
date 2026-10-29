@@ -1,7 +1,7 @@
 ---
 title: office — Design
 owner: daniel
-last_updated: 2026-10-26
+last_updated: 2026-10-29
 last_validated: 2026-10-26
 status: Draft
 feature: office
@@ -22,9 +22,9 @@ Source: spec §5, §6.6, §8, §13 and §18. Mechanism contracts live in
 ## 1. System shape
 
 Orbit Office is a distribution of Orbit: an app built on Orbit as its engine.
-Its component plugins are `office`, `gateway` and optional `cloudcli`. A planned
-office workspace preset supplies configuration and automation defaults once Orbit
-supports presets ([install spec](./specs/install.md#office-workspace-preset-pending-orbit-support)).
+Its component plugins are `office`, `gateway` and optional `cloudcli`. An
+office workspace preset supplies configuration and automation defaults
+([ORB-19197]; [install spec](./specs/install.md#office-workspace-preset)).
 
 ```
 ┌──────────────────────────── user's machine ────────────────────────────┐
@@ -250,5 +250,6 @@ Plugin exports are validated with `orbit plugin validate` and
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
+- [ORB-19197] — built the office workspace preset so a fresh workspace starts without Orbit's developer defaults.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
