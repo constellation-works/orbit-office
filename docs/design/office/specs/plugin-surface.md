@@ -227,7 +227,16 @@ thresholds:
   window_days: 30
   stale_days: 90
 open_weights: null
+brief:
+  task_workspaces: []
 ```
+
+`brief.task_workspaces` lists extra Orbit workspace selectors the session
+brief merges ([sessions.md](./sessions.md#extra-workspaces-brief-task_workspaces)):
+at most 16 distinct selectors of at most 256 bytes without whitespace
+(registered names, `ws_…` ids, absolute local paths, or `hm_…/<workspace>`
+federated selectors). It is settable as the whole leaf
+`brief.task_workspaces`.
 
 Retention is a positive integer up to 36,500 days or `null` (keep indefinitely).
 Sensitivity is `normal` or `private`. Packs are distinct names from `kt`,
@@ -265,7 +274,7 @@ values):
 
 `office.config-set` takes exactly `{"key":"retention.meeting","value":30}`.
 The value is typed JSON, not a YAML string. Supported keys are
-`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>`, `packs`, `demo.simulated_until`,
+`retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>`, `packs`, `brief.task_workspaces`, `demo.simulated_until`,
 `shared`, `shared.remote`, `shared.branch`, `shared.member`,
 `open_weights.<endpoint|model|kind|label>` and the whole `open_weights` block
 (a mapping of those four keys, or null), using the kinds, threshold names and

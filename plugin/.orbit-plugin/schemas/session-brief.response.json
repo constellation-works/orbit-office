@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.session-brief response",
-  "description": "Ordered sections. Handoff, latest_digest and onboarding are absent when empty. The other five sections are always present. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence refuses the whole brief.",
+  "description": "Ordered sections. Handoff, latest_digest, workspace_unavailable and onboarding are absent when empty. The other five sections are always present. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence from the office workspace refuses the whole brief; an unreadable extra workspace (brief.task_workspaces) appears as one workspace_unavailable item instead. Task items from an extra workspace carry workspace (its selector); office-workspace items omit it.",
   "type": "object",
   "properties": {
     "sections": {
@@ -19,6 +19,7 @@
               "open_questions",
               "last_session",
               "latest_digest",
+              "workspace_unavailable",
               "onboarding"
             ]
           },
@@ -79,8 +80,14 @@
                     "failed",
                     "rejected",
                     "archived",
+                    "workspace_unavailable",
                     null
                   ]
+                },
+                "workspace": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Additive: the brief.task_workspaces selector this task was read from, resolvable via orbit.task.show with workspace set to it. Absent for office-workspace items."
                 },
                 "template": {
                   "type": [

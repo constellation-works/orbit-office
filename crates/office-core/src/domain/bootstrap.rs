@@ -565,6 +565,8 @@ fn input_digest(snapshot: &Snapshot, plan: &Plan, settings: &Settings) -> Result
     // Keep existing plans stable when the new optional block is introduced/set.
     if let Some(map) = settings_value.as_object_mut() {
         map.remove("calendar");
+        // Session-brief workspaces do not affect bootstrap inference either.
+        map.remove("brief");
     }
     if settings.demo.simulated_until.is_none()
         && let Some(settings) = settings_value.as_object_mut()

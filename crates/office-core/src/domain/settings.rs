@@ -55,6 +55,18 @@ pub struct Settings {
     pub open_weights: Option<OpenWeights>,
     /// Facts about seeded demo history, recorded by the demo seeder.
     pub demo: DemoSettings,
+    /// Session-brief policy.
+    pub brief: BriefSettings,
+}
+
+/// Session-brief policy (specs/sessions.md#session-brief).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct BriefSettings {
+    /// Extra Orbit workspace selectors whose tasks merge into the brief
+    /// (`ws_*`, a registered name, an absolute local checkout path, or a
+    /// host-qualified `hm_…/<workspace>` federated selector). Empty means
+    /// the office workspace only, as before.
+    pub task_workspaces: Vec<String>,
 }
 
 /// Demo-history facts the app's labels read. Records themselves stay unmarked.
@@ -211,6 +223,7 @@ impl Default for Settings {
             open_weights: None,
             demo: DemoSettings::default(),
             scripts: Default::default(),
+            brief: BriefSettings::default(),
         }
     }
 }
@@ -252,6 +265,7 @@ impl Settings {
         ));
         out.push_str("video:\n  max_frames_per_hour: 120\n  scene_threshold: 0.3\ncosts:\n  currency: null\n  audio_minute: null\n  image: null\n  text_1k_tokens: null\nopen_weights: null\n");
         out.push_str(&format!("scripts:\n  timeout_seconds: {}\n  log_bytes: {}\n  output_files: {}\n  output_file_bytes: {}\n", defaults.scripts.timeout_seconds, defaults.scripts.log_bytes, defaults.scripts.output_files, defaults.scripts.output_file_bytes));
+        out.push_str("brief:\n  task_workspaces: []\n");
         out
     }
 
@@ -310,6 +324,10 @@ impl Settings {
                     .and_then(Value::as_object_mut)
                     .and_then(|map| map.get_mut(name))
             }
+            Some(("brief", "task_workspaces")) => encoded
+                .get_mut("brief")
+                .and_then(Value::as_object_mut)
+                .and_then(|map| map.get_mut("task_workspaces")),
             None if key == "packs" => encoded.get_mut(key),
             _ => None,
         }
@@ -520,6 +538,46 @@ impl TryFrom<Value> for Settings {
                                 }
                             }
                             _ => return Err(invalid(&key, "unknown cost setting")),
+                        }
+                    }
+                }
+                "brief" => {
+                    let items = value
+                        .as_object()
+                        .ok_or_else(|| invalid(key, "expected a mapping"))?;
+                    for (name, value) in items {
+                        let dotted = format!("brief.{name}");
+                        if name != "task_workspaces" {
+                            return Err(invalid(&dotted, "unknown brief setting"));
+                        }
+                        let list = value.as_array().ok_or_else(|| {
+                            invalid(&dotted, "expected a list of workspace selectors")
+                        })?;
+                        if list.len() > 16 {
+                            return Err(invalid(&dotted, "at most 16 workspace selectors"));
+                        }
+                        let mut seen = BTreeSet::new();
+                        settings.brief.task_workspaces.clear();
+                        for item in list {
+                            let selector = item
+                                .as_str()
+                                .filter(|s| {
+                                    !s.is_empty()
+                                        && s.len() <= 256
+                                        && s.bytes().all(|c| {
+                                            c.is_ascii_alphanumeric() || b"-._/:".contains(&c)
+                                        })
+                                })
+                                .ok_or_else(|| {
+                                    invalid(
+                                        &dotted,
+                                        "expected an Orbit workspace selector without whitespace",
+                                    )
+                                })?;
+                            if !seen.insert(selector) {
+                                return Err(invalid(&dotted, "duplicate workspace selector"));
+                            }
+                            settings.brief.task_workspaces.push(selector.into());
                         }
                     }
                 }

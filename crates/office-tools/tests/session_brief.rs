@@ -485,15 +485,47 @@ fn conformance_golden_replays_success_and_refusal_through_public_dispatch() {
         .join("../../plugin/.orbit-plugin/tests/conformance/session-brief.yaml");
     let golden = std::fs::read_to_string(path).unwrap();
     let mut input = None;
+    let mut brief_workspaces: Vec<String> = Vec::new();
+    let mut orbit_queue: Option<Vec<Value>> = None;
     let mut cases = 0;
     for line in golden.lines() {
+        if let Some(value) = line.strip_prefix("    brief_workspaces: ") {
+            brief_workspaces = serde_json::from_str(value).unwrap();
+        }
+        if let Some(value) = line.strip_prefix("    orbit: ") {
+            orbit_queue = Some(serde_json::from_str(value).unwrap());
+        }
         if let Some(value) = line.strip_prefix("    input: ") {
             input = Some(serde_json::from_str::<Value>(value).unwrap());
         }
         for (prefix, success) in [("      output: ", true), ("      error: ", false)] {
             if let Some(value) = line.strip_prefix(prefix) {
                 let expected: Value = serde_json::from_str(value).unwrap();
-                let (ports, _, _) = fixture(FakeLibrary::initialized(), json!([]));
+                let mut library = FakeLibrary::initialized();
+                if !brief_workspaces.is_empty() {
+                    library.settings = library
+                        .settings
+                        .with_setting("brief.task_workspaces", json!(brief_workspaces))
+                        .unwrap();
+                }
+                let (ports, _, _) = match orbit_queue.take() {
+                    Some(queue) => {
+                        let mut ports = office_testkit::fakes::PortsBuilder::default().build();
+                        let orbit = FakeOrbit::default();
+                        for reply in queue {
+                            if reply == json!("__error__") {
+                                orbit.push_response(Err(office_core::Error::OrbitUnavailable));
+                            } else {
+                                orbit.push_response(Ok(reply));
+                            }
+                        }
+                        ports.library = Box::new(library);
+                        ports.orbit = Box::new(orbit.clone());
+                        (ports, orbit, FakeModels::new())
+                    }
+                    None => fixture(library, json!([])),
+                };
+                brief_workspaces = Vec::new();
                 let response = call(&ports, input.take().unwrap());
                 assert_eq!(response["ok"], success, "{response}");
                 if success {
@@ -505,7 +537,78 @@ fn conformance_golden_replays_success_and_refusal_through_public_dispatch() {
             }
         }
     }
-    assert_eq!(cases, 2, "both golden cases must execute");
+    assert_eq!(cases, 4, "every golden case must execute");
+}
+
+fn brief_library(selectors: &[&str]) -> FakeLibrary {
+    let mut library = FakeLibrary::initialized();
+    library.settings = library
+        .settings
+        .with_setting("brief.task_workspaces", json!(selectors))
+        .unwrap();
+    library
+}
+
+#[test]
+fn extra_workspaces_merge_waiting_and_working_with_workspace_links() {
+    let mut ports = office_testkit::fakes::PortsBuilder::default().build();
+    let orbit = FakeOrbit::default();
+    orbit.push_response(Ok(json!({"tasks":[],"total":0,"truncated":false})));
+    let ext_done = done("ext-done", "2026-10-27T11:00:00Z");
+    orbit.push_response(Ok(json!({"tasks":[
+        task("ext-review", "review", "elsewhere", "2026-10-27T08:00:00Z"),
+        task("ext-working", "in-progress", "elsewhere", "2026-10-27T08:00:00Z"),
+        ext_done
+    ],"total":3,"truncated":false})));
+    ports.library = Box::new(brief_library(&["ws_extra"]));
+    ports.orbit = Box::new(orbit.clone());
+    let response = call(&ports, json!({}));
+    assert_eq!(response["ok"], true, "{response}");
+    let waiting = items(&response, "waiting_on_you");
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(waiting[0]["id"], "ext-review");
+    assert_eq!(waiting[0]["workspace"], "ws_extra");
+    assert_eq!(waiting[0]["link"], "orbit://task/ext-review");
+    let working = items(&response, "agents_working_on");
+    assert_eq!(
+        working
+            .iter()
+            .map(|i| i["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["ext-done", "ext-working"]
+    );
+    assert!(working.iter().all(|i| i["workspace"] == "ws_extra"));
+    assert!(section(&response, "workspace_unavailable").is_none());
+    let calls = orbit.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(calls[0].input.get("workspace").is_none());
+    assert_eq!(calls[1].input["workspace"], "ws_extra");
+}
+
+#[test]
+fn unavailable_extra_workspace_is_one_item_and_office_failure_still_refuses() {
+    let mut ports = office_testkit::fakes::PortsBuilder::default().build();
+    let orbit = FakeOrbit::default();
+    orbit.push_response(Ok(json!({"tasks":[],"total":0,"truncated":false})));
+    orbit.push_response(Err(office_core::Error::OrbitUnavailable));
+    ports.library = Box::new(brief_library(&["hm_other/ws_down"]));
+    ports.orbit = Box::new(orbit);
+    let response = call(&ports, json!({}));
+    assert_eq!(response["ok"], true, "{response}");
+    let notices = items(&response, "workspace_unavailable");
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0]["id"], "hm_other/ws_down");
+    assert_eq!(notices[0]["workspace"], "hm_other/ws_down");
+    assert_eq!(notices[0]["status"], "workspace_unavailable");
+
+    let mut ports = office_testkit::fakes::PortsBuilder::default().build();
+    let orbit = FakeOrbit::default();
+    orbit.push_response(Err(office_core::Error::OrbitUnavailable));
+    ports.library = Box::new(brief_library(&["ws_extra"]));
+    ports.orbit = Box::new(orbit);
+    let response = call(&ports, json!({}));
+    assert_eq!(response["ok"], false, "{response}");
+    assert_eq!(response["error"]["code"], "orbit_unavailable");
 }
 
 #[test]
@@ -583,6 +686,9 @@ impl Library for ChangedLibrary {
         let n = self.reads.get();
         self.reads.set(n + 1);
         Ok(Some(format!("fixture-head-{n}")))
+    }
+    fn settings(&self) -> office_core::Result<office_core::domain::settings::Settings> {
+        self.library.settings()
     }
 }
 
