@@ -327,6 +327,84 @@ fn status_returns_a_settings_refusal_instead_of_a_missing_endpoint() {
 }
 
 #[test]
+fn status_reports_followed_workspaces_exactly_as_configured() {
+    let input = Map::new();
+    let context = Map::new();
+    let mut library = office_testkit::fakes::FakeLibrary::initialized();
+    library.settings = library
+        .settings
+        .with_setting(
+            "brief.task_workspaces",
+            json!(["ws_followed", "/home/daniel/workspaces/other"]),
+        )
+        .expect("brief.task_workspaces accepts selectors");
+    let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
+        library: Box::new(library),
+        models: Box::new(office_testkit::fakes::FakeModels::new()),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
+        clock: Box::new(office_testkit::fakes::FakeClock(
+            std::time::SystemTime::UNIX_EPOCH,
+        )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
+        selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
+    };
+    let output = run(&Call {
+        ports: &ports,
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(
+        output["brief"],
+        json!({"task_workspaces": ["ws_followed", "/home/daniel/workspaces/other"]})
+    );
+    // Every other field keeps its shape.
+    assert_eq!(output["open_weights"], json!(null));
+    assert_eq!(output["shared"], json!(null));
+    assert_eq!(output["library"]["initialized"], json!(true));
+}
+
+#[test]
+fn status_reports_an_empty_brief_when_no_workspace_is_followed() {
+    let input = Map::new();
+    let context = Map::new();
+    let output = run(&Call {
+        ports: &office_testkit::fakes::PortsBuilder::default().build(),
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(output["brief"], json!({"task_workspaces": []}));
+}
+
+#[test]
+fn status_reports_a_null_brief_without_an_initialized_library() {
+    let input = Map::new();
+    let context = Map::new();
+    let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
+        library: Box::new(office_testkit::fakes::FakeLibrary::default()),
+        models: Box::new(office_testkit::fakes::FakeModels::new()),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
+        clock: Box::new(office_testkit::fakes::FakeClock(
+            std::time::SystemTime::UNIX_EPOCH,
+        )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
+        selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
+    };
+    let output = run(&Call {
+        ports: &ports,
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(output["brief"], json!(null));
+}
+
+#[test]
 fn status_reports_the_configured_shared_library_block() {
     let input = Map::new();
     let context = Map::new();

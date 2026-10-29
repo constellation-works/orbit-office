@@ -1,11 +1,12 @@
 //! `office.status`: the plugin version, which declared secrets are set
-//! (never a secret value; STD-05), Library and index health, and the
-//! configured private endpoint (`open_weights`, or null) and shared library
-//! (`shared`, or null). The token is only `set` or `unset` under `secrets`.
+//! (never a secret value; STD-05), Library and index health, the
+//! configured private endpoint (`open_weights`, or null), the shared library
+//! (`shared`, or null), and the followed workspaces (`brief`, or null).
+//! The token is only `set` or `unset` under `secrets`.
 //! Reading creates no Library state.
 
 use office_core::domain::endpoint::Capability;
-use office_core::domain::settings::OpenWeights;
+use office_core::domain::settings::{BriefSettings, OpenWeights};
 use office_core::domain::sharing::SharedSettings;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Result, SECRET_NAMES, VERSION};
@@ -67,16 +68,17 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
     // An uninitialized Library has no settings file. A configured one is
     // read afresh; a refusal (invalid config, pending write) stays an error
     // rather than looking like "no endpoint".
-    let (open_weights, shared) = if health.initialized {
+    let (open_weights, shared, brief) = if health.initialized {
         match call.ports.library.settings() {
             Ok(settings) => (
                 project_open_weights(settings.open_weights.as_ref()),
                 project_shared(settings.shared.as_ref()),
+                project_brief(&settings.brief),
             ),
             Err(error) => return Err(error),
         }
     } else {
-        (Value::Null, Value::Null)
+        (Value::Null, Value::Null, Value::Null)
     };
     Ok(json!({
         "version": VERSION,
@@ -95,6 +97,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         },
         "open_weights": open_weights,
         "shared": shared,
+        "brief": brief,
     }))
 }
 
@@ -129,5 +132,14 @@ fn project_open_weights(block: Option<&OpenWeights>) -> Value {
         "label": &block.label,
         "capabilities": capabilities,
         "verified_at": &block.verified_at,
+    })
+}
+
+/// The followed extra workspace selectors (`brief.task_workspaces`), exactly
+/// as configured and in order, with no resolution or reachability check.
+/// An unset list reads as an empty `task_workspaces`.
+fn project_brief(block: &BriefSettings) -> Value {
+    json!({
+        "task_workspaces": &block.task_workspaces,
     })
 }

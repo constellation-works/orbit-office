@@ -90,9 +90,27 @@
           "additionalProperties": false
         }
       ]
+    },
+    "brief": {
+      "description": "The followed extra Orbit workspace selectors (brief.task_workspaces), exactly as configured and in order, or null when the Library is uninitialized. Unset reads as an empty task_workspaces.",
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "task_workspaces": {
+              "type": "array",
+              "description": "Extra Orbit workspace selectors the session brief merges, in configured order, with no resolution or reachability check.",
+              "items": { "type": "string" }
+            }
+          },
+          "required": ["task_workspaces"],
+          "additionalProperties": false
+        }
+      ]
     }
   },
-  "required": ["version", "secrets", "library", "open_weights", "shared"],
+  "required": ["version", "secrets", "library", "open_weights", "shared", "brief"],
   "additionalProperties": false,
   "$defs": {
     "presence": { "type": "string", "enum": ["set", "unset"] }

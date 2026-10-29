@@ -26,6 +26,7 @@ tests:
           template_invalid: []
         open_weights: null
         shared: null
+        brief: {task_workspaces: []}
   - name: status_refuses_unknown_input
     tool: status
     input: {"verbose": true}
