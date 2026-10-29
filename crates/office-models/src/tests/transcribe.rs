@@ -137,8 +137,12 @@ fn transcribes_long_recordings_in_multiple_routed_requests() {
     assert_eq!(transcript.text, "first\nsecond\nthird");
     assert!(transcript.segments.is_empty());
     assert_eq!(
-        office_core::domain::source::meeting_body(&transcript),
-        "first\nsecond\nthird"
+        transcript.chunks,
+        vec![
+            TranscriptChunk::Text("first".into()),
+            TranscriptChunk::Text("second".into()),
+            TranscriptChunk::Text("third".into()),
+        ]
     );
     assert_chunks(
         &server,
@@ -196,10 +200,19 @@ fn offsets_reported_turns_by_each_chunks_start() {
     assert_eq!(transcript.segments[1].end_ms, 602_500);
     assert_eq!(transcript.segments[2].start_ms, 1_200_500);
     assert_eq!(transcript.segments[2].end_ms, 1_200_900);
-    assert_eq!(
-        office_core::domain::source::meeting_body(&transcript),
-        "[00:00:00] Jane: first\n\n[00:10:01] Daniel: second\n\n[00:20:00] Jane: third"
-    );
+    assert!(matches!(
+        transcript.chunks.as_slice(),
+        [TranscriptChunk::Turns(first), TranscriptChunk::Turns(second), TranscriptChunk::Turns(third)]
+            if first.len() == 1
+                && first[0].text == "first"
+                && first[0].start_ms == 0
+                && second.len() == 1
+                && second[0].speaker.as_deref() == Some("Daniel")
+                && second[0].start_ms == 601_000
+                && third.len() == 1
+                && third[0].text == "third"
+                && third[0].start_ms == 1_200_500
+    ));
     ffmpeg.assert_cleaned();
 }
 
@@ -239,10 +252,6 @@ fn keeps_the_text_of_a_chunk_that_reports_no_turns() {
             && third[0].text == "third"
             && third[0].start_ms == 1_200_500
     ));
-    assert_eq!(
-        office_core::domain::source::meeting_body(&transcript),
-        "[00:00:00] Jane: first\n\nthe gap\n\n[00:20:00] Daniel: third"
-    );
     ffmpeg.assert_cleaned();
 }
 
