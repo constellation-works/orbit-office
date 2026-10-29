@@ -60,6 +60,7 @@ const SHELL_ASSETS: readonly string[] = [
   "/screens/calendar/panel.js",
   "/screens/calendar/style.js",
   "/screens/calendar/task.js",
+  "/screens/agents/index.js",
   "/screens/insights/index.js",
   "/screens/library/index.js",
   "/screens/review/index.js",
@@ -82,7 +83,7 @@ const SHELL_ASSETS: readonly string[] = [
 ];
 
 /** Cache name for the shell. Bump when the shell's bytes change. */
-const SHELL_CACHE = "office-shell-v9";
+const SHELL_CACHE = "office-shell-v10";
 
 /**
  * True for live-data paths, which the worker must never cache. A `.js`
