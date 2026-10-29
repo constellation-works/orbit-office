@@ -1225,6 +1225,7 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-18796] — built the gateway plugin and found Orbit's verb rule.
 - [ORB-18719] — built `office.search` and `office.attach`, and decided where attach stages its copies.
 - [ORB-19747] — filed every meeting to-do as `owner:you` and left promotion to agent work to the orchestrator.
+- [ORB-19748] — marked `unused_automation` as planned across the spec, glossary and orchestrator reference.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 
@@ -1558,3 +1559,36 @@ agent activity are unchanged.
 - Cost: promotion is a manual orchestrator pass over each meeting's
   to-dos, and a user who never runs it keeps agent-suitable work in
   their own list.
+
+## Unused automation stays planned until usage telemetry exists
+
+**Recorded:** 2026-10-29 · [ORB-19748]
+**Code anchors:** `crates/office-core/src/domain/signals.rs::unused_automation`, `crates/office-tools/src/tools/proposals/signals_scan.rs::run`; [specs/proposals.md](./specs/proposals.md#signals)
+
+### Context
+
+`unused_automation` reads `facts.automation`, but the scan builds
+`SignalFacts::default()` and never fills `automation`, so the signal can
+never fire. No port exposes the needed opened/read telemetry: the Orbit
+port lists auto-tasks and task history with no opened event, and the
+Library port has no read tracking. The alternatives were to load per
+auto-task usage (minted tasks plus when outputs were last opened or
+approved) or to mark the signal planned.
+
+### Decision
+
+Mark `unused_automation` as planned and non-firing in
+[specs/proposals.md](./specs/proposals.md#signals),
+[references/glossary.md](./references/glossary.md) and the orchestrator
+`proposals-and-insights.md` reference. Keep the `unused_automation` enum
+value in `signals-scan.response.json` as the stable contract; the scan
+code is unchanged.
+
+### Consequences
+
+- The three artifacts agree the signal does not fire, and the
+  orchestrator must not tell the user an automation is unused unless they
+  say so.
+- Cost: the `retire` proposal kind stays reachable only by conversation,
+  and wiring real usage telemetry later must also revisit declared-cadence
+  coverage, which currently uses listed task titles.
