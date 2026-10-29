@@ -1,7 +1,9 @@
 //! Hosted (Meta) calls against the loopback fake server.
 
 use office_common::Sensitivity;
-use office_core::ports::{ExtractRequest, ImageRequest, Models, TranscribeRequest};
+use office_core::ports::{
+    ExtractRequest, ImageRequest, Models, TranscribeRequest, TranscriptChunk,
+};
 use serde_json::json;
 
 use super::{FakeServer, chat_reply, client, hosted_config};
@@ -66,8 +68,8 @@ fn maps_reported_speaker_turns_through_the_models_port() {
     assert_eq!(transcript.segments[1].end_ms, 752_500);
     assert_eq!(transcript.segments[1].text, "Daniel agreed.");
     assert_eq!(
-        office_core::domain::source::meeting_body(&transcript),
-        "[00:00:00] Jane: Jane opened.\n\n[00:12:31] Speaker: Daniel agreed."
+        transcript.chunks,
+        vec![TranscriptChunk::Turns(transcript.segments.clone())]
     );
     let body: serde_json::Value =
         serde_json::from_str(&server.requests()[0].body).expect("JSON request");
@@ -94,8 +96,8 @@ fn keeps_text_and_no_turns_when_the_reply_reports_none() {
     assert_eq!(transcript.text, "no turns");
     assert!(transcript.segments.is_empty());
     assert_eq!(
-        office_core::domain::source::meeting_body(&transcript),
-        "no turns"
+        transcript.chunks,
+        vec![TranscriptChunk::Text("no turns".into())]
     );
 }
 

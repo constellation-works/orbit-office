@@ -3,9 +3,7 @@
 use std::path::Path;
 
 use crate::domain::endpoint::Capability;
-use crate::domain::knowledge::{
-    Backlink, DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit,
-};
+use crate::domain::knowledge::{Backlink, DocumentRecord, Revision, SearchFilter, SearchHit};
 use crate::domain::settings::Settings;
 use crate::{Error, Result};
 
@@ -57,17 +55,6 @@ impl LibraryHealth {
     #[must_use]
     pub fn uninitialized() -> Self {
         Self::default()
-    }
-
-    /// Count for one kind.
-    #[must_use]
-    pub fn count_for(&self, kind: DocumentKind) -> u32 {
-        match kind {
-            DocumentKind::Source => self.source,
-            DocumentKind::Domain => self.domain,
-            DocumentKind::Runbook => self.runbook,
-            DocumentKind::Artifact => self.artifact,
-        }
     }
 }
 

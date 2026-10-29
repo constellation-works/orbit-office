@@ -1,7 +1,4 @@
-//! Meeting source body built from a transcript (specs/library.md).
-
-use crate::domain::source::meeting_body;
-use crate::ports::{Transcript, TranscriptChunk, TranscriptSegment};
+//! Source metadata, sensitivity, anchors and VTT import (specs/library.md).
 
 #[test]
 fn source_metadata_retains_quoted_original_numbers_and_versions() {
@@ -77,103 +74,6 @@ fn source_participants_preserve_quoted_punctuation_and_block_lists() {
     let error = parse_source_participants("---\nparticipants: [true]\n---\nBody")
         .expect_err("non-string participant refused");
     assert_eq!(error.code(), "invalid_frontmatter");
-}
-
-fn turn(speaker: Option<&str>, start_ms: u64, text: &str) -> TranscriptSegment {
-    TranscriptSegment {
-        speaker: speaker.map(str::to_string),
-        start_ms,
-        end_ms: start_ms + 1_000,
-        text: text.to_string(),
-    }
-}
-
-#[test]
-fn meeting_body_writes_one_paragraph_per_speaker_turn() {
-    let transcript = Transcript {
-        text: "ignored when turns are present".into(),
-        segments: vec![
-            turn(Some("Jane"), 0, "We should renew."),
-            turn(None, 751_000, "Agreed."),
-            turn(Some("Daniel"), 360_000_000, "Next year."),
-        ],
-        chunks: Vec::new(),
-    };
-    assert_eq!(
-        meeting_body(&transcript),
-        "[00:00:00] Jane: We should renew.\n\n[00:12:31] Speaker: Agreed.\n\n[100:00:00] Daniel: Next year."
-    );
-}
-
-#[test]
-fn meeting_body_keeps_text_when_no_turns_are_reported() {
-    let transcript = Transcript {
-        text: "plain transcript".into(),
-        segments: Vec::new(),
-        chunks: Vec::new(),
-    };
-    assert_eq!(meeting_body(&transcript), "plain transcript");
-    assert_eq!(meeting_body(&Transcript::default()), "");
-}
-
-#[test]
-fn meeting_body_keeps_a_text_only_chunk_in_its_place() {
-    let transcript = Transcript {
-        text: "before\nfirst\nsecond\nafter".into(),
-        segments: vec![
-            turn(Some("Jane"), 0, "first"),
-            turn(Some("Dee"), 1_000, "second"),
-        ],
-        chunks: vec![
-            TranscriptChunk::Text("before".into()),
-            TranscriptChunk::Turns(vec![
-                turn(Some("Jane"), 0, "first"),
-                turn(Some("Dee"), 1_000, "second"),
-            ]),
-            TranscriptChunk::Text("after".into()),
-        ],
-    };
-    assert_eq!(
-        meeting_body(&transcript),
-        "before\n\n[00:00:00] Jane: first\n\n[00:00:01] Dee: second\n\nafter"
-    );
-}
-
-#[test]
-fn meeting_body_keeps_joined_text_when_ordered_chunks_report_no_turns() {
-    let transcript = Transcript {
-        text: "first\nsecond".into(),
-        segments: Vec::new(),
-        chunks: vec![
-            TranscriptChunk::Text("first".into()),
-            TranscriptChunk::Text("second".into()),
-        ],
-    };
-    assert_eq!(meeting_body(&transcript), "first\nsecond");
-}
-
-#[test]
-fn meeting_body_keeps_adjacent_text_chunks_as_separate_paragraphs() {
-    let transcript = Transcript {
-        text: "turn\nsee you\ntomorrow\nlater".into(),
-        segments: vec![turn(Some("Jane"), 0, "turn")],
-        chunks: vec![
-            TranscriptChunk::Turns(vec![turn(Some("Jane"), 0, "turn")]),
-            TranscriptChunk::Text("see you\ntomorrow".into()),
-            TranscriptChunk::Text("later".into()),
-        ],
-    };
-    let body = meeting_body(&transcript);
-    assert_eq!(body, "[00:00:00] Jane: turn\n\nsee you\ntomorrow\n\nlater");
-    assert_eq!(
-        anchor_span(
-            &body,
-            parse_anchor("#t=00:00:00").expect("anchor"),
-            "#t=00:00:00"
-        )
-        .expect("span"),
-        "[00:00:00] Jane: turn"
-    );
 }
 
 use crate::domain::source::{
