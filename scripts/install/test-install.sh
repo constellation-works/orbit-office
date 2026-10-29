@@ -67,6 +67,10 @@
 #      naming its fix, no secret value in output, open starting a stopped
 #      installed service via stub managers and a stub browser, and the
 #      missing-service install.sh error (linux and macos service shapes).
+#  22. an fnm_multishells node symlink on PATH resolves to the stable
+#      node in both service units, with no fnm_multishells entry in the
+#      unit PATH; a non-symlink fnm_multishells wrapper as the only node
+#      fails naming the per-shell cause and writes neither unit.
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -2537,5 +2541,53 @@ check "BASETEN_TOKEN warning never echoes its value" \
     sh -c '! grep -q "old-token-must-not-echo-2" "$1"' sh "$ROOT/out-old2.txt"
 check "BASETEN_TOKEN is stored as open_weights_token" \
     test -f "$STUB_STATE/secret.open_weights_token"
+
+# ---------------------------------------------------------------------------
+# 22. fnm_multishells node: stable path in both units; wrapper-only fails
+# ---------------------------------------------------------------------------
+
+STABLE_NODE=$("$(command -v node)" -e 'console.log(require("fs").realpathSync(process.argv[1]))' "$(command -v node)") \
+    || fail "stable node path is resolvable"
+FNM_BIN="$ROOT/fnm_multishells/82380_1793236905367/bin"
+mkdir -p "$FNM_BIN"
+ln -s "$(command -v node)" "$FNM_BIN/node"
+
+FNM_HOME="$ROOT/home-fnm-systemd"; mkdir -p "$FNM_HOME"
+OUT_FNM="$ROOT/out-fnm-systemd.txt"
+(TEST_PATH="$FNM_BIN:$BIN:$NODE_DIR:/usr/bin:/bin" run_install "$FNM_HOME" -- > "$OUT_FNM" 2>&1) \
+    || { cat "$OUT_FNM" >&2; fail "fnm_multishells symlink install (systemd) exits 0"; }
+ok "fnm_multishells symlink install (systemd) exits 0"
+check "systemd ExecStart uses the stable node" \
+    grep -F "ExecStart=$STABLE_NODE " "$FNM_HOME/.config/systemd/user/orbit-office.service"
+check "systemd unit has no fnm_multishells entry" \
+    sh -c '! grep -q fnm_multishells "$1"' sh "$FNM_HOME/.config/systemd/user/orbit-office.service"
+
+FNM_MAC_HOME="$ROOT/home-fnm-launchd"; mkdir -p "$FNM_MAC_HOME"
+OUT_FNM_MAC="$ROOT/out-fnm-launchd.txt"
+(TEST_PATH="$FNM_BIN:$BIN:$NODE_DIR:/usr/bin:/bin" run_install "$FNM_MAC_HOME" ORBIT_OFFICE_OS=macos -- > "$OUT_FNM_MAC" 2>&1) \
+    || { cat "$OUT_FNM_MAC" >&2; fail "fnm_multishells symlink install (launchd) exits 0"; }
+ok "fnm_multishells symlink install (launchd) exits 0"
+check "launchd ProgramArguments uses the stable node" \
+    grep -F "<string>$STABLE_NODE</string>" "$FNM_MAC_HOME/Library/LaunchAgents/com.orbit-office.app.plist"
+check "launchd plist has no fnm_multishells entry" \
+    sh -c '! grep -q fnm_multishells "$1"' sh "$FNM_MAC_HOME/Library/LaunchAgents/com.orbit-office.app.plist"
+
+FNM_ONLY_BIN="$ROOT/fnm-only/fnm_multishells/99999_1/bin"
+mkdir -p "$FNM_ONLY_BIN"
+printf '#!/bin/sh\nexec "%s" "$@"\n' "$STABLE_NODE" > "$FNM_ONLY_BIN/node"
+chmod +x "$FNM_ONLY_BIN/node"
+FNM_ONLY_HOME="$ROOT/home-fnm-only"; mkdir -p "$FNM_ONLY_HOME"
+OUT_FNM_ONLY="$ROOT/out-fnm-only.txt"
+if (TEST_PATH="$FNM_ONLY_BIN:$BIN:/usr/bin:/bin" run_install "$FNM_ONLY_HOME" -- > "$OUT_FNM_ONLY" 2>&1); then
+    cat "$OUT_FNM_ONLY" >&2; fail "fnm_multishells wrapper-only install stops"
+else
+    ok "fnm_multishells wrapper-only install stops"
+fi
+check "wrapper-only failure names the per-shell fnm_multishells cause" \
+    grep -F "fnm_multishells" "$OUT_FNM_ONLY"
+check "wrapper-only failure writes no systemd unit" \
+    test ! -e "$FNM_ONLY_HOME/.config/systemd/user/orbit-office.service"
+check "wrapper-only failure writes no launchd plist" \
+    test ! -e "$FNM_ONLY_HOME/Library/LaunchAgents/com.orbit-office.app.plist"
 
 printf 'PASS: %s checks\n' "$PASS"

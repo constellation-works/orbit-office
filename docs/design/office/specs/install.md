@@ -67,7 +67,12 @@ filter for them. Orbit must support `workspace init --preset`.
      stays reachable from the MCP entry and the service without being moved or
      changed; only absolute directories are captured. Re-running the installer
      recaptures them if they moved, and a re-run where nothing moved changes
-     nothing. The `library-conventions` skill tells agents to use `python3`, and
+     nothing. The node path recorded in the service unit is resolved through
+     symlinks to its physical location, so an `fnm_multishells` per-shell shim
+     on `PATH` records the stable node it points at, and no per-shell directory
+     is captured into the generated `PATH`; when node only resolves under a
+     per-shell `fnm_multishells` directory, the installer stops naming that
+     cause instead of writing the unit. The `library-conventions` skill tells agents to use `python3`, and
      `uv run` for a script that declares dependencies inline (PEP 723).
    - **Check.** `tools/bin/python3 --version` must print the pinned minor version, or the
      step fails and names what went wrong. A re-run with both already in place changes

@@ -186,6 +186,69 @@ case "$OS" in
     macos) _path_rest="/usr/bin:/bin:/usr/sbin:/sbin" ;;
     *) _path_rest="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ;;
 esac
+# A per-shell shim directory does not survive the shell that created it
+# (fnm creates fnm_multishells/<pid>_<timestamp> per interactive shell
+# and removes it later), so it must never be recorded in a login service
+# unit or its PATH. Only the fnm_multishells layout is known; any other
+# shim is caught by resolving to a physical path and refusing a result
+# that still lives under such a directory.
+path_is_per_shell() {
+    case "$1" in
+        */fnm_multishells|*/fnm_multishells/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+physical_dir() {
+    CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P
+}
+# stable_path_of_file FILE : the symlink-free absolute path of FILE;
+# fails when FILE is missing or the resolved path is per-shell.
+stable_path_of_file() {
+    _spf=$1
+    _spf_n=0
+    while [ -L "$_spf" ] && [ "$_spf_n" -lt 40 ]; do
+        _spf_target=$(readlink "$_spf") || return 1
+        case "$_spf_target" in
+            /*) _spf=$_spf_target ;;
+            *) _spf="$(dirname -- "$_spf")/$_spf_target" ;;
+        esac
+        _spf_n=$((_spf_n + 1))
+    done
+    [ -f "$_spf" ] || return 1
+    _spf_phys=$(physical_dir "$(dirname -- "$_spf")") || return 1
+    _spf_stable="$_spf_phys/$(basename -- "$_spf")"
+    if path_is_per_shell "$_spf_stable"; then return 1; fi
+    printf '%s\n' "$_spf_stable"
+}
+# stable_node_path : a stable absolute node path, resolving the node on
+# PATH through symlinks and its physical directory; when that node is a
+# per-shell shim that does not resolve to a stable file, later PATH
+# entries are tried. Fails when no stable node can be resolved.
+stable_node_path() {
+    _snp_raw=$(command -v node 2>/dev/null || printf '')
+    if [ -n "$_snp_raw" ]; then
+        if _snp=$(stable_path_of_file "$_snp_raw"); then
+            printf '%s\n' "$_snp"; return 0
+        fi
+    fi
+    _snp_rest=${PATH:-}
+    while [ -n "$_snp_rest" ]; do
+        case "$_snp_rest" in
+            *:*)
+                _snp_dir=${_snp_rest%%:*}
+                _snp_rest=${_snp_rest#*:} ;;
+            *)
+                _snp_dir=$_snp_rest
+                _snp_rest="" ;;
+        esac
+        [ -n "$_snp_dir" ] && [ -x "$_snp_dir/node" ] || continue
+        if _snp=$(stable_path_of_file "$_snp_dir/node"); then
+            printf '%s\n' "$_snp"; return 0
+        fi
+    done
+    return 1
+}
+
 # Generated runtime PATH (MCP entries and the login service): tools/bin
 # first, then the directories holding the resolved `orbit` and `node`
 # executables, then the system directories. An Orbit or Node installed
@@ -199,6 +262,7 @@ esac
 # environment. The existing Orbit is never moved or changed by this.
 AGENT_PATH="$TOOLS_BIN"
 agent_path_append() {
+    if path_is_per_shell "$1"; then return 0; fi
     case ":$AGENT_PATH:" in
         *":$1:"*) ;;
         *) AGENT_PATH="$AGENT_PATH:$1" ;;
@@ -207,9 +271,18 @@ agent_path_append() {
 compute_agent_path() {
     AGENT_PATH="$TOOLS_BIN"
     for _rt_tool in orbit node; do
-        _rt_resolved=$(command -v "$_rt_tool" 2>/dev/null || printf '')
+        if [ "$_rt_tool" = node ]; then
+            _rt_resolved=$(stable_node_path 2>/dev/null || printf '')
+        else
+            _rt_resolved=$(command -v "$_rt_tool" 2>/dev/null || printf '')
+        fi
         case "$_rt_resolved" in
-            /*/*) agent_path_append "$(dirname -- "$_rt_resolved")" ;;
+            /*/*)
+                _rt_dir=$(dirname -- "$_rt_resolved")
+                if [ "$_rt_tool" != node ] && path_is_per_shell "$_rt_dir"; then
+                    _rt_dir=$(physical_dir "$_rt_dir" || printf '')
+                fi
+                if [ -n "$_rt_dir" ]; then agent_path_append "$_rt_dir"; fi ;;
             *) ;;
         esac
     done
@@ -2095,7 +2168,10 @@ step_app() {
     step "9 app"
     compute_agent_path
     validate_agent_path
-    _node_bin=$(command -v node 2>/dev/null || printf 'node')
+    if ! _node_bin=$(stable_node_path); then
+        _raw_node=$(command -v node 2>/dev/null || printf 'node')
+        die "app: node resolves to a per-shell shim ($_raw_node) under a fnm_multishells directory, which fnm removes when its shell exits, so the login service would not start; install a stable Node.js 20+ (a fnm default install, nvm, or the nodejs.org tarball) and put its bin directory, not a fnm_multishells path, first on PATH, then re-run"
+    fi
     if [ -n "$APP_SRC" ]; then
         _app_home="$APP_SRC"
         if app_entrypoint_ok "$APP_SRC"; then
