@@ -13,11 +13,13 @@ export type FeatureName =
   | "insights"
   | "review"
   | "selection"
-  | "settings";
+  | "settings"
+  | "agents";
 
 /** Web screens, one folder each under `web/src/screens/`. */
 export type ScreenId =
   | "today"
+  | "agents"
   | "calendar"
   | "source"
   | "todos"
@@ -292,6 +294,33 @@ export interface TodoItem {
   scheduled: string | null;
   /** True while nothing has started it, so **Schedule…** can set or clear the time. */
   schedulable: boolean;
+}
+
+/** One Orbit task an agent is carrying, on `GET /api/agents`. */
+export interface AgentWorkTask {
+  id: string;
+  title: string;
+  /** The followed workspace selector, or `office` for the office workspace. */
+  workspace: string;
+  type: string;
+  priority: string;
+  crew: string | null;
+  /** RFC 3339 time of the last update. */
+  updated_at: string;
+}
+
+/** `GET /api/agents`: agent-carried Orbit tasks across the followed workspaces, newest first. */
+export interface AgentWork {
+  working_now: AgentWorkTask[];
+  in_review: AgentWorkTask[];
+  queued: AgentWorkTask[];
+  done_today: AgentWorkTask[];
+  /** Every followed workspace, office first, then the configured selectors in order. */
+  workspaces: string[];
+  /** Followed workspaces that could not be read; their tasks are absent. */
+  unavailable: string[];
+  /** RFC 3339 time this snapshot was assembled. */
+  updated_at: string;
 }
 
 /** `GET /api/todos`: the You and Agents columns. */

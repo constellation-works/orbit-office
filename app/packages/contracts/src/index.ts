@@ -10,6 +10,8 @@ export type {
   AcceptAllResult,
   AcceptRequest,
   AgentCliStatus,
+  AgentWork,
+  AgentWorkTask,
   ApprovalDetail,
   ApprovalOk,
   ApproveRequest,
