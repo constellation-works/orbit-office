@@ -1,18 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { acceptProposal, acceptProposals, ApiError, approveOutput, dismissNeed, getApiCalls, getApprovalDetail, sendBack, sendDraft, getConnections, getHealth, getSource, capturePaste, uploadSource, sourcePlan, markSourcePrivate, getSourceCitation, getJson, getPrivateRoute, putConnection, savePrivateRoute } from "../dist/api/client.js";
+import { acceptProposal, acceptProposals, ApiError, approveOutput, dismissNeed, getApiCalls, getApprovalDetail, sendBack, sendDraft, getConnections, getSource, capturePaste, uploadSource, sourcePlan, markSourcePrivate, getSourceCitation, getJson, getPrivateRoute, putConnection, savePrivateRoute } from "../dist/api/client.js";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
-
-test("health requests return the contract", async () => {
-  globalThis.fetch = async (path, options) => {
-    assert.equal(path, "/healthz");
-    assert.equal(options.headers.accept, "application/json");
-    return new Response(JSON.stringify({ ok: true, app: "orbit-office", features: [] }));
-  };
-  assert.deepEqual(await getHealth(), { ok: true, app: "orbit-office", features: [] });
-});
 
 test("Settings helpers read connections and audit and post entered fields", async () => {
   const calls = [];

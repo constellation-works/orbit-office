@@ -1,7 +1,7 @@
 /** Typed access to the app server, with one error path. */
 import type {
   AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
-  GatewaySendResult, Health, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
+  GatewaySendResult, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
   SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoScheduled,
   ConflictChoice, ShareDocument, SharedLastSync, SharedLibraryBlock, SharedLibrarySaved, SharedLibraryStatus, SharedSync, ShareRequest, ShareResult,
 } from "@orbit-office/contracts";
@@ -59,11 +59,6 @@ async function requestJson<T>(path: string, body?: unknown, upload?: Blob): Prom
   } catch {
     throw new ApiError(response.status, "invalid_json");
   }
-}
-
-/** Read the server health contract. */
-export function getHealth(): Promise<Health> {
-  return getJson<Health>("/healthz");
 }
 
 /** Read the settings contract: the agent CLI connection. */
