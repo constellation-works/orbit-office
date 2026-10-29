@@ -4,7 +4,7 @@
  * ids, crews, runs or raw statuses. There is no Chat screen; conversation
  * happens in the user's agent CLI.
  */
-import type { SetupResult, SetupStatus, Today } from "@orbit-office/contracts";
+import type { AgentWork, SetupResult, SetupStatus, Today } from "@orbit-office/contracts";
 
 import { screenHash } from "./api/source-location.js";
 import { getCalendar, getJson, getPrivateRoute, postJson } from "./api/client.js";
@@ -23,9 +23,9 @@ function drawNav(nav: HTMLElement): void {
 
 /**
  * Counts beside the rail entries: how many routines are on, how many cards
- * wait on you today, and how many of today's past meetings have no notes yet
- * (a plain count, not an alert). A failed read hides the count; it never
- * shows 0.
+ * wait on you today, how many of today's past meetings have no notes yet,
+ * and how many tasks are in Working now (both plain counts, not alerts).
+ * A failed read hides the count; it never shows 0.
  */
 async function loadCounts(nav: HTMLElement): Promise<void> {
   await Promise.all([
@@ -53,6 +53,12 @@ async function loadCounts(nav: HTMLElement): Promise<void> {
       const count = meetingsWithoutNotes(view.meetings, now);
       setRailCount(nav, "calendar", count > 0 ? String(count) : null);
     })().catch(() => setRailCount(nav, "calendar", null)),
+    getJson<AgentWork>("/api/agents")
+      .then((data) => {
+        if (!Array.isArray(data.working_now)) throw new Error("malformed agents");
+        setRailCount(nav, "agents", data.working_now.length > 0 ? String(data.working_now.length) : null);
+      })
+      .catch(() => setRailCount(nav, "agents", null)),
   ]);
 }
 

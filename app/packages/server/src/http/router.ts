@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import type { Health } from "@orbit-office/contracts";
 
+import { feature as agents } from "../features/agents/index.js";
 import { feature as approvals } from "../features/approvals/index.js";
 import { feature as calendar } from "../features/calendar/index.js";
 import { feature as insights } from "../features/insights/index.js";
@@ -37,6 +38,7 @@ export const FEATURES: readonly Feature[] = [
   calendar,
   sources,
   todos,
+  agents,
   approvals,
   routines,
   library,
