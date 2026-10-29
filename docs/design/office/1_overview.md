@@ -1,7 +1,7 @@
 ---
 title: office — Overview
 owner: daniel
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 last_validated: 2026-10-26
 status: Draft
 stage: building
@@ -21,10 +21,10 @@ related_artifacts: [ORB-16585]
 
 Orbit Office is a distribution of Orbit: an app built on Orbit as its engine.
 The product combines the standalone app, the `office` and `gateway` component
-plugins, optional `cloudcli`, and a planned office workspace preset. Orbit supplies
+plugins, optional `cloudcli`, and an office workspace preset. Orbit supplies
 the runtime; plugins supply capabilities; the preset selects the workspace's
-configuration and initial automation. Preset integration awaits Orbit support
-([install spec](./specs/install.md#office-workspace-preset-pending-orbit-support)).
+configuration and initial automation. The preset shipped in [ORB-19197]
+([install spec](./specs/install.md#office-workspace-preset)).
 
 Office work is a generic, easy-to-use, personal agentic work-management
 system for anyone whose work is knowledge work: analysts, consultants,
@@ -123,6 +123,7 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 | Shared library: `shareable` documents synced with one team repository | [specs/shared-library.md](./specs/shared-library.md) | [ORB-19417] done, [ORB-19418] done, [ORB-19419] done, [ORB-19421] done |
 | Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-18723] done |
 | Models and privacy routing | [specs/models-and-privacy.md](./specs/models-and-privacy.md) | [ORB-18712] done |
+| Office workspace preset and install | [specs/install.md](./specs/install.md) | [ORB-19197] done |
 | Hackathon compliance, demo and build plan | [specs/delivery.md](./specs/delivery.md) | [ORB-16585] |
 | Directions beyond the event | [3_vision.md](./3_vision.md) | [ORB-16585] |
 
@@ -173,5 +174,6 @@ core.
 - [ORB-19418] — built `office.library-sync`, its routine and the two-workspace demo.
 - [ORB-19419] — built the shared layer: index, qualified citations, reads, attach and bootstrap.
 - [ORB-19421] — built the app's shared-library settings, labels, share switch and Needs you cards.
+- [ORB-19197] — built the office workspace preset so a fresh workspace starts without Orbit's developer defaults.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

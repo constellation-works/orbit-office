@@ -13,7 +13,7 @@ stdout, exit code) is excluded.
 |------|---------|
 | **Distribution** | An app built on Orbit as its engine, packaged for one audience with component plugins and a workspace preset. Orbit Office is the distribution; Orbit is its runtime dependency. |
 | **Component (plugin)** | An installable capability inside the distribution: `office`, `gateway`, or optional `cloudcli`. A plugin has its own tool namespace and grants; the term does not name the whole Orbit Office product. |
-| **Preset** | A workspace initialization policy that selects configuration, default seeding and definitions to enable. The planned office preset suppresses Orbit's developer defaults; its integration awaits Orbit's preset contract. See [install.md](../specs/install.md#office-workspace-preset-pending-orbit-support). |
+| **Preset** | A workspace initialization policy that selects configuration, default seeding and definitions to enable. The office preset suppresses Orbit's developer defaults on a fresh workspace. See [install.md](../specs/install.md#office-workspace-preset). |
 | **Source** | An immutable record of something that happened (meeting, chat, email, doc, receipt, conversation), with anchorable text. See [specs/library.md](../specs/library.md). |
 | **Knowledge page** | A derived, citable Library page: `domain` (About) or `runbook` (How-to). Rewritten freely; every claim cites a source anchor. |
 | **Template** | A page template in `library/.office/templates/`: id pattern, required sections, attach policy and skeleton. `office.init` installs the bundled ones; pages name theirs with `template:`. See [specs/knowledge-templates.md](../specs/knowledge-templates.md). |
