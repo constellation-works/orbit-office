@@ -1,0 +1,15 @@
+# Orbit-compatible session-brief cases. The offline callback fixtures, including
+# extra workspaces, live in crates/office-tools/tests/fixtures/session-brief.yaml.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: session_brief_empty_workspace
+    tool: session-brief
+    input: {}
+    expect:
+      output: {"sections":[{"kind":"since","items":[],"total":0,"truncated":false},{"kind":"waiting_on_you","items":[],"total":0,"truncated":false},{"kind":"agents_working_on","items":[],"total":0,"truncated":false},{"kind":"open_questions","items":[],"total":0,"truncated":false},{"kind":"last_session","items":[],"total":0,"truncated":false}]}
+  - name: session_brief_refuses_unknown_input
+    tool: session-brief
+    input: {"invent":true}
+    expect:
+      error: {"code":"invalid_argument"}
