@@ -194,6 +194,11 @@ those. Add `~/.local/bin` to your PATH if your shell does not already include it
 the installer prints the absolute launcher path and does not edit shell profiles.
 The launcher is embedded in the installer, so a piped install needs no extra
 script download. It needs Node, git, Orbit, and the already added plugins.
+`office.init` is a mutating plugin tool, which Orbit runs only for an operator; the
+launcher's child process has no TTY, so the launcher passes Orbit's audited
+`ORBIT_OPERATOR=1` override for that call on behalf of the person running it. It never
+adds the override inside a managed Orbit run (`ORBIT_MANAGED_RUN_CONTEXT` set, or
+`ORBIT_TASK_ACTOR_KIND=agent`), where the caller is an agent.
 The launcher is named `orbit-office`, not `office`: `office` is the plugin's Rust
 exec backend binary (`make install` puts it in `~/.cargo/bin`), and one name on
 PATH for both would hide one of them.

@@ -922,6 +922,15 @@ for (const arg of args) {
 if (!process.env.HOME) fail("HOME is not set");
 if (target === "") fail("workspace path must not be empty", 2);
 process.umask(0o077);
+// office.init is a mutating plugin tool, which Orbit runs only for an
+// operator. The person running orbit-office init (or install.sh) is that
+// operator, but the launcher's piped child has no TTY and resolves as an
+// agent, so pass Orbit's audited override. Inside a managed Orbit run the
+// caller is an agent, so the override is never added there.
+function operatorEnv() {
+  const managed = process.env.ORBIT_MANAGED_RUN_CONTEXT || process.env.ORBIT_TASK_ACTOR_KIND === "agent";
+  return managed ? {} : { ORBIT_OPERATOR: "1" };
+}
 function officeWorkspaceName(workspace) {
   return "office-" + path.basename(workspace);
 }
@@ -935,11 +944,11 @@ function resolvePhysical(file) {
   const parent = path.dirname(absolute);
   return path.join(resolvePhysical(parent), path.basename(absolute));
 }
-function run(command, argv, cwd, required = true) {
+function run(command, argv, cwd, required = true, extraEnv = {}) {
   const result = spawnSync(command, argv, {
     cwd, encoding: "utf8", timeout: 300000, maxBuffer: 8 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PATH: path.join(process.env.HOME, ".local/share/orbit-office/tools/bin") + path.delimiter + process.env.PATH },
+    env: { ...process.env, ...extraEnv, PATH: path.join(process.env.HOME, ".local/share/orbit-office/tools/bin") + path.delimiter + process.env.PATH },
   });
   if (required && (result.error || result.status !== 0)) {
     if (result.stderr) process.stderr.write(result.stderr);
@@ -1322,7 +1331,7 @@ function main() {
     say("workspace: office preset applied");
   }
   say("==> 7 scaffold");
-  const result = run("orbit", ["tool", "run", "office.init", "--json", "--full", "--input", "{}", "--workspace", workspace], workspace, false);
+  const result = run("orbit", ["tool", "run", "office.init", "--json", "--full", "--input", "{}", "--workspace", workspace], workspace, false, operatorEnv());
   if (result.stderr) process.stderr.write(result.stderr);
   const status = initStatus(result);
   if (result.error || result.status !== 0 || status !== "ok") fail("scaffold: office.init failed (code: " + status + ", exit: " + result.status + ")");

@@ -316,6 +316,12 @@ JSON
         # the JSON object on stderr. ok-false is the direct office
         # binary's {ok:false} envelope on stdout with exit 0.
         if [ "${3:-}" = "office.init" ]; then
+            # Like Orbit, a mutating plugin tool from a caller without a TTY
+            # needs the audited operator override.
+            if [ "${ORBIT_OPERATOR:-}" != 1 ]; then
+                printf '%s\n' '{"error":"capability denied: operation '"'"'plugin.tool.mutating'"'"' requires the `operator or runner` capability","code":"capability_denied"}' >&2
+                exit 1
+            fi
             # Orbit refuses a tool of a plugin that is not active: stderr, exit 1.
             if [ ! -f "$state/plugin-active" ]; then
                 printf '%s\n' "{\"code\":\"policy_denied\",\"message\":\"policy denied: plugin 'office' requests orbit_tools (spec.permissions.orbit_tools) but this host has not granted it\"}" >&2
@@ -1173,6 +1179,12 @@ INSTALL_FROM_CWD=1 run_install "$CWD_HOME" -- > "$ROOT/cwd-install" 2>&1 \
 ok "sh install.sh from the clone root exits 0"
 check "sh install.sh from the clone root adds the office plugin" test -e "$STUB_STATE/plugin-added"
 check "sh install.sh from the clone root does not ask for a clone" sh -c '! grep -qF "needs a clone" "$1"' sh "$ROOT/cwd-install"
+# Inside a managed Orbit run the launcher must not add the operator override.
+MANAGED_HOME="$ROOT/managed-run-home"; mkdir -p "$MANAGED_HOME"
+if run_install "$MANAGED_HOME" ORBIT_MANAGED_RUN_CONTEXT=probe -- > "$ROOT/managed-install" 2>&1; then
+    fail "install inside a managed run must not scaffold as operator"
+else ok "install inside a managed run is refused at scaffold"; fi
+check "managed-run refusal is the capability denial" grep -qF "capability_denied" "$ROOT/managed-install"
 # A host where `orbit workspace list` fails from an unregistered folder.
 UNBOUND_HOME="$ROOT/unbound-list-home"; mkdir -p "$UNBOUND_HOME"
 run_install "$UNBOUND_HOME" STUB_LIST_UNBOUND_FAILS=1 -- > "$ROOT/unbound-install" 2>&1 \
