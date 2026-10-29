@@ -97,6 +97,27 @@ pub(crate) fn parse(text: &str) -> Result<Vec<(String, Value)>> {
     Ok(fields)
 }
 
+/// Render one value in the flow subset [`parse`] accepts: objects as
+/// `{ k: v, … }` with unquoted keys, arrays as `[…]`, and scalars through
+/// their JSON spelling. Callers that store larger nested state as quoted
+/// JSON strings keep that encoding; this only renders the value given.
+pub(crate) fn flow_value(value: &Value) -> String {
+    match value {
+        Value::Object(map) => format!(
+            "{{ {} }}",
+            map.iter()
+                .map(|(key, value)| format!("{key}: {}", flow_value(value)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Value::Array(items) => format!(
+            "[{}]",
+            items.iter().map(flow_value).collect::<Vec<_>>().join(", ")
+        ),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.to_string(),
+    }
+}
+
 fn field_before(fields: &[(String, Value)]) -> String {
     fields
         .last()

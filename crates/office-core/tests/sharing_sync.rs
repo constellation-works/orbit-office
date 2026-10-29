@@ -140,6 +140,25 @@ fn remote_host_never_carries_users_or_paths() {
 }
 
 #[test]
+fn localized_view_bytes_are_exact_for_nested_empty_escaped_unicode_null_and_bool_values() {
+    let shared = "---\nid: \"dom-flow\"\ntitle: \"Café\"\nempty_map: {  }\nempty_list: []\nnested: { flag: true, inner: [\"a\\\"b\", \"🌍\"], missing: null }\nshared_by: \"bob\"\n---\nBody.\n";
+    let own = "---\nid: dom-flow\nshareable: true\nsensitivity: normal\n---\nBody.\n";
+    let localized = localized_view(shared, own, "me").unwrap();
+    assert_eq!(
+        localized,
+        "---\n\
+         id: \"dom-flow\"\n\
+         title: \"Café\"\n\
+         empty_map: {  }\n\
+         empty_list: []\n\
+         nested: { flag: true, inner: [\"a\\\"b\", \"🌍\"], missing: null }\n\
+         shareable: true\n\
+         sensitivity: \"normal\"\n\
+         ---\nBody.\n"
+    );
+}
+
+#[test]
 fn localized_view_round_trips_through_the_shared_view() {
     let own = "---\nid: dom-person-jane\ntitle: Jane\ntemplate: person\nsensitivity: normal\nshareable: true\ncites: [src-one#L1]\nrefs:\n  - {label: Email, contact: jane@example.invalid}\n  - {label: Deck, artifact: art-one}\n---\nJane owns this [src-one#L1].\n";
     let mine = sharing::shared_view(own, "me", |_| true, |_| false).unwrap();

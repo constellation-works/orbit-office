@@ -399,7 +399,7 @@ impl Artifact {
         let fields = value.as_object().ok_or_else(|| invalid("frontmatter"))?;
         let mut text = String::from("---\n");
         for (key, value) in fields {
-            text.push_str(&format!("{key}: {}\n", yaml_value(value)));
+            text.push_str(&format!("{key}: {}\n", frontmatter::flow_value(value)));
         }
         text.push_str("---\n");
         Ok(text)
@@ -435,23 +435,6 @@ impl Artifact {
             serde_json::from_value(Value::Object(fields)).map_err(|_| invalid("frontmatter"))?;
         artifact.validate()?;
         Ok(artifact)
-    }
-}
-
-pub(crate) fn yaml_value(value: &Value) -> String {
-    match value {
-        Value::Object(map) => format!(
-            "{{ {} }}",
-            map.iter()
-                .map(|(k, v)| format!("{k}: {}", yaml_value(v)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Value::Array(items) => format!(
-            "[{}]",
-            items.iter().map(yaml_value).collect::<Vec<_>>().join(", ")
-        ),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.to_string(),
     }
 }
 

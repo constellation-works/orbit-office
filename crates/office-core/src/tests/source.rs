@@ -421,6 +421,88 @@ fn rendered_source_keeps_untrusted_metadata_inside_frontmatter() {
 }
 
 #[test]
+fn processing_markdown_bytes_are_exact_for_nested_empty_escaped_unicode_null_and_bool_values() {
+    use crate::domain::endpoint::ModelRoute;
+    use crate::domain::source::processing_markdown;
+    use crate::ports::DerivedBy;
+    let markdown = "---\nid: src-flow\ntitle: Café\nempty_map: {}\nempty_list: []\nnested: { flag: true, inner: [\"a\\\"b\", \"🌍\"], missing: null }\n---\nBody.";
+    let derived = DerivedBy {
+        route: ModelRoute::Hosted,
+        model: "m\"🌍".into(),
+    };
+    let (next, snapshot) = processing_markdown(markdown, None, &derived).unwrap();
+    assert_eq!(snapshot, None);
+    assert_eq!(
+        next,
+        "---\n\
+         id: \"src-flow\"\n\
+         title: \"Café\"\n\
+         empty_map: {  }\n\
+         empty_list: []\n\
+         nested: { flag: true, inner: [\"a\\\"b\", \"🌍\"], missing: null }\n\
+         derived_by: { extraction: { model: \"m\\\"🌍\", route: \"hosted\" } }\n\
+         ---\nBody."
+    );
+}
+
+#[test]
+fn video_ledger_bytes_keep_quoted_plan_and_numeric_counts() {
+    use crate::domain::settings::Settings;
+    use crate::domain::source::video;
+    let source = video::VideoSource {
+        path: "sources/1970/01/src-video/source.md".into(),
+        markdown: "---\nid: src-video\nkind: video\nsensitivity: normal\n---\n".into(),
+        bytes: b"video".to_vec(),
+    };
+    let settings = Settings::default();
+    let plan = video::plan(
+        &source,
+        &video::VideoAnalysis {
+            duration_ms: 60_000,
+            has_audio: true,
+            candidates: Vec::new(),
+        },
+        &settings,
+        "normal",
+    )
+    .unwrap();
+    let digest = plan.digest.clone();
+    let preview = video::apply(
+        &source,
+        &settings,
+        video::VideoMutation::Plan {
+            plan: Box::new(plan),
+            confirm_digest: None,
+            at: "1970-01-01T00:00:00Z".into(),
+        },
+    )
+    .unwrap();
+    assert!(
+        preview.markdown.contains(
+            "video: { audio_completed: 0, calls: { audio: 0, extract: 0, frames: 0 }, confirmed_at: null, duration_s: 60, frames_read: 0, plan: \""
+        ),
+        "{}",
+        preview.markdown
+    );
+    assert!(
+        preview
+            .markdown
+            .contains(&format!("plan_digest: \"{digest}\"")),
+        "{}",
+        preview.markdown
+    );
+    assert!(
+        preview.markdown.contains(&format!(
+            ", plan_digest: \"{digest}\", readings: \"[]\", transcription_sha256: null }}"
+        )),
+        "{}",
+        preview.markdown
+    );
+    let state = video::state(&preview.markdown).unwrap().unwrap();
+    assert_eq!(state.plan.digest, digest);
+}
+
+#[test]
 fn video_selection_keeps_highest_scores_spread_across_the_recording() {
     use crate::domain::source::video::{VideoAnalysis, VideoFrame, select_frames};
     let analysis = VideoAnalysis {

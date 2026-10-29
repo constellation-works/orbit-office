@@ -310,10 +310,7 @@ pub fn localized_view(shared: &str, own: &str, member: &str) -> Result<String> {
     }
     let mut output = String::from("---\n");
     for (key, value) in fields {
-        output.push_str(&format!(
-            "{key}: {}\n",
-            crate::domain::artifact::yaml_value(&value)
-        ));
+        output.push_str(&format!("{key}: {}\n", frontmatter::flow_value(&value)));
     }
     output.push_str("---\n");
     output.push_str(&rewrite_citations(body, |cite| unqualify(cite, member)));

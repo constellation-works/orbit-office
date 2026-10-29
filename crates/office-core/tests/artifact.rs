@@ -114,6 +114,38 @@ fn yaml_roundtrips_nested_provenance_approval_and_versions_without_inventing_tim
 }
 
 #[test]
+fn markdown_bytes_are_exact_for_nested_empty_escaped_unicode_null_bool_and_numbers() {
+    let mut a = artifact("report", "reports", Approver::User).unwrap();
+    a.title = "Café \"quoted\" \\ 🌍".into();
+    a.cites = Vec::new();
+    a.tags = Vec::new();
+    a.produced_by.crew = None;
+    a.produced_by.runbook = None;
+    let markdown = a.to_markdown().unwrap();
+    assert_eq!(
+        markdown,
+        "---\n\
+         approved: { at: \"1970-01-01T00:00:00Z\", by: \"user\", edited: true }\n\
+         cites: []\n\
+         files: [\"output.bin\"]\n\
+         id: \"art-19700101-artifact-quoted-title\"\n\
+         kind: \"report\"\n\
+         produced_by: { at: null, crew: null, runbook: null }\n\
+         sensitivity: \"normal\"\n\
+         series: \"reports\"\n\
+         shareable: false\n\
+         summary: \"\"\n\
+         supersedes: null\n\
+         tags: []\n\
+         task: \"<id>\"\n\
+         title: \"Café \\\"quoted\\\" \\\\ 🌍\"\n\
+         version: 1\n\
+         ---\n"
+    );
+    assert_eq!(Artifact::from_markdown(&markdown).unwrap(), a);
+}
+
+#[test]
 fn payloads_preserve_text_and_binary_and_refuse_ambiguous_oversize_or_invalid_encodings() {
     assert_eq!(
         decode_payload(&json!({"content":"hello 🌍","size":10})).unwrap(),
