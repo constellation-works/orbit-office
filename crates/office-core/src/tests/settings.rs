@@ -20,6 +20,41 @@ fn library_example_config_parses_with_its_documented_settings() {
 }
 
 #[test]
+fn brief_task_workspaces_parse_update_and_refuse_bad_selectors() {
+    use serde_json::json;
+    let settings =
+        Settings::from_yaml("brief:\n  task_workspaces: [ws_orbit, hm_example/ws_constellation]\n")
+            .unwrap();
+    assert_eq!(
+        settings.brief.task_workspaces,
+        ["ws_orbit", "hm_example/ws_constellation"]
+    );
+    let cleared = settings
+        .with_setting("brief.task_workspaces", json!([]))
+        .unwrap();
+    assert!(cleared.brief.task_workspaces.is_empty());
+    assert_eq!(
+        Settings::from_yaml(&cleared.to_yaml().unwrap()).unwrap(),
+        cleared
+    );
+    for yaml in [
+        "brief:\n  task_workspaces: [ws_orbit, ws_orbit]\n",
+        "brief:\n  task_workspaces: ['has space']\n",
+        "brief:\n  task_workspaces: ws_orbit\n",
+        "brief:\n  unknown: []\n",
+    ] {
+        assert!(Settings::from_yaml(yaml).is_err(), "{yaml}");
+    }
+    assert_eq!(
+        Settings::default()
+            .with_setting("brief.task_workspaces", json!(["ws_a", "ws_a"]))
+            .unwrap_err()
+            .code(),
+        "invalid_library_setting"
+    );
+}
+
+#[test]
 fn invalid_open_weights_values_point_to_their_documented_limits() {
     let invalid_model = Settings::from_yaml(
         "open_weights:\n  endpoint: https://example.com/v1\n  model: 'my model'\n  kind: provider\n  label: Local\n",

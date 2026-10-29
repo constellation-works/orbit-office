@@ -69,6 +69,11 @@ pub struct Item {
     pub status: Option<String>,
     /// Template name for an onboarding suggestion, else null.
     pub template: Option<String>,
+    /// Orbit workspace selector for a task read from an extra workspace
+    /// (`brief.task_workspaces`); absent for the office workspace, so
+    /// existing briefs serialize unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
 }
 
 /// A section in display order; optional sections are absent from the array.
@@ -161,6 +166,7 @@ impl Conversation {
             entry_kind: Some(entry.kind.clone()),
             status: None,
             template: None,
+            workspace: None,
         }
     }
     fn reference(&self) -> Item {
@@ -172,6 +178,7 @@ impl Conversation {
             entry_kind: None,
             status: None,
             template: None,
+            workspace: None,
         }
     }
 }
@@ -280,7 +287,7 @@ fn task_active(status: &str) -> Result<bool> {
     }
 }
 
-fn task_item(row: &Value, at: &str, status: &str) -> Result<Item> {
+fn task_item(row: &Value, at: &str, status: &str, workspace: Option<&str>) -> Result<Item> {
     let id = text(row, "id")?;
     Ok(Item {
         id: id.into(),
@@ -290,36 +297,111 @@ fn task_item(row: &Value, at: &str, status: &str) -> Result<Item> {
         entry_kind: None,
         status: Some(status.into()),
         template: None,
+        workspace: workspace.map(str::to_string),
     })
 }
 
+/// One workspace's validated task inventory. `workspace: None` is the office
+/// workspace; `Some(selector)` is an extra workspace from
+/// `brief.task_workspaces`, read through `orbit.task.list` with that selector.
+pub struct TaskInventory<'a> {
+    /// Extra workspace selector, or `None` for the office workspace.
+    pub workspace: Option<&'a str>,
+    /// Validated rows from that workspace's `orbit.task.list`.
+    pub rows: &'a [Value],
+}
+
 fn task_sections(
-    rows: &[Value],
+    inventories: &[TaskInventory<'_>],
     since: Option<&str>,
     deliveries: &BTreeMap<String, Value>,
 ) -> Result<(Section, Section)> {
     let cutoff = since.map(time_key).transpose()?;
     let mut waiting = Vec::new();
     let mut working = Vec::new();
-    for row in rows {
+    let mut seen = BTreeSet::new();
+    for inventory in inventories {
+        let external = inventory.workspace.is_some();
+        for row in inventory.rows {
+            if !seen.insert(text(row, "id")?.to_string()) {
+                continue;
+            }
+            let item = classify_task(
+                row,
+                inventory.workspace,
+                external,
+                &cutoff,
+                deliveries,
+                &mut waiting,
+                &mut working,
+            );
+            // An extra workspace's malformed row must not refuse the whole
+            // brief; the handler reports such a workspace as unavailable
+            // before assembly, so a residual error here is skipped only for
+            // external rows. Office-workspace errors stay all-or-nothing.
+            match item {
+                Ok(()) => {}
+                Err(error) if external => {
+                    let _ = error;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+    waiting.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.id.cmp(&y.id)));
+    working.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.id.cmp(&y.id)));
+    Ok((
+        Section::new(
+            "waiting_on_you",
+            waiting.into_iter().map(|(_, i)| i).collect(),
+        ),
+        Section::new(
+            "agents_working_on",
+            working.into_iter().map(|(_, i)| i).collect(),
+        ),
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn classify_task(
+    row: &Value,
+    workspace: Option<&str>,
+    external: bool,
+    cutoff: &Option<(i64, String)>,
+    deliveries: &BTreeMap<String, Value>,
+    waiting: &mut Vec<((i64, String), Item)>,
+    working: &mut Vec<((i64, String), Item)>,
+) -> Result<()> {
+    {
         let tags = tags(row)?;
         let agent = tags.contains(&"owner:agent");
         let you = tags.contains(&"owner:you");
         let proposal = tags.contains(&"proposal");
-        if !agent && !you && !proposal {
-            continue;
+        // Office workspace: only office-tagged work, exactly as before.
+        // Extra workspaces do not use office ownership tags, so there the
+        // documented rule is broader: any `review` task waits on the user,
+        // and any non-proposal in-progress/finished/failed task is working.
+        if !external && !agent && !you && !proposal {
+            return Ok(());
         }
         let status = text(row, "status")?;
         let active = task_active(status)?;
         let created = text(row, "created_at")?;
         time_key(created)?;
-        if (proposal && status == "proposed")
-            || (!proposal && ((agent && status == "review") || (you && active)))
-        {
-            waiting.push((time_key(created)?, task_item(row, created, status)?));
+        let waits = (proposal && status == "proposed")
+            || (!proposal
+                && ((agent && status == "review")
+                    || (you && active)
+                    || (external && status == "review")));
+        if waits {
+            waiting.push((
+                time_key(created)?,
+                task_item(row, created, status, workspace)?,
+            ));
         }
-        if !agent || proposal {
-            continue;
+        if proposal || (!external && !agent) {
+            return Ok(());
         }
         let mut at = None;
         let mut working_status = status;
@@ -363,21 +445,33 @@ fn task_sections(
             }
         }
         if let Some(at) = at {
-            working.push((time_key(&at)?, task_item(row, &at, working_status)?));
+            working.push((
+                time_key(&at)?,
+                task_item(row, &at, working_status, workspace)?,
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Runs needing delivery evidence in an extra workspace, where office
+/// ownership tags do not apply: any active non-proposal task with a run.
+pub fn agent_runs_external(rows: &[Value]) -> Result<Vec<(String, String)>> {
+    let mut result = Vec::new();
+    for row in rows {
+        let tags = tags(row)?;
+        if tags.contains(&"proposal") || !task_active(text(row, "status")?)? {
+            continue;
+        }
+        match row.get("job_run_id") {
+            Some(Value::String(id)) if !id.is_empty() => {
+                result.push((text(row, "id")?.into(), id.clone()))
+            }
+            None | Some(Value::Null) => {}
+            Some(_) => return Err(invalid("task.job_run_id")),
         }
     }
-    waiting.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.id.cmp(&y.id)));
-    working.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.id.cmp(&y.id)));
-    Ok((
-        Section::new(
-            "waiting_on_you",
-            waiting.into_iter().map(|(_, i)| i).collect(),
-        ),
-        Section::new(
-            "agents_working_on",
-            working.into_iter().map(|(_, i)| i).collect(),
-        ),
-    ))
+    Ok(result)
 }
 
 /// Assemble an all-or-nothing brief from complete, read-only port snapshots.
@@ -386,6 +480,33 @@ fn task_sections(
 pub fn assemble(
     sources: &[LibraryText],
     rows: &[Value],
+    artifacts: &[LibraryText],
+    pages: &[LibraryText],
+    templates: &[LibraryText],
+    deliveries: &BTreeMap<String, Value>,
+) -> Result<Brief> {
+    assemble_with_workspaces(
+        sources,
+        &[TaskInventory {
+            workspace: None,
+            rows,
+        }],
+        &[],
+        artifacts,
+        pages,
+        templates,
+        deliveries,
+    )
+}
+
+/// Assemble a brief merging extra workspaces. The office workspace keeps
+/// the all-or-nothing rule; each selector in `unavailable` becomes one
+/// `workspace_unavailable` item instead of refusing the brief.
+#[allow(clippy::too_many_arguments)]
+pub fn assemble_with_workspaces(
+    sources: &[LibraryText],
+    inventories: &[TaskInventory<'_>],
+    unavailable: &[String],
     artifacts: &[LibraryText],
     pages: &[LibraryText],
     templates: &[LibraryText],
@@ -403,9 +524,30 @@ pub fn assemble(
         "since",
         last.map(Conversation::reference).into_iter().collect(),
     ));
-    let (waiting, working) = task_sections(rows, last.map(|c| c.time.as_str()), deliveries)?;
+    let (waiting, working) = task_sections(inventories, last.map(|c| c.time.as_str()), deliveries)?;
     sections.push(waiting);
     sections.push(working);
+    if !unavailable.is_empty() {
+        let mut selectors = unavailable.to_vec();
+        selectors.sort();
+        selectors.dedup();
+        sections.push(Section::new(
+            "workspace_unavailable",
+            selectors
+                .into_iter()
+                .map(|selector| Item {
+                    id: selector.clone(),
+                    link: format!("orbit://workspace/{selector}"),
+                    text: selector.clone(),
+                    time: None,
+                    entry_kind: None,
+                    status: Some("workspace_unavailable".into()),
+                    template: None,
+                    workspace: Some(selector),
+                })
+                .collect(),
+        ));
+    }
     let mut questions = Vec::new();
     for c in conversations.iter().take(10) {
         let mut open = BTreeMap::new();
@@ -473,6 +615,7 @@ pub fn assemble(
                 entry_kind: None,
                 status: None,
                 template: None,
+                workspace: None,
             }],
         ));
     }
@@ -496,6 +639,7 @@ pub fn assemble(
                 entry_kind: None,
                 status: None,
                 template: Some(template.template),
+                workspace: None,
             });
         }
     }

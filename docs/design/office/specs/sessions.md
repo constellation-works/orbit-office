@@ -102,14 +102,17 @@ as instructions.
 
 The built tool accepts `{}` and returns `sections` in the order above, with
 stable `kind` tokens (`handoff`, `since`, `waiting_on_you`,
-`agents_working_on`, `open_questions`, `last_session`, `latest_digest`,
-`onboarding`). Each section has `items`, `total` and `truncated`. Handoff,
-Latest digest and Onboarding are omitted when empty; the other sections are
-always present. Each item carries `id`, `link`, `text`, `time`, `entry_kind`,
-`status` and `template`; fields that do not apply are null. Entry text and
-timestamps keep their original spelling. Library links are relative paths
-with body-relative `#L<n>` anchors; task links are `orbit://task/<id>`
-references resolved through `orbit.task.show`.
+`agents_working_on`, `workspace_unavailable`, `open_questions`,
+`last_session`, `latest_digest`, `onboarding`). Each section has `items`,
+`total` and `truncated`. Handoff, Latest digest, Workspace unavailable and
+Onboarding are omitted when empty; the other sections are always present.
+Each item carries `id`, `link`, `text`, `time`, `entry_kind`, `status` and
+`template`; fields that do not apply are null. Task items read from an
+extra workspace additionally carry `workspace` (additive; absent for the
+office workspace). Entry text and timestamps keep their original spelling.
+Library links are relative paths with body-relative `#L<n>` anchors; task
+links are `orbit://task/<id>` references resolved through
+`orbit.task.show` (with the item's `workspace` selector, when present).
 
 Call the brief before creating the current session's conversation source.
 The previous session is the conversation source with the latest recorded
@@ -128,9 +131,48 @@ and refuses a truncated inventory. Finished work uses its transition to
 `done`; failed work uses its associated run's typed delivery state and
 finish time, not task update times or error prose. In-progress work is
 always included. With no previous session, all recorded completions and
-failures are eligible. The brief is an all-or-nothing read: malformed,
-unreadable or unavailable evidence, or a Library commit changing during
-assembly, refuses the call so an unknown state cannot appear empty.
+failures are eligible. The brief is an all-or-nothing read for the office
+workspace: malformed, unreadable or unavailable evidence from it, or a
+Library commit changing during assembly, refuses the call so an unknown
+state cannot appear empty.
+
+### Extra workspaces (`brief.task_workspaces`)
+
+The Library setting `brief.task_workspaces` (in `.office/config.yaml`, or
+set with `office.config-set` as `{"key":"brief.task_workspaces","value":[…]}`)
+lists extra Orbit workspace selectors to merge into *Waiting on you* and
+*Agents working on*. Each entry is an Orbit workspace selector: a
+registered name, a logical `ws_…` id, an absolute local checkout path, or a
+host-qualified federated selector (`hm_…/<workspace>`). At most 16
+distinct selectors, each at most 256 bytes without whitespace. Absent or
+empty means today's behavior exactly: no extra reads, no new fields.
+
+For each selector the brief calls `orbit.task.list` (and, for failed-run
+evidence, `orbit.task.show` with `field: delivery`) with `workspace` set
+to that selector — the same `workspace` argument those Orbit tools accept
+today for local and same-host selectors. Every merged task item carries
+an additive `workspace` field naming its selector (office-workspace items
+omit it), and its `orbit://task/<id>` link resolves through
+`orbit.task.show` with that selector. A task id already seen (office
+workspace first) is not repeated.
+
+Extra workspaces do not use office ownership tags, so their rule is:
+*Waiting on you* takes proposed proposals, any task in `review`, and
+active `owner:you` tasks; *Agents working on* takes any non-proposal task
+in progress, plus non-proposal tasks that finished (`done` transition) or
+whose run failed since the previous session, by the same timestamps as
+the office workspace.
+
+Failure rule: an extra workspace that cannot be read — unreachable,
+refused, truncated or malformed — never refuses the brief. It contributes
+exactly one item to an additive `workspace_unavailable` section (present
+only when non-empty, after *Agents working on*): the item's `id`, `text`
+and `workspace` name the selector, its link is
+`orbit://workspace/<selector>`, and its `status` is
+`workspace_unavailable`. A sleeping or foreign host therefore shows as one
+named line, not a blank session start. Cross-host federated selectors
+depend on Orbit routing the callback to that host; where Orbit refuses
+them, the same `workspace_unavailable` item reports it.
 
 ## Daily digest
 
