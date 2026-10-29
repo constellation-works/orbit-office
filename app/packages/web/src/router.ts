@@ -5,6 +5,7 @@
  * screen, so a task that builds one edits only its own folder.
  */
 import type { Screen } from "./screen.js";
+import { screen as agents } from "./screens/agents/index.js";
 import { screen as calendar } from "./screens/calendar/index.js";
 import { screen as insights } from "./screens/insights/index.js";
 import { screen as library } from "./screens/library/index.js";
@@ -20,6 +21,7 @@ export const SCREENS: readonly Screen[] = [
   today,
   calendar,
   todos,
+  agents,
   routines,
   library,
   insights,
