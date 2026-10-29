@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { createTodayFeature } from "../dist/features/today/index.js";
+import { createOrbitClient } from "../dist/orbit/client.js";
+import { installFakeOrbit } from "./fake-orbit.mjs";
 import { approvalTasks, fakeTodayClient, now, sharedTasks, todayTasks } from "./today-fixture.mjs";
 
 async function endpoint(t, client) {
@@ -36,6 +40,36 @@ test("Today HTTP sections contain proposals, reviews, your to-dos, active agents
   assert.equal(body.completion_dates_unavailable, 0);
   assert.equal(fake.state.calls.length, 2);
   assert.ok(fake.state.calls.every(({ name, input }) => name === "orbit.task.list" && input.fields.includes("history")));
+});
+
+test("GET /api/today returns 200 from cwd / with the workspace binding set (real Orbit client)", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  await writeFile(join(fake.state, "tasks.json"), JSON.stringify(todayTasks()));
+  const client = createOrbitClient({
+    timeoutMs: 5_000,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }),
+  });
+  const previousCwd = process.cwd();
+  process.chdir("/");
+  try {
+    const get = await endpoint(t, client);
+    const response = await get();
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.ok(Array.isArray(body.needs_you));
+  } finally {
+    process.chdir(previousCwd);
+  }
+  const cwds = (await readFile(join(fake.state, "cwds.log"), "utf8"))
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line));
+  assert.ok(cwds.length > 0);
+  assert.ok(cwds.every((cwd) => cwd === fake.root), `child cwd must be the workspace, got ${cwds.join(", ")}`);
 });
 
 test("an empty Orbit workspace produces three empty sections", async (t) => {

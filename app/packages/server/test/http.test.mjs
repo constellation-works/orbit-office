@@ -4,10 +4,17 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
 import { checkLoopbackRequest } from "../dist/http/guard.js";
-import { createHandler } from "../dist/http/router.js";
+
+// The router's feature modules build their Orbit clients on import, and a client
+// reads the installed workspace binding then and runs every tool child in it. Bind a
+// real directory first, as the installed service does, then load the router.
+const workspaceBinding = await mkdtemp(join(tmpdir(), "office-http-workspace-"));
+after(() => rm(workspaceBinding, { recursive: true, force: true }));
+process.env.ORBIT_OFFICE_WORKSPACE = workspaceBinding;
+const { createHandler } = await import("../dist/http/router.js");
 
 function request(port, { method = "GET", path = "/", headers = {} } = {}) {
   return new Promise((resolve, reject) => {

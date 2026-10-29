@@ -12,6 +12,7 @@ import {
   OrbitQueueTimeoutError,
   OrbitTimeoutError,
   OrbitUnknownAutoTaskError,
+  OrbitWorkspaceError,
 } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
 import { installSupervisionDoubles, timerAt } from "./supervision-doubles.mjs";
@@ -110,6 +111,7 @@ test("a non-zero exit is a typed error carrying the exit code", async (t) => {
 test("a missing executable is a typed spawn error", async () => {
   const client = createOrbitClient({
     timeoutMs: 5_000,
+    workspace: ".",
     env: { ...process.env, PATH: "/nonexistent-orbit-test-dir" },
   });
   await assert.rejects(client.callTool("orbit.task.show", { id: "X-1" }), (error) => {
@@ -180,14 +182,14 @@ test("a bound client sends the workspace selector for orbit.routine.control", as
   });
   const client = createOrbitClient({
     timeoutMs: 5_000,
-    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }),
   });
   const result = await client.callTool("orbit.routine.control", { action: "list" });
-  assert.equal(result.input.workspace, "/installed/workspace");
+  assert.equal(result.input.workspace, fake.root);
   const invocations = await invocationInputs(fake.state);
   assert.equal(invocations.length, 1);
   assert.equal(invocations[0].tool, "orbit.routine.control");
-  assert.deepEqual(invocations[0].input, { action: "list", workspace: "/installed/workspace" });
+  assert.deepEqual(invocations[0].input, { action: "list", workspace: fake.root });
 });
 
 test("an explicit workspace option overrides the environment binding", async (t) => {
@@ -198,15 +200,62 @@ test("an explicit workspace option overrides the environment binding", async (t)
   });
   const client = createOrbitClient({
     timeoutMs: 5_000,
-    workspace: "/explicit/workspace",
-    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/env/workspace" }),
+    workspace: fake.state,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }),
   });
   await client.callTool("orbit.routine.control", { action: "list" });
   const invocations = await invocationInputs(fake.state);
-  assert.equal(invocations[0].input.workspace, "/explicit/workspace");
+  assert.equal(invocations[0].input.workspace, fake.state);
 });
 
-test("workspace-less and non-requiring calls send input unchanged", async (t) => {
+test("non-requiring calls send input unchanged", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const bound = createOrbitClient({
+    timeoutMs: 5_000,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }),
+  });
+  await bound.callTool("orbit.task.list", { status: "backlog" });
+  const invocations = await invocationInputs(fake.state);
+  assert.deepEqual(invocations[0].input, { status: "backlog" });
+});
+
+test("every tool subprocess runs with cwd set to the workspace binding", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  const client = createOrbitClient({
+    timeoutMs: 5_000,
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }),
+  });
+  // A non-requiring tool: before the fix this child inherited the
+  // server's cwd, so from `/` Orbit resolved `/.orbit` and failed.
+  await client.callTool("orbit.task.list", { status: "backlog" });
+  await client.callTool("orbit.routine.control", { action: "list" });
+  const cwds = (await readLines(join(fake.state, "cwds.log"))).map((line) => JSON.parse(line));
+  assert.deepEqual(cwds, [fake.root, fake.root]);
+});
+
+test("the spawn options carry cwd = the workspace binding", async () => {
+  const doubles = installSupervisionDoubles();
+  try {
+    const client = createOrbitClient({ ...SUPERVISION_CLIENT, workspace: "." });
+    const pending = client.callTool("orbit.task.show", { id: "cwd-check" });
+    assert.equal(doubles.children.length, 1);
+    assert.equal(doubles.children[0].options.cwd, ".");
+    doubles.children[0].finish(0, null);
+    assert.equal(await pending, null);
+  } finally {
+    doubles.restore();
+  }
+});
+
+test("a missing workspace binding rejects with a typed error and spawns nothing", async (t) => {
   const fake = await installFakeOrbit();
   t.after(async () => {
     const { rm } = await import("node:fs/promises");
@@ -215,15 +264,43 @@ test("workspace-less and non-requiring calls send input unchanged", async (t) =>
   const unboundEnv = fake.env();
   delete unboundEnv.ORBIT_OFFICE_WORKSPACE;
   const unbound = createOrbitClient({ timeoutMs: 5_000, env: unboundEnv });
-  await unbound.callTool("orbit.routine.control", { action: "list" });
-  const bound = createOrbitClient({
-    timeoutMs: 5_000,
-    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+  await assert.rejects(unbound.callTool("orbit.task.list", { status: "backlog" }), (error) => {
+    assert.ok(error instanceof OrbitWorkspaceError, `expected OrbitWorkspaceError, got ${error}`);
+    assert.ok(error instanceof OrbitError);
+    assert.equal(error.code, "workspace_unavailable");
+    assert.equal(error.reason, "missing");
+    assert.equal(error.workspace, undefined);
+    return true;
   });
-  await bound.callTool("orbit.task.list", { status: "backlog" });
-  const invocations = await invocationInputs(fake.state);
-  assert.deepEqual(invocations[0].input, { action: "list" });
-  assert.deepEqual(invocations[1].input, { status: "backlog" });
+  const invocations = await readLines(join(fake.state, "invocations.log"));
+  assert.deepEqual(invocations, []);
+});
+
+test("a non-directory workspace binding rejects with a typed error and spawns nothing", async (t) => {
+  const fake = await installFakeOrbit();
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(fake.root, { recursive: true, force: true });
+  });
+  // fake.state is a directory; a path inside it that is a file is not.
+  const { writeFile } = await import("node:fs/promises");
+  const fileBinding = join(fake.state, "a-file");
+  await writeFile(fileBinding, "not a directory");
+  for (const binding of [fileBinding, join(fake.state, "does-not-exist")]) {
+    const client = createOrbitClient({
+      timeoutMs: 5_000,
+      env: fake.env({ ORBIT_OFFICE_WORKSPACE: binding }),
+    });
+    await assert.rejects(client.callTool("orbit.task.list", { status: "backlog" }), (error) => {
+      assert.ok(error instanceof OrbitWorkspaceError, `expected OrbitWorkspaceError, got ${error}`);
+      assert.equal(error.code, "workspace_unavailable");
+      assert.equal(error.reason, "not_directory");
+      assert.equal(error.workspace, binding);
+      return true;
+    });
+  }
+  const invocations = await readLines(join(fake.state, "invocations.log"));
+  assert.deepEqual(invocations, []);
 });
 
 test("a caller-supplied workspace is not overwritten, including via pollTool", async (t) => {
@@ -235,13 +312,13 @@ test("a caller-supplied workspace is not overwritten, including via pollTool", a
   const client = createOrbitClient({
     timeoutMs: 5_000,
     pollCacheTtlMs: 0,
-    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }),
   });
   await client.callTool("orbit.routine.control", { action: "list", workspace: "/caller/workspace" });
   await client.pollTool("orbit.routine.control", { action: "list" });
   const invocations = await invocationInputs(fake.state);
   assert.equal(invocations[0].input.workspace, "/caller/workspace");
-  assert.equal(invocations[1].input.workspace, "/installed/workspace");
+  assert.equal(invocations[1].input.workspace, fake.root);
 });
 
 test("mintAutoTask runs orbit.auto_task.mint with the workspace binding", async (t) => {
@@ -252,7 +329,7 @@ test("mintAutoTask runs orbit.auto_task.mint with the workspace binding", async 
   });
   const client = createOrbitClient({
     timeoutMs: 5_000,
-    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }),
   });
   const result = await client.mintAutoTask("office-review");
   assert.equal(result.minted, true);
@@ -264,7 +341,7 @@ test("mintAutoTask runs orbit.auto_task.mint with the workspace binding", async 
   assert.deepEqual(invocations[0].input, {
     name: "office-review",
     acknowledge_unconditional: true,
-    workspace: "/installed/workspace",
+    workspace: fake.root,
   });
 });
 
@@ -276,7 +353,7 @@ test("mintAutoTask maps an unknown auto-task to a typed error", async (t) => {
   });
   const client = createOrbitClient({
     timeoutMs: 5_000,
-    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }),
   });
   await assert.rejects(client.mintAutoTask("no-such-auto-task"), (error) => {
     assert.ok(error instanceof OrbitUnknownAutoTaskError, `expected OrbitUnknownAutoTaskError, got ${error}`);
@@ -295,7 +372,7 @@ test("mintAutoTask maps capability_denied to not_permitted", async (t) => {
   });
   const client = createOrbitClient({
     timeoutMs: 5_000,
-    env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }),
+    env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }),
   });
   await assert.rejects(client.mintAutoTask("denied-auto-task"), (error) => {
     assert.ok(error instanceof OrbitNotPermittedError, `expected OrbitNotPermittedError, got ${error}`);
@@ -307,12 +384,13 @@ test("mintAutoTask maps capability_denied to not_permitted", async (t) => {
   });
   const invocations = await invocationInputs(fake.state);
   assert.equal(invocations[0].tool, "orbit.auto_task.mint");
-  assert.equal(invocations[0].input.workspace, "/installed/workspace");
+  assert.equal(invocations[0].input.workspace, fake.root);
 });
 
 const SUPERVISION_CLIENT = {
   timeoutMs: 100,
   command: "orbit-supervision-double",
+  workspace: ".",
   env: { PATH: "" },
 };
 
@@ -433,6 +511,7 @@ test("oversized output holds its slot until the child closes", async () => {
       timeoutMs: 10_000,
       maxOutputBytes: 16,
       command: "orbit-supervision-double",
+      workspace: ".",
       env: { PATH: "" },
     });
     let firstSettled = false;
@@ -736,13 +815,13 @@ test("auto-task list and update receive the installed workspace binding", async 
     const { rm } = await import("node:fs/promises");
     await rm(fake.root, { recursive: true, force: true });
   });
-  const client = createOrbitClient({ timeoutMs: 5_000, env: fake.env({ ORBIT_OFFICE_WORKSPACE: "/installed/workspace" }) });
+  const client = createOrbitClient({ timeoutMs: 5_000, env: fake.env({ ORBIT_OFFICE_WORKSPACE: fake.root }) });
   await client.callTool("orbit.auto_task.list", {}).catch(() => {});
   await client.callTool("orbit.auto_task.update", { name: "meeting-sweep", enabled: false }).catch(() => {});
   const invocations = await invocationInputs(fake.state);
   assert.deepEqual(invocations.map(({ tool, input }) => [tool, input]), [
-    ["orbit.auto_task.list", { workspace: "/installed/workspace" }],
-    ["orbit.auto_task.update", { name: "meeting-sweep", enabled: false, workspace: "/installed/workspace" }],
+    ["orbit.auto_task.list", { workspace: fake.root }],
+    ["orbit.auto_task.update", { name: "meeting-sweep", enabled: false, workspace: fake.root }],
   ]);
 });
 
