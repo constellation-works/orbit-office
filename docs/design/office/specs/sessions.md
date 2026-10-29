@@ -138,10 +138,12 @@ state cannot appear empty.
 
 ### Extra workspaces (`brief.task_workspaces`)
 
-The Library setting `brief.task_workspaces` (in `.office/config.yaml`, or
-set with `office.config-set` as `{"key":"brief.task_workspaces","value":[…]}`)
+The Library setting `brief.task_workspaces` in the Library's `.office/config.yaml`
 lists extra Orbit workspace selectors to merge into *Waiting on you* and
-*Agents working on*. Each entry is an Orbit workspace selector: a
+*Agents working on*. The user edits that file directly to change it (for
+example `brief:` with `task_workspaces: [...]`); the app's Settings screen
+has no field for it, and the agent never sets it (`office.config-set` is
+`mcp_scope: none`, so it is not exposed to the orchestrator). Each entry is an Orbit workspace selector: a
 registered name, a logical `ws_…` id, an absolute local checkout path, or a
 host-qualified federated selector (`hm_…/<workspace>`). At most 16
 distinct selectors, each at most 256 bytes without whitespace. Absent or

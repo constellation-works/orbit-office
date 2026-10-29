@@ -52,7 +52,8 @@ Links:
 
 **Extra workspaces.** The Library setting `brief.task_workspaces` lists up to
 16 more Orbit workspaces to merge into *Waiting on you* and *Agents working
-on*. The user sets it in Settings or `.office/config.yaml`; you cannot
+on*. The user edits the Library's `.office/config.yaml` directly to change
+it; the app's Settings screen has no field for it, and you cannot set it
 (`office.config-set` is not exposed to you). In those workspaces any `review`
 task waits on the user, and any non-proposal task in progress, finished or
 failed counts as agent work. An unreachable one (a sleeping host, a refused
