@@ -88,6 +88,25 @@ fn shared_person_view_filters_refs_qualifies_cites_and_preserves_contributors() 
 }
 
 #[test]
+fn shared_view_bytes_are_exact_for_nested_empty_escaped_unicode_null_and_bool_values() {
+    let text = "---\nid: dom-flow\ntitle: Café\nempty_map: {}\nempty_list: []\nnested: { flag: true, inner: [\"a\\\"b\", \"🌍\"], missing: null }\nflag: false\n---\nBody.\n";
+    let next = sharing::shared_view(text, "jane", |_| true, |_| true).unwrap();
+    assert_eq!(
+        next,
+        "---\n\
+         id: \"dom-flow\"\n\
+         title: \"Café\"\n\
+         empty_map: {  }\n\
+         empty_list: []\n\
+         nested: { flag: true, inner: [\"a\\\"b\", \"🌍\"], missing: null }\n\
+         flag: false\n\
+         contributors: [\"jane\"]\n\
+         shared_by: \"jane\"\n\
+         ---\nBody.\n"
+    );
+}
+
+#[test]
 fn knowledge_model_attachments_preserve_true_sharing_and_proposal_flags_require_booleans() {
     let markdown = "---\nid: dom-shared\ntitle: Shared\nshareable: true\n---\nBody.\n";
     let page = Page::from_markdown(markdown).unwrap();

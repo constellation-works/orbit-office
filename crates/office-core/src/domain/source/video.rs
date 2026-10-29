@@ -255,33 +255,16 @@ fn decode_state(raw: &str) -> Result<VideoState> {
     }
     Ok(state)
 }
+// Larger nested state is stored as quoted JSON so unrelated frontmatter readers
+// can still read participants, tags and provenance within their depth bound.
 fn encode_state(state: &VideoState) -> Result<String> {
     let invalid = || refusal("invalid_video_plan", "cannot encode ledger");
-    Ok(flow(
+    Ok(crate::domain::knowledge::frontmatter::flow_value(
         &json!({"duration_s":state.plan.duration_ms.div_ceil(1000),"plan_digest":state.plan.digest,
         "plan":serde_json::to_string(&state.plan).map_err(|_|invalid())?,
         "confirmed_at":state.confirmed_at,"calls":state.calls,"frames_read":state.frames_read,
         "readings":serde_json::to_string(&state.readings).map_err(|_|invalid())?, "transcription_sha256":state.transcription_sha256,"audio_completed":state.audio_completed}),
     ))
-}
-// Emit the Library's supported YAML flow subset (plain keys plus JSON scalars).
-// Larger nested state is stored as quoted JSON so unrelated frontmatter readers
-// can still read participants, tags and provenance within their depth bound.
-pub(super) fn flow(value: &Value) -> String {
-    match value {
-        Value::Object(map) => format!(
-            "{{ {} }}",
-            map.iter()
-                .map(|(key, value)| format!("{key}: {}", flow(value)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Value::Array(items) => format!(
-            "[{}]",
-            items.iter().map(flow).collect::<Vec<_>>().join(", ")
-        ),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.to_string(),
-    }
 }
 /// Record the generated transcript hash without changing the approved plan digest.
 pub(super) fn with_transcript(markdown: &str, body: &str) -> Result<Option<String>> {
@@ -731,7 +714,10 @@ pub fn apply(
             json!({"route":reading.route,"model":reading.model}),
         );
         header.retain(|line| !line.starts_with("derived_by:"));
-        header.push(format!("derived_by: {}", flow(&derived)));
+        header.push(format!(
+            "derived_by: {}",
+            crate::domain::knowledge::frontmatter::flow_value(&derived)
+        ));
     }
     header.push(format!("sensitivity: {}", next.plan.sensitivity));
     header.push(format!("video: {}", encode_state(&next)?));

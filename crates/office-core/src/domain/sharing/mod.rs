@@ -295,10 +295,7 @@ pub fn shared_view(
     fields.push(("shared_by".into(), Value::String(member.into())));
     let mut output = String::from("---\n");
     for (key, value) in fields {
-        output.push_str(&format!(
-            "{key}: {}\n",
-            crate::domain::artifact::yaml_value(&value)
-        ));
+        output.push_str(&format!("{key}: {}\n", frontmatter::flow_value(&value)));
     }
     output.push_str("---\n");
     output.push_str(&rewrite_citations(body, |cite| qualify(cite, member)));

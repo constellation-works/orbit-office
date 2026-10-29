@@ -916,7 +916,12 @@ pub fn processing_markdown(
             // The ledger is already encoded in the Library YAML subset.
             let rendered = fields
                 .iter()
-                .map(|(key, value)| format!("{key}: {}", video::flow(value)))
+                .map(|(key, value)| {
+                    format!(
+                        "{key}: {}",
+                        crate::domain::knowledge::frontmatter::flow_value(value)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join("\n");
             return Ok((
@@ -928,7 +933,12 @@ pub fn processing_markdown(
     }
     let rendered = fields
         .iter()
-        .map(|(key, value)| format!("{key}: {}", video::flow(value)))
+        .map(|(key, value)| {
+            format!(
+                "{key}: {}",
+                crate::domain::knowledge::frontmatter::flow_value(value)
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
     Ok((
