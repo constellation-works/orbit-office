@@ -76,6 +76,18 @@ test('paste, source reads, privacy and citation reads go through the tools and p
   assert.deepEqual((await f.request('/api/sources/citation?id=rb-restart&kind=runbook')).body, { title: 'Runbook', text: 'Restart carefully.' });
 });
 
+test('a withheld private source reports content_withheld with empty text', async t => {
+  const f = await fixture(t, async name => {
+    if (name === 'office.source-show') return { ok: true, output: { ...SOURCE, text: '', sensitivity: 'private', content_withheld: true, derived_by: {} } };
+    if (name === 'office.status') return { open_weights: null };
+    throw Error('unexpected tool');
+  });
+  const response = await f.request(`/api/sources?id=${SOURCE.id}`);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.content_withheld, true);
+  assert.equal(response.body.text, '');
+});
+
 test('a private hosted-provider source names the third party in its route badge', async t => {
   const f = await fixture(t, async name => {
     if (name === 'office.source-show') return { ...SOURCE, sensitivity: 'private', derived_by: {

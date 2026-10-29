@@ -236,6 +236,42 @@ fn source_show_returns_provenance_pages_artifacts_tasks_and_chapters_without_cha
 }
 
 #[test]
+fn source_show_withholds_the_body_and_derived_text_of_a_private_source() {
+    let ports = ports(fixture(b"video", true, Default::default()));
+    let response = call("office.source-show", json!({"id":ID}), &ports);
+    assert_eq!(response["ok"], true, "{response}");
+    let output = &response["output"];
+    assert_eq!(output["sensitivity"], "private", "{response}");
+    assert_eq!(output["content_withheld"], true, "{response}");
+    assert_eq!(output["body"], "", "{response}");
+    assert_eq!(output["text"], "", "{response}");
+    assert_eq!(output["span"], Value::Null, "{response}");
+    assert_eq!(output["summary"], Value::Null, "{response}");
+    assert_eq!(output["chapters"], json!([]), "{response}");
+    assert_eq!(output["frames"], json!([]), "{response}");
+    assert_eq!(output["gotchas"], json!([]), "{response}");
+    // Metadata still returns: the caller can cite and re-route the source.
+    assert_eq!(output["id"], ID, "{response}");
+    assert_eq!(output["title"], "Fixture", "{response}");
+    assert_eq!(output["path"], SOURCE_PATH, "{response}");
+    assert!(
+        !response.to_string().contains("Transcript."),
+        "private body leaked: {response}"
+    );
+    let anchored = call(
+        "office.source-show",
+        json!({"id":ID,"anchor":"#L1"}),
+        &ports,
+    );
+    assert_eq!(anchored["ok"], true, "{anchored}");
+    assert_eq!(anchored["output"]["span"], Value::Null, "{anchored}");
+    assert!(
+        !anchored.to_string().contains("Transcript."),
+        "private span leaked: {anchored}"
+    );
+}
+
+#[test]
 fn source_show_media_is_complete_base64_or_explicitly_over_cap() {
     use office_core::domain::source::access::{MEDIA_LIMIT, base64};
     for bytes in [

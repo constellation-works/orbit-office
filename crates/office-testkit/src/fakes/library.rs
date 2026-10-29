@@ -782,6 +782,7 @@ impl Library for FakeLibrary {
                 title: doc.title.clone(),
                 path: doc.path.clone(),
                 snippet: doc.body.chars().take(120).collect(),
+                sensitivity: doc.sensitivity.clone(),
             })
             .collect())
     }

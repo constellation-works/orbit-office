@@ -91,9 +91,11 @@ log, not in a separate source. Meetings and KT videos have their own flows in
   `client:acme`), `series`, `since` and `until` (`YYYY-MM-DD`, inclusive;
   undated documents drop out), `layer` (`own` or `shared`; both when
   omitted), `limit` (1–100, default 20).
-- Hits carry `id`, `kind`, `title`, `path`, `snippet`, `layer` and
-  `shared_by`. A snippet is a lead, not evidence: open the document before
-  you cite it.
+- Hits carry `id`, `kind`, `title`, `path`, `snippet`, `layer`,
+  `shared_by` and `sensitivity`. A snippet is a lead, not evidence: open
+  the document before you cite it. A `private` hit lists by metadata
+  only: its `snippet` is empty and the hit carries
+  `content_withheld: true`.
 
 ```json
 {"query":"renewal price","tag":"client:acme","since":"2026-09-01"}
@@ -155,9 +157,14 @@ Sources, pages and artifacts are `normal` or `private`.
 - An artifact takes the strictest sensitivity of what it cites.
 - Private documents cannot be shared, and private cannot be downgraded to
   normal. Only the app changes sensitivity.
-- Text you read with `source-show` enters this conversation. Do not copy
-  private text into task descriptions, proposals or other documents.
-  Reference it by id and anchor.
+- The read tools withhold private content from you: for a `private`
+  source, page or artifact, `office.source-show`, `office.search`,
+  `office.knowledge-show` and `office.artifact-show` return metadata
+  only (id, title, path, sensitivity, anchors) with
+  `content_withheld: true` — no body, span, summary or snippet. Cite it
+  by id and anchor, and work on its content only through tools that
+  route to the user's private endpoint. Never ask the user to paste
+  private text to work around the withholding.
 
 ## Resolve "this" and "that"
 

@@ -159,6 +159,7 @@ function drawSource(source: SourceView, root: HTMLElement): void {
     image.addEventListener("error", () => { image.replaceWith(el("p", "The original image is unavailable or exceeds the current media limit.")); }); original.append(image);
   } else original.append(el("p", "The captured text is shown alongside. No playable original is available."));
   const transcript = el("div"); transcript.append(el("h2", "Text"));
+  if (source.content_withheld) transcript.append(el("p", "This source is private, so its text is withheld here. It is only processed on your chosen private endpoint."));
   const lines = el("div"); lines.className = "source-text"; lines.setAttribute("aria-label", "Source text");
   const lineNodes = source.text.split("\n").map((line, index) => {
     const node = el("p"); node.className = "source-line"; node.id = `L${index + 1}`;

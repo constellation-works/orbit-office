@@ -171,6 +171,9 @@ pub struct SearchHit {
     pub path: String,
     /// A short excerpt around the first match.
     pub snippet: String,
+    /// Frontmatter `sensitivity` (`normal` when absent). Read tools withhold
+    /// the snippet of a `private` hit (see the MCP private-content decision).
+    pub sensitivity: String,
 }
 
 /// How one document links to another.

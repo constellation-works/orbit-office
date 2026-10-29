@@ -130,8 +130,19 @@ source's `derived_by`.
   a missing modality returns `private_media_unsupported` naming it. Private
   text originals need text only; other original MIME types are refused as
   unsupported. These reads make no model or network call and never fall back
-  to the hosted route. Source text display without a media request retains
-  its existing behavior.
+  to the hosted route.
+- **Read tools withhold private bodies.** The MCP-visible read tools
+  (`office.source-show`, `office.search`, `office.knowledge-show`,
+  `office.artifact-show`) return metadata only for a `private` document —
+  id, kind, title, path, sensitivity, provenance and anchors as
+  identifiers — marked `content_withheld: true`. The source body and span,
+  its summary sidecar and chapter/frame/gotcha text, the search snippet,
+  the page body and the artifact body never reach any caller of these
+  tools, because the orchestrator's hosted model would otherwise receive
+  private text on every read ([decision](../4_decisions.md#private-content-is-withheld-from-mcp-visible-read-tools)).
+  This is the same rule selections and `office.attach` already apply.
+  Working on private content goes through the model tools, which route
+  it to the private endpoint; no private-route summary is substituted.
 - **Every tier and modality** goes to the one private model: digest,
   careful consolidation, frame reading and transcription. A private KT video
   is refused at planning only when the endpoint lacks a capability it needs

@@ -1635,3 +1635,67 @@ code is unchanged.
 - Cost: the `retire` proposal kind stays reachable only by conversation,
   and wiring real usage telemetry later must also revisit declared-cadence
   coverage, which currently uses listed task titles.
+
+## Private content is withheld from MCP-visible read tools
+
+**Recorded:** 2026-10-29 · [ORB-19752]
+**Code anchors:** `crates/office-tools/src/tools/sources/show.rs`, `crates/office-tools/src/tools/library/search.rs`, `crates/office-tools/src/tools/knowledge/show.rs`, `crates/office-tools/src/tools/artifacts/show.rs`; [specs/models-and-privacy.md](./specs/models-and-privacy.md), [specs/selection-sharing.md](./specs/selection-sharing.md)
+
+### Context
+
+`private` means inference only on the user's chosen private endpoint.
+The office tools enforced that for their own model calls, but the
+MCP-visible read tools returned private bodies and snippets to their
+caller unchecked: `office.source-show` returned the whole body or anchor
+span, `office.search` returned an FTS snippet built from the body, and
+`office.knowledge-show` / `office.artifact-show` returned page and
+artifact bodies. The orchestrator is the user's agent CLI, usually on a
+hosted model, so every such read sent private text to that hosted model
+— exactly what selection sharing already prevents by dropping the quote
+from private selections. The two surfaces disagreed.
+
+The alternatives considered:
+
+- **A per-caller rule (MCP versus app).** The call context carries no
+  caller-kind key in this checkout, and `McpScope` is a static manifest
+  flag, so no in-repo discriminator exists. A caller key supplied in
+  tool input would be spoofable by the very caller it must hold back.
+- **A summary produced on the private route instead of the body.** No
+  such summary exists for most documents, producing one needs a private
+  endpoint call on a read path, and a generated summary is still
+  derived private content whose wording no one approved for release.
+- **Refusing private reads with an error.** The caller then cannot
+  learn even that the document exists, which breaks citation,
+  re-routing and "listed by reference" flows that the digest already
+  uses for private items.
+
+### Decision
+
+Uniform withholding on the MCP-visible read surface. For a `private`
+document, `office.source-show`, `office.search`, `office.knowledge-show`
+and `office.artifact-show` return metadata only — id, layer, kind,
+title, path, sensitivity, and (for sources) provenance, anchors as
+identifiers and citers — and mark the result `content_withheld: true`.
+Withheld, per tool: the source body/`text`/span, its `summary.md`
+sidecar and chapter/frame/gotcha text; the search snippet (the hit
+still lists, with `sensitivity` on every hit); the page body; and the
+artifact's body companion. This matches `office.selection-get`'s
+stored-record shape for private objects (reference and anchor, never
+the quote) and `office.attach`, which already withholds private
+documents. Media payloads keep their existing private-route gating.
+No private-route summary is produced.
+
+### Consequences
+
+- No caller of these tools — MCP agent or app — receives private body
+  text through them. The app, which calls the same tools as the user,
+  therefore shows the withheld state for private items instead of the
+  body; restoring full private display in the app needs a future
+  `mcp_scope: none` app-only read tool, deliberately not built here.
+- The agent can still find, cite and route private material: search
+  lists it, source-show names it, and model work on it goes through
+  the tools that route to the private endpoint.
+- Cost: a private source cannot be read in the app's source view until
+  that app-only path exists, and callers must handle
+  `content_withheld: true` (an empty body/snippet) rather than a
+  refusal.

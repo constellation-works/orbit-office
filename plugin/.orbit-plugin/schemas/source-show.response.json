@@ -332,6 +332,7 @@
       }
     },
     "summary": { "type": ["string", "null"] },
+    "content_withheld": { "type": "boolean", "description": "Present and true only for a private source: body, text, span, summary and derived chapter/frame/gotcha text are withheld; metadata only is returned." },
     "gotchas": {
       "type": "array",
       "items": {

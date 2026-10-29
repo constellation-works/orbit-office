@@ -73,6 +73,7 @@
         "additionalProperties": false
       }
     },
+    "content_withheld": { "type": "boolean", "description": "Present and true only for a private page: the page body is withheld (empty); metadata only is returned." },
     "history": {
       "type": "object",
       "description": "Present only for history: true. Up to 50 newest-first document commits; author identity is withheld.",

@@ -61,7 +61,14 @@ fn source_sensitivity_is_monotonic_through_the_binary() {
     assert_eq!(git(&env.library(), &["rev-parse", "HEAD"]), head);
     let shown = env.tool("office.source-show", serde_json::json!({"id":id}));
     assert_eq!(shown["output"]["sensitivity"], "private", "{shown}");
-    assert_eq!(shown["output"]["body"], "Preserve this body.");
+    // Private bodies are withheld from tool callers (see
+    // library_reads::private_bodies_and_snippets_are_withheld_through_the_binary).
+    assert_eq!(shown["output"]["content_withheld"], true, "{shown}");
+    assert_eq!(shown["output"]["body"], "");
+    assert!(
+        !shown.to_string().contains("Preserve this body."),
+        "{shown}"
+    );
     let store = office_store::LibraryStore::open(&env.library(), &env.state).unwrap();
     assert_eq!(
         store
@@ -1570,8 +1577,11 @@ fn private_capture_metadata_cannot_inject_frontmatter() {
                 shown["output"]["sensitivity"], "private",
                 "{field}: {shown}"
             );
+            // The stored body is intact (indexed.body below); tool callers
+            // get it withheld because the source is private.
+            assert_eq!(shown["output"]["body"], "", "{field}: {shown}");
             assert_eq!(
-                shown["output"]["body"], "original private body",
+                shown["output"]["content_withheld"], true,
                 "{field}: {shown}"
             );
             let store = office_store::LibraryStore::open(&env.library(), &env.state).unwrap();
@@ -1608,7 +1618,10 @@ fn private_upload_extension_cannot_inject_frontmatter() {
     let shown = env.tool("office.source-show", serde_json::json!({"id": id}));
     assert_eq!(shown["ok"], true, "{shown}");
     assert_eq!(shown["output"]["sensitivity"], "private", "{shown}");
-    assert_eq!(shown["output"]["body"], "private uploaded body", "{shown}");
+    // The stored body is intact (indexed.body below); tool callers get it
+    // withheld because the source is private.
+    assert_eq!(shown["output"]["body"], "", "{shown}");
+    assert_eq!(shown["output"]["content_withheld"], true, "{shown}");
 
     let source_path = captured["output"]["path"].as_str().expect("source path");
     let original_path = env

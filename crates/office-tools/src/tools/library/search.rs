@@ -5,6 +5,11 @@
 //! is the one the index records (`DocumentRecord::date`); `since` and
 //! `until` are inclusive and exclude undated documents. An empty query is
 //! refused: this tool finds material, it does not list the Library.
+//!
+//! A `private` hit is listed by metadata only: its snippet is emptied and
+//! the hit is marked `content_withheld: true`, so private body text never
+//! reaches a caller of this MCP-visible tool (the private-content decision
+//! in docs/design/office/4_decisions.md).
 
 use office_core::domain::knowledge::{DocumentKind, LibraryLayer, SearchFilter};
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
@@ -93,15 +98,21 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .into_iter()
         .take(limit)
         .map(|hit| {
-            json!({
+            let withheld = hit.sensitivity == "private";
+            let mut output = json!({
                 "id": hit.id,
                 "layer": hit.layer,
                 "shared_by": hit.shared_by,
                 "kind": hit.kind,
                 "title": hit.title,
                 "path": hit.path,
-                "snippet": hit.snippet,
-            })
+                "snippet": if withheld { String::new() } else { hit.snippet },
+                "sensitivity": hit.sensitivity,
+            });
+            if withheld {
+                output["content_withheld"] = json!(true);
+            }
+            output
         })
         .collect();
     Ok(json!({ "count": hits.len(), "hits": hits }))

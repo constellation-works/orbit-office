@@ -4,6 +4,11 @@
 //! this tool is visible to agents over MCP (knowledge-templates.md,
 //! "Contact details"). Back-links are the indexed sources, pages and
 //! artifacts whose frontmatter `cites` or `related` name the page.
+//!
+//! A `private` page returns metadata only: its body is emptied and the
+//! output is marked `content_withheld: true`, so private page text never
+//! reaches a caller of this MCP-visible tool (the private-content decision
+//! in docs/design/office/4_decisions.md).
 
 use std::path::Path;
 
@@ -51,11 +56,18 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let markdown = library.read_text(Path::new(path))?;
     let mut view = Page::from_markdown(&markdown)?.model_view();
     view.path = path.to_string();
+    let withheld = view.sensitivity.as_str() == "private";
+    if withheld {
+        view.body = String::new();
+    }
     let backlinks = library.backlinks(id)?;
     let mut output = json!({
         "page": view,
         "backlinks": backlinks,
     });
+    if withheld {
+        output["content_withheld"] = json!(true);
+    }
     output["page"]["layer"] = json!(record.layer);
     output["page"]["shared_by"] = json!(record.shared_by);
     if history {

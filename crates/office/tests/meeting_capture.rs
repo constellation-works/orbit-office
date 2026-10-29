@@ -201,8 +201,17 @@ fn meeting_inbox_saves_indexed_anchorable_summary_and_is_a_noop_on_rerun() {
         json!({"id":id,"document":"summary","anchor":"#L3"}),
     );
     assert_eq!(shown["ok"], true, "{shown}");
-    assert_eq!(shown["output"]["body"], "Quasar meeting summary");
-    assert_eq!(shown["output"]["summary"], summary);
+    // The event source is private, so tool callers get its summary withheld;
+    // the stored summary sidecar above stays intact for the Library itself.
+    assert_eq!(shown["output"]["sensitivity"], "private", "{shown}");
+    assert_eq!(shown["output"]["content_withheld"], true, "{shown}");
+    assert_eq!(shown["output"]["body"], "", "{shown}");
+    assert_eq!(
+        shown["output"]["summary"],
+        serde_json::Value::Null,
+        "{shown}"
+    );
+    assert!(!shown.to_string().contains("Quasar"), "{shown}");
     let outside = call(
         &f.ports,
         "office.source-show",
