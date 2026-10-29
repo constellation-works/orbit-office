@@ -54,7 +54,7 @@ Copied from `install.sh --help`:
 | `--yes` | Skip the plugin-enable consent question |
 | `--with-cloudcli` | Also install the optional `cloudcli` plugin |
 | `--from-source` | Build office from this clone's HEAD (needs `cargo`) instead of a prebuilt export |
-| `--agent NAME` | Agent CLI to register: `claude` (default) or `codex` |
+| `--agent NAME` | Agent CLI to register: `claude` (default), `codex` or `muse` |
 | `--port PORT` | App port (default 4317, or `$ORBIT_OFFICE_PORT`) |
 | `--uninstall` | Remove the service, MCP entry, added deny rules, plugins and tools; keeps the workspace and Library |
 | `--purge` | Like `--uninstall`, and also removes the workspace when this installer owns it; otherwise refuses |
@@ -62,7 +62,7 @@ Copied from `install.sh --help`:
 Useful environment variables: `ORBIT_OFFICE_HOME` (same as `--home`), `ORBIT_OFFICE_DATA_DIR`
 (per-user data folder), `ORBIT_OFFICE_PLUGIN_BUNDLE` (unpacked office, gateway and optional
 cloudcli exports), `ORBIT_OFFICE_APP_BUNDLE` (unpacked app bundle, needed when there is no
-adjacent `app/` tree), `CLAUDE_CONFIG_DIR`. `ORBIT_OFFICE_META_API_KEY` and
+adjacent `app/` tree), `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`. `ORBIT_OFFICE_META_API_KEY` and
 `ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN` supply secrets instead of the prompt; never suggest putting
 a real key in a command line you can see.
 
@@ -131,7 +131,9 @@ never sent to the hosted API. See [tools-and-guardrails.md](tools-and-guardrails
 
 ## Agent CLI registration
 
-The installer registers one agent CLI: Claude Code by default, or Codex with `--agent codex`.
+The installer registers one agent CLI: Claude Code by default, or Codex with `--agent codex`,
+or Muse Code with `--agent muse`. Muse Code is the default orchestrator provider; the
+installer's own `--agent` default is `claude`.
 
 - **Claude Code:** the Orbit MCP entry (`orbit mcp serve`) goes in
   `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`. Deny rules `Bash(curl *)`, `Bash(wget *)`,
@@ -140,9 +142,12 @@ The installer registers one agent CLI: Claude Code by default, or Codex with `--
   `$CLAUDE_CONFIG_DIR/skills`). Each file it changes keeps a `.bak`.
 - **Codex:** MCP entry in `~/.codex/config.toml`, skills in `~/.codex/skills`. Codex has no
   per-command deny rules for sandboxed shell calls; the summary says so.
-- **Muse Code:** `orbit-office status` recognises an Orbit MCP entry in
-  `~/.config/muse/settings.json` (or under `$XDG_CONFIG_HOME`), but `install.sh` does not
-  write one. Muse Code also loads Claude Code and Codex personal skills unless that is off.
+- **Muse Code:** with `--agent muse`, the Orbit MCP entry goes in `mcpServers` in
+  `~/.config/muse/settings.json` (or under `$XDG_CONFIG_HOME`), and office skills are
+  copied to `~/.agents/skills`. The file it changes keeps a `.bak`, and uninstall removes
+  only the entry the installer wrote. Muse Code has no per-command shell deny settings,
+  so the summary says so. `orbit-office status` also recognises a hand-written entry in
+  that file. Muse Code also loads Claude Code and Codex personal skills unless that is off.
 
 The deny rules are an accident guard. Respect them even where they don't apply: use the
 gateway, never a shell HTTP client or cloud CLI.
@@ -183,7 +188,7 @@ error. With `--json` it prints one object with `ok` and a `problems` list of
 | `Private route:` | `configured (...)` or `not configured (optional)` | Not a failure. To add one: Settings › Private route |
 | `App service:` | `running at http://localhost:<port>/` | `not installed`: `install.sh`. `stopped`: `orbit-office open <path>` |
 | `App service log:` | a path (macOS) or the journalctl command (Linux) | Read only to diagnose a start failure; ask the user to look |
-| `Agent CLI:` | `registered` | Missing: `install.sh` (with `--agent` for Codex) |
+| `Agent CLI:` | `registered` | Missing: `install.sh` (with `--agent` for Codex or Muse Code) |
 
 Report the problems and their fixes in plain words. Don't run the fixes. The JSON form also
 reports `app_service.workspace`, the workspace the service is bound to; compare it with the

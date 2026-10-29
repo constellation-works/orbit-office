@@ -68,6 +68,12 @@
 #      in output, open starting a stopped installed service via stub
 #      managers and a stub browser, and the missing-service install.sh
 #      error (linux and macos service shapes).
+#  23. Muse Code (--agent muse): the Orbit MCP entry lands in
+#      ${XDG_CONFIG_HOME:-~/.config}/muse/settings.json with tools/bin
+#      first on PATH, other settings and servers preserved, skills in
+#      ~/.agents/skills; a second run changes nothing; uninstall removes
+#      only the installer-owned entry and keeps a pre-existing identical
+#      one; invalid JSON refuses byte-identically.
 #  22. an fnm_multishells node symlink on PATH resolves to the stable
 #      node in both service units, with no fnm_multishells entry in the
 #      unit PATH; a non-symlink fnm_multishells wrapper as the only node
@@ -721,6 +727,8 @@ assert_home_scope() { # files stay under the workspace, data/tools, service, MCP
             ./.claude|./.claude/*) ;;
             ./.claude.json|./.claude.json.bak) ;;
             ./.codex|./.codex/*) ;;
+            ./.config/muse|./.config/muse/*) ;;
+            ./.agents|./.agents/*) ;;
             ./Library/LaunchAgents|./Library/LaunchAgents/*) ;;
             ./Library/Application\ Support/orbit-office|./Library/Application\ Support/orbit-office/*) ;;
             *) printf '%s\n' "$_f" >> "$_bad" ;;
@@ -2631,5 +2639,69 @@ check "wrapper-only failure writes no systemd unit" \
     test ! -e "$FNM_ONLY_HOME/.config/systemd/user/orbit-office.service"
 check "wrapper-only failure writes no launchd plist" \
     test ! -e "$FNM_ONLY_HOME/Library/LaunchAgents/com.orbit-office.app.plist"
+
+# ---------------------------------------------------------------------------
+# 23. Muse Code MCP entry: written, idempotent, and removed on uninstall
+# ---------------------------------------------------------------------------
+
+HOME_MUSE="$ROOT/home-muse"; mkdir -p "$HOME_MUSE/.config/muse"
+MUSE_CFG="$HOME_MUSE/.config/muse/settings.json"
+cat > "$MUSE_CFG" <<'EOF'
+{ "kept": true, "mcpServers": { "other": {"command":"kept"} } }
+EOF
+cp "$MUSE_CFG" "$ROOT/muse-original.json"
+OUT_MUSE="$ROOT/out-muse.txt"
+run_install "$HOME_MUSE" -- --agent muse > "$OUT_MUSE" 2>&1 \
+    || { cat "$OUT_MUSE" >&2; fail "muse install exits 0"; }
+ok "muse install exits 0"
+check "muse MCP entry written with tools/bin first on PATH" \
+    node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const o=d.mcpServers&&d.mcpServers.orbit; if(!o||o.command!=="orbit"||JSON.stringify(o.args)!==JSON.stringify(["mcp","serve"])) process.exit(1); if(!o.env||!o.env.PATH.startsWith(process.argv[2]+":")) process.exit(1); if(d.kept!==true||!d.mcpServers.other||d.mcpServers.other.command!=="kept") process.exit(1)' "$MUSE_CFG" "$HOME_MUSE/$TOOLS_REL/bin"
+check "muse backup is the exact original settings" cmp -s "$MUSE_CFG.bak" "$ROOT/muse-original.json"
+check "muse ownership receipt records the owned entry" \
+    grep -q '"owned":true' "$HOME_MUSE/.local/share/orbit-office/muse-mcp.json"
+check "muse skills installed under .agents/skills" test -f "$HOME_MUSE/.agents/skills/orchestrator/SKILL.md"
+check "muse summary reports no deny rules" \
+    grep -F "deny rules unavailable for Muse Code shell calls" "$OUT_MUSE"
+snapshot "$HOME_MUSE" > "$ROOT/muse-snap1.txt"
+run_install "$HOME_MUSE" -- --agent muse > "$ROOT/out-muse2.txt" 2>&1 \
+    || { cat "$ROOT/out-muse2.txt" >&2; fail "muse second install exits 0"; }
+ok "muse second install exits 0"
+snapshot "$HOME_MUSE" > "$ROOT/muse-snap2.txt"
+check "muse second run changes nothing" cmp -s "$ROOT/muse-snap1.txt" "$ROOT/muse-snap2.txt"
+run_install "$HOME_MUSE" -- --agent muse --uninstall > "$ROOT/out-muse-un.txt" 2>&1 \
+    || { cat "$ROOT/out-muse-un.txt" >&2; fail "muse uninstall exits 0"; }
+ok "muse uninstall exits 0"
+check "muse uninstall removes the owned orbit entry" \
+    node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(d.mcpServers&&d.mcpServers.orbit) process.exit(1); if(d.kept!==true||!d.mcpServers.other) process.exit(1)' "$MUSE_CFG"
+check "muse uninstall clears the ownership receipt" \
+    test ! -e "$HOME_MUSE/.local/share/orbit-office/muse-mcp.json"
+check "muse uninstall removes installer-copied skills" test ! -e "$HOME_MUSE/.agents/skills/orchestrator"
+check "muse uninstall keeps the workspace" test -d "$HOME_MUSE/orbit"
+
+# XDG_CONFIG_HOME selects the Muse settings file; a pre-existing
+# identical entry (rediscovered without a receipt) is not claimed.
+HOME_MUSE_X="$ROOT/home-muse-xdg"; mkdir -p "$HOME_MUSE_X"
+run_install "$HOME_MUSE_X" "XDG_CONFIG_HOME=$HOME_MUSE_X/xdg" -- --agent muse > "$ROOT/out-muse-xdg.txt" 2>&1 \
+    || { cat "$ROOT/out-muse-xdg.txt" >&2; fail "muse XDG install exits 0"; }
+ok "muse XDG install exits 0"
+check "muse XDG settings file holds the entry" grep -q '"orbit"' "$HOME_MUSE_X/xdg/muse/settings.json"
+rm -f "$HOME_MUSE_X/.local/share/orbit-office/muse-mcp.json"
+run_install "$HOME_MUSE_X" "XDG_CONFIG_HOME=$HOME_MUSE_X/xdg" -- --agent muse > "$ROOT/out-muse-xdg2.txt" 2>&1 \
+    || { cat "$ROOT/out-muse-xdg2.txt" >&2; fail "muse XDG reinstall exits 0"; }
+check "pre-existing identical muse entry is not claimed as owned" \
+    grep -q '"owned":false' "$HOME_MUSE_X/.local/share/orbit-office/muse-mcp.json"
+run_install "$HOME_MUSE_X" "XDG_CONFIG_HOME=$HOME_MUSE_X/xdg" -- --agent muse --uninstall > "$ROOT/out-muse-xdg-un.txt" 2>&1 \
+    || { cat "$ROOT/out-muse-xdg-un.txt" >&2; fail "muse XDG uninstall exits 0"; }
+check "muse uninstall keeps a user-owned identical entry" grep -q '"orbit"' "$HOME_MUSE_X/xdg/muse/settings.json"
+
+# Invalid Muse settings refuse install and stay byte-identical.
+HOME_MUSE_BAD="$ROOT/home-muse-bad"; mkdir -p "$HOME_MUSE_BAD/.config/muse"
+printf '{invalid' > "$HOME_MUSE_BAD/.config/muse/settings.json"
+cp "$HOME_MUSE_BAD/.config/muse/settings.json" "$ROOT/muse-bad-original"
+if run_install "$HOME_MUSE_BAD" -- --agent muse > "$ROOT/out-muse-bad.txt" 2>&1; then fail "invalid muse settings must refuse"; fi
+ok "invalid muse settings refuses install"
+check "invalid muse settings remain byte-identical" cmp -s "$HOME_MUSE_BAD/.config/muse/settings.json" "$ROOT/muse-bad-original"
+check "invalid muse settings create no receipt" \
+    test ! -e "$HOME_MUSE_BAD/.local/share/orbit-office/muse-mcp.json"
 
 printf 'PASS: %s checks\n' "$PASS"
