@@ -1,7 +1,7 @@
 ---
 title: office — Decisions
 owner: daniel
-last_updated: 2026-10-27
+last_updated: 2026-10-29
 last_validated: 2026-10-26
 status: Draft
 feature: office
@@ -1224,6 +1224,7 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-18729] — built the source view, upload and paste capture, including citation anchor landing.
 - [ORB-18796] — built the gateway plugin and found Orbit's verb rule.
 - [ORB-18719] — built `office.search` and `office.attach`, and decided where attach stages its copies.
+- [ORB-19747] — filed every meeting to-do as `owner:you` and left promotion to agent work to the orchestrator.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 
@@ -1512,3 +1513,48 @@ task; the app (ORB-19421) builds that card. **Ask an agent to merge** is not
 built; a conflict offers **Use theirs** and **Keep mine**. The demo shares a
 transcript without frame readings, because those come only from the macOS
 video pipeline; `frames.md` round trips in the end-to-end test.
+
+## Meeting extraction files every to-do as owner:you; the orchestrator promotes
+
+**Recorded:** 2026-10-29 · [ORB-19747]
+**Code anchors:** `crates/office-tools/src/tools/sources/extract.rs::run`;
+`plugin/.orbit-plugin/definitions/activities/office-agent-todo.yaml`
+
+### Context
+
+`office.extract` (`profile: meeting`) filed one task per model to-do with
+the model's `owner` copied into the filed tag, and with no acceptance
+criteria, no `no-diff-expected` and no attached context. The agent to-do
+activity accepts only tasks tagged `owner:agent` **and**
+`no-diff-expected`, so a model-marked agent to-do was refused if
+dispatched, and nothing gated the model's owner choice against the
+"runbook or clear tool path" rule. The alternative — extraction filing
+agent to-dos complete, with criteria the model would have to author —
+was rejected: no extraction code path sends acceptance criteria to
+`orbit.task.add`, and an extraction model reply is unreviewed evidence,
+not a reviewed task brief.
+
+### Decision
+
+Extraction files every meeting to-do as `owner:you` (as it already did
+for KT questions). The model's `owner` remains in the structured result
+(`extract-result.json`) as a hint only; it never becomes the filed tag.
+Promotion is the orchestrator's step, after the summary: promote a filed
+to-do to `owner:agent` only when an attached runbook or a clear,
+permitted tool path can produce it and it is not outward-facing, adding
+acceptance criteria and `no-diff-expected` and running `office.attach`
+before it becomes ready. The model schema, the owner filter and the
+agent activity are unchanged.
+
+### Consequences
+
+- No to-do filed by `office.extract` can carry `owner:agent` without
+  also carrying `no-diff-expected` and acceptance criteria: it cannot
+  carry `owner:agent` at all. The meetings skill, the orchestrator packs
+  reference and the kt-videos/calendar specs state this rule.
+- A model-suggested agent to-do waits as the user's to-do until the
+  orchestrator (or the user) promotes it; nothing is dispatched straight
+  from a meeting.
+- Cost: promotion is a manual orchestrator pass over each meeting's
+  to-dos, and a user who never runs it keeps agent-suitable work in
+  their own list.

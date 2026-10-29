@@ -305,17 +305,12 @@ fn run(call: &Call<'_>) -> Result<Value> {
         },
     )?;
     for item in items {
-        let mut tags = vec![
-            format!(
-                "owner:{}",
-                if profile == "kt" {
-                    "you"
-                } else {
-                    item["owner"].as_str().unwrap_or("you")
-                }
-            ),
-            format!("source:{id}"),
-        ];
+        // Every filed to-do is `owner:you`, whatever the model suggested in
+        // `item["owner"]` (kept only as a hint in the structured result).
+        // The agent activity accepts only `owner:agent` tasks that also carry
+        // `no-diff-expected` and acceptance criteria, which extraction cannot
+        // supply; promotion to agent work is the orchestrator's step.
+        let mut tags = vec!["owner:you".to_string(), format!("source:{id}")];
         if profile == "kt" {
             tags.push("kt-question".into());
         }

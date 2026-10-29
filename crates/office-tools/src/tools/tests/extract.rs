@@ -410,10 +410,21 @@ fn meeting_files_owned_todos_and_attaches_the_structured_result() {
         calls[0].input["tags"],
         json!(["owner:you", format!("source:{ID}")])
     );
+    // Regression (ORB-19747): a model reply marking a to-do `owner:agent`
+    // must not file it as an agent to-do. Extraction files every meeting
+    // to-do as `owner:you`; promotion to `owner:agent` (with
+    // `no-diff-expected` and acceptance criteria) is the orchestrator's step.
     assert_eq!(
         calls[1].input["tags"],
-        json!(["owner:agent", format!("source:{ID}")])
+        json!(["owner:you", format!("source:{ID}")])
     );
+    for call in calls.iter().filter(|c| c.tool == "orbit.task.add") {
+        let tags = call.input["tags"].as_array().unwrap();
+        assert!(
+            !tags.iter().any(|t| t.as_str() == Some("owner:agent")),
+            "filed meeting to-do must never carry owner:agent: {call:?}"
+        );
+    }
     let staged = calls[2].input["source_path"].as_str().unwrap();
     let artifact: Value = serde_json::from_str(&staging.text(staged).unwrap()).unwrap();
     assert_eq!(artifact, result["output"]);

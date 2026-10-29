@@ -41,9 +41,13 @@ saves `summary.md` beside the unchanged source. Supplying `task` (or trusted
 `context.task_id`) also attaches the result to that task. A rerun of the inbox
 skips completed summaries. If transcription is incomplete or to-do filing
 stopped after an extraction, the tool holds the source for reconciliation;
-read its error and saved result before retrying. To-dos split by owner: yours stay
-`owner:you`, and agents' become `owner:agent` only when a permitted tool
-path or attached runbook can produce the result. Outward-facing drafts wait
+read its error and saved result before retrying. Extraction files every
+to-do as `owner:you`, whatever owner the model suggested; that suggestion
+survives only as a hint in the structured result. A to-do becomes
+`owner:agent` only later, when the orchestrator promotes it: a permitted
+tool path or attached runbook can produce the result, and promotion adds
+acceptance criteria, `no-diff-expected` and attached context with
+`office.attach`. Outward-facing drafts wait
 for the user's approval; never send, submit or approve anything yourself.
 
 Read the result back with `office.source-show` (use `document: summary` and
