@@ -59,7 +59,8 @@ Direction and rhythm entries are read from the complete body, including the
 is already recorded when `dom-standing-directions` cites its source, with or
 without an anchor. A source citing that page is incoming evidence and does
 not record the direction. The scan does not load auto-task usage telemetry; unused-automation facts
-remain unavailable, and cadence coverage currently uses the listed task titles.
+remain unavailable, so the unused-automation signal is planned and does not fire yet,
+and cadence coverage currently uses the listed task titles.
 
 | Signal | Condition | Proposes |
 |---|---|---|
@@ -67,7 +68,7 @@ remain unavailable, and cadence coverage currently uses the listed task titles.
 | **Friction recurrence** | The same friction (by text similarity or explicit link) recorded ≥2 times | `runbook_from_friction` |
 | **Staleness** | A knowledge page is at least `thresholds.stale_days` past `last_verified` and has a newer citing source; before proposing an update, the model must quote evidence that contradicts or extends it | `knowledge_update` |
 | **Gap** | An agent task finished without a runbook, and the user had to correct its output | `knowledge_add` (runbook) |
-| **Unused automation** | An auto-task has produced nothing the user opened in 30 days | `retire` |
+| **Unused automation (planned — does not fire yet)** | An auto-task has produced nothing the user opened in 30 days (no usage data is loaded, so this never fires today) | `retire` (planned) |
 | **New subject** | A participant, or a `client:`/`project:`/`topic:` tag, that no page covers (by title, `aliases` or tag), seen in ≥2 sources | `knowledge_add` from the matching template |
 | **Unrecorded direction** | A `direction` entry in a conversation source that `dom-standing-directions` does not cite | `knowledge_update` adding it |
 | **Declared cadence** | A `rhythm` entry with a deliverable that no auto-task covers | `auto_task` for that deliverable |

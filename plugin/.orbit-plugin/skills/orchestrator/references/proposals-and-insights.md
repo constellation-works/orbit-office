@@ -34,11 +34,11 @@ Thresholds live in Library settings (`thresholds.*`). Defaults are shown.
 | `new_subject` | a participant or `client:`/`project:`/`topic:` tag no page covers, seen in 2+ sources | `knowledge_add` from the matching template |
 | `unrecorded_direction` | a `direction` entry that `dom-standing-directions` does not cite | `knowledge_update` adding it |
 | `declared_cadence` | a `rhythm` entry with a deliverable no auto-task covers | `auto_task` for it |
-| `unused_automation` | an auto-task nobody opened output from in 30 days | `retire` |
+| `unused_automation` (planned — does not fire yet) | an auto-task nobody opened output from in 30 days (no usage data is loaded) | `retire` (planned) |
 
 Notes:
 
-- `unused_automation` does not fire today. The scan loads no auto-task usage
+- `unused_automation` is planned and does not fire yet. The scan loads no auto-task usage
   data. Do not tell the user an automation is unused unless they say so.
 - For `staleness`, quote the newer evidence that contradicts or extends the
   page before you propose an update. A newer source alone is not enough.
