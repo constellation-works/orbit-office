@@ -40,6 +40,7 @@ Source: spec §12. The one-call envelope is
 | `office.signals-scan` | read_only | workspace | Run the proposal signals and return candidate proposals with evidence |
 | `office.proposal-create` | mutating | workspace | File a proposal task, its artifact and its evidence page |
 | `office.proposal-accept` | mutating | **none** | Apply a proposal's payload; close the task |
+| `office.proposal-reconcile` | mutating | **none** | Move each proposal's evidence page to the status folder its task says (`open`, `accepted`, `dismissed`); migrates legacy flat pages; idempotent ([proposals.md](./proposals.md#record-and-lifecycle)) |
 | `office.metrics` | read_only | workspace | Compute the analytics metrics for a window |
 | `office.selection-get` | mutating | workspace | Return the user's fresh, unused selections from the app; consumes them unless `peek: true`. Mutating because the default consumes |
 | `office.selection-put` | mutating | **none** | Record a selection from the app; `clear: true` empties the tray |
@@ -140,7 +141,7 @@ and capability floor:
 |---|---|
 | `transcribe`, `extract` (workspace MCP) | Remain Operator/Runner only. Transcription calls Muse Voice and writes source bodies; extraction makes model calls, persists derived material and can file owner-to-dos. Their cost, privacy routing and confirmation belong to operator/routine processing. |
 | `library-sync` (workspace MCP) | Remains Operator/Runner only: the backend can push shared content to an external Git remote, even though some inputs request dry-run/pull. Authority covers the whole verb. |
-| `calendar-sync`, `meeting-prep`, `video-plan`, `frames`, `source-set-sensitivity`, `share-set`, `knowledge-write`, `artifact-promote`, `init`, `reindex`, `config-set`, `private-route-check`, `proposal-accept`, `selection-put`, `digest`, `script-run`, `batch-plan`, `consolidate` (MCP none) | Remain hidden and Operator/Runner only. These cover calendar/config/secrets-adjacent setup, confirmations/cost, direct knowledge/artifact/sharing writes, approvals, scripts and standing automation. Calling through a shell does not bypass authorization. |
+| `calendar-sync`, `meeting-prep`, `video-plan`, `frames`, `source-set-sensitivity`, `share-set`, `knowledge-write`, `artifact-promote`, `init`, `reindex`, `config-set`, `private-route-check`, `proposal-accept`, `proposal-reconcile`, `selection-put`, `digest`, `script-run`, `batch-plan`, `consolidate` (MCP none) | Remain hidden and Operator/Runner only. These cover calendar/config/secrets-adjacent setup, confirmations/cost, direct knowledge/artifact/sharing writes, approvals, scripts and standing automation. Calling through a shell does not bypass authorization. |
 | `status`, `calendar-list`, `source-show`, `knowledge-list`, `knowledge-show`, `artifact-list`, `artifact-show`, `search`, `signals-scan`, `session-brief`, `bootstrap-status`, `metrics`, `review-inputs` | Read-only, workspace MCP, unchanged Agent access. |
 
 The orchestrator skill is a read-only workflow reference: capture evidence,

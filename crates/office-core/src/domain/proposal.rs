@@ -433,27 +433,189 @@ pub fn valid_name(name: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
-/// Proposal records are flat Markdown files under the existing proposal root.
-pub fn validate_record_path(relative: &std::path::Path) -> Result<()> {
-    let parts: Vec<_> = relative.components().collect();
-    if parts.len() != 2
-        || parts[0] != std::path::Component::Normal(std::ffi::OsStr::new("proposals"))
-    {
-        return Err(invalid("flat proposals/<id>.md path"));
+/// Where a proposal's evidence page sits, by the app's words for its status.
+/// The record is the Orbit task; the page only follows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ProposalStatus {
+    /// Still waiting for the user (Orbit `proposed`).
+    Open,
+    /// Accepted (Orbit `done`).
+    Accepted,
+    /// Dismissed (Orbit `rejected`).
+    Dismissed,
+}
+impl ProposalStatus {
+    /// The folder under `proposals/`.
+    #[must_use]
+    pub fn folder(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Accepted => "accepted",
+            Self::Dismissed => "dismissed",
+        }
     }
-    let name = relative
-        .file_stem()
-        .and_then(|v| v.to_str())
-        .unwrap_or_default();
-    if relative.extension().is_none_or(|v| v != "md")
-        || name.is_empty()
-        || !name
+
+    /// The folder an Orbit task status files its page under. Any other
+    /// status (an acceptance in progress or review, a backlog or archived
+    /// task) has no folder of its own, so its page is not moved.
+    #[must_use]
+    pub fn from_orbit(status: &str) -> Option<Self> {
+        match status {
+            "proposed" => Some(Self::Open),
+            "done" => Some(Self::Accepted),
+            "rejected" => Some(Self::Dismissed),
+            _ => None,
+        }
+    }
+
+    fn from_folder(folder: &str) -> Option<Self> {
+        match folder {
+            "open" => Some(Self::Open),
+            "accepted" => Some(Self::Accepted),
+            "dismissed" => Some(Self::Dismissed),
+            _ => None,
+        }
+    }
+}
+
+/// A proposal page's place in the Library.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RecordLocation {
+    /// Legacy flat `proposals/<id>.md`, read until reconciled.
+    Flat,
+    /// `proposals/open/<id>.md`.
+    Open,
+    /// `proposals/{accepted,dismissed}/YYYY/MM/<id>.md`, dated by closing.
+    Closed {
+        /// Accepted or dismissed.
+        status: ProposalStatus,
+        /// Four-digit closing year.
+        year: String,
+        /// Two-digit closing month.
+        month: String,
+    },
+}
+impl RecordLocation {
+    /// The status folder this page sits in, `None` for a legacy flat page.
+    #[must_use]
+    pub fn status(&self) -> Option<ProposalStatus> {
+        match self {
+            Self::Flat => None,
+            Self::Open => Some(ProposalStatus::Open),
+            Self::Closed { status, .. } => Some(*status),
+        }
+    }
+}
+
+/// A validated proposal page path: the proposal id (the file stem) and where it sits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecordPath {
+    /// File stem; the Orbit task id for every page Office writes.
+    pub id: String,
+    /// Status folder or the legacy flat layout.
+    pub location: RecordLocation,
+}
+
+/// Parse a Library-relative proposal page path. Accepted layouts are
+/// `proposals/open/<id>.md`, `proposals/{accepted,dismissed}/YYYY/MM/<id>.md`
+/// and the legacy flat `proposals/<id>.md`; anything else is refused.
+pub fn parse_record_path(relative: &std::path::Path) -> Result<RecordPath> {
+    let mut parts = Vec::new();
+    for component in relative.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(invalid("proposals/<status>/<id>.md path"));
+        };
+        parts.push(
+            name.to_str()
+                .ok_or_else(|| invalid("proposals/<status>/<id>.md path"))?,
+        );
+    }
+    let digits =
+        |value: &str, len: usize| value.len() == len && value.bytes().all(|b| b.is_ascii_digit());
+    let location = match parts.as_slice() {
+        ["proposals", _] => RecordLocation::Flat,
+        ["proposals", "open", _] => RecordLocation::Open,
+        ["proposals", folder, year, month, _]
+            if digits(year, 4) && digits(month, 2) && ("01"..="12").contains(month) =>
+        {
+            match ProposalStatus::from_folder(folder) {
+                Some(status @ (ProposalStatus::Accepted | ProposalStatus::Dismissed)) => {
+                    RecordLocation::Closed {
+                        status,
+                        year: (*year).to_string(),
+                        month: (*month).to_string(),
+                    }
+                }
+                Some(ProposalStatus::Open) | None => {
+                    return Err(invalid("proposals/<status>/<id>.md path"));
+                }
+            }
+        }
+        _ => return Err(invalid("proposals/<status>/<id>.md path")),
+    };
+    let name = parts.last().copied().unwrap_or_default();
+    let id = name.strip_suffix(".md").unwrap_or_default();
+    if id.is_empty()
+        || !id
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
     {
         return Err(invalid("proposal record filename"));
     }
-    Ok(())
+    Ok(RecordPath {
+        id: id.to_string(),
+        location,
+    })
+}
+
+/// Proposal records are Markdown pages in a status folder (or the legacy
+/// flat layout) under the proposal root.
+pub fn validate_record_path(relative: &std::path::Path) -> Result<()> {
+    parse_record_path(relative).map(|_| ())
+}
+
+/// The page path for `id` in `status`. A closed page is dated by `closed_at`
+/// (RFC 3339, UTC), so each closed folder holds one month.
+pub fn record_path(id: &str, status: ProposalStatus, closed_at: &str) -> Result<String> {
+    let path = match status {
+        ProposalStatus::Open => format!("proposals/open/{id}.md"),
+        ProposalStatus::Accepted | ProposalStatus::Dismissed => {
+            let (year, month) = closed_month(closed_at).ok_or_else(|| invalid("closing time"))?;
+            format!("proposals/{}/{year}/{month}/{id}.md", status.folder())
+        }
+    };
+    parse_record_path(std::path::Path::new(&path))?;
+    Ok(path)
+}
+
+/// The `YYYY` and `MM` of an RFC 3339 timestamp.
+#[must_use]
+pub fn closed_month(at: &str) -> Option<(String, String)> {
+    timestamp(at)?;
+    let year = at.get(0..4)?;
+    let month = at.get(5..7)?;
+    Some((year.to_string(), month.to_string()))
+}
+
+/// Heading of the section a closed page carries its outcome under.
+pub const OUTCOME_HEADING: &str = "## Outcome";
+
+/// Append an outcome section to a page that has none; a page that already
+/// records its outcome is returned unchanged.
+#[must_use]
+pub fn with_outcome(page: &str, outcome: &str) -> String {
+    if page.lines().any(|line| line == OUTCOME_HEADING) {
+        return page.to_string();
+    }
+    let mut text = page.trim_end().to_string();
+    if !text.is_empty() {
+        text.push_str("\n\n");
+    }
+    text.push_str(OUTCOME_HEADING);
+    text.push_str("\n\n");
+    text.push_str(outcome.trim_end());
+    text.push('\n');
+    text
 }
 
 // Numeric five-field cron, with lists, ranges and positive steps. Restricting

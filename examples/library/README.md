@@ -11,7 +11,8 @@ library/
     domain/<slug>.md               # About: facts, pointers, preferences
     runbooks/<slug>.md             # How-to: repeatable work
   artifacts/YYYY/MM/<artifact-id>/ # approved agent outputs, versioned
-  proposals/<proposal-id>.md       # rendered evidence per proposal
+  proposals/open/<proposal-id>.md  # rendered evidence per waiting proposal
+  proposals/{accepted,dismissed}/YYYY/MM/<proposal-id>.md  # closed, by closing month
   .office/config.yaml              # Library settings: retention, sensitivity, packs, thresholds
 ```
 

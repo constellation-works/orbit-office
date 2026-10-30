@@ -1,0 +1,14 @@
+# Replayed through public dispatch with the recording Orbit fake in proposal.rs.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: proposal_reconcile_with_every_page_in_place_moves_nothing
+    tool: proposal-reconcile
+    input: {}
+    expect:
+      output: {"moved":[],"unknown":[]}
+  - name: proposal_reconcile_refuses_unknown_input
+    tool: proposal-reconcile
+    input: {"id":"proposal-fixture"}
+    expect:
+      error: {"code":"invalid_argument"}

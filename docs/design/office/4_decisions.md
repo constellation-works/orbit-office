@@ -1894,3 +1894,64 @@ open, which is preferable to invented authority. Credential scrubbing covers
 known shapes, not arbitrary prose secrets. Normal-preview extraction uses the
 cheap crew; private extraction is conservative local work. The brief can lag
 until an asynchronous job finishes and a later digest may pick up late evidence.
+
+
+## Library proposals are partitioned by status
+
+**Recorded:** 2026-10-30 · [ORB-20247]
+**Code anchors:** `crates/office-core/src/domain/proposal.rs` (`ProposalStatus`, `parse_record_path`, `record_path`, `with_outcome`); `crates/office-tools/src/tools/proposals/reconcile.rs`, `accept.rs`, `create.rs`; `crates/office-store/src/repository/library.rs` (`move_proposal`, `proposal_pages`); `app/packages/server/src/features/approvals/service.ts::dismiss`; [specs/proposals.md](./specs/proposals.md#record-and-lifecycle), [specs/library.md](./specs/library.md#layout)
+
+### Context
+
+Every proposal's evidence page sat flat in `library/proposals/<id>.md`
+whether it was waiting, accepted or dismissed, so the folder becomes a long
+list. Daniel asked for proposals to be partitioned by status like sources
+(ORB-20243). Unlike a source's kind, a proposal's status changes, so its page
+has to move. Acceptance also wrote a separate `<id>-accepted.md` receipt.
+
+### Decision
+
+The page sits in the folder for its status, named in the app's words:
+`proposals/open/<id>.md` while the Orbit task is `proposed`, and
+`proposals/accepted/YYYY/MM/<id>.md` (`done`) or
+`proposals/dismissed/YYYY/MM/<id>.md` (`rejected`) once closed, dated by the
+closing month so closed folders stay bounded. Any other task status keeps the
+page where it is. The record stays the Orbit task and nothing links to a page
+by path, so a move is safe: lookups resolve by proposal id in any status
+folder and in the legacy flat layout.
+
+- `office.proposal-create` writes under `open/`.
+- `office.proposal-accept` moves the page to `accepted/` in the commit that
+  records the outcome: the receipt becomes the page's `## Outcome` section
+  instead of a separate file.
+- Dismissal stays the app's Orbit rejection (it carries who dismissed and
+  why); the app then calls a new app-only tool, `office.proposal-reconcile`,
+  which moves the page to `dismissed/` in one commit.
+- `office.proposal-reconcile` (`{}`, mutating, `mcp_scope: none`) also moves
+  pages whose task closed outside the app and migrates legacy flat pages,
+  folding a legacy receipt into the accepted page. It reads one complete
+  proposal task list and is idempotent: a page already in its folder is left
+  alone, so a re-run changes nothing.
+- A move is one journaled Library write (journal version 9,
+  `proposal_move`): the new page and the removal of its old paths are
+  committed together and replayed together after a crash.
+
+A dedicated tool was chosen over folding dismissal or reconcile into
+`office.proposal-accept`, whose name, input and `accepted: true` response
+contract would otherwise change meaning. Adding it touched the
+integrator-owned registry row, `tools/proposals/mod.rs`, the manifest block
+and ARCHITECTURE.md's tool list; this task's scope named the proposal tool
+family and manifest, so it made those one-line changes rather than splitting
+off an integration task.
+
+### Consequences
+
+- Waiting proposals are one short folder; closed ones are browsable by month,
+  and a closed page carries its outcome.
+- Cost: dismissal and its page move are two calls, so a failed reconcile
+  leaves a dismissed page under `open/` until the next reconcile; the task
+  is still the record. Operator closures catch up only at the next app
+  dismissal or a manual `orbit tool run office.proposal-reconcile`.
+- Cost: reconcile refuses when the proposal task list is truncated (more
+  than 1000 proposal tasks) rather than guess at missing statuses.
+- Two layouts are readable until reconcile has run once on a Library.

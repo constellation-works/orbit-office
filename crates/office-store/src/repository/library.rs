@@ -34,7 +34,7 @@ use pending::{
     PendingOriginal, PendingWrite, RawPendingWrite, WriteKind, normalize_upload_extension,
 };
 
-const LATEST_PENDING_WRITE_VERSION: u32 = 8;
+const LATEST_PENDING_WRITE_VERSION: u32 = 9;
 
 /// A Library and its index. Construction may create layout/index directories;
 /// read methods never create state or wait for the writer lock. Bounded media
@@ -892,6 +892,36 @@ impl LibraryStore {
         self.finish(&pending)
     }
 
+    /// Move a proposal page between status folders: write `text` at `to` and
+    /// remove every `from` page, journaled and committed once.
+    pub fn move_proposal(&self, to: &Path, text: &str, from: &[String]) -> Result<()> {
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        self.require_initialized()?;
+        self.files.validate_proposal_path(to)?;
+        let to = to.to_str().ok_or_else(|| Error::UnsafePath {
+            kind: "proposal",
+            value: to.display().to_string(),
+        })?;
+        let mut removed = Vec::new();
+        for path in from {
+            self.files.validate_proposal_path(Path::new(path))?;
+            if path != to && !removed.contains(path) {
+                removed.push(path.clone());
+            }
+        }
+        let pending =
+            self.decide_with(WriteKind::ProposalMove, to, text, None, None, Some(removed))?;
+        self.finish(&pending)
+    }
+
+    /// Every proposal page with its Markdown, in path order. No writer-lock wait.
+    pub fn proposal_pages(&self) -> Result<Vec<office_core::ports::LibraryText>> {
+        self.read_ready()?;
+        self.require_initialized()?;
+        self.files.proposal_pages()
+    }
+
     /// Promote an entire artifact while holding the writer lock across version
     /// allocation, durable decision, byte publication, index and one commit.
     pub fn promote_artifact(
@@ -1187,6 +1217,18 @@ impl LibraryStore {
         original: Option<PendingOriginal>,
         bundle: Option<Vec<ArtifactFile>>,
     ) -> Result<PendingWrite> {
+        self.decide_with(kind, relative, text, original, bundle, None)
+    }
+
+    fn decide_with(
+        &self,
+        kind: WriteKind,
+        relative: &str,
+        text: &str,
+        original: Option<PendingOriginal>,
+        bundle: Option<Vec<ArtifactFile>>,
+        removed: Option<Vec<String>>,
+    ) -> Result<PendingWrite> {
         let time = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| {
             Error::io(
                 "read write decision time",
@@ -1195,7 +1237,9 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: if matches!(kind, WriteKind::Proposal) {
+            version: if matches!(kind, WriteKind::ProposalMove) {
+                9
+            } else if matches!(kind, WriteKind::Proposal) {
                 8
             } else if matches!(kind, WriteKind::SourceProcessing) {
                 7
@@ -1217,6 +1261,7 @@ impl LibraryStore {
             token: format!("{}-{}", std::process::id(), time.as_nanos()),
             original,
             bundle,
+            removed,
         };
         self.validate_original(&pending)?;
         self.validate_bundle(&pending)?;
@@ -1310,6 +1355,14 @@ impl LibraryStore {
                 self.files
                     .validate_proposal_path(Path::new(&pending.relative))?;
             }
+            WriteKind::ProposalMove => {
+                self.require_initialized()?;
+                self.files
+                    .validate_proposal_path(Path::new(&pending.relative))?;
+                for path in pending.removed.as_deref().unwrap_or_default() {
+                    self.files.validate_proposal_path(Path::new(path))?;
+                }
+            }
             WriteKind::Document => {
                 self.require_initialized()?;
                 self.files
@@ -1355,6 +1408,13 @@ impl LibraryStore {
             WriteKind::Proposal => {
                 self.files
                     .write_proposal(Path::new(&pending.relative), &pending.text)?;
+            }
+            WriteKind::ProposalMove => {
+                self.files
+                    .write_proposal(Path::new(&pending.relative), &pending.text)?;
+                for path in pending.removed.as_deref().unwrap_or_default() {
+                    self.files.remove_proposal(Path::new(path))?;
+                }
             }
             WriteKind::Document => {
                 let relative = Path::new(&pending.relative);
@@ -1421,6 +1481,14 @@ impl LibraryStore {
             WriteKind::Settings => self.files.write_settings(&pending.text)?,
         }
         let mut paths = vec![pending.relative.clone()];
+        // A removed page is staged only when tracked: an untracked path has no
+        // deletion to record, and `git add` refuses a pathspec that never matched.
+        // A replay after the commit returns before staging, by its token.
+        for path in pending.removed.as_deref().unwrap_or_default() {
+            if self.git.has_tracked(path)? {
+                paths.push(path.clone());
+            }
+        }
         if let Some(files) = &pending.bundle {
             let parent = Path::new(&pending.relative)
                 .parent()
@@ -2333,6 +2401,12 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn write_proposal(&self, relative: &Path, text: &str) -> office_core::Result<()> {
         Ok(Self::write_proposal(self, relative, text)?)
+    }
+    fn move_proposal(&self, to: &Path, text: &str, from: &[String]) -> office_core::Result<()> {
+        Ok(Self::move_proposal(self, to, text, from)?)
+    }
+    fn proposal_pages(&self) -> office_core::Result<Vec<office_core::ports::LibraryText>> {
+        Ok(Self::proposal_pages(self)?)
     }
 
     fn bootstrap_snapshot(&self) -> office_core::Result<office_core::domain::bootstrap::Snapshot> {

@@ -8,7 +8,9 @@
  * - Send back: `review` to `backlog` with the user's comment.
  * - Accept: `office.proposal-accept` once, bound to the digest the user saw;
  *   a shared-library conflict also carries the user's `choice` (theirs or mine).
- * - Dismiss: the task is rejected; a gateway draft is never sent.
+ * - Dismiss: the task is rejected; a gateway draft is never sent. A dismissed
+ *   proposal then runs `office.proposal-reconcile`, which moves its evidence
+ *   page to `proposals/dismissed/`; a failed move leaves the dismissal standing.
  * - Send: `gateway.http-send` with the draft id and the digest shown. A lost
  *   reply is `outcome_unknown`, never a failure, and is never retried.
  *
@@ -314,13 +316,21 @@ export async function sendBack(client: ApprovalClient, key: string, comment: str
 }
 
 export async function dismiss(client: ApprovalClient, key: string, reason: string, approver: string): Promise<void> {
-  await actionable(client, key, ["proposal", "script_output", "gateway_draft"]);
+  const task = await actionable(client, key, ["proposal", "script_output", "gateway_draft"]);
   const why = reason === "" ? "" : ` Reason: ${reason}`;
   await step(client, "orbit.task.update", {
     id: key,
     status: "rejected",
     comment: `Dismissed by ${approver} in the office app.${why}`,
   }, "dismiss_refused");
+  if (task.kind !== "proposal") return;
+  // The rejection is the record. Moving the evidence page to dismissed/ follows
+  // it; if that fails, the next reconcile moves it, so the dismissal stands.
+  try {
+    await call(client, "office.proposal-reconcile", {});
+  } catch {
+    // Reported by the next reconcile, not to the user who dismissed.
+  }
 }
 
 export function isChoice(value: unknown): value is ConflictChoice {

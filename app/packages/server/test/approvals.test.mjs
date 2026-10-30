@@ -54,6 +54,7 @@ function fakeClient() {
         task.status = "done";
         return { ok: true, output: { id: input.id, accepted: true, change: { page: "dom-x", path: "knowledge/x.md" } } };
       }
+      if (name === "office.proposal-reconcile") return { ok: true, output: { moved: [], unknown: [] } };
       if (name === "gateway.http-send") return { draft: input.draft, task_id: "T-draft", outcome: "sent", status: 201, task_closed: true };
       throw new Error(`unexpected tool ${name}`);
     },
@@ -184,16 +185,37 @@ test("accept all accepts each in turn; one refusal leaves the others accepted an
   assert.equal((await api.post("/api/approvals/accept-all", { proposals: [] })).status, 400);
 });
 
-test("dismissing a proposal records the rejection with the reason, and nothing else", async (t) => {
+test("dismissing a proposal records the rejection with the reason, then files its page under dismissed", async (t) => {
   const state = fakeClient();
   const api = await serve(t, state);
   const result = await api.post("/api/approvals/dismiss", { key: "T-page", reason: "Not our team." });
   assert.equal(result.status, 200);
-  assert.deepEqual(names(state), ["orbit.task.show", "orbit.task.update"]);
+  assert.deepEqual(names(state), ["orbit.task.show", "orbit.task.update", "office.proposal-reconcile"]);
   const update = state.calls[1].input;
   assert.equal(update.status, "rejected");
   assert.match(update.comment, /Dismissed by Dana.*Not our team\./);
+  assert.deepEqual(state.calls[2].input, {});
   assert.equal((await api.post("/api/approvals/dismiss", { key: "T-review" })).status, 409, "reviewed work is sent back, not dismissed");
+});
+
+test("a failed page move after dismissing still reports the dismissal", async (t) => {
+  const state = fakeClient();
+  state.failures["office.proposal-reconcile"] = "proposal_history_incomplete";
+  const api = await serve(t, state);
+  assert.equal((await api.post("/api/approvals/dismiss", { key: "T-page2" })).status, 200);
+  assert.equal(state.tasks.find((row) => row.id === "T-page2").status, "rejected");
+  assert.deepEqual(names(state, "office."), ["office.proposal-reconcile"], "never retried");
+});
+
+test("a proposal's review preview comes from its task by id, wherever its page is filed", async (t) => {
+  const state = fakeClient();
+  const api = await serve(t, state);
+  const result = await api.get("/api/approvals/detail?key=T-page");
+  assert.equal(result.body.preview, "# Ingest service\n\nWho runs it and how.");
+  assert.deepEqual(state.calls.map(({ name, input }) => [name, input.id, input.path]), [
+    ["orbit.task.show", "T-page", undefined],
+    ["orbit.task.artifact.get", "T-page", "proposal.json"],
+  ], "no Library page path is read");
 });
 
 test("script output shows its files; approve promotes it and walks it closed; dismiss rejects it", async (t) => {

@@ -392,6 +392,12 @@ impl Library for RealLibrary {
     fn write_proposal(&self, relative: &Path, text: &str) -> office_core::Result<()> {
         Ok(self.store()?.write_proposal(relative, text)?)
     }
+    fn move_proposal(&self, to: &Path, text: &str, from: &[String]) -> office_core::Result<()> {
+        Ok(self.store()?.move_proposal(to, text, from)?)
+    }
+    fn proposal_pages(&self) -> office_core::Result<Vec<office_core::ports::LibraryText>> {
+        Ok(self.store()?.proposal_pages()?)
+    }
 
     fn read_media(
         &self,

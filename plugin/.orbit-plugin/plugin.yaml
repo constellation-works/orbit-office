@@ -328,6 +328,15 @@ spec:
       input_schema: { $ref: schemas/proposal-accept.request.json }
       output_schema: { $ref: schemas/proposal-accept.response.json }
 
+    - name: proposal-reconcile
+      description: >-
+        Move each proposal's evidence page to the status folder its task
+        says (open, accepted or dismissed); legacy flat pages migrate.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/proposal-reconcile.request.json }
+      output_schema: { $ref: schemas/proposal-reconcile.response.json }
+
     # ---- selection ----
 
     - name: selection-get

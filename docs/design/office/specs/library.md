@@ -26,12 +26,23 @@ library/
   artifacts/YYYY/MM/<artifact-id>/
     artifact.md          # frontmatter + summary (the body itself for text kinds)
     <files>              # report.md, draft.eml.md, script.py, data.csv, deck.pdf …
-  proposals/<proposal-id>.md   # rendered evidence for each proposal (the record is the Orbit task)
+  proposals/                   # rendered evidence for each proposal (the record is the Orbit task)
+    open/<proposal-id>.md                    # waiting for the user (Orbit `proposed`)
+    accepted/YYYY/MM/<proposal-id>.md        # accepted (Orbit `done`), dated by closing
+    dismissed/YYYY/MM/<proposal-id>.md       # dismissed (Orbit `rejected`), dated by closing
   .office/config.yaml          # Library settings: retention, sensitivity, packs, thresholds
   .office/templates/<name>.md  # About and How-to page templates (knowledge-templates.md)
   .gitignore                   # original.*, frames/ and .office/state/ (binaries and writer state are not tracked; binaries are pinned by sha256)
 ```
 
+- Proposal pages are partitioned by status, in the app's words. A page
+  moves when its proposal closes: `office.proposal-accept` and
+  `office.proposal-reconcile` write it at its new path and remove the old
+  one in one Library commit, adding an `## Outcome` section to a closed page
+  ([proposals.md](./proposals.md#record-and-lifecycle)). Nothing links to a
+  proposal page by path; lookups resolve by proposal id in any status folder
+  and in the legacy flat `proposals/<proposal-id>.md` layout, which
+  `office.proposal-reconcile` migrates.
 - The index in `plugin_state/index.sqlite` (FTS5 plus link tables) is
   rebuildable at any time with `office.reindex`. Reindex rebuilds only
   after a complete scan: a missing layer is empty, and an enumeration

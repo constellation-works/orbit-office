@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: proposals — kinds, mechanical signals, record and lifecycle, dismissal memory"
-last_validated: 2026-10-26
+last_validated: 2026-10-30
 ---
 
 # Spec: Proposals
@@ -81,11 +81,21 @@ cadence are should-have.
 
 ## Record and lifecycle
 
-- Each proposal is an Orbit task tagged `proposal` and `proposal:<kind>`, in `proposed` state. The description says what changes. Its evidence (task ids, source anchors, friction ids) goes in the body and in `library/proposals/<id>.md`. The concrete payload (an auto-task definition, a page diff) is a task artifact.
+- Each proposal is an Orbit task tagged `proposal` and `proposal:<kind>`, in `proposed` state. The description says what changes. Its evidence (task ids, source anchors, friction ids) goes in the body and in its Library evidence page (below). The concrete payload (an auto-task definition, a page diff) is a task artifact.
+- **Evidence page by status.** The page sits in the folder for its proposal's status, named in the app's words and dated by closing time once closed, so no folder grows without bound:
+
+  | Folder | Orbit task status | When |
+  |---|---|---|
+  | `library/proposals/open/<id>.md` | `proposed` | Created here by `office.proposal-create` |
+  | `library/proposals/accepted/YYYY/MM/<id>.md` | `done` | Moved by `office.proposal-accept` (or reconcile), in the closing month |
+  | `library/proposals/dismissed/YYYY/MM/<id>.md` | `rejected` | Moved by `office.proposal-reconcile` after a dismissal, in the rejection month |
+
+  A task in any other status (an acceptance in progress or review, `backlog`, `archived`) keeps its page where it is. The record is the Orbit task, so the page can move: nothing links to it by path, and lookups resolve by proposal id in any status folder and in the legacy flat `library/proposals/<id>.md` layout. A closed page gains an `## Outcome` section. Each move writes the new path and removes the old one in one Library commit.
 - **Onboarding set.** The proposals filed from the onboarding interview also carry the tag `onboarding`. The app shows them as one "Set up your Library" card with *Accept all* and per-page review; *Accept all* accepts each one in turn, and a refusal on one leaves the others accepted and names it.
 - **Script payload contract:** `proposal.json` carries `{kind, definition}`; the definition contains the concrete `plugin.tool_call` steps. `office.script-run` verifies the complete pinned step input against a done proposal. Acceptance calls `office_tools::prepare_script` before enabling any script step; see [scripts.md](./scripts.md#implementation-contracts).
-- **Accept:** the app calls `office.proposal-accept`, which applies the payload (creates and enables the auto-task, writes the page; for an auto-task that runs a script, it first fetches the script's dependencies and refuses the acceptance if they do not resolve, [scripts.md](./scripts.md#dependencies-are-fetched-once-at-approval)), closes the task as done with the change recorded, and commits the Library. `proposal-accept` is `mcp_scope: none`: only the app can call it.
-- **Dismiss:** closes it as rejected with an optional reason.
+- **Accept:** the app calls `office.proposal-accept`, which applies the payload (creates and enables the auto-task, writes the page; for an auto-task that runs a script, it first fetches the script's dependencies and refuses the acceptance if they do not resolve, [scripts.md](./scripts.md#dependencies-are-fetched-once-at-approval)), closes the task as done with the change recorded, and commits the Library. Its evidence page moves to `accepted/YYYY/MM/` with the acceptance summary as its outcome, in the commit that records the acceptance. `proposal-accept` is `mcp_scope: none`: only the app can call it.
+- **Dismiss:** closes it as rejected with an optional reason. The app then calls `office.proposal-reconcile`, which moves the page to `dismissed/YYYY/MM/` in one commit; the reason stays in the task's history. A failed move leaves the dismissal standing until the next reconcile.
+- **Reconcile:** `office.proposal-reconcile` (`{}`, mutating, `mcp_scope: none`) lists the proposal tasks (`orbit.task.list`, tag `proposal`, up to 1000, refused as `proposal_history_incomplete` when truncated) and moves every page whose folder disagrees with its task's status, so a proposal closed outside the app (an operator's CLI) catches up and legacy flat pages migrate: to `open/` while waiting (or in another non-closed status), to `accepted/` or `dismissed/` under the month of the task's `updated_at`. A legacy acceptance receipt `<id>-accepted.md` is folded into the accepted page's outcome. A page already in its folder is left alone, so a re-run moves nothing and commits nothing. Pages with no proposal task are reported as `unknown` and left in place. It returns `{moved: [{id, from, to}], unknown}`. The app runs it after a dismissal; an operator runs `orbit tool run office.proposal-reconcile --input '{}'` to migrate a Library or repair it after closing proposals outside the app.
 - **Never auto-approved.** Orbit only approves a `proposed` task automatically when a drain is started with `--approve-proposed`. The office workspace runs no drain, and the dispatch pass submits `backlog` tasks only, so a proposal changes state only when the user accepts or dismisses it.
 
 ## Dismissal memory
@@ -101,7 +111,7 @@ dismissed this on Oct 29").
 `payload`, and optional `tags`. It uses Orbit task creation's `proposed`
 default (there is no status override), preserves additional tags such as
 `onboarding`, and attaches `proposal.json`. Its response is
-`{created, id, suppressed, evidence_page, payload_sha256}`; a recently rejected equivalent
+`{created, id, suppressed, evidence_page, payload_sha256}`, where `evidence_page` is `proposals/open/<id>.md`; a recently rejected equivalent
 returns `created: false`, `suppressed: true`, its prior task id and a null
 page and digest. Dismissal history must be complete and readable. Equivalence is the
 kind plus the sorted, deduplicated evidence-reference set; rejection's
@@ -152,8 +162,11 @@ an explicit `orbit.auto_task.update` with `enabled: true`; preparation precedes
 both. Retirement uses only update with `enabled: false`. No callback is retried
 on an unknown outcome. Knowledge publication compares the reviewed revision
 under the Library writer lock, including an absence check for a new page.
-The Library commits a proposal acceptance receipt and the task records the
-change through `review` to `done` with an execution summary.
+The Library moves the evidence page to `proposals/accepted/YYYY/MM/<id>.md`
+with the acceptance summary (the receipt: payload digest and applied change)
+as its `## Outcome`, in one commit, and the task records the change through
+`review` to `done` with an execution summary. Before pages moved, the receipt
+was a separate `proposals/<id>-accepted.md`; reconcile folds it into the page.
 
 A failed callback after reservation can leave partial effects. The proposal
 stays in progress or review and acceptance refuses it; inspect its payload,
