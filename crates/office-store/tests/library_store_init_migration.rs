@@ -481,3 +481,197 @@ fn a_failed_backfill_on_open_is_retried_by_the_next_open() {
     let ids: Vec<&str> = hits.iter().map(|hit| hit.id.as_str()).collect();
     assert_eq!(ids, ["dom-person-jane"]);
 }
+
+#[test]
+fn init_scaffolds_state_ignore_and_status_stays_clean_after_a_write() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let library = workspace.join("library");
+    let state = library.join(".office/state");
+    let first =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("first init");
+    assert!(!first.already_initialized);
+    let gitignore = std::fs::read_to_string(library.join(".gitignore")).expect("gitignore");
+    assert!(
+        gitignore.lines().any(|line| line == "original.*"),
+        "fresh .gitignore keeps original.*: {gitignore:?}"
+    );
+    assert!(
+        gitignore.lines().any(|line| line == "frames/"),
+        "fresh .gitignore keeps frames/: {gitignore:?}"
+    );
+    assert!(
+        gitignore.lines().any(|line| line == ".office/state/"),
+        "fresh .gitignore ignores writer state: {gitignore:?}"
+    );
+    // Writer state lives under .office/state on disk but must stay untracked.
+    assert!(state.join("index.sqlite").is_file());
+    assert!(state.join("library.writer.lock").exists());
+    assert!(git(&library, &["status", "--porcelain"]).trim().is_empty());
+    let tracked = git(&library, &["ls-files"]);
+    assert!(
+        tracked.lines().any(|line| line == ".office/config.yaml"),
+        "config stays tracked: {tracked}"
+    );
+    assert!(
+        tracked
+            .lines()
+            .any(|line| line == ".office/templates/person.md"),
+        "templates stay tracked: {tracked}"
+    );
+    assert!(
+        !tracked
+            .lines()
+            .any(|line| line.starts_with(".office/state")),
+        "writer state stays untracked: {tracked}"
+    );
+
+    let store = LibraryStore::open(&library, &state).expect("open");
+    store
+        .write_document(
+            Path::new("knowledge/domain/dom-state-ignore.md"),
+            "---\nid: dom-state-ignore\ntype: domain\ntitle: State ignore\n---\n\nKeeps state untracked.\n",
+        )
+        .expect("write document");
+    assert!(
+        git(&library, &["status", "--porcelain"]).trim().is_empty(),
+        "writer state must not appear in git status after a write"
+    );
+}
+
+#[test]
+fn init_untracks_committed_state_in_one_commit_and_is_then_idempotent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let library = workspace.join("library");
+    let state = library.join(".office/state");
+    LibraryStore::initialize_at(&library, &state, None, &workspace).expect("first init");
+    // Simulate a Library from before the fix: an old .gitignore without the
+    // state entry, plus writer state force-added to the index.
+    std::fs::write(library.join(".gitignore"), "original.*\nframes/\n").expect("old gitignore");
+    git(&library, &["add", "--", ".gitignore"]);
+    git(
+        &library,
+        &[
+            "commit",
+            "--quiet",
+            "-m",
+            "old gitignore",
+            "--",
+            ".gitignore",
+        ],
+    );
+    git(&library, &["add", "--force", "--", ".office/state"]);
+    git(
+        &library,
+        &[
+            "commit",
+            "--quiet",
+            "-m",
+            "track state",
+            "--",
+            ".office/state",
+        ],
+    );
+    let tracked_before = git(&library, &["ls-files", "--", ".office/state"]);
+    assert!(
+        !tracked_before.trim().is_empty(),
+        "fixture must track writer state"
+    );
+    let count_before = git(&library, &["rev-list", "--count", "HEAD"]);
+    let head_before = git(&library, &["rev-parse", "HEAD"]);
+
+    let repaired =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("repair init");
+    assert!(!repaired.already_initialized);
+    let gitignore = std::fs::read_to_string(library.join(".gitignore")).expect("gitignore");
+    assert!(
+        gitignore.lines().any(|line| line == ".office/state/"),
+        "repair adds the state ignore: {gitignore:?}"
+    );
+    // The files stay on disk while leaving the index.
+    assert!(state.join("index.sqlite").is_file());
+    assert!(state.join("library.writer.lock").exists());
+    let tracked_after = git(&library, &["ls-files", "--", ".office/state"]);
+    assert!(
+        tracked_after.trim().is_empty(),
+        "writer state leaves the index: {tracked_after:?}"
+    );
+    let tracked = git(&library, &["ls-files"]);
+    assert!(
+        tracked.lines().any(|line| line == ".office/config.yaml"),
+        "config stays tracked: {tracked}"
+    );
+    assert!(
+        tracked
+            .lines()
+            .any(|line| line == ".office/templates/person.md"),
+        "templates stay tracked: {tracked}"
+    );
+    // One commit holds the .gitignore change and the untracking together.
+    let count_after: u32 = git(&library, &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse()
+        .expect("count");
+    let count_before: u32 = count_before.trim().parse().expect("count");
+    assert_eq!(count_after, count_before + 1);
+    let names = git(
+        &library,
+        &["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+    );
+    assert!(
+        names.lines().any(|line| line == ".gitignore"),
+        "repair commits the ignore change: {names}"
+    );
+    assert!(
+        git(&library, &["status", "--porcelain"]).trim().is_empty(),
+        "untracked-but-present state must not dirty status"
+    );
+
+    let head_after_repair = git(&library, &["rev-parse", "HEAD"]);
+    assert_ne!(head_before, head_after_repair);
+    let second =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("second init");
+    assert!(second.already_initialized);
+    assert!(second.created.is_empty());
+    assert_eq!(git(&library, &["rev-parse", "HEAD"]), head_after_repair);
+}
+
+#[test]
+fn init_preserves_gitignore_variants_without_duplicating_state() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let library = workspace.join("library");
+    let state = dir.path().join("state");
+    LibraryStore::initialize_at(&library, &state, None, &workspace).expect("first init");
+
+    // Other lines and a missing trailing newline survive the upgrade.
+    std::fs::write(library.join(".gitignore"), "custom-ignore\nframes/")
+        .expect("custom gitignore without newline");
+    let upgraded =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("upgrade");
+    assert!(!upgraded.already_initialized);
+    assert_eq!(
+        std::fs::read_to_string(library.join(".gitignore")).expect("gitignore"),
+        "custom-ignore\nframes/\n.office/state/\n"
+    );
+    let repeat = LibraryStore::initialize_at(&library, &state, None, &workspace).expect("repeat");
+    assert!(repeat.already_initialized);
+
+    // A slashless `.office/state` entry already counts as present.
+    std::fs::write(
+        library.join(".gitignore"),
+        "custom-ignore\nframes/\n.office/state",
+    )
+    .expect("slashless gitignore without newline");
+    let slashless =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("slashless");
+    assert!(slashless.already_initialized);
+    assert_eq!(
+        std::fs::read_to_string(library.join(".gitignore")).expect("gitignore"),
+        "custom-ignore\nframes/\n.office/state"
+    );
+}

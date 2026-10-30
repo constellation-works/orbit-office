@@ -155,7 +155,8 @@ impl LibraryStore {
     /// Scaffold a Library at the requested location (specs/library.md,
     /// "Scaffolding: `office.init`"), in spec order. Creates only what is
     /// missing and preserves existing config, templates and pages. Appends
-    /// `frames/` to an existing `.gitignore` when needed, preserving other lines.
+    /// a missing `frames/` or `.office/state/` to an existing `.gitignore`
+    /// when needed, preserving other lines.
     /// A complete Library, including every bundled template file, reports
     /// `already_initialized` with no commit.
     /// Holds the writer lock from before inspecting Library state through
@@ -255,6 +256,14 @@ impl LibraryStore {
         let gitignore_exists = gitignore.is_some();
         let gitignore_text = gitignore.unwrap_or_default();
         let frames_ignored = gitignore_text.lines().any(|line| line == "frames/");
+        let state_ignored = gitignore_text
+            .lines()
+            .any(|line| line == ".office/state/" || line == ".office/state");
+        let state_tracked = if is_repo {
+            git.has_tracked(".office/state")?
+        } else {
+            false
+        };
         let index_exists = state_dir.join("index.sqlite").exists();
         let layout_complete = LAYOUT_DIRS.iter().all(|dir| {
             let path = candidate.join(dir);
@@ -269,6 +278,8 @@ impl LibraryStore {
             && config_text.is_some()
             && gitignore_exists
             && frames_ignored
+            && state_ignored
+            && !state_tracked
             && index_exists
             && layout_complete
             && templates_present
@@ -309,22 +320,39 @@ impl LibraryStore {
             )?;
             created.push(".office/config.yaml".to_string());
         }
-        if !gitignore_exists || !frames_ignored {
+        if !gitignore_exists || !frames_ignored || !state_ignored {
             let mut text = if gitignore_exists {
                 gitignore_text
             } else {
                 "original.*\n".into()
             };
-            if !text.is_empty() && !text.ends_with('\n') {
-                text.push('\n');
+            if !frames_ignored {
+                if !text.is_empty() && !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                text.push_str("frames/\n");
             }
-            text.push_str("frames/\n");
+            if !state_ignored {
+                if !text.is_empty() && !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                text.push_str(".office/state/\n");
+            }
             write_atomic(&candidate.join(".gitignore"), text.as_bytes())?;
             created.push(".gitignore".to_string());
         }
         // Only the paths this call created are committed, so a later restore
         // does not stage an edit the user made to another template.
+        // A tracked `.office/state` is removed from the index with
+        // `git rm -r --cached` and committed together with the `.gitignore`
+        // change. `--cached` never deletes the files on disk, and the
+        // removal is scoped to `.office/state` so config and templates
+        // stay tracked.
         created.extend(files.install_missing_templates()?);
+        let untrack_state = state_tracked;
+        if untrack_state {
+            created.push(".office/state".to_string());
+        }
         let root = candidate
             .canonicalize()
             .map_err(|e| Error::io("resolve Library", &candidate, e))?;
@@ -334,14 +362,24 @@ impl LibraryStore {
             created.push("index.sqlite".to_string());
         }
         store.reindex_locked(&lock)?;
-        let committable: Vec<String> = created
+        // `.office` itself is never added: `add --force -- .office`
+        // would force-add the ignored `.office/state` it contains when
+        // writer state lives inside the Library. Its tracked files
+        // (`.office/config.yaml`, `.office/templates/...`) are each in
+        // `created` on their own and are added individually.
+        let add_paths: Vec<String> = created
             .iter()
-            .filter(|path| path.as_str() != ".git" && path.as_str() != "index.sqlite")
+            .filter(|path| {
+                path.as_str() != ".git"
+                    && path.as_str() != "index.sqlite"
+                    && path.as_str() != ".office"
+                    && path.as_str() != ".office/state"
+            })
             .cloned()
             .collect();
         store
             .git
-            .commit_created(&committable, "Initialize the Library")?;
+            .commit_scaffold(&add_paths, untrack_state, "Initialize the Library")?;
         created.sort();
         Ok(InitOutcome {
             already_initialized: false,
