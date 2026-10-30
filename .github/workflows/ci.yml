@@ -75,4 +75,5 @@ jobs:
         with:
           # The fixture's agent-status reader imports TypeScript directly.
           node-version: "24"
+      - run: sh scripts/install/build-install.sh --check
       - run: sh scripts/install/test-install.sh

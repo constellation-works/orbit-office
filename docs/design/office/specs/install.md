@@ -8,7 +8,9 @@ last_validated: 2026-10-27
 
 Source: spec §13.5.
 
-Run `./install.sh` from a clone to install everything without a manual Orbit or scaffold step. A piped install also requires a prepared plugin bundle and a prepared app bundle, as described below. The script is idempotent: every step checks first and
+Run `./install.sh` from a clone to install everything without a manual Orbit or scaffold step. A piped install also requires a prepared plugin bundle and a prepared app bundle, as described below.
+
+**Sources and assembly.** The distributed `install.sh` is generated, self-contained output; do not edit it directly. Its hand-maintained sources are the step modules under `scripts/install/lib/`: `helpers.sh` (arguments, platform and paths, small helpers and install state), `python.sh` (the pinned uv and Python, `step_python`), `agent.sh` (`step_agent`, including the Claude, Codex and Muse MCP registration) and `steps.sh` (`step_preflight`, `step_orbit`, `step_launcher`, `step_workspace_init`, `step_plugin`, `step_secrets`, `step_app`, `do_uninstall` and the main dispatch, which the assembler places last). `sh scripts/install/build-install.sh` concatenates those modules in that order, with a generated-file banner, into `install.sh`; `sh scripts/install/build-install.sh --check` fails when the checked-in file differs, and CI runs that check in its installer job. The modules are assembled, never sourced at runtime, so the piped (`curl | sh`) and standalone-copy forms below need no adjacent files and behave exactly as before. The script is idempotent: every step checks first and
 does only what is missing, so re-running it repairs a partial install and changes nothing on
 a complete one. It prints each step as it goes and a summary at the end.
 
@@ -452,7 +454,7 @@ a prepared `ORBIT_OFFICE_APP_BUNDLE` for the app, as step 9 describes; without o
 it stops at the app step rather than installing a service with nothing to run.
 
 Run `sh scripts/install/test-install.sh` for the installer acceptance harness; CI
-runs it on Linux and macOS with Node 24 (the fixture imports TypeScript directly).
+runs `sh scripts/install/build-install.sh --check` and then that harness on Linux and macOS with Node 24 (the fixture imports TypeScript directly).
 `UPDATE_GOLDENS=1 sh scripts/install/test-install.sh` explicitly refreshes the
 installed launcher help golden. The launcher itself supports Node 20+. The harness uses
 temporary homes, stub Orbit and service managers, local archive fixtures and a PTY
