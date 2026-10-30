@@ -30,3 +30,15 @@ tests:
     expect:
       error:
         code: unknown_event
+  - name: capture_requires_session_path_and_id_together
+    tool: capture
+    input: {"session_id":"example-session"}
+    expect:
+      error:
+        code: invalid_argument
+  - name: capture_refuses_mixed_session_and_upload_modes
+    tool: capture
+    input: {"session_transcript_path":"example.jsonl", "session_id":"example-session", "text":"No source should be created."}
+    expect:
+      error:
+        code: invalid_argument

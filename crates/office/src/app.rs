@@ -542,6 +542,20 @@ impl Library for RealLibrary {
     ) -> office_core::Result<office_core::ports::SourceOutcome> {
         LibraryStore::capture_source(&self.store()?, request)
     }
+    fn session_transcript(
+        &self,
+        path: &str,
+        session_id: &str,
+    ) -> office_core::Result<office_core::domain::source::conversation::Session> {
+        office_core::ports::Library::session_transcript(&self.store()?, path, session_id)
+    }
+    fn capture_session(
+        &self,
+        request: &office_core::domain::source::conversation::Request,
+        captured_at: &str,
+    ) -> office_core::Result<office_core::ports::SourceOutcome> {
+        office_core::ports::Library::capture_session(&self.store()?, request, captured_at)
+    }
     fn read_source(&self, id: &str) -> office_core::Result<office_core::ports::SourceView> {
         LibraryStore::read_source(&self.store()?, id)
     }

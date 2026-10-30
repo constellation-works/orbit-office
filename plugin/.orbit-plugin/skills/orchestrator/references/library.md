@@ -75,7 +75,12 @@ source. Fields (see `capture.request.json`):
 The result gives `id`, `sensitivity` and `deduplicated`. Identical content
 returns the existing source with `deduplicated: true`; cite that one.
 
-The session log is the `conversation` kind with `entries` and `append_to`;
+The session log is the `conversation` kind. SessionEnd extraction uses
+`session_transcript_path` plus `session_id`; rolling handoffs use `append_to`.
+The extractor records nullable session `orchestrator`, `model` and `session_id`,
+with `captured_by: transcript-extractor`, and retries the same session/hash
+without a duplicate. Until the host hook and definition registration are
+installed, manual capture still uses `entries` and `append_to`;
 see [sessions.md](sessions.md). Short directions the user types go in that
 log, not in a separate source. Meetings and KT videos have their own flows in
 [packs.md](packs.md).

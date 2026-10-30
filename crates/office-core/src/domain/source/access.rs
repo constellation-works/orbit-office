@@ -39,6 +39,7 @@ fn fields(markdown: &str) -> Result<Vec<(String, Value)>> {
 
 /// Provenance exactly as recorded by capture and processing, empty when absent.
 pub fn derived_by(markdown: &str) -> Result<Value> {
+    super::conversation::validate_provenance(markdown)?;
     let value = fields(markdown)?
         .into_iter()
         .find(|(key, _)| key == "derived_by")

@@ -2,9 +2,9 @@
 
 How a session starts, keeps its thread and survives an abrupt end: the brief, the conversation log, the rolling handoff and scratch.
 
-Sessions end whenever the user closes the terminal. Nothing waits for an end
-summary. The log and the handoff are written as you go, and the brief is
-computed from state that already exists.
+Sessions end whenever the user closes the terminal. The rolling handoff is written as you go. A SessionEnd job extracts
+conversation evidence from the transcript; a host sweep recovers missed ends.
+The brief uses existing state and may lag while extraction is queued.
 
 ## Start: call the brief first
 
@@ -79,18 +79,34 @@ up from there. If there is no handoff, rely on the computed sections alone.
 
 ## The conversation log
 
-Open **one conversation source per session** with `office.capture`,
-`kind: conversation`, and `entries`. Keep the returned `id`. Add every later
-entry to that same source with `append_to`. Never edit earlier lines, and
-never start a new conversation source per turn.
+The session-end extractor writes decisions, directions, facts, actions and
+open questions. Do not call capture on every turn. It copies user wording,
+scrubs credentials, treats unclear statements as open, and records the
+session's `orchestrator`, exact `model` and `session_id` separately from
+`captured_by: transcript-extractor`. Private evidence stays off the crew.
+
+Keep the rolling handoff yourself. With the host integration installed, when
+the first handoff is needed, open the session source from its staged transcript
+and keep the returned id:
 
 ```json
-{"kind":"conversation","title":"Office session","entries":[{"kind":"open","text":"Which request should we prepare first?"}]}
+{"session_transcript_path":"<absolute-staged-transcript-path>","session_id":"<session-id>"}
 ```
 
+Append handoffs to that id. The extractor later updates the same source,
+preserving every handoff and anchor. It never generates handoffs or resolutions.
+
 ```json
-{"append_to":"<source-id>","entries":[{"kind":"decision","text":"Renewal deck goes to Jane by Friday."},{"kind":"handoff","text":"Next: draft the renewal deck; the user wants to review wording first."}]}
+{"append_to":"<source-id>","entries":[{"kind":"handoff","text":"Next: draft the renewal deck; the user wants to review wording first."}]}
 ```
+
+The plugin ships a disabled `office-conversation-extract` recovery auto-task;
+manifest registration is a separate integrator change and constellation must
+install the SessionEnd staging/queue hook beside `operations/scripts/session-brief.py`.
+Until those prerequisites are installed, continue the existing manual log
+(`kind: conversation`, `entries`, then `append_to`). Do not silently create an
+extracted duplicate of a legacy manual source. Capture a fact immediately when
+an onboarding or knowledge proposal needs a citation before session end.
 
 Each entry is `{kind, text}` (or the string `"<kind>: <text>"`). Capture adds
 the timestamp. Each entry becomes one line, anchorable as `#L<n>`. The
@@ -99,10 +115,10 @@ with the source `id` to find them.
 
 | Kind | Write it when | Rule |
 |---|---|---|
-| `decision` | A decision is made | Say what it changes |
+| `decision` | The user explicitly decides | Extractor; no inferred consent |
 | `direction` | The user gives a rule or instruction | **Verbatim** |
 | `fact` | The user states something about themselves, their people or their work | **Verbatim**; onboarding pages cite these |
-| `action` | You did something (filed a to-do, captured a source, filed a proposal) | One line per action, citing its source, task or output |
+| `action` | The transcript reports something done | Extractor; reported, not independently verified |
 | `open` | A question is left unanswered | One question per entry |
 | `resolved` | An open question is answered | **Start the text with the open entry's anchor**, e.g. `#L4 — Acme stays on Pro.` |
 | `handoff` | The plan changes | See below |
@@ -143,8 +159,8 @@ changes. Every line cites its evidence. It is promoted without review.
 
 - You do not run it: `office.digest` is not exposed to you.
 - A day with no activity has no digest.
-- Your log entries are its input. Clear `decision`, `direction` and `action`
-  lines make a useful digest.
+- Extracted log entries and rolling handoffs are its input. Pending extraction
+  can delay the latest session evidence until the next digest run.
 - Use it to answer "what did I do yesterday" or "what happened last week":
   find it through the brief's `latest_digest`, or `office.search` /
   `office.artifact-list` with series `digest-daily`, and cite it.

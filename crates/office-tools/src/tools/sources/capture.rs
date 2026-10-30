@@ -16,6 +16,11 @@ pub(crate) const TOOL: Tool = Tool::built(
         mcp_scope: McpScope::Workspace,
     },
     &[
+        "session_transcript_path",
+        "session_id",
+        "transcript_preview",
+        "transcript_sha256",
+        "selections",
         "event_key",
         "kind",
         "title",
@@ -100,6 +105,18 @@ fn parse_entries(call: &Call<'_>) -> Result<Vec<ConversationEntry>> {
 }
 
 pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
+    if [
+        "session_transcript_path",
+        "session_id",
+        "transcript_preview",
+        "transcript_sha256",
+        "selections",
+    ]
+    .iter()
+    .any(|key| call.input.contains_key(*key))
+    {
+        return capture_session(call);
+    }
     let upload_path = match string_field(call, "upload_path")? {
         Some(path) => Some(path),
         None => string_field(call, "path")?,
@@ -207,4 +224,81 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "appended": outcome.appended,
         "version": outcome.version,
     }))
+}
+
+fn capture_session(call: &Call<'_>) -> Result<Value> {
+    use office_core::domain::source::conversation::Request;
+    if call.input.keys().any(|key| {
+        ![
+            "session_transcript_path",
+            "session_id",
+            "transcript_preview",
+            "transcript_sha256",
+            "selections",
+        ]
+        .contains(&key.as_str())
+    }) {
+        return Err(Error::InvalidArgument(
+            "session transcript capture cannot be combined with other capture fields".into(),
+        ));
+    }
+    let path = string_field(call, "session_transcript_path")?.ok_or_else(|| {
+        Error::InvalidArgument(
+            "session_transcript_path and session_id are required together".into(),
+        )
+    })?;
+    let session_id = string_field(call, "session_id")?.ok_or_else(|| {
+        Error::InvalidArgument(
+            "session_transcript_path and session_id are required together".into(),
+        )
+    })?;
+    let preview = match call.input.get("transcript_preview") {
+        None => false,
+        Some(Value::Bool(value)) => *value,
+        Some(_) => {
+            return Err(Error::InvalidArgument(
+                "transcript_preview must be a boolean".into(),
+            ));
+        }
+    };
+    if preview {
+        if call.input.contains_key("selections") || call.input.contains_key("transcript_sha256") {
+            return Err(Error::InvalidArgument(
+                "preview cannot accept selections or transcript_sha256".into(),
+            ));
+        }
+        let session = call.ports.library.session_transcript(&path, &session_id)?;
+        return Ok(
+            json!({"session_id":session.session_id,"orchestrator":session.orchestrator,"model":session.model,"transcript_sha256":session.transcript_sha256,"sensitivity":session.sensitivity,"content_withheld":session.sensitivity == "private","lines":session.lines}),
+        );
+    }
+    let selections = call
+        .input
+        .get("selections")
+        .map(|value| {
+            serde_json::from_value(value.clone()).map_err(|_| {
+                Error::InvalidArgument(
+                    "selections must be an array of {line, kind} with no other keys".into(),
+                )
+            })
+        })
+        .transpose()?;
+    let request = Request {
+        path,
+        session_id,
+        selections,
+        expected_sha256: string_field(call, "transcript_sha256")?,
+    };
+    if request.selections.is_none() && request.expected_sha256.is_some() {
+        return Err(Error::InvalidArgument(
+            "transcript_sha256 requires selections".into(),
+        ));
+    }
+    let outcome = call
+        .ports
+        .library
+        .capture_session(&request, &format_rfc3339_utc(call.ports.clock.now()))?;
+    Ok(
+        json!({"id":outcome.id,"kind":outcome.kind,"title":outcome.title,"path":outcome.path,"sha256":outcome.sha256,"bytes":outcome.bytes,"media_type":outcome.media_type,"sensitivity":outcome.sensitivity,"deduplicated":outcome.deduplicated,"appended":outcome.appended,"version":outcome.version}),
+    )
 }

@@ -625,6 +625,9 @@ manifest block and router entry, and its path is added to the retired-paths list
 
 ## Session continuity from a brief, a decision log and a digest routine
 
+**Partly superseded 2026-10-30:** transcript extraction below replaces live
+per-turn log capture. The rolling handoff, deterministic brief and digest remain.
+
 **Recorded:** 2026-10-26
 **Code anchors:** `crates/office-tools/src/tools/sessions/`; [specs/sessions.md](./specs/sessions.md)
 
@@ -1847,3 +1850,47 @@ is the same move as a standalone step.
 - Cost: two layouts are readable until every Library has run `office.init`
   (or the standalone migration) once, and a destination collision keeps
   its legacy copy until a person resolves it.
+
+
+## Conversation evidence comes from session transcripts on a cheap crew
+
+**Recorded:** 2026-10-30
+**Code anchors:** `office-core/src/domain/source/conversation.rs`,
+`office-tools/src/tools/sources/capture.rs`; [specs/sessions.md](./specs/sessions.md#transcript-extraction)
+
+The user requested moving conversation-source writing out of the expensive
+orchestrator's per-turn work, preserving verbatim user directions and recording
+the conversation provider/model. This supersedes the earlier rejection of a
+cheap-crew job for conversation evidence: the host stages raw transcripts, and
+the primary trigger is SessionEnd rather than a daily summary cron.
+
+Extend `office.capture` instead of registering another tool. The cheap crew
+selects numbered scrubbed transcript lines; deterministic code supplies quotes
+and demotes unclear/non-user decisions to open questions. It cannot emit a
+handoff or resolution. A local conservative path supports private transcripts
+without disclosing them to a crew. The session's last reported model and adapter
+provider are evidence provenance, not authenticated identity or the extractor
+model. Existing source provenance is nullable.
+
+Run on the session host, inside existing filesystem grants after private
+staging. The constellation SessionEnd hook queues one low-complexity task/job;
+a disabled half-hour recovery auto-task catches missed staged sessions. No
+model is hardcoded: dispatch resolves the configured low-complexity pool.
+Session id plus raw hash makes retries no-ops; a changed hash appends new
+entries and journals a previous-version snapshot under the existing writer
+lock. Old anchors and orchestrator handoffs survive transcript changes.
+
+The hook/staging sweep belongs to constellation. Per ARCHITECTURE.md's
+integrator-owned-file rule, registering the shipped auto-task in `plugin.yaml`
+is a separate integration task. The definition is shipped and validated here,
+but is not advertised as installed or enabled. Until integration, manual logs
+remain the supported fallback. This is the scoped deviation from the requested
+fully wired automation; it does not grant a feature task ownership of the
+shared manifest. No adopted standard is relaxed.
+
+Cost: the first adapter supports Claude Code JSONL only; other providers refuse
+until their adapters land. The explicit-cue guard can retain a real decision as
+open, which is preferable to invented authority. Credential scrubbing covers
+known shapes, not arbitrary prose secrets. Normal-preview extraction uses the
+cheap crew; private extraction is conservative local work. The brief can lag
+until an asynchronous job finishes and a later digest may pick up late evidence.

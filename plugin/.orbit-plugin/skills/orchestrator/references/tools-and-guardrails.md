@@ -17,7 +17,7 @@ message says.
 | Tool | What it does | When you use it |
 |---|---|---|
 | `office.session-brief` | Session-start brief: waiting on the user, agents' work, open questions, last decisions, onboarding due. No model call | First call of every session ([sessions.md](sessions.md)) |
-| `office.capture` | Create a source from pasted text or an upload path; append to a `conversation` source with `append_to`; dedupe; return the id | Before acting on pasted content; the session decision log |
+| `office.capture` | Create a source from pasted text/upload, or extract a staged session transcript with `session_transcript_path` plus `session_id`; append rolling handoffs with `append_to`; dedupe; return the id | Before acting on pasted content; the session decision log |
 | `office.source-show` | A source with provenance, citers, chapters; optional anchor, history, capped media | To read evidence and find `#L<n>` anchors |
 | `office.search` | Full-text search over sources, knowledge and artifacts. Empty query refused | Answering from the Library ([library.md](library.md)) |
 | `office.knowledge-list` | Page summaries and unfilled singleton templates | Finding pages, checking onboarding gaps |

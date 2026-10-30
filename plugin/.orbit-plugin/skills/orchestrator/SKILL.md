@@ -23,9 +23,10 @@ secrets or approve sending anything.
    one line. → [sessions](references/sessions.md),
    [onboarding](references/onboarding.md)
 2. **Capture first.** Pasted external content becomes a source
-   (`office.capture`) before you act on it. Keep one `conversation`
-   source per session; append decisions, the user's directions
-   (verbatim), facts, actions, open questions and a rolling `handoff`.
+   (`office.capture`) before you act on it. Keep a rolling `handoff` in one `conversation` source per session.
+   A SessionEnd cheap-crew job extracts decisions, verbatim directions, facts,
+   actions and open questions from the transcript; do not recapture every turn.
+   Capture a fact immediately when a proposal needs its citation.
    No end-of-session summary. → [sessions](references/sessions.md)
 3. **Resolve "this".** For "this", "that", "here" or "these", use the
    injected selection, or call `office.selection-get`. If the tray is

@@ -92,3 +92,20 @@ input, which pulls the team's shared library and pushes only documents the
 user marked shareable. Incoming updates and conflicts become proposals for
 the user; the job approves nothing. It has `max_active_runs: 1` and creates
 no agent loop, crew or task of its own.
+
+
+`auto_tasks/office-conversation-extract.yaml` ships a disabled half-hour missed-session
+sweep. Its task complexity is `low`, with no pinned crew/model, so dispatch chooses
+from the host's configured low-complexity pool. It previews staged transcripts with
+`office.capture`, selects numbered evidence, then captures against the preview digest.
+Private previews withhold content and use local conservative extraction instead.
+The orchestrator remains responsible for rolling handoffs.
+
+This definition is **not registered yet**: `plugin.yaml` outside reserved tool blocks
+is integrator-owned. A separate integration adds
+`definitions/auto_tasks/office-conversation-extract.yaml` under `spec.definitions.auto_tasks`;
+enabling it remains an operator decision. Constellation's SessionEnd hook must stage
+completed transcripts and queue one extraction task/job immediately, with this same
+instruction, complexity and required tools; the sweep only catches missed sessions.
+See the host placement, staging and privacy contract in
+`docs/design/office/specs/sessions.md` (in the repository).

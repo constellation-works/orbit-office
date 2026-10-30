@@ -1675,6 +1675,115 @@ impl LibraryStore {
         Ok(out)
     }
 
+    fn load_session(
+        &self,
+        raw: &str,
+        id: &str,
+    ) -> office_core::Result<office_core::domain::source::conversation::Session> {
+        use office_core::domain::source::{conversation, video::refusal};
+        use std::io::Read;
+        let canonical = std::fs::canonicalize(raw).map_err(|_| {
+            refusal(
+                "session_transcript_unavailable",
+                "session transcript is unavailable",
+            )
+        })?;
+        if !self
+            .upload_roots
+            .iter()
+            .any(|root| std::fs::canonicalize(root).is_ok_and(|root| canonical.starts_with(root)))
+        {
+            return Err(refusal(
+                "upload_outside_allowed_roots",
+                "stage the transcript inside the granted workspace or Library",
+            ));
+        }
+        if !std::fs::metadata(&canonical).is_ok_and(|m| m.is_file()) {
+            return Err(refusal(
+                "session_transcript_unavailable",
+                "transcript must be a regular file",
+            ));
+        }
+        let file = std::fs::File::open(&canonical).map_err(|_| {
+            refusal(
+                "session_transcript_unavailable",
+                "session transcript is unavailable",
+            )
+        })?;
+        if !file.metadata().is_ok_and(|m| m.is_file()) {
+            return Err(refusal(
+                "session_transcript_unavailable",
+                "transcript must be a regular file",
+            ));
+        }
+        // Verify the opened descriptor still names the physically checked file.
+        let current = std::fs::symlink_metadata(&canonical).map_err(|_| {
+            refusal(
+                "session_transcript_unavailable",
+                "transcript changed while opening",
+            )
+        })?;
+        let opened = file.metadata().map_err(|_| {
+            refusal(
+                "session_transcript_unavailable",
+                "could not inspect transcript",
+            )
+        })?;
+        let mut same_file = current.is_file()
+            && std::fs::canonicalize(&canonical).is_ok_and(|path| path == canonical);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            same_file &= current.dev() == opened.dev() && current.ino() == opened.ino();
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = opened;
+        }
+        if !same_file {
+            return Err(refusal(
+                "session_transcript_unavailable",
+                "transcript changed while opening",
+            ));
+        }
+        let mut bytes = Vec::new();
+        file.take(conversation::INPUT_LIMIT + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| {
+                refusal(
+                    "session_transcript_unavailable",
+                    "could not read session transcript",
+                )
+            })?;
+        if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > conversation::INPUT_LIMIT {
+            return Err(refusal(
+                "session_transcript_too_large",
+                "session transcript exceeds 8 MiB",
+            ));
+        }
+        let raw = std::str::from_utf8(&bytes).map_err(|_| {
+            refusal(
+                "invalid_session_transcript",
+                "session transcript must be UTF-8",
+            )
+        })?;
+        let mut session = conversation::parse(raw, id)?;
+        let settings = self.settings()?;
+        let existing_private = self.source_views()?.iter().any(|(_, text)| {
+            office_core::domain::metrics::metadata(text).is_ok_and(|meta| {
+                meta.get("session_id").and_then(serde_json::Value::as_str) == Some(id)
+                    && parse_source_meta(text).sensitivity == "private"
+            })
+        });
+        if session.scrubbed
+            || existing_private
+            || settings.sensitivity.get("conversation") == Some(&Sensitivity::Private)
+        {
+            session.sensitivity = "private".into();
+        }
+        Ok(session)
+    }
+
     /// Capture a source: copy an upload, store pasted text, open a
     /// conversation, or append to one (see domain rules in office-core).
     pub fn capture_source(
@@ -2678,6 +2787,170 @@ impl office_core::ports::Library for LibraryStore {
             capabilities,
             verified_at,
         )?)
+    }
+    fn session_transcript(
+        &self,
+        path: &str,
+        session_id: &str,
+    ) -> office_core::Result<office_core::domain::source::conversation::Session> {
+        use office_core::domain::source::video::refusal;
+        // A privacy change cannot race preview disclosure. Read-only: never create a lock.
+        let guard_path = self.state.join("library.writer.lock");
+        let guard = std::fs::File::open(&guard_path)
+            .map_err(|e| Error::io("open transcript read guard", &guard_path, e))?;
+        match guard.try_lock_shared() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock) => {
+                return Err(refusal(
+                    "library_writer_busy",
+                    "transcript preview unavailable during a Library write; retry",
+                ));
+            }
+            Err(std::fs::TryLockError::Error(e)) => {
+                return Err(Error::io("lock transcript read", &guard_path, e).into());
+            }
+        }
+        self.require_initialized()?;
+        let mut session = self.load_session(path, session_id)?;
+        if session.sensitivity == "private" {
+            session.lines.clear();
+        }
+        Ok(session)
+    }
+    fn capture_session(
+        &self,
+        request: &office_core::domain::source::conversation::Request,
+        captured_at: &str,
+    ) -> office_core::Result<SourceOutcome> {
+        use office_core::domain::source::{conversation, video::refusal};
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        self.require_initialized()?;
+        let mut session = self.load_session(&request.path, &request.session_id)?;
+        let entries = conversation::entries(&session, request)?;
+        let existing = self.source_views()?;
+        let mut matches = Vec::new();
+        for (path, text) in &existing {
+            conversation::validate_provenance(text)?;
+            let meta = office_core::domain::metrics::metadata(text)?;
+            if meta.get("session_id").and_then(serde_json::Value::as_str)
+                == Some(&request.session_id)
+            {
+                matches.push((path, text, meta));
+            }
+        }
+        if matches.len() > 1 {
+            return Err(refusal(
+                "session_source_conflict",
+                "multiple sources have this session id; reconcile them before capture",
+            ));
+        }
+        let (id, path, base, changed) = if let Some((path, text, meta)) = matches.first() {
+            if parse_source_meta(text).kind != "conversation"
+                || meta
+                    .get("orchestrator")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|p| p != session.orchestrator)
+            {
+                return Err(refusal(
+                    "session_source_conflict",
+                    "session id belongs to incompatible source provenance",
+                ));
+            }
+            let id = parse_source_meta(text).id;
+            if meta
+                .get("transcript_sha256")
+                .and_then(serde_json::Value::as_str)
+                == Some(&session.transcript_sha256)
+            {
+                let view = self.read_source(&id)?;
+                return Ok(SourceOutcome {
+                    id,
+                    kind: "conversation".into(),
+                    title: view.title,
+                    path: view.path,
+                    sensitivity: view.sensitivity,
+                    deduplicated: true,
+                    version: view.version,
+                    ..SourceOutcome::default()
+                });
+            }
+            (id, (*path).clone(), (*text).clone(), true)
+        } else {
+            let at = &session.lines[0].timestamp;
+            let date = at
+                .get(..10)
+                .ok_or_else(|| refusal("invalid_session_transcript", "invalid session date"))?
+                .to_string();
+            let base_id = source_id_base(
+                &date,
+                &format!(
+                    "session-{}",
+                    &sha256_hex(request.session_id.as_bytes())[..12]
+                ),
+            );
+            let id = unique_source_id(&base_id, |candidate| {
+                existing
+                    .iter()
+                    .any(|(_, text)| parse_source_meta(text).id == candidate)
+            });
+            let path = format!(
+                "sources/conversation/{}/{}/{id}/source.md",
+                &date[..4],
+                &date[5..7]
+            );
+            let text = render_source(&RenderSource {
+                id: &id,
+                kind: SourceKind::Conversation,
+                title: "Conversation session",
+                captured_at,
+                captured_by: "transcript-extractor",
+                origin: None,
+                occurred_at: Some(at),
+                participants: &[],
+                event: None,
+                tags: &[],
+                sensitivity: Sensitivity::parse(&session.sensitivity).unwrap_or_default(),
+                original: None,
+                derived_transcription: None,
+                retention_days: None,
+                body: "",
+            });
+            (id, path, text, false)
+        };
+        let scrubbed_base = conversation::scrub_source(&base)?;
+        if scrubbed_base != base {
+            session.sensitivity = "private".into();
+        }
+        let base = scrubbed_base;
+        let text = conversation::merge(&base, &session, &entries, &session.sensitivity, changed)?;
+        self.validate_identity(&DocumentRecord::from_markdown(Path::new(&path), &text))?;
+        let bundle = if changed {
+            vec![ArtifactFile {
+                path: format!("v{}.md", parse_source_meta(&base).version),
+                bytes: base.into_bytes(),
+            }]
+        } else {
+            vec![]
+        };
+        let pending = self.decide(
+            WriteKind::SourceProcessing,
+            &path,
+            &text,
+            None,
+            Some(bundle),
+        )?;
+        self.finish(&pending)?;
+        Ok(SourceOutcome {
+            id,
+            kind: "conversation".into(),
+            title: parse_source_meta(&text).title,
+            path,
+            sensitivity: session.sensitivity,
+            deduplicated: false,
+            version: parse_source_meta(&text).version,
+            ..SourceOutcome::default()
+        })
     }
     fn capture_source(&self, request: &CaptureSourceRequest) -> office_core::Result<SourceOutcome> {
         Self::capture_source(self, request)
