@@ -42,6 +42,7 @@ Source: spec §13.1–§13.2 and §13.4.
 | **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
 | **Calendar** | Week view (day view on a phone) of the user's meetings, read only from Outlook or an ICS feed, with each meeting's prep and capture state in words and the routines' runs as margin marks, and tasks scheduled for a date as blocks; a meeting opens its attendees, agenda, cited prep brief and **Add notes or transcript** ([calendar.md](./calendar.md#app)) |
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge, and its scheduled time when it has one; **Schedule…** sets or clears the time ([calendar.md](./calendar.md#scheduled-tasks)) |
+| **Agent work** | The Orbit tasks agents are carrying across the office workspace and followed workspaces: Working now, In review, Queued and Done today groups, with a workspace filter and an Open in Orbit link |
 | **Routines** | The next hour as one track (a mark per scheduled run, hollow where a paused routine skips its slot), then On and Paused tables: a switch, the routine and what it does, when it runs (plain words, with the cron line beneath), when it runs next (worked out from the schedule in the computer's time zone) and how its last time went (from `last_fire` in `orbit.auto_task.list`: when, and its task's state in words; task ids stay on the server). Retention settings below. Scheduled routines use the same tables, with their last run outcome when available. Only shipped component definitions are listed, with a count of hidden Orbit developer routines (see below). Full run history and produced outputs are managed in Orbit. |
 | **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meeting sources and other Library documents; task links are deferred until a page-citation read exists); history for every page and artifact; "Shared" and "Shared · from <member>" labels and a **Share with the team** switch on page, source and artifact views ([shared-library.md](./shared-library.md#app)) |
 | **Settings** | Library settings; **Shared library** (remote, branch and member name, **Sync now**, the last sync in words; [shared-library.md](./shared-library.md#app)); **Private route** (choose the endpoint kind, URL, model and label; the token goes straight to `orbit plugin secret set`; the check's capabilities in plain words; "Built with Muse Spark Open"; [models-and-privacy.md](./models-and-privacy.md#the-private-route)); **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again; a secret address takes the feed's full address; a sign-in-with-a-code connection shows the user code and verification address, then its signed-in state, and "Sign in again" once it reads `auth_expired`); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
@@ -279,6 +280,16 @@ output, or a gateway draft's connection, method, URL, body and digest.
   anything: a Library `draft` for someone else is copied, never sent
   ([orchestrator.md](./orchestrator.md#guardrails)).
 
+### Agent work implementation
+
+Agent work is built ([ORB-19735]) and registered as a screen, rail item
+and count ([ORB-19741]). `GET /api/agents` reads the followed workspaces
+from `office.status` (`brief.task_workspaces`, [ORB-19740]) and lists
+Orbit tasks in progress, in review, queued and done today for the office
+workspace and each followed workspace. An unreachable workspace is
+reported per workspace without failing the whole response. The screen is
+read-only: it offers no task actions.
+
 ### To-dos implementation
 
 To-dos are built ([ORB-18728]). `GET /api/todos` lists You and Agents
@@ -414,6 +425,9 @@ Source, Settings and Today.
 - [ORB-19195] — built the Calendar screen, `/api/calendar*`, the rail entry and Today's Next meeting card.
 - [ORB-19216] — built scheduled tasks on the calendar, the To-dos Schedule… picker, `POST /api/todos/schedule` and the dispatch pass's wait.
 - [ORB-19421] — built Settings › Shared library, the sharing labels and switch, and the shared-library card in Needs you.
+- [ORB-19735] — built the Agent work screen and `GET /api/agents`.
+- [ORB-19740] — projected `brief.task_workspaces` in `office.status`.
+- [ORB-19741] — registered the Agent work screen: route, rail item and count.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 

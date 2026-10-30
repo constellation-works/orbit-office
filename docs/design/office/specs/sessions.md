@@ -148,6 +148,8 @@ registered name, a logical `ws_…` id, an absolute local checkout path, or a
 host-qualified federated selector (`hm_…/<workspace>`). At most 16
 distinct selectors, each at most 256 bytes without whitespace. Absent or
 empty means today's behavior exactly: no extra reads, no new fields.
+Local and same-host merging was built in [ORB-19702]; cross-host routing
+was built in [ORB-19733].
 
 For each selector the brief calls `orbit.task.list` (and, for failed-run
 evidence, `orbit.task.show` with `field: delivery`) with `workspace` set
@@ -229,3 +231,11 @@ No agent loop, no crew and no Orbit task is involved.
   digest published just after midnight belongs to the day it summarizes.
   Older digests without the tag retain approval-date selection. A quarterly
   review starts from about ninety cited summaries rather than raw records.
+
+## Task References
+
+- [ORB-19702] — built session-brief merging of tasks from configured extra workspaces.
+- [ORB-19706] — built federated workspace reads for plugin callbacks.
+- [ORB-19733] — built cross-host session-brief routing to federated workspaces.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

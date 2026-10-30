@@ -1269,6 +1269,9 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-18719] — built `office.search` and `office.attach`, and decided where attach stages its copies.
 - [ORB-19747] — filed every meeting to-do as `owner:you` and left promotion to agent work to the orchestrator.
 - [ORB-19748] — marked `unused_automation` as planned across the spec, glossary and orchestrator reference.
+- [ORB-19421] — built the app's shared-library card in Needs you.
+- [ORB-19751] — registered Muse Code with `--agent muse` in the installer.
+- [ORB-19752] — withheld private content from MCP-visible read tools.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 

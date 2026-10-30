@@ -236,7 +236,8 @@ brief merges ([sessions.md](./sessions.md#extra-workspaces-brief-task_workspaces
 at most 16 distinct selectors of at most 256 bytes without whitespace
 (registered names, `ws_…` ids, absolute local paths, or `hm_…/<workspace>`
 federated selectors). It is settable as the whole leaf
-`brief.task_workspaces`.
+`brief.task_workspaces`. Projecting it in `office.status` was built in
+[ORB-19740].
 
 Retention is a positive integer up to 36,500 days or `null` (keep indefinitely).
 Sensitivity is `normal` or `private`. Packs are distinct names from `kt`,
@@ -314,6 +315,7 @@ defaults; existing explicit pack lists keep their values.
 ## Task References
 
 - [ORB-18838] — renamed the scaffold README's KT routine from `office-meeting-inbox` to `office-kt-inbox`.
+- [ORB-19740] — projected `brief.task_workspaces` in `office.status`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 
