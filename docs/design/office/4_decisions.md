@@ -206,9 +206,11 @@ run: `claude`, `codex` or `muse`. For Muse Code it splices
 `${XDG_CONFIG_HOME:-~/.config}/muse/settings.json`, preserving every
 other byte and setting, keeping a `.bak`, and recording ownership in
 `<data>/muse-mcp.json` so uninstall removes only an installer-owned
-entry and keeps a pre-existing identical one. Office skills are copied
-to `$HOME/.agents/skills` under the same recorded-ownership rule as the
-other CLIs. Muse Code has no per-command shell deny settings, so no
+entry and keeps a pre-existing identical one. Office skills reach Muse
+Code as `office-` plugin links in `$HOME/.agents/skills`, as for the
+other CLIs (see [Office skills come from the plugin, not installer
+copies](#office-skills-come-from-the-plugin-not-installer-copies)).
+Muse Code has no per-command shell deny settings, so no
 deny rules are written and the summary reports that, as it does for
 Codex. "Default" is now pinned in both senses: Muse Code is the default
 orchestrator provider; `claude` is the installer's `--agent` default.
@@ -223,6 +225,33 @@ orchestrator provider; `claude` is the installer's `--agent` default.
   beside the Claude and Codex paths) and its harness coverage, and Muse
   users get no installer-written deny rules, only the skill's gateway
   instruction.
+
+## Office skills come from the plugin, not installer copies
+
+**Recorded:** 2026-10-30 · [ORB-20228]
+**Code anchors:** `scripts/install/lib/agent.sh` (`step_agent`, `migrate_bare_skill_copies`, `install_skill_fallback`); `scripts/install/test-install.sh` §15, §24
+
+### Context
+
+The Orbit plugin links each office skill as `office-<name>` into the
+agent's skills directory, tracking the installed plugin. The installer's
+agent step also copied every plugin skill under its bare name and never
+refreshed an existing destination, so each skill appeared twice and the
+copy went stale.
+
+### Decision
+
+The plugin's links are the one source of truth. When the plugin provides
+the skills the installer copies nothing. A fallback copy, used only when
+no Orbit plugin path provides them, uses the same `office-` names and
+refreshes a stale recorded copy. On re-run, receipt-recorded bare-named
+copies are removed when unchanged and kept with a warning when modified.
+
+### Consequences
+
+- Each office skill appears once per agent, under its `office-` name.
+- Cost: the installer keeps receipt, digest and migration machinery for
+  the fallback copies it may still make and for legacy bare copies.
 
 ## Approval is enforced by tool visibility, not by instructions
 

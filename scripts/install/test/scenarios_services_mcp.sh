@@ -388,7 +388,8 @@ check "muse MCP entry written with tools/bin first on PATH" \
 check "muse backup is the exact original settings" cmp -s "$MUSE_CFG.bak" "$ROOT/muse-original.json"
 check "muse ownership receipt records the owned entry" \
     grep -q '"owned":true' "$HOME_MUSE/.local/share/orbit-office/muse-mcp.json"
-check "muse skills installed under .agents/skills" test -f "$HOME_MUSE/.agents/skills/orchestrator/SKILL.md"
+check "muse skills linked under .agents/skills with office- names" \
+    sh -c 'test -L "$1/office-orchestrator" && test -f "$1/office-orchestrator/SKILL.md" && test ! -e "$1/orchestrator"' sh "$HOME_MUSE/.agents/skills"
 check "muse summary reports no deny rules" \
     grep -F "deny rules unavailable for Muse Code shell calls" "$OUT_MUSE"
 snapshot "$HOME_MUSE" > "$ROOT/muse-snap1.txt"
@@ -404,7 +405,8 @@ check "muse uninstall removes the owned orbit entry" \
     node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(d.mcpServers&&d.mcpServers.orbit) process.exit(1); if(d.kept!==true||!d.mcpServers.other) process.exit(1)' "$MUSE_CFG"
 check "muse uninstall clears the ownership receipt" \
     test ! -e "$HOME_MUSE/.local/share/orbit-office/muse-mcp.json"
-check "muse uninstall removes installer-copied skills" test ! -e "$HOME_MUSE/.agents/skills/orchestrator"
+check "muse uninstall removes the plugin skill link" \
+    sh -c 'test ! -e "$1/office-orchestrator" && test ! -L "$1/office-orchestrator"' sh "$HOME_MUSE/.agents/skills"
 check "muse uninstall keeps the workspace" test -d "$HOME_MUSE/orbit"
 
 # XDG_CONFIG_HOME selects the Muse settings file; a pre-existing

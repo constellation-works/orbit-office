@@ -36,10 +36,13 @@
 #      bundle error from an empty working directory and from a decoy git
 #      checkout carrying a gateway/ tree: it pins no git HEAD from the
 #      working directory and copies no gateway export from it
-#  15. a pre-existing same-named user skill survives install and
-#      uninstall byte-for-byte for claude and codex; uninstall removes
-#      only installer-copied skills still unmodified, keeps a skill the
-#      user edited after copying, and is safe to repeat
+#  15. office skills arrive once as office- plugin links for claude
+#      and codex; a pre-existing bare-named user skill survives install
+#      and uninstall byte-for-byte, no bare-named copies are created,
+#      and uninstall is safe to repeat
+#  24. receipt-recorded bare-named copies from an earlier installer are
+#      removed on re-run when unmodified and kept with a warning when
+#      modified; a stale office- fallback copy is refreshed
 #  16. Orbit and Node in a temporary non-system prefix: the PATH values
 #      read back from the generated Claude, Codex, launchd and systemd
 #      files resolve and execute that Orbit (and Node) under env -i,
@@ -268,6 +271,23 @@ JSON
             printf "Plugin is inactive: plugin 'office' requests%s but this host has not granted it\n" "$_missing"
         else
             : > "$state/plugin-active$_suffix"; printf 'enabled\n'
+            # Like Orbit: enabling office links each plugin skill as
+            # office-<name> into every agent skill root.
+            if [ "$_plugin" = office ]; then
+                _skills_src="$(dirname -- "${STUB_MANIFEST:?}")/skills"
+                if [ -d "$_skills_src" ]; then
+                    for _root in "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.agents/skills"; do
+                        mkdir -p "$_root"
+                        for _s in "$_skills_src"/*; do
+                            [ -d "$_s" ] || continue
+                            _link="$_root/office-$(basename -- "$_s")"
+                            if [ ! -e "$_link" ] && [ ! -L "$_link" ]; then
+                                ln -s "$_s" "$_link"
+                            fi
+                        done
+                    done
+                fi
+            fi
         fi ;;
     "plugin remove")
         _suffix=".${3:?}"
@@ -277,6 +297,13 @@ JSON
             exit 1
         fi
         rm -f "$state/plugin-added$_suffix" "$state/plugin-enabled$_suffix" "$state/plugin-active$_suffix"
+        if [ "$3" = office ]; then
+            for _root in "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.agents/skills"; do
+                for _link in "$_root"/office-*; do
+                    [ -L "$_link" ] && rm -f "$_link" || true
+                done
+            done
+        fi
         printf 'removed\n' ;;
     "plugin disable")
         rm -f "$state/plugin-enabled" "$state/plugin-active"; printf 'disabled\n' ;;
@@ -586,5 +613,6 @@ scenario_19
 scenario_20_retired
 scenario_22
 scenario_23
+scenario_24
 
 printf 'PASS: %s checks\n' "$PASS"

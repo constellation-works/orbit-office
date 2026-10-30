@@ -39,8 +39,9 @@ nothing on a complete one. It prints each step and a summary that names the unin
 6. **Secrets.** Asks for the Meta API key, then optionally the private route's token, with
    hidden input. Skipped when already set. Without a terminal on stdin it skips them and
    prints the command to set the Meta key later.
-7. **Agent CLI.** Registers the Orbit MCP entry, copies the office skills, and adds the
-   shell deny rules (below).
+7. **Agent CLI.** Registers the Orbit MCP entry and adds the shell deny rules
+   (below). The office skills are not copied here: enabling the Orbit plugin
+   links them into the agent's skills directory under `office-` names.
 8. **App.** Installs the app as a login service and opens `http://localhost:<port>/`, where
    the browser offers to install it as a PWA.
 
@@ -138,22 +139,32 @@ installer's own `--agent` default is `claude`.
 - **Claude Code:** the Orbit MCP entry (`orbit mcp serve`) goes in
   `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`. Deny rules `Bash(curl *)`, `Bash(wget *)`,
   `Bash(http *)`, `Bash(aws *)` and `Bash(gcloud *)` go in `settings.json`'s
-  `permissions.deny`. Office skills are copied to `~/.claude/skills` (or
-  `$CLAUDE_CONFIG_DIR/skills`). Each file it changes keeps a `.bak`.
-- **Codex:** MCP entry in `~/.codex/config.toml`, skills in `~/.codex/skills`. Codex has no
+  `permissions.deny`. Each file it changes keeps a `.bak`.
+- **Codex:** MCP entry in `~/.codex/config.toml`. Codex has no
   per-command deny rules for sandboxed shell calls; the summary says so.
 - **Muse Code:** with `--agent muse`, the Orbit MCP entry goes in `mcpServers` in
-  `~/.config/muse/settings.json` (or under `$XDG_CONFIG_HOME`), and office skills are
-  copied to `~/.agents/skills`. The file it changes keeps a `.bak`, and uninstall removes
+  `~/.config/muse/settings.json` (or under `$XDG_CONFIG_HOME`). The file it changes keeps a `.bak`, and uninstall removes
   only the entry the installer wrote. Muse Code has no per-command shell deny settings,
   so the summary says so. `orbit-office status` also recognises a hand-written entry in
   that file. Muse Code also loads Claude Code and Codex personal skills unless that is off.
 
+The office skills themselves come from the Orbit plugin, not from a copy:
+enabling the plugin links each skill as `office-<name>` into the agent's
+skills directory (`~/.claude/skills` or `$CLAUDE_CONFIG_DIR/skills` for
+Claude Code, `~/.codex/skills` for Codex, `~/.agents/skills` for Muse
+Code), so each skill appears once and tracks the installed plugin. The
+installer copies a skill only as a fallback when no Orbit plugin path
+provides it, and then under the same `office-` name, refreshing a stale
+recorded copy instead of leaving it. On re-run it removes a bare-named
+copy an earlier installer recorded when that copy is unchanged, and keeps
+a user-modified one with a warning.
+
 The deny rules are an accident guard. Respect them even where they don't apply: use the
 gateway, never a shell HTTP client or cloud CLI.
 
-A skill already present under the same name is left untouched. Uninstall removes only skills
-it copied and that are unchanged.
+A skill already present under the same name is left untouched. Uninstall removes only
+fallback skills it copied and that are unchanged; plugin links are removed
+with the plugin.
 
 ## The app service
 

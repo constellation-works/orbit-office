@@ -147,11 +147,19 @@ filter for them. Orbit must support `workspace init --preset`.
 8. **Agent CLI.** Adds the Orbit MCP entry (agent authority) to Claude Code's
    `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` — the file Claude Code and the
    app's connection check actually read — keeping a backup of the old file
-   (`.claude.json.bak`), and installs the office skills. A
-   skill already present under the same name is left untouched and is not claimed: the
-   installer records only the skills it itself copies, as one `<name> <sha256>` line per
-   skill in `<data>/agent-skills-<agent>.txt`, where the digest covers every file's
-   relative path and bytes in the copied tree. It
+   (`.claude.json.bak`). The office skills are not copied when the Orbit
+   plugin provides them: enabling the plugin links each skill as
+   `office-<name>` into the agent's skills directory, so each skill appears
+   once and tracks the installed plugin. On re-run the installer removes a
+   bare-named copy an earlier installer recorded in
+   `<data>/agent-skills-<agent>.txt` when its tree still matches the recorded
+   digest, and keeps a user-modified one with a warning. Only when no Orbit
+   plugin path provides the skills does it copy as a fallback, under the
+   same `office-<name>` names, recording one `<name> <sha256>` line per
+   copied skill (the digest covers every file's relative path and bytes in
+   the copied tree) and refreshing a stale recorded copy on re-run instead
+   of reporting it already done. A skill already present under the same
+   name is left untouched and is not claimed. It
    also adds deny rules for direct shell use of `curl`, `wget`, `http`, `aws` and `gcloud`,
    so API and cloud calls go through the gateway ([gateway.md](./gateway.md#agent-cli-deny-rules)),
    and lists them in the summary. Rules the user already has are kept, and uninstall
@@ -166,8 +174,9 @@ filter for them. Orbit must support `workspace init --preset`.
    the entry (and a created `mcpServers` container) is installer-owned in
    `<data>/muse-mcp.json`; uninstall removes it only when that receipt
    proves ownership, so a pre-existing identical entry is kept. Office
-   skills are copied to `$HOME/.agents/skills` under the same recorded-
-   ownership rule as the other CLIs. Muse Code has no per-command shell
+   skills reach Muse Code the same way as the other CLIs: as `office-`
+   plugin links in `$HOME/.agents/skills`, with an installer copy there
+   only as the recorded-ownership fallback above. Muse Code has no per-command shell
    deny settings to write, so the summary reports that instead of claiming
    those calls are blocked. Invalid JSON, duplicate keys, incompatible
    field types and unsafe settings/receipt files stop the edit.
@@ -441,8 +450,9 @@ command. `--purge --home DIR` still applies only to the selected owned workspace
 The summary lists what was created, where, and the uninstall command
 (`install.sh --uninstall`). Uninstall removes the service, the MCP entry and its deny rules, the plugins, its recorded `orbit-office` launcher and the
 `tools` folder (`uv` and its Python, which nothing else uses). For skills it removes only a
-skill recorded in `agent-skills-<agent>.txt` whose tree still matches its recorded digest;
-a pre-existing same-named skill, a skill the user edited after copying, and any unrecorded
+fallback skill recorded in `agent-skills-<agent>.txt` whose tree still matches its recorded digest;
+the `office-` plugin links are removed with the plugin, not by the installer. A
+pre-existing same-named skill, a skill the user edited after copying, and any unrecorded
 skill are kept in place and named in the output with their path, and a repeated uninstall
 is a safe no-op for them. It keeps `~/orbit` and the
 Library unless `--purge` is given. `--purge` deletes that workspace only after the same
