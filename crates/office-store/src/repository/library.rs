@@ -13,7 +13,6 @@ use office_core::domain::source::{
     source_body, source_id_base, unique_source_id, vtt_to_body,
 };
 use office_core::ports::{CaptureSourceRequest, SourceOutcome, SourceView};
-use serde::{Deserialize, Serialize};
 
 use office_core::domain::knowledge::{DocumentKind, LibraryLayer};
 use office_core::domain::template::{KnowledgePage, TemplateFile, assess_templates};
@@ -27,6 +26,14 @@ use crate::driver::git::Git;
 use crate::driver::sqlite::connection::IndexStore;
 use crate::{Error, Result};
 
+mod grant;
+mod pending;
+
+use grant::{normalize_path, resolve_existing_ancestor, resolve_within_grant};
+use pending::{
+    PendingOriginal, PendingWrite, RawPendingWrite, WriteKind, normalize_upload_extension,
+};
+
 const LATEST_PENDING_WRITE_VERSION: u32 = 8;
 
 /// A Library and its index. Construction may create layout/index directories;
@@ -38,113 +45,6 @@ pub struct LibraryStore {
     state: PathBuf,
     git: Git,
     upload_roots: Vec<PathBuf>,
-}
-
-/// A durable decision to finish one write. Replayed idempotently while locked.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PendingWrite {
-    version: u32,
-    kind: WriteKind,
-    root: PathBuf,
-    relative: String,
-    text: String,
-    token: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    original: Option<PendingOriginal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    bundle: Option<Vec<ArtifactFile>>,
-}
-
-/// Upload bytes belong to the decision, never to the caller's temporary path.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PendingOriginal {
-    relative: String,
-    bytes: Vec<u8>,
-}
-
-/// Keep upload extensions safe for conversion and inline source frontmatter.
-/// A non-alphanumeric suffix starts an untrusted tail, so retain only the
-/// leading ASCII alphanumeric extension and normalize it to lowercase.
-fn normalize_upload_extension(extension: &str) -> String {
-    extension
-        .chars()
-        .take_while(|character| character.is_ascii_alphanumeric())
-        .collect::<String>()
-        .to_ascii_lowercase()
-}
-
-/// A journal as read from disk, before its version gate is applied.
-/// Version-1 journals predate `kind` and are always documents; version-2
-/// journals must carry `kind` explicitly. Defaulting a missing `kind` on
-/// a version-2 journal would silently change what the journal means, so
-/// recovery refuses it instead. Version 3 adds a document's original upload;
-/// earlier readers refuse that version rather than dropping its bytes.
-/// Version 4 binds an artifact document and every immutable companion byte.
-/// Version 5 binds a video source update and its mutable derived files.
-/// Version 6 binds bootstrap phase ledgers and source privacy updates.
-/// Version 7 binds model provenance, immutable transcript versions and extraction sidecars.
-/// Version 8 commits non-indexed proposal records; older readers refuse it.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawPendingWrite {
-    version: u32,
-    #[serde(default)]
-    kind: Option<WriteKind>,
-    root: PathBuf,
-    relative: String,
-    text: String,
-    token: String,
-    #[serde(default)]
-    original: Option<PendingOriginal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    bundle: Option<Vec<ArtifactFile>>,
-}
-
-impl RawPendingWrite {
-    /// Apply the version gate and produce the replayable decision.
-    fn into_pending(self, path: &Path) -> Result<PendingWrite> {
-        let kind = match (self.version, self.kind, &self.original, &self.bundle) {
-            (1, None | Some(WriteKind::Document), None, None) => WriteKind::Document,
-            (2, Some(WriteKind::Document), None, None) => WriteKind::Document,
-            (2, Some(WriteKind::Settings), None, None) => WriteKind::Settings,
-            (3, Some(WriteKind::Document), Some(_), None) => WriteKind::Document,
-            (4, Some(WriteKind::Artifact), None, Some(_)) => WriteKind::Artifact,
-            (5, Some(WriteKind::Video), None, Some(_)) => WriteKind::Video,
-            (6, Some(WriteKind::Bootstrap), None, Some(_)) => WriteKind::Bootstrap,
-            (7, Some(WriteKind::SourceProcessing), None, Some(_)) => WriteKind::SourceProcessing,
-            (8, Some(WriteKind::Proposal), None, None) => WriteKind::Proposal,
-            _ => {
-                return Err(Error::Journal {
-                    path: path.to_path_buf(),
-                });
-            }
-        };
-        Ok(PendingWrite {
-            version: self.version,
-            kind,
-            root: self.root,
-            relative: self.relative,
-            text: self.text,
-            token: self.token,
-            original: self.original,
-            bundle: self.bundle,
-        })
-    }
-}
-
-#[derive(Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum WriteKind {
-    #[default]
-    Document,
-    Settings,
-    Artifact,
-    Video,
-    Bootstrap,
-    SourceProcessing,
-    Proposal,
 }
 
 impl LibraryStore {
@@ -2212,106 +2112,6 @@ impl LibraryStore {
 
 /// Library-relative staging root for `office.attach` copies (never indexed).
 const STAGING_DIR: &str = ".office/attach";
-
-/// A Library root that resolved inside `{{workspace}}/library`.
-struct GrantedRoot {
-    candidate: PathBuf,
-    allowed: PathBuf,
-}
-
-/// Decide containment on the physical path before any create (STD-05 R6).
-///
-/// Lexical `..` and absolute paths are normalized first so a join cannot
-/// spell a different root. A missing suffix is appended to its canonical
-/// ancestor; the spelled path alone is never the decision.
-///
-/// The grant is the workspace's own `library` directory: the workspace is
-/// resolved, `library` is not. A `library` link, even to a directory inside
-/// the workspace, is refused, so its target never becomes the allowed root.
-fn resolve_within_grant(candidate: &Path, workspace_root: &Path) -> Result<GrantedRoot> {
-    let allowed = normalize_path(&workspace_root.join("library"));
-    let candidate = normalize_path(candidate);
-    if candidate != allowed && !candidate.starts_with(&allowed) {
-        return Err(Error::LibraryDirOutside {
-            requested: candidate,
-            allowed,
-        });
-    }
-    if std::fs::symlink_metadata(&candidate).is_ok_and(|metadata| metadata.file_type().is_symlink())
-    {
-        return Err(Error::UnsafePath {
-            kind: "symlink",
-            value: candidate.display().to_string(),
-        });
-    }
-    if std::fs::symlink_metadata(&allowed).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
-        return Err(Error::LibraryDirOutside {
-            requested: candidate,
-            allowed,
-        });
-    }
-    // Resolve the grant and destination before creating the lock, index or
-    // Library. A missing suffix is appended to its canonical ancestor.
-    let allowed = resolve_existing_ancestor(&normalize_path(workspace_root))?.join("library");
-    let candidate = resolve_existing_ancestor(&candidate)?;
-    if !candidate.starts_with(&allowed) {
-        return Err(Error::LibraryDirOutside {
-            requested: candidate,
-            allowed,
-        });
-    }
-    Ok(GrantedRoot { candidate, allowed })
-}
-
-/// Lexically resolve `.` and `..` without requiring the path to exist.
-fn normalize_path(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            std::path::Component::Prefix(prefix) => out.push(prefix.as_os_str()),
-            std::path::Component::RootDir => out.push(std::path::Component::RootDir.as_os_str()),
-            std::path::Component::Normal(name) => out.push(name),
-        }
-    }
-    out
-}
-
-/// Resolve an existing ancestor without treating dangling links as missing.
-fn resolve_existing_ancestor(path: &Path) -> Result<PathBuf> {
-    let mut ancestor = path;
-    let mut missing = Vec::new();
-    loop {
-        match std::fs::symlink_metadata(ancestor) {
-            Ok(_) => {
-                let mut resolved = ancestor
-                    .canonicalize()
-                    .map_err(|e| Error::io("resolve Library path", ancestor, e))?;
-                for name in missing.into_iter().rev() {
-                    resolved.push(name);
-                }
-                return Ok(resolved);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                let name = ancestor
-                    .file_name()
-                    .ok_or_else(|| Error::io("resolve Library path", ancestor, e))?;
-                missing.push(name);
-                ancestor = ancestor.parent().ok_or_else(|| {
-                    Error::io(
-                        "resolve Library path",
-                        ancestor,
-                        std::io::Error::other("no existing ancestor"),
-                    )
-                })?;
-            }
-            Err(e) => return Err(Error::io("inspect Library path", ancestor, e)),
-        }
-    }
-}
 
 fn dir_is_empty(path: &Path) -> bool {
     std::fs::read_dir(path)
