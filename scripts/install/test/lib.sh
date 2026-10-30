@@ -161,6 +161,28 @@ run_install_standalone() { # run_install_standalone <home> <env...> -- <args...>
         $_uv_env $_envs \
         sh "$ROOT/standalone-src/install.sh" $_yes "$@" < /dev/null
 }
+tree_digest() { # tree_digest <dir> : same digest as install.sh skill_tree_digest
+    node - "$1" <<'NODE'
+const fs = require("fs"), path = require("path"), crypto = require("crypto");
+const root = process.argv[2];
+const entries = [];
+(function walk(dir, rel) {
+  for (const name of fs.readdirSync(dir)) {
+    const p = path.join(dir, name), r = rel + "/" + name, st = fs.lstatSync(p);
+    if (st.isSymbolicLink() || st.isFile()) entries.push(r);
+    else if (st.isDirectory()) walk(p, r);
+  }
+})(root, ".");
+entries.sort();
+const lines = entries.map((rel) => {
+  const p = path.join(root, rel);
+  if (fs.lstatSync(p).isSymbolicLink()) return "link " + rel + " " + fs.readlinkSync(p) + "\n";
+  const h = crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+  return "file " + h + " " + rel + "\n";
+});
+process.stdout.write(crypto.createHash("sha256").update(lines.join("")).digest("hex") + "\n");
+NODE
+}
 TOOLS_REL=".local/share/orbit-office/tools"
 assert_home_scope() { # files stay under the workspace, data/tools, service, MCP
     _home="$1"

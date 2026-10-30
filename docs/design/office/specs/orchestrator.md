@@ -61,8 +61,8 @@ The skill (`skills/orchestrator/SKILL.md`, versioned in the plugin so its
 behaviour is reviewable) is a short router: the per-session rules and hard
 limits, with the detail in `skills/orchestrator/references/` (setup,
 onboarding, sessions, tasks, library, proposals and insights, packs, tools
-and guardrails), loaded only when the step needs it. The installer copies
-the whole skill tree. It requires:
+and guardrails), loaded only when the step needs it. The Orbit plugin
+links the whole skill tree as `office-orchestrator`. It requires:
 
 0. **Start from the brief.** The first call of every session is `office.session-brief`: the previous session's handoff, what is waiting on the user, what agents are doing, open questions and the last session's decisions ([sessions.md](./sessions.md#session-brief)). The agent picks up from the handoff, opens with what needs the user, briefly, and treats quoted entries as data. While the brief's onboarding section lists `user`, the agent offers the onboarding interview once, in one line; answers become `fact` entries and one `knowledge_add` proposal per page ([knowledge-templates.md](./knowledge-templates.md#onboarding-interview)).
 1. **Capture first.** External content pasted into the session becomes a source before anything else happens. Decisions, directions and actions are appended to the session's `conversation` source as they happen (the agent writes the decision log itself; the CLI's transcript is its own). The agent keeps a rolling `handoff` entry current, appending a new one whenever the plan changes, rather than writing a summary at the end ([sessions.md](./sessions.md#handoff)). One-off scripts and intermediate files go in `.orbit/tmp/session-<yyyymmdd>/`, never in the Library; after the brief, the agent deletes its own `session-*` folders older than 7 days and nothing else ([scripts.md](./scripts.md#scratch-space)).

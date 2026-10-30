@@ -146,8 +146,9 @@ check "office launcher is recorded as created" grep -qxF "launcher_path=$HOME1/.
 
 scenario_15() {
 # ---------------------------------------------------------------------------
-# 15. Pre-existing same-named skills survive install and uninstall for
-#     both agents; only recorded, unmodified copies are removed.
+# 15. Office skills arrive once, as office- plugin links; a pre-existing
+#     bare-named user skill survives install and uninstall, and the
+#     installer creates no bare-named copies.
 # ---------------------------------------------------------------------------
 
 for _agent in claude codex; do
@@ -164,34 +165,76 @@ for _agent in claude codex; do
     check "$_agent pre-existing skill bytes unchanged by install" \
         sh -c 'cmp -s "$1/SKILL.md" "$2/SKILL.md" && cmp -s "$1/extra.txt" "$2/extra.txt"' \
         sh "$ROOT/user-skill-$_agent" "$SK_DIR/library-conventions"
-    check "$_agent plugin skill installed beside the user skill" \
-        test -f "$SK_DIR/orchestrator/SKILL.md"
-    printf 'user edit after install\n' >> "$SK_DIR/meetings/SKILL.md"
-    printf 'user added file\n' > "$SK_DIR/meetings/user-added.txt"
-    cp "$SK_DIR/meetings/SKILL.md" "$ROOT/modified-skill-$_agent.md"
+    check "$_agent office skill appears once as a plugin link" \
+        sh -c 'test -L "$1/office-orchestrator" && test -f "$1/office-orchestrator/SKILL.md"' sh "$SK_DIR"
+    for _bare in bootstrap kt meetings orchestrator; do
+        check "$_agent installer creates no bare-named copy $_bare" \
+            test ! -e "$SK_DIR/$_bare"
+    done
     run_install "$SK_HOME" -- --agent "$_agent" --uninstall > "$ROOT/out-skill-$_agent-un.txt" 2>&1 \
         || { cat "$ROOT/out-skill-$_agent-un.txt" >&2; fail "skill $_agent uninstall exits 0"; }
     ok "skill $_agent uninstall exits 0"
     check "$_agent pre-existing skill bytes survive uninstall" \
         sh -c 'cmp -s "$1/SKILL.md" "$2/SKILL.md" && cmp -s "$1/extra.txt" "$2/extra.txt"' \
         sh "$ROOT/user-skill-$_agent" "$SK_DIR/library-conventions"
-    check "$_agent unmodified installed skill removed by uninstall" \
-        test ! -e "$SK_DIR/orchestrator"
-    check "$_agent user-modified installed skill preserved by uninstall" \
-        cmp -s "$SK_DIR/meetings/SKILL.md" "$ROOT/modified-skill-$_agent.md"
-    check "$_agent file added to an installed skill preserved by uninstall" \
-        grep -qx "user added file" "$SK_DIR/meetings/user-added.txt"
-    check "$_agent uninstall says the modified skill was kept" \
-        grep -F "kept modified skill meetings" "$ROOT/out-skill-$_agent-un.txt"
+    check "$_agent plugin link removed with the plugin on uninstall" \
+        sh -c 'test ! -e "$1/office-orchestrator" && test ! -L "$1/office-orchestrator"' sh "$SK_DIR"
     run_install "$SK_HOME" -- --agent "$_agent" --uninstall > "$ROOT/out-skill-$_agent-un2.txt" 2>&1 \
         || { cat "$ROOT/out-skill-$_agent-un2.txt" >&2; fail "skill $_agent repeated uninstall exits 0"; }
     ok "skill $_agent repeated uninstall exits 0"
     check "$_agent repeated uninstall still preserves the user skill" \
         sh -c 'cmp -s "$1/SKILL.md" "$2/SKILL.md" && cmp -s "$1/extra.txt" "$2/extra.txt"' \
         sh "$ROOT/user-skill-$_agent" "$SK_DIR/library-conventions"
-    check "$_agent repeated uninstall still preserves the modified skill" \
-        cmp -s "$SK_DIR/meetings/SKILL.md" "$ROOT/modified-skill-$_agent.md"
 done
+}
+
+scenario_24() {
+# ---------------------------------------------------------------------------
+# 24. Legacy bare-named copies migrate on re-run, and a stale office-
+#     fallback copy is refreshed instead of reported already done.
+# ---------------------------------------------------------------------------
+PLUGIN_SKILLS_SRC="$SCRIPT_DIR/../../plugin/.orbit-plugin/skills"
+MIG_HOME="$ROOT/home-skill-migrate"
+MIG_DIR="$MIG_HOME/.claude/skills"
+MIG_DATA="$MIG_HOME/.local/share/orbit-office"
+mkdir -p "$MIG_DIR" "$MIG_DATA"
+# Bare orchestrator: exactly as an old installer copied it (recorded).
+cp -R "$PLUGIN_SKILLS_SRC/orchestrator" "$MIG_DIR/orchestrator"
+printf 'orchestrator %s\n' "$(tree_digest "$MIG_DIR/orchestrator")" > "$MIG_DATA/agent-skills-claude.txt"
+# Bare meetings: recorded, then edited by the user after the copy.
+cp -R "$PLUGIN_SKILLS_SRC/meetings" "$MIG_DIR/meetings"
+printf 'meetings %s\n' "$(tree_digest "$MIG_DIR/meetings")" >> "$MIG_DATA/agent-skills-claude.txt"
+printf 'user edit after install\n' >> "$MIG_DIR/meetings/SKILL.md"
+cp "$MIG_DIR/meetings/SKILL.md" "$ROOT/migrated-modified-meetings.md"
+# office-meetings fallback copy: stale content, still matching its receipt.
+cp -R "$PLUGIN_SKILLS_SRC/meetings" "$MIG_DIR/office-meetings"
+printf 'stale fallback bytes\n' > "$MIG_DIR/office-meetings/STALE.txt"
+printf 'office-meetings %s\n' "$(tree_digest "$MIG_DIR/office-meetings")" >> "$MIG_DATA/agent-skills-claude.txt"
+run_install "$MIG_HOME" -- --agent claude > "$ROOT/out-skill-migrate.txt" 2>&1 \
+    || { cat "$ROOT/out-skill-migrate.txt" >&2; fail "skill migrate install exits 0"; }
+ok "skill migrate install exits 0"
+check "unmodified bare-named copy removed on re-run" test ! -e "$MIG_DIR/orchestrator"
+check "modified bare-named copy kept on re-run" \
+    cmp -s "$MIG_DIR/meetings/SKILL.md" "$ROOT/migrated-modified-meetings.md"
+check "modified bare-named copy warns on re-run" \
+    grep -F "kept modified skill meetings" "$ROOT/out-skill-migrate.txt"
+check "no new bare-named copies created on re-run" \
+    sh -c 'test ! -e "$1/bootstrap" && test ! -e "$1/kt" && test ! -e "$1/orchestrator"' sh "$MIG_DIR"
+check "stale office- fallback copy is refreshed" \
+    sh -c 'cmp -s "$1/SKILL.md" "$2/SKILL.md" && test ! -e "$1/STALE.txt"' \
+    sh "$MIG_DIR/office-meetings" "$PLUGIN_SKILLS_SRC/meetings"
+check "refresh is reported, not already done" \
+    grep -F "refreshed skill office-meetings" "$ROOT/out-skill-migrate.txt"
+check "office skill still appears once as a plugin link beside the fallback" \
+    sh -c 'test -L "$1/office-orchestrator" && test -f "$1/office-orchestrator/SKILL.md"' sh "$MIG_DIR"
+# Uninstall removes the refreshed recorded fallback copy, keeps the
+# user-modified bare copy.
+run_install "$MIG_HOME" -- --agent claude --uninstall > "$ROOT/out-skill-migrate-un.txt" 2>&1 \
+    || { cat "$ROOT/out-skill-migrate-un.txt" >&2; fail "skill migrate uninstall exits 0"; }
+ok "skill migrate uninstall exits 0"
+check "uninstall removes the recorded office- fallback copy" test ! -e "$MIG_DIR/office-meetings"
+check "uninstall keeps the user-modified bare copy" \
+    cmp -s "$MIG_DIR/meetings/SKILL.md" "$ROOT/migrated-modified-meetings.md"
 }
 
 scenario_16() {

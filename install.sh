@@ -1433,6 +1433,122 @@ skill_tree_digest() {
     printf '%s\n' "$_digest"
 }
 
+# Print the recorded digest for $1, or nothing when it is not recorded.
+skill_receipt_digest() {
+    [ -f "$SKILLS_RECEIPT" ] && [ ! -L "$SKILLS_RECEIPT" ] || return 0
+    awk -v name="$1" '$1 == name { print $2; exit }' "$SKILLS_RECEIPT" 2>/dev/null || true
+}
+
+# Drop the ownership line for $1; remove the receipt when it becomes empty.
+skill_receipt_forget() {
+    [ -f "$SKILLS_RECEIPT" ] && [ ! -L "$SKILLS_RECEIPT" ] || return 0
+    _tmp="$SKILLS_RECEIPT.tmp.$$"
+    grep -v "^$1 " "$SKILLS_RECEIPT" > "$_tmp" || true
+    if [ -s "$_tmp" ]; then
+        mv "$_tmp" "$SKILLS_RECEIPT"
+    else
+        rm -f "$_tmp" "$SKILLS_RECEIPT"
+    fi
+}
+
+# True when Orbit already provides (or is about to provide) the office
+# skills for this machine: the plugin was added or enabled by an earlier
+# step of this installer, a bundle/source is in use, or Orbit lists it.
+plugin_provides_skills() {
+    if state_has "plugin_added" || state_has "plugin_enabled"; then
+        return 0
+    fi
+    if [ -n "${ORBIT_OFFICE_PLUGIN_BUNDLE:-}" ] \
+        || [ -n "${ORBIT_OFFICE_PLUGIN_SOURCE:-}" ]; then
+        return 0
+    fi
+    if command -v orbit >/dev/null 2>&1 && plugin_is_listed office 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# Remove bare-named copies this installer recorded in an earlier release
+# (for example $SKILLS_DIR/orchestrator). Remove only a copy whose tree
+# still matches its recorded digest; keep and warn about a modified one,
+# exactly as uninstall does.
+migrate_bare_skill_copies() {
+    [ -f "$SKILLS_RECEIPT" ] && [ ! -L "$SKILLS_RECEIPT" ] || return 0
+    [ -d "$SKILLS_DIR" ] || return 0
+    _snapshot=$(mktemp "${TMPDIR:-/tmp}/orbit-office-skills.XXXXXX") || return 0
+    cp "$SKILLS_RECEIPT" "$_snapshot"
+    while IFS=' ' read -r _name _digest _extra || [ -n "${_name:-}" ]; do
+        case "${_name:-}" in
+            ''|office-*) continue ;;
+            *) ;;
+        esac
+        if ! skill_name_valid "${_name:-}" || ! skill_digest_valid "${_digest:-}" \
+            || [ -n "${_extra:-}" ]; then
+            continue
+        fi
+        _dest="$SKILLS_DIR/$_name"
+        if [ ! -e "$_dest" ] && [ ! -L "$_dest" ]; then
+            skill_receipt_forget "$_name"
+            continue
+        fi
+        if [ -L "$_dest" ] || [ ! -d "$_dest" ]; then
+            warn "agent: kept skill $_name at $_dest (not a directory this installer copied)"
+            continue
+        fi
+        _current=$(skill_tree_digest "$_dest") || _current=""
+        if [ -n "$_current" ] && [ "$_current" = "$_digest" ]; then
+            rm -rf "${_dest:?}"
+            skill_receipt_forget "$_name"
+            say "agent: removed stale bare-named skill copy $_name (superseded by office-$_name from the Orbit plugin)"
+        else
+            warn "agent: kept modified skill $_name at $_dest (it differs from the copy this installer installed; remove it manually if you no longer want it)"
+        fi
+    done < "$_snapshot"
+    rm -f "$_snapshot"
+}
+
+# Copy $1 to $SKILLS_DIR/office-$2, or refresh a stale recorded copy.
+# A pre-existing unrecorded skill and a user-modified recorded copy are
+# kept untouched; a plugin link (a symlink) never reaches this function.
+install_skill_fallback() {
+    _src="$1"; _prefixed="office-$2"; _dest="$SKILLS_DIR/$_prefixed"
+    if [ -e "$_dest" ] || [ -L "$_dest" ]; then
+        _recorded=$(skill_receipt_digest "$_prefixed")
+        if [ -n "$_recorded" ] && [ -d "$_dest" ] && [ ! -L "$_dest" ]; then
+            _current=$(skill_tree_digest "$_dest") || _current=""
+            _wanted=$(skill_tree_digest "$_src") || _wanted=""
+            if [ -n "$_current" ] && [ -n "$_wanted" ] && [ "$_current" = "$_wanted" ]; then
+                say "agent: skill $_prefixed already done"
+                return 0
+            fi
+            if [ -n "$_current" ] && [ "$_current" != "$_recorded" ]; then
+                warn "agent: kept modified skill $_prefixed at $_dest (it differs from the copy this installer installed; remove it manually if you no longer want it)"
+                return 0
+            fi
+            if [ -n "$_current" ] && [ -n "$_wanted" ]; then
+                rm -rf "${_dest:?}"
+                cp -R "$_src" "$_dest"
+                if _digest=$(skill_tree_digest "$_dest") \
+                    && skill_receipt_record "$_prefixed" "$_digest"; then
+                    say "agent: refreshed skill $_prefixed"
+                else
+                    warn "agent: refreshed skill $_prefixed without an ownership record; uninstall will keep it"
+                fi
+                return 0
+            fi
+        fi
+        say "agent: skill $_prefixed already done"
+        return 0
+    fi
+    cp -R "$_src" "$_dest"
+    if _digest=$(skill_tree_digest "$_dest") \
+        && skill_receipt_record "$_prefixed" "$_digest"; then
+        say "agent: installed skill $_prefixed"
+    else
+        warn "agent: installed skill $_prefixed without an ownership record; uninstall will keep it"
+    fi
+}
+
 # Record (or replace) the ownership line for a skill this run copied.
 skill_receipt_record() {
     _name="$1"; _digest="$2"
@@ -1505,17 +1621,21 @@ remove_recorded_skills() {
             printf '%s %s\n' "$_name" "$_digest" >> "$_kept"
         fi
     done < "$_snapshot"
-    # Name same-named skills that were never recorded as ours.
+    # Name same-named skills that were never recorded as ours. Plugin
+    # links (symlinks under the office- name) belong to Orbit, not to
+    # this installer, so they are never named or removed here.
     if [ -n "$PLUGIN_SRC" ] && [ -d "$PLUGIN_SRC/.orbit-plugin/skills" ] \
         && [ -d "$SKILLS_DIR" ]; then
         for _skill in "$PLUGIN_SRC/.orbit-plugin/skills"/*; do
             [ -d "$_skill" ] || continue
             _name=$(basename -- "$_skill")
             skill_name_valid "$_name" || continue
-            if [ -e "$SKILLS_DIR/$_name" ] \
-                && ! grep -q "^$_name " "$_snapshot" 2>/dev/null; then
-                say "uninstall: kept skill $_name at $SKILLS_DIR/$_name (not recorded as installed by this installer)"
-            fi
+            for _candidate in "$_name" "office-$_name"; do
+                if [ -e "$SKILLS_DIR/$_candidate" ] && [ ! -L "$SKILLS_DIR/$_candidate" ] \
+                    && ! grep -q "^$_candidate " "$_snapshot" 2>/dev/null; then
+                    say "uninstall: kept skill $_candidate at $SKILLS_DIR/$_candidate (not recorded as installed by this installer)"
+                fi
+            done
         done
     fi
     rm -f "$_snapshot"
@@ -1535,9 +1655,20 @@ step_agent() {
         codex) register_mcp_codex ;;
         muse) register_mcp_muse ;;
     esac
-    # Office skills from the plugin tree, when this run has one.
+    # Office skills have one source of truth: the Orbit plugin's links,
+    # named office-<skill> in the agent's skills dir. When the plugin
+    # provides them the installer copies nothing. Bare-named copies an
+    # earlier installer recorded are migrated away first. A copy-based
+    # fallback, used only when no Orbit plugin path provides the skills,
+    # copies under the same office- names and refreshes stale copies.
+    migrate_bare_skill_copies
     if [ -n "$PLUGIN_SRC" ] && [ -d "$PLUGIN_SRC/.orbit-plugin/skills" ]; then
         mkdir -p "$SKILLS_DIR"
+        if plugin_provides_skills; then
+            _plugin_provides=1
+        else
+            _plugin_provides=0
+        fi
         for _skill in "$PLUGIN_SRC/.orbit-plugin/skills"/*; do
             [ -d "$_skill" ] || continue
             _name=$(basename -- "$_skill")
@@ -1545,18 +1676,15 @@ step_agent() {
                 warn "agent: skipping skill with an unsafe name: $_name"
                 continue
             fi
-            if [ -e "$SKILLS_DIR/$_name" ] || [ -L "$SKILLS_DIR/$_name" ]; then
-                # Pre-existing, previously installed or user-modified:
-                # never overwrite and never claim ownership here.
-                say "agent: skill $_name already done"
+            _prefixed="office-$_name"
+            if [ -L "$SKILLS_DIR/$_prefixed" ]; then
+                say "agent: skill $_prefixed already done"
+            elif [ -e "$SKILLS_DIR/$_prefixed" ]; then
+                install_skill_fallback "$_skill" "$_name"
+            elif [ "$_plugin_provides" -eq 1 ]; then
+                say "agent: skill $_prefixed provided by the Orbit plugin; not copying"
             else
-                cp -R "$_skill" "$SKILLS_DIR/$_name"
-                if _digest=$(skill_tree_digest "$SKILLS_DIR/$_name") \
-                    && skill_receipt_record "$_name" "$_digest"; then
-                    say "agent: installed skill $_name"
-                else
-                    warn "agent: installed skill $_name without an ownership record; uninstall will keep it"
-                fi
+                install_skill_fallback "$_skill" "$_name"
             fi
         done
     else
