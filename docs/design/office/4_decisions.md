@@ -1,7 +1,7 @@
 ---
 title: office — Decisions
 owner: daniel
-last_updated: 2026-10-29
+last_updated: 2026-10-30
 last_validated: 2026-10-26
 status: Draft
 feature: office
@@ -1272,6 +1272,7 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-19421] — built the app's shared-library card in Needs you.
 - [ORB-19751] — registered Muse Code with `--agent muse` in the installer.
 - [ORB-19752] — withheld private content from MCP-visible read tools.
+- [ORB-20096] — enabled scoped agent permissions for Office capture and proposals.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 
@@ -1709,7 +1710,7 @@ No private-route summary is produced.
 **Code anchors:** `plugin/.orbit-plugin/plugin.yaml`, `scripts/install/lib/steps.sh`
 
 The orchestrator needs to capture sources, file pending proposals, attach task
-context and consume app selections. Orbit >=0.39.0 provides the generic
+context and consume app selections ([ORB-20096]). Orbit >=0.39.0 provides the generic
 `agent_callable: true` plus digest-bound `agent_tools` consent mechanism; Office
 uses it for exactly `capture`, `proposal-create`, `attach`, `selection-get`.
 The [full inventory](specs/plugin-surface.md#agent-authority-inventory) records
