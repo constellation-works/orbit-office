@@ -52,7 +52,8 @@ That is how approval is enforced.
 | `office.video-plan`, `office.batch-plan` | The app shows and confirms plans; routines list confirmed ones |
 | `office.frames`, `office.consolidate` | The `office-kt-inbox` and `office-bootstrap` routines |
 | `office.digest` | The `office-daily-digest` routine |
-| `office.calendar-sync`, `office.meeting-prep` | The `office-calendar-sync` and `office-meeting-prep` routines |
+| `office.calendar-sync` | The sync routine; the app for Sync now, local event edits and calendar source choices |
+| `office.meeting-prep` | The `office-meeting-prep` routine |
 | `office.script-run` | Routine and auto-task steps, for approved scripts |
 | `office.init` | `orbit-office init` (run by the installer or the user) |
 

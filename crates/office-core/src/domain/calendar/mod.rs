@@ -1,6 +1,8 @@
 //! Pure calendar policy, normalization and bounded recurrence expansion.
 mod graph;
 mod ics;
+mod local;
+pub use local::{CalendarSources, LocalCalendar, LocalChange, LocalEvent};
 mod time;
 
 pub use graph::{graph_events, next_request};
@@ -140,6 +142,9 @@ pub struct Organizer {
 /// One event in private plugin state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Event {
+    /// Authored in this workspace; never synchronized outward.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub local: bool,
     /// UID plus original UTC start, stable when moved.
     pub key: String,
     /// iCalendar UID.

@@ -3,7 +3,7 @@ use crate::driver::file::lock::WriterLock;
 use office_common::fs::{atomic::write_atomic, hash::sha256_hex};
 use office_core::{
     Result,
-    domain::calendar::{CalendarError, Snapshot},
+    domain::calendar::{CalendarError, CalendarSources, LocalCalendar, LocalChange, Snapshot},
     ports::Calendar,
 };
 use serde_json::json;
@@ -122,11 +122,32 @@ fn safe_components(path: &Path) -> Result<()> {
     }
     Ok(())
 }
-impl Calendar for CalendarStore {
-    fn load(&self) -> Result<(Snapshot, Option<String>)> {
+impl CalendarStore {
+    fn local_store(&self) -> Result<Self> {
+        // Keep authored events inside the workspace, independently of plugin cache resets.
+        let workspace = resolved_root(&self.workspace)?;
+        safe_components(&workspace.join(".office"))?;
+        Ok(Self::new(workspace.join(".office"), workspace))
+    }
+    fn local_state(&self) -> Result<LocalCalendar> {
+        let store = self.local_store()?;
+        let dir = store.dir(false)?;
+        let Some(bytes) = store.bytes(&dir.join("local.json"))? else {
+            return Ok(LocalCalendar::default());
+        };
+        let state: LocalCalendar =
+            serde_json::from_slice(&bytes).map_err(|_| CalendarError::Storage)?;
+        if state.schema_version != 1 || state.events.iter().any(|e| !e.local) {
+            return Err(CalendarError::Storage.into());
+        }
+        Ok(state)
+    }
+}
+impl CalendarStore {
+    fn imported(&self) -> Result<(Snapshot, Option<String>)> {
         let dir = self.dir(false)?;
         let bytes = self.bytes(&dir.join("events.json"))?;
-        let snapshot = match &bytes {
+        let snapshot: Snapshot = match &bytes {
             None => Snapshot::default(),
             Some(bytes) => {
                 let value: serde_json::Value =
@@ -152,13 +173,61 @@ impl Calendar for CalendarStore {
         };
         Ok((snapshot, error))
     }
+}
+impl Calendar for CalendarStore {
+    fn sources(&self) -> Result<CalendarSources> {
+        Ok(self.local_state()?.sources)
+    }
+    fn change_local(&self, change: &LocalChange) -> Result<Option<String>> {
+        change.validate()?;
+        let store = self.local_store()?;
+        let dir = store.dir(true)?;
+        safe_components(&dir.join("library.writer.lock"))?;
+        safe_components(&dir.join("library.writer.owner.json"))?;
+        let _lock = WriterLock::acquire(&dir)?;
+        let mut state = self.local_state()?;
+        let nonce = format!(
+            "{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| CalendarError::Storage)?
+                .as_nanos()
+        );
+        let key = state.apply(change, format!("local-{}", sha256_hex(nonce.as_bytes())))?;
+        let bytes = serde_json::to_vec(&state).map_err(|_| CalendarError::Storage)?;
+        if bytes.len() > 16 * 1_048_576 {
+            return Err(CalendarError::TooLarge.into());
+        }
+        safe_components(&dir.join("local.json"))?;
+        write_atomic(&dir.join("local.json"), &bytes).map_err(|_| CalendarError::Storage)?;
+        Ok(key)
+    }
+    fn load(&self) -> Result<(Snapshot, Option<String>)> {
+        let local = self.local_state()?;
+        let (mut snapshot, error) = if local.sources.external {
+            self.imported()?
+        } else {
+            (Snapshot::default(), None)
+        };
+        if local.sources.local {
+            snapshot.events.extend(local.events);
+        }
+        snapshot.events.sort_by(|a, b| {
+            office_core::domain::calendar::parse_time(&a.start)
+                .ok()
+                .cmp(&office_core::domain::calendar::parse_time(&b.start).ok())
+                .then(a.key.cmp(&b.key))
+        });
+        Ok((snapshot, if local.sources.external { error } else { None }))
+    }
     fn replace(&self, snapshot: &Snapshot) -> Result<()> {
         let dir = self.dir(true)?;
         safe_components(&dir.join("library.writer.lock"))?;
         safe_components(&dir.join("library.writer.owner.json"))?;
         let _lock = WriterLock::acquire(&dir)?;
         // Check version before mutation, including future versions of persisted state.
-        self.load()?;
+        self.imported()?;
         let mut value = serde_json::to_value(snapshot).map_err(|_| CalendarError::Storage)?;
         value["schema_version"] = json!(1);
         value["generation"] = json!(format!(
@@ -182,7 +251,7 @@ impl Calendar for CalendarStore {
         safe_components(&dir.join("library.writer.lock"))?;
         safe_components(&dir.join("library.writer.owner.json"))?;
         let _lock = WriterLock::acquire(&dir)?;
-        self.load()?;
+        self.imported()?;
         let value = json!({"snapshot_sha256":self.hash(&dir)?,"code":code});
         safe_components(&dir.join("last_error.json"))?;
         write_atomic(&dir.join("last_error.json"), value.to_string().as_bytes())

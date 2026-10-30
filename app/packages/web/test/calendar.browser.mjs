@@ -14,11 +14,11 @@ import { calendarServer, now } from '../../server/test/calendar-fixture.mjs';
 
 const WIDTHS = [1440, 375];
 
-async function browserFixture(t, overrides = {}) {
+async function browserFixture(t, overrides = {}, timezoneId = 'UTC') {
   assert.ok(process.env.PLAYWRIGHT_MODULE, 'source the verified ORBIT_BROWSER_KIT_ENV first');
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE);
   const browser = await chromium.launch({ headless: true }); t.after(() => browser.close());
-  const context = await browser.newContext({ timezoneId: 'UTC', serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
+  const context = await browser.newContext({ timezoneId, serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage(); const errors = [];
   page.on('pageerror', error => errors.push(error.message)); t.after(() => assert.deepEqual(errors, []));
   page.setDefaultTimeout(5000);
@@ -157,11 +157,13 @@ test('never synced, a failed sync and an empty week are said in words', { timeou
     await never.page.setViewportSize({ width, height: 900 });
     await never.page.goto(`${never.url}/#calendar`);
     await never.page.getByRole('heading', { name: 'Connect your calendar' }).waitFor();
-    assert.equal(await never.page.getByRole('link', { name: 'Open Settings › Connections' }).getAttribute('href'), '#settings');
-    assert.equal(await never.page.locator('.calendar-grid').count(), 0);
+    assert.equal(await never.page.getByRole('link', { name: 'Connect a calendar' }).getAttribute('href'), '#settings');
+    assert.equal(await never.page.locator('.calendar-grid').count(), 1);
+    assert.ok(await never.page.locator('.calendar-mark').count() > 0);
+    await block(never.page, 'Refresh the pricing sheet').waitFor();
     await noOverflow(never.page, 'never synced'); await shot(never.page, 'calendar-connect');
   }
-  await never.page.getByRole('link', { name: 'Open Settings › Connections' }).click();
+  await never.page.getByRole('link', { name: 'Connect a calendar' }).click();
   await never.page.waitForFunction(() => location.hash === '#settings');
 
   const failed = await browserFixture(t, { last_error: 'gateway_unreachable' });
@@ -314,4 +316,102 @@ test('an Orbit that cannot read scheduled to-dos still shows the week and says s
     assert.equal(await page.locator('.calendar-task').count(), 0);
     await noOverflow(page, `scheduled unavailable at ${width}`);
   }
+});
+
+test('local calendar creates, edits, captures and deletes events and Settings selects sources', { timeout: 60000 }, async t => {
+  const {page, url, state, captures} = await browserFixture(t, {synced_at:null, events:[]});
+  await page.goto(`${url}/#calendar`);
+  await page.getByRole('button',{name:'Use a local calendar',exact:true}).click();
+  await page.getByRole('button',{name:'New local event',exact:true}).click();
+  let editor = page.getByRole('dialog',{name:'New local event'});
+  await editor.getByLabel('Title',{exact:true}).fill('Local review');
+  await editor.getByLabel('Starts',{exact:true}).fill('2026-10-28T09:00');
+  await editor.getByLabel('Ends',{exact:true}).fill('2026-10-28T10:00');
+  await editor.getByLabel('Attendees (one name per line)').fill('Jane Park');
+  await editor.getByLabel('Agenda',{exact:true}).fill('Review the plan');
+  await editor.getByRole('button',{name:'Save event'}).click();
+  await block(page,'Local review').waitFor();
+  assert.match(await block(page,'Local review').innerText(),/Local/);
+  const key = state.events[0].key;
+  // Reload the entire app: the UI never relies on browser-only event state.
+  await page.reload();
+  await block(page,'Local review').click();
+  let panel = page.getByRole('dialog',{name:'Local review',exact:true});
+  await panel.getByRole('button',{name:'Edit local event',exact:true}).click();
+  editor = page.getByRole('dialog',{name:'Edit local event'});
+  assert.equal(await editor.getByLabel('Starts',{exact:true}).inputValue(),'2026-10-28T09:00');
+  await editor.getByLabel('Title',{exact:true}).fill('Local planning');
+  await editor.getByRole('button',{name:'Save event'}).click();
+  assert.equal(state.events[0].key,key);
+  await block(page,'Local planning').click();
+  panel = page.getByRole('dialog',{name:'Local planning',exact:true});
+  await panel.getByLabel('Meeting notes').fill('Decided to ship.');
+  await panel.getByRole('button',{name:'Save notes'}).click();
+  await page.getByRole('dialog',{name:'Local planning',exact:true}).getByRole('link',{name:'Open the notes'}).waitFor();
+  assert.equal(captures[0].input.event_key,key);
+  await page.getByRole('dialog',{name:'Local planning',exact:true}).getByRole('button',{name:'Close',exact:true}).click();
+  // Add an external event, then enable both in the actual Settings UI.
+  state.events.push(calendarEventsForTest()); state.synced_at = now.toISOString();
+  for (const [local,external,titles] of [[true,true,['Local planning','Connected review']],[false,true,['Connected review']],[true,false,['Local planning']]]) {
+    await page.goto(`${url}/#settings`);
+    await page.getByRole('button',{name:'Calendar',exact:true}).click();
+    const choices = page.getByRole('form',{name:'Calendar sources'});
+    await choices.getByLabel('Local calendar',{exact:true}).setChecked(local);
+    await choices.getByLabel('Connected calendar',{exact:true}).setChecked(external);
+    await choices.getByRole('button',{name:'Save calendar choices'}).click();
+    await choices.getByText('Calendar choices saved.').waitFor();
+    if (local && external) {
+      await shot(page,'calendar-settings');
+      await page.setViewportSize({width:375,height:900});
+      await noOverflow(page,'calendar settings'); await shot(page,'calendar-settings');
+      await page.setViewportSize({width:1440,height:1000});
+    }
+    await page.reload();
+    await page.getByRole('button',{name:'Calendar',exact:true}).click();
+    assert.equal(await page.getByLabel('Local calendar',{exact:true}).isChecked(),local);
+    assert.equal(await page.getByLabel('Connected calendar',{exact:true}).isChecked(),external);
+    await page.goto(`${url}/#calendar`);
+    for (const title of titles) await block(page,title).waitFor();
+    if (local && external) {
+      await shot(page,'calendar-merged');
+      await page.setViewportSize({width:375,height:900});
+      await noOverflow(page,'merged calendar'); await shot(page,'calendar-merged');
+      await page.setViewportSize({width:1440,height:1000});
+    }
+    assert.equal(await block(page,local ? 'Connected review' : 'Local planning').count(), titles.length===2 ? 1 : 0);
+  }
+  for (const width of WIDTHS) {
+    await page.setViewportSize({width,height:900});
+    await block(page,'Local planning').click();
+    await noOverflow(page,'local event'); await shot(page,'calendar-local');
+    panel = page.getByRole('dialog',{name:'Local planning',exact:true});
+    await panel.getByRole('button',{name:'Edit local event',exact:true}).click();
+    await page.getByRole('dialog',{name:'Edit local event'}).waitFor();
+    await noOverflow(page,'local editor'); await shot(page,'calendar-local-editor');
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  }
+  await block(page,'Local planning').click();
+  panel = page.getByRole('dialog',{name:'Local planning',exact:true});
+  await panel.getByRole('button',{name:'Delete local event',exact:true}).click();
+  await panel.getByRole('button',{name:'Delete event',exact:true}).click();
+  await block(page,'Local planning').waitFor({state:'detached'});
+  assert.equal(state.sources.has(captures[0].id),true,'deleting an event keeps its captured notes');
+});
+
+function calendarEventsForTest() {
+  return {key:'external-fixture',series:'external-fixture',title:'Connected review',start:'2026-10-28T15:00:00Z',end:'2026-10-28T16:00:00Z',location:'',agenda:'',all_day:false,status:'confirmed',online:false,organizer:{name:''},attendees:[],sensitivity:'normal',recurrence_unsupported:false,prep:null,capture:null,people:[]};
+}
+
+test('all-day local dates survive editing in a time zone west of UTC', {timeout:60000}, async t => {
+  const {page,url,state} = await browserFixture(t, {calendarSources:{local:true,external:false},events:[{...calendarEventsForTest(),local:true,key:'local-allday',title:'Local offsite',start:'2026-10-28T00:00:00Z',end:'2026-10-29T00:00:00Z',all_day:true}]}, 'America/Los_Angeles');
+  await page.goto(`${url}/#calendar`);
+  await block(page,'Local offsite').click();
+  await page.getByRole('button',{name:'Edit local event',exact:true}).click();
+  const editor = page.getByRole('dialog',{name:'Edit local event'});
+  assert.equal(await editor.getByLabel('Starts',{exact:true}).inputValue(),'2026-10-28T00:00');
+  assert.equal(await editor.getByLabel('Ends',{exact:true}).inputValue(),'2026-10-29T00:00');
+  await editor.getByRole('button',{name:'Save event'}).click();
+  await editor.waitFor({state:'detached'});
+  assert.equal(state.events[0].start,'2026-10-28T00:00:00Z');
+  assert.equal(state.events[0].end,'2026-10-29T00:00:00Z');
 });

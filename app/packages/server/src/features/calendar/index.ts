@@ -1,5 +1,5 @@
 /**
- * The Calendar screen's data: the read-only meeting snapshot beside the
+ * The Calendar screen's data: local events and the read-only meeting snapshot beside the
  * routines that run and the to-dos scheduled for a time, "Sync now", and
  * notes or a transcript captured from one meeting
  * (docs/design/office/specs/calendar.md, "App"). Every read and write
@@ -93,6 +93,10 @@ function eventKey(value: unknown): string {
   return value;
 }
 
+function calendarSources(value: unknown): {local: boolean; external: boolean} {
+  const item = row(value); return {local: flag(item.local), external: flag(item.external)};
+}
+
 function person(value: unknown): { id: string; title: string } {
   const item = row(value);
   return { id: text(item.id), title: text(item.title) };
@@ -126,7 +130,7 @@ function meeting(value: unknown): CalendarMeeting {
   const start = text(event.start); const end = text(event.end);
   if (Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) throw new Refusal(502, "invalid_output");
   return {
-    key: text(event.key), title: text(event.title), start, end, all_day: flag(event.all_day), status,
+    local: event.local === true, key: text(event.key), title: text(event.title), start, end, all_day: flag(event.all_day), status,
     location: text(event.location), online: flag(event.online), organizer: text(row(event.organizer).name),
     attendees, people: people.filter(page => !linked.has(page.id)), agenda: text(event.agenda),
     private: event.sensitivity === "private", prep, capture,
@@ -329,12 +333,29 @@ export function createCalendarFeature(options: CalendarOptions): Feature {
       const synced = listing.synced_at === null ? null : text(listing.synced_at);
       if (listing.last_error !== null) text(listing.last_error);
       const view: CalendarView = {
+        sources: listing.sources === undefined ? { local: false, external: true } : calendarSources(listing.sources),
         from, until, synced_at: synced, sync_failed: listing.last_error !== null, prep_lead_minutes: options.prepLeadMinutes ?? 120,
         meetings: listing.events.map(meeting).sort((a, b) => Date.parse(a.start) - Date.parse(b.start)),
         routines: schedule.routines, routines_unavailable: schedule.unavailable,
         tasks: tasks.tasks, scheduled_unavailable: tasks.unavailable,
       };
       reply(response, 200, view);
+    }),
+    route("GET", "/api/calendar/sources", async (_request, response) => {
+      // Read source metadata through the existing list surface, projecting away events.
+      const at = new Date(); const until = new Date(at.getTime() + 1000);
+      const listing = await call("office.calendar-list", { from: at.toISOString(), until: until.toISOString() });
+      reply(response, 200, calendarSources(listing.sources ?? {local:false, external:true}));
+    }),
+    route("POST", "/api/calendar/local", async (request, response) => {
+      if (request.headers["content-type"]?.split(";")[0] !== "application/json") throw new Refusal(415, "invalid_input");
+      // The core's closed LocalChange parser owns event and source policy.
+      const input = await jsonBody(request, 64 * 1024);
+      try { reply(response, 200, await call("office.calendar-sync", { local: input })); }
+      catch (error) {
+        if (error instanceof Refusal && error.code === "calendar_invalid") throw new Refusal(400, "invalid_input");
+        throw error;
+      }
     }),
     route("POST", "/api/calendar/sync", async (request, response) => {
       if (request.headers["content-type"]?.split(";")[0] !== "application/json") throw new Refusal(415, "invalid_input");
@@ -346,6 +367,7 @@ export function createCalendarFeature(options: CalendarOptions): Feature {
         if (error instanceof Refusal && error.status === 409) throw new Refusal(502, "sync_failed");
         throw error;
       }
+      if (data.key === null && isRow(data.sources) && data.sources.external === false) throw new Refusal(409, "calendar_local_only");
       const events = data.events; const skipped = data.skipped;
       if (typeof events !== "number" || typeof skipped !== "number") throw new Refusal(502, "invalid_output");
       const synced: CalendarSynced = { events, skipped, synced_at: text(data.synced_at) };

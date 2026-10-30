@@ -56,6 +56,7 @@ fn event(v: &Value) -> Result<Event, CalendarError> {
         })
         .unwrap_or_default();
     Ok(Event {
+        local: false,
         key: format!("{uid}:{}", stamp(original)),
         series: uid.into(),
         title: plain(&text(&v["subject"])),

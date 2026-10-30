@@ -81,3 +81,4 @@ export type {
 } from "./api.js";
 export type { BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView } from "./api.js";
 export type { SelectionInput, SelectionCount } from "./api.js";
+export type { CalendarSources, LocalCalendarEvent, LocalCalendarChange } from "./api.js";

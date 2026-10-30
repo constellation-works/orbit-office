@@ -88,18 +88,25 @@ fn run(call: &Call<'_>) -> Result<Value> {
                 .iter()
                 .filter(|p| {
                     p.template.as_deref() == Some("person")
-                        && p.refs.iter().any(|r| {
+                        && (event.attendees.iter().any(|a| {
+                            a.email.is_none()
+                                && (p.title.eq_ignore_ascii_case(&a.name)
+                                    || p.aliases
+                                        .iter()
+                                        .any(|alias| alias.eq_ignore_ascii_case(&a.name)))
+                        }) || p.refs.iter().any(|r| {
                             r.target == RefTarget::Contact
                                 && emails.iter().any(|email| {
                                     r.value
                                         .trim_start_matches("mailto:")
                                         .eq_ignore_ascii_case(email)
                                 })
-                        })
+                        }))
                 })
                 .map(|p| json!({"id":p.id.as_str(),"title":plain(&p.title)}))
                 .collect();
             people.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+            view["local"] = json!(event.local);
             view["people"] = json!(people);
             view["prep"] = artifacts
                 .iter()
@@ -133,7 +140,9 @@ fn run(call: &Call<'_>) -> Result<Value> {
             events.push(view);
         }
     }
-    Ok(json!({"events":events,"synced_at":snapshot.synced_at,"last_error":last_error}))
+    Ok(
+        json!({"events":events,"synced_at":snapshot.synced_at,"last_error":last_error,"sources":call.ports.calendar.sources()?}),
+    )
 }
 fn event_key(map: &serde_json::Map<String, Value>) -> Option<&str> {
     map.get("event")

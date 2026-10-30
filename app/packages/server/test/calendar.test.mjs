@@ -236,7 +236,7 @@ test('calendar routes sit behind the loopback guard and healthz lists the featur
     });
     req.on('error', reject); req.end(method === 'POST' ? '{}' : undefined);
   });
-  for (const [method, path] of [['GET', week], ['POST', '/api/calendar/sync'], ['POST', '/api/calendar/capture'], ['GET', '/api/calendar/meeting?source=src-1']]) {
+  for (const [method, path] of [['GET', week], ['POST', '/api/calendar/sync'], ['POST', '/api/calendar/capture'], ['POST','/api/calendar/local'], ['GET','/api/calendar/sources'], ['GET', '/api/calendar/meeting?source=src-1']]) {
     const evil = await send(method, path, { host: 'evil.example.com', 'content-type': 'application/json' });
     assert.equal(evil.status, 403, `${method} ${path} with a foreign Host`);
     assert.equal(JSON.parse(evil.body).error, 'forbidden');
@@ -247,4 +247,27 @@ test('calendar routes sit behind the loopback guard and healthz lists the featur
   assert.equal((await send('POST', '/api/calendar/sync', { host: `127.0.0.1:${port}`, 'content-type': 'application/json' })).status, 403);
   const health = JSON.parse((await send('GET', '/healthz', { host: `127.0.0.1:${port}` })).body);
   assert.ok(health.features.includes('calendar'));
+});
+
+test('local writes are closed, merge through calendar-list and preserve stable identity', async t => {
+  const f = await serve(t, {events:[],synced_at:null});
+  const event = {title:'Local review',start:'2026-10-28T09:00:00Z',end:'2026-10-28T10:00:00Z'};
+  assert.equal((await f.post('/api/calendar/local',{action:'sources',local:true,external:false})).status,200);
+  assert.deepEqual((await f.get('/api/calendar/sources')).body,{local:true,external:false});
+  assert.deepEqual(await f.post('/api/calendar/sync',{}),{status:409,body:{error:'calendar_local_only'}});
+  const created = await f.post('/api/calendar/local',{action:'create',event});
+  assert.equal(created.status,200);
+  const key = created.body.key;
+  const listed = await f.get(week);
+  assert.equal(listed.body.meetings[0].key,key);
+  assert.equal(listed.body.meetings[0].local,true);
+  assert.deepEqual(listed.body.sources,{local:true,external:false});
+  assert.equal((await f.post('/api/calendar/local',{action:'update',key,event:{...event,title:'Changed'}})).status,200);
+  assert.equal((await f.get(week)).body.meetings[0].title,'Changed');
+  assert.equal((await f.post('/api/calendar/local',[])).status,400);
+  f.state.localError = 'calendar_invalid';
+  assert.equal((await f.post('/api/calendar/local',{action:'create',event})).status,400,'core refusal becomes an input error');
+  f.state.localError = null;
+  assert.equal((await f.post('/api/calendar/local',{action:'delete',key})).status,200);
+  assert.deepEqual((await f.get(week)).body.meetings,[]);
 });

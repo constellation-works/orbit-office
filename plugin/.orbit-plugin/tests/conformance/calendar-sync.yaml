@@ -11,3 +11,18 @@ tests:
     input: {"url":"https://calendar.example.invalid/secret"}
     expect:
       error: {code: invalid_argument}
+  - name: persists_source_choices_without_a_connection
+    tool: calendar-sync
+    input: {"local":{"action":"sources","local":false,"external":true}}
+    expect:
+      output: {"key":null,"sources":{"local":false,"external":true}}
+  - name: refuses_local_unknown_keys
+    tool: calendar-sync
+    input: {"local":{"action":"sources","local":true,"external":false,"connection":"external"}}
+    expect:
+      error: {code: calendar_invalid}
+  - name: refuses_combined_import_and_local_write
+    tool: calendar-sync
+    input: {"ics_file":"calendar.ics","local":{"action":"sources","local":true,"external":false}}
+    expect:
+      error: {code: calendar_invalid}

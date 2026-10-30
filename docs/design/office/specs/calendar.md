@@ -1,29 +1,35 @@
 ---
 type: design
-summary: "Spec: calendar — a read-only snapshot of the user's Outlook or ICS calendar beside the routines' schedule and the tasks scheduled for a date, a cited prep brief before each meeting, and notes or a transcript captured from the event after it"
+summary: "Spec: calendar — workspace-local events and a read-only snapshot of Outlook or ICS beside the routines' schedule and the tasks scheduled for a date, a cited prep brief before each meeting, and notes or a transcript captured from the event after it"
 last_validated: 2026-10-27
 ---
 
 # Spec: Calendar
 
 The Calendar screen shows the user's day the way the agents see it: their
-meetings, read from Outlook or any ICS feed, the routines that will run, and
+meetings, authored locally or read from Outlook or an ICS feed, the routines that will run, and
 the to-dos scheduled for a date.
 The agents keep it current. Before a meeting they write a prep brief from
 the Library. After it, the user drops in notes or a transcript, and the
 meeting becomes a source with a cited summary, decisions and to-dos
 ([decision](../4_decisions.md#the-calendar-is-a-read-only-snapshot-with-prep-before-and-capture-after)).
 
-The calendar never writes back. Accepting, declining or creating an invite
-is an outward-facing action, and none is built
+Connected calendars never receive writes. Accepting, declining or creating an
+external invite is an outward-facing action, and none is built. Creating, editing
+and deleting a local event changes only workspace-owned Library data, in the
+same action class as writing meeting notes; it sends no invitation or gateway request
+([local-backend decision](../4_decisions.md#local-calendar-events-are-workspace-writes))
 ([orchestrator.md](./orchestrator.md#guardrails)).
 
 ## The loop
 
-1. **Sync.** The `office-calendar-sync` routine reads the calendar every 15
-   minutes through a gateway connection and replaces the snapshot.
+1. **Choose and keep current.** Use a local calendar, a connected calendar, or
+   both in Settings › Calendar. Local events are saved immediately. For an
+   enabled external source, the `office-calendar-sync` routine reads every 15
+   minutes through a gateway connection and replaces only the imported snapshot.
+   A local-only selection makes the routine a no-op, without gateway reads.
 2. **Prep.** The `office-meeting-prep` routine finds meetings that start
-   within the lead time and have no prep yet. For each one, it writes a cited
+   within the lead time and have no prep yet, from both selected sources. For each one, it writes a cited
    brief.
 3. **Meet.** The user attends as usual. Nothing records the call.
 4. **Capture.** On a past meeting, the user pastes notes or drops a `.vtt`,
@@ -36,12 +42,15 @@ is an outward-facing action, and none is built
 
 ## Reading the calendar
 
-Two backends feed one tool. Both are read-only, and both go through the
-`gateway` plugin, because anything leaving the machine apart from model
-inference is an audited gateway read ([gateway.md](./gateway.md)).
+Local and imported events feed one tool. Network imports go through the
+`gateway` plugin: anything leaving the machine apart from model inference is
+an audited gateway read ([gateway.md](./gateway.md)). Local event storage and
+ICS-file imports need no connection. Prep and summarization retain the existing
+model and privacy routing; choosing local never authorizes an external calendar write.
 
 | Backend | Connection | Notes |
 |---|---|---|
+| **Local** | none | Create, edit and delete events in the app; persisted at `<workspace>/.office/calendar/local.json`. May be shown alone or merged with the imported snapshot. |
 | **ICS feed** | A gateway connection to the feed's origin, using the `secret_path` scheme: the slot holds the path and query, which carry the feed's token | Outlook's "Publish calendar" link, Google's secret address, any CalDAV server's export. Some company tenants disable publishing. |
 | **Microsoft Graph** | A gateway connection to `https://graph.microsoft.com/v1.0/`, using the `oauth2_device` scheme with the `Calendars.Read` scope | `GET me/calendarView` over the window, paged through `@odata.nextLink` (each next link must stay under `base_url`). Graph expands recurrences itself. |
 | **ICS file** | none | A `.ics` file inside the workspace, read once. Used for the demo and for one-off exports. |
@@ -73,9 +82,12 @@ Both stay generic: neither knows about calendars. Both are built
 ## `office.calendar-sync`
 
 Mutating, `mcp_scope: none`. It is called only by the `office-calendar-sync`
-routine and by the app's "Sync now".
+routine and by the app's "Sync now" or local event controls.
 
-- **Input:** `{}`, or `{"ics_file": "<workspace-relative path>"}`.
+- **Input:** `{}`, `{"ics_file": "<workspace-relative path>"}`, or a closed
+  `local` operation described below. `ics_file` and `local` cannot be combined.
+  When external events are disabled, `{}` returns `{key: null, sources}` and
+  performs no sync. Explicit `ics_file` imports still work.
 - **Reads** `calendar` from `.office/config.yaml` (below). A missing block,
   or a missing `connection` without `ics_file`, is refused as
   `calendar_unconfigured`.
@@ -99,6 +111,38 @@ routine and by the app's "Sync now".
   `last_error`, so a network failure never shows as an empty day.
 - **Output:** `{events, skipped, window: {from, until}, synced_at}`.
 
+### Local events and source choices
+
+`office.calendar-sync` accepts additive local operations under `local`:
+
+```json
+{"local":{"action":"create","event":{"title":"Planning","start":"2026-10-30T14:00:00Z","end":"2026-10-30T15:00:00Z","attendees":["Jane Park"]}}}
+```
+
+- `create` takes `event`; `update` takes a local `key` and replacement `event`;
+  `delete` takes only the local `key`. Identity and origin cannot be supplied
+  in an event. Updates keep both the key and series so prep and captured notes
+  retain their links. Deletion preserves existing Library sources and briefs.
+- Events require a nonempty title (512 bytes maximum) and ordered RFC 3339
+  `start`/exclusive `end`. Optional fields: `all_day`, `location` (1024 bytes),
+  `agenda` (8192 bytes), `attendees` (up to 100 display names, 256 bytes each),
+  and `private`. All-day dates use UTC midnight and an exclusive end date.
+  Inputs are closed at every level. Local events do not support recurrence or RSVP.
+- `{"local":{"action":"sources","local":true,"external":false}}` selects local
+  only; set both booleans true to merge, or local false/external true for imported
+  only. Choices persist without deleting hidden events. New workspaces default to
+  local off/external on; creating an event also enables local. The Calendar setup
+  action selects local only. Settings can enable both even before the first sync.
+- Local operations return `{key, sources: {local, external}}`, with a null key for
+  source selection. No local operation reads gateway credentials or calls a gateway.
+- The workspace store contains a versioned event list and source choices, separate
+  from `<plugin_state>/calendar/events.json`. Writes take the bounded advisory
+  writer lock across read/modify/atomic replacement, with 0700 directories and
+  0600 files; symlinks and future versions are refused. It is workspace-owned
+  data, not an imported cache, and survives app restarts and plugin-state resets.
+  It is not a Markdown Library record or automatically committed to Library git.
+  Local state has the same 16 MiB bound and a 10,000-event cap.
+
 ### Event
 
 ```json
@@ -120,7 +164,9 @@ routine and by the app's "Sync now".
 }
 ```
 
-- **`key`** is the iCalUID plus the instance's original start, so a moved
+- **`local`** is true for workspace-authored events and false for imports in list
+  output. Local keys use a store-assigned `local-` identity, also used as the series.
+- **`key`** for imported events is the iCalUID plus the instance's original start, so a moved
   instance keeps its key. **`series`** is the iCalUID alone.
 - **`status`** is `confirmed`, `tentative` or `cancelled`. Cancelled events
   stay in the snapshot, so prep and capture can tell "cancelled" from
@@ -152,7 +198,10 @@ tomorrow?" from it, and the app draws the screen from it.
   - `people`: the matched person pages, by id and title.
 - Each event's `attendees` carry names and responses only; emails are never
   returned.
-- Also returns `synced_at` and `last_error`. An empty snapshot that has
+- Also returns `sources: {local, external}`, `synced_at` and `last_error`.
+  The Calendar port merges selected local and imported events before list, prep
+  and capture; a sync replaces only imports. With external disabled, external
+  sync status is hidden. An empty snapshot that has
   never synced reads `synced_at: null`, which differs from a synced, empty
   week.
 
@@ -316,16 +365,16 @@ In `.office/config.yaml`, written with `office.config-set`:
 
 ```yaml
 calendar:
-  connection: outlook           # a gateway connection name; omit for ics_file only
+  connection: outlook           # gateway connection; omit for local or ics_file
   window_days_past: 14          # 1–90
   window_days_ahead: 30         # 1–90
   prep_lead_minutes: 120        # 15–1440
   prep_max_per_run: 5           # 1–20
 ```
 
-`office-calendar-sync` and `office-meeting-prep` are seeded disabled. The
-Calendar screen's setup card turns them on once a connection is chosen, and
-both show on the Routines screen.
+`office-calendar-sync` and `office-meeting-prep` are seeded disabled and
+show on the Routines screen, where the user enables them. Local meeting prep
+and capture need no external connection.
 
 ## App
 
@@ -340,7 +389,8 @@ both show on the Routines screen.
   - upcoming: "Prep ready" or "Prep at 12:00";
   - past: "Add notes" or "Summary saved";
   - "Cancelled", struck through;
-  - "Private", with the private badge.
+  - "Private", with the private badge;
+  - "Local", for workspace-authored events.
 - **Routine runs** are thin marks in each day's margin, from the same
   schedule reading as the Routines screen, hollow when paused. They are
   shown, not edited: a mark opens Routines. The schedule reader moves from
@@ -368,17 +418,28 @@ both show on the Routines screen.
 - **Rail count:** the number of today's past meetings with no notes, shown
   as a plain count, not an alert.
 - **Empty and failure states:**
-  - never synced: "Connect your calendar", opening Settings › Connections;
+  - never synced: a setup card offers **Use a local calendar** beside
+    **Connect a calendar** (Settings › Connections). The week, routine runs and
+    scheduled to-dos remain visible below the card, even with no events;
   - a sync that failed: the last good snapshot, with "Last synced 10:15,
     the latest sync failed";
   - a week with no meetings, said in words.
+
+**Local editing:** enabling local adds **New local event**. Local meeting
+panels offer **Edit local event** and **Delete local event**, with a deletion
+confirmation. Settings › Calendar independently selects local and connected
+events. Hidden events are preserved. Times use the computer's time zone.
 
 Server: `GET /api/calendar?from&until` calls `office.calendar-list`,
 `orbit.auto_task.list` and `orbit.task.list` with the `not_before` range. It
 adds `tasks` and `scheduled_unavailable` to the view. Reschedule and Clear
 use the to-do write, `POST /api/todos/schedule`. `POST /api/calendar/sync` calls
 `office.calendar-sync`. `POST /api/calendar/capture` stages the upload and
-calls `office.capture` with `event_key`.
+calls `office.capture` with `event_key`. `POST /api/calendar/local` validates
+a local operation and calls `office.calendar-sync` with `{local: operation}`.
+`GET /api/calendar/sources` reads the persisted choices through calendar-list.
+The Sync now HTTP route refuses `calendar_local_only` if external events are
+disabled; its button is hidden for that selection.
 
 ## Demo
 
@@ -389,7 +450,8 @@ instance, and one moved instance retaining its original-start key. It is never a
 
 ## Not built
 
-- Writing to the calendar: RSVP, creating or moving events.
+- Writing to external calendars: RSVP, creating or moving external events.
+- Local recurring events and invitations.
 - Fetching transcripts automatically from Teams or Zoom. Graph's
   `onlineMeetings` transcripts need tenant consent beyond `Calendars.Read`.
 - Recording or capturing calls that aren't recorded
@@ -440,7 +502,8 @@ the generation and invalidates older failure metadata in one atomic snapshot
 write. Reads never create state. The Calendar port and its fake share this
 success/failure contract; a future snapshot version refuses reads and writes.
 Library person pages match attendee addresses case-insensitively against `contact`
-refs (plain addresses or `mailto:`). Only person id/title and attendee name/response
+refs (plain addresses or `mailto:`); display-only local attendees also match
+person titles or aliases. Only person id/title and attendee name/response
 are returned, with attendee addresses also withheld if repeated in invite text.
 Prep matches report series `meeting-prep` with `event_key` or `event.key`;
 capture matches source `event.key`, with `summary.md` determining `summarized`.

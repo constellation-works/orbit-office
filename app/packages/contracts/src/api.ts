@@ -493,6 +493,8 @@ export interface CalendarAttendee {
  * screen never renders it.
  */
 export interface CalendarMeeting {
+  /** Authored only in this workspace. */
+  local?: boolean;
   key: string;
   title: string;
   /** RFC 3339 instants. All-day events start and end at UTC midnight. */
@@ -549,6 +551,8 @@ export interface CalendarTask {
 
 /** `GET /api/calendar?from&until`: meetings in the range and the routines that run. */
 export interface CalendarView {
+  /** Source choices persist without deleting hidden events. */
+  sources?: CalendarSources;
   from: string;
   until: string;
   /** Null until the calendar has synced once; a synced, empty week reads a time. */
@@ -582,3 +586,16 @@ export interface MeetingOutcome {
   /** True when Orbit had more to-dos than listed. */
   more: boolean;
 }
+
+/** Persistent calendar sources, independently selectable. */
+export interface CalendarSources { local: boolean; external: boolean }
+/** Workspace-authored event, with computer-local times converted to RFC 3339. */
+export interface LocalCalendarEvent {
+  title: string; start: string; end: string; all_day?: boolean;
+  location?: string; agenda?: string; attendees?: string[]; private?: boolean;
+}
+export type LocalCalendarChange =
+  | { action: "create"; event: LocalCalendarEvent }
+  | { action: "update"; key: string; event: LocalCalendarEvent }
+  | { action: "delete"; key: string }
+  | ({ action: "sources" } & CalendarSources);
