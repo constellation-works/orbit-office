@@ -23,9 +23,15 @@ library/
   knowledge/domain/<id>.md
   knowledge/runbooks/<id>.md
   artifacts/YYYY/MM/<artifact-id>/artifact.md  (+ its files)
-  proposals/<proposal-id>.md
+  proposals/open/<proposal-id>.md
+  proposals/{accepted,dismissed}/YYYY/MM/<proposal-id>.md
   .office/config.yaml, .office/templates/<name>.md
 ```
+
+A proposal page sits in the folder for its status: `open` while its Orbit
+task is `proposed`, `accepted` once `done` and `dismissed` once `rejected`,
+under the month it closed. The page moves when the proposal closes, so name a
+proposal by its id, never by its page path.
 
 ## Ids and anchors
 

@@ -82,6 +82,18 @@ pub trait Library {
     fn write_proposal(&self, _relative: &Path, _text: &str) -> Result<()> {
         Err(Error::LibraryUnavailable)
     }
+    /// Write `text` at the proposal page `to` and remove every page in `from`
+    /// in one commit, so a page changes status folder in the same commit that
+    /// records the outcome. Every path must be a proposal page path.
+    fn move_proposal(&self, _to: &Path, _text: &str, _from: &[String]) -> Result<()> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Every proposal page in any status folder or the legacy flat layout,
+    /// in path order, with its Markdown. Other files under `proposals/` are
+    /// not listed.
+    fn proposal_pages(&self) -> Result<Vec<LibraryText>> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Write reviewed knowledge under the writer lock only if the current
     /// Markdown hash matches. `None` requires an absent destination.
     fn write_reviewed_page(

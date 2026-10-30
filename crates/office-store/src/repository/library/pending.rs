@@ -21,6 +21,9 @@ pub(super) struct PendingWrite {
     pub(super) original: Option<PendingOriginal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) bundle: Option<Vec<ArtifactFile>>,
+    /// Proposal pages a version-9 move removes in the same commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) removed: Option<Vec<String>>,
 }
 
 /// Upload bytes belong to the decision, never to the caller's temporary path.
@@ -53,6 +56,8 @@ pub(super) fn normalize_upload_extension(extension: &str) -> String {
 /// Version 6 binds bootstrap phase ledgers and source privacy updates.
 /// Version 7 binds model provenance, immutable transcript versions and extraction sidecars.
 /// Version 8 commits non-indexed proposal records; older readers refuse it.
+/// Version 9 moves a proposal page between status folders: it writes the page
+/// and removes its previous paths in one commit.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawPendingWrite {
@@ -67,11 +72,18 @@ pub(super) struct RawPendingWrite {
     original: Option<PendingOriginal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     bundle: Option<Vec<ArtifactFile>>,
+    #[serde(default)]
+    removed: Option<Vec<String>>,
 }
 
 impl RawPendingWrite {
     /// Apply the version gate and produce the replayable decision.
     pub(super) fn into_pending(self, path: &Path) -> Result<PendingWrite> {
+        if self.removed.is_some() != (self.version == 9) {
+            return Err(Error::Journal {
+                path: path.to_path_buf(),
+            });
+        }
         let kind = match (self.version, self.kind, &self.original, &self.bundle) {
             (1, None | Some(WriteKind::Document), None, None) => WriteKind::Document,
             (2, Some(WriteKind::Document), None, None) => WriteKind::Document,
@@ -82,6 +94,7 @@ impl RawPendingWrite {
             (6, Some(WriteKind::Bootstrap), None, Some(_)) => WriteKind::Bootstrap,
             (7, Some(WriteKind::SourceProcessing), None, Some(_)) => WriteKind::SourceProcessing,
             (8, Some(WriteKind::Proposal), None, None) => WriteKind::Proposal,
+            (9, Some(WriteKind::ProposalMove), None, None) => WriteKind::ProposalMove,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -97,6 +110,7 @@ impl RawPendingWrite {
             token: self.token,
             original: self.original,
             bundle: self.bundle,
+            removed: self.removed,
         })
     }
 }
@@ -112,4 +126,5 @@ pub(super) enum WriteKind {
     Bootstrap,
     SourceProcessing,
     Proposal,
+    ProposalMove,
 }

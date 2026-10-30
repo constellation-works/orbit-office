@@ -32,8 +32,99 @@ fn proposal_records_commit_without_entering_the_document_index() {
         "knowledge/domain/page.md",
         "proposals/../../escape.md",
         "proposals/nested/page.md",
+        "proposals/accepted/page.md",
+        "proposals/dismissed/2026/13/page.md",
+        "proposals/open/2026/10/page.md",
     ] {
         assert!(Library::write_proposal(&store, Path::new(path), "refused").is_err());
+    }
+}
+
+#[test]
+fn a_proposal_page_moves_between_status_folders_in_one_commit() {
+    use office_core::ports::Library;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("library");
+    let store = LibraryStore::open(&root, &temp.path().join("state")).unwrap();
+    Library::initialize(&store, None).unwrap();
+    let flat = "proposals/proposal-fixture.md";
+    Library::write_proposal(&store, Path::new(flat), "# Evidence\n").unwrap();
+    // An untracked stray page is removed too, with no deletion to stage.
+    write(&root, "proposals/open/proposal-fixture.md", "# Stray\n");
+    let commits = git(&root, &["rev-list", "--count", "HEAD"]);
+    let to = Path::new("proposals/accepted/2026/10/proposal-fixture.md");
+    Library::move_proposal(
+        &store,
+        to,
+        "# Evidence\n\n## Outcome\n\nAccepted.\n",
+        &[flat.into(), "proposals/open/proposal-fixture.md".into()],
+    )
+    .unwrap();
+    assert_eq!(
+        git(&root, &["rev-list", "--count", "HEAD"]).trim(),
+        (commits.trim().parse::<u32>().unwrap() + 1).to_string()
+    );
+    assert!(!root.join(flat).exists());
+    assert!(!root.join("proposals/open/proposal-fixture.md").exists());
+    let changed = git(&root, &["show", "--name-status", "--format=", "HEAD"]);
+    assert!(changed.contains(&format!("D\t{flat}")), "{changed}");
+    assert!(
+        changed.contains(&format!("A\t{}", to.display())),
+        "{changed}"
+    );
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
+    let pages: Vec<String> = Library::proposal_pages(&store)
+        .unwrap()
+        .into_iter()
+        .map(|page| page.path)
+        .collect();
+    assert_eq!(pages, [to.display().to_string()]);
+    assert!(Library::move_proposal(&store, Path::new("knowledge/domain/x.md"), "x", &[]).is_err());
+    assert!(Library::move_proposal(&store, to, "x", &["proposals/../escape.md".into()]).is_err());
+}
+
+#[test]
+fn an_interrupted_proposal_move_replays_once_on_open() {
+    use office_core::ports::Library;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("library");
+    let state = temp.path().join("state");
+    let store = LibraryStore::open(&root, &state).unwrap();
+    Library::initialize(&store, None).unwrap();
+    Library::write_proposal(&store, Path::new("proposals/open/p-1.md"), "Evidence").unwrap();
+    drop(store);
+    let pending = serde_json::json!({"version":9,"kind":"proposal_move","root":root.canonicalize().unwrap(),"relative":"proposals/dismissed/2026/10/p-1.md","text":"Evidence, dismissed","token":"123-789","removed":["proposals/open/p-1.md"]});
+    std::fs::write(
+        state.join("library.pending-write.json"),
+        pending.to_string(),
+    )
+    .unwrap();
+    let store = LibraryStore::open(&root, &state).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("proposals/dismissed/2026/10/p-1.md")).unwrap(),
+        "Evidence, dismissed"
+    );
+    assert!(!root.join("proposals/open/p-1.md").exists());
+    assert!(!state.join("library.pending-write.json").exists());
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
+    assert_eq!(Library::proposal_pages(&store).unwrap().len(), 1);
+    drop(store);
+    // A move journal without its removals, or removals on another version, is refused.
+    for pending in [
+        serde_json::json!({"version":9,"kind":"proposal_move","root":root.canonicalize().unwrap(),"relative":"proposals/open/p-2.md","text":"x","token":"1-2"}),
+        serde_json::json!({"version":8,"kind":"proposal","root":root.canonicalize().unwrap(),"relative":"proposals/open/p-2.md","text":"x","token":"1-2","removed":[]}),
+    ] {
+        std::fs::write(
+            state.join("library.pending-write.json"),
+            pending.to_string(),
+        )
+        .unwrap();
+        assert!(
+            LibraryStore::open(&root, &state)
+                .and_then(|store| store.proposal_pages())
+                .is_err()
+        );
+        assert!(!root.join("proposals/open/p-2.md").exists());
     }
 }
 

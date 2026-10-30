@@ -86,7 +86,7 @@ crates/office-tools/src/
     knowledge/           list  show  write                            (specs/library.md)
     artifacts/           list  show  promote                          (specs/library.md)
     library/             init  reindex  config_set  search  attach  private_route_check   (specs/library.md, plugin-surface.md, models-and-privacy.md)
-    proposals/           signals_scan  create  accept                 (specs/proposals.md)
+    proposals/           signals_scan  create  accept  reconcile      (specs/proposals.md)
     selection/           get  put                                     (specs/selection-sharing.md)
     sessions/            brief  digest                                (specs/sessions.md)
     scripts/             run                                          (specs/scripts.md)

@@ -124,7 +124,7 @@ pub(crate) fn file(call: &Call<'_>, mut input: Create) -> Result<Value> {
     {
         return Err(Error::OrbitOutcomeUnknown);
     }
-    let path = format!("proposals/{id}.md");
+    let path = proposal::record_path(id, proposal::ProposalStatus::Open, "")?;
     call.ports.orbit.task_artifact_put(&object(
         json!({"id":id,"source_path":staged,"path":"proposal.json"}),
     )?)?;

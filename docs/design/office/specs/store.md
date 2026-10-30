@@ -279,13 +279,25 @@ result revision refuses publication instead of overwriting a newer source.
 
 ### Proposal records and reviewed knowledge writes
 
-`Library::write_proposal` commits only flat `proposals/<id>.md` records,
-without adding source or knowledge rows to the rebuildable index. Generic
-`write_document` retains its indexed-path restriction. Proposal paths pass the
-same physical containment and symlink checks. Journal version 8 adds the
-`proposal` write kind; versions 1–7 retain their original shapes. Recovery
-validates the path and replays publication plus the Library commit under the
-writer lock. Older binaries refuse the new journal version.
+`Library::write_proposal` commits only proposal page records
+(`proposals/open/<id>.md`, `proposals/{accepted,dismissed}/YYYY/MM/<id>.md`
+or the legacy flat `proposals/<id>.md`), without adding source or knowledge
+rows to the rebuildable index. Generic `write_document` retains its
+indexed-path restriction. Proposal paths pass the same physical containment
+and symlink checks. Journal version 8 adds the `proposal` write kind; versions
+1–7 retain their original shapes. Recovery validates the path and replays
+publication plus the Library commit under the writer lock. Older binaries
+refuse the new journal version.
+
+`Library::move_proposal` moves a page between status folders: journal version
+9 (`proposal_move`) records the new path and text and the `removed` paths, and
+finishing writes the page, removes the old paths (an absent one is not an
+error) and commits all of them once. A removed path is staged only if git
+tracks it. Recovery validates every path and replays the same move; a replay
+after the commit finds the commit by its token and adds nothing. A version-9
+journal without `removed`, or another version with it, is refused.
+`Library::proposal_pages` lists every proposal page with its Markdown, without
+following symlinks.
 
 `Library::write_reviewed_page` compares the current Markdown SHA-256 (or
 requires an absent destination for an addition) while holding the writer lock

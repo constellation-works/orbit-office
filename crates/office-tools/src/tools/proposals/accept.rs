@@ -1,9 +1,10 @@
 //! App-only approval: prepare, reserve once, apply and record the change.
 use super::create::{check_revision, object, validate_payload};
+use super::reconcile;
 use crate::registry::{Call, Tool};
 use office_core::domain::artifact::decode_payload;
 use office_core::domain::knowledge::Page;
-use office_core::domain::proposal::{self, Payload, ProposalKind, RetireTarget};
+use office_core::domain::proposal::{self, Payload, ProposalKind, ProposalStatus, RetireTarget};
 use office_core::domain::script::ScriptRequest;
 use office_core::domain::sharing::SharingError;
 use office_core::domain::sharing::sync::SyncState;
@@ -137,11 +138,18 @@ fn run(call: &Call<'_>) -> Result<Value> {
         payload.kind().as_str(),
         change
     );
-    // Every Library write commits through the port. The receipt is committed
-    // too, including for auto-task-only changes.
-    call.ports.library.write_proposal(
-        Path::new(&format!("proposals/{id}-accepted.md")),
-        &format!("# Accepted proposal\n\n{summary}\n"),
+    // Every Library write commits through the port. The evidence page moves
+    // to accepted/ in the commit that records the outcome, including for
+    // auto-task-only changes; it is found by id in any layout.
+    let closed_at = reconcile::now(call);
+    let pages = reconcile::pages_for(call, id)?;
+    reconcile::file(
+        call,
+        id,
+        ProposalStatus::Accepted,
+        &closed_at,
+        Some(&format!("Accepted {closed_at}.\n\n{summary}")),
+        &pages,
     )?;
     let review = call.ports.orbit.task_update(&object(
         json!({"id":id,"status":"review","execution_summary":summary}),

@@ -599,6 +599,44 @@ impl LibraryFs {
         Ok(write_atomic(&path, text.as_bytes())?)
     }
 
+    /// Remove one proposal page; an already absent page is not an error, so a
+    /// replayed move is idempotent.
+    pub(crate) fn remove_proposal(&self, relative: &Path) -> Result<()> {
+        self.validate_proposal_path(relative)?;
+        let path = self.root.join(relative);
+        match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(Error::io("remove moved proposal page", path, error)),
+        }
+    }
+
+    /// Every proposal page under `proposals/`, in path order. Symlinks are
+    /// not followed; files that are not proposal page paths (`.gitkeep`) are
+    /// skipped. A page that cannot be read as UTF-8 has no Markdown.
+    pub(crate) fn proposal_pages(&self) -> Result<Vec<office_core::ports::LibraryText>> {
+        let mut files = Vec::new();
+        collect_optional_layer(&self.root.join("proposals"), &mut files, &[])?;
+        files.sort();
+        let mut pages = Vec::new();
+        for path in files {
+            let Ok(relative) = path.strip_prefix(&self.root) else {
+                continue;
+            };
+            let Some(relative) = relative.to_str() else {
+                continue;
+            };
+            if office_core::domain::proposal::parse_record_path(Path::new(relative)).is_err() {
+                continue;
+            }
+            pages.push(office_core::ports::LibraryText {
+                path: relative.replace(std::path::MAIN_SEPARATOR, "/"),
+                markdown: std::fs::read_to_string(&path).ok(),
+            });
+        }
+        Ok(pages)
+    }
+
     /// Validate every physical path component, including existing ancestors.
     /// A symlink anywhere below the granted root is refused, including a dangling
     /// one. The plugin's filesystem grant is the concurrent replacement boundary.

@@ -6,7 +6,7 @@ tests:
     tool: proposal-create
     input: {"title":"Weekly report","description":"Repeated work","evidence":["task-a","task-b"],"payload":{"kind":"auto_task","definition":{"name":"weekly-report","schedule":{"cron":"0 9 * * 1"},"template":{"title":"Write the report","status":"backlog"}}},"tags":["onboarding"]}
     expect:
-      output: {"created":true,"id":"proposal-fixture","suppressed":false,"evidence_page":"proposals/proposal-fixture.md","payload_sha256":"30c031da383576776d8cb2b9fca7abaf89907c17be1891d627d795d1eff47bfd"}
+      output: {"created":true,"id":"proposal-fixture","suppressed":false,"evidence_page":"proposals/open/proposal-fixture.md","payload_sha256":"30c031da383576776d8cb2b9fca7abaf89907c17be1891d627d795d1eff47bfd"}
   - name: proposal_create_refuses_routine_kind
     tool: proposal-create
     input: {"title":"Legacy routine","description":"Not supported","evidence":["task-a"],"payload":{"kind":"routine","definition":{}}}

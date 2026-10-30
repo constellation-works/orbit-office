@@ -121,7 +121,7 @@ fn output(ports: &Ports<'_>) -> Value {
 fn filed(ports: &Ports<'_>, id: &str) -> Value {
     let markdown = ports
         .library
-        .read_text(std::path::Path::new(&format!("proposals/{id}.md")))
+        .read_text(std::path::Path::new(&format!("proposals/open/{id}.md")))
         .unwrap();
     serde_json::from_str(
         markdown

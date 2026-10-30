@@ -319,6 +319,39 @@ impl Library for FakeLibrary {
         self.record_commit();
         Ok(())
     }
+    fn move_proposal(&self, to: &Path, text: &str, from: &[String]) -> Result<()> {
+        self.ready()?;
+        office_core::domain::proposal::validate_record_path(to)?;
+        for path in from {
+            office_core::domain::proposal::validate_record_path(Path::new(path))?;
+        }
+        let to = to.to_string_lossy().into_owned();
+        let mut texts = self.texts.borrow_mut();
+        for path in from {
+            if *path != to {
+                texts.remove(path);
+            }
+        }
+        texts.insert(to, text.into());
+        drop(texts);
+        self.record_commit();
+        Ok(())
+    }
+    fn proposal_pages(&self) -> Result<Vec<LibraryText>> {
+        self.ready()?;
+        Ok(self
+            .texts
+            .borrow()
+            .iter()
+            .filter(|(path, _)| {
+                office_core::domain::proposal::parse_record_path(Path::new(path.as_str())).is_ok()
+            })
+            .map(|(path, text)| LibraryText {
+                path: path.clone(),
+                markdown: Some(text.clone()),
+            })
+            .collect())
+    }
 
     fn bootstrap_snapshot(&self) -> Result<office_core::domain::bootstrap::Snapshot> {
         use office_core::domain::bootstrap::{Snapshot, Source};

@@ -113,7 +113,7 @@ payload claims. Source citations in a page draft must resolve.
 
 The tool files an Orbit task in `proposed`, tagged `proposal`,
 `proposal:<kind>` and an evidence-cluster tag, plus any tags you pass. It
-attaches `proposal.json` and writes `library/proposals/<id>.md`. It returns
+attaches `proposal.json` and writes `library/proposals/open/<id>.md`. It returns
 `{created, id, suppressed, evidence_page, payload_sha256}`.
 
 Tag onboarding proposals `onboarding`. The app shows them as one

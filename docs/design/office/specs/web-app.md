@@ -18,8 +18,8 @@ Source: spec §13.1–§13.2 and §13.4.
 - It acts **as the user**: it calls Orbit with `orbit tool run --json` for
   both `orbit.*` and `office.*` tools, including the tools hidden from MCP
   (`office.knowledge-write`, `office.proposal-accept`,
-  `office.artifact-promote`, `office.selection-put`, `office.config-set`,
-  `office.reindex`). Settings changed in the app, such as retention on the
+  `office.proposal-reconcile`, `office.artifact-promote`,
+  `office.selection-put`, `office.config-set`, `office.reindex`). Settings changed in the app, such as retention on the
   Routines screen, are written with `office.config-set` ([ORB-18711]).
 - It never reads `.orbit/` directly. Orbit's HTTP API is not used; it
   belongs to Orbit's own dashboard (spec §18.3).
@@ -272,7 +272,12 @@ output, or a gateway draft's connection, method, URL, body and digest.
   **Accept all** on a grouped card accepts each page in turn; a refused page
   leaves the others accepted, and the card names it.
 - **Dismiss** rejects a proposal, script output or gateway draft, with an
-  optional reason.
+  optional reason. After a proposal's rejection the app calls
+  `office.proposal-reconcile` once, which moves its evidence page to
+  `proposals/dismissed/`; if that call fails, the dismissal still stands and
+  the next reconcile moves the page. The review preview reads the proposal's
+  `proposal.json` by task id, never its Library page, so it is the same in
+  any status folder.
 - **Approve and send** on a gateway draft calls `gateway.http-send` with the
   draft id and the digest shown ([gateway.md](./gateway.md)). A lost reply
   is shown as `outcome_unknown`, never as a failure, and is never retried.

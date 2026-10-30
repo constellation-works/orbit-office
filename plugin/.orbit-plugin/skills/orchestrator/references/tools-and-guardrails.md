@@ -44,7 +44,7 @@ That is how approval is enforced.
 
 | Tool | Who calls it |
 |---|---|
-| `office.knowledge-write`, `office.proposal-accept`, `office.artifact-promote` | The app, when the user accepts or approves |
+| `office.knowledge-write`, `office.proposal-accept`, `office.proposal-reconcile`, `office.artifact-promote` | The app, when the user accepts, dismisses or approves |
 | `office.selection-put` | The app, when the user selects something |
 | `office.config-set`, `office.reindex` | The app (Settings) |
 | `office.source-set-sensitivity`, `office.share-set` | The app (source view, sharing switch) |

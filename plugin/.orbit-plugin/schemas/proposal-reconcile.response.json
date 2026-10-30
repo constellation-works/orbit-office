@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.proposal-reconcile.response",
+  "type": "object",
+  "properties": {
+    "moved": {
+      "type": "array",
+      "description": "Pages moved, one entry per proposal: the paths it left and the page it now has.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "unknown": {
+      "type": "array",
+      "description": "Proposal ids with a page but no proposal task; their pages are left in place.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "moved",
+    "unknown"
+  ],
+  "additionalProperties": false
+}

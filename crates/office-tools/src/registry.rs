@@ -116,6 +116,7 @@ static TOOLS: &[Tool] = &[
     proposals::signals_scan::TOOL,
     proposals::create::TOOL,
     proposals::accept::TOOL,
+    proposals::reconcile::TOOL,
     // selection (specs/selection-sharing.md)
     selection::get::TOOL,
     selection::put::TOOL,

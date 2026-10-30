@@ -57,7 +57,7 @@ fn proposal_create_files_proposed_task_payload_and_evidence() {
     assert_eq!(calls[2].input["path"], "proposal.json");
     assert_eq!(
         response["output"]["evidence_page"],
-        "proposals/proposal-fixture.md"
+        "proposals/open/proposal-fixture.md"
     );
 }
 
@@ -232,7 +232,7 @@ fn proposal_knowledge_add_materializes_the_template_and_cites_evidence() {
     assert!(
         ports
             .library
-            .read_text(Path::new("proposals/proposal-fixture.md"))
+            .read_text(Path::new("proposals/open/proposal-fixture.md"))
             .unwrap()
             .contains("src-fixture")
     );
@@ -476,9 +476,11 @@ fn proposal_updates_retirements_and_runbooks_apply_reviewed_pages() {
 
 #[test]
 fn proposal_conformance_goldens_replay_success_and_refusal_offline() {
-    for verb in ["proposal-create", "proposal-accept"] {
+    for verb in ["proposal-create", "proposal-accept", "proposal-reconcile"] {
         let (ports, orbit) = fixture();
-        if verb == "proposal-create" {
+        if verb == "proposal-reconcile" {
+            orbit.push_response(Ok(json!({"tasks":[],"truncated":false})));
+        } else if verb == "proposal-create" {
             orbit.push_response(Ok(json!({"tasks":[],"truncated":false})));
             orbit.push_response(Ok(json!({"id":"proposal-fixture","status":"proposed"})));
             orbit.push_response(Ok(json!({})));
@@ -616,7 +618,7 @@ fn proposal_draft_materializes_shareable_true_in_the_reviewed_markdown() {
     assert_eq!(response["ok"], true, "{response}");
     let text = ports
         .library
-        .read_text(std::path::Path::new("proposals/proposal-fixture.md"))
+        .read_text(std::path::Path::new("proposals/open/proposal-fixture.md"))
         .unwrap();
     let payload = text
         .split("```json\n")
@@ -644,5 +646,177 @@ fn proposal_draft_materializes_shareable_true_in_the_reviewed_markdown() {
             .unwrap()
             .unwrap()
             .shareable
+    );
+}
+
+fn seed(ports: &Ports<'_>, path: &str, text: &str) {
+    ports
+        .library
+        .write_proposal(std::path::Path::new(path), text)
+        .unwrap();
+}
+
+fn proposal_paths(ports: &Ports<'_>) -> Vec<String> {
+    ports
+        .library
+        .proposal_pages()
+        .unwrap()
+        .into_iter()
+        .map(|page| page.path)
+        .collect()
+}
+
+#[test]
+fn accepting_moves_the_evidence_page_to_accepted_in_the_commit_that_records_it() {
+    // The page is found by id whether it was filed under open/ or flat.
+    for layout in [
+        "proposals/open/proposal-fixture.md",
+        "proposals/proposal-fixture.md",
+    ] {
+        let (ports, orbit) = fixture();
+        seed(
+            &ports,
+            layout,
+            "---\nid: proposal-fixture\ntype: proposal\n---\nRepeated work\n",
+        );
+        let head = ports.library.head_commit().unwrap();
+        accept_replies(&orbit, &auto_task());
+        reserve(&orbit);
+        orbit.push_response(Ok(json!({"name":"weekly-report","enabled":true})));
+        orbit.push_response(Ok(json!({"name":"weekly-report","enabled":true})));
+        close(&orbit);
+        let response = call(&ports, "office.proposal-accept", approval(&auto_task()));
+        assert_eq!(response["ok"], true, "{response}");
+        let accepted = "proposals/accepted/1970/02/proposal-fixture.md";
+        assert_eq!(proposal_paths(&ports), [accepted], "{layout}");
+        let page = ports
+            .library
+            .read_text(std::path::Path::new(accepted))
+            .unwrap();
+        assert!(
+            page.starts_with("---\nid: proposal-fixture\ntype: proposal\n---\nRepeated work\n")
+        );
+        assert!(
+            page.contains(
+                "\n## Outcome\n\nAccepted 1970-02-10T00:00:00+00:00.\n\nOffice proposal payload sha256: "
+            ),
+            "{page}"
+        );
+        assert!(page.contains("Applied change: {\"auto_task\":\"weekly-report\""));
+        // An auto-task changes no page, so the move is the acceptance's one commit.
+        assert_eq!(head.as_deref(), Some("fake-head-1"));
+        assert_eq!(
+            ports.library.head_commit().unwrap().as_deref(),
+            Some("fake-head-2")
+        );
+    }
+}
+
+#[test]
+fn proposal_reconcile_files_pages_by_task_status_and_a_rerun_changes_nothing() {
+    let (ports, orbit) = fixture();
+    let page = |id: &str| format!("---\nid: {id}\ntype: proposal\n---\nEvidence for {id}\n");
+    seed(&ports, "proposals/p-open.md", &page("p-open"));
+    seed(&ports, "proposals/p-done.md", &page("p-done"));
+    seed(
+        &ports,
+        "proposals/p-done-accepted.md",
+        "# Accepted proposal\n\nOffice proposal payload sha256: abc\nUser accepted Office auto_task proposal.\n",
+    );
+    seed(&ports, "proposals/open/p-rejected.md", &page("p-rejected"));
+    seed(&ports, "proposals/open/p-waiting.md", &page("p-waiting"));
+    seed(&ports, "proposals/open/p-busy.md", &page("p-busy"));
+    seed(&ports, "proposals/p-review.md", &page("p-review"));
+    seed(&ports, "proposals/open/p-gone.md", &page("p-gone"));
+    let listing = json!({"tasks":[
+        {"id":"p-open","status":"proposed","updated_at":"2026-10-01T09:00:00Z"},
+        {"id":"p-done","status":"done","updated_at":"2026-10-29T18:30:00Z"},
+        {"id":"p-rejected","status":"rejected","updated_at":"2026-09-15T08:00:00Z"},
+        {"id":"p-waiting","status":"proposed","updated_at":"2026-10-02T09:00:00Z"},
+        {"id":"p-busy","status":"in-progress","updated_at":"2026-10-03T09:00:00Z"},
+        {"id":"p-review","status":"review","updated_at":"2026-10-04T09:00:00Z"},
+        {"id":"p-unfiled","status":"proposed","updated_at":"2026-10-05T09:00:00Z"}
+    ],"truncated":false});
+    let head = ports.library.head_commit().unwrap();
+    orbit.push_response(Ok(listing.clone()));
+    let response = call(&ports, "office.proposal-reconcile", json!({}));
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(orbit.calls()[0].tool, "orbit.task.list");
+    assert_eq!(orbit.calls()[0].input["tag"], "proposal");
+    assert_eq!(
+        response["output"],
+        json!({"moved":[
+            {"id":"p-done","from":["proposals/p-done-accepted.md","proposals/p-done.md"],"to":"proposals/accepted/2026/10/p-done.md"},
+            {"id":"p-open","from":["proposals/p-open.md"],"to":"proposals/open/p-open.md"},
+            {"id":"p-rejected","from":["proposals/open/p-rejected.md"],"to":"proposals/dismissed/2026/09/p-rejected.md"},
+            {"id":"p-review","from":["proposals/p-review.md"],"to":"proposals/open/p-review.md"}
+        ],"unknown":["p-gone"]})
+    );
+    assert_eq!(
+        proposal_paths(&ports),
+        [
+            "proposals/accepted/2026/10/p-done.md",
+            "proposals/dismissed/2026/09/p-rejected.md",
+            "proposals/open/p-busy.md",
+            "proposals/open/p-gone.md",
+            "proposals/open/p-open.md",
+            "proposals/open/p-review.md",
+            "proposals/open/p-waiting.md",
+        ]
+    );
+    let read = |path: &str| ports.library.read_text(std::path::Path::new(path)).unwrap();
+    let done = read("proposals/accepted/2026/10/p-done.md");
+    assert!(done.starts_with(&page("p-done")), "{done}");
+    assert!(done.contains("## Outcome\n\nAccepted: the Orbit task is `done`"));
+    assert!(
+        done.contains("Office proposal payload sha256: abc"),
+        "{done}"
+    );
+    let dismissed = read("proposals/dismissed/2026/09/p-rejected.md");
+    assert!(dismissed.contains("## Outcome\n\nDismissed: the Orbit task is `rejected`"));
+    assert_eq!(read("proposals/open/p-open.md"), page("p-open"));
+    // One commit per proposal moved.
+    assert_eq!(head.as_deref(), Some("fake-head-8"));
+    let after = ports.library.head_commit().unwrap();
+    assert_eq!(after.as_deref(), Some("fake-head-12"));
+
+    orbit.push_response(Ok(listing));
+    let rerun = call(&ports, "office.proposal-reconcile", json!({}));
+    assert_eq!(
+        rerun["output"],
+        json!({"moved":[],"unknown":["p-gone"]}),
+        "{rerun}"
+    );
+    assert_eq!(ports.library.head_commit().unwrap(), after);
+    assert_eq!(read("proposals/accepted/2026/10/p-done.md"), done);
+
+    orbit.push_response(Ok(json!({"tasks":[],"truncated":true})));
+    let partial = call(&ports, "office.proposal-reconcile", json!({}));
+    assert_eq!(partial["error"]["code"], "proposal_history_incomplete");
+    assert_eq!(ports.library.head_commit().unwrap(), after);
+}
+
+#[test]
+fn a_dismissed_proposal_closed_outside_the_app_moves_by_its_rejection_month() {
+    let (ports, orbit) = fixture();
+    let created = {
+        orbit.push_response(Ok(json!({"tasks":[],"truncated":false})));
+        orbit.push_response(Ok(json!({"id":"proposal-fixture","status":"proposed"})));
+        orbit.push_response(Ok(json!({})));
+        call(&ports, "office.proposal-create", create_input())
+    };
+    assert_eq!(
+        created["output"]["evidence_page"],
+        "proposals/open/proposal-fixture.md"
+    );
+    // An unparseable rejection time falls back to the call's clock.
+    orbit.push_response(Ok(json!({"tasks":[
+        {"id":"proposal-fixture","status":"rejected","updated_at":"unknown"}
+    ],"truncated":false})));
+    let response = call(&ports, "office.proposal-reconcile", json!({}));
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        proposal_paths(&ports),
+        ["proposals/dismissed/1970/02/proposal-fixture.md"]
     );
 }
