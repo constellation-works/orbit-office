@@ -433,7 +433,7 @@ fn init_second_run_is_an_already_initialized_no_op() {
     }
     assert_eq!(
         std::fs::read_to_string(library.join(".gitignore")).unwrap(),
-        "original.*\nframes/\n"
+        "original.*\nframes/\n.office/state/\n"
     );
     let config = std::fs::read_to_string(library.join(".office/config.yaml")).unwrap();
     assert!(config.contains("retention:"), "default config: {config}");
@@ -451,7 +451,11 @@ fn init_second_run_is_an_already_initialized_no_op() {
         "packs: [meetings, receipts]\n",
     )
     .unwrap();
-    std::fs::write(library.join(".gitignore"), "custom-ignore\nframes/\n").unwrap();
+    std::fs::write(
+        library.join(".gitignore"),
+        "custom-ignore\nframes/\n.office/state/\n",
+    )
+    .unwrap();
     std::fs::write(library.join("knowledge/domain/dom-keep.md"), DOMAIN).unwrap();
     let head_before = git(&library, &["rev-parse", "HEAD"]);
 
@@ -470,7 +474,7 @@ fn init_second_run_is_an_already_initialized_no_op() {
     );
     assert_eq!(
         std::fs::read_to_string(library.join(".gitignore")).unwrap(),
-        "custom-ignore\nframes/\n"
+        "custom-ignore\nframes/\n.office/state/\n"
     );
     assert_eq!(
         std::fs::read_to_string(library.join("knowledge/domain/dom-keep.md")).unwrap(),

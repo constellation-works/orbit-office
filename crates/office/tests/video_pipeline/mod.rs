@@ -256,7 +256,7 @@ fn init_upgrades_gitignore_preserving_every_existing_byte_and_is_then_idempotent
     assert_eq!(upgraded["output"]["already_initialized"], false);
     assert_eq!(
         std::fs::read(&path).unwrap(),
-        b"# user policy\r\noriginal.*\r\ncustom-ignore\nframes/\n"
+        b"# user policy\r\noriginal.*\r\ncustom-ignore\nframes/\n.office/state/\n"
     );
     let head = git(&env.library(), &["rev-parse", "HEAD"]);
     let repeat = env.tool("office.init", json!({}));

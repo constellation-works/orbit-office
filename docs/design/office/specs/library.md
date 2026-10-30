@@ -29,7 +29,7 @@ library/
   proposals/<proposal-id>.md   # rendered evidence for each proposal (the record is the Orbit task)
   .office/config.yaml          # Library settings: retention, sensitivity, packs, thresholds
   .office/templates/<name>.md  # About and How-to page templates (knowledge-templates.md)
-  .gitignore                   # original.* and frames/ (binaries are pinned by sha256, not tracked)
+  .gitignore                   # original.*, frames/ and .office/state/ (binaries and writer state are not tracked; binaries are pinned by sha256)
 ```
 
 - The index in `plugin_state/index.sqlite` (FTS5 plus link tables) is
@@ -46,9 +46,13 @@ library/
 
 - The Library is its own git repository at `library/`, created by
   `office.init`. The plugin commits there after each mutating tool call,
-  so the history of every page is recoverable. Binaries (`original.*`)
-  are ignored by the Library's own `.gitignore`, and each is pinned by the
-  `sha256` in its source's frontmatter.
+  so the history of every page is recoverable. Binaries (`original.*`),
+  generated frames (`frames/`) and per-machine writer state
+  (`.office/state/`: `index.sqlite` plus its `-shm`/`-wal`,
+  `library.writer.lock` and `library.writer.owner.json`) are ignored by
+  the Library's own `.gitignore`, and each binary is pinned by the
+  `sha256` in its source's frontmatter. `.office/config.yaml` and
+  `.office/templates/` stay tracked.
 - The workspace repository ignores `/library/`. Orbit refuses a plugin
   write grant on the workspace's `.git`, and plugin writes to tracked
   files in the primary checkout would fail running agent tasks with
@@ -76,13 +80,21 @@ a second workspace or a repair. Fresh workspaces use the office preset to suppre
 2. Creates the layout directories, with a `.gitkeep` in each empty one.
 3. Runs `git init` in `library/` if it is not already a repository.
 4. Writes `.office/config.yaml` from the plugin's bundled default, and the
-   `.gitignore`.
+   `.gitignore` ensuring `original.*`, `frames/` and `.office/state/`.
+   On an existing `.gitignore` it appends a missing `frames/` or
+   `.office/state/` line while preserving all existing bytes (adding a
+   separating newline when needed); an existing `.office/state` line
+   without the trailing slash counts as present and is not duplicated.
 5. Copies each bundled page template that is missing into
    `.office/templates/` ([knowledge-templates.md](./knowledge-templates.md#templates)).
    It writes no pages: About pages come from the onboarding interview and
    later sources, each citing its evidence.
 6. Creates or migrates `plugin_state/index.sqlite`, then reindexes.
-7. Commits whatever it created ("Initialize the Library").
+7. Commits whatever it created ("Initialize the Library"). When
+   `.office/state` is tracked, it removes that path from the index with
+   `git rm -r --cached` and commits the removal together with the
+   `.gitignore` change in one commit. The files stay on disk, and only
+   `.office/state` is untracked.
 
 After validating the requested path and git availability, init prepares the
 plugin state directory and acquires `plugin_state/library.writer.lock` before
@@ -95,10 +107,11 @@ repository or index.
 
 It is idempotent: it creates only what is missing and never overwrites an
 existing config, `.gitignore`, template or page. A Library is complete only
-when its layout, repository, config, `.gitignore`, index and every bundled
-template file are present. A second run on a complete Library changes
-nothing and reports `already_initialized`. Copying a missing bundled
-template lists that file in `created` and does not report
+when its layout, repository, config, `.gitignore` (with `frames/` and
+`.office/state/` present), index, every bundled template file, and no
+tracked `.office/state` path are present. A second run on a complete
+Library changes nothing and reports `already_initialized`. Copying a
+missing bundled template lists that file in `created` and does not report
 `already_initialized`. The result lists what was created.
 
 Other tools open the store only after the same grant decision `office.init`

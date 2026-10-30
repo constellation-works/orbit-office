@@ -222,10 +222,16 @@ of dropping searchable content. Generic `write_document` still accepts only
 primary indexed documents; video writes publish companions through their
 journaled operation.
 
-Initialization writes `original.*` and `frames/` in a new `.gitignore`. On an
-existing Library, it appends a missing `frames/` line while preserving all
-existing bytes (adding a separating newline when needed), commits the update,
-and is a no-op on the next call. It refuses a symlink at this fixed root path.
+Initialization writes `original.*`, `frames/` and `.office/state/` in a new
+`.gitignore`. On an existing Library, it appends a missing `frames/` or
+`.office/state/` line while preserving all existing bytes (adding a
+separating newline when needed; an existing `.office/state` line without
+the trailing slash counts as present), commits the update, and is a no-op
+on the next call. When `.office/state` is tracked, it removes that path
+from the index with `git rm -r --cached` and commits the removal together
+with the `.gitignore` change in one commit, leaving the files on disk and
+keeping `.office/config.yaml` and `.office/templates/` tracked. It refuses
+a symlink at this fixed root path.
 
 ### Bootstrap previews and phase progress
 
