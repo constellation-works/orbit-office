@@ -57,10 +57,37 @@ orbit plugin test "$out" --grant fs,network
 
 ```bash
 orbit plugin add /tmp/office-plugin-<sha>
-orbit plugin enable office --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools
+orbit plugin enable office --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools --grant agent_tools
 orbit plugin secret set office meta_api_key
 orbit plugin secret set office open_weights_token   # optional: the private endpoint's token
 ```
 
 Enabling is the operator's consent to the plugin's filesystem and network
 access; agents do not run `orbit plugin add`/`enable`.
+
+Office requires Orbit >=0.39.0 <1.0.0. `agent_tools` is explicit, digest-bound
+consent to exactly `attach`, `capture`, `proposal-create` and `selection-get`.
+They prepare evidence/context and pending proposals; they cannot accept proposals,
+write knowledge directly, promote outputs, configure secrets, dispatch or send.
+Extraction, transcription and Library sync retain Operator/Runner authority.
+See the [reviewed inventory](../docs/design/office/specs/plugin-surface.md#agent-authority-inventory)
+and [operator update/reconnect procedure](../docs/design/office/specs/install.md#updating-and-reconnecting-scoped-agent-sessions-operator-handoff).
+
+The updated installer/init prints the exact verbs, repairs missing agent consent,
+preserves narrower fs roots, and requires a terminal answer or explicit `--yes`
+when enablement needs consent. After updating the plugin export, re-enable it and
+reconnect the ordinary agent MCP session. Keep agent sessions free of operator
+overrides. Capability refusal and a shell/callback filesystem sandbox denial are
+separate failures; a scoped permission declaration only addresses the former.
+
+The public authorization fixture uses real Orbit and Office, separately from the
+installer's stub-based argument checks:
+
+```sh
+cd ..
+cargo build --locked -p office
+python3 scripts/plugin/test-agent-permissions.py --orbit /path/to/orbit --office target/debug/office
+```
+
+Run on both Linux and macOS before release;
+missing prerequisites fail instead of silently skipping.

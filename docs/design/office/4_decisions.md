@@ -1702,3 +1702,33 @@ No private-route summary is produced.
   that app-only path exists, and callers must handle
   `content_withheld: true` (an empty body/snippet) rather than a
   refusal.
+
+## Scoped agent preparation, separate from application authority
+
+**Recorded:** 2026-10-30
+**Code anchors:** `plugin/.orbit-plugin/plugin.yaml`, `scripts/install/lib/steps.sh`
+
+The orchestrator needs to capture sources, file pending proposals, attach task
+context and consume app selections. Orbit >=0.39.0 provides the generic
+`agent_callable: true` plus digest-bound `agent_tools` consent mechanism; Office
+uses it for exactly `capture`, `proposal-create`, `attach`, `selection-get`.
+The [full inventory](specs/plugin-surface.md#agent-authority-inventory) records
+backend writes, callbacks, cost and the decision for every remaining tool.
+No core exception, new callback grant or operator-wide agent session is added.
+MCP placement remains unchanged; hidden tools remain governed through CLI too.
+
+Operator acceptance remains the only application path for proposal payloads.
+Attachment is limited to task artifacts and selection consumption to the app tray.
+Extraction/transcription retain their cost/confirmation route; sharing retains
+its external-send boundary. App/operator authority and audit identity are intact.
+
+Installer consent lists the exact verbs and all existing scoped grants. A
+non-interactive run requiring consent now refuses unless `--yes` is explicit,
+rather than inferring consent from absent input. Repair preserves a recorded fs
+scope and refuses an unexpected agent verb set; Orbit owns digest witnesses and
+revokes consent on widening. The Office version remains unchanged; only the
+minimum host/toolchain pin moves to 0.39.0. This follows STD-05@1 §R3 and §R21.
+
+The real public fixture must prove authorization and persistence; installer stubs
+prove only installer behavior. A host callback filesystem denial cannot count as
+successful proposal verification or be repaired by broadening authority.
