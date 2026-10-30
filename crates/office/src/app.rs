@@ -229,6 +229,16 @@ impl RealCalendar<'_> {
     }
 }
 impl office_core::ports::Calendar for RealCalendar<'_> {
+    fn sources(&self) -> office_core::Result<office_core::domain::calendar::CalendarSources> {
+        self.store()?.sources()
+    }
+    fn change_local(
+        &self,
+        change: &office_core::domain::calendar::LocalChange,
+    ) -> office_core::Result<Option<String>> {
+        self.store()?.change_local(change)
+    }
+
     fn load(
         &self,
     ) -> office_core::Result<(office_core::domain::calendar::Snapshot, Option<String>)> {

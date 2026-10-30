@@ -187,6 +187,7 @@ export function meetingPanel(meeting: CalendarMeeting, context: PanelContext): H
     states.append(pill(words, words === "Private" ? "private" : words === "Add notes" ? "attention" : "neutral"));
   }
   const title = element("h2", meeting.title, meeting.status === "cancelled" ? "calendar-struck" : undefined);
+  if (meeting.local) states.append(pill("Local", "neutral"));
   head.append(states, title, button("Close", context.close, "calendar-close"));
   panel.append(head);
 

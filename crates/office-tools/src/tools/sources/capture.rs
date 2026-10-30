@@ -172,7 +172,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
             .find(|event| event.key == key)
             .ok_or(Error::Library {
                 code: "unknown_event",
-                message: "no calendar event has this key; sync the calendar first".into(),
+                message: "no selected calendar event has this key; check calendar choices or sync the connected calendar".into(),
             })?;
         request.kind = Some("meeting".into());
         request.title = Some(event.title.clone());

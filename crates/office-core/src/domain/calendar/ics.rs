@@ -106,6 +106,7 @@ impl Raw {
             .checked_add_signed(duration)
             .ok_or(CalendarError::Invalid)?;
         Ok(Event {
+            local: false,
             key: format!("{}:{}", uid, stamp(original)),
             series: uid,
             title: plain(&self.text("SUMMARY")),

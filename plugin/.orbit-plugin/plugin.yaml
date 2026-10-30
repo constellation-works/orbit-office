@@ -79,7 +79,7 @@ spec:
     # (ARCHITECTURE.md, "Tools"); keep the blank line between blocks.
 
     - name: calendar-sync
-      description: Read an ICS file or gateway calendar and atomically replace the private snapshot.
+      description: Read an ICS file or gateway calendar, or manage workspace-local events and source selection.
       execution_kind: mutating
       mcp_scope: none
       input_schema: { $ref: schemas/calendar-sync.request.json }

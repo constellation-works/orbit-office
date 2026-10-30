@@ -15,10 +15,20 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::Mutating,
         mcp_scope: McpScope::None,
     },
-    &["ics_file"],
+    &["ics_file", "local"],
     run,
 );
 fn run(call: &Call<'_>) -> Result<Value> {
+    if let Some(local) = call.input.get("local") {
+        if call.input.contains_key("ics_file") {
+            return Err(CalendarError::Invalid.into());
+        }
+        let change: calendar::LocalChange =
+            serde_json::from_value(local.clone()).map_err(|_| CalendarError::Invalid)?;
+        change.validate()?;
+        let key = call.ports.calendar.change_local(&change)?;
+        return Ok(json!({"key":key,"sources":call.ports.calendar.sources()?}));
+    }
     let file = match call.input.get("ics_file") {
         None => None,
         Some(Value::String(s)) if !s.is_empty() => Some(s.as_str()),
@@ -28,6 +38,12 @@ fn run(call: &Call<'_>) -> Result<Value> {
             ));
         }
     };
+    // A local-only workspace has nothing external to synchronize. Explicit
+    // offline imports still work and never alter the saved source choices.
+    let sources = call.ports.calendar.sources()?;
+    if file.is_none() && !sources.external {
+        return Ok(json!({"key":null,"sources":sources}));
+    }
     let now = format_rfc3339_utc(call.ports.clock.now());
     let result: Result<Value> = (|| {
         let settings = call.ports.library.settings()?.calendar;

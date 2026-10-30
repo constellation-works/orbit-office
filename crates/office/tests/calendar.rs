@@ -54,7 +54,7 @@ fn never_synced_calendar_is_read_only_and_distinct_from_an_empty_sync() {
     assert_eq!(response["ok"], true, "{response}");
     assert_eq!(
         response["output"],
-        json!({"events":[],"synced_at":null,"last_error":null})
+        json!({"events":[],"synced_at":null,"last_error":null,"sources":{"local":false,"external":true}})
     );
     assert!(!env.root.path().join("state/calendar").exists());
 }
@@ -222,4 +222,184 @@ fn real_library_prep_capture_and_summary_are_joined_by_event_key() {
             json!({"source":"src-fixture","summarized":summarized})
         );
     }
+}
+
+#[test]
+fn local_events_persist_across_processes_and_external_sync_never_overwrites_them() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", json!({}))["ok"], true);
+    let event = json!({"title":"Local planning", "start":"2026-10-30T14:00:00Z", "end":"2026-10-30T15:00:00Z", "attendees":["Jane Park"]});
+    let created = env.tool(
+        "office.calendar-sync",
+        json!({"local":{"action":"create","event":event}}),
+    );
+    assert_eq!(created["ok"], true, "{created}");
+    let key = created["output"]["key"].as_str().unwrap();
+    let range = json!({"from":"2026-10-26T00:00:00Z","until":"2026-11-02T00:00:00Z"});
+    let listed = env.tool("office.calendar-list", range.clone());
+    assert_eq!(listed["output"]["events"][0]["key"], key);
+    assert_eq!(listed["output"]["events"][0]["local"], true);
+    assert_eq!(
+        listed["output"]["sources"],
+        json!({"local":true,"external":true})
+    );
+    let file = env.root.path().join("calendar.ics");
+    std::fs::write(file, "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:external\nDTSTART:20261030T100000Z\nDTEND:20261030T110000Z\nSUMMARY:External meeting\nEND:VEVENT\nEND:VCALENDAR").unwrap();
+    assert_eq!(
+        env.tool("office.calendar-sync", json!({"ics_file":"calendar.ics"}))["ok"],
+        true
+    );
+    let merged = env.tool("office.calendar-list", range.clone());
+    assert_eq!(merged["output"]["events"].as_array().unwrap().len(), 2);
+    for (local, external, count) in [
+        (true, false, 1),
+        (false, true, 1),
+        (false, false, 0),
+        (true, true, 2),
+    ] {
+        assert_eq!(
+            env.tool(
+                "office.calendar-sync",
+                json!({"local":{"action":"sources","local":local,"external":external}})
+            )["ok"],
+            true
+        );
+        assert_eq!(
+            env.tool("office.calendar-list", range.clone())["output"]["events"]
+                .as_array()
+                .unwrap()
+                .len(),
+            count
+        );
+    }
+    let edited = json!({"title":"Moved planning", "start":"2026-10-30T16:00:00Z", "end":"2026-10-30T17:00:00Z"});
+    assert_eq!(
+        env.tool(
+            "office.calendar-sync",
+            json!({"local":{"action":"update","key":key,"event":edited}})
+        )["ok"],
+        true
+    );
+    let listed = env.tool("office.calendar-list", range.clone());
+    let local = listed["output"]["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["local"] == true)
+        .unwrap();
+    assert_eq!(local["key"], key);
+    assert_eq!(local["title"], "Moved planning");
+    assert_eq!(
+        env.tool(
+            "office.calendar-sync",
+            json!({"local":{"action":"delete","key":key}})
+        )["ok"],
+        true
+    );
+    assert_eq!(
+        env.tool("office.calendar-list", range)["output"]["events"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn invalid_local_writes_preserve_state_and_refuse_external_keys() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", json!({}))["ok"], true);
+    let event =
+        json!({"title":"Local", "start":"2026-10-30T14:00:00Z","end":"2026-10-30T15:00:00Z"});
+    let created = env.tool(
+        "office.calendar-sync",
+        json!({"local":{"action":"create","event":event}}),
+    );
+    assert_eq!(created["ok"], true, "{created}");
+    let file = env.root.path().join(".office/calendar/local.json");
+    let before = std::fs::read(&file).unwrap();
+    for change in [
+        json!({"action":"delete","key":"external:2026-10-30T10:00:00Z"}),
+        json!({"action":"delete","key":"local-missing"}),
+        json!({"action":"sources","local":true,"external":false,"unknown":true}),
+        json!({"action":"create","event":{"title":"Bad range","start":"2026-10-30T15:00:00Z","end":"2026-10-30T14:00:00Z"}}),
+        json!({"action":"create","event":{"title":"Unknown field","start":"2026-10-30T14:00:00Z","end":"2026-10-30T15:00:00Z","local":false}}),
+    ] {
+        assert_eq!(
+            env.tool("office.calendar-sync", json!({"local":change}))["error"]["code"],
+            "calendar_invalid"
+        );
+        assert_eq!(std::fs::read(&file).unwrap(), before);
+    }
+    assert!(
+        !env.root.path().join("state/calendar").exists(),
+        "local writes never sync or record external failures"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            std::fs::metadata(file.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn local_storage_symlinks_and_future_versions_refuse_writes() {
+    use std::os::unix::fs::symlink;
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", json!({}))["ok"], true);
+    let outside = tempfile::tempdir().unwrap();
+    let sentinel = outside.path().join("sentinel");
+    std::fs::write(&sentinel, b"unchanged").unwrap();
+    let dir = env.root.path().join(".office/calendar");
+    std::fs::create_dir_all(&dir).unwrap();
+    symlink(&sentinel, dir.join("local.json")).unwrap();
+    let change = json!({"local":{"action":"sources","local":true,"external":false}});
+    assert_eq!(
+        env.tool("office.calendar-sync", change.clone())["error"]["code"],
+        "calendar_storage_unavailable"
+    );
+    assert_eq!(std::fs::read(&sentinel).unwrap(), b"unchanged");
+    std::fs::remove_file(dir.join("local.json")).unwrap();
+    let future = br#"{"schema_version":2,"sources":{"local":true,"external":false},"events":[]}"#;
+    std::fs::write(dir.join("local.json"), future).unwrap();
+    assert_eq!(
+        env.tool("office.calendar-sync", change)["error"]["code"],
+        "calendar_storage_unavailable"
+    );
+    assert_eq!(std::fs::read(dir.join("local.json")).unwrap(), future);
+}
+
+#[test]
+fn local_only_calendar_works_without_reading_or_writing_imported_state() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", json!({}))["ok"], true);
+    let change = json!({"local":{"action":"sources","local":true,"external":false}});
+    assert_eq!(env.tool("office.calendar-sync", change)["ok"], true);
+    assert!(!env.root.path().join("state/calendar").exists());
+    let dir = env.root.path().join("state/calendar");
+    std::fs::create_dir_all(&dir).unwrap();
+    let foreign = b"unreadable imported snapshot";
+    std::fs::write(dir.join("events.json"), foreign).unwrap();
+    let range = json!({"from":"2026-10-26T00:00:00Z","until":"2026-11-02T00:00:00Z"});
+    assert_eq!(env.tool("office.calendar-list", range)["ok"], true);
+    let skipped = env.tool("office.calendar-sync", json!({}));
+    assert_eq!(skipped["ok"], true, "{skipped}");
+    assert_eq!(
+        skipped["output"],
+        json!({"key":null,"sources":{"local":true,"external":false}})
+    );
+    assert_eq!(std::fs::read(dir.join("events.json")).unwrap(), foreign);
+    assert!(!dir.join("last_error.json").exists());
 }

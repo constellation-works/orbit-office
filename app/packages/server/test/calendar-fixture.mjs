@@ -110,7 +110,7 @@ const overlaps = (event, from, until) => Date.parse(event.start) < Date.parse(un
 export function fakeCalendarClient(overrides = {}) {
   const state = {
     synced_at: '2026-10-28T10:15:00Z', last_error: null, events: calendarEvents(), syncs: 0, syncError: null,
-    routinesDenied: false,
+    routinesDenied: false, calendarSources: {local:false,external:true},
     sources: new Map([['src-20261026-weekly-sync', { id: 'src-20261026-weekly-sync', kind: 'meeting', title: 'Weekly sync', text: 'Notes', summary: 'We agreed the renewal terms and the November date.' }]]),
     tasks: [{ id: 'FIXTURE-7', title: 'Send the renewal draft', status: 'backlog', tags: ['owner:you', 'source:src-20261026-weekly-sync'] }, ...scheduledTasks()],
     scheduledDenied: false,
@@ -121,8 +121,24 @@ export function fakeCalendarClient(overrides = {}) {
     calls.push({ name, input });
     switch (name) {
       case 'office.calendar-list':
-        return { events: state.events.filter(e => overlaps(e, input.from, input.until) && (input.include_cancelled || e.status !== 'cancelled')), synced_at: state.synced_at, last_error: state.last_error };
+        return { events: state.events.filter(e => (e.local ? state.calendarSources.local : state.calendarSources.external) && overlaps(e, input.from, input.until) && (input.include_cancelled || e.status !== 'cancelled')), synced_at: state.synced_at, last_error: state.last_error, sources: state.calendarSources };
       case 'office.calendar-sync':
+        if (input.local) {
+          if (state.localError) return {ok:false,error:{code:state.localError}};
+          const change = input.local;
+          if (change.action === 'sources') { state.calendarSources = {local:change.local,external:change.external}; return {key:null,sources:state.calendarSources}; }
+          const key = change.key ?? `local-fixture-${state.events.length}`;
+          if (change.action === 'delete') state.events = state.events.filter(e=>e.key !== key);
+          else {
+            const draft = change.event;
+            const found = event(key, draft.title, draft.start, draft.end, {...draft,local:true,attendees:(draft.attendees ?? []).map(name=>({name,response:'needsAction'})),sensitivity:draft.private ? 'private' : 'normal'});
+            const index = state.events.findIndex(e=>e.key === key);
+            if (index < 0) state.events.push(found); else state.events[index] = found;
+            state.calendarSources.local = true;
+          }
+          return {key,sources:state.calendarSources};
+        }
+        if (!state.calendarSources.external) return {key:null,sources:state.calendarSources};
         state.syncs += 1;
         if (state.syncError) return { ok: false, error: { code: state.syncError, message: 'fixture refusal' } };
         state.synced_at = now.toISOString(); state.last_error = null;

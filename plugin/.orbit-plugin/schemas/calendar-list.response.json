@@ -128,6 +128,9 @@
               ],
               "additionalProperties": false
             }
+          },
+          "local": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -163,6 +166,22 @@
         "string",
         "null"
       ]
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local",
+        "external"
+      ],
+      "properties": {
+        "local": {
+          "type": "boolean"
+        },
+        "external": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "required": [

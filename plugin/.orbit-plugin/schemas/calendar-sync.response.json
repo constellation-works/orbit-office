@@ -1,40 +1,76 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "events": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "skipped": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "window": {
+  "oneOf": [
+    {
       "type": "object",
       "properties": {
-        "from": {
-          "type": "string"
+        "events": {
+          "type": "integer",
+          "minimum": 0
         },
-        "until": {
+        "skipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string"
+            },
+            "until": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "from",
+            "until"
+          ],
+          "additionalProperties": false
+        },
+        "synced_at": {
           "type": "string"
         }
       },
       "required": [
-        "from",
-        "until"
+        "events",
+        "skipped",
+        "window",
+        "synced_at"
       ],
       "additionalProperties": false
     },
-    "synced_at": {
-      "type": "string"
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "sources"
+      ],
+      "properties": {
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "local",
+            "external"
+          ],
+          "properties": {
+            "local": {
+              "type": "boolean"
+            },
+            "external": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
     }
-  },
-  "required": [
-    "events",
-    "skipped",
-    "window",
-    "synced_at"
-  ],
-  "additionalProperties": false
+  ]
 }

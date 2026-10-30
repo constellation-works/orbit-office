@@ -2,13 +2,13 @@
  * Calendar: the user's week as the agents see it (docs/design/office/specs/
  * calendar.md, "App"). A week from Monday at desktop widths and one day at a
  * time on a phone; meetings and scheduled to-dos as blocks with their state
- * in words; the routines' runs as marks in each day's margin. The calendar
- * itself is read only: nothing here writes back to it. A scheduled to-do's
+ * in words; the routines' runs as marks in each day's margin. External calendars
+ * remain read only; local event edits stay in the workspace. A scheduled to-do's
  * time is Orbit's, and its panel can move or clear it.
  */
 import type { CalendarMeeting, CalendarRoutine, CalendarTask, CalendarView } from "@orbit-office/contracts";
 
-import { ApiError, getCalendar, scheduleTodo, syncCalendar } from "../../api/client.js";
+import { ApiError, getCalendar, scheduleTodo, syncCalendar, changeLocalCalendar } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
 import { card, errorState, requestRailRefresh } from "../../ui/index.js";
 import { pickerStyles } from "../../ui/when.js";
@@ -16,6 +16,7 @@ import {
   addDays, clock, dayRuns, hourRange, meetingState, onDay, placeDay, routineTitle, sameDay, stateWords,
   syncedWords, taskSlot, taskState, taskWords, weekLabel, weekStart, type TaskSlot,
 } from "./model.js";
+import { eventEditor } from "./editor.js";
 import { meetingPanel } from "./panel.js";
 import { styles } from "./style.js";
 import { taskPanel } from "./task.js";
@@ -49,6 +50,7 @@ function block(meeting: CalendarMeeting, now: Date, lead: number, open: (meeting
   // A button centres overflowing content; the inner box keeps the title on top.
   const inner = element("span", "", "calendar-meeting-inner");
   inner.append(element("span", meeting.title, "calendar-meeting-title"));
+  if (meeting.local) words.unshift("Local");
   if (words.length > 0) inner.append(element("span", words.join(" · "), "calendar-meeting-state"));
   inner.append(element("span", time, "calendar-meeting-meta"));
   node.append(inner);
@@ -189,7 +191,7 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
     const style = element("style", styles + pickerStyles);
     const header = element("header", "", "calendar-header");
     const titles = element("div");
-    titles.append(element("h1", "Calendar"), element("p", "Your meetings with their prep and notes, the to-dos scheduled for a time, and the routines that run. Read from your calendar; nothing is written back.", "intro"));
+    titles.append(element("h1", "Calendar"), element("p", "Your meetings with their prep and notes, the to-dos scheduled for a time, and the routines that run. Local events stay on this machine. Connected calendars are read only.", "intro"));
     const syncLine = element("div", "", "calendar-sync");
     const syncState = element("span");
     syncState.setAttribute("role", "status");
@@ -214,6 +216,11 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
       state.open = null;
       panel?.remove(); panel = null;
     }
+    function editLocal(meeting: CalendarMeeting | null): void {
+      panel?.remove(); state.open = null;
+      panel = eventEditor(meeting, addDays(state.week, state.day), changeLocalCalendar, async () => { closePanel(); requestRailRefresh(); await refresh(); }, closePanel);
+      page.append(panel); panel.querySelector<HTMLInputElement>("input")?.focus();
+    }
     function openPanel(meeting: CalendarMeeting): void {
       panel?.remove();
       state.open = meeting.key;
@@ -221,6 +228,18 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
         now: now(), leadMinutes: shown?.prep_lead_minutes ?? 120, close: closePanel,
         captured: async key => { state.open = key; requestRailRefresh(); await refresh(); },
       });
+      if (meeting.local) {
+        const actions = element("div", "", "calendar-task-buttons");
+        const feedback = element("p"); feedback.setAttribute("role", "status");
+        const remove = button("Delete local event", () => {
+          actions.replaceChildren(element("span", "Delete this local event? Notes and summaries stay in the Library."), button("Cancel", () => openPanel(meeting)), button("Delete event", () => {
+            for (const control of actions.querySelectorAll("button")) control.disabled = true;
+            void changeLocalCalendar({action:"delete",key:meeting.key}).then(async () => { closePanel(); requestRailRefresh(); await refresh(); })
+              .catch(() => { feedback.textContent = "The event could not be deleted. Open it again to retry."; });
+          }));
+        });
+        actions.append(button("Edit local event", () => editLocal(meeting)), remove); panel.append(actions, feedback);
+      }
       page.append(panel);
       panel.querySelector<HTMLButtonElement>(".calendar-close")?.focus();
     }
@@ -245,7 +264,8 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
         })
         .finally(() => { syncButton.disabled = false; });
     });
-    syncLine.append(syncState, syncButton);
+    const newEvent = button("New local event", () => editLocal(null));
+    syncLine.append(syncState, syncButton, newEvent);
 
     function draw(view: CalendarView): void {
       shown = view;
@@ -254,20 +274,27 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
       syncState.textContent = view.synced_at === null ? "" : view.sync_failed
         ? `Last synced ${syncedWords(view.synced_at, time)}, the latest sync failed`
         : `Last synced ${syncedWords(view.synced_at, time)}`;
-      if (view.synced_at === null) {
+      newEvent.hidden = view.sources?.local !== true;
+      syncButton.hidden = view.sources?.external === false;
+      if (view.synced_at === null && view.sources?.local !== true) {
         const content = element("div", "", "card-content");
         content.append(element("p", view.sync_failed
           ? "The latest sync failed before any meetings were read. Check the calendar connection, then sync again."
           : "Add your Outlook or ICS calendar as a connection, then sync. Office reads it every 15 minutes and never writes back."));
-        const link = element("a", "Open Settings › Connections");
+        const useLocal = button("Use a local calendar", () => {
+          useLocal.disabled = true;
+          void changeLocalCalendar({action:"sources",local:true,external:false}).then(refresh)
+            .catch(() => { syncState.textContent = "The local calendar could not be enabled. Try again."; })
+            .finally(() => { useLocal.disabled = false; });
+        });
+        const link = element("a", "Connect a calendar");
         link.href = "#settings";
-        content.append(link);
+        content.append(useLocal, document.createTextNode(" · "), link);
         const connect = card("Connect your calendar", content, undefined, { label: "Not connected yet", tone: "attention" });
         connect.classList.add("calendar-connect");
-        body.replaceChildren(connect);
-        return;
+        parts.push(connect);
       }
-      if (view.sync_failed) {
+      if (view.sync_failed && view.synced_at !== null) {
         const notice = element("p", `Last synced ${syncedWords(view.synced_at, time)}, the latest sync failed. These are the meetings from the last good sync.`, "calendar-notice");
         notice.dataset.tone = "attention";
         notice.setAttribute("role", "alert");

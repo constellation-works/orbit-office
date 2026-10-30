@@ -1,6 +1,6 @@
 /** Typed access to the app server, with one error path. */
 import type {
-  AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
+  CalendarSources, LocalCalendarChange, AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
   SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoScheduled,
   ConflictChoice, ShareDocument, SharedLastSync, SharedLibraryBlock, SharedLibrarySaved, SharedLibraryStatus, SharedSync, ShareRequest, ShareResult,
@@ -226,4 +226,12 @@ export function captureMeetingFile(eventKey: string, file: File): Promise<Captur
 }
 export function getMeetingOutcome(source: string): Promise<MeetingOutcome> {
   return getJson<MeetingOutcome>(`/api/calendar/meeting?${new URLSearchParams({ source })}`);
+}
+
+/** Local event writes and source selection never call a gateway. */
+export function changeLocalCalendar(local: LocalCalendarChange): Promise<{ key: string | null; sources: CalendarSources }> {
+  return postJson("/api/calendar/local", local);
+}
+export function getCalendarSources(): Promise<CalendarSources> {
+  return getJson("/api/calendar/sources");
 }

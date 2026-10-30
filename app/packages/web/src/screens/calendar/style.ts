@@ -82,6 +82,8 @@ a.calendar-cite { color:var(--accent); }
 .calendar-summary-text { white-space:pre-wrap; }
 .calendar-capture { display:flex; flex-direction:column; gap:8px; }
 .calendar-field { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--fg-mute); }
+.calendar-field input:not([type="checkbox"]), .calendar-field textarea { min-width:0; max-width:100%; }
+.calendar-field input[type="checkbox"] { align-self:flex-start; }
 .calendar-field textarea { width:100%; resize:vertical; }
 .calendar-capture .primary-action { align-self:flex-start; }
 .calendar-drop { display:block; padding:14px; border:1px dashed var(--border-strong); border-radius:var(--radius); font-size:13px; color:var(--fg-dim); cursor:pointer; }

@@ -1762,3 +1762,49 @@ minimum host/toolchain pin moves to 0.39.0. This follows STD-05@1 §R3 and §R21
 The real public fixture must prove authorization and persistence; installer stubs
 prove only installer behavior. A host callback filesystem denial cannot count as
 successful proposal verification or be repaired by broadening authority.
+
+## Local calendar events are workspace writes
+
+**Recorded:** 2026-10-30 · [ORB-20246]
+**Code anchors:** `office-core/domain/calendar/local.rs`; `office-store/src/calendar.rs`;
+`office-tools/src/tools/calendar/{sync,list}.rs`; `screens/calendar/editor.ts`;
+`specs/calendar.md`.
+
+### Context
+
+Requiring an Outlook or ICS connection hid routines and scheduled to-dos behind
+setup, and prevented using the meeting workflow without an external calendar.
+The existing calendar port already gives list, prep and capture one event model.
+The prohibition on outward-facing actions protects external systems, rather than
+preventing the user from editing their own workspace data.
+
+### Decision
+
+Keep a versioned local event store and independent source choices at
+`<workspace>/.office/calendar/local.json`. This workspace-owned data is separate
+from the imported plugin-state snapshot: a sync never overwrites authored events.
+Local writes are in the same local Library action class as notes and briefs;
+they send no invitations, modify no remote calendar and require no gateway.
+They are not Markdown Library records and are not automatically Library git commits.
+Prep and summaries still use their existing model/privacy routes.
+
+Merge selected sources behind the Calendar port so all existing meeting consumers
+use the same event keys and workflow. Local updates retain keys and series; deletion
+keeps captured Library notes. List output marks origin in words in the app.
+Settings can show local, connected, both, or neither without deleting anything.
+Always render the schedule even while the calendar setup card is shown.
+
+Extend the existing mutating calendar-sync surface with a closed `local` operation
+instead of changing the shared tool registry or adding an outward action. Its
+original empty and `ics_file` inputs remain compatible; local-only empty sync is a
+no-op. Use the existing bounded writer lock and atomic file helper, with private
+permissions and fail-closed schema-version handling.
+
+### Consequences
+
+- Local creation, editing and deletion work offline and persist across app restarts.
+  External snapshots retain the read-only contract.
+- Prep, capture and summaries use the existing pipeline for both sources.
+- Cost: a separate workspace store must be backed up alongside the Library; local
+  events have no recurrence, invitations, or automatic Library git history. The
+  calendar-sync tool now carries local mutations as well as imported sync.

@@ -5,7 +5,7 @@ tests:
     tool: calendar-list
     input: {"from":"2026-10-26T00:00:00Z","until":"2026-11-02T00:00:00Z"}
     expect:
-      output: {"events":[],"synced_at":null,"last_error":null}
+      output: {"events":[],"synced_at":null,"last_error":null,"sources":{"local":false,"external":true}}
   - name: refuses_long_range
     tool: calendar-list
     input: {"from":"2026-10-01T00:00:00Z","until":"2026-11-13T00:00:00Z"}
