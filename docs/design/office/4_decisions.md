@@ -1808,3 +1808,42 @@ permissions and fail-closed schema-version handling.
 - Cost: a separate workspace store must be backed up alongside the Library; local
   events have no recurrence, invitations, or automatic Library git history. The
   calendar-sync tool now carries local mutations as well as imported sync.
+
+## Library sources are partitioned by kind
+
+**Recorded:** 2026-10-30 · [ORB-20243]
+**Code anchors:** `crates/office-store/src/repository/library.rs` (`capture_source`, `migrate_source_layout`, `initialize_at`); `crates/office-store/src/driver/file/library.rs::migrate_legacy_sources`; `crates/office-core/src/domain/sharing/sync.rs::classify`; `crates/office-core/src/domain/sharing/mod.rs::shared_document`; [specs/library.md](./specs/library.md#sources), [specs/shared-library.md](./specs/shared-library.md#the-shared-repository)
+
+### Context
+
+Every source sat in one date tree (`library/sources/YYYY/MM/<id>/`), so
+conversation sources — soon one per orchestrator session — mixed with
+documents and every other kind. A source's `kind` is set at capture and
+never changes, so it can partition the tree without paths ever moving
+again. Citations already address a source by id (`src-…#Ln`), not by
+path.
+
+### Decision
+
+New sources are written under `sources/<kind>/YYYY/MM/<source-id>/`,
+and shared member sources under
+`members/<member>/sources/<kind>/YYYY/MM/<source-id>/`. Enumeration,
+listing, search, citation resolution and shared-layer validation resolve
+by id and accept both the new layout and the legacy
+`sources/YYYY/MM/<source-id>/` layout (locally and under
+`members/<member>/`). `office.init` migrates a Library in place: each
+legacy source directory moves whole — `source.md`, originals and
+sidecars — into the directory for the kind in its frontmatter, then the
+Library is reindexed and the move committed. The migration is
+idempotent (a re-run moves nothing and commits nothing), and a source
+whose kind directory already holds a different directory for its id is
+left in place rather than overwritten. `LibraryStore::migrate_source_layout`
+is the same move as a standalone step.
+
+### Consequences
+
+- Kinds are distinguishable in the tree and in the shared library, and
+  paths stay stable because kind is immutable.
+- Cost: two layouts are readable until every Library has run `office.init`
+  (or the standalone migration) once, and a destination collision keeps
+  its legacy copy until a person resolves it.

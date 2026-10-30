@@ -151,6 +151,65 @@ fn init_retry_does_not_claim_layout_created_by_the_previous_writer() {
 }
 
 #[test]
+fn init_migrates_legacy_sources_by_kind_and_a_rerun_changes_nothing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let library = workspace.join("library");
+    let state = dir.path().join("state");
+    LibraryStore::initialize_at(&library, &state, None, &workspace).expect("first init");
+    write(
+        &library,
+        "sources/2026/09/src-20260915-legacy/source.md",
+        "---\nid: src-20260915-legacy\nkind: meeting\ntitle: Legacy meeting\ncaptured_at: 2026-09-15T10:00:00+00:00\n---\nlegacytoken body\n",
+    );
+    write(
+        &library,
+        "sources/2026/09/src-20260915-legacy/summary.md",
+        "Legacy summary.\n",
+    );
+    write(
+        &library,
+        "sources/2026/10/src-20261027-chat/source.md",
+        "---\nid: src-20261027-chat\nkind: chat\ntitle: Legacy chat\ncaptured_at: 2026-10-27T10:00:00+00:00\n---\nchattoken body\n",
+    );
+    git(&library, &["add", "-A"]);
+    git(&library, &["commit", "--quiet", "-m", "legacy sources"]);
+    let migrated =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("migrate init");
+    assert!(!migrated.already_initialized);
+    assert!(!library.join("sources/2026/09/src-20260915-legacy").exists());
+    assert_eq!(
+        std::fs::read_to_string(
+            library.join("sources/meeting/2026/09/src-20260915-legacy/summary.md")
+        )
+        .expect("sidecar moved"),
+        "Legacy summary.\n"
+    );
+    assert!(
+        library
+            .join("sources/chat/2026/10/src-20261027-chat/source.md")
+            .is_file()
+    );
+    let store = LibraryStore::open(&library, &state).expect("open");
+    for (id, token) in [
+        ("src-20260915-legacy", "legacytoken"),
+        ("src-20261027-chat", "chattoken"),
+    ] {
+        let read = store.read_source(id).expect("read by id");
+        assert!(read.body.contains(token), "{}: {}", id, read.body);
+        assert_eq!(search_sorted(&store, token).len(), 1, "{id}");
+    }
+    let commits = git(&library, &["rev-list", "--count", "HEAD"]);
+    let rerun =
+        LibraryStore::initialize_at(&library, &state, None, &workspace).expect("rerun init");
+    assert!(rerun.already_initialized);
+    assert!(rerun.created.is_empty());
+    assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]), commits);
+    assert_eq!(git(&library, &["status", "--porcelain"]), "");
+}
+
+#[test]
 fn init_reports_office_created_by_internal_state_bootstrap_only_once() {
     let dir = tempfile::tempdir().expect("tempdir");
     let workspace = dir.path().join("workspace");

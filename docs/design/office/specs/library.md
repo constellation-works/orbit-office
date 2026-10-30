@@ -16,7 +16,7 @@ Source: spec §6.1–§6.5.
 
 ```
 library/
-  sources/YYYY/MM/<source-id>/
+  sources/<kind>/YYYY/MM/<source-id>/
     source.md            # frontmatter + normalized, anchorable text
     original.<ext>       # raw upload: m4a, wav, png, jpg, pdf, txt
     v2.md …              # corrections, as new versions (never overwrite)
@@ -89,7 +89,13 @@ a second workspace or a repair. Fresh workspaces use the office preset to suppre
    `.office/templates/` ([knowledge-templates.md](./knowledge-templates.md#templates)).
    It writes no pages: About pages come from the onboarding interview and
    later sources, each citing its evidence.
-6. Creates or migrates `plugin_state/index.sqlite`, then reindexes.
+6. Creates or migrates `plugin_state/index.sqlite`, moves any legacy
+   `sources/YYYY/MM/<source-id>/` directories into
+   `sources/<kind>/YYYY/MM/<source-id>/` (the kind from each source's
+   frontmatter; the whole directory, with its originals and sidecars),
+   then reindexes. The move is idempotent: a re-run moves nothing and
+   makes no commit, and a source whose destination already exists is
+   left in place. Reads accept the legacy layout until the move runs.
 7. Commits whatever it created ("Initialize the Library"). When
    `.office/state` is tracked, it removes that path from the index with
    `git rm -r --cached` and commits the removal together with the
@@ -142,6 +148,15 @@ real commits, a real index and real provenance.
 ## Sources
 
 **Id:** `src-YYYYMMDD-<slug>`, made unique with a numeric suffix.
+
+Sources live under `sources/<kind>/YYYY/MM/<source-id>/`, partitioned by
+their immutable `kind` so different kinds are easy to distinguish and a
+path stays stable. Citations and every lookup use the source id
+(`src-…#Ln`), never the path: enumeration, listing, search and citation
+resolution scan both this layout and the legacy
+`sources/YYYY/MM/<source-id>/` layout by id, until `office.init`'s
+migration (step 6 above) has moved a legacy source into its kind
+directory.
 
 **`source.md` frontmatter:**
 

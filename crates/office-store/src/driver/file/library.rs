@@ -365,6 +365,120 @@ impl LibraryFs {
         Ok(())
     }
 
+    /// Move every legacy `sources/YYYY/MM/<id>/` directory into the
+    /// kind-partitioned `sources/<kind>/YYYY/MM/<id>/` layout, using the
+    /// `kind` in its `source.md` frontmatter. The whole directory moves, so
+    /// originals and sidecars travel with it. A source whose kind is not a
+    /// known source kind, or whose destination already exists, is left in
+    /// place and stays readable. Returns `(old, new)` Library-relative
+    /// directories in path order; a re-run on a migrated Library is empty.
+    pub(crate) fn migrate_legacy_sources(&self) -> Result<Vec<(String, String)>> {
+        let sources = self.root.join("sources");
+        match std::fs::symlink_metadata(&sources) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                return Ok(Vec::new());
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(Error::io("inspect sources", &sources, error)),
+        }
+        let mut years = Vec::new();
+        for entry in std::fs::read_dir(&sources)
+            .map_err(|error| Error::io("list sources", &sources, error))?
+        {
+            let entry = entry.map_err(|error| Error::io("list sources", &sources, error))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|error| Error::io("inspect source entry", entry.path(), error))?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if file_type.is_dir()
+                && name.len() == 4
+                && name.bytes().all(|byte| byte.is_ascii_digit())
+            {
+                years.push((name.to_string(), entry.path()));
+            }
+        }
+        years.sort();
+        let mut moved = Vec::new();
+        for (yyyy, year_dir) in years {
+            let mut months = Vec::new();
+            for entry in std::fs::read_dir(&year_dir)
+                .map_err(|error| Error::io("list source year", &year_dir, error))?
+            {
+                let entry =
+                    entry.map_err(|error| Error::io("list source year", &year_dir, error))?;
+                let file_type = entry
+                    .file_type()
+                    .map_err(|error| Error::io("inspect source entry", entry.path(), error))?;
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else { continue };
+                if file_type.is_dir()
+                    && name.len() == 2
+                    && name.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    months.push((name.to_string(), entry.path()));
+                }
+            }
+            months.sort();
+            for (mm, month_dir) in months {
+                let mut ids = Vec::new();
+                for entry in std::fs::read_dir(&month_dir)
+                    .map_err(|error| Error::io("list source month", &month_dir, error))?
+                {
+                    let entry =
+                        entry.map_err(|error| Error::io("list source month", &month_dir, error))?;
+                    let file_type = entry
+                        .file_type()
+                        .map_err(|error| Error::io("inspect source entry", entry.path(), error))?;
+                    let name = entry.file_name();
+                    let Some(name) = name.to_str() else { continue };
+                    if file_type.is_dir() {
+                        ids.push((name.to_string(), entry.path()));
+                    }
+                }
+                ids.sort();
+                for (id, id_dir) in ids {
+                    let source_file = id_dir.join("source.md");
+                    match std::fs::symlink_metadata(&source_file) {
+                        Ok(metadata) if metadata.is_file() => {}
+                        Ok(_) => continue,
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                        Err(error) => {
+                            return Err(Error::io("inspect source", &source_file, error));
+                        }
+                    }
+                    let text = std::fs::read_to_string(&source_file)
+                        .map_err(|error| Error::io("read source", &source_file, error))?;
+                    let meta = office_core::domain::source::parse_source_meta(&text);
+                    let Some(kind) = office_core::domain::source::SourceKind::parse(&meta.kind)
+                    else {
+                        continue;
+                    };
+                    let old = format!("sources/{yyyy}/{mm}/{id}");
+                    let new = format!("sources/{}/{yyyy}/{mm}/{id}", kind.as_str());
+                    let destination = self.root.join(&new);
+                    match std::fs::symlink_metadata(&destination) {
+                        Ok(_) => continue,
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => {
+                            return Err(Error::io("inspect source", &destination, error));
+                        }
+                    }
+                    if let Some(parent) = destination.parent() {
+                        Self::create_private_dirs(parent)?;
+                    }
+                    std::fs::rename(&id_dir, &destination)
+                        .map_err(|error| Error::io("move legacy source", &destination, error))?;
+                    moved.push((old, new));
+                }
+                let _ = std::fs::remove_dir(&month_dir);
+            }
+            let _ = std::fs::remove_dir(&year_dir);
+        }
+        Ok(moved)
+    }
+
     /// Names already occupying a capture month, including empty directories,
     /// regular files and dangling symlinks. Inspection failures are not vacancy.
     pub(crate) fn entry_names(&self, relative: &Path) -> Result<Vec<String>> {

@@ -53,7 +53,9 @@ pub enum SharedPath {
         /// The page id.
         id: String,
     },
-    /// `members/<member>/{sources,artifacts}/YYYY/MM/<id>/{source,artifact}.md`.
+    /// `members/<member>/sources/<kind>/YYYY/MM/<id>/source.md` (or the
+    /// legacy `members/<member>/sources/YYYY/MM/<id>/source.md`), or
+    /// `members/<member>/artifacts/YYYY/MM/<id>/artifact.md`.
     Document {
         /// The sharing member.
         member: String,
@@ -118,21 +120,34 @@ pub fn classify(path: &str) -> SharedPath {
         return SharedPath::Page { id: id.into() };
     }
     let parts: Vec<_> = path.split('/').collect();
-    let [
-        "members",
-        member,
-        area @ ("sources" | "artifacts"),
-        year,
-        month,
-        id,
-        name,
-    ] = parts.as_slice()
-    else {
-        return SharedPath::Outside;
+    // New source layout carries the kind; the legacy source layout and
+    // artifacts do not. Both source shapes are accepted on read.
+    let (member, area, kind, year, month, id, name, dir_len) = match parts.as_slice() {
+        ["members", member, "sources", kind, year, month, id, name] => (
+            *member,
+            "sources",
+            Some(*kind),
+            *year,
+            *month,
+            *id,
+            *name,
+            7,
+        ),
+        [
+            "members",
+            member,
+            area @ ("sources" | "artifacts"),
+            year,
+            month,
+            id,
+            name,
+        ] => (*member, *area, None, *year, *month, *id, *name, 6),
+        _ => return SharedPath::Outside,
     };
-    let source = *area == "sources";
+    let source = area == "sources";
     let prefix = if source { "src-" } else { "art-" };
     if validate_member(member).is_err()
+        || kind.is_some_and(|kind| crate::domain::source::SourceKind::parse(kind).is_none())
         || year.len() != 4
         || month.len() != 2
         || !year
@@ -148,16 +163,16 @@ pub fn classify(path: &str) -> SharedPath {
     {
         return SharedPath::Outside;
     }
-    let dir = parts[..6].join("/");
-    let member = (*member).to_string();
+    let dir = parts[..dir_len].join("/");
+    let member = member.to_string();
     let document = if source { "source.md" } else { "artifact.md" };
-    if *name == document {
+    if name == document {
         SharedPath::Document { member, dir }
     } else if (source && source_sidecar(name)) || (!source && !name.starts_with("original.")) {
         SharedPath::Companion {
             member,
             dir,
-            name: (*name).to_string(),
+            name: name.to_string(),
             source,
         }
     } else {

@@ -121,12 +121,19 @@ shared:
   .office-shared.yaml          # format: 1
   knowledge/domain/<id>.md     # one page per subject, edited by any member
   knowledge/runbooks/<id>.md
-  members/<member>/sources/YYYY/MM/<source-id>/   # source.md, vN.md, frames.md, chapters.md, digest.json, summary.md
+  members/<member>/sources/<kind>/YYYY/MM/<source-id>/   # source.md, vN.md, frames.md, chapters.md, digest.json, summary.md
   members/<member>/artifacts/YYYY/MM/<artifact-id>/
 ```
 
 - **Pages are shared by subject.** There is one Acme client page for the
   team, and anyone may improve it.
+- Shared sources sit under their kind
+  (`members/<member>/sources/<kind>/YYYY/MM/<source-id>/`), mirroring the
+  Library layout. The legacy member layout without the kind
+  (`members/<member>/sources/YYYY/MM/<source-id>/`) is still classified,
+  validated and indexed on read, so clones synced before the partition
+  keep working; a push from a kind-partitioned own source writes the new
+  layout.
 - **Sources and artifacts belong to the member who shared them.** They are
   immutable evidence, and two members can give different sources the same
   id (both capture the same meeting on the same day), so they sit under

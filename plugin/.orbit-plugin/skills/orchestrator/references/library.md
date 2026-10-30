@@ -19,7 +19,7 @@ Layout, for orientation only:
 
 ```
 library/
-  sources/YYYY/MM/<source-id>/source.md     (+ original.*, v2.md, summary.md, frames.md, chapters.md)
+  sources/<kind>/YYYY/MM/<source-id>/source.md     (+ original.*, v2.md, summary.md, frames.md, chapters.md)
   knowledge/domain/<id>.md
   knowledge/runbooks/<id>.md
   artifacts/YYYY/MM/<artifact-id>/artifact.md  (+ its files)
