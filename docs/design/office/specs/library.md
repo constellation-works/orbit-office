@@ -166,7 +166,10 @@ kind: meeting            # video | meeting | chat | email | doc | receipt | bill
 title: Acme QBR
 occurred_at: 2026-10-28T14:00:00-04:00
 captured_at: 2026-10-28T15:02:11-04:00
-captured_by: upload      # upload | paste | routine | orchestrator
+captured_by: upload      # upload | paste | routine | orchestrator | transcript-extractor
+orchestrator: null      # conversation provider, e.g. claude; nullable on existing sources
+model: null             # exact conversation model id, separate from the extractor
+session_id: null        # provider session id; nullable on existing sources
 origin: "Zoom recording, uploaded"     # free text: "Slack #pricing, pasted"
 participants: [Jane Park (Acme), Daniel]
 event: { key: "<event-key>", series: "<series-uid>" } # event-backed meetings only
@@ -264,14 +267,14 @@ reports `unshared: true` when approval was revoked (otherwise false) ([shared-li
 - **Email, doc:** paragraphs. The anchor is `#L…`. Converted documents add `#slide=<n>` (PowerPoint) and `#page=<n>` (PDF); conversions are in [library-bootstrap.md](./library-bootstrap.md#document-capture).
 - **Digest:** any source may carry `digest.json` beside `source.md`: the per-source summary, subjects, cited claims, procedures and terms that the bootstrap's consolidation reads ([library-bootstrap.md](./library-bootstrap.md#stage-1-a-digest-per-source-cheap)).
 - **Receipt, bill:** extracted fields as a YAML block plus the raw OCR text.
-- **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), fact the user stated, action, open question, resolution or handoff, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The agent CLI's own transcript belongs to that CLI, so the skill has the agent write this log itself ([sessions.md](./sessions.md#decision-log)).
+- **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), fact the user stated, action, open question, resolution or handoff, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The session-end cheap crew extracts transcript evidence; the orchestrator writes rolling handoffs and explicit resolutions ([sessions.md](./sessions.md#transcript-extraction)).
 
 **Rules:**
 
 - **Immutable versions.** Model transcription publishes `v1.md`, then corrections or additional completed chunks publish `v2.md`, `v3.md`, and so on, with `supersedes` set. Existing version files are never replaced. `source.md` is the materialized current view for display and indexing; its update and the new snapshot share one writer-locked journal decision. Citations name a version when it matters, otherwise the latest.
 - **Dedupe.** If the `sha256` of the original, or of the normalized pasted text, matches an existing source, capture returns that source instead of creating a new one.
 - **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. Short directives typed by the user are not captured separately: they go in the `conversation` source.
-- **Conversation sources.** The skill has the agent open one `conversation` source per session and append to it whenever the user makes a decision or gives a standing direction, and for each action it takes. Instead of an end-of-session summary, the agent keeps a rolling `handoff` entry current, and the next session starts from `office.session-brief`, which leads with that handoff ([sessions.md](./sessions.md)). The user's directions are decisions, and the review needs them.
+- **Conversation sources.** The session-end extractor opens or updates one `conversation` source per transcript session, with nullable `orchestrator`, `model` and `session_id` provenance validated by the plugin. Directions and facts copy user evidence verbatim except credential scrubbing; ambiguous decisions remain open. Repeated session/hash inputs make no commit; changed transcripts bump `version`/`supersedes` and snapshot the previous source. Instead of an end-of-session summary, the agent keeps a rolling `handoff` entry current, and the next session starts from `office.session-brief`, which leads with that handoff ([sessions.md](./sessions.md)). The extractor's identity is `captured_by: transcript-extractor`, separate from the session provider/model. Definition registration and the constellation SessionEnd hook are deployment prerequisites; see the session spec.
 - **Retention** is per kind and shown on the Routines screen: for example, keep meeting transcripts forever and drop the audio after 90 days. Expiry deletes only the `original.*` file and records that in the frontmatter.
 
 ## Knowledge pages

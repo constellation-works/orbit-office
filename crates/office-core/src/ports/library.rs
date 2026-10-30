@@ -264,6 +264,22 @@ pub trait Library {
     fn capture_source(&self, _request: &CaptureSourceRequest) -> Result<SourceOutcome> {
         Err(Error::LibraryUnavailable)
     }
+    /// Read and scrub a contained session transcript, without writing it.
+    fn session_transcript(
+        &self,
+        _path: &str,
+        _session_id: &str,
+    ) -> Result<crate::domain::source::conversation::Session> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Re-read a transcript and atomically create or version its conversation.
+    fn capture_session(
+        &self,
+        _request: &crate::domain::source::conversation::Request,
+        _captured_at: &str,
+    ) -> Result<SourceOutcome> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Read one source by id for display at an optional anchor.
     fn read_source(&self, _id: &str) -> Result<SourceView> {
         Err(Error::LibraryUnavailable)

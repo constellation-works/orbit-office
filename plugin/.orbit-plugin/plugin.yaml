@@ -104,7 +104,9 @@ spec:
     - name: capture
       description: >-
         Create a source from an upload path or pasted text; convert documents
-        to anchorable text, store tags and dedupe; return the id.
+        to anchorable text, store tags and dedupe; return the id. A staged session
+        transcript plus session_id previews scrubbed evidence or updates one
+        versioned conversation source, preserving handoffs and exact user words.
       execution_kind: mutating
       agent_callable: true
       mcp_scope: workspace

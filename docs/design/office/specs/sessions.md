@@ -14,7 +14,7 @@ is the cheapest mechanism that can do its job
 
 | Piece | Written by | When | Model |
 |---|---|---|---|
-| **Decision log** | the agent, through `office.capture` | as decisions happen | none |
+| **Decision log** | transcript extractor, through `office.capture` | SessionEnd; sweep recovers misses | configured low-complexity pool |
 | **Handoff** | the agent, as `handoff` entries in that log | refreshed whenever the plan changes | none |
 | **Session brief** | `office.session-brief`, computed on demand | at session start | none |
 | **Daily digest** | `office.digest`, from the `office-daily-digest` routine | once a day | one Muse Spark call |
@@ -22,18 +22,22 @@ is the cheapest mechanism that can do its job
 The handoff is never left to the end of a session, which often ends with
 the terminal simply closing. The agent rewrites it whenever the plan
 changes, so the latest one is always current. A session that ends abruptly
-loses nothing: the log and the handoff were written as it went, and the
-brief is computed from state that already exists.
+retains its last handoff. The recovery sweep extracts its available transcript;
+until extraction finishes, the brief has the existing evidence, not a promise
+that the last session has already been processed.
 
 ## Decision log
 
 One `conversation` source per orchestrator session ([library.md](./library.md#sources)).
 
-- **Opened** by the first `office.capture` of a session with `kind: conversation`.
-  Later entries are added with `append_to: <source-id>`.
+- **Opened** by `office.capture` with `session_transcript_path` and `session_id`.
+  The session-end extractor adds evidence to that same source. The orchestrator
+  may open it earlier when writing a rolling handoff, then append handoffs with
+  `append_to: <source-id>`. Legacy manual sources still work unchanged.
 - **Append-only.** Entries are added, never edited or removed. Each append
-  is one Library commit. This is how a conversation source stays immutable
-  while it is still being written: nothing already recorded changes.
+  is one Library commit. Changed transcripts append new evidence and preserve
+  prior lines and anchors; they also bump version and snapshot the previous
+  source, as described below.
 - **Entry format,** one line each, anchorable as `#L<n>`:
 
   ```
@@ -72,6 +76,151 @@ anchor and id.
   the computed state.
 - **Never the only record.** The brief does not depend on it: with no
   handoff, it still returns the computed sections.
+
+## Transcript extraction
+
+The built `office.capture` tool has a session mode separate from uploads and
+WebVTT's `transcript_path`. No new Orbit-core service is needed. Its inputs
+cannot be mixed with other capture fields:
+
+```json
+{"session_transcript_path":".orbit/tmp/session-transcripts/session.jsonl","session_id":"<session-id>","transcript_preview":true}
+```
+
+Use an absolute staged path in actual calls. Preview returns `session_id`,
+`orchestrator`, `model`, `transcript_sha256`, `sensitivity`, `content_withheld`
+and numbered `lines` (`line`, `role`, `timestamp`, `text`). It creates no source
+and takes only a shared read lock. A cheap crew selects relevant evidence:
+
+```json
+{"session_transcript_path":".orbit/tmp/session-transcripts/session.jsonl","session_id":"<session-id>","transcript_sha256":"<preview-sha256>","selections":[{"line":0,"kind":"direction"},{"line":2,"kind":"open"}]}
+```
+
+The adapter copies the selected text, never model-authored replacement words.
+A stale digest, duplicate/out-of-range line or unsupported kind refuses the
+whole write. Selection order is normalized to transcript order. Without
+`selections`, capture conservatively classifies user lines and explicit
+assistant `Action:` lines locally. This also permits private sessions to be
+captured without exposing their text to an agent crew. It does not call a
+hosted inference API. Empty selections are valid when no evidence is relevant.
+
+### Adapter and provenance
+
+The first adapter accepts complete UTF-8 Claude Code JSONL up to 8 MiB.
+`type: user/assistant`, matching `message.role`, `sessionId` and RFC 3339
+`timestamp` are required for conversational records. Text strings and text
+content blocks are read; tool input/results, thinking, sidechains, metadata,
+compaction summaries, fenced code and blockquotes are excluded. Other record
+types are ignored. Mixed-session files, unsupported provider formats, truncated
+records and missing timestamps refuse without writing. Stage the final file
+atomically after the provider closes it; a growing file may require a retry.
+
+The adapter records `orchestrator: claude`, the last non-synthetic assistant
+`message.model` (exact spelling, null if absent), and `session_id` in source
+frontmatter. The provider comes from the validated record format; these fields
+are transcript claims, not authentication. `captured_by: transcript-extractor`
+identifies the writer and is separate from who held the conversation.
+Legacy sources may omit these three fields or use null; the plugin validates
+nonnull values as nonempty single-line strings, bounded to 256 bytes.
+
+Codex rollout JSONL and other providers need their own adapter mapping their
+session metadata, model context and message records to the same numbered text
+line representation. They are refused today, rather than guessed as Claude.
+Adding an adapter must keep tool blocks, synthetic context and provider
+instructions out of user evidence. Sessions that change model record the last
+reported conversational model; the transcript digest identifies the input.
+
+### Decision guard and split of work
+
+The cheap crew chooses `direction`, `decision`, `fact`, `action` and `open`.
+Only user lines can be directions/decisions. The deterministic guard also
+requires an explicit cue: `Decision:`, `I decided`, `We decided`, `I choose`
+for decisions; `Direction:`, `Always`, `Never`, `Please`, `We need to`,
+`I want you to` for directions (case insensitive). Questions and uncertainty
+such as maybe, perhaps, thinking, might, could, consider or conditional `if`
+become `open` even if the model calls them decisions. Other formulations stay
+open until the user clarifies; this intentionally favors false negatives over
+invented consent. Facts must be unambiguous user statements. Assistant action
+lines are reported actions, not independent verification of their outcomes.
+Quoted external material is not a user's decision; the crew must exclude
+pasted documents too, including unmarked pastes that an adapter cannot detect.
+
+Directions and facts retain the exact selected line, apart from credential
+redaction and outer whitespace. Multiline text contributes separate lines.
+The extractor cannot write `handoff` or `resolved`. The orchestrator still
+writes the rolling handoff and explicit resolutions via ordinary `append_to`.
+When the first handoff is needed before extraction, call session capture once,
+keep its returned source id, then append the handoff. An existing manual log
+without session provenance is never silently merged into an extracted source;
+continue using it until the host hook is installed, or reconcile it explicitly.
+
+### Host, trigger and cheap crew
+
+**Run on the transcript-owning host.** Constellation needs a `SessionEnd` hook
+beside `operations/scripts/session-brief.py` (the SessionStart hook), e.g.
+`operations/scripts/session-extract.py`, with provider hook registration.
+It stages the completed `~/.claude/projects/**/<session>.jsonl` under the
+workspace's `.orbit/tmp/session-transcripts/`, together with its session id,
+using owner-only directories/files and atomic publication. Each completed input
+has a sibling JSON descriptor `{session_id, transcript_path, transcript_sha256,
+completed_at}`; paths are absolute and the descriptor is published last. The
+host sweep and extraction task enumerate these descriptors, not growing files.
+The path passed to
+office must physically resolve inside the granted workspace or Library;
+symlink escapes and special files are refused. The plugin does not widen its
+grants to read the user's provider home or transfer raw transcripts to the
+owner. Local staging is an operator-authorized hook, outside this repository.
+
+The hook queues one extraction task/job for that session on that host, using
+the instruction in `definitions/auto_tasks/office-conversation-extract.yaml`
+and the path/session id as task context. Set task complexity `low`, omit `crew`
+and let the host's configured low-complexity pool choose the cheap crew; do not
+pin a provider or model. The hook must not wait for inference. Queue dedupe uses
+session id plus raw transcript SHA-256. If a newer session starts before the
+job finishes, its brief may lag; show the pending extraction rather than claim
+it has completed. A hard crash that misses SessionEnd is covered by a host
+sweep: the hook's staging companion enumerates completed, unstaged sessions,
+and the shipped half-hour auto-task processes staged sessions idempotently.
+The sweep is recovery, not the primary trigger. Retain staged files until
+capture succeeds; host retention owns their later removal.
+
+The auto-task is shipped **disabled** with `dedupe: skip_if_open` and
+`complexity: low`. Registration under `spec.definitions.auto_tasks` in
+`plugin.yaml` is a separate integrator task under ARCHITECTURE.md. This feature
+ships the definition but does not register or enable it. The constellation
+hook and host sweep are also deployment prerequisites, not changes made here.
+
+### Secrets, privacy and retries
+
+Before preview and persistence, the pure scrubber masks high-confidence
+provider credentials, bearer values, secret assignments, URL passwords and
+PEM blocks. It excludes tool blocks entirely. Copied handoffs and previous-version snapshots pass through the same scrubber
+before a new extraction write. No raw transcript copy, tool result or thinking
+is stored in the Library. Only the raw SHA-256 is retained
+as `transcript_sha256`. The scrubber is a defense against known credential
+shapes, not a claim to recognize arbitrary secrets embedded in prose; staging
+remains private and operators should use the private conversation default
+for sensitive sessions. Credential detection anywhere in the raw input makes
+the result private. The strictest of this, the Library's conversation default
+and the source's existing privacy wins. Private previews return no lines, and
+the sweep uses local conservative classification for them. Normal previews
+can be processed by the configured cheap crew. New transcript evidence revokes
+sharing approval; extraction never marks a source shareable.
+
+The writer lock serializes session lookup and publication. Session id selects
+one conversation across both source layouts. Its stable new path is
+`sources/conversation/YYYY/MM/src-<date>-session-<session-id-digest>/source.md`;
+the date comes from the first text turn. Same id plus same raw digest returns
+the existing source and makes no commit, regardless of a second model's
+choices. A changed digest increments `version`, sets `supersedes: vN.md`, and
+journals the previous complete source as immutable `vN.md` with the new current
+view and index update in one Library commit. Existing entries/handoffs stay
+anchorable; changed or deleted transcript text does not retract old evidence.
+Multiple sources claiming a session id refuse for explicit reconciliation.
+The model selection digest prevents classifying different bytes from those
+previewed. A retry after a committed write is a no-op; journal recovery covers
+interrupted publication. Historical snapshots remain subject to the source's
+privacy; a source changed to private stays private on later extraction.
 
 ## Session brief
 

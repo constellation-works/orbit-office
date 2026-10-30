@@ -2,6 +2,8 @@
 
 /// Source display metadata, bounded media and monotonic privacy updates.
 pub mod access;
+/// Transcript conversation extraction and provenance.
+pub mod conversation;
 /// KT video planning and processing state.
 pub mod video;
 
@@ -666,6 +668,12 @@ pub struct SourceEvent {
 /// Parsed source frontmatter fields the index record does not carry.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SourceMeta {
+    /// Conversation provider; absent/null on legacy sources.
+    pub orchestrator: Option<String>,
+    /// Exact session model, separate from the extractor identity.
+    pub model: Option<String>,
+    /// Provider session identity, absent/null on legacy sources.
+    pub session_id: Option<String>,
     /// Documented item: id.
     pub id: String,
     /// Documented item: kind.
@@ -789,6 +797,9 @@ pub fn parse_source_meta(text: &str) -> SourceMeta {
             out
         };
         match key.trim() {
+            "orchestrator" if value != "null" => meta.orchestrator = Some(unq(value)),
+            "model" if value != "null" => meta.model = Some(unq(value)),
+            "session_id" if value != "null" => meta.session_id = Some(unq(value)),
             "id" => meta.id = unq(value),
             "kind" => meta.kind = unq(value),
             "title" => meta.title = unq(value),
@@ -1036,6 +1047,9 @@ pub fn render_source(input: &RenderSource<'_>) -> String {
     }
     if let Some(how) = input.derived_transcription {
         out.push_str(&format!("derived_by: {{ transcription: {how} }}\n"));
+    }
+    if input.kind == SourceKind::Conversation {
+        out.push_str("orchestrator: null\nmodel: null\nsession_id: null\n");
     }
     out.push_str("version: 1\nsupersedes: null\n");
     match input.retention_days {

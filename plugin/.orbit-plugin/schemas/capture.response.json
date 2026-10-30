@@ -1,20 +1,130 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.capture response",
-  "type": "object",
-  "properties": {
-    "id": { "type": "string" },
-    "kind": { "type": "string" },
-    "title": { "type": "string" },
-    "path": { "type": "string" },
-    "sha256": { "type": ["string", "null"] },
-    "bytes": { "type": ["integer", "null"] },
-    "media_type": { "type": ["string", "null"] },
-    "sensitivity": { "type": "string" },
-    "deduplicated": { "type": "boolean" },
-    "appended": { "type": "integer" },
-    "version": { "type": "integer" }
-  },
-  "required": ["id", "kind", "title", "path", "sha256", "bytes", "media_type", "sensitivity", "deduplicated", "appended", "version"],
-  "additionalProperties": false
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bytes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "media_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sensitivity": {
+          "type": "string"
+        },
+        "deduplicated": {
+          "type": "boolean"
+        },
+        "appended": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "path",
+        "sha256",
+        "bytes",
+        "media_type",
+        "sensitivity",
+        "deduplicated",
+        "appended",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "orchestrator": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transcript_sha256": {
+          "type": "string"
+        },
+        "sensitivity": {
+          "type": "string"
+        },
+        "content_withheld": {
+          "type": "boolean"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "line",
+              "role",
+              "timestamp",
+              "text"
+            ],
+            "properties": {
+              "line": {
+                "type": "integer"
+              },
+              "role": {
+                "type": "string"
+              },
+              "timestamp": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "session_id",
+        "orchestrator",
+        "model",
+        "transcript_sha256",
+        "sensitivity",
+        "content_withheld",
+        "lines"
+      ],
+      "additionalProperties": false
+    }
+  ]
 }
