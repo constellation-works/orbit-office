@@ -65,9 +65,7 @@ step_orbit() {
         _raw=$(orbit --version 2>/dev/null || printf '')
         _version=$(extract_version "$_raw")
         if [ -z "$_version" ]; then
-            warn "could not read the Orbit version from '$_raw'; continuing without changing it"
-            say "orbit: already installed (version unreadable, left unchanged)"
-            return 0
+            die "could not verify Orbit >=$TESTED_ORBIT_VERSION from '$_raw'; upgrade with npm install -g $ORBIT_NPM_PACKAGE, then re-run"
         fi
         _cmp=$(version_cmp "$_version" "$TESTED_ORBIT_VERSION")
         if [ "$_cmp" -lt 0 ]; then
@@ -169,7 +167,7 @@ Options:
   --yes       Enable plugins without the consent question (default: ask on a TTY)
   -h, --help  Show this help
 
-Non-interactive stdin prints the grants and proceeds without reading input.
+Non-interactive stdin requires --yes when grants or enablement need consent.
 Existing non-empty folders are refused unless owned by office setup.
 Exit codes: 0 success, 1 setup/tool failure, 2 usage error.
 
@@ -528,6 +526,9 @@ function openMain() {
   say("app: " + svc.url);
 }
 function main() {
+  const versionText = run("orbit", ["--version"], process.env.HOME).stdout.trim();
+  const version = /^orbit (\d+)\.(\d+)\.(\d+)(?:\s|$)/.exec(versionText);
+  if (!version || Number(version[1]) !== 0 || Number(version[2]) < 39) fail("Orbit >=0.39.0 <1.0.0 is required for scoped agent consent; upgrade with npm install -g @orbit-tools/cli@0.39.0, then re-run");
   const requested = path.resolve(target || process.env.ORBIT_OFFICE_HOME || path.join(process.env.HOME, "orbit"));
   const entry = exists(requested);
   if (entry && (entry.isSymbolicLink() || !entry.isDirectory())) fail("workspace path " + requested + " exists and is not a folder or is a symlink");
@@ -610,16 +611,30 @@ function main() {
   say("==> 5 workspace plugins");
   const rows = json("orbit", ["plugin", "list", "--json", "--workspace", workspace], workspace);
   const grants = {
-    office: ["fs={{workspace}},{{plugin_state}}", "network", "orbit_tools"],
+    office: ["fs={{workspace}},{{plugin_state}}", "network", "orbit_tools", "agent_tools"],
     gateway: ["fs={{workspace}}/.orbit-gateway,{{plugin_state}}", "network", "orbit_tools"],
     cloudcli: ["fs={{plugin_state}}", "network"],
   };
+  const officeRow = rows.find((plugin) => plugin.name === "office");
+  const agentVerbs = ["attach", "capture", "proposal-create", "selection-get"];
+  const agentRequest = officeRow?.permissions?.find((permission) => permission.grant === "agent_tools")?.requested;
+  if (agentRequest !== agentVerbs.join(",")) fail("installed office agent verbs differ from this installer; review and upgrade the office plugin export before re-running init");
+  // A repair must not widen a previously scoped filesystem grant. Orbit
+  // replaces the complete grant set, so carry the other required grants too.
+  for (const name of plugins) {
+    const roots = rows.find((plugin) => plugin.name === name)?.permissions?.find((permission) => permission.grant === "fs")?.granted_roots;
+    if (Array.isArray(roots)) {
+      if (!roots.length || roots.some((root) => typeof root !== "string" || !root || root.includes(","))) fail("cannot safely preserve " + name + " filesystem scope; review grants with orbit plugin show");
+      grants[name][0] = "fs=" + roots.join(",");
+    }
+  }
   const needsHost = (row, name) => row.host_enabled !== true || grants[name].some((grant) => !row.permissions?.some((permission) => permission.grant === grant.split("=")[0] && permission.granted === true));
   if (plugins.some((name) => { const row = rows.find((plugin) => plugin.name === name); return !row || needsHost(row, name) || row.workspace_toggle !== true; })) {
     say("The plugins " + plugins.join(" ") + " request these grants:");
-    say("  office: fs {{workspace}}, {{plugin_state}}; network unscoped; orbit_tools task, friction, search and auto-task");
-    say("  gateway: fs {{workspace}}/.orbit-gateway, {{plugin_state}}; network unscoped; orbit_tools task add/artifact/show/update");
-    if (plugins.includes("cloudcli")) say("  cloudcli: fs {{plugin_state}}; network unscoped; programs python3, aws, gcloud");
+    say("  office: " + grants.office.join("; ") + "; network unscoped; orbit_tools task, friction, search and auto-task");
+    say("  office agent_tools: " + agentVerbs.map((verb) => "office." + verb).join(", ") + " (capture evidence, propose pending review, attach task context, consume selections; no approval or knowledge application)");
+    say("  gateway: " + grants.gateway.join("; ") + "; network unscoped; orbit_tools task add/artifact/show/update");
+    if (plugins.includes("cloudcli")) say("  cloudcli: " + grants.cloudcli.join("; ") + "; network unscoped; programs python3, aws, gcloud");
     if (yes) say("Consent: --yes given, enabling " + plugins.join(" ") + ".");
     else if (require("node:tty").isatty(0)) {
       process.stderr.write("Enable plugins " + plugins.join(" ") + " with these grants? [y/N] ");
@@ -627,7 +642,7 @@ function main() {
       const byte = Buffer.alloc(1);
       while (fs.readSync(0, byte, 0, 1, null) && byte[0] !== 10) answer += byte.toString();
       if (!["y", "yes"].includes(answer.trim().toLowerCase())) fail("plugin enable declined; re-run with --yes to consent");
-    } else say("Consent: non-interactive run, enabling " + plugins.join(" ") + " (pass --yes to confirm explicitly).");
+    } else fail("plugin consent required: re-run with --yes to consent explicitly to the printed grants and agent verbs");
   }
   for (const name of plugins) {
     const row = rows.find((plugin) => plugin.name === name);

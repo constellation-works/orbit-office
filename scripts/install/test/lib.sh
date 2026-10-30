@@ -66,7 +66,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
     (cd "$_run_dir" && env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
         STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
-        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.37.0}" \
+        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.39.0}" \
         STUB_UV_ARCHIVE="$FIXTURE" \
         STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
         STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" \
@@ -100,7 +100,7 @@ run_install_piped() {
         (cd "$_cwd" && cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
             STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
             STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
-            STUB_ORBIT_VERSION=0.37.0 STUB_UV_ARCHIVE="$FIXTURE" \
+            STUB_ORBIT_VERSION=0.39.0 STUB_UV_ARCHIVE="$FIXTURE" \
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
@@ -112,7 +112,7 @@ run_install_piped() {
         (cd "$_cwd" && cat "$INSTALL_SH" | env -i PATH="$BIN:$NODE_DIR:/usr/bin:/bin" HOME="$_home" \
             STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
             STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
-            STUB_ORBIT_VERSION=0.37.0 STUB_UV_ARCHIVE="$FIXTURE" \
+            STUB_ORBIT_VERSION=0.39.0 STUB_UV_ARCHIVE="$FIXTURE" \
             STUB_CURL_MODE=ok STUB_INIT_MODE=ok \
             STUB_INIT_FIXTURES="$INIT_FIXTURES" STUB_ORBIT_SRC="$BIN/orbit" \
             ORBIT_OFFICE_OS=linux ORBIT_OFFICE_UV_URL="$FIXTURE" \
@@ -151,7 +151,7 @@ run_install_standalone() { # run_install_standalone <home> <env...> -- <args...>
     env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
         STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
-        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.37.0}" \
+        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.39.0}" \
         STUB_UV_ARCHIVE="$FIXTURE" \
         STUB_CURL_MODE="${STUB_CURL_MODE:-ok}" \
         STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" \
@@ -207,6 +207,7 @@ run_office() { # run_office <home> <args...>
         STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
         STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" STUB_INIT_FIXTURES="$INIT_FIXTURES" \
+        STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.39.0}" \
         ORBIT_OFFICE_OS="${OFFICE_TEST_OS:-linux}" ORBIT_OFFICE_HOME="${OFFICE_TEST_HOME:-}" "$_office_home/.local/bin/orbit-office" "$@" < /dev/null
 }
 # check_protected_purge <label> <home> <expected line> <run_install args...>

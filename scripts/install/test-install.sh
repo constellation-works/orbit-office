@@ -24,8 +24,8 @@
 #  11. a real office.init error (exit 1, WARN then JSON on stderr)
 #      fails the step, names the office code and leaves no marker;
 #      an {ok:false} stdout envelope with exit 0 still does too
-#  12. a non-interactive run without --yes prints the grants, enables the
-#      plugin with them and does not ask
+#  12. a non-interactive run without --yes prints grants and refuses;
+#      --yes records explicit consent, including the exact agent verbs
 #  13. enable grants every permission plugin.yaml requests: the plugin is
 #      active and office.init is not refused with policy_denied
 #  14. the documented curl-to-sh form (install.sh itself on a piped stdin,
@@ -167,7 +167,7 @@ mkdir -p "$state"
 printf '%s\n' "$*" >> "$state/orbit.log"
 case "${1:-} ${2:-}" in
     "--version ")
-        printf 'orbit %s\n' "${STUB_ORBIT_VERSION:-0.37.0}" ;;
+        printf 'orbit %s\n' "${STUB_ORBIT_VERSION:-0.39.0}" ;;
     "plugin list")
         case " $* " in
             *" --json "*)
@@ -182,7 +182,10 @@ for (const name of ["office", "gateway", "cloudcli"]) {
   const host = present("plugin-active" + suffix);
   const toggle = fs.existsSync(path.join(cwd, ".orbit", "enabled-" + name));
   rows.push({name, install_path: path.dirname(process.env.STUB_MANIFEST), host_enabled: host, workspace_toggle: toggle || null,
-    permissions: ["fs", "network", ...(name === "cloudcli" ? [] : ["orbit_tools"])].map(grant => ({grant, granted: host}))});
+    permissions: ["fs", "network", ...(name === "cloudcli" ? [] : ["orbit_tools"]), ...(name === "office" ? ["agent_tools"] : [])].map(grant => ({grant,
+      requested: grant === "agent_tools" ? (process.env.STUB_AGENT_VERBS || "attach,capture,proposal-create,selection-get") : null,
+      granted_roots: grant === "fs" && present("narrow-fs") ? ["{{workspace}}/library", "{{plugin_state}}"] : null,
+      granted: host && !(grant === "agent_tools" && present("missing-agent-consent"))}))});
 }
 process.stdout.write(JSON.stringify(rows));
 JSON
@@ -257,6 +260,10 @@ JSON
         for _p in $(awk '/^  permissions:/ { p = 1; next } /^  [^ #]/ { p = 0 } p && /^    [a-z_]+:/ { sub(/:.*/, ""); sub(/^ +/, ""); print }' "$_manifest"); do
             grep -qxF "$_p" "$state/plugin-grants$_suffix" || _missing="$_missing $_p"
         done
+        if [ "$_plugin" = office ]; then
+            grep -qxF agent_tools "$state/plugin-grants$_suffix" || _missing="$_missing agent_tools"
+            if [ -z "$_missing" ]; then : > "$state/agent-consented"; fi
+        fi
         if [ -n "$_missing" ]; then
             printf "Plugin is inactive: plugin 'office' requests%s but this host has not granted it\n" "$_missing"
         else

@@ -51,28 +51,45 @@ check "already_initialized object records the scaffolded marker" \
 
 scenario_12() {
 # ---------------------------------------------------------------------------
-# 12. A non-interactive run without --yes prints the grants, enables the
-#     plugin with the same grants and does not ask
+# 12. Non-interactive setup needs new explicit consent, including agent verbs.
 # ---------------------------------------------------------------------------
-
 HOME12N="$ROOT/home12n"; mkdir -p "$HOME12N"
-rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled" "$STUB_STATE/plugin-active"
 : > "$STUB_STATE/orbit.log"
 OUT_NOYES="$ROOT/out-noyes.txt"
-(NO_YES=1 run_install "$HOME12N" -- > "$OUT_NOYES" 2>&1) \
-    || { cat "$OUT_NOYES" >&2; fail "non-interactive run without --yes exits 0"; }
-ok "non-interactive run without --yes exits 0"
-check "non-interactive run does not ask the question" \
-    sh -c '! grep -qF "[y/N]" "$1"' sh "$OUT_NOYES"
-check "non-interactive run says it proceeds" \
-    grep -qF "non-interactive run, enabling office" "$OUT_NOYES"
-check "printed network grant is unscoped" \
-    grep -qF "network unscoped" "$OUT_NOYES"
-check "printed grants include orbit_tools" \
-    grep -qF "orbit_tools" "$OUT_NOYES"
-check "plugin enabled with the fs, network and orbit_tools grants" \
-    grep -qF "plugin enable office --grant fs={{workspace}},{{plugin_state}} --grant network --grant orbit_tools" "$STUB_STATE/orbit.log"
-check "plugin enabled (stub, non-interactive)" test -f "$STUB_STATE/plugin-enabled"
+if (NO_YES=1 run_install "$HOME12N" -- > "$OUT_NOYES" 2>&1); then
+    fail "non-interactive run without --yes refuses missing consent"
+fi
+ok "non-interactive run without --yes refuses missing consent"
+check "refusal asks for explicit --yes" grep -qF "plugin consent required: re-run with --yes" "$OUT_NOYES"
+check "no enable before consent" sh -c '! grep -qF "plugin enable office" "$1"' sh "$STUB_STATE/orbit.log"
+check "printed consent names exact agent verbs" grep -qF "office.attach, office.capture, office.proposal-create, office.selection-get" "$OUT_NOYES"
+check "printed network grant is unscoped" grep -qF "network unscoped" "$OUT_NOYES"
+run_install "$HOME12N" -- > "$ROOT/out-yes.txt" 2>&1 || { cat "$ROOT/out-yes.txt" >&2; fail "explicit consent enables plugin"; }
+check "explicit consent includes complete grant set" grep -qF "plugin enable office --grant fs={{workspace}},{{plugin_state}} --grant network --grant orbit_tools --grant agent_tools" "$STUB_STATE/orbit.log"
+check "plugin enabled after consent" test -f "$STUB_STATE/plugin-active"
+
+# Simulate an existing install with all old grants but no agent consent.
+# This tests installer repair, not Orbit authorization (the real fixture does).
+: > "$STUB_STATE/missing-agent-consent"
+: > "$STUB_STATE/narrow-fs"
+printf 'custom Library setting\n' > "$HOME12N/orbit/library/custom.txt"
+cp "$HOME12N/orbit/library/custom.txt" "$ROOT/custom-before"
+: > "$STUB_STATE/orbit.log"
+if (NO_YES=1 run_install "$HOME12N" -- > "$ROOT/repair-no.txt" 2>&1); then fail "repair must ask for fresh consent"; fi
+check "repair does not enable before fresh consent" sh -c '! grep -qF "plugin enable office" "$1"' sh "$STUB_STATE/orbit.log"
+run_install "$HOME12N" -- > "$ROOT/repair-yes.txt" 2>&1 || { cat "$ROOT/repair-yes.txt" >&2; fail "repair with consent succeeds"; }
+check "repair preserves narrower fs and other grants" grep -qF "plugin enable office --grant fs={{workspace}}/library,{{plugin_state}} --grant network --grant orbit_tools --grant agent_tools" "$STUB_STATE/orbit.log"
+check "repair preserves custom Library bytes" cmp -s "$HOME12N/orbit/library/custom.txt" "$ROOT/custom-before"
+# Simulated readback now reflects the newly recorded consent.
+# Markers are specific fixture files, not host state.
+unlink "$STUB_STATE/missing-agent-consent"
+: > "$STUB_STATE/orbit.log"
+run_install "$HOME12N" -- > "$ROOT/repair-repeat.txt" 2>&1 || { cat "$ROOT/repair-repeat.txt" >&2; fail "repair rerun succeeds"; }
+check "repair rerun does not replace grants" sh -c '! grep -qF "plugin enable office" "$1"' sh "$STUB_STATE/orbit.log"
+if run_install "$HOME12N" STUB_AGENT_VERBS=attach,capture,proposal-create,selection-get,transcribe -- > "$ROOT/wider.txt" 2>&1; then fail "installer refuses unreviewed widened verbs"; fi
+check "widened verbs name review and upgrade" grep -qF "installed office agent verbs differ" "$ROOT/wider.txt"
+unlink "$STUB_STATE/narrow-fs"
+
 }
 
 scenario_13() {

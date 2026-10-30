@@ -148,23 +148,31 @@ scenario_2() {
 
 HOME2="$ROOT/home2"; mkdir -p "$HOME2"
 OUT_OLD="$ROOT/out-old.txt"
-if run_install "$HOME2" STUB_ORBIT_VERSION=0.33.0 -- > "$OUT_OLD" 2>&1; then
+if run_install "$HOME2" STUB_ORBIT_VERSION=0.38.0 -- > "$OUT_OLD" 2>&1; then
     fail "older Orbit stops the script"
 else
     ok "older Orbit stops the script"
 fi
 check "older Orbit prints the upgrade command" \
-    grep -q "npm install -g @orbit-tools/cli@0.37.0" "$OUT_OLD"
+    grep -q "npm install -g @orbit-tools/cli@0.39.0" "$OUT_OLD"
 check "older Orbit: no workspace created" test ! -e "$HOME2/orbit"
 
 HOME3="$ROOT/home3"; mkdir -p "$HOME3"
 # Reset plugin stub state so this fresh HOME installs cleanly.
 rm -f "$STUB_STATE/plugin-added" "$STUB_STATE/plugin-enabled"
 OUT_NEW="$ROOT/out-new.txt"
-run_install "$HOME3" STUB_ORBIT_VERSION=0.38.0 -- > "$OUT_NEW" 2>&1 \
+run_install "$HOME3" STUB_ORBIT_VERSION=0.40.0 -- > "$OUT_NEW" 2>&1 \
     || { cat "$OUT_NEW" >&2; fail "newer Orbit continues"; }
 ok "newer Orbit continues"
 check "newer Orbit warns" grep -qi "newer" "$OUT_NEW"
+# The installed standalone entry point must also refuse an older host before
+# creating a requested workspace (not just rely on install.sh preflight).
+if (STUB_ORBIT_VERSION=0.38.0 run_office "$HOME3" init "$ROOT/unsupported-workspace" --yes) > "$ROOT/old-init.txt" 2>&1; then fail "standalone init refuses old Orbit"; fi
+check "standalone refusal names minimum host" grep -qF "Orbit >=0.39.0 <1.0.0 is required" "$ROOT/old-init.txt"
+check "standalone refusal creates no workspace" test ! -e "$ROOT/unsupported-workspace"
+if run_install "$HOME2" STUB_ORBIT_VERSION=unreadable -- > "$ROOT/unreadable-version.txt" 2>&1; then fail "unreadable Orbit version refuses setup"; fi
+check "unreadable host asks for verified version" grep -qF "could not verify Orbit >=0.39.0" "$ROOT/unreadable-version.txt"
+
 }
 
 scenario_3() {
@@ -533,7 +541,7 @@ OUT_MISS="$ROOT/out-missing.txt"
     || { cat "$OUT_MISS" >&2; fail "missing Orbit install exits 0"; }
 ok "missing Orbit: npm installs it and the install completes"
 check "missing Orbit: npm got the tested package" \
-    grep -q "install -g @orbit-tools/cli@0.37.0" "$STUB_STATE/npm.log"
+    grep -q "install -g @orbit-tools/cli@0.39.0" "$STUB_STATE/npm.log"
 check "missing Orbit: stub orbit created by npm" test -x "$BIN2/orbit"
 check "missing Orbit: tools/bin/uv installed from the archive" \
     test -x "$HOME5/$TOOLS_REL/bin/uv"

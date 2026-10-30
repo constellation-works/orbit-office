@@ -10,7 +10,7 @@ metadata:
   homepage: https://github.com/constellation-works/orbit-office
 spec:
   requires:
-    orbit: ">=0.34.0 <1.0.0"
+    orbit: ">=0.39.0 <1.0.0"
     host_api: 1
     platforms: [linux, macos]
     programs: [git, ffmpeg, ffprobe, pdftotext, ssh]
@@ -106,6 +106,7 @@ spec:
         Create a source from an upload path or pasted text; convert documents
         to anchorable text, store tags and dedupe; return the id.
       execution_kind: mutating
+      agent_callable: true
       mcp_scope: workspace
       input_schema: { $ref: schemas/capture.request.json }
       output_schema: { $ref: schemas/capture.response.json }
@@ -292,6 +293,7 @@ spec:
         as task artifacts under context/, pages as their model views, with
         the Library commit they were read at.
       execution_kind: mutating
+      agent_callable: true
       mcp_scope: workspace
       input_schema: { $ref: schemas/attach.request.json }
       output_schema: { $ref: schemas/attach.response.json }
@@ -311,6 +313,7 @@ spec:
       description: >-
         File a proposal task, its artifact and its evidence page.
       execution_kind: mutating
+      agent_callable: true
       mcp_scope: workspace
       input_schema: { $ref: schemas/proposal-create.request.json }
       output_schema: { $ref: schemas/proposal-create.response.json }
@@ -330,6 +333,7 @@ spec:
         Return the user's fresh, unused selections from the app and mark
         them consumed.
       execution_kind: mutating
+      agent_callable: true
       mcp_scope: workspace
       input_schema: { $ref: schemas/selection-get.request.json }
       output_schema: { $ref: schemas/selection-get.response.json }

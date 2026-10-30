@@ -116,6 +116,63 @@ An absent callback context refuses with `orbit_unavailable`. The recording testk
 fake queues explicit results and exposes full calls through a shared clone; an
 unconfigured reply also refuses rather than inventing a successful write.
 
+## Agent authority inventory
+
+Orbit **>=0.39.0 <1.0.0** supplies the generic `agent_callable` declaration and
+`agent_tools` grant. MCP placement is discovery, not authority: CLI and MCP
+both use Orbit's governed dispatch. Read-only tools keep ordinary Agent access.
+Only the following four mutations declare `agent_callable: true`, all with
+`mcp_scope: workspace`. The operator consents to their exact sorted verbs at the
+installed manifest digest; `agent_tools` alone conveys no filesystem, callback,
+model, approval or operator capability. Activity allowlists still apply.
+
+| Newly callable verb | Bounded backend behavior and review |
+|---|---|
+| `capture` | `sources/capture.rs` calls the Library capture port: create/dedupe source evidence or append typed conversation entries, retain provenance, convert uploaded local documents within the existing fs grant. No model call, Orbit mutation, knowledge write, approval, dispatch or external send. Source files, Library commits and index updates are deliberate writes. |
+| `proposal-create` | `proposals/create.rs` validates/materializes a reviewed payload, checks dismissal history, creates an Orbit **proposed** task, stages `proposal.json`, attaches it and writes a Library proposal evidence page. Only `task.list`, `task.add`, `task.artifact.put` callbacks. Knowledge/sharing/automation changes remain payload data until the separate acceptance operation. No acceptance, promotion, schedule activation or model call. |
+| `attach` | `library/attach.rs` reads a named task and copies at most eight selected Library documents plus a provenance manifest into that task's artifacts. Private documents are withheld and pages use their model views. Only `task.show` and `task.artifact.put` callbacks; staging is removed. This is a durable context write, without task approval, Library knowledge application, model calls or external sends. |
+| `selection-get` | `selection/get.rs` returns fresh selections from this workspace's app tray and marks them consumed (`peek` leaves them unconsumed). Only the selection SQLite store changes; no Orbit callback, model call, approval or external send. Consent explicitly includes consuming the tray. |
+
+The remainder of the complete manifest surface retains its previous placement
+and capability floor:
+
+| Inventory | Agent decision |
+|---|---|
+| `transcribe`, `extract` (workspace MCP) | Remain Operator/Runner only. Transcription calls Muse Voice and writes source bodies; extraction makes model calls, persists derived material and can file owner-to-dos. Their cost, privacy routing and confirmation belong to operator/routine processing. |
+| `library-sync` (workspace MCP) | Remains Operator/Runner only: the backend can push shared content to an external Git remote, even though some inputs request dry-run/pull. Authority covers the whole verb. |
+| `calendar-sync`, `meeting-prep`, `video-plan`, `frames`, `source-set-sensitivity`, `share-set`, `knowledge-write`, `artifact-promote`, `init`, `reindex`, `config-set`, `private-route-check`, `proposal-accept`, `selection-put`, `digest`, `script-run`, `batch-plan`, `consolidate` (MCP none) | Remain hidden and Operator/Runner only. These cover calendar/config/secrets-adjacent setup, confirmations/cost, direct knowledge/artifact/sharing writes, approvals, scripts and standing automation. Calling through a shell does not bypass authorization. |
+| `status`, `calendar-list`, `source-show`, `knowledge-list`, `knowledge-show`, `artifact-list`, `artifact-show`, `search`, `signals-scan`, `session-brief`, `bootstrap-status`, `metrics`, `review-inputs` | Read-only, workspace MCP, unchanged Agent access. |
+
+The orchestrator skill is a read-only workflow reference: capture evidence,
+resolve selections, attach to-dos and propose for human review. These declarations
+support that bounded preparation. They do not make extraction, transcription or
+sharing into agent operations. App/operator authority is unchanged.
+
+### Public regression route
+
+Build the real backend and run the fixture against a real compatible Orbit:
+
+```sh
+cargo build --locked -p office
+python3 scripts/plugin/test-agent-permissions.py --orbit /path/to/orbit --office target/debug/office
+```
+
+The fixture uses a private temporary root under `/tmp`, outside this checkout's
+product tree, real Orbit dispatch and the built Office backend. It copies command
+and MCP evidence to `.orbit/tmp/` on success or failure and removes its live root.
+The external root avoids an ancestor product-marker read outside the callback's
+filesystem grant (see [callback troubleshooting](./install.md#updating-and-reconnecting-scoped-agent-sessions-operator-handoff)).
+Operator authority is confined to fixture setup;
+acting CLI/MCP agents never receive `--operator` or `ORBIT_OPERATOR`. It checks
+legacy denial, missing consent/inactivity, source readback, selection consumption,
+all nonselected mutations, verb widening and fresh consent, pending proposals,
+attachment readback and withholding of private sources. Unused media executables fail if invoked; no model/network call
+or converter success is simulated. Missing prerequisites and callback sandbox
+failures fail the check. Run this route on Linux and macOS with the supported
+Orbit build before release; a skipped platform is not a pass. Installer argument
+and idempotence coverage is separate (`scripts/install/test-install.sh`), and its
+stub Orbit is never evidence of plugin authorization.
+
 ## Definitions shipped
 
 Routines and auto-tasks are seeded disabled and enabled during onboarding.
@@ -161,6 +218,8 @@ outward-facing action.
   - fs read and write on `{{workspace}}/library` and `{{plugin_state}}`.
   - network `any`, the only setting that reaches remote hosts. The plugin calls only `api.meta.ai` and the one private endpoint the user configured ([models-and-privacy.md](./models-and-privacy.md#the-private-route)), and its `git` child reaches only the shared library's configured remote ([shared-library.md](./shared-library.md#transport)).
   - `orbit_tools`: the callbacks listed above.
+  - `agent_tools`: exactly `attach,capture,proposal-create,selection-get`,
+    derived by Orbit from the four declarations, bound to the manifest digest.
   - Secrets: `meta_api_key` and `open_weights_token` (`spec.secrets`).
 - **Required programs:** `spec.requires.programs: [git, ffmpeg, ffprobe, uv, pdftotext, ssh]` (`pdftotext` is optional: without it PDFs are refused with `converter_unavailable`), plus
   `cargo` under `spec.build` for source-built installs. Programs are

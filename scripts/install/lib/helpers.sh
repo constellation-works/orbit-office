@@ -13,8 +13,8 @@
 # they are never echoed and never written to a file.
 set -eu
 
-TESTED_ORBIT_VERSION="0.37.0"
-ORBIT_NPM_PACKAGE="@orbit-tools/cli@0.37.0"
+TESTED_ORBIT_VERSION="0.39.0"
+ORBIT_NPM_PACKAGE="@orbit-tools/cli@0.39.0"
 PLUGIN_NAME="office"
 DEFAULT_PORT="4317"
 

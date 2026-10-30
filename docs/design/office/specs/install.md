@@ -80,9 +80,11 @@ filter for them. Orbit must support `workspace init --preset`.
      step fails and names what went wrong. A re-run with both already in place changes
      nothing.
 3. **Orbit.** If `orbit` is missing, installs the tested release:
-   `npm install -g @orbit-tools/cli@0.37.0`. An existing Orbit is never upgraded or
+   `npm install -g @orbit-tools/cli@0.39.0`. An existing Orbit is never upgraded or
    downgraded: an older one stops the script with the command to upgrade, and a newer one
-   continues with a warning.
+   continues with a warning. An unreadable version refuses safely. Office requires
+   Orbit >=0.39.0 <1.0.0 for governed agent mutations; the standalone init launcher
+   checks this too, before creating workspace files.
 4. **Git and the workspace.** Delegated to the installed `orbit-office init` command below. It creates `~/orbit` and runs `git init -b main` if it is not
    already a repository; writes `.gitignore` with `/library/`; makes the first commit if
    the repository has none (Orbit's runs need a commit to create worktrees from). If git
@@ -105,11 +107,16 @@ filter for them. Orbit must support `workspace init --preset`.
    built. A completed build is reused on a re-run until uninstall. An explicit local
    office source or bundle must already contain an executable `bin/office-bin`; a missing
    backend or failed build stops before office is recorded as added or enabled. Then
-   workspace enablement through `orbit-office init` using `orbit plugin enable office` with the grants the manifest requests (`fs`, `network`, `orbit_tools`), after printing them and
-   asking once. A grant left out leaves the plugin inactive, and `office.init` is then refused.
+   workspace enablement through `orbit-office init` using `orbit plugin enable office` with the grants the manifest requests (`fs`, `network`, `orbit_tools`, `agent_tools`), after printing them and
+   asking once. The exact agent verbs are `office.attach`, `office.capture`,
+   `office.proposal-create`, `office.selection-get`: evidence capture, pending
+   proposals, task context and selection consumption; no approval or knowledge
+   application. These are derived from the installed manifest's permission row;
+   init refuses if they differ from its reviewed set. A grant left out leaves the plugin inactive, and `office.init` is then refused.
    The question needs a terminal on stdin. A piped install without one (piped stdin is
-   the script itself, for example) prints the grants and enables the plugin without asking,
-   and its output says so. `--yes` skips the question in either case. The `gateway` plugin is
+   the script itself, for example) prints the grants and refuses when consent is
+   needed; rerun with `--yes` to give explicit consent. `--yes` skips the question
+   and records a fresh grant witness through Orbit in either case. The `gateway` plugin is
    added and enabled the same way, in the same consent prompt, and `cloudcli` only with
    `--with-cloudcli` ([gateway.md](./gateway.md)). Both come from the same release export, and
    neither has a build step.
@@ -255,11 +262,16 @@ The command does these steps in order:
 4. Enable installed `office` and `gateway`, plus `cloudcli` when installed,
    with the manifest grants from step 5. Print grants and ask once when setup
    needs enablement and stdin is a terminal; decline fails. `--yes` prints
-   explicit consent. Non-interactive stdin prints that it proceeds without a
-   question and is never consumed. Read live enablement and permissions rather
+   explicit consent. Non-interactive stdin requires `--yes` when consent is needed
+   and is never consumed. Read live enablement and permissions rather
    than global install markers. Record host grants when needed, then enable
    the selected workspace with `--scope workspace` to seed its definitions;
-   a workspace toggle never receives host-only grant flags.
+   a workspace toggle never receives host-only grant flags. Repair detects a missing
+   `agent_tools` grant even when the old grants are present. Because an explicit
+   grant list replaces the old one, repair sends fs/network/orbit_tools/agent_tools
+   together, carrying forward any recorded narrower fs roots. An already consented
+   installation does not re-enable or replace its grants. Customized Library,
+   workspace settings and seeded definitions are preserved (no `--force` enable).
 5. For a newly registered office workspace, apply the office preset after plugin
    seeding; a repeat setup leaves the operator's later routine choices alone.
 6. Always call `orbit tool run office.init --json --full --input '{}'` in
@@ -459,3 +471,54 @@ runs `sh scripts/install/build-install.sh --check` and then that harness on Linu
 installed launcher help golden. The launcher itself supports Node 20+. The harness uses
 temporary homes, stub Orbit and service managers, local archive fixtures and a PTY
 for the hidden-input and single-consent checks; it never contacts a provider.
+
+## Updating and reconnecting scoped agent sessions (operator handoff)
+
+This change does not install, deploy or change a live client. In the operator's
+own terminal, first upgrade Orbit to at least 0.39.0 (the installer refuses an
+older or unreadable host; it never upgrades an existing Orbit automatically).
+Export the reviewed Office commit with the normal `make -C plugin export`
+route. Review the [authority inventory](plugin-surface.md#agent-authority-inventory),
+then update the installed plugin from that export:
+
+```sh
+orbit plugin upgrade office /path/to/office-export --workspace /path/to/office-workspace
+orbit plugin show office --json --workspace /path/to/office-workspace
+orbit-office init /path/to/office-workspace
+```
+
+Use the launcher from the matching updated installer. Run init interactively to
+review its exact grants, or use `--yes` as explicit consent in automation. The
+installer does not replace an installed plugin from a different manifest on its
+own: upgrade the export first. Permission/verb widening disables the plugin and
+clears old grants; it needs fresh consent. Init refuses an unexpected verb set,
+even with `--yes`. Review `plugin show` afterward: `agent_tools.requested` must be
+`attach,capture,proposal-create,selection-get`, granted true, with the expected fs
+roots and the plugin active. Preserve any narrower fs scope when consenting
+manually; `plugin enable --grant` replaces the entire grant set.
+
+The canonical declaration is `plugin/.orbit-plugin/plugin.yaml`; plugin export
+copies that tree from a resolved HEAD, so there is no derived manifest to edit.
+Installer sources are `scripts/install/lib/helpers.sh` and `steps.sh`; regenerate
+`install.sh` with `sh scripts/install/build-install.sh` and check it with
+`--check`. No Office version bump is part of this change.
+
+Reconnect/restart the client's ordinary Orbit MCP session so discovery and
+workspace binding are refreshed, then retry capture and proposal preparation.
+Do not add `--operator` or `ORBIT_OPERATOR` to the agent's MCP/CLI environment.
+Operator sessions remain reserved for approvals, direct writes and setup.
+
+A `capability_denied` on `plugin.tool.mutating` is an authorization refusal:
+check the declaration, live digest-bound consent and activity policy. It does
+not show that the plugin is uninstalled. A shell filesystem denial writing an
+Orbit callback session, or a nested callback `io_error` (`Permission denied`)
+while reading an ancestor `.orbit-product` marker, is a separate host/runtime
+problem. A confined callback can stat that marker outside its grant and then
+fail the read; the public fixture therefore lives outside this checkout.
+Creating `.generation-participants/<pid>.json.staged` is also denied and is
+not, by itself, the proposal failure: Orbit keeps the generation lock and
+continues without that record. Neither `agent_callable` nor re-consenting
+overrides the outer shell sandbox or repairs Orbit's callback filesystem
+profile. Keep that failure's command/path evidence for the host operator and
+retry only after the runtime or client filesystem boundary is repaired; do
+not broaden agent authority.

@@ -212,7 +212,7 @@ chmod +x "$CUSTOM_BIN"/*
 ln -s "$(command -v node)" "$CUSTOM_BIN/node"
 cat > "$CUSTOM_BIN/orbit" <<STUB
 #!/usr/bin/env node
-if (process.argv[2] === "--version") { process.stdout.write("orbit 0.37.0\n"); process.exit(0); }
+if (process.argv[2] === "--version") { process.stdout.write("orbit 0.39.0\n"); process.exit(0); }
 const { spawnSync } = require("child_process");
 const r = spawnSync("/bin/sh", ["$BIN/orbit", ...process.argv.slice(2)], { stdio: "inherit" });
 process.exit(r.status === null ? 1 : r.status);
