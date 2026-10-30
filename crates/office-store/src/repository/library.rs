@@ -274,6 +274,15 @@ impl LibraryStore {
             }
         });
         let templates_present = files.bundled_templates_present()?;
+        // Move legacy sources into the kind-partitioned layout before the
+        // completeness check, so a complete-but-legacy Library migrates
+        // instead of reporting `already_initialized`. The writer lock is
+        // already held; reindex and the commit below finish the move.
+        let migrated_sources = if candidate.exists() {
+            files.migrate_legacy_sources()?
+        } else {
+            Vec::new()
+        };
         if is_repo
             && config_text.is_some()
             && gitignore_exists
@@ -283,6 +292,7 @@ impl LibraryStore {
             && index_exists
             && layout_complete
             && templates_present
+            && migrated_sources.is_empty()
         {
             return Ok(InitOutcome {
                 already_initialized: true,
@@ -298,6 +308,11 @@ impl LibraryStore {
             .map(|dir| (*dir).to_string())
             .collect();
         files.ensure_layout()?;
+        for (_, new_dir) in &migrated_sources {
+            if !created.contains(new_dir) {
+                created.push(new_dir.clone());
+            }
+        }
         for dir in LAYOUT_DIRS {
             if *dir == ".office" {
                 continue;
@@ -377,6 +392,13 @@ impl LibraryStore {
             })
             .cloned()
             .collect();
+        let mut add_paths = add_paths;
+        for (old_dir, _) in &migrated_sources {
+            let tracked = is_repo && git.has_tracked(old_dir)?;
+            if tracked && !add_paths.contains(old_dir) {
+                add_paths.push(old_dir.clone());
+            }
+        }
         store
             .git
             .commit_scaffold(&add_paths, untrack_state, "Initialize the Library")?;
@@ -547,6 +569,37 @@ impl LibraryStore {
     pub fn reindex(&self) -> Result<u32> {
         let lock = WriterLock::acquire(&self.state)?;
         self.reindex_locked(&lock)
+    }
+
+    /// Move legacy `sources/YYYY/MM/<id>/` directories into the
+    /// kind-partitioned layout, reindex and commit the move. Idempotent:
+    /// a Library with no legacy sources returns an empty list and makes
+    /// no commit. Reads accept both layouts, so this never has to run
+    /// before a source can be read. Returns the new directories.
+    pub fn migrate_source_layout(&self) -> Result<Vec<String>> {
+        let lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        self.require_initialized()?;
+        let moved = self.files.migrate_legacy_sources()?;
+        if moved.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.reindex_locked(&lock)?;
+        let mut paths: Vec<String> = Vec::new();
+        for (old, new) in &moved {
+            // An untracked legacy directory has no deletion to stage, and
+            // `git add` refuses a pathspec that never matched.
+            if self.git.has_tracked(old)? {
+                paths.push(old.clone());
+            }
+            paths.push(new.clone());
+        }
+        self.git.commit_scaffold(
+            &paths,
+            false,
+            "Move sources into the kind-partitioned layout",
+        )?;
+        Ok(moved.into_iter().map(|(_, new)| new).collect())
     }
 
     fn reindex_locked(&self, _lock: &WriterLock) -> Result<u32> {
@@ -1893,7 +1946,7 @@ impl LibraryStore {
         } else {
             ("1970", "01")
         };
-        let month = format!("sources/{yyyy}/{mm}");
+        let month = format!("sources/{}/{yyyy}/{mm}", kind.as_str());
         known_ids.extend(
             self.files
                 .entry_names(Path::new(&month))

@@ -55,7 +55,7 @@ cover the rest. The `meetings` pack remains. The calendar gives it routines of i
 A video is a source of kind **`video`** ([library.md](./library.md#sources)):
 
 ```
-library/sources/2026/10/src-20261027-ingest-kt/
+library/sources/video/2026/10/src-20261027-ingest-kt/
   source.md      # frontmatter + transcript, one paragraph per turn: [hh:mm:ss] Speaker: …   (#t=)
   frames.md      # one entry per frame read: [hh:mm:ss] what is on screen, visible text      (#frame=)
   chapters.md    # frontmatter chapters list + a readable index

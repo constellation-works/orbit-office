@@ -263,6 +263,150 @@ fn processing_persists_immutable_versions_sidecars_provenance_and_indexed_latest
     );
 }
 
+#[test]
+fn capture_writes_each_kind_under_its_kind_directory() {
+    let (_dir, store, _workspace) = setup();
+    for (kind, text) in [("chat", "hello from chat"), ("note", "a plain note")] {
+        let mut req = request();
+        req.kind = Some(kind.to_string());
+        req.title = Some(format!("{kind} title"));
+        req.text = Some(text.to_string());
+        let outcome = store.capture_source(&req).expect("capture");
+        assert_eq!(
+            outcome.path,
+            format!("sources/{kind}/2026/10/{}/source.md", outcome.id),
+            "{kind}"
+        );
+        let read = store.read_source(&outcome.id).expect("read by id");
+        assert_eq!(read.path, outcome.path);
+    }
+    let mut conversation = request();
+    conversation.kind = Some("conversation".to_string());
+    conversation.title = Some("Session".to_string());
+    conversation.entries = vec![ConversationEntry {
+        kind: "decision".to_string(),
+        text: "Ship it.".to_string(),
+    }];
+    let opened = store.capture_source(&conversation).expect("conversation");
+    assert!(
+        opened.path.starts_with("sources/conversation/2026/10/"),
+        "{}",
+        opened.path
+    );
+}
+
+#[test]
+fn legacy_and_kind_layout_sources_are_found_by_id() {
+    use office_core::ports::Library;
+
+    let (_dir, store, workspace) = setup();
+    let library = workspace.join("library");
+    for (relative, id, kind, token) in [
+        (
+            "sources/2026/09/src-20260915-legacy/source.md",
+            "src-20260915-legacy",
+            "meeting",
+            "legacytoken",
+        ),
+        (
+            "sources/chat/2026/10/src-20261027-fresh/source.md",
+            "src-20261027-fresh",
+            "chat",
+            "freshtoken",
+        ),
+    ] {
+        let path = library.join(relative);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(
+            &path,
+            format!(
+                "---\nid: {id}\nkind: {kind}\ntitle: {id}\ncaptured_at: 2026-10-27T10:00:00+00:00\n---\n{token} body\n"
+            ),
+        )
+        .expect("source");
+    }
+    store.reindex().expect("reindex");
+    for (id, relative, token) in [
+        (
+            "src-20260915-legacy",
+            "sources/2026/09/src-20260915-legacy/source.md",
+            "legacytoken",
+        ),
+        (
+            "src-20261027-fresh",
+            "sources/chat/2026/10/src-20261027-fresh/source.md",
+            "freshtoken",
+        ),
+    ] {
+        let record = store.get(id).expect("get").expect("present");
+        assert_eq!(record.path, relative, "{id}");
+        let read = store.read_source(id).expect("read by id");
+        assert_eq!(read.path, relative);
+        assert!(read.body.contains(token), "{}", read.body);
+        let hits = store
+            .search(token, &crate::SearchFilter::default())
+            .expect("search");
+        assert_eq!(
+            hits.iter().map(|hit| hit.id.as_str()).collect::<Vec<_>>(),
+            [id]
+        );
+    }
+    let port: &dyn Library = &store;
+    let mut paths: Vec<String> = port
+        .source_documents()
+        .expect("documents")
+        .into_iter()
+        .map(|file| file.path)
+        .collect();
+    paths.sort();
+    assert_eq!(
+        paths,
+        [
+            "sources/2026/09/src-20260915-legacy/source.md",
+            "sources/chat/2026/10/src-20261027-fresh/source.md",
+        ]
+    );
+}
+
+#[test]
+fn migrate_source_layout_moves_legacy_sources_and_rerun_changes_nothing() {
+    let (_dir, store, workspace) = setup();
+    let library = workspace.join("library");
+    let legacy = library.join("sources/2026/09/src-20260915-legacy");
+    std::fs::create_dir_all(&legacy).expect("mkdir");
+    std::fs::write(
+        legacy.join("source.md"),
+        "---\nid: src-20260915-legacy\nkind: meeting\ntitle: Legacy\ncaptured_at: 2026-09-15T10:00:00+00:00\n---\nlegacytoken body\n",
+    )
+    .expect("source");
+    std::fs::write(legacy.join("summary.md"), "Legacy summary.\n").expect("sidecar");
+    let moved = store.migrate_source_layout().expect("migrate");
+    assert_eq!(
+        moved,
+        ["sources/meeting/2026/09/src-20260915-legacy".to_string()]
+    );
+    assert!(!legacy.exists());
+    let new_dir = library.join("sources/meeting/2026/09/src-20260915-legacy");
+    assert_eq!(
+        std::fs::read_to_string(new_dir.join("summary.md")).expect("sidecar moved"),
+        "Legacy summary.\n"
+    );
+    let read = store
+        .read_source("src-20260915-legacy")
+        .expect("read by id");
+    assert_eq!(
+        read.path,
+        "sources/meeting/2026/09/src-20260915-legacy/source.md"
+    );
+    // A re-run moves nothing and makes no commit.
+    let commits = store.head_commit().expect("head");
+    assert_eq!(
+        store.migrate_source_layout().expect("rerun"),
+        Vec::<String>::new()
+    );
+    assert_eq!(store.head_commit().expect("head after rerun"), commits);
+}
+
 #[cfg(unix)]
 #[test]
 fn processing_refuses_symlinked_sidecars_and_versions_without_writing_outside() {

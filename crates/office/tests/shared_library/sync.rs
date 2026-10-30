@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 use std::rc::Rc;
 
 const PAGE: &str = "knowledge/domain/dom-onboarding.md";
-const SOURCE_DIR: &str = "sources/2026/10/src-20261028-kickoff";
+const SOURCE_DIR: &str = "sources/meeting/2026/10/src-20261028-kickoff";
 
 fn own_page(body: &str) -> String {
     format!(

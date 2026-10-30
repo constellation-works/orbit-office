@@ -1230,7 +1230,7 @@ impl Library for FakeLibrary {
         } else {
             ("1970", "01")
         };
-        let path = format!("sources/{yyyy}/{mm}/{id}/source.md");
+        let path = format!("sources/{}/{yyyy}/{mm}/{id}/source.md", kind.as_str());
         let sensitivity = match &request.sensitivity {
             Some(s) => Sensitivity::parse(s).ok_or_else(|| {
                 Error::InvalidArgument("sensitivity must be normal or private".to_string())

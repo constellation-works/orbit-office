@@ -47,6 +47,7 @@ def snapshot(root):
         value = value.replace(str(root), '<seed-root>')
         value = re.sub(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})', '<timestamp>', value)
         value = re.sub(r'\b\d{4}-\d{2}-\d{2}\b', '<date>', value)
+        value = re.sub(r'sources/([a-z]+)/\d{4}/\d{2}/', r'sources/\1/', value)
         return re.sub(r'sources/\d{4}/\d{2}/', 'sources/', value)
 
     files = {}

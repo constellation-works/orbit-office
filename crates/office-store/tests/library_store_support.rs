@@ -82,7 +82,7 @@ pub(crate) fn upload_request(root: &Path) -> office_core::ports::CaptureSourceRe
     }
 }
 
-pub(crate) const UPLOAD_DIR: &str = "sources/2026/10/src-20261027-upload";
+pub(crate) const UPLOAD_DIR: &str = "sources/note/2026/10/src-20261027-upload";
 
 pub(crate) fn search_sorted(store: &LibraryStore, query: &str) -> Vec<SearchHit> {
     let mut hits = store

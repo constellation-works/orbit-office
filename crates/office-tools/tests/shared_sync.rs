@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 const PAGE: &str = "knowledge/domain/dom-topic.md";
-const SOURCE: &str = "sources/2026/10/src-20261028-call/source.md";
+const SOURCE: &str = "sources/meeting/2026/10/src-20261028-call/source.md";
 
 fn call(ports: &Ports<'_>, tool: &str, input: Value) -> Value {
     let request = office_core::protocol::parse(&envelope::request(tool, input, json!({}))).unwrap();
@@ -82,7 +82,7 @@ fn input_and_configuration_are_checked_before_any_git() {
 fn first_push_initializes_the_layout_and_a_second_sync_pushes_nothing() {
     let (ports, shared, _) = configured();
     let first = sync(&ports, json!({}));
-    let dir = "members/me/sources/2026/10/src-20261028-call";
+    let dir = "members/me/sources/meeting/2026/10/src-20261028-call";
     assert_eq!(
         first["pushed"],
         json!([PAGE, format!("{dir}/source.md")]),
@@ -190,7 +190,7 @@ fn unsharing_removes_this_members_paths_on_the_next_push() {
     let result = sync(&ports, json!({"direction":"push"}));
     assert_eq!(
         result["removed"],
-        json!(["members/me/sources/2026/10/src-20261028-call/source.md"]),
+        json!(["members/me/sources/meeting/2026/10/src-20261028-call/source.md"]),
         "{result}"
     );
     assert_eq!(
@@ -287,7 +287,7 @@ fn changing_the_member_starts_fresh() {
     assert_eq!(shared.resets(), 1);
     assert!(
         result["pushed"].as_array().unwrap().contains(&json!(
-            "members/me-two/sources/2026/10/src-20261028-call/source.md"
+            "members/me-two/sources/meeting/2026/10/src-20261028-call/source.md"
         )),
         "{result}"
     );

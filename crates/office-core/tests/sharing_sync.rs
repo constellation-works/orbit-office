@@ -43,7 +43,7 @@ fn classify_accepts_only_the_documented_layout() {
             id: "rb-deploy".into()
         }
     );
-    let dir = "members/alice/sources/2026/10/src-20261028-call";
+    let dir = "members/alice/sources/meeting/2026/10/src-20261028-call";
     assert_eq!(
         classify(&format!("{dir}/source.md")),
         SharedPath::Document {
@@ -51,6 +51,19 @@ fn classify_accepts_only_the_documented_layout() {
             dir: dir.into()
         }
     );
+    // The legacy layout without the kind is still accepted on read.
+    let legacy = "members/alice/sources/2026/10/src-20261028-call";
+    assert_eq!(
+        classify(&format!("{legacy}/source.md")),
+        SharedPath::Document {
+            member: "alice".into(),
+            dir: legacy.into()
+        }
+    );
+    assert!(matches!(
+        classify(&format!("{legacy}/summary.md")),
+        SharedPath::Companion { source: true, .. }
+    ));
     for sidecar in [
         "frames.md",
         "chapters.md",
@@ -80,6 +93,8 @@ fn classify_accepts_only_the_documented_layout() {
         "members/Alice/sources/2026/10/src-x/source.md",
         "members/alice/sources/2026/10/art-x/source.md",
         "members/alice/sources/26/10/src-x/source.md",
+        "members/alice/sources/bogus/2026/10/src-x/source.md",
+        "members/alice/sources/meeting/2026/10/art-x/source.md",
         &format!("{dir}/original.mp4"),
         &format!("{dir}/notes.txt"),
         &format!("{dir}/.hidden"),
@@ -94,6 +109,26 @@ fn classify_accepts_only_the_documented_layout() {
     );
     assert_eq!(page_path("src-x"), None);
     assert_eq!(page_path("dom-../x"), None);
+}
+
+#[test]
+fn shared_document_accepts_kind_and_legacy_source_layouts() {
+    let markdown = "---\nid: src-20261028-call\nkind: meeting\ntitle: Call\nshared_by: alice\n---\n[00:00:01] A: Hello.\n";
+    for path in [
+        "members/alice/sources/meeting/2026/10/src-20261028-call/source.md",
+        "members/alice/sources/2026/10/src-20261028-call/source.md",
+    ] {
+        let record = sharing::shared_document(path, markdown).unwrap();
+        assert_eq!(record.id, "alice/src-20261028-call", "{path}");
+    }
+    // A kind directory that disagrees with the frontmatter kind is refused.
+    assert!(
+        sharing::shared_document(
+            "members/alice/sources/chat/2026/10/src-20261028-call/source.md",
+            markdown
+        )
+        .is_err()
+    );
 }
 
 #[test]

@@ -431,19 +431,25 @@ pub fn shared_document(relative: &str, markdown: &str) -> Result<DocumentRecord>
                 .and_then(|s| s.get(..8))
                 .filter(|date| date.bytes().all(|b| b.is_ascii_digit()))
                 .ok_or_else(|| invalid("id", "expected a dated source id"))?;
-            if value("kind")
+            let kind = value("kind")
                 .and_then(Value::as_str)
-                .and_then(crate::domain::source::SourceKind::parse)
-                .is_none()
-            {
-                return Err(invalid("kind", "expected a source kind"));
-            }
+                .filter(|kind| crate::domain::source::SourceKind::parse(kind).is_some())
+                .ok_or_else(|| invalid("kind", "expected a source kind"))?;
             crate::domain::source::parse_source_participants(markdown)?;
-            format!(
+            let legacy = format!(
                 "members/{member}/sources/{}/{}/{id}/source.md",
                 &date[..4],
                 &date[4..6]
-            )
+            );
+            if relative == legacy {
+                legacy
+            } else {
+                format!(
+                    "members/{member}/sources/{kind}/{}/{}/{id}/source.md",
+                    &date[..4],
+                    &date[4..6]
+                )
+            }
         }
     };
     if relative != expected || local.is_empty() {
