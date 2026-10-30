@@ -1,4 +1,4 @@
-.PHONY: help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-audit app-check plugin-export plugin-check install clean
+.PHONY: help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-audit app-check plugin-export plugin-check plugin-install install clean
 
 CARGO ?= cargo
 # Every build uses the committed Cargo.lock as is; a stale lock fails instead
@@ -36,6 +36,8 @@ help:
 	@echo "  make ci               Everything above; what CI runs"
 	@echo "  make baseline         Every stack's gate: ci + gateway + app typecheck/tests"
 	@echo "  make app-deps         Install app/node_modules from the lockfile when missing or stale"
+	@echo "  make plugin-install   Build HEAD into the local Orbit office plugin and enable it"
+	@echo "                        (PLUGIN_WORKSPACE=<w> also enables it in that workspace)"
 	@echo "  make build | fmt | install | clean"
 
 build:
@@ -162,10 +164,40 @@ app-audit: app-deps
 # Install
 # ---------------------------------------------------------------------------
 
+# Every permission the manifest requests, so an upgrade that widens a request
+# re-consents instead of leaving the plugin disabled.
+PLUGIN_NAME := office
+PLUGIN_GRANTS ?= --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools --grant agent_tools
+# `make plugin-install PLUGIN_WORKSPACE=office-constellation` also enables the
+# plugin in that workspace; left empty, the workspace toggle is untouched.
+PLUGIN_WORKSPACE ?=
+
 install:
 	$(CARGO) build --release --bin $(BINARY) $(LOCKED)
 	install -d $(INSTALL_BIN_DIR)
 	install -m 755 target/release/$(BINARY) $(INSTALL_BIN_DIR)/$(BINARY)
+
+# Build HEAD into a fresh export, validate it, then upgrade the installed
+# plugin (or add it on first install) and enable it with PLUGIN_GRANTS.
+# HEAD, not the working tree: commit first.
+plugin-install:
+	@command -v orbit >/dev/null 2>&1 || { echo "error: orbit is not installed." >&2; exit 1; }
+	@set -eu; \
+	parent=$$(mktemp -d "$${TMPDIR:-/tmp}/office-plugin-install.XXXXXX"); \
+	out="$$parent/$(PLUGIN_NAME)-plugin-$$(git rev-parse --short HEAD)"; \
+	trap 'rm -rf "$$parent"' EXIT HUP INT TERM; \
+	$(MAKE) -C plugin export OUT="$$out"; \
+	orbit plugin validate "$$out"; \
+	if orbit plugin show $(PLUGIN_NAME) >/dev/null 2>&1; then \
+		orbit plugin upgrade $(PLUGIN_NAME) "$$out" $(PLUGIN_GRANTS); \
+	else \
+		orbit plugin add "$$out"; \
+		orbit plugin enable $(PLUGIN_NAME) $(PLUGIN_GRANTS); \
+	fi; \
+	if [ -n "$(PLUGIN_WORKSPACE)" ]; then \
+		orbit plugin enable $(PLUGIN_NAME) --scope workspace --workspace "$(PLUGIN_WORKSPACE)"; \
+	fi; \
+	orbit plugin show $(PLUGIN_NAME) | sed -n '1,7p'
 
 clean:
 	$(CARGO) clean
