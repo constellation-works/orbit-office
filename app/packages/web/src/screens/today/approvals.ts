@@ -53,6 +53,9 @@ export const serverApprovals: ApprovalApi = {
 
 type Tone = "done" | "info" | "error";
 
+/** Orbit refused the app's authority: nothing changed, and trying again won't help. */
+const NOT_PERMITTED = "The app isn’t allowed to do this yet, so nothing changed. Trying again won’t help.";
+
 const REASONS: Record<string, string> = {
   task_not_reviewable: "It isn’t ready for review yet.",
   task_has_no_artifacts: "There is no output to add yet.",
@@ -69,6 +72,7 @@ const REASONS: Record<string, string> = {
   draft_changed: "The request changed after you saw it, so nothing was sent. Review it again.",
   draft_dismissed: "The request was dismissed, so nothing was sent.",
   draft_not_pending: "The request was already sent or is being sent. It is never sent twice.",
+  not_permitted: NOT_PERMITTED,
 };
 
 function reasonText(code: string | undefined): string {
@@ -82,6 +86,7 @@ function problem(error: unknown, action: string): string {
     if (error.code === "not_actionable" || error.code === "not_found") {
       return `${action} It was already handled or has changed. The list will update shortly.`;
     }
+    if (error.code === "not_permitted") return `${action} ${NOT_PERMITTED}`;
     const reason = reasonText(error.reason);
     if (reason !== "") return `${action} ${reason}`;
   }
@@ -381,6 +386,7 @@ export class ApprovalControls {
         }
       }
       let accepted = 0;
+      let notPermitted = false;
       if (ready.length > 0) {
         try {
           const { results } = await this.api.acceptAll(ready);
@@ -389,6 +395,7 @@ export class ApprovalControls {
             const item = items.find((candidate) => candidate.key === result.key);
             if (item !== undefined) refused.push(item.title);
             if (result.error === "proposal_payload_changed") this.details.delete(result.key);
+            if (result.error === "not_permitted") notPermitted = true;
           }
         } catch (error) {
           this.fail(groupKey, problem(error, "Couldn’t accept these pages."));
@@ -400,7 +407,8 @@ export class ApprovalControls {
         return;
       }
       const names = refused.map((title) => `“${title}”`).join(", ");
-      this.fail(groupKey, `Accepted ${accepted} of ${items.length} pages. ${names} couldn’t be accepted and ${refused.length === 1 ? "is" : "are"} still here to review.`);
+      const why = notPermitted ? ` ${NOT_PERMITTED}` : "";
+      this.fail(groupKey, `Accepted ${accepted} of ${items.length} pages. ${names} couldn’t be accepted and ${refused.length === 1 ? "is" : "are"} still here to review.${why}`);
     }); });
     const pages = element("ul", "approval-pages");
     pages.setAttribute("aria-label", "Pages");

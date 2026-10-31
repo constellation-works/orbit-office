@@ -1960,3 +1960,47 @@ off an integration task.
 - Cost: reconcile refuses when the proposal task list is truncated (more
   than 1000 proposal tasks) rather than guess at missing statuses.
 - Two layouts are readable until reconcile has run once on a Library.
+
+## The app reports missing approval authority instead of granting itself Operator
+
+**Recorded:** 2026-10-31 · [ORB-20245]
+**Code anchors:** `app/packages/server/src/features/approvals/service.ts` (`refusal`); `app/packages/web/src/screens/today/approvals.ts` (`problem`, `NOT_PERMITTED`); `app/packages/server/src/orbit/client.ts` (module header); [specs/proposals.md](./specs/proposals.md#record-and-lifecycle), [specs/plugin-surface.md](./specs/plugin-surface.md#agent-authority-inventory)
+
+### Context
+
+Accepting a proposal on Today failed with "Please try again" and retrying
+never helped. `office.proposal-accept` is a mutating, `mcp_scope: none` tool
+that is not `agent_callable`, so Orbit admits only Operator or Runner. The
+installed app runs `orbit tool run` with no `ORBIT_OPERATOR` and resolves as a
+local CLI holding Agent, so Orbit refuses it with `capability_denied`. Dismiss,
+send-back and approve (`orbit.task.update`, `office.artifact-promote`) and
+`gateway.http-send` share the gap; routine control and auto-task mint already
+report it as `not_permitted`. The proposal spec said "only the app can call
+it", while the plugin-surface inventory says Operator/Runner only.
+
+### Decision
+
+- The app does not hold a blanket Operator grant: no `ORBIT_OPERATOR` in the
+  service templates, as the client header and the earlier operator decision
+  already require. The approval tools stay out of `agent_callable`, whose
+  consent also admits agent sessions, so agents still cannot accept.
+- Scoped authority for the user-approval tools must come from Orbit as a
+  generic, host-issued, audited application identity bound to this workspace
+  and an explicit tool list. Orbit 0.40.0 offers only Agent, Operator and
+  Runner, so the Orbit prerequisite is filed in the Orbit workspace
+  (ORB-20362); the Office wiring follows once it lands (ORB-20363).
+- Until then, every approval route reports Orbit's authority refusal
+  (`capability_denied`, `policy_denied`, from Orbit's stderr or a tool
+  envelope) as the reason `not_permitted`; accept-all names it per page.
+  Today shows one plain sentence: the app isn't allowed to do this yet,
+  nothing changed, and trying again won't help.
+- An operator accepts from the office workspace with `ORBIT_OPERATOR=1`
+  (STD-05@1 §R3: authority is held by the operator, not inferred by the app).
+
+### Consequences
+
+- Proposals, sends and dismissals still cannot be completed from the app; the
+  user now sees why instead of retrying.
+- When the Orbit application identity lands, the app wires its credential to
+  the Orbit child process, a server-route test exercises accept through the
+  real authority path, and this decision and the proposal spec are revised.

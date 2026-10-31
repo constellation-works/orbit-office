@@ -44,7 +44,11 @@
  * authority", so {@link OrbitToolClient.mintAutoTask} does not succeed
  * without operator authority for an installed-workspace caller; Orbit's
  * `capability_denied` is reported as a typed `not_permitted` error and
- * no capability is granted here.
+ * no capability is granted here. The user-approval tools
+ * (`office.proposal-accept`, `office.artifact-promote`, `gateway.http-send`
+ * and the approval `orbit.task.update` transitions) share the gap; the
+ * approvals feature reports their refusal as `not_permitted`
+ * (docs/design/office/4_decisions.md).
  */
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";

@@ -185,6 +185,23 @@ test("accept all accepts each in turn; one refusal leaves the others accepted an
   assert.equal((await api.post("/api/approvals/accept-all", { proposals: [] })).status, 400);
 });
 
+test("Orbit refusing the app's authority is not_permitted on every user-approval route, and nothing changes", async (t) => {
+  for (const code of ["capability_denied", "policy_denied"]) {
+    const state = fakeClient();
+    for (const name of ["office.proposal-accept", "orbit.task.update", "gateway.http-send", "office.artifact-promote"]) state.failures[name] = code;
+    const api = await serve(t, state);
+    assert.deepEqual(await api.post("/api/approvals/accept", { key: "T-page", sha256: PROPOSAL_SHA }), { status: 409, body: { error: "accept_refused", reason: "not_permitted" } }, code);
+    const all = await api.post("/api/approvals/accept-all", { proposals: ["T-page", "T-page2"].map((key) => ({ key, sha256: PROPOSAL_SHA })) });
+    assert.deepEqual(all.body.results, [{ key: "T-page", accepted: false, error: "not_permitted" }, { key: "T-page2", accepted: false, error: "not_permitted" }]);
+    assert.deepEqual(await api.post("/api/approvals/dismiss", { key: "T-page3" }), { status: 409, body: { error: "dismiss_refused", reason: "not_permitted" } });
+    assert.deepEqual(await api.post("/api/approvals/send", { key: "T-draft", sha256: DRAFT_SHA }), { status: 409, body: { error: "send_refused", reason: "not_permitted" } });
+    assert.deepEqual(await api.post("/api/approvals/approve", { key: "T-review" }), { status: 409, body: { error: "promote_refused", reason: "not_permitted" } });
+    assert.deepEqual(await api.post("/api/approvals/send-back", { key: "T-review", comment: "More detail." }), { status: 409, body: { error: "send_back_refused", reason: "not_permitted" } });
+    assert.deepEqual(state.tasks.map((row) => row.status), tasks().map((row) => row.status), "a refused authority changes no task");
+    assert.equal(names(state, "office.proposal-reconcile").length, 0);
+  }
+});
+
 test("dismissing a proposal records the rejection with the reason, then files its page under dismissed", async (t) => {
   const state = fakeClient();
   const api = await serve(t, state);

@@ -14,6 +14,10 @@
  * - Send: `gateway.http-send` with the draft id and the digest shown. A lost
  *   reply is `outcome_unknown`, never a failure, and is never retried.
  *
+ * Orbit refusing the app's authority for any of these (`capability_denied`,
+ * `policy_denied`) reaches the screen as the reason `not_permitted`: nothing
+ * changed, and trying again will not help (docs/design/office/specs/proposals.md).
+ *
  * Library drafts for someone else are never sent from here; only a gateway
  * draft the user approves goes out (docs/design/office/specs/gateway.md).
  */
@@ -71,15 +75,22 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** A tool's own refusal code, from an exec envelope or Orbit's stderr line. */
+/** Orbit's refusals of the caller's authority; the screen says `not_permitted`. */
+const PERMISSION = new Set(["capability_denied", "policy_denied"]);
+
+/**
+ * A tool's own refusal code, from an exec envelope or Orbit's stderr line.
+ * Orbit refusing the app's authority is `not_permitted`, whichever tool it was.
+ */
 function refusal(error: unknown): string | undefined {
-  if (error instanceof ToolRefusal) return error.code;
+  if (error instanceof ToolRefusal) return PERMISSION.has(error.code) ? "not_permitted" : error.code;
   if (!(error instanceof OrbitExitError)) return undefined;
   for (const line of error.stderr.split("\n").reverse()) {
     try {
       const parsed: unknown = JSON.parse(line);
       if (!record(parsed)) continue;
       const code = record(parsed.error) ? parsed.error.code : parsed.code;
+      if (typeof code === "string" && PERMISSION.has(code)) return "not_permitted";
       if (typeof code === "string") return CODE.test(code) ? code : "refused";
     } catch {
       // Not a JSON line.
