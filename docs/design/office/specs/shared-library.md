@@ -133,7 +133,7 @@ shared:
   (`members/<member>/sources/YYYY/MM/<source-id>/`) is still classified,
   validated and indexed on read, so clones synced before the partition
   keep working; a push from a kind-partitioned own source writes the new
-  layout.
+  layout ([ORB-20243]).
 - **Sources and artifacts belong to the member who shared them.** They are
   immutable evidence, and two members can give different sources the same
   id (both capture the same meeting on the same day), so they sit under
@@ -438,3 +438,4 @@ covered by the end-to-end test.
 - [ORB-19418] — built `office.library-sync`, its routine and the demo repository.
 - [ORB-19419] — built the shared layer: index, qualified citations, reads, attach and bootstrap.
 - [ORB-19421] — built the app: Settings › Shared library, labels, the share switch and Needs you cards.
+- [ORB-20243] — partitioned Library sources by kind, mirrored in the shared member layout.

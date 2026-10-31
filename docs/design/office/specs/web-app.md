@@ -40,7 +40,7 @@ Source: spec §13.1–§13.2 and §13.4.
 |---|---|
 | **Today** | Library setup card when missing; otherwise Next meeting (time and prep, hidden when the day's meetings are over), Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; a shared-library sync's updates, conflicts and skipped documents as one card; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
 | **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
-| **Calendar** | Week view (day view on a phone) of the user's meetings, read only from Outlook or an ICS feed, with each meeting's prep and capture state in words and the routines' runs as margin marks, and tasks scheduled for a date as blocks; a meeting opens its attendees, agenda, cited prep brief and **Add notes or transcript** ([calendar.md](./calendar.md#app)) |
+| **Calendar** | Week view (day view on a phone) of the user's meetings, authored locally or read from Outlook or an ICS feed, with each meeting's prep and capture state in words and the routines' runs as margin marks, and tasks scheduled for a date as blocks; a meeting opens its attendees, agenda, cited prep brief and **Add notes or transcript** ([calendar.md](./calendar.md#app); local events [ORB-20246]) |
 | **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge, and its scheduled time when it has one; **Schedule…** sets or clears the time ([calendar.md](./calendar.md#scheduled-tasks)) |
 | **Agent work** | The Orbit tasks agents are carrying across the office workspace and followed workspaces: Working now, In review, Queued and Done today groups, with a workspace filter and an Open in Orbit link |
 | **Routines** | The next hour as one track (a mark per scheduled run, hollow where a paused routine skips its slot), then On and Paused tables: a switch, the routine and what it does, when it runs (plain words, with the cron line beneath), when it runs next (worked out from the schedule in the computer's time zone) and how its last time went (from `last_fire` in `orbit.auto_task.list`: when, and its task's state in words; task ids stay on the server). Retention settings below. Scheduled routines use the same tables, with their last run outcome when available. Only shipped component definitions are listed, with a count of hidden Orbit developer routines (see below). Full run history and produced outputs are managed in Orbit. |
@@ -137,7 +137,8 @@ carries its `approval-actions` (below).
 ### Calendar implementation
 
 Calendar, its server feature and Today's Next meeting card are built
-([ORB-19195]), and so are the scheduled-task blocks ([ORB-19216]). The shared
+([ORB-19195]), and so are the scheduled-task blocks ([ORB-19216]) and the
+local events with their source choices ([ORB-20246]). The shared
 contracts are `CalendarView`, `CalendarMeeting`, `CalendarRoutine`,
 `CalendarTask`, `CalendarSynced`, `MeetingNotes` and `MeetingOutcome` in
 `app/packages/contracts`.
@@ -273,7 +274,7 @@ output, or a gateway draft's connection, method, URL, body and digest.
   leaves the others accepted, and the card names it.
 - **Dismiss** rejects a proposal, script output or gateway draft, with an
   optional reason. After a proposal's rejection the app calls
-  `office.proposal-reconcile` once, which moves its evidence page to
+  `office.proposal-reconcile` ([ORB-20247]) once, which moves its evidence page to
   `proposals/dismissed/`; if that call fails, the dismissal still stands and
   the next reconcile moves the page. The review preview reads the proposal's
   `proposal.json` by task id, never its Library page, so it is the same in
@@ -433,6 +434,8 @@ Source, Settings and Today.
 - [ORB-19735] — built the Agent work screen and `GET /api/agents`.
 - [ORB-19740] — projected `brief.task_workspaces` in `office.status`.
 - [ORB-19741] — registered the Agent work screen: route, rail item and count.
+- [ORB-20246] — built local calendar events in the app: the editor, source choices and local endpoints.
+- [ORB-20247] — moved dismissed proposal pages via `office.proposal-reconcile` after app dismissal.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 

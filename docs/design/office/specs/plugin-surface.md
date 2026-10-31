@@ -40,7 +40,7 @@ Source: spec §12. The one-call envelope is
 | `office.signals-scan` | read_only | workspace | Run the proposal signals and return candidate proposals with evidence |
 | `office.proposal-create` | mutating | workspace | File a proposal task, its artifact and its evidence page |
 | `office.proposal-accept` | mutating | **none** | Apply a proposal's payload; close the task |
-| `office.proposal-reconcile` | mutating | **none** | Move each proposal's evidence page to the status folder its task says (`open`, `accepted`, `dismissed`); migrates legacy flat pages; idempotent ([proposals.md](./proposals.md#record-and-lifecycle)) |
+| `office.proposal-reconcile` | mutating | **none** | Move each proposal's evidence page to the status folder its task says (`open`, `accepted`, `dismissed`); migrates legacy flat pages; idempotent ([ORB-20247]; [proposals.md](./proposals.md#record-and-lifecycle)) |
 | `office.metrics` | read_only | workspace | Compute the analytics metrics for a window |
 | `office.selection-get` | mutating | workspace | Return the user's fresh, unused selections from the app; consumes them unless `peek: true`. Mutating because the default consumes |
 | `office.selection-put` | mutating | **none** | Record a selection from the app; `clear: true` empties the tray |
@@ -376,6 +376,7 @@ defaults; existing explicit pack lists keep their values.
 
 - [ORB-18838] — renamed the scaffold README's KT routine from `office-meeting-inbox` to `office-kt-inbox`.
 - [ORB-19740] — projected `brief.task_workspaces` in `office.status`.
+- [ORB-20247] — added `office.proposal-reconcile` and the status-partitioned proposal layout.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 

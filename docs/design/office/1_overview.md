@@ -1,7 +1,7 @@
 ---
 title: office — Overview
 owner: daniel
-last_updated: 2026-10-29
+last_updated: 2026-10-31
 last_validated: 2026-10-26
 status: Draft
 stage: building
@@ -119,7 +119,7 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 | Proposals and their signals | [specs/proposals.md](./specs/proposals.md) | [ORB-18721] done, [ORB-18722] done |
 | Analytics and generated reviews | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) | [ORB-18724] done |
 | Web app screens and rules | [specs/web-app.md](./specs/web-app.md) | [ORB-18727] done, [ORB-18728] done, Agent work [ORB-19735] done and registered [ORB-19741] done |
-| Calendar: read-only sync, meeting prep, capture after the meeting | [specs/calendar.md](./specs/calendar.md) | [ORB-19191] done, [ORB-19192] done, [ORB-19193] done, [ORB-19194] done, [ORB-19195] done |
+| Calendar: local events and read-only sync, meeting prep, capture after the meeting | [specs/calendar.md](./specs/calendar.md) | [ORB-19191] done, [ORB-19192] done, [ORB-19193] done, [ORB-19194] done, [ORB-19195] done, [ORB-20246] done |
 | Shared library: `shareable` documents synced with one team repository | [specs/shared-library.md](./specs/shared-library.md) | [ORB-19417] done, [ORB-19418] done, [ORB-19419] done, [ORB-19421] done |
 | Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-18723] done |
 | Models and privacy routing | [specs/models-and-privacy.md](./specs/models-and-privacy.md) | [ORB-18712] done |
@@ -177,5 +177,6 @@ core.
 - [ORB-19197] — built the office workspace preset so a fresh workspace starts without Orbit's developer defaults.
 - [ORB-19735] — built the Agent work screen and `GET /api/agents`.
 - [ORB-19741] — registered the Agent work screen: route, rail item and count.
+- [ORB-20246] — added local calendar events and source choices so the Calendar screen works with no external calendar.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
