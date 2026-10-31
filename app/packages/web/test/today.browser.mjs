@@ -7,6 +7,7 @@ import { test } from "node:test";
 
 import { createTodayFeature } from "../../server/dist/features/today/index.js";
 import { createHandler } from "../../server/dist/http/router.js";
+import { OrbitExitError } from "../../server/dist/orbit/client.js";
 import { fakeTodayClient, now } from "../../server/test/today-fixture.mjs";
 
 test("Today renders fake Orbit sections, results, empty states, failures and live updates at desktop and phone widths", { timeout: 30_000 }, async (t) => {
@@ -149,11 +150,15 @@ function approvalOrbit(fake) {
     sha256: "b".repeat(64), created_at: "2026-10-27T00:00:00.000Z",
   });
   const files = { review: ["brief.md", "artifact-manifest.json"], script: ["receipts.csv", "summary.md", "artifact-manifest.json", "script-run.json"] };
-  const state = { calls: [], refuse: {}, replies: {} };
+  // `deny` refuses the app's authority the way installed Orbit does: a nonzero exit and its stderr line.
+  const state = { calls: [], refuse: {}, replies: {}, deny: new Set() };
   const find = (id) => fake.state.tasks.find((row) => row.id === id);
   state.client = {
     async callTool(name, input) {
       state.calls.push({ name, input });
+      if (state.deny.has(name)) {
+        throw new OrbitExitError(name, 1, null, JSON.stringify({ error: "capability denied: operation 'plugin.tool.mutating' requires the operator or runner capability", code: "capability_denied" }));
+      }
       const refusal = state.refuse[`${name} ${input.id ?? input.task}`] ?? state.refuse[name];
       if (refusal) return { ok: false, error: { code: refusal, message: "fixture", retryable: false } };
       const task = find(input.id ?? input.task);
@@ -269,6 +274,25 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
   await shoot("today-accept-all-partial");
   await page.clock.fastForward(5_000);
   await page.waitForFunction(() => document.querySelectorAll('[data-group="onboarding"] .approval-page').length === 1);
+
+  // Orbit refusing the app's authority is said plainly, never "Please try again", and nothing changes.
+  orbit.deny.add("office.proposal-accept");
+  const ingest = cardOf("Ingest service");
+  const overview = ingest.locator('.approval-page[data-key="boot-1"]');
+  await overview.getByRole("button", { name: "Accept", exact: true }).click();
+  await overview.getByRole("alert").waitFor();
+  const denied = await overview.getByRole("alert").innerText();
+  assert.match(denied, /^Couldn’t accept “Ingest service: overview”\. The app isn’t allowed to do this yet, so nothing changed\. Trying again won’t help\.$/);
+  assert.doesNotMatch(denied, /Please try again/);
+  await ingest.getByRole("button", { name: "Accept all" }).click();
+  await ingest.getByText(/Accepted 0 of 2 pages\. .* still here to review\. The app isn’t allowed to do this yet, so nothing changed\./).waitFor();
+  orbit.deny.add("orbit.task.update");
+  const policies = cardOf("Pages about your processes and policies");
+  await policies.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await policies.getByText("Couldn’t dismiss this. The app isn’t allowed to do this yet, so nothing changed. Trying again won’t help.").waitFor();
+  for (const id of ["boot-1", "boot-2", "boot-3"]) assert.equal(fake.state.tasks.find((row) => row.id === id).status, "proposed");
+  await shoot("today-not-permitted");
+  orbit.deny.clear();
 
   // A lost gateway reply is reported as unknown, not as a failure.
   orbit.replies["gateway.http-send"] = { outcome: "outcome_unknown", status: null, task_closed: false };
