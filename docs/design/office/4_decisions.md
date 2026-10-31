@@ -1,7 +1,7 @@
 ---
 title: office — Decisions
 owner: daniel
-last_updated: 2026-10-30
+last_updated: 2026-10-31
 last_validated: 2026-10-26
 status: Draft
 feature: office
@@ -1305,6 +1305,11 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-19751] — registered Muse Code with `--agent muse` in the installer.
 - [ORB-19752] — withheld private content from MCP-visible read tools.
 - [ORB-20096] — enabled scoped agent permissions for Office capture and proposals.
+- [ORB-20228] — stopped the installer copying office skills the Orbit plugin already links.
+- [ORB-20242] — moved conversation evidence to session-transcript extraction on a cheap crew.
+- [ORB-20243] — partitioned Library sources by kind.
+- [ORB-20246] — kept local calendar events as workspace writes.
+- [ORB-20247] — partitioned Library proposals by status.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 
@@ -1854,7 +1859,7 @@ is the same move as a standalone step.
 
 ## Conversation evidence comes from session transcripts on a cheap crew
 
-**Recorded:** 2026-10-30
+**Recorded:** 2026-10-30 · [ORB-20242]
 **Code anchors:** `office-core/src/domain/source/conversation.rs`,
 `office-tools/src/tools/sources/capture.rs`; [specs/sessions.md](./specs/sessions.md#transcript-extraction)
 

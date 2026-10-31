@@ -80,7 +80,7 @@ anchor and id.
 ## Transcript extraction
 
 The built `office.capture` tool has a session mode separate from uploads and
-WebVTT's `transcript_path`. No new Orbit-core service is needed. Its inputs
+WebVTT's `transcript_path` ([ORB-20242]). No new Orbit-core service is needed. Its inputs
 cannot be mixed with other capture fields:
 
 ```json
@@ -386,5 +386,6 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-19702] — built session-brief merging of tasks from configured extra workspaces.
 - [ORB-19706] — built federated workspace reads for plugin callbacks.
 - [ORB-19733] — built cross-host session-brief routing to federated workspaces.
+- [ORB-20242] — built conversation transcript extraction through the `office.capture` session mode and the SessionEnd sweep.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

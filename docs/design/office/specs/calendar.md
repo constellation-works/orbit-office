@@ -18,7 +18,7 @@ Connected calendars never receive writes. Accepting, declining or creating an
 external invite is an outward-facing action, and none is built. Creating, editing
 and deleting a local event changes only workspace-owned Library data, in the
 same action class as writing meeting notes; it sends no invitation or gateway request
-([local-backend decision](../4_decisions.md#local-calendar-events-are-workspace-writes))
+([local-backend decision](../4_decisions.md#local-calendar-events-are-workspace-writes), built in [ORB-20246])
 ([orchestrator.md](./orchestrator.md#guardrails)).
 
 ## The loop
@@ -527,6 +527,7 @@ above; unknown leaves and other types refuse the update.
 - [ORB-19216] — built the Schedule… picker, scheduled tasks on the calendar and the dispatch pass's wait; needs an Orbit release with ws_orbit [ORB-19214] and [ORB-19215].
 - [ORB-19214] — built Orbit's `not_before` field and its admission hold (ws_orbit).
 - [ORB-19215] — built Orbit's date-range list filter and surfaces (ws_orbit).
+- [ORB-20246] — built local calendar events, source selection and the workspace event store.
 
 ### Meeting-prep implementation contract
 
