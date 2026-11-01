@@ -163,10 +163,17 @@ fn scrub(value: &mut Value, emails: &[&str]) {
                 if email.is_empty() {
                     continue;
                 }
-                while let Some(start) = text.to_ascii_lowercase().find(&email.to_ascii_lowercase())
-                {
-                    text.replace_range(start..start + email.len(), "[contact withheld]");
+                let lower = text.to_ascii_lowercase();
+                let needle = email.to_ascii_lowercase();
+                let mut redacted = String::with_capacity(text.len());
+                let mut end = 0;
+                for (start, matched) in lower.match_indices(&needle) {
+                    redacted.push_str(&text[end..start]);
+                    redacted.push_str("[contact withheld]");
+                    end = start + matched.len();
                 }
+                redacted.push_str(&text[end..]);
+                *text = redacted;
             }
         }
         Value::Array(xs) => {
