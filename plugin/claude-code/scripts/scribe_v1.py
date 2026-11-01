@@ -60,6 +60,130 @@ USAGE = ("usage: /scribe [note <text> | pending | pref <matter> | landed [today|
          "why <matter|topic> | ask <question> | title <text> | backfill [--since <date>] [--project <name>]]")
 
 
+# --- staged-transcript stripping --------------------------------------
+# Office's conversation parser keeps only `type=text` content blocks (and
+# string content) from user/assistant records, and skips isMeta, isSidechain
+# and isCompactSummary records. Tool payloads are therefore dropped at
+# staging time so a long, tool-heavy session fits Office's 8 MiB input cap
+# without changing any kept text, and so every `m-<n>` id is unchanged.
+# Stripping is a pure per-record function: no whole-file threshold and no
+# positional logic, so the staged bytes of an unchanged record never change
+# when a live transcript grows.
+
+_ENVELOPE_KEYS = {"type", "sessionId", "timestamp", "cwd", "gitBranch",
+                  "isMeta", "isSidechain", "isCompactSummary", "uuid", "parentUuid"}
+_PAYLOAD_KEYS = {"content", "input", "thinking", "signature", "data", "source", "output", "result"}
+_CRED_PREFIX = re.compile(r"(?<![A-Za-z0-9_-])(?:sk-|ghp_|gho_|github_pat_|xoxb-|xoxp-|AKIA|eyJ)[A-Za-z0-9_\-./+=]{16,}")
+_CRED_ASSIGN = re.compile(r"(?i)(?<![A-Za-z0-9_])(?:token|password|secret|api_key|apikey|access_token)\s*[:=]\s*[^\s\"',}\]]{8,}")
+_CRED_BEARER = re.compile(r"(?i)\bbearer\s+\S+")
+_CRED_PEM = re.compile(r"-----BEGIN[^-\r\n]*-----.*?-----END[^-\r\n]*-----", re.S)
+_CRED_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'<>]+")
+
+
+def _strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item)
+
+
+def _credential_fragments(value) -> list[str]:
+    """Credential-shaped fragments in a dropped payload, verbatim.
+
+    Mirrors the shapes `office-core`'s `scrub` redacts, so a credential that
+    appeared only in a tool payload still appears in the staged bytes and
+    Office still marks the session private (scrubbed) instead of handing it
+    to the scribe agent.
+    """
+    found: list[str] = []
+    for text in _strings(value):
+        if "-----BEGIN" in text:
+            pem = list(_CRED_PEM.finditer(text))
+            found.extend(match.group(0) for match in pem)
+            if not pem:
+                found.append("-----BEGIN")
+        if any(marker in text for marker in ("sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "eyJ")):
+            found.extend(match.group(0) for match in _CRED_PREFIX.finditer(text))
+        lower = text.lower()
+        if any(key in lower for key in ("token", "password", "secret", "api_key", "apikey", "access_token")):
+            found.extend(match.group(0) for match in _CRED_ASSIGN.finditer(text))
+        if "bearer" in lower:
+            found.extend(match.group(0) for match in _CRED_BEARER.finditer(text))
+        if "://" in text:
+            for match in _CRED_URL.finditer(text):
+                url = match.group(0)
+                authority = url.split("://", 1)[1].split("/", 1)[0]
+                if ":" in authority and "@" in authority:
+                    found.append(url)
+    return list(dict.fromkeys(found))
+
+
+def _preserved(fragments: list[str]) -> str:
+    return " " + " ".join(dict.fromkeys(fragments)) + " "
+
+
+def _strip_block(block: dict) -> dict:
+    if block.get("type") == "text":
+        return block
+    out: dict = {"type": block["type"]} if "type" in block else {}
+    for key in ("id", "tool_use_id", "name", "is_error"):
+        if key in block and (not isinstance(block[key], str) or len(block[key]) <= 128):
+            out[key] = block[key]
+    fragments: list[str] = []
+    for key, value in block.items():
+        if key == "type" or key in out:
+            continue
+        if key in _PAYLOAD_KEYS or not isinstance(value, (str, int, float, bool, type(None))) or len(str(value)) > 128:
+            fragments.extend(_credential_fragments(value))
+        else:
+            out[key] = value
+    if fragments:
+        out["_preserved"] = _preserved(fragments)
+    return out
+
+
+def _strip_content(content):
+    if isinstance(content, str) or not isinstance(content, list):
+        return content
+    out = []
+    for block in content:
+        if isinstance(block, dict):
+            out.append(_strip_block(block))
+        elif isinstance(block, str) and len(block) > 128:
+            stub: dict = {"type": "stripped"}
+            fragments = _credential_fragments(block)
+            if fragments:
+                stub["_preserved"] = _preserved(fragments)
+            out.append(stub)
+        else:
+            out.append(block)
+    return out
+
+
+def _strip_record(record: dict) -> dict:
+    out: dict = {}
+    fragments: list[str] = []
+    for key, value in record.items():
+        if key == "message" and isinstance(value, dict):
+            message = {}
+            for mkey, mvalue in value.items():
+                message[mkey] = _strip_content(mvalue) if mkey == "content" else mvalue
+            out[key] = message
+        elif key in _ENVELOPE_KEYS:
+            out[key] = value
+        elif isinstance(value, (dict, list)) or (isinstance(value, str) and len(value) > 256):
+            fragments.extend(_credential_fragments(value))
+        else:
+            out[key] = value
+    if fragments:
+        out["_preserved"] = _preserved(fragments)
+    return out
+
+
 def message_index(msg_id: str) -> int:
     return int(msg_id.split("-", 1)[1])
 
@@ -183,11 +307,15 @@ class V1:
         return None
 
     def stage(self, sid: str, transcript: str, cwd: str) -> Path | None:
-        """Copy the transcript's complete records into the workspace for Office.
+        """Stage the records Office's parser reads into the workspace.
 
         Office reads transcripts only inside the granted workspace, so the
-        provider file is published `0600` as `session-transcripts/scribe-<id>.jsonl`.
-        None when the session touched an excluded project.
+        stripped provider file is published `0600` as
+        `session-transcripts/scribe-<id>.jsonl`. Only the record envelope and
+        text content are staged; tool payloads are dropped (see the stripping
+        helpers above), with credential-shaped fragments preserved verbatim
+        in a parser-ignored field so Office still marks such a session
+        private. None when the session touched an excluded project.
         """
         self.client.session_id(sid)
         if self.client.excluded_project(cwd):
@@ -204,18 +332,26 @@ class V1:
                 json.loads(data[cut:])
             except ValueError:
                 data = data[:cut]
+        staged_lines: list[bytes] = []
         for line in data.splitlines():
-            if b'"cwd"' not in line:
+            if not line.strip():
                 continue
             try:
                 record = json.loads(line)
             except ValueError:
+                staged_lines.append(line)
                 continue
-            if isinstance(record, dict) and isinstance(record.get("cwd"), str) and self.client.excluded_project(record["cwd"]):
+            if not isinstance(record, dict):
+                staged_lines.append(line)
+                continue
+            if isinstance(record.get("cwd"), str) and self.client.excluded_project(record["cwd"]):
                 return None
+            stripped = _strip_record(record)
+            staged_lines.append(json.dumps(stripped, ensure_ascii=False, separators=(",", ":")).encode())
+        staged = b"\n".join(staged_lines) + (b"\n" if staged_lines else b"")
         self.client.setup()
         target = self.client.staging / ("scribe-" + sid + ".jsonl")
-        publish(target, data)
+        publish(target, staged)
         return target
 
     def models(self, rules: dict | None = None) -> dict:
