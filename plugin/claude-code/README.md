@@ -109,11 +109,31 @@ the place for meeting notes.
   untagged note, `ask` and backfill return an `agent` request, which the
   command passes to the `scribe` subagent with its model.
 - **Staging.** Office reads transcripts only inside the granted workspace, so
-  each run copies the session's complete records to
+  each run stages the session to
   `.orbit/tmp/session-transcripts/scribe-<session-id>.jsonl` (`0600`, private
-  directory; a trailing partial record is left out). That path is what the
-  SCR file's `transcript` key records. Office writes its parse and the SCR
-  file; the plugin never edits either.
+  directory; a trailing partial record is left out). Staging keeps only what
+  Office's parser reads: each record's envelope (`type`, `sessionId`,
+  `timestamp`, `cwd`, branch and sidechain flags) and message role/model,
+  string content, and `text` content blocks verbatim. Non-text blocks
+  (`tool_use`, `tool_result`, `thinking`, …) become minimal stubs with their
+  payloads dropped, and other large record fields (such as `toolUseResult`)
+  are dropped too, so a tool-heavy transcript that is tens of megabytes as a
+  provider file usually stages under Office's 8 MiB input cap and can be
+  scribed. Because only kept text determines the `m-<n>` ids, those ids are
+  identical to an unstripped parse. Stripping is a pure per-record function,
+  so re-staging a growing transcript leaves the staged bytes of unchanged
+  records unchanged. One exception: credential-shaped fragments found in a
+  dropped payload (provider token prefixes, PEM blocks, secret assignments,
+  bearer tokens and credential-bearing URLs) are kept verbatim in a
+  parser-ignored `_preserved` field, so Office's scrubber still marks the
+  session private and withholds it, exactly as for the unstripped file. If
+  the conversational text alone (with those fragments) still exceeds 8 MiB,
+  `office.scribe-pending` still refuses with
+  `session_transcript_too_large`; there is no windowed partial parse, and
+  the remedy is to scribe the session in passes as it grows or wait for a
+  future windowed reader. That path is what the SCR file's `transcript` key
+  records. Office writes its parse and the SCR file; the plugin never edits
+  either.
 - **Writing level.** The agent calls the tool's `pending` step for the
   messages (at most about 40,000 characters of new text per pass, with up to
   10 earlier messages as read-only context; very long messages are cut and
@@ -207,7 +227,9 @@ open on the local flag and heartbeat files. SessionEnd
 requires a complete final JSONL file. Each immutable snapshot is published
 `0600` in `0700` `.orbit/tmp/session-transcripts/`, then its sibling descriptor
 is published last with session id, absolute transcript path, SHA-256, byte
-length, completion time, project and mode. Provider input is bounded to 8 MiB.
+length, completion time, project and mode. Provider input for these legacy
+snapshots is bounded to 8 MiB (the v1 staging above strips tool payloads
+before Office's separate 8 MiB cap instead; it is not bounded this way).
 The hooks read no Library directory and send no raw transcript off-host.
 
 Scribe state lives under `.orbit/tmp/`. `scribe/` and `session-transcripts/`

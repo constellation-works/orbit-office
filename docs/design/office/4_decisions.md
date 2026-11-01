@@ -2310,6 +2310,49 @@ v1 has proven what to keep.
   `/etc/localtime` link. Names and entry times use it; message files keep
   the transcript's RFC 3339 times.
 
+## Scribe staging strips tool payloads before the 8 MiB cap
+
+**Recorded:** 2026-11-01 · [ORB-20849]
+**Code anchors:** `plugin/claude-code/scripts/scribe_v1.py::V1.stage`,
+`_strip_record`, `_strip_block`, `_credential_fragments`;
+`crates/office-core/src/domain/source/conversation.rs::parse` (keeps only
+`text` blocks), `crates/office-store/src/repository/library.rs::load_session`
+(the 8 MiB refusal); [specs/scribe.md](./specs/scribe.md#staging-tool-payloads-are-not-staged)
+
+### Context
+
+Long sessions failed `office.scribe-pending` with
+`session_transcript_too_large` because the plugin staged the provider
+transcript whole and most of its bytes are tool inputs and results the
+parser never reads. The 8 MiB cap itself stays: it bounds what Office will
+read and scrub in one call.
+
+### Decision
+
+The plugin stages only the records the parser reads, per record and with no
+whole-file threshold: record envelope and message role/model, string
+content and `text` blocks verbatim; non-text blocks as minimal stubs with
+payloads dropped; other large record fields dropped. Message ids are
+therefore identical to an unstripped parse, and a growing transcript's
+unchanged staged prefix stays byte-identical. Credential-shaped fragments
+in dropped payloads are kept verbatim in a parser-ignored `_preserved`
+field, mirroring `conversation::scrub`, so such a session is still marked
+private and withheld from the scribe agent. When the conversational text
+alone exceeds the cap, the refusal stands for the whole session — a
+windowed read of only the messages after `scribed_through` would need a
+Rust reader that can assign prefix-dependent ids without the full file,
+and is left as future work; scribing in passes as a session grows is the
+current remedy.
+
+### Consequences
+
+- Tool-heavy sessions (tens of megabytes as provider files) scribe through
+  `/scribe` and `/scribe backfill` with stable `m-<n>` ids.
+- The staged file's digests describe staged bytes, not provider bytes.
+- Cost: a Python mirror of `scrub`'s credential shapes must be kept in step
+  with `office-core`, and a session whose text alone passes 8 MiB still
+  cannot be scribed in one call.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
@@ -2337,5 +2380,6 @@ v1 has proven what to keep.
 - [ORB-20690] — orchestrated the scribe and recall push; recorded scribe v1.
 - [ORB-20780] — built `office.scribe-pending` and `office.scribe-append`.
 - [ORB-20825] — moved local calendar events into the Library's ignored state, inside the plugin's write grant.
+- [ORB-20849] — made long, tool-heavy sessions scribable by stripping tool payloads at staging.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -83,7 +83,10 @@ transcript ──parse (no model)──▶ <library>/.office/state/scribe/<sessi
                      append (no model, validates) ──▶ SCR-<dd-hhmm>-<title>.md
 ```
 
-1. **Parse: model-free.** It reads the provider transcript through the
+1. **Parse: model-free.** The Claude Code plugin stages the provider
+   transcript into the workspace first (see
+   [Staging](#staging-tool-payloads-are-not-staged) below), then
+   `office.scribe-pending` reads the staged file through the
    existing conversation adapter ([sessions.md](./sessions.md#adapter-and-provenance)).
    That adapter keeps only the text exchanged between Daniel and the agent:
    no tool calls, tool results, thinking or sidechains. Credentials are
@@ -119,6 +122,46 @@ Only Daniel's lines can become `decision`, `direction` or `todo` (the
 existing guard: an assistant line never becomes a decision or direction).
 Assistant lines are scribed only for `landed` and `fact`, for an answer to a
 question Daniel asked, and for the orchestrator tags below.
+
+### Staging: tool payloads are not staged
+
+The plugin's stager (`scribe_v1.py::V1.stage`) does not copy the provider
+transcript whole. Per record it stages only what the adapter reads: the
+record envelope (`type`, `sessionId`, `timestamp`, `cwd`, `gitBranch`,
+`isMeta`/`isSidechain`/`isCompactSummary` and ids), the message role and
+model, string content, and `text` content blocks verbatim. Every non-text
+block (`tool_use`, `tool_result`, `thinking`, …) is staged as a minimal stub
+carrying its type and small ids with its payload dropped, and other large
+record fields (for example `toolUseResult`) are dropped. Malformed lines are
+kept verbatim, as is a trailing complete record; a trailing partial record
+is left out, as before.
+
+- **Message ids are unchanged.** Ids count kept text messages only, so a
+  staged parse assigns exactly the `m-<n>` ids an unstripped parse would.
+- **Prefix stability.** Stripping is a pure per-record function with no
+  whole-file threshold or positional logic, so re-staging a growing
+  transcript leaves the staged bytes of unchanged records unchanged (the
+  staged bytes feed the transcript and per-line prefix digests).
+- **Privacy is unchanged.** Credential-shaped fragments in a dropped
+  payload — provider token prefixes (`sk-`, `ghp_`, `AKIA`, `eyJ`, …), PEM
+  blocks, secret assignments, bearer tokens and credential-bearing URLs,
+  mirroring `office-core`'s `scrub` — are kept verbatim in a parser-ignored
+  `_preserved` field on the stub (or on the record for dropped record-level
+  fields). Office's scrub of the staged bytes therefore still marks such a
+  session private and `scribe-pending` withholds it, as for the unstripped
+  file. No other tool-payload text is staged.
+- **Over-cap conversations.** Office's 8 MiB cap (`conversation::INPUT_LIMIT`)
+  applies to the staged file. A tool-heavy session whose provider file is
+  far over the cap normally stages under it and scribes normally. If the
+  conversational text alone (with preserved credential fragments) still
+  exceeds 8 MiB, `office.scribe-pending` still refuses the whole call with
+  `session_transcript_too_large`: there is no windowed parse of the messages
+  after `scribed_through`, because message ids need the full prefix. The
+  practical remedy today is to scribe a long session in passes as it grows;
+  a windowed reader in Office is future work, not part of this staging
+  change. The legacy automatic-capture snapshots (`provider-scribe-…`) are
+  unaffected: they still copy provider bytes whole under their own 8 MiB
+  bound, and no `from_line` capture reads a `scribe-<id>.jsonl` file.
 
 ### Orchestrators scribe their own work
 

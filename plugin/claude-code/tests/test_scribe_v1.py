@@ -286,6 +286,82 @@ class ScribeV1(unittest.TestCase):
         rest = self.scribe("")
         self.assertEqual(rest["new_count"], 1)
 
+    # ---- long sessions: tool payloads are not staged --------------------
+
+    def write_records(self, records, path=None):
+        path = path or self.path
+        with path.open("w") as stream:
+            for record in records:
+                stream.write(json.dumps(record) + "\n")
+        return path
+
+    def record(self, role, content, index, **extra):
+        base = {"type": role, "sessionId": self.sid, "cwd": str(self.project),
+                "timestamp": "2026-10-30T0{}:00:00Z".format(index % 10),
+                "message": {"role": role, "content": content}}
+        base.update(extra)
+        return base
+
+    def staged_path(self):
+        return self.workspace / ".orbit/tmp/session-transcripts" / ("scribe-" + self.sid + ".jsonl")
+
+    def test_long_tool_heavy_transcript_is_staged_under_the_cap_with_stable_ids(self):
+        payload = "z" * (9 * 1024 * 1024)
+        self.write_records([
+            self.record("user", "We decided to keep the scribe local because it is cheap", 0),
+            self.record("assistant", [{"type": "text", "text": "Merged as PR#268"},
+                                      {"type": "tool_use", "id": "toolu_1", "name": "Bash",
+                                       "input": {"command": payload}}], 1),
+            self.record("user", [{"type": "tool_result", "tool_use_id": "toolu_1", "content": payload},
+                                 {"type": "text", "text": "Always release early and exclude pending defects"}], 2,
+                        toolUseResult={"stdout": payload}),
+            self.record("assistant", [{"type": "thinking", "thinking": payload},
+                                      {"type": "text", "text": "Noted the preference"}], 3),
+        ])
+        self.assertGreater(self.path.stat().st_size, 8 * 1024 * 1024)
+        reply = self.scribe("")
+        self.assertTrue(reply["model_call"])
+        self.assertEqual(reply["new_count"], 4)
+        pending, appended = self.agent_catchup(reply, [
+            {"msg": "m-0001", "quote": "keep the scribe local", "tag": "decision"},
+            {"msg": "m-0002", "quote": "Merged as PR#268", "tag": "landed", "refs": ["PR#268"]}])
+        self.assertEqual([(m["id"], m["role"], m["text"]) for m in pending["messages"]], [
+            ("m-0001", "user", "We decided to keep the scribe local because it is cheap"),
+            ("m-0002", "assistant", "Merged as PR#268"),
+            ("m-0003", "user", "Always release early and exclude pending defects"),
+            ("m-0004", "assistant", "Noted the preference")])
+        self.assertEqual(appended["added"], 2)
+        staged = self.staged_path()
+        self.assertLessEqual(staged.stat().st_size, 8 * 1024 * 1024)
+        self.assertNotIn("z" * 1000, staged.read_text())
+        self.assert_no_model_process()
+
+    def test_credential_only_in_a_tool_result_stays_verbatim_in_the_staged_file(self):
+        credential = "sk-" + "A" * 32
+        assignment = "api_key=supersecretvalue123"
+        self.write_records([
+            self.record("user", "hello scribe", 0),
+            self.record("user", [{"type": "tool_result", "tool_use_id": "toolu_1",
+                                  "content": "output " + credential + " and " + assignment + " done"},
+                                 {"type": "text", "text": "after the tool"}], 1),
+        ])
+        self.scribe("")
+        staged = self.staged_path().read_text()
+        self.assertIn(credential, staged)
+        self.assertIn(assignment, staged)
+
+    def test_staging_a_growing_transcript_keeps_the_unchanged_prefix_bytes(self):
+        first = [self.record("user", "first decision here", 0),
+                 self.record("assistant", "Merged as PR#268", 1)]
+        self.write_records(first)
+        self.scribe("")
+        before = self.staged_path().read_bytes().splitlines()
+        self.write_records(first + [self.record("user", "second decision here", 2)])
+        self.scribe("")
+        after = self.staged_path().read_bytes().splitlines()
+        self.assertEqual(after[:len(before)], before)
+        self.assertGreater(len(after), len(before))
+
     # ---- criterion 2: model-free note and queries -----------------------
 
     def test_tagged_note_writes_through_append_without_a_model(self):

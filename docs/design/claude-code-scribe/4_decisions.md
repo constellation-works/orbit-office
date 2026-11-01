@@ -161,9 +161,51 @@ catch-up. The command's routing still depends on the session model following
 `commands/scribe.md`; the deterministic parts are tested through the MCP
 entrypoint without inference.
 
+## Scribe v1 staging strips tool payloads
+
+**Recorded:** 2026-11-01 · [ORB-20849]
+**Code anchors:** `plugin/claude-code/scripts/scribe_v1.py::V1.stage`,
+`_strip_record`, `_credential_fragments`;
+[specs/scribe.md](../office/specs/scribe.md#staging-tool-payloads-are-not-staged)
+
+### Context
+
+`office.scribe-pending` refuses a staged transcript over 8 MiB
+(`session_transcript_too_large`), and long orchestration sessions — mostly
+tool output — could never be scribed. Office's parser keeps only `text`
+content blocks and string content, so the staged tool payloads were bytes
+the scribe never reads. Lifting the cap blindly would admit arbitrarily
+large raw transcripts; a windowed parse for a conversation whose text alone
+is over the cap would need a Rust change in `office-store` and is not done
+here.
+
+### Decision
+
+This supersedes the "complete records" staging bullet in
+[Scribe v1 command surface](#scribe-v1-command-surface). `V1.stage` stages,
+per record, only the envelope and message fields the parser reads plus text
+verbatim; non-text blocks become minimal stubs with payloads dropped, and
+other large record fields are dropped. Stripping is a pure per-record
+function, so a growing transcript's unchanged staged prefix is byte-stable.
+Credential-shaped fragments in dropped payloads are preserved verbatim in a
+parser-ignored `_preserved` field, mirroring `office-core::scrub`, so a
+session whose only credential sat in a tool result is still marked private
+and withheld. If the kept text alone exceeds 8 MiB the call still refuses
+with `session_transcript_too_large`, as documented in the spec.
+
+### Consequences
+
+- Tool-heavy sessions well over 8 MiB as provider files stage under the cap
+  and scribe with the same `m-<n>` ids as an unstripped parse.
+- Cost: the staged file is no longer a byte copy of the provider transcript,
+  so its digest and per-line prefix digests describe the staged bytes, not
+  the provider's; anyone needing raw tool output must read the provider
+  file, and the credential-fragment mirror must track `scrub`'s shapes.
+
 ## Task References
 
 - [ORB-20689] — built the Claude Code provider scribe and recall client.
 - [ORB-20799] — Scribe v1 agent and `/scribe` commands in the plugin.
+- [ORB-20849] — made long, tool-heavy sessions scribable by stripping tool payloads at staging.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
