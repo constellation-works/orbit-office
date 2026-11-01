@@ -1,8 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.session-brief request",
-  "description": "Assemble the deterministic brief for the current workspace. Call before opening a new conversation source. No input, inference or writes.",
+  "description": "Assemble the deterministic brief for the current workspace. Call before opening a new conversation source. Optionally pass the current session's project and orchestrator to lead with that thread's handoff and list other recent threads in other_sessions; with no project the legacy single-conversation output is returned. No inference or writes.",
   "type": "object",
-  "properties": {},
+  "properties": {
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Current project (repository name or working-directory path, normalized to the repository name). Absent or null keeps the legacy output."
+    },
+    "orchestrator": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Current orchestrator (for example claude or codex); inside the project, its thread's handoff leads. Absent or null means no orchestrator preference."
+    }
+  },
   "additionalProperties": false
 }

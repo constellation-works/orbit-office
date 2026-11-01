@@ -169,6 +169,12 @@ class PluginBehavior(unittest.TestCase):
     def flag(self):
         return self.workspace / (".orbit/tmp/scribe/" + self.sid)
 
+    def test_session_start_brief_forwards_project_and_orchestrator(self):
+        self.hook("SessionStart")
+        briefs = self.calls("office.session-brief")
+        self.assertEqual(len(briefs), 1)
+        self.assertEqual(briefs[0]["input"], {"project": "project", "orchestrator": "claude"})
+
     def test_start_brief_stop_debounce_switch_now_and_final(self):
         start = self.hook("SessionStart")
         self.assertEqual(start.returncode, 0, start.stderr)

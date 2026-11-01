@@ -26,6 +26,19 @@ TOOLS = {"office.session-brief", "office.capture", "office.recall", "office.scri
          "orbit.task.add", "orbit.task.show"}
 
 
+def repo_project(cwd: str) -> str:
+    """The repository name for a working directory (path rule only, no git).
+
+    A Claude Code worktree cwd (`<repo>/.claude/worktrees/<name>`) names its
+    repository; otherwise the directory's own name. This mirrors the name
+    conversation sources record as their project.
+    """
+    parts = [part for part in cwd.rstrip("/").split("/") if part]
+    if len(parts) >= 4 and parts[-2] == "worktrees" and parts[-3] == ".claude":
+        return parts[-4]
+    return parts[-1] if parts else cwd
+
+
 def user_turn(record: dict) -> bool:
     if record.get("type") != "user" or record.get("isMeta") or record.get("isSidechain"):
         return False
@@ -367,7 +380,11 @@ class Scribe:
             save(self.state / (sid + ".context.json"), {k: context[k] for k in ("session_id", "cwd", "transcript_path") if k in context})
             save(self.state / (sid + ".json"), state)
             if event == "SessionStart":
-                return {"brief": self.call("office.session-brief", {})}
+                brief_input = {}
+                if isinstance(context.get("cwd"), str) and context["cwd"]:
+                    brief_input = {"project": repo_project(context["cwd"]),
+                                   "orchestrator": "claude"}
+                return {"brief": self.call("office.session-brief", brief_input)}
             if self.shared is not None and self.shared.get("on") is None:
                 # First turn Office sees: publish this host's switch (the
                 # plugin default) so the window shows the same state.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.session-brief response",
-  "description": "Ordered sections. Handoff, latest_digest, workspace_unavailable and onboarding are absent when empty. The other five sections are always present. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence from the office workspace refuses the whole brief; an unreadable extra workspace (brief.task_workspaces) appears as one workspace_unavailable item instead. Task items from an extra workspace carry workspace (its selector); office-workspace items omit it.",
+  "description": "Ordered sections. Handoff, other_sessions, latest_digest, workspace_unavailable and onboarding are absent when empty. The other five sections are always present. Handoff is the newest handoff of the current session's thread (its project, preferring its orchestrator; a thread is the first Orbit task id its handoff cites, else its conversation's project plus orchestrator); other_sessions lists one cited handoff item per other thread, newest first, for handoffs no more than seven days older than the newest conversation source, capped at five items with total and truncated reporting the window count and cap. Other_sessions is present only when the request carried a project; without a project the output is the legacy single-conversation brief. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence from the office workspace refuses the whole brief; an unreadable extra workspace (brief.task_workspaces) appears as one workspace_unavailable item instead. Task items from an extra workspace carry workspace (its selector); office-workspace items omit it.",
   "type": "object",
   "properties": {
     "sections": {
@@ -13,6 +13,7 @@
             "type": "string",
             "enum": [
               "handoff",
+              "other_sessions",
               "since",
               "waiting_on_you",
               "agents_working_on",

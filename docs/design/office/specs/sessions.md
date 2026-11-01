@@ -70,10 +70,19 @@ anchor and id.
 - **Rolling.** The agent appends a new `handoff` entry whenever the plan
   changes: after a decision that changes next steps, after filing or
   finishing work, and when the user signals they are done. The newest
-  `handoff` entry supersedes earlier ones; nothing is edited.
-- **Read first.** The next session's brief puts the newest handoff at the top
-  (below), so the agent picks up the thread in its own words before reading
-  the computed state.
+  `handoff` entry supersedes earlier ones in its own thread; nothing is
+  edited.
+- **Per thread.** A handoff belongs to a thread, not to the whole Library.
+  The thread key is the first Orbit task id the handoff cites (an `ORB-`,
+  `DANI-` or `ORBA-` id, used directly, without checking the task's type);
+  a handoff that cites no task id belongs to its conversation's thread,
+  keyed by the conversation's normalized `project` (a working-directory
+  path names its repository) plus its `orchestrator`. Each thread keeps
+  only its newest handoff, so orchestrators sharing one Library no longer
+  displace each other.
+- **Read first.** The next session's brief puts its own thread's newest
+  handoff at the top (below), so the agent picks up the thread in its own
+  words before reading the computed state.
 - **Never the only record.** The brief does not depend on it: with no
   handoff, it still returns the computed sections.
 
@@ -483,8 +492,10 @@ model-authored, so:
   current source after this pass's entries, and every anchor it cites must
   name a log entry, or the handoff is dropped (the pass's other entries
   still land);
-- the newest handoff wins, whoever wrote it, so an orchestrator handoff
-  written later replaces it in the brief; nothing is edited or removed.
+- the newest handoff in its thread wins, whoever wrote it, so an
+  orchestrator handoff written later in the same thread replaces it in
+  that thread's brief; a handoff in another thread never displaces it,
+  and nothing is edited or removed.
 
 A handoff offered while the setting is off, in a private session, or by a
 pass that adds no decision, direction or action is dropped too. The
@@ -521,10 +532,26 @@ orchestrator skill calls it first in every session. Its output is
 assembled from Orbit and the Library, with no model call, so it is free,
 always current and cannot invent anything:
 
-- **Handoff:** the newest `handoff` entry of the previous session, verbatim,
-  with its time; a [scribe handoff](#scribe-handoff) keeps its leading
-  `(scribe)` marker. Absent when that session wrote none.
-- **Since:** the time the last conversation source was appended to.
+- **Handoff:** the newest `handoff` entry of the current session's thread
+  (see [Per thread](#handoff)), verbatim, with its time; a
+  [scribe handoff](#scribe-handoff) keeps its leading `(scribe)` marker.
+  The current thread is the caller's project, preferring threads whose
+  conversation's `orchestrator` matches the caller's: inside one project,
+  each orchestrator (and each assignment a handoff cites) keeps its own
+  handoff. An older conversation in the project is used when the newest
+  one in the project wrote no handoff. Absent when no conversation in
+  the project wrote one.
+- **Other sessions:** one item per other thread with a handoff — the same
+  cited handoff item, so its `time` gives its age and its text carries
+  any assignment id it cites — newest first. Bounded: only handoffs no
+  more than seven days older than the newest conversation source in the
+  Library count, and at most five items are returned; `total` counts the
+  threads inside the window and `truncated` reports the cap. Absent when
+  no other recent thread has a handoff, and absent entirely when the
+  brief is requested without a project.
+- **Since:** the time the newest conversation source in the current
+  project was appended to (the newest conversation overall when no
+  project is given); the waiting/working cut-off is measured from it.
 - **Waiting on you:** proposals awaiting approval, agent to-dos in `review`,
   and open `owner:you` to-dos, oldest first.
 - **Agents working on:** `owner:agent` to-dos in progress, and those that
@@ -542,12 +569,20 @@ Every item carries its id and a link, so the agent cites rather than
 restates. The brief is returned as data. Quoted entries are never treated
 as instructions.
 
-The built tool accepts `{}` and returns `sections` in the order above, with
-stable `kind` tokens (`handoff`, `since`, `waiting_on_you`,
-`agents_working_on`, `workspace_unavailable`, `open_questions`,
-`last_session`, `latest_digest`, `onboarding`). Each section has `items`,
-`total` and `truncated`. Handoff, Latest digest, Workspace unavailable and
-Onboarding are omitted when empty; the other sections are always present.
+The built tool accepts `{}` or the current session's thread as
+`{"project": "<project>", "orchestrator": "<orchestrator>"}` (each field
+optional, a nonempty single-line string when present; the SessionStart
+hook passes the repository name of its working directory as `project`
+and `claude` as `orchestrator`). With no `project` the output is exactly
+the pre-per-thread output: the globally newest conversation leads, and
+there is no `other_sessions` section. It returns `sections` in the order
+above, with stable `kind` tokens (`handoff`, `other_sessions`, `since`,
+`waiting_on_you`, `agents_working_on`, `workspace_unavailable`,
+`open_questions`, `last_session`, `latest_digest`, `onboarding`). Each
+section has `items`, `total` and `truncated`. Handoff, Other sessions,
+Latest digest, Workspace unavailable and Onboarding are omitted when
+empty; the other sections are always present. With a project, Last
+session is likewise the newest conversation in that project.
 Each item carries `id`, `link`, `text`, `time`, `entry_kind`, `status` and
 `template`; fields that do not apply are null. Task items read from an
 extra workspace additionally carry `workspace` (additive; absent for the
