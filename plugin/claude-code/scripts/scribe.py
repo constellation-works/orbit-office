@@ -167,6 +167,23 @@ class Scribe:
         finally:
             os.close(fd)
 
+    def window_open(self, sid: str) -> bool:
+        """True while a Scribe window heartbeat for this session is fresh."""
+        try:
+            heartbeat = self.state / (sid + ".window-open")
+            if heartbeat.is_symlink():
+                return False
+            return time.time() - heartbeat.stat().st_mtime < 120
+        except OSError:
+            return False
+
+    def heartbeat(self, sid: str) -> dict:
+        """Refresh the window-open heartbeat the Stop hook reads."""
+        self.session_id(sid)
+        self.setup()
+        publish(self.state / (sid + ".window-open"), b"open\n")
+        return {"window_open": True}
+
     def switch(self, sid: str, state: dict) -> bool:
         flag = self.state / sid
         if not state.get("initialized"):
@@ -232,7 +249,12 @@ class Scribe:
             raise Failure("queue_outcome_unknown; inspect_Orbit_before_retry")
         now = time.time()
         if not force and snap["mode"] == "live" and state.get("last_queued_at") is not None:
-            if now - state["last_queued_at"] < 300 and snap["turns"] - state.get("last_turns", 0) < 8:
+            # While a Scribe window (web screen or desktop pane) is open on
+            # this session it refreshes a window-open heartbeat; the turn
+            # bound tightens to 2 (specs/recall.md, "Pace while the window
+            # is open"). The time bound is unchanged.
+            turns_needed = 2 if self.window_open(sid) else 8
+            if now - state["last_queued_at"] < 300 and snap["turns"] - state.get("last_turns", 0) < turns_needed:
                 return {"queued": False, "reason": "debounced"}
         # An indeterminate mutation is never blindly retried. Staged descriptor survives.
         state["queue_unknown"] = True

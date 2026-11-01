@@ -252,7 +252,17 @@ second writer.
   session it sits in, using the session identity the engine supplies, and
   links to the web screen for everything else. It reaches Office the same
   way the plugin's hooks do, through `orbit tool run office.*`; it holds no
-  Library path or credentials.
+  Library path or credentials. Built: `plugin/claude-code/mod/scribe-pane.tsx`,
+  validated with `claude plugin validate` and
+  `claude plugin test`. Its feed is `office.recall` queried with the
+  engine-supplied session id (recall matches the id against each source's
+  session identity and returns that session's entries newest first);
+  corrections are one `office.capture` `append_to` append per choice; the
+  switch, **Capture now** and title controls go through the plugin's
+  structured pane control (`scripts/pane.py`); the ask box spawns the
+  `recall` subagent and falls back to rendering `office.recall`'s cited
+  evidence when a surface returns no subagent answer. When Orbit is
+  unreachable the pane shows a single `scribe unavailable` line.
 
 ### What it shows
 
@@ -288,7 +298,8 @@ the user's choice, written through `office.capture` with `append_to`.
   `knowledge_update` proposal to `dom-scribe-rules`, quoting the corrected
   entries ([proposals.md](./proposals.md#signals)).
 
-The correction backend is built; the Scribe window controls remain planned.
+The correction backend is built; the desktop pane's controls are built
+(the web Scribe screen's controls remain planned).
 Append through `office.capture`, for example:
 
 ```json
@@ -336,6 +347,13 @@ The feed is only as fresh as the last pass. While a window is open on a
 session, its debounce tightens to `max_turns: 2` (the time bound unchanged),
 and **Capture now** covers the rest. With no window open, the defaults of
 [sessions.md](./sessions.md#trigger-and-debounce) apply.
+
+The window-open heartbeat is a file the window refreshes while it is open:
+`.orbit/tmp/scribe/<session-id>.window-open` in the Office workspace
+(touched by the desktop pane on every refresh, through the plugin's pane
+control). The end-of-turn hook treats a heartbeat under two minutes old as
+"window open" and applies the tighter turn bound. The web Scribe screen
+refreshes the same file for its session when it is built.
 
 ### Answering in each host
 
