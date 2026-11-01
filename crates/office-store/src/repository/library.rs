@@ -2997,6 +2997,13 @@ impl office_core::ports::Library for LibraryStore {
             session.sensitivity = "private".into();
         }
         let base = scrubbed_base;
+        // An incremental pass (one carrying `from_line`) whose snapshot
+        // only grew past the recorded prefix appends to the current source:
+        // no version bump and no `vN.md` snapshot. Only a non-prefix change
+        // takes the changed-digest versioning path, and a pass without
+        // `from_line` keeps the SessionEnd changed-digest behavior.
+        let changed = changed
+            && !(request.from_line.is_some() && conversation::prefix_grew(&session, &base)?);
         let text = conversation::merge(&base, &session, &entries, &session.sensitivity, changed)?;
         self.validate_identity(&DocumentRecord::from_markdown(Path::new(&path), &text))?;
         let bundle = if changed {

@@ -6,6 +6,10 @@ use serde_json::{Value, json};
 
 /// Bounded raw transcript input (8 MiB); no raw transcript is persisted.
 pub const INPUT_LIMIT: u64 = 8 * 1024 * 1024;
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// One scrubbed, numbered text line; tool results and thinking are excluded.
 #[derive(Clone, Debug, Serialize)]
 pub struct Line {
@@ -17,6 +21,9 @@ pub struct Line {
     pub timestamp: String,
     /// Exact line after credential scrubbing and outer whitespace removal.
     pub text: String,
+    /// Read-only context line in an incremental preview; never selectable.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub context: bool,
 }
 /// Parsed Claude Code session; future providers implement this same shape.
 #[derive(Clone, Debug, Serialize)]
@@ -35,6 +42,10 @@ pub struct Session {
     pub sensitivity: String,
     /// Text only, with original timestamps and roles.
     pub lines: Vec<Line>,
+    /// SHA-256 of the raw transcript bytes up to each line's source record,
+    /// parallel to `lines`. Lets a later pass prove the transcript only grew.
+    #[serde(skip)]
+    pub line_prefix_sha256: Vec<String>,
 }
 /// A cheap model selects evidence by number, never supplies replacement text.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -55,6 +66,9 @@ pub struct Request {
     pub selections: Option<Vec<Selection>>,
     /// Preview digest; required whenever selections are supplied.
     pub expected_sha256: Option<String>,
+    /// First line this pass considers (zero-based, inclusive); earlier lines
+    /// are read-only context and selecting one refuses the write.
+    pub from_line: Option<usize>,
 }
 fn invalid(message: &'static str) -> Error {
     Error::Library {
@@ -161,8 +175,19 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
         scrubbed: scrub(raw) != raw,
         sensitivity: "normal".into(),
         lines: vec![],
+        line_prefix_sha256: vec![],
     };
-    for raw_line in raw.lines().filter(|line| !line.trim().is_empty()) {
+    let mut offset = 0usize;
+    for raw_line in raw.split_inclusive('\n') {
+        offset += raw_line.len();
+        if raw_line.trim().is_empty() {
+            continue;
+        }
+        // The prefix ends at the record's content, excluding its line
+        // separator, so appending later records cannot change it.
+        let record_end = offset
+            - usize::from(raw_line.ends_with('\n'))
+            - usize::from(raw_line.ends_with("\r\n"));
         let record: Value = serde_json::from_str(raw_line)
             .map_err(|_| invalid("transcript must contain complete JSONL records"))?;
         let kind = record
@@ -219,6 +244,7 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
         } else {
             return Err(invalid("message content must be text or content blocks"));
         };
+        let prefix_sha256 = sha256_hex(&raw.as_bytes()[..record_end]);
         // Scrub the entire text block, so multiline PEM credentials stay hidden.
         for text in texts {
             let clean = scrub(text);
@@ -237,7 +263,9 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
                     role: kind.into(),
                     timestamp: timestamp.into(),
                     text: text.into(),
+                    context: false,
                 });
+                session.line_prefix_sha256.push(prefix_sha256.clone());
             }
         }
     }
@@ -261,8 +289,48 @@ fn ambiguous(text: &str) -> bool {
         .iter()
         .any(|s| lower.contains(s))
 }
+const DECISION_CUES: &[&str] = &["decision:", "i decided ", "we decided ", "i choose "];
+const DIRECTION_CUES: &[&str] = &[
+    "direction:",
+    "always ",
+    "never ",
+    "please ",
+    "we need to ",
+    "i want you to ",
+];
+
+/// Text after a leading `Note:`/`Scribe:` command prefix, if this is one.
+fn note_remainder(text: &str) -> Option<&str> {
+    let lower = text.to_ascii_lowercase();
+    ["note:", "scribe:"]
+        .iter()
+        .find(|prefix| lower.starts_with(*prefix))
+        .map(|prefix| text[prefix.len()..].trim_start())
+}
+
+/// Deterministic kind for a `Note:`/`Scribe:` command: a decision or
+/// direction cue in the text after the prefix wins, otherwise a fact.
+/// Commands are captured without model judgment, so ambiguity in the
+/// remainder does not demote them the way ordinary lines are demoted.
+pub fn note_kind(text: &str) -> Option<&'static str> {
+    let rest = note_remainder(text)?;
+    let lower = rest.to_ascii_lowercase();
+    if DECISION_CUES.iter().any(|p| lower.starts_with(p)) {
+        Some("decision")
+    } else if DIRECTION_CUES.iter().any(|p| lower.starts_with(p)) {
+        Some("direction")
+    } else {
+        Some("fact")
+    }
+}
+
 fn explicit_kind(line: &Line) -> &'static str {
     let lower = line.text.to_ascii_lowercase();
+    if line.role == "user"
+        && let Some(kind) = note_kind(&line.text)
+    {
+        return kind;
+    }
     if ambiguous(&line.text) {
         return "open";
     }
@@ -273,22 +341,9 @@ fn explicit_kind(line: &Line) -> &'static str {
             "open"
         };
     }
-    if ["decision:", "i decided ", "we decided ", "i choose "]
-        .iter()
-        .any(|p| lower.starts_with(p))
-    {
+    if DECISION_CUES.iter().any(|p| lower.starts_with(p)) {
         "decision"
-    } else if [
-        "direction:",
-        "always ",
-        "never ",
-        "please ",
-        "we need to ",
-        "i want you to ",
-    ]
-    .iter()
-    .any(|p| lower.starts_with(p))
-    {
+    } else if DIRECTION_CUES.iter().any(|p| lower.starts_with(p)) {
         "direction"
     } else if lower.starts_with("fact:") {
         "fact"
@@ -306,9 +361,39 @@ pub fn entries(session: &Session, request: &Request) -> Result<Vec<String>> {
             "transcript changed since preview; read a fresh preview",
         ));
     }
+    if let Some(from_line) = request.from_line
+        && let Some(selections) = &request.selections
+        && selections.iter().any(|s| s.line < from_line)
+    {
+        return Err(invalid(
+            "selections before from_line name read-only context and cannot be selected",
+        ));
+    }
+    // `Note:`/`Scribe:` commands are captured without model judgment: add
+    // any the crew did not select, in the range this pass considers.
+    let from_line = request.from_line.unwrap_or(0);
+    let augmented;
     let defaults;
     let selections = match &request.selections {
-        Some(selections) => selections,
+        Some(selections) => {
+            let chosen: std::collections::BTreeSet<usize> =
+                selections.iter().map(|s| s.line).collect();
+            let mut all = selections.clone();
+            for line in &session.lines {
+                if line.line >= from_line
+                    && line.role == "user"
+                    && !chosen.contains(&line.line)
+                    && let Some(kind) = note_kind(&line.text)
+                {
+                    all.push(Selection {
+                        line: line.line,
+                        kind: kind.into(),
+                    });
+                }
+            }
+            augmented = all;
+            &augmented
+        }
         None => {
             defaults = session
                 .lines
@@ -337,7 +422,13 @@ pub fn entries(session: &Session, request: &Request) -> Result<Vec<String>> {
             .get(selection.line)
             .ok_or_else(|| invalid("selection line is outside the transcript"))?;
         let mut kind = selection.kind.as_str();
-        if (["decision", "direction"].contains(&kind) && explicit_kind(line) != kind)
+        // A command's kind is fixed by its cue, not by the crew's choice.
+        let forced = (line.role == "user")
+            .then(|| note_kind(&line.text))
+            .flatten();
+        if let Some(forced) = forced {
+            kind = forced;
+        } else if (["decision", "direction"].contains(&kind) && explicit_kind(line) != kind)
             || (kind == "fact" && (line.role != "user" || ambiguous(&line.text)))
             || (kind == "action" && line.role != "assistant")
         {
@@ -411,6 +502,37 @@ pub fn scrub_source(markdown: &str) -> Result<String> {
     Ok(result)
 }
 
+/// Recorded extraction progress of a conversation source, if it has run a
+/// pass under the incremental scheme. Legacy sources return `(None, None)`.
+pub fn extracted_state(markdown: &str) -> Result<(Option<usize>, Option<String>)> {
+    let fields = crate::domain::metrics::metadata(markdown)?;
+    let through = fields.get("extracted_through").and_then(|value| {
+        value
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+            .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
+    });
+    let prefix = fields
+        .get("extracted_prefix_sha256")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    Ok((through, prefix))
+}
+
+/// True when this session's bytes up to the source's recorded
+/// `extracted_through` hash to its `extracted_prefix_sha256`: the
+/// transcript only grew since that pass, so new entries may append.
+pub fn prefix_grew(session: &Session, markdown: &str) -> Result<bool> {
+    let (through, prefix) = extracted_state(markdown)?;
+    Ok(match (through, prefix) {
+        (Some(through), Some(prefix)) => session
+            .line_prefix_sha256
+            .get(through)
+            .is_some_and(|hash| hash == &prefix),
+        _ => false,
+    })
+}
+
 /// Merge new evidence append-only, retaining handoffs and old citation anchors.
 /// The caller journals the returned Markdown with an immutable prior snapshot.
 pub fn merge(
@@ -439,6 +561,12 @@ pub fn merge(
     fields.insert("sensitivity".into(), json!(sensitivity));
     fields.insert("version".into(), json!(next));
     fields.insert("captured_by".into(), json!("transcript-extractor"));
+    // Every successful pass advances the incremental cursor, even one that
+    // selected nothing; the next pass starts after the last line here.
+    if let (Some(last), Some(prefix)) = (session.lines.last(), session.line_prefix_sha256.last()) {
+        fields.insert("extracted_through".into(), json!(last.line));
+        fields.insert("extracted_prefix_sha256".into(), json!(prefix));
+    }
     // Any new evidence revokes previous sharing approval.
     fields.insert("shareable".into(), json!(false));
     if changed {

@@ -21,6 +21,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         "transcript_preview",
         "transcript_sha256",
         "selections",
+        "from_line",
         "event_key",
         "kind",
         "title",
@@ -111,6 +112,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "transcript_preview",
         "transcript_sha256",
         "selections",
+        "from_line",
     ]
     .iter()
     .any(|key| call.input.contains_key(*key))
@@ -235,6 +237,7 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
             "transcript_preview",
             "transcript_sha256",
             "selections",
+            "from_line",
         ]
         .contains(&key.as_str())
     }) {
@@ -252,6 +255,19 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
             "session_transcript_path and session_id are required together".into(),
         )
     })?;
+    let from_line = match call.input.get("from_line") {
+        None | Some(Value::Null) => None,
+        Some(value) => Some(
+            value
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| {
+                    Error::InvalidArgument(
+                        "capture from_line must be a non-negative integer".into(),
+                    )
+                })?,
+        ),
+    };
     let preview = match call.input.get("transcript_preview") {
         None => false,
         Some(Value::Bool(value)) => *value,
@@ -268,8 +284,32 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
             ));
         }
         let session = call.ports.library.session_transcript(&path, &session_id)?;
+        let lines = match from_line {
+            None => session.lines.clone(),
+            Some(from) => {
+                let mut lines: Vec<_> = session
+                    .lines
+                    .iter()
+                    .filter(|line| line.line < from && line.role == "assistant")
+                    .max_by_key(|line| line.line)
+                    .map(|context| {
+                        let mut context = context.clone();
+                        context.context = true;
+                        vec![context]
+                    })
+                    .unwrap_or_default();
+                lines.extend(
+                    session
+                        .lines
+                        .iter()
+                        .filter(|line| line.line >= from)
+                        .cloned(),
+                );
+                lines
+            }
+        };
         return Ok(
-            json!({"session_id":session.session_id,"orchestrator":session.orchestrator,"model":session.model,"transcript_sha256":session.transcript_sha256,"sensitivity":session.sensitivity,"content_withheld":session.sensitivity == "private","lines":session.lines}),
+            json!({"session_id":session.session_id,"orchestrator":session.orchestrator,"model":session.model,"transcript_sha256":session.transcript_sha256,"sensitivity":session.sensitivity,"content_withheld":session.sensitivity == "private","lines":lines}),
         );
     }
     let selections = call
@@ -288,6 +328,7 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
         session_id,
         selections,
         expected_sha256: string_field(call, "transcript_sha256")?,
+        from_line,
     };
     if request.selections.is_none() && request.expected_sha256.is_some() {
         return Err(Error::InvalidArgument(

@@ -204,6 +204,153 @@ fn model_selections_are_digest_bound_cannot_rewrite_text_or_elevate_assistant_de
 }
 
 #[test]
+fn live_scribe_incremental_passes_append_note_commands_and_advance_on_empty() {
+    let f = Fixture::new();
+    let record = |kind: &str, at: &str, content: &str| {
+        json!({"type":kind,"sessionId":"fixture-session","timestamp":at,"message":{"role":kind,"content":content}}).to_string()
+    };
+    let mut records = vec![
+        record("user", "2026-10-30T10:00:00Z", "First topic here."),
+        record(
+            "assistant",
+            "2026-10-30T10:01:00Z",
+            "Shall we proceed with the plan?",
+        ),
+        record(
+            "user",
+            "2026-10-30T10:02:00Z",
+            "Note: always keep summaries short.",
+        ),
+        record(
+            "user",
+            "2026-10-30T10:03:00Z",
+            "Scribe: Decision: use the blue theme.",
+        ),
+        record(
+            "user",
+            "2026-10-30T10:04:00Z",
+            "Note: the deploy window is Fridays.",
+        ),
+    ];
+    std::fs::write(f.transcript(), records.join("\n")).unwrap();
+
+    // Incremental preview: only lines >= from_line, plus one context line.
+    let mut preview_input = f.input();
+    preview_input["transcript_preview"] = json!(true);
+    preview_input["from_line"] = json!(2);
+    let preview = f.call(preview_input, "office.capture");
+    assert_eq!(preview["ok"], true, "{preview}");
+    let lines = preview["output"]["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 4, "{lines:?}");
+    assert_eq!(lines[0]["line"], 1);
+    assert_eq!(lines[0]["context"], true);
+    assert_eq!(lines[1]["line"], 2);
+    assert!(lines[1].get("context").is_none());
+    let sha = preview["output"]["transcript_sha256"].clone();
+
+    // Selecting the read-only context line refuses the write.
+    let mut bad = f.input();
+    bad["from_line"] = json!(2);
+    bad["transcript_sha256"] = sha.clone();
+    bad["selections"] = json!([{"line":1,"kind":"open"}]);
+    let refused = f.call(bad, "office.capture");
+    assert_eq!(refused["ok"], false, "{refused}");
+    assert_eq!(refused["error"]["code"], "invalid_session_transcript");
+
+    // Crew pass: the Note kind comes from its cue, not the crew's choice,
+    // and unselected Note:/Scribe: commands are captured without judgment.
+    let mut crew = f.input();
+    crew["from_line"] = json!(2);
+    crew["transcript_sha256"] = sha;
+    crew["selections"] = json!([{"line":2,"kind":"fact"}]);
+    let captured = f.call(crew, "office.capture");
+    assert_eq!(captured["ok"], true, "{captured}");
+    assert_eq!(captured["output"]["version"], 1);
+    let path = f
+        .workspace()
+        .join("library")
+        .join(captured["output"]["path"].as_str().unwrap());
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("direction: Note: always keep summaries short."),
+        "{text}"
+    );
+    assert!(
+        text.contains("decision: Scribe: Decision: use the blue theme."),
+        "{text}"
+    );
+    assert!(
+        text.contains("fact: Note: the deploy window is Fridays."),
+        "{text}"
+    );
+    let meta = office_core::domain::metrics::metadata(&text).unwrap();
+    assert_eq!(meta["extracted_through"], "4");
+    assert_eq!(meta["extracted_prefix_sha256"].as_str().unwrap().len(), 64);
+
+    // A snapshot that only grew appends: no version bump, no vN.md, and the
+    // local conservative path honours Note: too.
+    records.push(record(
+        "user",
+        "2026-10-30T10:05:00Z",
+        "Note: the staging host is mars.",
+    ));
+    records.push(record(
+        "user",
+        "2026-10-30T10:06:00Z",
+        "A plain status remark.",
+    ));
+    std::fs::write(f.transcript(), records.join("\n")).unwrap();
+    let mut grown_input = f.input();
+    grown_input["from_line"] = json!(5);
+    let grown = f.call(grown_input, "office.capture");
+    assert_eq!(grown["ok"], true, "{grown}");
+    assert_eq!(grown["output"]["version"], 1);
+    assert!(!path.with_file_name("v1.md").exists());
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("fact: Note: the staging host is mars."),
+        "{text}"
+    );
+    assert_eq!(
+        office_core::domain::metrics::metadata(&text).unwrap()["extracted_through"],
+        "6"
+    );
+
+    // A pass that selects nothing still advances extracted_through.
+    records.push(record(
+        "user",
+        "2026-10-30T10:07:00Z",
+        "Another plain remark.",
+    ));
+    std::fs::write(f.transcript(), records.join("\n")).unwrap();
+    let mut preview_input = f.input();
+    preview_input["transcript_preview"] = json!(true);
+    let sha = f.call(preview_input, "office.capture")["output"]["transcript_sha256"].clone();
+    let mut empty = f.input();
+    empty["from_line"] = json!(7);
+    empty["transcript_sha256"] = sha;
+    empty["selections"] = json!([]);
+    let empty_pass = f.call(empty, "office.capture");
+    assert_eq!(empty_pass["ok"], true, "{empty_pass}");
+    assert_eq!(empty_pass["output"]["version"], 1);
+    assert!(!path.with_file_name("v1.md").exists());
+    assert_eq!(
+        office_core::domain::metrics::metadata(&std::fs::read_to_string(&path).unwrap()).unwrap()["extracted_through"],
+        "7"
+    );
+
+    // A non-prefix change still versions as before.
+    records[0] = record("user", "2026-10-30T10:00:00Z", "First topic rewritten.");
+    std::fs::write(f.transcript(), records.join("\n")).unwrap();
+    let mut changed_input = f.input();
+    changed_input["from_line"] = json!(8);
+    let changed = f.call(changed_input, "office.capture");
+    assert_eq!(changed["ok"], true, "{changed}");
+    assert_eq!(changed["output"]["version"], 2);
+    assert!(path.with_file_name("v1.md").is_file());
+}
+
+#[test]
 fn transcript_refusals_leave_library_history_unchanged_and_private_previews_withhold_content() {
     let f = Fixture::new();
     f.write("");

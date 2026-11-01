@@ -144,9 +144,10 @@ invented consent. Facts must be unambiguous user statements. Assistant action
 lines are reported actions, not independent verification of their outcomes.
 Quoted external material is not a user's decision; the crew must exclude
 pasted documents too, including unmarked pastes that an adapter cannot detect.
-The live scribe (planned) adds two narrow ways a user line becomes a decision
-or direction without these cues: an explicit `Note:` command and an answer
-to a concrete question ([below](#answers-to-questions)).
+The live scribe adds two narrow ways a user line becomes a decision
+or direction without these cues: an explicit `Note:` command (built,
+[ORB-20685]) and an answer
+to a concrete question ([below](#answers-to-questions), planned).
 
 Directions and facts retain the exact selected line, apart from credential
 redaction and outer whitespace. Multiline text contributes separate lines.
@@ -225,9 +226,12 @@ previewed. A retry after a committed write is a no-op; journal recovery covers
 interrupted publication. Historical snapshots remain subject to the source's
 privacy; a source changed to private stays private on later extraction.
 
-## Live scribe (planned)
+## Live scribe
 
-Status: specified, not built. Everything above still applies; this section
+Status: partly built. The incremental passes and the user `Note:`/`Scribe:`
+commands below are built ([ORB-20685]); the switch, trigger and debounce,
+rules page, answers to questions, scribe handoff and feedback sections
+remain specified, not built. Everything above still applies; this section
 changes when extraction runs, how much of the transcript each pass reads,
 and three narrow rules about what it may write.
 
@@ -276,6 +280,13 @@ the configured pool chooses.
 
 ### Incremental passes
 
+Built ([ORB-20685]): `from_line` previews with one read-only assistant
+`context` line, the source's `extracted_through`/`extracted_prefix_sha256`
+cursor, append-instead-of-version for a snapshot that only grew past the
+recorded prefix (a pass without `from_line` keeps the SessionEnd
+changed-digest behavior above), and a cursor that advances even when a
+pass selects nothing.
+
 A pass reads only what earlier passes have not.
 
 - `office.capture` session preview accepts `from_line` (zero-based,
@@ -314,7 +325,7 @@ extraction task apply.
 
 ### Commands
 
-- **User:** a user line that begins with `Note:` (or `Scribe:`) is captured
+- **User (built, [ORB-20685]):** a user line that begins with `Note:` (or `Scribe:`) is captured
   without model judgment, verbatim apart from credential redaction. Its kind
   is `direction` when the text after the prefix carries a direction cue,
   `decision` when it carries a decision cue, and `fact` otherwise. The local
