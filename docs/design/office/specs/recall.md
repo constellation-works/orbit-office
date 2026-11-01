@@ -260,8 +260,11 @@ second writer.
   corrections are one `office.capture` `append_to` append per choice; the
   switch, **Capture now** and title controls go through the plugin's
   structured pane control (`scripts/pane.py`); the ask box spawns the
-  `recall` subagent and falls back to rendering `office.recall`'s cited
-  evidence when a surface returns no subagent answer. When Orbit is
+  `recall` subagent, renders its answer from that agent's `turn.complete`,
+  and falls back to rendering `office.recall`'s cited evidence when the
+  spawn is refused or no answer comes. Until `office.scribe-control`
+  carries the heartbeat and shared switch, both stay the plugin's local
+  files under `.orbit/tmp/scribe/`. When Orbit is
   unreachable the pane shows a single `scribe unavailable` line.
 
 ### What it shows

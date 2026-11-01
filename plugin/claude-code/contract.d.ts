@@ -14,9 +14,13 @@ export type PaneState = {
   on: boolean | null
   lastPass: string | null
   answer: string
+  asking: boolean
   missedKind: string
   unavailable: boolean
   notice: string
+  expanded: string | null
+  kindFilter: string
+  shown: number
 }
 
 declare module 'claude-code' {

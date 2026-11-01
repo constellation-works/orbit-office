@@ -127,37 +127,53 @@ until capture succeeds; host retention owns later removal.
 
 The plugin also ships a Claude desktop mod (`mod/scribe-pane.tsx`, named in
 `hooks/hooks.json` under `modules`): a pane beside the chat for the session
-it sits in. It opens on session start (or with the `scribe-pane` command),
-shows that session's captured entries newest first with kind, time,
-`src-…#L<n>` anchor and corrected/by markers, a status line (switch, title,
-last queued pass, entry count), Turn on/off, **Capture now** and title
-controls, inline corrections (**Not a decision**, **Remove**, **Wrong
-wording…**, **Wrong kind…**), a **Missed something…** box (kind chosen with
-the Missed kind selector, stored verbatim with `by: user`), an ask box and
-a link to the web Scribe screen for other conversations (the app's default
-local address, `http://localhost:4317/scribe`).
+it sits in. It opens on session start (or with the `scribe-pane` command)
+and shows:
+
+- that session's captured entries, newest first, with kind, time,
+  `src-…#L<n>` anchor and corrected/by markers;
+- a status line: switch, title, last queued pass, entry count;
+- Turn on/off, **Capture now**, Refresh and title controls;
+- inline corrections: **Not a decision**, **Remove**, **Wrong kind…**,
+  **Wrong wording**;
+- a **Missed something…** box, its kind chosen with a selector and stored
+  verbatim with `by: user`;
+- an ask box;
+- a link to the web Scribe screen for other conversations (the
+  `scribe_url` option, default `http://localhost:4317/scribe`; empty hides
+  it).
+
+Mobile has no fields yet, so there the pane shows the feed and its buttons.
 
 The pane reaches Office only through `orbit tool run office.*` run with
-`$.process`: the feed is `office.recall` queried with the engine-supplied
-session id (recall matches it against each source's session identity and
-returns that session's entries newest first), corrections are one
-`office.capture` `append_to` append per choice, and switch/Capture
-now/title go through the plugin's structured pane control
-(`scripts/pane.py`, the same command path as the `scribe` MCP tool). The
-ask box spawns the plugin's `recall` subagent; when a surface returns no
-subagent answer it renders the same cited evidence from `office.recall`
-directly. It refreshes on a 30-second timer and after each turn. When
-Orbit is unreachable it shows a single `scribe unavailable` line with a
-Retry button — no error loop, and the session stays responsive.
+`$.process`, against the configured `workspace` option:
 
-While the pane is open it keeps the window-open heartbeat: every refresh
-runs the pane control's `heartbeat` action, which touches
-`.orbit/tmp/scribe/<session-id>.window-open`; the end-of-turn hook reads
-that file and, while it is under two minutes old, tightens the live
-debounce to two new turns (the time bound unchanged), as in
+- The feed is `office.recall` queried with the engine-supplied session id,
+  keeping only sources whose `session_id` is this session.
+- Each correction is one `office.capture` `append_to` append.
+- Switch, Capture now and title go through the plugin's structured pane
+  control (`scripts/pane.py`, the same command path as the `scribe` MCP
+  tool). The pane passes the plugin's options to it as the
+  `CLAUDE_PLUGIN_OPTION_*` variables the command hooks receive.
+
+The ask box spawns the plugin's `recall` subagent and renders its answer
+when that agent's turn completes. If the spawn is refused or no answer comes
+within three minutes, it renders the same cited evidence from
+`office.recall` directly. The pane refreshes on a 30-second timer and after
+each main-loop turn, never holding the turn. When Orbit is unreachable it
+shows a single `scribe unavailable` line with a Retry button: no error loop,
+and the session stays responsive. A failed control press shows one dim
+notice.
+
+While the pane is placed it keeps the window-open heartbeat, behind one
+function (`heartbeat` in the mod). Until `office.scribe-control` (ORB-20755,
+ORB-20756) carries the heartbeat and the shared switch, that function runs
+the pane control's `heartbeat` action, which touches
+`.orbit/tmp/scribe/<session-id>.window-open`; the switch stays the local flag
+file `.orbit/tmp/scribe/<session-id>`. The end-of-turn hook reads the
+heartbeat and, while it is under two minutes old, tightens the live debounce
+to two new turns, the time bound unchanged, as in
 `docs/design/office/specs/recall.md` § "Pace while the window is open".
-The web Scribe screen is expected to refresh the same heartbeat file for
-its session when it is built.
 
 ## Verification
 

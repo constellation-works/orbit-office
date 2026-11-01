@@ -25,6 +25,12 @@
       "title": "Excluded project paths",
       "default": "[]",
       "description": "JSON array of absolute paths. These paths and their physical descendants are never staged or captured, including by backfill."
+    },
+    "scribe_url": {
+      "type": "string",
+      "title": "Web Scribe screen",
+      "default": "http://localhost:4317/scribe",
+      "description": "Address of the orbit-office app's /scribe screen, linked from the desktop pane for other conversations. Empty hides the link."
     }
   },
   "types": "./contract.d.ts"
