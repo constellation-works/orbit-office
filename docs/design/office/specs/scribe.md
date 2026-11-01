@@ -97,16 +97,23 @@ transcript ──parse (no model)──▶ <library>/.office/state/scribe/<sessi
    `<local-command-*>` output are
    dropped, and a slash command is kept as one `/<name> <args>` line
    ([sessions.md](./sessions.md#adapter-and-provenance)). A desktop side
-   session's opening brief ("Background from the session that started this
-   one…") is the orchestrator's text, not Daniel's: it is kept as an
-   assistant message, so it keeps its `m-<n>` id but never takes Daniel's
-   tags. The session's `project` is the git repository name: for a
-   session at a repository or linked-worktree root, the plugin
-   resolves the main worktree's top-level directory (through
-   `git rev-parse --git-common-dir`) and passes it to
-   `office.scribe-pending`, falling back to the `cwd` basename when git
-   cannot resolve it that way (a non-git directory, a plain
-   subdirectory, or a worktree removed by GC).
+   session's opening brief is the orchestrator's text, not Daniel's: it
+   is kept as an assistant message, so it keeps its `m-<n>` id but
+   never takes Daniel's tags. The brief opens with `Background (from
+   the session that started this one):` in the desktop app (the
+   unparenthesised form without the colon occurs too); both forms are
+   matched case-insensitively, ignoring the parentheses and the
+   trailing colon. The session's `project` is the git repository name:
+   a Claude Code worktree cwd (`<repo>/.claude/worktrees/<name>`)
+   names `<repo>` by that path rule, even when the worktree directory
+   was removed by GC; otherwise, for a session at a repository or
+   linked-worktree root, the plugin resolves the main worktree's
+   top-level directory (through `git rev-parse --git-common-dir`) and
+   passes it to `office.scribe-pending`, falling back to the `cwd`
+   basename when git cannot resolve it that way (a non-git directory
+   or a plain subdirectory). The plugin also passes the transcript's
+   latest `customTitle` (`custom-title` record) to
+   `office.scribe-pending` as `custom_title`, when present.
    Default topics come from that project name, so no worktree slug reaches
    them. Output is
    `<library>/.office/state/scribe/<session-id>.jsonl`, one message per line:
@@ -281,12 +288,15 @@ file `SCR-<dd-hhmm>-<title-slug>.md`.
 Until a title is set, the slug comes from Daniel's first message with
 remaining text after harness stripping (above): a message emptied by
 stripping never names the file, and a bare slash command such as
-`/scribe backfill` names it when nothing else exists. A side session
-(one opening with the orchestrator brief above) is the exception: its
-slug comes from the session's own title — the transcript's title/summary
-record when present, else the brief's task-title line, else Daniel's
-first real message — and never from the brief's preamble. `/scribe
-title` renames the file once and records the old name in `aliases`.
+`/scribe backfill` names it when nothing else exists. A set custom
+title — the transcript's latest `custom-title` record (or the
+caller-passed latest `customTitle`) — wins for every session, not
+only side sessions. A side session (one opening with the orchestrator
+brief above) without one takes its slug from the session's own
+title/summary record when present, else the brief's task-title line,
+else the brief's first prose sentence after the preamble — and never
+from the brief's preamble itself. `/scribe title` renames the file
+once and records the old name in `aliases`.
 
 ```markdown
 ---

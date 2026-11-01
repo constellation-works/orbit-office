@@ -31,7 +31,19 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 4096,
-      "description": "Optional caller-resolved repository name used as the SCR project and default topic; absent, the project is derived from the cwd basename."
+      "description": "Optional caller-resolved repository name used as the SCR project and default topic; absent, the project is derived from the cwd (a <repo>/.claude/worktrees/<name> cwd names <repo>, else the cwd basename)."
+    },
+    "custom_title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Optional latest customTitle from the transcript's custom-title records; when present it is the SCR slug and title source for any session."
+    },
+    "session_title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Alias of custom_title."
     }
   },
   "required": [

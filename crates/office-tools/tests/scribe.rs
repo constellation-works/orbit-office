@@ -193,6 +193,34 @@ fn ports(mut library: FakeLibrary) -> Ports<'static> {
             "Ship the real thing.",
         ),
     );
+    library.session_transcripts.insert(
+        "side-real.jsonl".into(),
+        side_transcript(
+            None,
+            "Background (from the session that started this one):\nFix the phone rail snap so the visible span matches. The rest explains why.",
+            "Ship the real thing.",
+        ),
+    );
+    library.session_transcripts.insert(
+        "side-lower.jsonl".into(),
+        side_transcript(
+            None,
+            "background (from the session that started this one):\nFix the phone rail snap so the visible span matches.",
+            "Ship the real thing.",
+        ),
+    );
+    library.session_transcripts.insert(
+        "custom-title.jsonl".into(),
+        [
+            json!({"type":"custom-title","customTitle":"ORB-11111: an earlier title"}).to_string(),
+            record("user", 7, &json!("Daniel's own opening words here.")),
+            json!({"type":"custom-title","customTitle":"ORB-20524: phone rail snap regression"})
+                .to_string(),
+            record("assistant", 9, &json!("Working on it.")),
+        ]
+        .join("\n")
+            + "\n",
+    );
     library.host = Some("macbook".into());
     let mut ports = office_testkit::fakes::PortsBuilder::default().build();
     ports.library = Box::new(library);
@@ -464,13 +492,102 @@ fn side_session_brief_is_assistant_and_slug_comes_from_title_then_task_line() {
         "sources/conversation/2026/10/SCR-31-2007-fix-the-gateway-deploy.md"
     );
 
-    // Neither: Daniel's first real message names the file.
+    // Neither title nor task line: the brief's first prose sentence
+    // names the file.
     let ports = crate::ports(FakeLibrary::initialized());
     let first = pending(&ports, "side-plain.jsonl");
     assert_eq!(
         first["scr"]["path"],
-        "sources/conversation/2026/10/SCR-31-2007-ship-the-real-thing.md"
+        "sources/conversation/2026/10/SCR-31-2007-the-orchestrator-wrote-this-context.md"
     );
+}
+
+#[test]
+fn real_desktop_brief_is_assistant_and_its_preamble_never_names_the_file() {
+    // The desktop form, parentheses and colon included, with no Task:
+    // line: recognized as a brief, and the slug is its first prose
+    // sentence, never `background-from-the-session-that-started-…`.
+    for fixture in ["side-real.jsonl", "side-lower.jsonl"] {
+        let ports = crate::ports(FakeLibrary::initialized());
+        let first = pending(&ports, fixture);
+        let messages = first["messages"].as_array().unwrap();
+        assert_eq!(messages[0]["role"], "assistant", "{fixture}");
+        assert_eq!(
+            first["scr"]["path"],
+            "sources/conversation/2026/10/SCR-31-2007-fix-the-phone-rail-snap-so-the-visible-span-matc.md",
+            "{fixture}"
+        );
+        let brief_id = messages[0]["id"].as_str().unwrap().to_string();
+        let out = append(
+            &ports,
+            json!({"through": brief_id, "entries":[
+                {"msg": brief_id, "quote": "Fix the phone rail snap", "tag": "decision", "topics": []}
+            ]}),
+        );
+        assert_eq!(out["added"], json!([]), "{fixture}");
+        assert_eq!(
+            out["refused"][0]["reason"], "tag_not_permitted",
+            "{fixture}"
+        );
+    }
+}
+
+#[test]
+fn latest_custom_title_names_any_session_and_caller_title_wins() {
+    // Not a side session: the latest custom-title record still wins
+    // over Daniel's first message.
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = pending(&ports, "custom-title.jsonl");
+    assert_eq!(first["messages"][0]["role"], "user");
+    assert_eq!(
+        first["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-orb-20524-phone-rail-snap-regression.md"
+    );
+
+    // The caller-passed latest customTitle (plugin staging) does the same.
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = output(
+        &ports,
+        "office.scribe-pending",
+        json!({"session_id":SESSION,"transcript":"short.jsonl","provider":"claude-code",
+                "cwd":"/Users/daniel/workspace/constellation",
+                "custom_title":"ORB-20524: phone rail snap regression"}),
+    );
+    assert_eq!(
+        first["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-orb-20524-phone-rail-snap-regression.md"
+    );
+}
+
+#[test]
+fn gc_worktree_cwd_records_the_repository_project() {
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = output(
+        &ports,
+        "office.scribe-pending",
+        json!({"session_id":SESSION,"transcript":"short.jsonl","provider":"claude-code",
+                "cwd":"/Users/daniel/workspace/constellation/codebases/orbit/.claude/worktrees/orb-20524-rail-snap-visible-span-993033"}),
+    );
+    assert_eq!(first["rules"]["topics"], json!(["orbit"]));
+    let meta: Value = serde_json::from_str(
+        &ports
+            .library
+            .read_scribe_parse(SESSION)
+            .unwrap()
+            .unwrap()
+            .meta,
+    )
+    .unwrap();
+    assert_eq!(meta["project"], "orbit");
+
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = output(
+        &ports,
+        "office.scribe-pending",
+        json!({"session_id":SESSION,"transcript":"short.jsonl","provider":"claude-code",
+                "cwd":"/Users/daniel/workspace/constellation/.claude/worktrees/xenodochial-wozniak-4453b8"}),
+    );
+    assert_eq!(first["rules"]["topics"], json!(["constellation"]));
 }
 
 #[test]

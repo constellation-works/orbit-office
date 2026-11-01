@@ -33,13 +33,64 @@ pub struct Line {
     pub context: bool,
 }
 /// First line of the brief a desktop side session opens with: the
-/// orchestrator that started the session wrote it, not Daniel.
+/// orchestrator that started the session wrote it, not Daniel. The
+/// desktop app writes it parenthesised, with a trailing colon
+/// (`Background (from the session that started this one):`); the
+/// unparenthesised form occurs too.
 pub const SIDE_SESSION_BRIEF_PREFIX: &str = "Background from the session that started this one";
 
-/// True when `text` opens with the side-session brief preamble.
+/// True when `text` opens with the side-session brief preamble. Both
+/// written forms match, case-insensitively, ignoring the parentheses
+/// and a trailing colon on the preamble.
 #[must_use]
 pub fn is_side_session_brief(text: &str) -> bool {
-    text.trim_start().starts_with(SIDE_SESSION_BRIEF_PREFIX)
+    let lower = text.trim_start().to_ascii_lowercase();
+    let plain: String = lower.chars().filter(|c| *c != '(' && *c != ')').collect();
+    let plain = plain.trim_start();
+    let Some(rest) = plain.strip_prefix("background from the session that started this one") else {
+        return false;
+    };
+    rest.chars()
+        .next()
+        .is_none_or(|c| !c.is_ascii_alphanumeric())
+}
+
+/// The brief's first prose sentence after the preamble line, skipping
+/// any `Task:`/`Title:` line and blank lines. The sentence ends at its
+/// terminating `.`, `!` or `?`, or at the end of its paragraph.
+#[must_use]
+pub fn brief_first_sentence(text: &str) -> Option<String> {
+    if !is_side_session_brief(text) {
+        return None;
+    }
+    let body = text.lines().skip(1).collect::<Vec<_>>().join("\n");
+    for paragraph in body.split("\n\n") {
+        let prose: Vec<&str> = paragraph
+            .lines()
+            .map(str::trim)
+            .filter(|line| {
+                !line.is_empty()
+                    && !line.to_ascii_lowercase().starts_with("task:")
+                    && !line.to_ascii_lowercase().starts_with("title:")
+            })
+            .collect();
+        if prose.is_empty() {
+            continue;
+        }
+        let joined = prose.join(" ");
+        let end = joined
+            .char_indices()
+            .find(|(_, c)| ['.', '!', '?'].contains(c))
+            .map_or(joined.len(), |(at, c)| at + c.len_utf8());
+        let sentence = joined[..end]
+            .trim()
+            .trim_end_matches(['.', '!', '?'])
+            .trim();
+        if !sentence.is_empty() {
+            return Some(sentence.to_owned());
+        }
+    }
+    None
 }
 
 /// The brief's task-title line: a `Task:`/`Title:` line (optionally
@@ -76,6 +127,8 @@ pub fn brief_task_title(text: &str) -> Option<String> {
 fn record_title(record: &Value, kind: &str) -> Option<String> {
     let keys: &[&str] = if kind == "summary" {
         &["summary", "title", "aiTitle", "customTitle"]
+    } else if kind == "custom-title" {
+        &["customTitle", "aiTitle", "title", "summary"]
     } else if kind.contains("title") {
         &["aiTitle", "customTitle", "title", "summary"]
     } else {
@@ -100,6 +153,8 @@ pub struct Session {
     pub orchestrator: String,
     /// Title from the transcript's title/summary record, if any.
     pub title: Option<String>,
+    /// Latest `custom-title` record's `customTitle`, if any.
+    pub custom_title: Option<String>,
     /// Last non-synthetic model reported by an assistant message.
     pub model: Option<String>,
     /// Working directory and branch of the first conversational record.
@@ -339,6 +394,7 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
     let mut session = Session {
         orchestrator: "claude".into(),
         title: None,
+        custom_title: None,
         model: None,
         project: None,
         branch: None,
@@ -353,6 +409,7 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
     };
     let mut offset = 0usize;
     let mut first_user_seen = false;
+    let mut custom_title_seen = false;
     for raw_line in raw.split_inclusive('\n') {
         offset += raw_line.len();
         if raw_line.trim().is_empty() {
@@ -369,7 +426,16 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
             .get("type")
             .and_then(Value::as_str)
             .ok_or_else(|| invalid("transcript record needs a type"))?;
-        if session.title.is_none()
+        // The latest `custom-title` record wins over every other title
+        // record; any other title only fills a still-empty title.
+        if kind == "custom-title" {
+            if let Some(title) = record_title(&record, kind) {
+                session.title = Some(title.clone());
+                session.custom_title = Some(title);
+                custom_title_seen = true;
+            }
+        } else if !custom_title_seen
+            && session.title.is_none()
             && let Some(title) = record_title(&record, kind)
         {
             session.title = Some(title);

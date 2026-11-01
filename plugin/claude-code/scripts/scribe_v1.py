@@ -208,14 +208,19 @@ def _strip_task_notifications(text: str) -> str:
 def repo_project(cwd: str) -> str:
     """The repository name for a working directory.
 
-    For a session at a repository or linked-worktree root, the main
-    worktree's top-level directory name, resolved through
+    A Claude Code worktree cwd (`<repo>/.claude/worktrees/<name>`)
+    names its repository by that path rule, even when the worktree
+    directory was removed by GC and git can no longer resolve it.
+    Otherwise, for a session at a repository or linked-worktree root,
+    the main worktree's top-level directory name, resolved through
     `git rev-parse --git-common-dir` (whose parent is that directory),
     so a session in a linked worktree records the repository, not the
     worktree directory. Falls back to the `cwd` basename when git cannot
-    resolve it that way: a non-git directory, a plain subdirectory, or a
-    worktree removed by GC.
+    resolve it that way: a non-git directory or a plain subdirectory.
     """
+    parts = [part for part in cwd.rstrip("/").split("/") if part]
+    if len(parts) >= 4 and parts[-2] == "worktrees" and parts[-3] == ".claude":
+        return parts[-4]
     fallback = cwd.rstrip("/").rsplit("/", 1)[-1]
     try:
         done = subprocess.run(["git", "-C", cwd, "rev-parse", "--git-common-dir", "--show-toplevel"],
@@ -454,6 +459,7 @@ class V1:
             except ValueError:
                 data = data[:cut]
         staged_lines: list[bytes] = []
+        self._custom_title: str | None = None
         for line in data.splitlines():
             if not line.strip():
                 continue
@@ -465,6 +471,11 @@ class V1:
             if not isinstance(record, dict):
                 staged_lines.append(line)
                 continue
+            if record.get("type") == "custom-title":
+                value = record.get("customTitle")
+                if isinstance(value, str) and value.strip() and len(value) <= 256 \
+                        and not any(ord(c) < 32 or ord(c) == 127 for c in value):
+                    self._custom_title = value.strip()
             if isinstance(record.get("cwd"), str) and self.client.excluded_project(record["cwd"]):
                 return None
             stripped = _strip_record(record)
@@ -538,9 +549,13 @@ class V1:
         staged = self.stage(sid, transcript, cwd)
         if staged is None:
             return None
-        reply = self.office("office.scribe-pending", {"session_id": sid, "transcript": str(staged),
-                                                      "provider": PROVIDER, "cwd": cwd,
-                                                      "project": repo_project(cwd)})
+        payload = {"session_id": sid, "transcript": str(staged),
+                   "provider": PROVIDER, "cwd": cwd,
+                   "project": repo_project(cwd)}
+        custom_title = getattr(self, "_custom_title", None)
+        if custom_title:
+            payload["custom_title"] = custom_title
+        reply = self.office("office.scribe-pending", payload)
         return staged, reply
 
     def catchup(self, sid: str) -> dict:
