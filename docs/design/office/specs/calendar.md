@@ -50,7 +50,7 @@ model and privacy routing; choosing local never authorizes an external calendar 
 
 | Backend | Connection | Notes |
 |---|---|---|
-| **Local** | none | Create, edit and delete events in the app; persisted at `<workspace>/.office/calendar/local.json`. May be shown alone or merged with the imported snapshot. |
+| **Local** | none | Create, edit and delete events in the app; persisted at `<library>/.office/state/local-calendar/local.json`, inside the plugin's Library write grant and ignored by the Library's git. A file at the old `<workspace>/.office/calendar/local.json` is still read until the next local change moves its events. May be shown alone or merged with the imported snapshot. |
 | **ICS feed** | A gateway connection to the feed's origin, using the `secret_path` scheme: the slot holds the path and query, which carry the feed's token | Outlook's "Publish calendar" link, Google's secret address, any CalDAV server's export. Some company tenants disable publishing. |
 | **Microsoft Graph** | A gateway connection to `https://graph.microsoft.com/v1.0/`, using the `oauth2_device` scheme with the `Calendars.Read` scope | `GET me/calendarView` over the window, paged through `@odata.nextLink` (each next link must stay under `base_url`). Graph expands recurrences itself. |
 | **ICS file** | none | A `.ics` file inside the workspace, read once. Used for the demo and for one-off exports. |

@@ -228,7 +228,11 @@ impl RealCalendar<'_> {
             &["workspace_root", "workspace", "workspace_dir"],
         )
         .ok_or(office_core::domain::calendar::CalendarError::Storage)?;
-        Ok(office_store::CalendarStore::new(state, workspace))
+        // Authored local events live in the Library, inside its write grant.
+        let library = workspace
+            .join(context_library_dir(self.context).unwrap_or_else(|| "library".to_string()));
+        LibraryStore::confine_to_grant(&library, &workspace)?;
+        Ok(office_store::CalendarStore::new(state, workspace, library))
     }
 }
 impl office_core::ports::Calendar for RealCalendar<'_> {

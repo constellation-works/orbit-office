@@ -107,7 +107,7 @@ impl Fixture {
         let state = root.path().join("state");
         let library = workspace.join("library");
         LibraryStore::initialize_at(&library, &state, None, &workspace).unwrap();
-        let calendar = CalendarStore::new(state.clone(), workspace);
+        let calendar = CalendarStore::new(state.clone(), workspace, library.clone());
         let snapshot: Snapshot = serde_json::from_value(json!({"events":[{
             "key":"fixture-event", "series":"fixture-series", "title":"Release planning",
             "start":"1970-01-01T10:00:00Z", "end":"1970-01-01T11:00:00Z", "all_day":false,
