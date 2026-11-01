@@ -104,8 +104,39 @@ transcript ──parse (no model)──▶ .orbit/tmp/scribe/<session-id>.jsonl
 
 Only Daniel's lines can become `decision`, `direction` or `todo` (the
 existing guard: an assistant line never becomes a decision or direction).
-Assistant lines are scribed only for `landed` and `fact`, and for an answer
-to a question Daniel asked.
+Assistant lines are scribed only for `landed` and `fact`, for an answer to a
+question Daniel asked, and for the orchestrator tags below.
+
+### Orchestrators scribe their own work
+
+An orchestrator, and above all an unattended on-call shift, records what it
+decided and what it left open. Its execution summary on the assignment task
+no longer has to carry that alone. Four tags belong to agents:
+
+| Tag | Meaning |
+|---|---|
+| `agent-decision` | What the orchestrator decided and why, with the task or run ids. |
+| `pending` | An open issue that needs Daniel or a follow-up. |
+| `resolved` | Closes a `pending`; carries `resolves: <SCR id>#L<n>`. |
+| `incident` | Something broke, and what was done about it. |
+
+- An agent entry carries `by: <crew>` (for example `by: opus`), and the
+  append step refuses an agent tag without it. Daniel's tags (`decision`,
+  `direction`, `todo`) are never accepted with an agent `by`, so no agent
+  records a decision in Daniel's name.
+- Orchestrators write with `/scribe note #<tag> …` as things happen. A
+  note is model-free, so it is cheap enough for every wake. They also run
+  `/scribe` at the end of each wake and of the shift. In the orchestrator's
+  own session, its assistant lines may take the four agent tags.
+- A `resolved` entry must name an existing `pending` line; the append step
+  refuses one that does not.
+- The assignment task stays the session's system of record. The scribe is
+  the searchable index across sessions: short lines that cite the task
+  (`refs: ORB-…`) instead of copying its comments, and the execution
+  summary cites the SCR lines.
+
+Open items are the `#pending` lines with no `#resolved` line pointing at
+them. "What's pending from last night?" answers from exactly that set.
 
 ## The SCR file
 
@@ -146,10 +177,11 @@ aliases: []
 
 Line format, one entry per line so grep finds it:
 
-`- <msg-id> <time> #<tag> #<topic>… "<verbatim quote>" [refs: …] [due: …] [by: user]`
+`- <msg-id> <time> #<tag> #<topic>… "<verbatim quote>" [refs: …] [due: …] [resolves: …] [by: user|<crew>]`
 
 - Quotes are verbatim, with newlines written as `\n`.
-- `by: user` marks `/scribe note` entries.
+- `by: user` marks Daniel's `/scribe note` entries; `by: <crew>` marks an
+  orchestrator's entries. A note has no message id and uses `note` in its place.
 - `#corrected` follows an entry that a later `correction` line amends. Lines
   are never edited in place.
 
@@ -174,6 +206,8 @@ sections that the append step reads:
   - `reminder`: a time-bound note to self.
   - `fact`: a stated fact about hosts, people or configuration.
   - `landed`: a PR merged or a task done, reported in the chat.
+  - `agent-decision`, `pending`, `resolved`, `incident`: orchestrator tags
+    ([above](#orchestrators-scribe-their-own-work)).
 - **Topics:** the allowed topic list, for example project names and feature
   slugs. The agent may only use listed topics. It may suggest a new one in
   its report, and adding it is a proposal.
@@ -195,6 +229,8 @@ writes and no Orbit calls.
   topics it searched, and names any session not scribed past its last
   message. Those are sessions with messages after `scribed_through`; the
   agent can see them by comparing against the parsed file when it exists.
+- "What's pending?" lists `#pending` lines with no `#resolved` line that
+  names them, oldest first, each with its `by`, task refs and file:line.
 - "Did we land X?" answers from `#landed` entries. When the plugin's `gh`
   source is available, it adds the live PR state and says which part is
   live and which was captured.
@@ -224,7 +260,9 @@ writes and no Orbit calls.
      § Integrator-owned files).
 2. **The `scribe` agent and commands** in the Claude Code plugin: `/scribe`,
    `note`, `ask`, `title`, and the subagent definition with its model and
-   tools. Turn the automatic hooks off by default.
+   tools. Turn the automatic hooks off by default. The constellation
+   `orchestration-session` skill then requires orchestrators to scribe
+   decisions and open issues as they happen.
 3. **Rules page sections:** a proposal to `dom-scribe-rules` with the default
    tags, topics and capture rules.
 
