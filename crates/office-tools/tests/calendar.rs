@@ -493,3 +493,41 @@ fn local_meeting_uses_the_same_prep_capture_and_inbox_summary_workflow() {
         json!([])
     );
 }
+
+#[test]
+fn list_redacts_imported_contacts_once_in_nested_values() {
+    let (p, c, _) = setup();
+    c.file(
+        "fixture.ics",
+        &feed("BEGIN:VEVENT\nUID:redaction\nDTSTART:20261027T090000Z\nDTEND:20261027T100000Z\nSUMMARY:Contact contact MIRA@EXAMPLE.COM\nDESCRIPTION:contact and CoNtAcT and mira@example.com\nATTENDEE;CN=contact:mailto:contact\nATTENDEE;CN=MIRA@EXAMPLE.COM:mailto:mira@example.com\nATTENDEE;CN=Empty:mailto:\nEND:VEVENT"),
+    );
+    assert_eq!(sync(&p)["ok"], true);
+    let (snapshot, _) = c.load().unwrap();
+    assert!(
+        snapshot.events[0]
+            .attendees
+            .iter()
+            .any(|a| a.email.as_deref() == Some(""))
+    );
+    let response = list(&p);
+    assert_eq!(response["ok"], true, "{response}");
+    let row = &response["output"]["events"][0];
+    assert_eq!(
+        row["title"],
+        "[contact withheld] [contact withheld] [contact withheld]"
+    );
+    assert_eq!(
+        row["agenda"],
+        "[contact withheld] and [contact withheld] and [contact withheld]"
+    );
+    assert_eq!(row["attendees"][0]["name"], "[contact withheld]");
+    assert_eq!(row["attendees"][1]["name"], "[contact withheld]");
+    assert_eq!(row["attendees"][2]["name"], "Empty");
+    assert!(
+        row["attendees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|a| a.get("email").is_none())
+    );
+}
