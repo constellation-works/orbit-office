@@ -365,6 +365,7 @@ fn ports(env: &Env, callbacks: Callbacks) -> Ports<'static> {
         calendar: Box::new(UnavailableCalendar),
         selections: Box::new(UnavailableSelections),
         shared: Box::new(office_core::ports::UnavailableShared),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     }
 }
 fn dispatch(ports: &Ports<'_>, tool: &str, input: Value) -> Value {

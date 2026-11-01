@@ -23,6 +23,7 @@ fn ports(orbit: FakeOrbit) -> Ports<'static> {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     }
 }
 
@@ -301,6 +302,7 @@ fn list_ports(library: FakeLibrary) -> Ports<'static> {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     }
 }
 

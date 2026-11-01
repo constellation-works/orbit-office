@@ -5,6 +5,7 @@ mod clock;
 mod library;
 mod models;
 mod orbit;
+mod pr;
 mod scripts;
 mod selection;
 mod shared;
@@ -21,6 +22,7 @@ pub use models::{
 };
 pub use office_common::Sensitivity;
 pub use orbit::Orbit;
+pub use pr::{PrError, PrState, PrView, PullRequests, UnavailablePullRequests, parse_pr_id};
 pub use scripts::ScriptRunner;
 pub use selection::{Selections, UnavailableSelections};
 pub use shared::{
@@ -46,4 +48,6 @@ pub struct Ports<'a> {
     pub selections: Box<dyn Selections + 'a>,
     /// The team's shared library clone in plugin state.
     pub shared: Box<dyn SharedRepository + 'a>,
+    /// Live pull-request state through `gh`.
+    pub pr: Box<dyn PullRequests + 'a>,
 }

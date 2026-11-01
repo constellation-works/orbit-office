@@ -67,6 +67,7 @@ fn status_reports_off_template_pages_and_names_a_broken_template() {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let output = run(&Call {
         ports: &ports,
@@ -99,6 +100,7 @@ fn status_reports_an_uninitialized_library_without_refusing() {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let output = run(&Call {
         ports: &ports,
@@ -140,6 +142,7 @@ fn status_returns_a_pending_write_as_its_typed_error_not_as_uninitialized() {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let error = run(&Call {
         ports: &ports,
@@ -170,6 +173,7 @@ fn status_reports_an_unavailable_library_adapter_as_uninitialized_without_refusi
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let output = run(&Call {
         ports: &ports,
@@ -260,6 +264,7 @@ fn status_reports_a_configured_private_endpoint_and_never_its_token() {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let output = run(&Call {
         ports: &ports,
@@ -316,6 +321,7 @@ fn status_returns_a_settings_refusal_instead_of_a_missing_endpoint() {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let error = run(&Call {
         ports: &ports,
@@ -349,6 +355,7 @@ fn status_reports_followed_workspaces_exactly_as_configured() {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let output = run(&Call {
         ports: &ports,
@@ -394,6 +401,7 @@ fn status_reports_a_null_brief_without_an_initialized_library() {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let output = run(&Call {
         ports: &ports,
@@ -428,6 +436,7 @@ fn status_reports_the_configured_shared_library_block() {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let output = run(&Call {
         ports: &ports,

@@ -127,6 +127,7 @@ impl Fixture {
             clock: Box::new(offline.clone()),
             selections: Box::new(UnavailableSelections),
             shared: Box::new(office_core::ports::UnavailableShared),
+            pr: Box::new(office_core::ports::UnavailablePullRequests),
         };
         Self {
             root,

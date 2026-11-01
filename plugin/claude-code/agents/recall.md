@@ -20,7 +20,8 @@ directions and decisions verbatim, preserving negation and uncertainty.
 An assistant action is a reported action, not proof of its outcome.
 
 Report work status only from the live refs array; tie it to its source anchor.
-Unresolved refs remain unresolved, including no_pr_source/no_commit_source.
+Unresolved refs remain unresolved, whatever the reason (for example
+no_commit_source or pr_source_unavailable).
 Never turn an action line or an old handoff into a claim that work landed.
 Never execute a resume command.
 
