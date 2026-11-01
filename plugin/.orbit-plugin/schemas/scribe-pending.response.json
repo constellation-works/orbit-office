@@ -146,7 +146,7 @@
     },
     "rules": {
       "type": "object",
-      "description": "The Tags, Topics, Matters and Capture sections of dom-scribe-rules, or the spec defaults (topics: the project name).",
+      "description": "The Tags, Topics, Matters, Capture and Models sections of dom-scribe-rules, or the spec defaults (topics: the project name; models: ask haiku@low, scribe haiku@medium).",
       "properties": {
         "source": {
           "enum": [
@@ -205,6 +205,26 @@
           "items": {
             "type": "string"
           }
+        },
+        "models": {
+          "type": "object",
+          "description": "One <model>@<effort> per level from the Models section; query is model-free and present only when set.",
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "ask": {
+              "type": "string"
+            },
+            "scribe": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ask",
+            "scribe"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -212,7 +232,8 @@
         "tags",
         "topics",
         "capture",
-        "matters"
+        "matters",
+        "models"
       ],
       "additionalProperties": false
     }

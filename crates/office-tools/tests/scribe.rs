@@ -180,6 +180,10 @@ fn pending_writes_stable_ids_and_returns_new_messages_with_context_and_default_r
         first["rules"]["matters"],
         json!(["release-with-open-defects"])
     );
+    assert_eq!(
+        first["rules"]["models"],
+        json!({"ask": "haiku@low", "scribe": "haiku@medium"})
+    );
 
     let short = ports.library.read_scribe_parse(SESSION).unwrap().unwrap();
     let lines: Vec<Value> = short
@@ -215,13 +219,17 @@ fn pending_reads_rule_sections_from_the_rules_page() {
     library
         .write_document(
             Path::new("knowledge/domain/dom-scribe-rules.md"),
-            "---\nid: dom-scribe-rules\ntype: domain\ntemplate: scribe-rules\ntitle: Scribe rules\n---\n## Note\n- Decisions.\n\n## Tags\n- `decision`: Daniel settles a choice.\n  - lets go one step at a time\n- `landed`: A PR merged.\n\n## Topics\n- scribe: the scribe feature\n- recall\n\n## Capture\n- Skip status chatter.\n",
+            "---\nid: dom-scribe-rules\ntype: domain\ntemplate: scribe-rules\ntitle: Scribe rules\n---\n## Tags\n- `decision`: Daniel settles a choice.\n  - lets go one step at a time\n- `landed`: A PR merged.\n\n## Topics\n- scribe: the scribe feature\n- recall\n\n## Matters\n- release-with-open-defects\n- other-matter\n\n## Capture\n- Skip status chatter.\n\n## Models\n- query: none\n- ask: luna@low\n- scribe: luna@medium\n",
         )
         .unwrap();
     let ports = ports(library);
     let rules = pending(&ports, "short.jsonl")["rules"].clone();
     assert_eq!(rules["source"], "page");
     assert_eq!(rules["topics"], json!(["scribe", "recall"]));
+    assert_eq!(
+        rules["matters"],
+        json!(["release-with-open-defects", "other-matter"])
+    );
     assert_eq!(rules["capture"], json!(["Skip status chatter."]));
     assert_eq!(
         rules["tags"],
@@ -230,6 +238,54 @@ fn pending_reads_rule_sections_from_the_rules_page() {
             {"name":"landed","meaning":"A PR merged.","examples":[],"authors":"any"}
         ])
     );
+    assert_eq!(
+        rules["models"],
+        json!({"ask": "luna@low", "scribe": "luna@medium"})
+    );
+}
+
+#[test]
+fn pending_returns_default_models_without_models_section_and_defaults_for_old_sections() {
+    // A v1 page without Models falls back to the spec defaults.
+    let library = FakeLibrary::initialized();
+    library
+        .write_document(
+            Path::new("knowledge/domain/dom-scribe-rules.md"),
+            "---\nid: dom-scribe-rules\ntype: domain\ntemplate: scribe-rules\ntitle: Scribe rules\n---\n## Tags\n- `decision`: Daniel settles a choice.\n\n## Topics\n- scribe\n\n## Capture\n- Skip status chatter.\n",
+        )
+        .unwrap();
+    let v1_ports = ports(library);
+    let rules = pending(&v1_ports, "short.jsonl")["rules"].clone();
+    assert_eq!(rules["source"], "page");
+    assert_eq!(
+        rules["models"],
+        json!({"ask": "haiku@low", "scribe": "haiku@medium"})
+    );
+
+    // An old live-scribe page still loads; its sections are ignored by v1.
+    let library = FakeLibrary::initialized();
+    library
+        .write_document(
+            Path::new("knowledge/domain/dom-scribe-rules.md"),
+            "---\nid: dom-scribe-rules\ntype: domain\ntemplate: scribe-rules\ntitle: Scribe rules\n---\n## Note\n- Decisions.\n\n## Skip\n- Status chatter.\n\n## Kinds\n- Borderline guidance.\n",
+        )
+        .unwrap();
+    let old_ports = ports(library);
+    let rules = pending(&old_ports, "short.jsonl")["rules"].clone();
+    assert_eq!(rules["source"], "defaults");
+    assert_eq!(rules["topics"], json!(["constellation"]));
+    assert_eq!(rules["matters"], json!(["release-with-open-defects"]));
+    assert_eq!(
+        rules["models"],
+        json!({"ask": "haiku@low", "scribe": "haiku@medium"})
+    );
+    let tags: Vec<&str> = rules["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(tags.contains(&"decision") && tags.contains(&"incident"));
 }
 
 #[test]

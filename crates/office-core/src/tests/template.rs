@@ -94,7 +94,7 @@ fn every_bundled_template_has_the_spec_rules_and_a_usable_skeleton() {
             "dom-scribe-rules",
             true,
             AttachPolicy::Never,
-            &["Note"],
+            &[],
         ),
         (
             "runbook",
@@ -131,6 +131,33 @@ fn every_bundled_template_has_the_spec_rules_and_a_usable_skeleton() {
             .validate_page(&id, document_kind, &template.body)
             .expect("every suggested section has a useful skeleton");
     }
+}
+
+#[test]
+fn scribe_rules_template_declares_v1_sections_none_required_and_allows_old_pages() {
+    let bundled = BUNDLED
+        .iter()
+        .find(|entry| entry.filename == "scribe-rules.md")
+        .expect("scribe-rules template");
+    let template = Template::from_markdown(bundled.filename, bundled.markdown)
+        .expect("bundled scribe-rules parse");
+    assert_eq!(
+        template.sections,
+        ["Tags", "Topics", "Matters", "Capture", "Models"]
+    );
+    assert!(template.required.is_empty());
+    // An old live-scribe page keeps validating: no section is required,
+    // so it is at most drift, never a missing-section refusal.
+    template
+        .validate_page(
+            "dom-scribe-rules",
+            DocumentKind::Domain,
+            "## Note\nDecisions.\n\n## Skip\nStatus chatter.\n\n## Kinds\nBorderline guidance.\n",
+        )
+        .expect("old sections page still validates");
+    template
+        .validate_page("dom-scribe-rules", DocumentKind::Domain, "")
+        .expect("empty page still validates");
 }
 
 fn assert_invalid(text: &str, field: &str) {
