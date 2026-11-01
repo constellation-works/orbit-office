@@ -269,6 +269,18 @@ sections that the append step reads:
   its report, and adding it is a proposal.
 - **Capture:** whose messages may take which tags (the defaults above), and
   what to skip, such as status chatter and restated plans.
+- **Models:** one model and effort per level, as `<model>@<effort>`.
+
+  | Level | Default | Why |
+  |---|---|---|
+  | `query` | none | Canned queries are model-free. |
+  | `ask` | `haiku@low` | Reads a shortlist of tagged lines and quotes them. |
+  | `scribe` | `haiku@medium` | Judgment that is written once and read many times: preference vs decision, pairing `why`, choosing `matter`. |
+
+  In Claude Code the `scribe` subagent runs Claude models only. Where the
+  scribe runs through Orbit or Codex, for example an on-call orchestrator
+  on the box, a Luna equivalent (`luna@low`, `luna@medium`) may be set.
+  The setting changes cost and quality without a code change.
 
 With no page, the defaults above apply and topics fall back to the project
 name.
@@ -303,7 +315,12 @@ answer. Answering has two levels.
 2. **Ask, model on the shortlist.** For free-form questions the `scribe`
    agent first runs queries and Grep to narrow the candidates. It then reads
    only that shortlist and composes the cited answer. It never reads the
-   whole Library.
+   whole Library. It runs at the `ask` level (default `haiku@low`).
+   - Before an answer is shown, the plugin checks each quoted span against
+     the cited line, as the append step checks writes, and drops any quote
+     that does not match.
+   - A cheap model therefore cannot misquote; at worst it leaves something
+     out.
 
 The `scribe` agent answers from the SCR files only. Its tools are the query
 tool, Grep and Read over the Library's `sources/conversation/`; it has no
