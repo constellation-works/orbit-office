@@ -31,6 +31,9 @@ OS_INJECTED_ENV = {"__CF_USER_TEXT_ENCODING"}
 
 # Every command the spec's denylist names, and the rule each refusal names.
 SPEC_DENYLIST = [
+    ("aws", ["apigateway", "get-api-key", "--api-key", "fixture-id", "--include-value"], "aws apigateway get-api-key --include-value"),
+    ("aws", ["apigateway", "get-api-keys", "--include-values"], "aws apigateway get-api-keys --include-values"),
+    ("aws", ["appsync", "list-api-keys", "--api-id", "fixture-id"], "aws appsync list-api-keys"),
     ("aws", ["secretsmanager", "get-secret-value", "--secret-id", "prod/db"], "aws secretsmanager get-secret-value"),
     ("aws", ["ssm", "get-parameter", "--name", "/prod/db", "--with-decryption"], "aws ssm get-parameter --with-decryption"),
     ("aws", ["ssm", "get-parameters", "--names", "a", "b", "--with-decryption"], "aws ssm get-parameters --with-decryption"),
@@ -74,6 +77,56 @@ class Policy(CloudCase):
         self.refuse("aws", ["configure", "list-profiles"], "aws configure")
         self.refuse("gcloud", ["config", "list"], "gcloud config")
         self.assertEqual(self.cli.runs(), [])
+
+    def test_credential_returning_key_reads_are_refused_before_anything_runs(self) -> None:
+        # API Gateway key values and AppSync key enumeration return credentials,
+        # so the policy refuses them before the CLI spawns or files are written.
+        self.refuse(
+            "aws",
+            ["apigateway", "get-api-key", "--api-key", "fixture-id", "--include-value"],
+            "aws apigateway get-api-key --include-value",
+        )
+        self.refuse(
+            "aws",
+            ["apigateway", "get-api-keys", "--include-values"],
+            "aws apigateway get-api-keys --include-values",
+        )
+        self.refuse("aws", ["appsync", "list-api-keys", "--api-id", "fixture-id"], "aws appsync list-api-keys")
+        self.refuse("aws", ["appsync", "list-api-keys"], "aws appsync list-api-keys")
+        # Abbreviated value-inclusion flags count as the flag they abbreviate.
+        self.refuse(
+            "aws",
+            ["apigateway", "get-api-key", "--api-key", "fixture-id", "--include-valu"],
+            "aws apigateway get-api-key --include-value",
+        )
+        self.refuse(
+            "aws",
+            ["apigateway", "get-api-keys", "--include-valu"],
+            "aws apigateway get-api-keys --include-values",
+        )
+        self.refuse(
+            "aws",
+            ["apigateway", "get-api-key", "--api-key", "fixture-id", "--include-value=true"],
+            "aws apigateway get-api-key --include-value",
+        )
+        self.refuse(
+            "aws",
+            ["apigateway", "get-api-keys", "--include-values=true"],
+            "aws apigateway get-api-keys --include-values",
+        )
+        self.assertEqual(self.cli.runs(), [], "no CLI ran")
+        self.assertFalse((self.state / "calls").exists(), "no credentials were written")
+
+    def test_key_metadata_reads_without_values_still_run(self) -> None:
+        # Without the value-inclusion flags the same operations return metadata
+        # only, so they stay available.
+        self.cli.reply("aws", stdout='{"id": "fixture-id"}')
+        out = self.ok("run", {"program": "aws", "args": ["apigateway", "get-api-key", "--api-key", "fixture-id"]})
+        self.assertEqual(out["command"], "apigateway get-api-key")
+        self.cli.reply("aws", stdout='{"items": []}')
+        out = self.ok("run", {"program": "aws", "args": ["apigateway", "get-api-keys"]})
+        self.assertEqual(out["command"], "apigateway get-api-keys")
+        self.assertEqual(len(self.cli.runs()), 2)
 
     def test_commands_that_are_not_describe_list_or_get_are_refused(self) -> None:
         for args in (
