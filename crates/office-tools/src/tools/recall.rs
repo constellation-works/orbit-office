@@ -1,4 +1,8 @@
 //! `office.recall`: read-only selection of captured evidence and live refs.
+//! Integrator-owned: one line per tool, written by the scaffold.
+
+pub(crate) mod answer;
+
 use office_core::domain::source::conversation::recall::{self, Query, Reference};
 use office_core::ports::{PrError, parse_pr_id};
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};

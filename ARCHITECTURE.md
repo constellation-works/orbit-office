@@ -82,14 +82,14 @@ crates/office-tools/src/
   dispatch.rs            envelope → tool → envelope
   tools/
     status.rs
-    recall.rs            (specs/recall.md)
+    recall.rs            recall  answer (planned: recall-answer)   (specs/recall.md)
     sources/             capture  transcribe  video_plan  frames  extract  show   (specs/library.md, specs/kt-videos.md)
     knowledge/           list  show  write                            (specs/library.md)
     artifacts/           list  show  promote                          (specs/library.md)
     library/             init  reindex  config_set  search  attach  private_route_check   (specs/library.md, plugin-surface.md, models-and-privacy.md)
     proposals/           signals_scan  create  accept  reconcile      (specs/proposals.md)
     selection/           get  put                                     (specs/selection-sharing.md)
-    sessions/            brief  digest                                (specs/sessions.md)
+    sessions/            brief  digest  scribe_control (planned: scribe-control)   (specs/sessions.md)
     scripts/             run                                          (specs/scripts.md)
     bootstrap/           batch_plan  consolidate  status              (specs/library-bootstrap.md)
     calendar/            sync  list                                  (specs/calendar.md)

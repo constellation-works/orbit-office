@@ -4,3 +4,4 @@
 
 pub(crate) mod brief;
 pub(crate) mod digest;
+pub(crate) mod scribe_control;

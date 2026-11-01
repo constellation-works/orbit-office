@@ -123,8 +123,10 @@ static TOOLS: &[Tool] = &[
     // sessions (specs/sessions.md)
     sessions::brief::TOOL,
     sessions::digest::TOOL,
+    sessions::scribe_control::TOOL,
     // recall (specs/recall.md)
     recall::TOOL,
+    recall::answer::TOOL,
     // scripts (specs/scripts.md)
     scripts::run::TOOL,
     // bootstrap (specs/library-bootstrap.md)

@@ -268,6 +268,12 @@ per-user provider plugin from this repository
 covers every project; answering questions across conversations is
 [recall.md](./recall.md).
 
+Per-session scribe control state is owned by Office behind the planned
+`office.scribe-control` tool (`get`, `set_switch`, `request_now`,
+`set_title`, `heartbeat`). The provider plugin's hooks read that state, so
+the web Scribe window and the plugin share one switch. The flag file above
+is the plugin's local cache of that Office-owned state.
+
 ### Trigger and debounce
 
 The provider's end-of-turn hook (`Stop` in Claude Code) checks the flag and,
@@ -631,5 +637,6 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-20685] — built the live scribe's incremental passes and `Note:`/`Scribe:` commands.
 - [ORB-20686] — built the live scribe's rules page, answers to questions and scribe handoff.
 - [ORB-20689] — built the per-user Claude Code hooks, commands, debounce and backfill.
+- [ORB-20755] — reserved the planned `office.recall-answer` and `office.scribe-control` scaffold (registry rows, reserved manifest blocks, this section).
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
