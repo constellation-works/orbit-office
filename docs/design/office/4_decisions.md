@@ -1,7 +1,7 @@
 ---
 title: office — Decisions
 owner: daniel
-last_updated: 2026-10-31
+last_updated: 2026-11-01
 last_validated: 2026-10-26
 status: Draft
 feature: office
@@ -1859,6 +1859,49 @@ is the same move as a standalone step.
   (or the standalone migration) once, and a destination collision keeps
   its legacy copy until a person resolves it.
 
+
+## A live scribe extracts the conversation while it runs
+
+**Recorded:** 2026-11-01 · proposed, pending review
+**Code anchors:** none yet; [specs/sessions.md](./specs/sessions.md#live-scribe-planned)
+
+### Context
+
+SessionEnd extraction ([below](#conversation-evidence-comes-from-session-transcripts-on-a-cheap-crew))
+moved capture to a cheap crew, but only after the session closes, so the
+orchestrator still captures by hand during the session. On 2026-10-31,
+after comparing claude-mem's always-on observer, the user asked for a
+dedicated scribe instead: switched on per session, reading only the
+conversation threads, following rules the user writes, and commandable by
+the user or the orchestrator. claude-mem observes every tool call and lets
+a model decide what to keep; the user wants the conversation only.
+
+### Decision
+
+- Run the existing extractor incrementally while a per-session switch is
+  on, from the provider's end-of-turn hook, debounced, plus a final
+  SessionEnd pass. No new tool: `office.capture` gains `from_line` and a
+  prefix hash so a growing transcript appends instead of versioning.
+- What to note is a Library page the user owns (`dom-scribe-rules`). Rules
+  narrow and steer; they never widen the guard.
+- Relax the cue guard in two narrow, deterministic ways: `Note:` commands,
+  and a short affirmative or option choice answering the immediately
+  preceding assistant question, recorded with both lines verbatim.
+- Allow an opt-in, marked, anchor-citing scribe handoff so the orchestrator
+  can stop maintaining it.
+
+### Consequences
+
+- The orchestrator's per-turn capture work goes away while the scribe is
+  on; the log is current during the session, not only after it.
+- Answer-pair decisions accept a small risk of reading a reflexive "ok" as
+  consent. The checks (adjacent question, ends in `?`, no uncertainty
+  markers, closed affirmative list) bound it, and the question is quoted
+  beside the answer so a reader can judge.
+- The scribe handoff is the first model-authored entry in the log. It is
+  marked, cited and replaceable, and off by default.
+- Cost: one low-complexity pass every few turns per scribed session, each
+  reading only new lines. Claude Code only until a Codex adapter lands.
 
 ## Conversation evidence comes from session transcripts on a cheap crew
 
