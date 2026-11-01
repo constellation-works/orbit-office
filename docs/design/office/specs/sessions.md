@@ -209,11 +209,10 @@ The sweep is recovery, not the primary trigger. Retain staged files until
 capture succeeds; host retention owns their later removal.
 
 The auto-task is shipped **disabled** with `dedupe: skip_if_open` and
-`complexity: low`. Registration under `spec.definitions.auto_tasks` in
-`plugin.yaml` is a separate integrator task under ARCHITECTURE.md. This feature
-ships the definition but does not register or enable it. Installing the
-provider plugin on the transcript-owning host and enabling any desired
-recovery sweep remain operator deployment steps.
+`complexity: low`, and is **registered** under `spec.definitions.auto_tasks`
+in `plugin.yaml`. This feature ships the definition registered but not
+enabled. Installing the provider plugin on the transcript-owning host and
+enabling any desired recovery sweep remain operator deployment steps.
 
 ### Secrets, privacy and retries
 
