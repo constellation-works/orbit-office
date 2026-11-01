@@ -89,7 +89,7 @@ async function runSecret(
       else if (code !== 0 || writeFailed) reject(new SecretError(failure));
       else resolve();
     });
-    // No newline is added: the bytes the user entered are the bytes sent.
+    // No newline is added: the value reaches stdin exactly as given.
     child.stdin.end(value);
   });
 }
