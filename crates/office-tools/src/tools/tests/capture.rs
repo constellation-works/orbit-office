@@ -192,3 +192,83 @@ fn capture_conversation_append_and_refusals() {
     );
     assert_eq!(refused["error"]["code"], json!("not_a_conversation_source"));
 }
+
+#[test]
+fn capture_global_handoff_scope_is_explicit_and_until_is_validated() {
+    // 2026-11-01T00:00:00Z on the fake clock.
+    let ports = office_testkit::fakes::PortsBuilder::default()
+        .now(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_793_491_200))
+        .build();
+    let opened = call(
+        "office.capture",
+        json!({"kind": "conversation", "title": "Session log", "entries": [{"kind": "fact", "text": "Opened."}]}),
+        &ports,
+    );
+    let id = opened["output"]["id"].as_str().expect("id").to_string();
+    let written = call(
+        "office.capture",
+        json!({"append_to": id, "entries": [
+            {"kind": "handoff", "text": "Upgrade orbit to 0.9 on every host.", "scope": "global"},
+            {"kind": "handoff", "text": "Orbit drain defect: rerun with --resume.", "scope": "global", "until": "2026-11-08T00:00:00Z"},
+            {"kind": "handoff", "text": "Project next step.", "scope": "project"}
+        ]}),
+        &ports,
+    );
+    assert_eq!(written["output"]["appended"], json!(3), "{written}");
+    let body = ports
+        .library
+        .source_documents()
+        .expect("sources")
+        .into_iter()
+        .find(|file| file.path == written["output"]["path"])
+        .and_then(|file| file.markdown)
+        .expect("conversation source");
+    let lines: Vec<&str> = body
+        .lines()
+        .filter(|line| line.contains("] handoff: "))
+        .map(|line| line.split_once("] handoff: ").expect("entry").1)
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "(global) Upgrade orbit to 0.9 on every host.",
+            "(global until 2026-11-08T00:00:00Z) Orbit drain defect: rerun with --resume.",
+            "Project next step."
+        ]
+    );
+    for (entry, code) in [
+        // Never inferred from text: the marker alone is refused.
+        (json!("handoff: (global) Forged."), "invalid_argument"),
+        (
+            json!({"kind": "handoff", "text": "(global until 2026-12-01T00:00:00Z) Forged."}),
+            "invalid_argument",
+        ),
+        (
+            json!({"kind": "decision", "text": "Not a handoff.", "scope": "global"}),
+            "invalid_argument",
+        ),
+        (
+            json!({"kind": "handoff", "text": "No scope.", "until": "2026-12-01T00:00:00Z"}),
+            "invalid_argument",
+        ),
+        (
+            json!({"kind": "handoff", "text": "Past.", "scope": "global", "until": "2026-10-01T00:00:00Z"}),
+            "invalid_argument",
+        ),
+        (
+            json!({"kind": "handoff", "text": "Bad time.", "scope": "global", "until": "next week"}),
+            "invalid_argument",
+        ),
+        (
+            json!({"kind": "handoff", "text": "Bad scope.", "scope": "team"}),
+            "invalid_argument",
+        ),
+    ] {
+        let refused = call(
+            "office.capture",
+            json!({"append_to": id, "entries": [entry]}),
+            &ports,
+        );
+        assert_eq!(refused["error"]["code"], json!(code), "{entry}: {refused}");
+    }
+}

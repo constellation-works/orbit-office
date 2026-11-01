@@ -181,12 +181,14 @@ fn library_signal_fixture() -> (office_testkit::fakes::FakeLibrary, Vec<String>)
     for index in 0..2 {
         let mut entries = vec![ConversationEntry {
             by: None,
+            global: None,
             kind: "fact".into(),
             text: "Context preceding the signal. ".repeat(10),
         }];
         if index == 0 {
             entries.push(ConversationEntry {
                 by: None,
+                global: None,
                 kind: "direction".into(),
                 text: "Cite primary evidence.".into(),
             });

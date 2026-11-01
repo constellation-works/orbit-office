@@ -146,6 +146,8 @@ pub fn capture_entry(value: &Value) -> Result<crate::ports::ConversationEntry> {
         text: Option<String>,
         by: Option<String>,
         correction: Option<Value>,
+        scope: Option<String>,
+        until: Option<String>,
     }
     let input: Input = serde_json::from_value(value.clone()).map_err(|_| {
         Error::InvalidArgument(
@@ -170,10 +172,33 @@ pub fn capture_entry(value: &Value) -> Result<crate::ports::ConversationEntry> {
         }
         text
     };
+    // Scope is the writer's explicit declaration, never inferred from text.
+    let global = match (input.scope.as_deref(), input.until) {
+        (None | Some("project"), None) => None,
+        (Some("global"), until) if input.kind == "handoff" => {
+            Some(crate::domain::session::GlobalScope { until })
+        }
+        (Some("global"), _) => {
+            return Err(Error::InvalidArgument(
+                "scope: global applies only to handoff entries".into(),
+            ));
+        }
+        (None | Some("project"), Some(_)) => {
+            return Err(Error::InvalidArgument(
+                "until applies only to a handoff with scope: global".into(),
+            ));
+        }
+        (Some(_), _) => {
+            return Err(Error::InvalidArgument(
+                "capture entry scope must be global or project".into(),
+            ));
+        }
+    };
     Ok(crate::ports::ConversationEntry {
         kind: input.kind,
         text,
         by: input.by,
+        global,
     })
 }
 

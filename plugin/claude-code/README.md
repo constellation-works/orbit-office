@@ -5,7 +5,7 @@ agent that you or an orchestrator command. `/scribe` scribes the messages of
 this session that are not scribed yet into one tagged, grep-able SCR file per
 session in the Library; `/scribe note` takes direct notes; the canned queries
 and `/scribe ask` answer with exact `SCR file:line` citations. The plugin also
-keeps the SessionStart brief.
+keeps the SessionStart brief and `/handoff`, which loads a project's handoff.
 
 Requires Python 3.10+ on macOS or Linux, Claude Code with plugin user
 configuration, and a locally installed Orbit Office plugin with
@@ -43,10 +43,31 @@ Change options later through Claude's plugin configuration UI.
 Restart Claude after installation — and after upgrading the plugin
 checkout under a running session, which keeps the plugin code it loaded at
 start — and check `/agents` (the `scribe` agent),
-`/mcp` (the `office` server and its `scribe` tool) and `/hooks`. The command's
+`/mcp` (the `office` server and its `scribe` and `handoff` tools) and `/hooks`. The command's
 stable provider-qualified form is `/office-scribe:scribe`; `/scribe` below
 means that command under Claude's standard namespacing. Permission prompts
 remain governed by your Claude and Orbit settings.
+
+### SessionStart brief and `/handoff`
+
+The SessionStart hook calls `office.session-brief` with `session_start: true`
+and `orchestrator: claude` (the provider name conversation sources record,
+not a crew name), so Office applies the Library setting `brief.handoff`
+([sessions spec](../../docs/design/office/specs/sessions.md#choosing-the-project)).
+A working directory that is one repository is sent as `project`. A directory
+holding two or more repositories among its children and grandchildren (the
+constellation root) sends no project; it sends the caller's assignment from
+`ORBIT_ACTIVE_TASK_ID` or `ORBIT_TASK_ID` as `task` when Orbit set one. In
+`auto` Office leads with that project's handoff, else the manual output; in
+`manual` the brief carries only the global handoffs and the projects that
+have a thread.
+
+`/handoff <project>` (in either mode, also mid-session) calls the read-only
+`handoff` MCP tool, which asks `office.session-brief` for
+`{"view":"handoffs","project":"<project>","orchestrator":"claude"}` and
+prints the project's newest handoff and then the open global handoffs.
+`/handoff` alone lists the global handoffs and the projects with a thread.
+No model is involved.
 
 After verifying this plugin's SessionStart brief, the operator can retire
 constellation's `operations/scripts/session-brief.py` hook. This repository

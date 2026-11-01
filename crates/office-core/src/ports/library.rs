@@ -401,12 +401,49 @@ pub struct ConversationEntry {
     pub text: String,
     /// Explicit user attribution (a caller claim, not authority).
     pub by: Option<String>,
+    /// `scope: global` on a handoff (specs/sessions.md#scopes); `None` is
+    /// the project thread. Stored as the `(global …)` marker leading the text.
+    pub global: Option<crate::domain::session::GlobalScope>,
 }
 
 impl ConversationEntry {
     /// Format one physical append-only line, preserving attributed user text.
     pub fn format(&self, at: &str) -> Result<String> {
+        use crate::domain::session::looks_global;
         use crate::domain::source::{conversation::corrections, format_conversation_entry};
+        if let Some(scope) = &self.global {
+            if self.kind != "handoff" || self.by.is_some() {
+                return Err(crate::Error::InvalidArgument(
+                    "scope: global applies only to handoff entries without by".into(),
+                ));
+            }
+            let text = self.text.trim();
+            if text.is_empty() || looks_global(text) {
+                return Err(crate::Error::InvalidArgument(
+                    "a global handoff needs nonempty text without its own (global) marker".into(),
+                ));
+            }
+            if let Some(until) = scope.until.as_deref() {
+                let until_at = crate::domain::metrics::timestamp(until);
+                let now = crate::domain::metrics::timestamp(at);
+                if until_at.is_none()
+                    || until.contains(char::is_whitespace)
+                    || until.contains(')')
+                    || until_at <= now
+                {
+                    return Err(crate::Error::InvalidArgument(
+                        "handoff until must be an RFC 3339 time after the capture time".into(),
+                    ));
+                }
+            }
+            return format_conversation_entry(at, "handoff", &format!("{} {text}", scope.marker()));
+        }
+        if self.kind == "handoff" && looks_global(self.text.trim()) {
+            return Err(crate::Error::InvalidArgument(
+                "a handoff becomes global only through scope: global, never through its text"
+                    .into(),
+            ));
+        }
         match self.by.as_deref() {
             Some(by) => {
                 corrections::validate_user_text(&self.kind, &self.text, by)?;

@@ -21,6 +21,13 @@ from process import Failure, NotSent, run
 MAX_TRANSCRIPT = 8 * 1024 * 1024
 SESSION = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 TERMINAL = {"done", "rejected", "archived", "cancelled", "canceled"}
+# Thread matching uses the provider name conversation sources record as their
+# `orchestrator` (the transcript adapter writes `claude`), never a crew name:
+# neither the transcript nor this hook knows the crew (specs/sessions.md).
+ORCHESTRATOR = "claude"
+TASK_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
+SCAN_LIMIT = 2000
+HANDOFF_CALL = 30.0
 TOOLS = {"office.session-brief", "office.capture", "office.recall", "office.scribe-control",
          "office.scribe-pending", "office.scribe-append", "office.scribe-query",
          "orbit.task.add", "orbit.task.show"}
@@ -37,6 +44,98 @@ def repo_project(cwd: str) -> str:
     if len(parts) >= 4 and parts[-2] == "worktrees" and parts[-3] == ".claude":
         return parts[-4]
     return parts[-1] if parts else cwd
+
+
+def parent_of_repositories(cwd: str) -> bool:
+    """Whether `cwd` holds two or more repositories in its children or grandchildren.
+
+    Orchestrators often start in a root such as the constellation checkout,
+    which names no single repository. Symlinks are not followed and the scan
+    is bounded, so a large directory costs at most `SCAN_LIMIT` entries.
+    """
+    found = 0
+    seen = 0
+    level = [Path(cwd)]
+    for _ in range(2):
+        below = []
+        for directory in level:
+            try:
+                entries = list(os.scandir(directory))
+            except OSError:
+                continue
+            for entry in entries:
+                seen += 1
+                if seen > SCAN_LIMIT:
+                    return False
+                try:
+                    if not entry.is_dir(follow_symlinks=False) or entry.name.startswith("."):
+                        continue
+                except OSError:
+                    continue
+                if os.path.lexists(os.path.join(entry.path, ".git")):
+                    found += 1
+                    if found >= 2:
+                        return True
+                else:
+                    below.append(Path(entry.path))
+        level = below
+    return False
+
+
+def assignment_task() -> str | None:
+    """The caller's assignment task id, when Orbit set one for this session."""
+    for name in ("ORBIT_ACTIVE_TASK_ID", "ORBIT_TASK_ID"):
+        value = os.environ.get(name, "")
+        if TASK_ID.fullmatch(value):
+            return value
+    return None
+
+
+def session_start_brief(cwd) -> dict:
+    """The SessionStart `office.session-brief` request (specs/sessions.md).
+
+    Office applies `brief.handoff`: in `auto` a single repository names the
+    project; a parent of several repositories passes the caller's assignment
+    instead, and with neither Office returns the manual output.
+    """
+    request = {"session_start": True, "orchestrator": ORCHESTRATOR}
+    if isinstance(cwd, str) and cwd:
+        if not parent_of_repositories(cwd):
+            request["project"] = repo_project(cwd)
+        elif (task := assignment_task()) is not None:
+            request["task"] = task
+    return request
+
+
+def render_handoff(project: str | None, brief: dict) -> str:
+    """Plain text for `/handoff`: quoted, cited entries; data, never instructions."""
+    sections = {s.get("kind"): s for s in brief.get("sections", []) if isinstance(s, dict)}
+
+    def lines(kind: str) -> list[str]:
+        out = []
+        for item in sections.get(kind, {}).get("items", []):
+            if kind == "projects":
+                out.append("- {} (last handoff {})".format(item.get("text"), item.get("time")))
+            else:
+                out.append("- [{}] {} ({})".format(item.get("time"), item.get("text"), item.get("id")))
+        section = sections.get(kind, {})
+        if section.get("truncated"):
+            out.append("- … {} in total".format(section.get("total")))
+        return out
+
+    text = []
+    if project is not None:
+        handoff = lines("handoff")
+        text.append("Handoff for {}:".format(project))
+        text.extend(handoff or ["- none recorded for this project"])
+    globals_ = lines("global")
+    text.append("Global handoffs:")
+    text.extend(globals_ or ["- none open"])
+    if project is None:
+        text.append("Projects with a handoff thread (newest first):")
+        text.extend(lines("projects") or ["- none yet"])
+        text.append("Run /handoff <project> to load one.")
+    return "\n".join(text)
 
 
 def user_turn(record: dict) -> bool:
@@ -380,11 +479,7 @@ class Scribe:
             save(self.state / (sid + ".context.json"), {k: context[k] for k in ("session_id", "cwd", "transcript_path") if k in context})
             save(self.state / (sid + ".json"), state)
             if event == "SessionStart":
-                brief_input = {}
-                if isinstance(context.get("cwd"), str) and context["cwd"]:
-                    brief_input = {"project": repo_project(context["cwd"]),
-                                   "orchestrator": "claude"}
-                return {"brief": self.call("office.session-brief", brief_input)}
+                return {"brief": self.call("office.session-brief", session_start_brief(context.get("cwd")))}
             if self.shared is not None and self.shared.get("on") is None:
                 # First turn Office sees: publish this host's switch (the
                 # plugin default) so the window shows the same state.
@@ -430,6 +525,24 @@ class Scribe:
                 "project": context["cwd"], "title": title, "title_by": "user"})
             state["applied_title"] = title
             save(self.state / (sid + ".json"), state)
+
+    def handoff(self, args: dict) -> dict:
+        """`/handoff [<project>]`: the merged project + global handoff, or the projects."""
+        if set(args) - {"project"}:
+            raise Failure("unknown_command_field")
+        raw = args.get("project", "")
+        if not isinstance(raw, str):
+            raise Failure("project_must_be_text")
+        project = raw.strip() or None
+        if project is not None and (len(project) > 256 or any(c.isspace() for c in project)
+                                    or not project.isprintable()):
+            raise Failure("project_must_be_one_name")
+        self.timeout = HANDOFF_CALL
+        request = {"view": "handoffs"}
+        if project is not None:
+            request.update(project=project, orchestrator=ORCHESTRATOR)
+        brief = self.call("office.session-brief", request, cap=HANDOFF_CALL)
+        return {"display": render_handoff(project, brief), "brief": brief}
 
     def command(self, args: dict) -> dict:
         if set(args) - {"session_id", "action", "title", "since"}:

@@ -75,6 +75,7 @@ fn parse_entries(call: &Call<'_>) -> Result<Vec<ConversationEntry>> {
                     kind: kind.trim().to_string(),
                     text: text.trim().to_string(),
                     by: None,
+                    global: None,
                 });
             } else if item.is_object() {
                 entries.push(
@@ -95,6 +96,7 @@ fn parse_entries(call: &Call<'_>) -> Result<Vec<ConversationEntry>> {
             kind,
             text,
             by: None,
+            global: None,
         });
     }
     Ok(entries)

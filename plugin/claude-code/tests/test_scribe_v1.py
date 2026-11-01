@@ -818,7 +818,7 @@ class ScribeV1(unittest.TestCase):
 
     def test_one_structured_scribe_tool_refuses_mixed_or_unknown_fields(self):
         listed = self.mcp({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})[0]["result"]["tools"]
-        self.assertEqual([t["name"] for t in listed], ["scribe"])
+        self.assertEqual([t["name"] for t in listed], ["scribe", "handoff"])
         self.assertEqual(self.tool({"session_id": self.sid, "args": "", "action": "pending"}, error=True),
                          "unknown_command_field")
         self.assertEqual(self.tool({"session_id": self.sid, "action": "verify", "entries": []}, error=True),

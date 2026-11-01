@@ -85,6 +85,76 @@ anchor and id.
   words before reading the computed state.
 - **Never the only record.** The brief does not depend on it: with no
   handoff, it still returns the computed sections.
+- **Orchestrator is the provider name.** Thread matching compares the
+  conversation's `orchestrator` frontmatter, which the transcript adapter
+  writes as the provider (`claude`), with the caller's `orchestrator`; the
+  SessionStart hook therefore passes `claude`, not a crew name (opus, sol,
+  …). Neither the transcript nor the hook knows the crew, so a crew name
+  would match no source. Work that needs one thread per crew or per task
+  cites its assignment id, which keys the thread instead (ORB-21063).
+
+#### Scopes
+
+A handoff is project-scoped (the thread rules above) unless its writer
+declares `scope: global` in `office.capture`:
+
+```json
+{"append_to":"<source-id>","entries":[{"kind":"handoff","text":"Orbit 0.9 drains need --resume after a host restart.","scope":"global","until":"2026-11-08T00:00:00Z"}]}
+```
+
+- **Explicit, never inferred.** The scope is stored as a marker leading the
+  entry text, `handoff: (global) <text>` or `handoff: (global until
+  <until>) <text>` (the log grammar keeps one kind token per entry, as for
+  the [scribe handoff](#scribe-handoff)). Capture writes the marker only
+  for `scope: global` and refuses a handoff whose text starts with
+  `(global)` or `(global until ` without it, including the string form.
+  `scope` applies to `handoff` entries only (`project` is the default and
+  accepted); `until` needs `scope: global` and must be an RFC 3339 time
+  after the capture time. The scope is read from the original entry, so a
+  later correction cannot change it.
+- **Open until expired or closed.** A global handoff is open until its
+  `until` is at or before the brief's current time (the Clock port), or a
+  `resolved` entry recorded at or after it cites it: by its full
+  `<source-id>#L<n>` from any conversation, or by `#L<n>` later in its own
+  source (a whole-token citation anywhere in the text; `#L30` does not cite
+  `#L3`). Expired and closed globals are left out of every brief. Globals
+  never displace each other.
+- **Separate from threads.** A global never becomes a thread's handoff,
+  never appears in `other_sessions`, and never replaces a project handoff;
+  project handoffs keep the newest-in-thread rule.
+- **Merged into every brief.** The brief puts the project thread's handoff
+  first, then a `global` section of the open globals, newest first, capped
+  at five (`total` counts every open global, `truncated` reports the cap). A
+  global the project handoff cites by anchor is always listed, exactly once,
+  even past the cap.
+
+#### Choosing the project
+
+The Library setting `brief.handoff` in `.office/config.yaml` is `auto`
+(default; omitted from the config) or `manual`. The user edits it; the
+agent never sets it. It governs only the SessionStart hook's brief, which
+the hook marks with `session_start: true`; every other request uses the
+project it names.
+
+- **`auto`.** The hook sends its working directory's repository as
+  `project`, as before. When the working directory holds two or more
+  repositories among its children and grandchildren (orchestrators start in
+  the constellation root), it sends no project and, when Orbit set one for
+  the session (`ORBIT_ACTIVE_TASK_ID`, else `ORBIT_TASK_ID`), the caller's
+  assignment as `task`. Office asks `orbit.task.show` whether that task is
+  open; when it is, the project is the one recorded by the newest
+  conversation whose project handoff cites it (Orbit's task record carries
+  no workspace path, so the assignment's thread is where its workspace is
+  known). Any failure or no such thread falls back to the manual output.
+  With neither a project nor a task the brief is the manual output too.
+- **`manual`.** The hook's brief has no `handoff` and no `other_sessions`;
+  it carries the `global` section and a `projects` section listing every
+  project with a handoff thread, newest first (at most 20). Since and Last
+  session are those of the newest conversation overall.
+- **`/handoff <project>`** (Claude Code, both modes, also mid-session)
+  returns that project's handoff then the open globals; `/handoff` alone
+  returns the globals and the projects. It calls `office.session-brief` with
+  `view: handoffs`, which reads only the Library.
 
 ## Transcript extraction
 
@@ -540,7 +610,15 @@ always current and cannot invent anything:
   each orchestrator (and each assignment a handoff cites) keeps its own
   handoff. An older conversation in the project is used when the newest
   one in the project wrote no handoff. Absent when no conversation in
-  the project wrote one.
+  the project wrote one, and in manual output (below). Global-scoped
+  handoffs are never chosen here.
+- **Global:** the open [global handoffs](#scopes), verbatim with their
+  `(global …)` marker, newest first, at most five; one the handoff cites is
+  always listed once. Present in every brief while one is open.
+- **Projects:** only in manual output ([Choosing the
+  project](#choosing-the-project)): one item per project with a handoff
+  thread (`id` and `text` name it; `link` and `time` are its newest
+  handoff's), newest first, at most 20.
 - **Other sessions:** one item per other thread with a handoff — the same
   cited handoff item, so its `time` gives its age and its text carries
   any assignment id it cites — newest first. Bounded: only handoffs no
@@ -573,15 +651,22 @@ The built tool accepts `{}` or the current session's thread as
 `{"project": "<project>", "orchestrator": "<orchestrator>"}` (each field
 optional, a nonempty single-line string when present; the SessionStart
 hook passes the repository name of its working directory as `project`
-and `claude` as `orchestrator`). With no `project` the output is exactly
-the pre-per-thread output: the globally newest conversation leads, and
+and `claude` as `orchestrator`). Three more optional fields serve
+[Choosing the project](#choosing-the-project): `session_start` (boolean;
+applies `brief.handoff`), `task` (the caller's assignment id, only with
+`session_start`) and `view` (`brief`, the default, or `handoffs`, which
+returns only Handoff, Global and Projects, reads no Orbit task, and cannot
+be combined with `session_start`). With no `project` and no
+`session_start` the output is the pre-per-thread output plus Global: the
+globally newest conversation's newest project-scoped handoff leads, and
 there is no `other_sessions` section. It returns `sections` in the order
-above, with stable `kind` tokens (`handoff`, `other_sessions`, `since`,
-`waiting_on_you`, `agents_working_on`, `workspace_unavailable`,
-`open_questions`, `last_session`, `latest_digest`, `onboarding`). Each
-section has `items`, `total` and `truncated`. Handoff, Other sessions,
-Latest digest, Workspace unavailable and Onboarding are omitted when
-empty; the other sections are always present. With a project, Last
+above, with stable `kind` tokens (`handoff`, `global`, `projects`,
+`other_sessions`, `since`, `waiting_on_you`, `agents_working_on`,
+`workspace_unavailable`, `open_questions`, `last_session`,
+`latest_digest`, `onboarding`). Each section has `items`, `total` and
+`truncated`. Handoff, Global, Projects, Other sessions, Latest digest,
+Workspace unavailable and Onboarding are omitted when empty; the other
+sections are always present. With a project, Last
 session is likewise the newest conversation in that project.
 Each item carries `id`, `link`, `text`, `time`, `entry_kind`, `status` and
 `template`; fields that do not apply are null. Task items read from an
@@ -723,6 +808,8 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-20686] — built the live scribe's rules page, answers to questions and scribe handoff.
 - [ORB-20689] — built the per-user Claude Code hooks, commands, debounce and backfill.
 - [ORB-20755] — reserved the planned `office.recall-answer` and `office.scribe-control` scaffold (registry rows, reserved manifest blocks, this section).
+- [ORB-21060] — built per-thread handoffs within a project and the `other_sessions` section.
+- [ORB-21063] — built global-scoped handoffs (scope, expiry, resolution, the `global` section), the `brief.handoff` auto/manual setting with the assignment fallback, the `projects` section, `view: handoffs` and the Claude Code `/handoff` command.
 - [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
