@@ -40,7 +40,8 @@
           "session_id": { "type": "string" },
           "counterpart": { "type": ["string", "null"] },
           "counterpart_name": { "type": ["string", "null"] },
-          "title": { "type": ["string", "null"], "description": "The session title from the SCR file's front matter; null until /scribe title sets it." },
+          "title": { "type": ["string", "null"], "description": "The session title, or the humanized filename slug where the SCR title is still null; never Untitled session." },
+          "title_by": { "type": ["string", "null"], "enum": ["user", "custom", "scribe", null] },
           "project": { "type": ["string", "null"], "description": "The session's project from the SCR file's front matter." },
           "scribed_through": { "type": ["string", "null"], "description": "The session's scribe cursor: the last message id scribed into its SCR file. office.scribe-append takes it as through to add a note without moving the cursor." },
           "resume": { "type": ["string", "null"], "description": "Resume command for the session." },
@@ -52,7 +53,7 @@
           "no_why": { "type": "boolean", "description": "A decision still missing its reason." },
           "content_withheld": { "type": "boolean", "description": "True when the entry is private (by conversation sensitivity or the SCR file's sensitivity) and its text, quote and reason are withheld; references and anchors remain. A configured private route does not release the content to the caller." }
         },
-        "required": ["text", "line_text", "quote", "id", "scr_id", "path", "line", "file_line", "citation", "msg", "message_id", "time", "at", "tag", "topics", "refs", "by", "matter", "review_by", "stale", "due", "resolves", "supersedes", "session_id", "counterpart", "counterpart_name", "title", "project", "scribed_through", "resume", "resume_command", "why", "reason", "why_source", "why_filled_by", "no_why", "content_withheld"],
+        "required": ["text", "line_text", "quote", "id", "scr_id", "path", "line", "file_line", "citation", "msg", "message_id", "time", "at", "tag", "topics", "refs", "by", "matter", "review_by", "stale", "due", "resolves", "supersedes", "session_id", "counterpart", "counterpart_name", "title", "title_by", "project", "scribed_through", "resume", "resume_command", "why", "reason", "why_source", "why_filled_by", "no_why", "content_withheld"],
         "additionalProperties": false
       }
     },

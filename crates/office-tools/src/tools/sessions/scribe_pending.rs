@@ -141,7 +141,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         None if messages.is_empty() => Value::Null,
         None => {
             let (id, path) = scribe::planned(&files, &parsed, &messages, None, zone.as_deref())?;
-            json!({"exists":false,"id":id,"path":path,"title":null,"scribed_through":null,
+            json!({"exists":false,"id":id,"path":path,"title":null,"title_by":null,"scribed_through":null,
                 "last_scribed_at":null,"topics":[],"aliases":[],"counterpart":null,"counterpart_name":null})
         }
     };

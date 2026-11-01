@@ -118,6 +118,24 @@
         ],
         "additionalProperties": false
       }
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "title_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "user",
+        "custom",
+        "scribe",
+        null
+      ]
     }
   },
   "required": [
@@ -132,7 +150,9 @@
     "topics",
     "added",
     "duplicates",
-    "refused"
+    "refused",
+    "title",
+    "title_by"
   ],
   "additionalProperties": false
 }

@@ -58,7 +58,7 @@ its me my of on or so that the their them then there these they this to was we w
 where which who why will with you your about any daniel decide decided decision we've""".split())
 
 USAGE = ("usage: /scribe [note <text> | pending | pref <matter> | landed [today|<date>] | "
-         "why <matter|topic> | ask <question> | title <text> | backfill [--since <date>] [--project <name>]]")
+         "why <matter|topic> | ask <question> | title <text> | backfill [--titles] [--since <date>] [--project <name>]]")
 
 
 # --- staged-transcript stripping --------------------------------------
@@ -365,6 +365,27 @@ def stem(word: str) -> str:
     return word
 
 
+def _placeholder_title(title: str) -> bool:
+    words = title.split()
+    if len(words) < 2 or words[0].lower() != "new" or words[1].lower() != "session":
+        return False
+    rest = words[2:]
+    return len(rest) <= 1 and all(w.isdigit() for w in rest)
+
+
+def _humanized_slug(scr_id: str | None) -> str | None:
+    if not scr_id:
+        return None
+    parts = scr_id.split("-")
+    if len(parts) < 4 or parts[0] != "SCR":
+        return None
+    words = parts[3:]
+    if not words:
+        return None
+    text = " ".join(words[:8]).strip()
+    return (text[:1].upper() + text[1:]) if text else None
+
+
 def keywords(question: str) -> list[str]:
     words = re.findall(r"[a-z0-9][a-z0-9#._-]*", question.lower())
     return sorted({stem(w.strip("._-")) for w in words if w not in STOPWORDS and len(w.strip("._-")) >= 2})
@@ -596,7 +617,9 @@ class V1:
             prompt = ("Writing level. Catch up scribe session " + json.dumps(sid) + ". Call the scribe tool with "
                       + step + ", choose entries under your writing rules, then call it with "
                       '{"action": "append", "session_id": ' + json.dumps(sid) + ', "entries": [...]} '
-                      "(an empty list when nothing qualifies). Return only the tool's display.")
+                      "(an empty list when nothing qualifies). When the session has no title yet, also include "
+                      '\"title\": \"<at most eight plain words on what the session was about>\", \"title_by\": \"scribe\" '
+                      "in that append call. Return only the tool's display.")
             label = "Backfill: scribe " + sid if backfill else "Scribe catch-up"
             return {"display": "{} new message(s) after {}; the scribe agent reads {} now{}.".format(
                         len(new), through or "the start", len(batch),
@@ -620,25 +643,36 @@ class V1:
         return {"session_id": sid, "through": ticket["through"], "scr": ticket.get("scr"),
                 "rules": ticket.get("rules"), "messages": ticket.get("messages", []),
                 "note": "Messages marked context are read-only; cite only the others. A truncated "
-                        "message is cut for length: quote only text you were given."}
+                        "message is cut for length: quote only text you were given. When scr has no title, "
+                        "propose a title of at most eight plain words with title_by scribe on append."}
 
-    def step_append(self, sid: str, entries) -> dict:
+    def step_append(self, sid: str, entries, title=None, title_by=None) -> dict:
         if not isinstance(entries, list) or len(entries) > MAX_ENTRIES or any(not isinstance(e, dict) for e in entries):
             raise Failure("entries_must_be_a_list_of_objects")
+        if title is not None and (not isinstance(title, str) or not title.strip()):
+            raise Failure("title_required")
+        if title_by is not None and title_by not in ("user", "custom", "scribe"):
+            raise Failure("title_by_must_be_user_custom_or_scribe")
         with self.client.locked(sid):
             ticket = load(self.file(sid, "catchup"))
             if not ticket:
                 raise Failure("no_catchup_started; run /scribe")
-            result = self.write(sid, ticket["through"], entries, more=bool(ticket.get("more")))
+            result = self.write(sid, ticket["through"], entries, more=bool(ticket.get("more")),
+                                title=title, title_by=title_by)
             self.drop(sid, "catchup")
             return result
 
-    def write(self, sid: str, through: str, entries: list, more: bool) -> dict:
+    def write(self, sid: str, through: str, entries: list, more: bool, title=None, title_by=None) -> dict:
         """One `office.scribe-append`, with any held notes and title. Caller holds the lock."""
         held = load(self.file(sid, "held"))
         payload = {"session_id": sid, "through": through, "entries": list(held.get("entries", [])) + entries}
         if held.get("title"):
+            # A held user title outranks any scribe proposal in the same pass.
             payload["title"] = held["title"]
+            payload["title_by"] = held.get("title_by") or "user"
+        elif title:
+            payload["title"] = title
+            payload["title_by"] = title_by or "scribe"
         reply = self.office("office.scribe-append", payload)
         self.drop(sid, "held")
         return self.render_append(reply, more)
@@ -728,9 +762,9 @@ class V1:
     def title(self, sid: str, text: str) -> dict:
         if not text.strip() or "\n" in text:
             raise Failure("title_required")
-        return self.hold_or_write(sid, title=text.strip())
+        return self.hold_or_write(sid, title=text.strip(), title_by="user")
 
-    def hold_or_write(self, sid: str, entries: list | None = None, title: str | None = None) -> dict:
+    def hold_or_write(self, sid: str, entries: list | None = None, title: str | None = None, title_by: str = "user") -> dict:
         """Write now when the session has a cursor; otherwise hold for the next append.
 
         `office.scribe-append` needs `through`, and moving a never-scribed
@@ -750,6 +784,7 @@ class V1:
                 held = load(self.file(sid, "held"))
                 if title:
                     held["title"] = title
+                    held["title_by"] = title_by
                 held["entries"] = list(held.get("entries", [])) + list(entries or [])
                 save(self.file(sid, "held"), held)
                 return self.write(sid, through, [], more=False)
@@ -758,6 +793,7 @@ class V1:
             held["entries"] = list(held.get("entries", [])) + list(entries or [])
             if title:
                 held["title"] = title
+                held["title_by"] = title_by
             save(self.file(sid, "held"), held)
             what = "title" if title else "note"
             return {"display": "Held: this session has no scribe cursor yet, so the {} is written with "
@@ -914,6 +950,42 @@ class V1:
 
     # ---- backfill -------------------------------------------------------
 
+    def title_session(self, sid: str, transcript: str, cwd: str) -> dict:
+        """Fill one existing SCR file's null title, without renaming it.
+
+        Precedence: a held user title, then a real custom title, then the
+        humanized filename slug as a scribe title (at most eight words).
+        """
+        with self.client.locked(sid):
+            found = self.pending(sid, transcript, cwd)
+            if found is None:
+                return {"excluded": True, "titled": False, "model_call": False}
+            _, reply = found
+            if reply.get("content_withheld"):
+                return {"withheld": True, "titled": False, "model_call": False}
+            scr = reply.get("scr") or {}
+            if not scr.get("exists"):
+                return {"titled": False, "no_scr": True, "model_call": False}
+            if scr.get("title"):
+                return {"titled": False, "already": True, "model_call": False}
+            held = load(self.file(sid, "held"))
+            custom = getattr(self, "_custom_title", None)
+            if held.get("title"):
+                title, by = held["title"], held.get("title_by") or "user"
+            elif custom and not _placeholder_title(custom):
+                title, by = custom, "custom"
+            else:
+                title, by = _humanized_slug(scr.get("id")), "scribe"
+            if not title:
+                return {"titled": False, "model_call": False}
+            out = self.office("office.scribe-append",
+                              {"session_id": sid, "title": title, "title_by": by})
+            if held.get("title"):
+                self.drop(sid, "held")
+            return {"titled": True, "title": out.get("title", title),
+                    "title_by": out.get("title_by", by), "path": out.get("path", scr.get("path")),
+                    "renamed_from": out.get("renamed_from"), "model_call": False}
+
     def backfill(self, rest: str, caller: str | None = None) -> dict:
         """Oldest-first catch-up over existing transcripts.
 
@@ -928,10 +1000,14 @@ class V1:
         """
         tokens = rest.split()
         since = project = None
+        titles_only = False
         while tokens:
             flag = tokens.pop(0)
+            if flag == "--titles":
+                titles_only = True
+                continue
             if flag not in ("--since", "--project") or not tokens:
-                raise Failure("usage: backfill [--since YYYY-MM-DD] [--project <name>]")
+                raise Failure("usage: backfill [--titles] [--since YYYY-MM-DD] [--project <name>]")
             value = tokens.pop(0)
             if flag == "--since":
                 if not DATE.fullmatch(value):
@@ -944,6 +1020,8 @@ class V1:
         cache = load(cache_path)
         done = cache.get("done", {})
         candidates, scribed = [], 0
+        titled: list[str] = []
+        already_titled: list[str] = []
         not_sessions: list[str] = []
         headless: list[str] = []
         scribe_only: list[str] = []
@@ -982,7 +1060,7 @@ class V1:
                 info = path.lstat()
                 if not stat.S_ISREG(info.st_mode):
                     raise Failure("unsafe_input_file")
-                if done.get(str(path)) == [info.st_size, info.st_mtime_ns]:
+                if not titles_only and done.get(str(path)) == [info.st_size, info.st_mtime_ns]:
                     scribed += 1
                     continue
                 head = self.head(path)
@@ -1030,6 +1108,21 @@ class V1:
                 return {"display": "Backfill paused at the command budget; run it again to continue." + refusal_summary(),
                         "continue": True, "model_call": False, **totals()}
             sid = head["session_id"]
+            if titles_only:
+                try:
+                    result = self.title_session(sid, path, head["cwd"])
+                except Failure as error:
+                    note_refusal(error, sid)
+                    continue
+                if result.get("titled"):
+                    titled.append(sid)
+                    done[path] = [info.st_size, info.st_mtime_ns]
+                    save(cache_path, {"done": done})
+                elif result.get("already"):
+                    already_titled.append(sid)
+                else:
+                    skipped.append(sid)
+                continue
             try:
                 result = self.catchup_session(sid, path, head["cwd"], backfill=True)
             except Failure as error:
@@ -1056,6 +1149,13 @@ class V1:
             if result.get("new_count") == 0 or result.get("withheld") or result.get("excluded"):
                 done[path] = [info.st_size, info.st_mtime_ns]
                 save(cache_path, {"done": done})
+        if titles_only:
+            return {"display": "Backfill titles done: {} session(s) titled, {} already titled, "
+                               "{} skipped.{}".format(len(titled), len(already_titled),
+                                                       len(skipped), refusal_summary() or " 0 refused"),
+                    "done": True, "continue": False, "model_call": False,
+                    "titled": len(titled), "titled_sessions": list(titled),
+                    "already_titled": len(already_titled), **totals()}
         done_display = ("Backfill done: {} session(s) already scribed to their end, "
                           "{} non-session file(s) skipped, {} headless session(s) skipped, "
                           "{} scribe-only session(s) skipped,{}").format(
@@ -1073,7 +1173,7 @@ class V1:
 def dispatch(args: dict) -> dict:
     """The structured `scribe` MCP tool: a `/scribe` argument string, or one agent step."""
     allowed = {None: {"session_id", "args"}, "pending": {"session_id", "action"},
-               "append": {"session_id", "action", "entries"}, "query": {"session_id", "action", "query"},
+               "append": {"session_id", "action", "entries", "title", "title_by"}, "query": {"session_id", "action", "query"},
                "verify": {"session_id", "action", "answer"}}
     action = args.get("action")
     if action not in allowed or set(args) - allowed[action]:
@@ -1087,7 +1187,7 @@ def dispatch(args: dict) -> dict:
     if action == "pending":
         return v1.step_pending(sid)
     if action == "append":
-        return v1.step_append(sid, args.get("entries"))
+        return v1.step_append(sid, args.get("entries"), args.get("title"), args.get("title_by"))
     if action == "query":
         return v1.step_query(sid, args.get("query"))
     return v1.step_verify(sid, args.get("answer"))

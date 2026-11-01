@@ -63,7 +63,8 @@ on the session it is run in, identified by `${CLAUDE_SESSION_ID}`.
 | `/scribe pending`, `/scribe pref <matter>`, `/scribe landed [today\|<date>]`, `/scribe why <matter\|topic>` | Model-free queries over the tags; instant, cited lines ([Answering](#answering)). |
 | `/scribe ask <question>` | Answer a free-form question with citations; runs the queries first and calls the model only on the shortlist. |
 | `/scribe backfill [--since <date>] [--project <name>]` | Run the catch-up over the user's existing transcripts, oldest first. Each session gets its SCR file; sessions already scribed to their end are skipped. The calling session is never selected: it is left to `/scribe` (counted as `caller_skipped`). Sessions whose only user messages invoke `/scribe` (`office-scribe:scribe`) are skipped as scribe-only (counted as `scribe_only`): a driver that only ran `/scribe` is not a conversation, never refused and never handed to the scribe agent. `<task-notification>` blocks are stripped before that judgment, so a driver whose other user records are only background-task notifications still counts as scribe-only. Headless agent-to-agent runs, whose first conversational record carries `entrypoint: sdk-cli` (Orbit workers, `claude -p`), are skipped as headless: counted in `skipped`, never refused and never handed to the scribe agent. An explicit `/scribe` inside a calling, scribe-only or headless session still scribes it. A finished backfill reports `done` with `continue: false`. |
-| `/scribe title <text>` | Set the session title, which renames the SCR file once (below). |
+| `/scribe title <text>` | Set the session title (`title_by: user`), which renames the SCR file once (below). |
+| `/scribe backfill --titles` | Title-only backfill: fill `title` for existing SCR files whose title is null, without renaming them (below). |
 
 Orchestrators reach the same agent as the `scribe` subagent: "ask the
 scribe whether Daniel decided on X". A standalone scribe session
@@ -309,10 +310,39 @@ the preamble — and never from the brief's preamble itself.
 `/scribe title` renames the file once and records the old name in
 `aliases`.
 
+### Titles
+
+Every SCR file carries `title` and `title_by` (`user`, `custom` or
+`scribe`; both null until a title is set). On the first writing pass for
+a session whose title is null, the scribe agent proposes a title of at
+most eight words in plain language — what the session was about, not its
+first command — and sends it with that pass through
+`office.scribe-append` (`title` with `title_by: scribe`). Precedence,
+highest first:
+
+1. a user title (`/scribe title`, `title_by: user`);
+2. the transcript's latest real `custom-title` (`title_by: custom`);
+3. a side session's title/summary record (`title_by: custom`);
+4. the scribe's proposed title (`title_by: scribe`).
+
+The desktop `New session` placeholder (any case, with or without one
+trailing number) never becomes a title at any level. A scribe title may
+be refined on a later pass only while it is still scribe-set; a user
+title is never replaced, and a real custom title beats a scribe title.
+Only a user title renames the file (once, above); scribe and custom
+titles never rename it. Where the title is still null, the web Scribe
+feed and `office.scribe-query` show the humanized filename slug
+(`SCR-30-1135-pilot-admission-hold` reads "Pilot admission hold"),
+never "Untitled session"; `office.scribe-query` also returns
+`title_by`. `/scribe backfill --titles` fills titles for existing SCR
+files whose title is null without renaming them, using the same
+precedence (its last resort is the humanized slug, marked `scribe`).
+
 ```markdown
 ---
 id: SCR-01-0307-scribe-v1-design
 title: Scribe v1 design
+title_by: user
 session_id: 0a31040c-e7e2-411a-8100-1eba1b8c1dde
 provider: claude-code
 model: claude-opus-5-5
@@ -507,7 +537,7 @@ web access, no writes and no Orbit calls.
 | Conversation sources as `src-…/source.md` | Left as they are; new sessions write `SCR-…md`. No migration in v1. |
 | `office.recall`, `office.recall-answer`, `office.scribe-control`, corrections | Unchanged and unused by v1. Corrections may be reused later as `correction` lines. |
 | Desktop pane (ORB-20697) | Unused by v1. |
-| Web Scribe screen (ORB-20696) | Built over v1, commanded only: the feed and the Pending, Preferences, Landed and Why views read `office.scribe-query`; a note is appended through `office.scribe-append` at the session's own `scribed_through`, as `/scribe note` records it; the ask box calls `office.scribe-ask`. No automatic capture, heartbeat or capture switch. `office.scribe-query` results carry the file's `title`, `project` and `scribed_through` for it. |
+| Web Scribe screen (ORB-20696) | Built over v1, commanded only: the feed and the Pending, Preferences, Landed and Why views read `office.scribe-query`; a note is appended through `office.scribe-append` at the session's own `scribed_through`, as `/scribe note` records it; the ask box calls `office.scribe-ask`. No automatic capture, heartbeat or capture switch. `office.scribe-query` results carry the file's `title` (or the humanized slug where null), `title_by`, `project` and `scribed_through` for it. |
 
 ## Build order
 
@@ -528,7 +558,7 @@ web access, no writes and no Orbit calls.
      Every refused entry is returned with a reason code; a message at or
      before the file's `scribed_through` is read-only context. Front matter
      always carries every key above on one line (an untitled session has
-     `title: null`), so `#L<n>` file lines never move. Times use the host
+     `title: null` and `title_by: null`), so `#L<n>` file lines never move. Times use the host
      zone from the clock port.
 2. **The query tool, the `scribe` agent and commands.**
    - `office.scribe-query`, model-free, through an integrator scaffold.

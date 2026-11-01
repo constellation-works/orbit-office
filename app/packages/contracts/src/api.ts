@@ -664,7 +664,10 @@ export interface ScribeEntry {
 /** One session's lines in the feed, newest first. */
 export interface ScribeSession {
   session_id: string;
+  /** SCR file id, whose slug names an untitled session for display. */
+  id: string | null;
   title: string | null;
+  title_by: string | null;
   project: string | null;
   counterpart_name: string | null;
   /** The session's scribe cursor; a note needs one. */

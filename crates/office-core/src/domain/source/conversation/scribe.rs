@@ -631,6 +631,8 @@ pub struct Front {
     pub id: String,
     /// Title set by `/scribe title`; `None` until then.
     pub title: Option<String>,
+    /// Who set `title`: `user`, `custom` or `scribe`; `None` with no title.
+    pub title_by: Option<String>,
     /// Provider session id.
     pub session_id: String,
     /// Transcript format.
@@ -690,6 +692,7 @@ impl Front {
         Ok(Self {
             id: text(&fields, "id").unwrap_or_default(),
             title: text(&fields, "title"),
+            title_by: text(&fields, "title_by"),
             session_id: text(&fields, "session_id").unwrap_or_default(),
             provider: text(&fields, "provider").unwrap_or_default(),
             model: text(&fields, "model"),
@@ -714,9 +717,10 @@ impl Front {
     pub fn render(&self) -> String {
         use crate::domain::knowledge::frontmatter::flow_value;
         let opt = |value: &Option<String>| value.as_ref().map_or(Value::Null, |v| json!(v));
-        let fields: [(&str, Value); 18] = [
+        let fields: [(&str, Value); 19] = [
             ("id", json!(self.id)),
             ("title", opt(&self.title)),
+            ("title_by", opt(&self.title_by)),
             ("session_id", json!(self.session_id)),
             ("provider", json!(self.provider)),
             ("model", opt(&self.model)),
@@ -745,7 +749,7 @@ impl Front {
     /// Metadata a caller reports about this file.
     #[must_use]
     pub fn view(&self, path: &str, exists: bool) -> Value {
-        json!({"exists":exists,"id":self.id,"path":path,"title":self.title,
+        json!({"exists":exists,"id":self.id,"path":path,"title":self.title,"title_by":self.title_by,
             "scribed_through":self.scribed_through,"last_scribed_at":self.last_scribed_at,
             "topics":self.topics,"aliases":self.aliases,"counterpart":self.counterpart,
             "counterpart_name":self.counterpart_name})
@@ -867,6 +871,49 @@ fn placeholder_title(title: &str) -> bool {
 /// A title that can name the file: non-blank and not a placeholder.
 fn named_title(title: Option<&str>) -> Option<&str> {
     title.filter(|t| !t.trim().is_empty() && !placeholder_title(t))
+}
+
+/// Humanized filename slug of an SCR id (`SCR-30-1135-pilot-admission-hold`
+/// becomes `Pilot admission hold`), for display where the title is still null.
+#[must_use]
+pub fn humanized_title(id: &str) -> Option<String> {
+    let slug = id
+        .strip_prefix("SCR-")
+        .and_then(|rest| rest.split_once('-'))
+        .and_then(|(_, rest)| rest.split_once('-'))
+        .map(|(_, slug)| slug)?;
+    let words = slug.replace('-', " ");
+    let words = words.trim();
+    if words.is_empty() {
+        return None;
+    }
+    let mut chars = words.chars();
+    let first = chars.next()?.to_uppercase().collect::<String>();
+    Some(format!("{first}{}", chars.collect::<String>()))
+}
+
+/// Title a caller displays for a session: its real title, else the
+/// humanized filename slug. Never `Untitled session`.
+#[must_use]
+pub fn display_title(title: Option<&str>, id: &str) -> Option<String> {
+    match title {
+        Some(title) if !title.trim().is_empty() => Some(title.to_owned()),
+        _ => humanized_title(id),
+    }
+}
+
+/// Transcript-derived title: a real custom title, else a side session's
+/// real title/summary record. Both are `custom`, never placeholder.
+fn derived_title(parsed: &Parsed, messages: &[Message]) -> Option<(String, &'static str)> {
+    if let Some(title) = named_title(parsed.custom_title.as_deref()) {
+        return Some((title.to_owned(), "custom"));
+    }
+    if brief_message(messages).is_some()
+        && let Some(title) = named_title(parsed.session_title.as_deref())
+    {
+        return Some((title.to_owned(), "custom"));
+    }
+    None
 }
 
 /// Slug source for a new file: an explicit title wins, then a set
@@ -1102,6 +1149,8 @@ pub struct Request<'a> {
     pub through: Option<&'a str>,
     /// New title, renaming the file.
     pub title: Option<&'a str>,
+    /// Who sets `title`: `user` (default), `custom` or `scribe`.
+    pub title_by: Option<&'a str>,
     /// Counterpart kind.
     pub counterpart: Option<&'a str>,
     /// Counterpart name.
@@ -1535,6 +1584,30 @@ pub fn append(
     {
         return Err(invalid("title must be a nonempty single line"));
     }
+    if let Some(title_by) = request.title_by
+        && !matches!(title_by, "user" | "custom" | "scribe")
+    {
+        return Err(invalid("title_by must be user, custom or scribe"));
+    }
+    if request.title_by.is_some() && request.title.is_none() {
+        return Err(invalid("title_by requires title"));
+    }
+    // A placeholder or blank explicit title counts as no title.
+    let explicit: Option<(String, &'static str)> = match (request.title, request.title_by) {
+        (Some(title), by) if named_title(Some(title)).is_some() => {
+            let by = match by {
+                Some("custom") => "custom",
+                Some("scribe") => "scribe",
+                _ => "user",
+            };
+            if by == "scribe" && title.split_whitespace().count() > 8 {
+                return Err(invalid("a scribe title has at most eight words"));
+            }
+            Some((title.to_owned(), by))
+        }
+        _ => None,
+    };
+    let derived = derived_title(parsed, messages);
     if let Some(counterpart) = request.counterpart
         && !COUNTERPARTS.contains(&counterpart)
     {
@@ -1595,11 +1668,29 @@ pub fn append(
             Some((file.path.clone(), file.markdown.clone())),
         )
     } else {
-        let (id, path) = planned(&others, parsed, messages, request.title, request.zone)?;
+        // Precedence on creation: user, then transcript-derived, then scribe.
+        let chosen: Option<(String, &'static str)> = match (&explicit, &derived) {
+            (Some((title, "user")), _) => Some((title.clone(), "user")),
+            (_, Some((title, by))) => Some((title.clone(), *by)),
+            (Some((title, by)), None) => Some((title.clone(), *by)),
+            (None, None) => None,
+        };
+        let (id, path) = planned(
+            &others,
+            parsed,
+            messages,
+            chosen.as_ref().map(|(title, _)| title.as_str()),
+            request.zone,
+        )?;
         let start = session_start(parsed, messages, request.zone)?;
+        let (title, title_by) = match chosen {
+            Some((title, by)) => (Some(title), Some(by.to_owned())),
+            None => (None, None),
+        };
         let front = Front {
             id,
-            title: request.title.map(str::to_owned),
+            title,
+            title_by,
             session_id: request.session_id.to_owned(),
             provider: parsed.provider.clone(),
             model: parsed.model.clone(),
@@ -1616,31 +1707,59 @@ pub fn append(
     };
     let created = previous.is_none();
 
-    // A changed title renames the file once and keeps the old id.
+    // Title precedence on an existing file. A legacy title with no
+    // `title_by` was set by `/scribe title`, so it counts as user-owned.
     let mut renamed_from = None;
-    if let Some(title) = request.title
-        && !created
-        && front.title.as_deref() != Some(title)
-    {
-        front.title = Some(title.to_owned());
-        let prefix = front.id.get(..12).unwrap_or_default().to_owned();
-        let candidate = free_id(
-            &others,
-            &format!("{prefix}{}", {
-                let s = slug(title);
-                if s.is_empty() { "session".into() } else { s }
-            }),
-            request.session_id,
-        )?;
-        if candidate != front.id {
-            let dir = path
-                .rsplit_once('/')
-                .map(|(d, _)| d.to_owned())
-                .unwrap_or_default();
-            renamed_from = Some(front.id.clone());
-            front.aliases.push(front.id.clone());
-            front.id = candidate;
-            path = format!("{dir}/{}.md", front.id);
+    if !created {
+        let current_by: Option<String> = if front.title.is_some() {
+            Some(front.title_by.clone().unwrap_or_else(|| "user".to_owned()))
+        } else {
+            None
+        };
+        let user_owned = current_by.as_deref() == Some("user");
+        // A user title always wins and renames the file once.
+        if let Some((title, "user")) = &explicit
+            && front.title.as_deref() != Some(title.as_str())
+        {
+            front.title = Some(title.clone());
+            front.title_by = Some("user".to_owned());
+            let prefix = front.id.get(..12).unwrap_or_default().to_owned();
+            let candidate = free_id(
+                &others,
+                &format!("{prefix}{}", {
+                    let s = slug(title);
+                    if s.is_empty() { "session".into() } else { s }
+                }),
+                request.session_id,
+            )?;
+            if candidate != front.id {
+                let dir = path
+                    .rsplit_once('/')
+                    .map(|(d, _)| d.to_owned())
+                    .unwrap_or_default();
+                renamed_from = Some(front.id.clone());
+                front.aliases.push(front.id.clone());
+                front.id = candidate;
+                path = format!("{dir}/{}.md", front.id);
+            }
+        } else if !user_owned {
+            // Transcript-derived beats scribe; scribe refines only its own.
+            if let Some((title, by)) = &derived {
+                if front.title.as_deref() != Some(title.as_str()) {
+                    front.title = Some(title.clone());
+                    front.title_by = Some((*by).to_owned());
+                }
+            } else if let Some((title, by)) = &explicit {
+                let may_set = match *by {
+                    "custom" => true,
+                    "scribe" => front.title.is_none() || current_by.as_deref() == Some("scribe"),
+                    _ => false,
+                };
+                if may_set && front.title.as_deref() != Some(title.as_str()) {
+                    front.title = Some(title.clone());
+                    front.title_by = Some((*by).to_owned());
+                }
+            }
         }
     }
     validate_scr_path(Path::new(&path))?;

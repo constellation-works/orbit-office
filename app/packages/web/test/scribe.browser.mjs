@@ -47,8 +47,8 @@ test("the feed shows each line with its tags, quote, time and file:line, the mos
     await recent.getByText("Most recent").waitFor();
     await recent.getByText("orbit-office · 4 lines").waitFor();
     const blocks = page.locator(".scribe-session h3");
-    assert.deepEqual(await blocks.allInnerTexts(), ["Scribe screen", "Untitled session"]);
-    await session(page, "Untitled session").getByText("constellation · 4 lines").waitFor();
+    assert.deepEqual(await blocks.allInnerTexts(), ["Scribe screen", "Plan the scribe v1 rollout keep it model free"]);
+    await session(page, "Plan the scribe v1 rollout keep it model free").getByText("constellation · 4 lines").waitFor();
     // Newest first inside a session, each with its anchors.
     const quotes = await recent.locator(".scribe-quote").allInnerTexts();
     assert.deepEqual(quotes, ["Landed the scribe-ask tool as #287.", "ORB-20780 is green and merged.", "poll every ten seconds", "CI for the screen is still running."]);
