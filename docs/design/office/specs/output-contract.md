@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: exec envelope contract — request, response, errors and exit codes"
-last_validated: 2026-10-26
+last_validated: 2026-11-01
 ---
 
 # Spec: Exec envelope contract
