@@ -56,6 +56,19 @@ fn source(library: &FakeLibrary, id: &str, created: &str, body: &str) -> String 
     path
 }
 
+fn source_in(
+    library: &FakeLibrary,
+    id: &str,
+    created: &str,
+    project: &str,
+    orchestrator: &str,
+    body: &str,
+) -> String {
+    let path = format!("sources/2026/10/{id}/source.md");
+    library.write_document(Path::new(&path), &format!("---\nid: {id}\nkind: conversation\ntitle: {id}\ncaptured_at: \"{created}\"\nsensitivity: normal\nproject: {project}\norchestrator: {orchestrator}\nsession_id: session-{id}\n---\n{body}")).unwrap();
+    path
+}
+
 fn section<'a>(response: &'a Value, kind: &str) -> Option<&'a Value> {
     response["output"]["sections"]
         .as_array()
@@ -278,6 +291,208 @@ fn newest_session_without_handoff_does_not_fall_back_to_an_old_session() {
     assert!(section(&response, "latest_digest").is_none());
     assert_eq!(items(&response, "last_session")[0]["id"], "src-new");
     assert_eq!(items(&response, "since")[0]["time"], "2026-10-27T09:00:00Z");
+}
+
+#[test]
+fn brief_for_a_project_leads_with_its_handoff_and_lists_the_other_project() {
+    let library = FakeLibrary::initialized();
+    source_in(
+        &library,
+        "src-a",
+        "2026-10-26T08:00:00Z",
+        "project-a",
+        "claude",
+        "[2026-10-26T09:00:00Z] handoff: A handoff for ORB-111.\n",
+    );
+    source_in(
+        &library,
+        "src-b",
+        "2026-10-27T08:00:00Z",
+        "project-b",
+        "codex",
+        "[2026-10-27T09:00:00Z] handoff: B handoff — for ORB-222.\n",
+    );
+    let (ports, _, _) = fixture(library, json!([]));
+    let response = call(
+        &ports,
+        json!({"project": "project-a", "orchestrator": "claude"}),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        items(&response, "handoff")[0]["text"],
+        "A handoff for ORB-111."
+    );
+    let others = items(&response, "other_sessions");
+    assert_eq!(others.len(), 1, "{response}");
+    assert_eq!(others[0]["text"], "B handoff — for ORB-222.");
+    assert_eq!(others[0]["entry_kind"], "handoff");
+    assert_eq!(others[0]["time"], "2026-10-27T09:00:00Z");
+}
+
+#[test]
+fn brief_for_a_project_falls_back_to_an_older_handoff_in_that_project() {
+    let library = FakeLibrary::initialized();
+    source_in(
+        &library,
+        "src-a-old",
+        "2026-10-26T08:00:00Z",
+        "project-a",
+        "claude",
+        "[2026-10-26T09:00:00Z] handoff: Older A handoff.\n",
+    );
+    source_in(
+        &library,
+        "src-a-new",
+        "2026-10-27T08:00:00Z",
+        "project-a",
+        "claude",
+        "[2026-10-27T09:00:00Z] decision: New A decision, no handoff.\n",
+    );
+    let (ports, _, _) = fixture(library, json!([]));
+    let response = call(
+        &ports,
+        json!({"project": "project-a", "orchestrator": "claude"}),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(items(&response, "handoff")[0]["text"], "Older A handoff.");
+    assert_eq!(items(&response, "since")[0]["id"], "src-a-new");
+}
+
+#[test]
+fn two_orchestrators_in_one_project_keep_their_own_handoffs() {
+    let library = FakeLibrary::initialized();
+    source_in(
+        &library,
+        "src-claude",
+        "2026-10-26T08:00:00Z",
+        "project-a",
+        "claude",
+        "[2026-10-26T09:00:00Z] handoff: Claude thread for ORB-111.\n",
+    );
+    source_in(
+        &library,
+        "src-codex",
+        "2026-10-27T08:00:00Z",
+        "project-a",
+        "codex",
+        "[2026-10-27T09:00:00Z] handoff: Codex thread for ORB-222.\n",
+    );
+    let (ports, _, _) = fixture(library, json!([]));
+    let response = call(
+        &ports,
+        json!({"project": "project-a", "orchestrator": "claude"}),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        items(&response, "handoff")[0]["text"],
+        "Claude thread for ORB-111."
+    );
+    let others = items(&response, "other_sessions");
+    assert_eq!(others.len(), 1, "{response}");
+    assert_eq!(others[0]["text"], "Codex thread for ORB-222.");
+}
+
+#[test]
+fn since_is_scoped_to_the_project_and_no_project_keeps_todays_output() {
+    let build = || {
+        let library = FakeLibrary::initialized();
+        source_in(
+            &library,
+            "src-a",
+            "2026-10-26T08:00:00Z",
+            "project-a",
+            "claude",
+            "[2026-10-26T09:00:00Z] handoff: A handoff for ORB-111.\n",
+        );
+        source_in(
+            &library,
+            "src-b",
+            "2026-10-27T08:00:00Z",
+            "project-b",
+            "codex",
+            "[2026-10-27T09:00:00Z] handoff: B handoff for ORB-222.\n",
+        );
+        fixture(
+            library,
+            json!([done("finished-between", "2026-10-26T12:00:00Z")]),
+        )
+    };
+    let (ports, _, _) = build();
+    let scoped = call(
+        &ports,
+        json!({"project": "project-a", "orchestrator": "claude"}),
+    );
+    assert_eq!(scoped["ok"], true, "{scoped}");
+    assert_eq!(items(&scoped, "since")[0]["id"], "src-a");
+    assert_eq!(items(&scoped, "since")[0]["time"], "2026-10-26T09:00:00Z");
+    assert_eq!(
+        items(&scoped, "agents_working_on")
+            .iter()
+            .map(|i| i["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["finished-between"],
+        "work finished after project A's last session counts as since then"
+    );
+    let (ports, _, _) = build();
+    let legacy = call(&ports, json!({}));
+    assert_eq!(legacy["ok"], true, "{legacy}");
+    assert_eq!(
+        items(&legacy, "handoff")[0]["text"],
+        "B handoff for ORB-222."
+    );
+    assert_eq!(items(&legacy, "since")[0]["id"], "src-b");
+    assert!(section(&legacy, "other_sessions").is_none());
+    assert!(items(&legacy, "agents_working_on").is_empty());
+}
+
+#[test]
+fn other_sessions_is_bounded_by_window_and_count() {
+    let library = FakeLibrary::initialized();
+    source_in(
+        &library,
+        "src-a",
+        "2026-10-27T08:00:00Z",
+        "project-a",
+        "claude",
+        "[2026-10-27T09:00:00Z] handoff: A handoff for ORB-111.\n",
+    );
+    for n in 0..7 {
+        source_in(
+            &library,
+            &format!("src-other-{n}"),
+            "2026-10-26T08:00:00Z",
+            &format!("project-x{n}"),
+            "codex",
+            &format!("[2026-10-26T09:00:00Z] handoff: Other {n} for ORB-30{n}.\n"),
+        );
+    }
+    source_in(
+        &library,
+        "src-ancient",
+        "2026-09-01T08:00:00Z",
+        "project-old",
+        "codex",
+        "[2026-09-01T09:00:00Z] handoff: Ancient for ORB-399.\n",
+    );
+    let (ports, _, _) = fixture(library, json!([]));
+    let response = call(
+        &ports,
+        json!({"project": "project-a", "orchestrator": "claude"}),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    let others = items(&response, "other_sessions");
+    assert_eq!(others.len(), 5, "{response}");
+    assert_eq!(section(&response, "other_sessions").unwrap()["total"], 7);
+    assert_eq!(
+        section(&response, "other_sessions").unwrap()["truncated"],
+        true
+    );
+    assert!(
+        others
+            .iter()
+            .all(|item| !item["text"].as_str().unwrap().contains("Ancient")),
+        "{response}"
+    );
 }
 
 #[test]

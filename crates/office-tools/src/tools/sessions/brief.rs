@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use office_core::domain::session::{
-    TaskInventory, agent_runs, agent_runs_external, assemble_with_workspaces, invalid, tasks,
+    SessionContext, TaskInventory, agent_runs, agent_runs_external, assemble_for_session, invalid,
+    tasks,
 };
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
@@ -17,9 +18,27 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::ReadOnly,
         mcp_scope: McpScope::Workspace,
     },
-    &[],
+    &["project", "orchestrator"],
     run,
 );
+
+/// An optional current-session field: absent or null is `None`, a nonempty
+/// single-line string is kept, anything else is a usage error.
+fn optional_context(call: &Call<'_>, key: &str) -> Result<Option<String>> {
+    match call.input.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value))
+            if !value.trim().is_empty()
+                && value.len() <= 256
+                && !value.chars().any(char::is_control) =>
+        {
+            Ok(Some(value.clone()))
+        }
+        Some(_) => Err(Error::InvalidArgument(format!(
+            "session-brief {key} must be a nonempty single-line string"
+        ))),
+    }
+}
 
 fn task_list_input(workspace: Option<&str>) -> Result<serde_json::Map<String, Value>> {
     let mut input = json!({"limit":10000,"fields":["id","title","status","tags","created_at","updated_at","history","job_run_id"]});
@@ -58,6 +77,10 @@ fn delivery(
 }
 
 fn run(call: &Call<'_>) -> Result<Value> {
+    let context = SessionContext {
+        project: optional_context(call, "project")?,
+        orchestrator: optional_context(call, "orchestrator")?,
+    };
     let library = &call.ports.library;
     let head = library.head_commit()?;
     let sources = library.source_documents()?;
@@ -102,7 +125,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
             rows: extra_rows,
         });
     }
-    let brief = assemble_with_workspaces(
+    let brief = assemble_for_session(
         &sources,
         &inventories,
         &unavailable,
@@ -110,6 +133,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         &pages,
         &templates,
         &deliveries,
+        &context,
     )?;
     if library.head_commit()? != head {
         return Err(Error::Library {

@@ -125,9 +125,29 @@ impl Section {
 /// A complete brief; section order is part of the tool contract.
 #[derive(Debug, Serialize)]
 pub struct Brief {
-    /// Handoff, Since, Waiting, Agents, Questions, Last session, Digest, Onboarding.
+    /// Handoff, Other sessions, Since, Waiting, Agents, Questions, Last
+    /// session, Digest, Onboarding.
     pub sections: Vec<Section>,
 }
+
+/// The current session's thread identity, when the caller knows it. Both
+/// fields are optional: a brief without a project keeps the legacy
+/// single-conversation behaviour exactly.
+#[derive(Clone, Debug, Default)]
+pub struct SessionContext {
+    /// Current project (a repository name or a working-directory path; it is
+    /// normalized to the repository name before comparison).
+    pub project: Option<String>,
+    /// Current orchestrator (for example `claude` or `codex`), used to lead
+    /// with the current orchestrator's thread inside the current project.
+    pub orchestrator: Option<String>,
+}
+
+/// `other_sessions` window: only handoffs at most this many seconds older
+/// than the scoped `since` reference are listed.
+pub const OTHER_SESSIONS_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
+/// `other_sessions` cap: at most this many other threads are listed.
+pub const OTHER_SESSIONS_LIMIT: usize = 5;
 
 /// Invalid or incomplete evidence cannot look like an empty workspace.
 #[must_use]
@@ -176,6 +196,72 @@ struct Conversation {
     title: String,
     time: String,
     log: Vec<Entry>,
+    project: Option<String>,
+    orchestrator: Option<String>,
+    #[allow(dead_code)]
+    session_id: Option<String>,
+}
+
+/// An optional single-line frontmatter field: absent or null is `None`, a
+/// nonempty string is kept, anything else refuses the read.
+fn optional_text(fields: &Value, field: &str) -> Result<Option<String>> {
+    match fields.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) if !value.trim().is_empty() => Ok(Some(value.clone())),
+        Some(_) => Err(invalid(field)),
+    }
+}
+
+/// Normalize a project value to the repository name: a trailing
+/// `.claude/worktrees/<name>` names its repository, otherwise the last path
+/// component; a bare name is unchanged.
+fn project_key(project: Option<&str>) -> Option<String> {
+    let project = project?;
+    let parts: Vec<&str> = project
+        .trim_end_matches(['/', '\\'])
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.len() >= 4
+        && parts[parts.len() - 2] == "worktrees"
+        && parts[parts.len() - 3] == ".claude"
+    {
+        return Some(parts[parts.len() - 4].to_string());
+    }
+    parts.last().map(|part| (*part).to_string())
+}
+
+/// The first Orbit assignment id a handoff cites (`ORB-…`, `DANI-…` or
+/// `ORBA-…`), when it cites one. The id is used directly as the thread key;
+/// the brief does not verify the task's type.
+fn cited_assignment(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        if !text.is_char_boundary(at) {
+            at += 1;
+            continue;
+        }
+        for prefix in ["ORBA-", "DANI-", "ORB-"] {
+            if text[at..].starts_with(prefix)
+                && (at == 0 || !(bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'-'))
+            {
+                let start = at + prefix.len();
+                let mut end = start;
+                while end < bytes.len()
+                    && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'-')
+                {
+                    end += 1;
+                }
+                let id = text[at..end].trim_end_matches('-');
+                if id.len() > prefix.len() && id.bytes().any(|b| b.is_ascii_digit()) {
+                    return Some(id.to_string());
+                }
+            }
+        }
+        at += 1;
+    }
+    None
 }
 
 impl Conversation {
@@ -236,6 +322,9 @@ fn conversations(files: &[LibraryText]) -> Result<Vec<Conversation>> {
             path: file.path.clone(),
             time,
             log,
+            project: optional_text(&fields, "project")?,
+            orchestrator: optional_text(&fields, "orchestrator")?,
+            session_id: optional_text(&fields, "session_id")?,
         });
     }
     // Keys were validated above; sorting never maps an unknown timestamp to zero.
@@ -529,6 +618,46 @@ pub fn assemble(
     )
 }
 
+struct ThreadHandoff<'a> {
+    key: String,
+    conversation: &'a Conversation,
+    entry: &'a Entry,
+    at: (i64, String),
+}
+
+/// One thread per assignment id a handoff cites, else per normalized
+/// project plus orchestrator; each thread keeps only its newest handoff.
+fn thread_handoffs<'a>(conversations: &'a [Conversation]) -> Result<Vec<ThreadHandoff<'a>>> {
+    let mut by_key: BTreeMap<String, ThreadHandoff<'a>> = BTreeMap::new();
+    for conversation in conversations {
+        let Some(entry) = conversation.log.iter().rev().find(|e| e.kind == "handoff") else {
+            continue;
+        };
+        let key = match cited_assignment(&entry.text) {
+            Some(id) => format!("task:{id}"),
+            None => format!(
+                "project:{}\u{0}orchestrator:{}",
+                project_key(conversation.project.as_deref()).unwrap_or_default(),
+                conversation.orchestrator.as_deref().unwrap_or("")
+            ),
+        };
+        let candidate = ThreadHandoff {
+            key: key.clone(),
+            conversation,
+            entry,
+            at: time_key(&entry.time)?,
+        };
+        let keep_existing = by_key.get(&key).is_some_and(|existing| {
+            (existing.at.clone(), &existing.conversation.id)
+                >= (candidate.at.clone(), &candidate.conversation.id)
+        });
+        if !keep_existing {
+            by_key.insert(key, candidate);
+        }
+    }
+    Ok(by_key.into_values().collect())
+}
+
 /// Assemble a brief merging extra workspaces. The office workspace keeps
 /// the all-or-nothing rule; each selector in `unavailable` becomes one
 /// `workspace_unavailable` item instead of refusing the brief.
@@ -542,10 +671,105 @@ pub fn assemble_with_workspaces(
     templates: &[LibraryText],
     deliveries: &BTreeMap<String, Value>,
 ) -> Result<Brief> {
+    assemble_for_session(
+        sources,
+        inventories,
+        unavailable,
+        artifacts,
+        pages,
+        templates,
+        deliveries,
+        &SessionContext::default(),
+    )
+}
+
+/// Assemble a brief for the current session's thread. With a project, the
+/// `handoff` section is the newest handoff of the current session's thread
+/// (its project, preferring its orchestrator), `other_sessions` lists the
+/// newest handoff of every other recent thread, and `since` is measured
+/// from the newest conversation in that project. Without a project the
+/// legacy single-conversation behaviour is kept exactly.
+#[allow(clippy::too_many_arguments)]
+pub fn assemble_for_session(
+    sources: &[LibraryText],
+    inventories: &[TaskInventory<'_>],
+    unavailable: &[String],
+    artifacts: &[LibraryText],
+    pages: &[LibraryText],
+    templates: &[LibraryText],
+    deliveries: &BTreeMap<String, Value>,
+    context: &SessionContext,
+) -> Result<Brief> {
     let conversations = conversations(sources)?;
-    let last = conversations.first();
+    let scoped_project = context
+        .project
+        .as_deref()
+        .and_then(|project| project_key(Some(project)));
+    let last = match &scoped_project {
+        Some(wanted) => conversations
+            .iter()
+            .find(|c| project_key(c.project.as_deref()).as_ref() == Some(wanted)),
+        None => conversations.first(),
+    };
     let mut sections = Vec::new();
-    if let Some(c) = last
+    if let Some(wanted) = &scoped_project {
+        let threads = thread_handoffs(&conversations)?;
+        let in_project: Vec<&ThreadHandoff<'_>> = threads
+            .iter()
+            .filter(|thread| {
+                project_key(thread.conversation.project.as_deref()).as_ref() == Some(wanted)
+            })
+            .collect();
+        let own: Vec<&ThreadHandoff<'_>> = match context.orchestrator.as_deref() {
+            Some(orchestrator) => in_project
+                .iter()
+                .copied()
+                .filter(|thread| thread.conversation.orchestrator.as_deref() == Some(orchestrator))
+                .collect(),
+            None => Vec::new(),
+        };
+        let pool: &[&ThreadHandoff<'_>] = if own.is_empty() { &in_project } else { &own };
+        let lead = pool.iter().copied().max_by(|a, b| {
+            (a.at.clone(), &a.conversation.id).cmp(&(b.at.clone(), &b.conversation.id))
+        });
+        if let Some(lead) = lead {
+            sections.push(Section::new(
+                "handoff",
+                vec![lead.conversation.item(lead.entry)],
+            ));
+        }
+        // The window is measured from the newest conversation overall, so a
+        // newer thread in another project is never excluded as "future".
+        let reference = conversations.first();
+        if let Some(reference) = reference {
+            let (reference_seconds, _) = time_key(&reference.time)?;
+            let mut others: Vec<&ThreadHandoff<'_>> = threads
+                .iter()
+                .filter(|thread| Some(thread.key.as_str()) != lead.map(|lead| lead.key.as_str()))
+                .filter(|thread| {
+                    thread.at.0 >= reference_seconds - OTHER_SESSIONS_WINDOW_SECONDS
+                        && thread.at.0 <= reference_seconds
+                })
+                .collect();
+            others.sort_by(|a, b| {
+                (b.at.clone(), &b.conversation.id).cmp(&(a.at.clone(), &a.conversation.id))
+            });
+            if !others.is_empty() {
+                let total = others.len();
+                let mut section = Section::new(
+                    "other_sessions",
+                    others
+                        .iter()
+                        .take(OTHER_SESSIONS_LIMIT)
+                        .map(|thread| thread.conversation.item(thread.entry))
+                        .collect(),
+                );
+                section.total = total;
+                section.truncated = total > section.items.len();
+                sections.push(section);
+            }
+        }
+    } else if let Some(c) = last
         && let Some(entry) = c.log.iter().rev().find(|e| e.kind == "handoff")
     {
         sections.push(Section::new("handoff", vec![c.item(entry)]));

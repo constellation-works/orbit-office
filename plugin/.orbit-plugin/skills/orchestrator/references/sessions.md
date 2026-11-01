@@ -8,8 +8,9 @@ The brief uses existing state and may lag while extraction is queued.
 
 ## Start: call the brief first
 
-1. Call `office.session-brief` with `{}`. It is read-only, makes no model
-   call and writes nothing.
+1. Call `office.session-brief` with `{}` (the SessionStart hook already
+   passes your `project` and `orchestrator`; a direct call may pass them
+   too). It is read-only, makes no model call and writes nothing.
 2. Call it **before** you open this session's conversation source. The brief
    treats the conversation with the newest entry as "the previous session".
    Opening a new source first would hide the real previous session.
@@ -31,8 +32,9 @@ The response is `sections`, in this order. Each section has `kind`, `items`,
 
 | `kind` | Present | What it holds | What to do |
 |---|---|---|---|
-| `handoff` | only if the previous session wrote one | Its newest `handoff` entry, verbatim, with time | Resume from it (below) |
-| `since` | always (empty with no previous session) | The previous conversation source: id, path, title, last entry time | Note the time; "since" means since then |
+| `handoff` | only if your thread wrote one | Your thread's newest `handoff` entry, verbatim, with time (your project, preferring your orchestrator; a thread is the first task id its handoff cites, else its conversation's project plus orchestrator) | Resume from it (below) |
+| `other_sessions` | only with a project, when another recent thread wrote one | One cited handoff item per other thread, newest first, within seven days and at most five | Note in one line; do not resume from another thread's handoff |
+| `since` | always (empty with no previous session) | The newest conversation source in your project: id, path, title, last entry time | Note the time; "since" means since then |
 | `waiting_on_you` | always | Proposals awaiting a decision, agent to-dos in `review`, open `owner:you` to-dos; oldest first | Open with these |
 | `agents_working_on` | always | `owner:agent` to-dos in progress, plus those that finished or failed since then | Report finished and failed work briefly |
 | `workspace_unavailable` | only when an extra workspace could not be read | One item per selector, `status: workspace_unavailable` | Say which one is unreachable, in one line |
