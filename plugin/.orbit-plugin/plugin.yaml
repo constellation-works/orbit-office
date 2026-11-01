@@ -385,6 +385,7 @@ spec:
         window-open heartbeat. The provider plugin's hooks read this state;
         the flag file is their local cache. Plugin state only.
       execution_kind: mutating
+      agent_callable: true
       mcp_scope: workspace
       input_schema: { $ref: schemas/scribe-control.request.json }
       output_schema: { $ref: schemas/scribe-control.response.json }
@@ -405,6 +406,7 @@ spec:
         to the session's SCR file, refusing any quote that is not an exact
         substring of its message; commit to the Library. Model-free.
       execution_kind: mutating
+      agent_callable: true
       mcp_scope: workspace
       input_schema: { $ref: schemas/scribe-append.request.json }
       output_schema: { $ref: schemas/scribe-append.response.json }

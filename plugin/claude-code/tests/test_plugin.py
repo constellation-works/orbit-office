@@ -584,3 +584,28 @@ class ProcessGroupSweep(unittest.TestCase):
         with mock.patch.object(process.os, "killpg", refuse):
             result = process.run([sys.executable, "-c", "print('{\"ok\": true}')"], str(PLUGIN), 5)
         self.assertEqual(result, {"ok": True})
+
+
+class ManifestCallability(unittest.TestCase):
+    def test_mutating_tools_the_plugin_calls_are_agent_callable(self):
+        # The plugin calls Orbit as `local-cli` holding [agent]; a mutating
+        # Office tool without agent_callable is refused there (ORB-20856).
+        sys.path.insert(0, str(PLUGIN / "scripts"))
+        import scribe
+
+        blocks: dict[str, dict[str, str]] = {}
+        current = None
+        manifest = PLUGIN.parent / ".orbit-plugin" / "plugin.yaml"
+        for line in manifest.read_text().splitlines():
+            if line.startswith("    - name: "):
+                current = blocks.setdefault(line.split(": ", 1)[1].strip(), {})
+            elif current is not None and line.startswith("      ") and ":" in line:
+                key, _, value = line.strip().partition(":")
+                current[key] = value.strip()
+            elif not line.startswith("      "):
+                current = None
+        for tool in sorted(t for t in scribe.TOOLS if t.startswith("office.")):
+            block = blocks.get(tool.split(".", 1)[1])
+            self.assertIsNotNone(block, tool + " is declared in the manifest")
+            if block.get("execution_kind") == "mutating":
+                self.assertEqual(block.get("agent_callable"), "true", tool + " is agent_callable")
