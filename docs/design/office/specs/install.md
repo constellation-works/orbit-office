@@ -224,6 +224,22 @@ filter for them. Orbit must support `workspace init --preset`.
    on re-run and changes nothing; a partial one is repaired by supplying the bundle
    again, and without one the failure names the concrete missing entrypoint.
 
+## Updating the plugin from a clone (`make plugin-install`)
+
+`make plugin-install` builds HEAD into a fresh plugin export, validates it,
+then upgrades the installed plugin (or adds it on first install) and enables
+it. When `PLUGIN_WORKSPACE=<workspace>` is given, it also enables the plugin
+in that workspace and then runs `office.init` there
+(`orbit tool run office.init --json --full --input '{}' --workspace <workspace>`),
+so a later plugin version's new templates and layout migrations arrive with
+the upgrade instead of waiting for a manual init. `office.init` is a mutating
+tool Orbit runs only for an operator, so the recipe passes the audited
+`ORBIT_OPERATOR=1` override for that call — except inside a managed Orbit run
+(`ORBIT_MANAGED_RUN_CONTEXT` set, or `ORBIT_TASK_ACTOR_KIND=agent`), where the
+override is never added. The target fails when `office.init` exits non-zero
+or returns an `{ok: false}` envelope on stdout. Without `PLUGIN_WORKSPACE`,
+the workspace toggle is untouched and `office.init` is not run.
+
 ## `orbit-office init [path]`
 
 `install.sh` installs a standalone human launcher at `~/.local/bin/orbit-office` and
