@@ -64,7 +64,7 @@ Each command acts on the session it is run in (`${CLAUDE_SESSION_ID}`).
 | `/scribe why <matter\|topic>` | Decisions on that matter (then topic) with their `why`, or "no recorded reason". | none |
 | `/scribe ask <question>` | Free-form answer with citations: the plugin queries first, the agent reads only the shortlist, and quotes are checked before display. | `ask` level |
 | `/scribe title <text>` | Set the session title; Office renames the SCR file once and keeps the old id in `aliases`. | none |
-| `/scribe backfill [--since <date>] [--project <name>]` | Catch up over your existing transcripts, oldest first; sessions already scribed to their end are skipped. Headless agent-to-agent runs, whose first conversational record carries `entrypoint: sdk-cli` (Orbit workers, `claude -p`), are skipped as headless: counted in `skipped`, never refused and never handed to the scribe agent. An explicit `/scribe` inside such a session still scribes it. | `scribe` level per session |
+| `/scribe backfill [--since <date>] [--project <name>]` | Catch up over your existing transcripts, oldest first; sessions already scribed to their end are skipped. The calling session is never selected: it is left to `/scribe` (counted as `caller_skipped`). Sessions whose only user messages invoke `/scribe` (`office-scribe:scribe`) are skipped as scribe-only (counted as `scribe_only`): a driver that only ran `/scribe` is not a conversation, never refused and never handed to the scribe agent. Headless agent-to-agent runs, whose first conversational record carries `entrypoint: sdk-cli` (Orbit workers, `claude -p`), are skipped as headless: counted in `skipped`, never refused and never handed to the scribe agent. An explicit `/scribe` inside a calling, scribe-only or headless session still scribes it. | `scribe` level per session |
 
 **Notes.** Keys go before the text, or after a quoted text:
 `/scribe note #todo due: 2026-11-01 write the v1 spec`,
@@ -162,13 +162,19 @@ the place for meeting notes.
   never subagent files), dates each by its first conversational record in
   local time, filters `--since` (inclusive local date) and `--project` (the
   working directory's last component or the provider folder name), and
-  works oldest first. Each call skips sessions with nothing new and hands the
+  works oldest first. The session running the backfill is never selected: it
+  is left to `/scribe` (counted as `caller_skipped` in the reply and named in
+  the display). Sessions whose only user messages invoke `/scribe`
+  (`office-scribe:scribe`) are skipped as scribe-only (counted as
+  `scribe_only` in the reply and display): a driver that only ran `/scribe`
+  is not a conversation, never refused and never handed to the scribe agent.
+  Each call skips sessions with nothing new and hands the
   first session that has new messages to the agent with `continue: true`; the
-  command repeats until `done`. Headless agent-to-agent runs, whose first
+  command repeats until `done`, which carries `continue: false`. Headless agent-to-agent runs, whose first
   conversational record carries `entrypoint: sdk-cli` (Orbit workers,
   `claude -p`), are skipped as headless: counted in `skipped`, never refused
-  and never handed to the scribe agent. An explicit `/scribe` inside such a
-  session still scribes it. Sessions found scribed to their end are
+  and never handed to the scribe agent. An explicit `/scribe` inside a
+  calling, scribe-only or headless session still scribes it. Sessions found scribed to their end are
   remembered by size and modification time in `.orbit/tmp/scribe/backfill.json`,
   so a finished backfill is a no-op. A command has a 120-second budget across
   its Office calls; a paused run says so and continues on the next call.
