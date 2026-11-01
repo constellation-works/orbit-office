@@ -2,6 +2,7 @@
 export const styles = `
 .scribe-page { display:grid; gap:20px; min-width:0; max-width:880px }
 .scribe-page *, .scribe-page *::before { min-width:0 }
+.scribe-page [hidden] { display:none !important }
 .scribe-page h2 { margin:0 0 8px; font-size:16px }
 .scribe-lede { color:var(--fg-mute); margin:0 }
 .scribe-page button, .scribe-page input, .scribe-page textarea, .scribe-page select { font:inherit; font-size:14px; max-width:100% }
@@ -21,6 +22,7 @@ export const styles = `
 .scribe-about input { flex:1 1 180px; width:auto }
 .scribe-stated { margin:0; font-size:13px; color:var(--fg-mute) }
 .scribe-session { display:grid; gap:8px }
+.scribe-session + .scribe-session { margin-top:12px }
 .scribe-session > header { display:grid; gap:2px }
 .scribe-session h3 { margin:0; font-size:15px; overflow-wrap:anywhere }
 .scribe-session .scribe-meta { margin:0; font-size:13px; color:var(--fg-mute); overflow-wrap:anywhere }
@@ -39,4 +41,14 @@ export const styles = `
 .scribe-answer { display:grid; gap:8px }
 .scribe-claim { padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); display:grid; gap:6px }
 .scribe-claim p { margin:0; overflow-wrap:anywhere }
+.handoff-bar { display:grid; gap:8px }
+.handoff-subs button[aria-pressed=true] { background:var(--bg-hover); border-color:var(--border-strong); font-weight:600 }
+.handoff-toggle { display:flex; gap:6px; align-items:center; font-size:13px; color:var(--fg-dim) }
+.handoff-toggle input { width:auto; min-height:0 }
+.handoff-filters label { display:grid; gap:4px; flex:1 1 140px; font-size:13px; color:var(--fg-dim) }
+.handoff-task { font-family:var(--font-mono); font-size:12px; overflow-wrap:anywhere }
+.handoff-fields dd { white-space:pre-wrap }
+.handoff-items { margin:0; padding-left:18px; display:grid; gap:2px }
+.handoff-closed { margin:0; font-size:13px; color:var(--fg-dim); overflow-wrap:anywhere }
+.handoff-pager { justify-content:flex-end }
 `;

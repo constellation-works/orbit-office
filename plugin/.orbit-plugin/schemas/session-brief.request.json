@@ -1,20 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.session-brief request",
-  "description": "Assemble the deterministic brief for the current workspace. Call before opening a new conversation source. Optionally pass the current session's project and orchestrator to lead with that thread's handoff, followed by the open global handoffs, and list other recent threads in other_sessions; with no project the legacy single-conversation output is returned, plus the open global handoffs. The SessionStart hook sets session_start, so the Library setting brief.handoff (auto | manual) applies; view handoffs is the /handoff command. No inference or writes.",
+  "description": "Assemble the deterministic brief for the current workspace. Call before opening a new conversation source. Optionally pass the current session's project and orchestrator to lead with that thread's handoff, followed by the open global handoffs, and list other recent threads in other_sessions; with no project the legacy single-conversation output is returned, plus the open global handoffs. The SessionStart hook sets session_start, so the Library setting brief.handoff (auto | manual) applies; view handoffs is the /handoff command; view list is the web app's handoff list (current threads, global handoffs and paged history). No inference or writes.",
   "type": "object",
   "properties": {
     "project": {
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "description": "Current project (repository name or working-directory path, normalized to the repository name). Absent or null keeps the legacy output."
+      "description": "Current project (repository name or working-directory path, normalized to the repository name). Absent or null keeps the legacy output. With view list it filters history only."
     },
     "orchestrator": {
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "description": "Current orchestrator as conversation sources record it: the provider name (claude, codex), not the crew name; inside the project, its thread's handoff leads. Absent or null means no orchestrator preference."
+      "description": "Current orchestrator as conversation sources record it: the provider name (claude, codex), not the crew name; inside the project, its thread's handoff leads. Absent or null means no orchestrator preference. With view list it filters history only."
     },
     "task": {
       "type": "string",
@@ -30,9 +30,32 @@
     "view": {
       "enum": [
         "brief",
-        "handoffs"
+        "handoffs",
+        "list"
       ],
-      "description": "brief (default) is the full brief. handoffs is the /handoff command: with a project, its handoff then global; without one, global then projects. Reads no Orbit tasks; cannot be combined with session_start."
+      "description": "brief (default) is the full brief. handoffs is the /handoff command: with a project, its handoff then global; without one, global then projects. list returns threads (each open thread's current handoff), global (open global handoffs, plus expired and resolved ones with include_closed) and history (every project handoff, newest first, filtered by project, orchestrator and thread, paged by offset and limit). handoffs and list read no Orbit tasks and cannot be combined with session_start."
+    },
+    "thread": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "view list only: a thread value from a listed item; filters history to that thread."
+    },
+    "include_closed": {
+      "type": "boolean",
+      "description": "view list only: also list expired and resolved global handoffs, each with its state and the resolved entry that closed it. Default false."
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000,
+      "description": "view list only: the first history item to return. Default 0."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "view list only: history page size. Default 50."
     }
   },
   "additionalProperties": false

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.session-brief response",
-  "description": "Ordered sections. Handoff, global, projects, other_sessions, latest_digest, workspace_unavailable and onboarding are absent when empty. The other five sections are always present. Handoff is the newest project-scoped handoff of the current session's thread (its project, preferring its orchestrator; a thread is the first Orbit task id its handoff cites, else its conversation's project plus orchestrator). Global lists the open scope: global handoffs (stored with a leading (global) or (global until <time>) marker; not expired and not cited by a later resolved entry), newest first, capped at five; a global the project handoff cites by anchor is always listed, exactly once; total counts every open global. Projects is present only in manual output (session_start with brief.handoff manual, auto with no project found, or view handoffs without a project): one item per project with a handoff thread, newest first, capped at twenty; id and text name the project, link and time are its newest handoff's. other_sessions lists one cited handoff item per other thread, newest first, for handoffs no more than seven days older than the newest conversation source, capped at five items with total and truncated reporting the window count and cap. Other_sessions is present only when a project is used; without a project the output is the legacy single-conversation brief plus global. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence from the office workspace refuses the whole brief; an unreadable extra workspace (brief.task_workspaces) appears as one workspace_unavailable item instead. Task items from an extra workspace carry workspace (its selector); office-workspace items omit it. view handoffs returns only handoff, global and projects. Handoff items include structured_handoff when structured, with text rendered as Objective, Next, Authorization, Observations (observed at and recheck), Evidence, in that order. Scope and scribe markers remain. Unstructured historical handoffs retain exact text and carry legacy:true.",
+  "description": "Ordered sections. Handoff, global, projects, other_sessions, latest_digest, workspace_unavailable and onboarding are absent when empty. The other five sections are always present. Handoff is the newest project-scoped handoff of the current session's thread (its project, preferring its orchestrator; a thread is the first Orbit task id its handoff cites, else its conversation's project plus orchestrator). Global lists the open scope: global handoffs (stored with a leading (global) or (global until <time>) marker; not expired and not cited by a later resolved entry), newest first, capped at five; a global the project handoff cites by anchor is always listed, exactly once; total counts every open global. Projects is present only in manual output (session_start with brief.handoff manual, auto with no project found, or view handoffs without a project): one item per project with a handoff thread, newest first, capped at twenty; id and text name the project, link and time are its newest handoff's. other_sessions lists one cited handoff item per other thread, newest first, for handoffs no more than seven days older than the newest conversation source, capped at five items with total and truncated reporting the window count and cap. Other_sessions is present only when a project is used; without a project the output is the legacy single-conversation brief plus global. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence from the office workspace refuses the whole brief; an unreadable extra workspace (brief.task_workspaces) appears as one workspace_unavailable item instead. Task items from an extra workspace carry workspace (its selector); office-workspace items omit it. view handoffs returns only handoff, global and projects. Handoff items include structured_handoff when structured, with text rendered as Objective, Next, Authorization, Observations (observed at and recheck), Evidence, in that order. Scope and scribe markers remain. Unstructured historical handoffs retain exact text and carry legacy:true. view list returns exactly threads, global and history, each always present: threads lists every thread's current handoff whose own anchor no resolved entry cites, newest first, capped at 200; global lists open global handoffs (with include_closed, also expired and resolved ones), newest first, capped at 200; history lists every project handoff, newest first, after the project, orchestrator and thread filters, paged by offset and limit, with total counting every match and truncated meaning more follow this page. List items carry listing. Items from a private conversation source have empty text and listing.source_title, no structured_handoff or legacy, and listing.withheld true.",
   "type": "object",
   "properties": {
     "sections": {
@@ -23,7 +23,9 @@
               "last_session",
               "latest_digest",
               "workspace_unavailable",
-              "onboarding"
+              "onboarding",
+              "threads",
+              "history"
             ]
           },
           "items": {
@@ -112,6 +114,9 @@
                 "legacy": {
                   "const": true,
                   "description": "Historical one-line handoff: original text retained; render with a legacy marker."
+                },
+                "listing": {
+                  "$ref": "#/$defs/listing"
                 }
               },
               "required": [
@@ -132,6 +137,11 @@
           },
           "truncated": {
             "type": "boolean"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "view list history only: the page's first index."
           }
         },
         "required": [
@@ -204,6 +214,135 @@
       "required": [
         "objective",
         "next"
+      ],
+      "additionalProperties": false
+    },
+    "listing": {
+      "type": "object",
+      "description": "view list only: thread, scope and state of a listed handoff.",
+      "properties": {
+        "scope": {
+          "enum": [
+            "project",
+            "global"
+          ]
+        },
+        "thread": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "task:<id> for the first assignment id the handoff cites, else project:<project> orchestrator:<orchestrator>; null for a global handoff. Pass it back as the thread filter."
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The conversation's normalized project."
+        },
+        "orchestrator": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The conversation's orchestrator (provider name)."
+        },
+        "assignment": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The first Orbit task id the handoff cites (resolve through orbit.task.show)."
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The conversation's session id, for claude --resume."
+        },
+        "source_title": {
+          "type": "string",
+          "description": "The conversation source's title; empty when the source is private."
+        },
+        "superseded": {
+          "type": "boolean",
+          "description": "A later handoff in its thread, or in its conversation, replaced it."
+        },
+        "state": {
+          "enum": [
+            "open",
+            "resolved",
+            "expired"
+          ],
+          "description": "resolved: a later resolved entry cites its anchor. expired: a global whose until is at or before now."
+        },
+        "until": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "A global handoff's until, when set."
+        },
+        "resolved_by": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "link": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Null when the resolving source is private."
+                },
+                "time": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "link",
+                "text",
+                "time"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "description": "The earliest resolved entry that closed it."
+        },
+        "withheld": {
+          "type": "boolean",
+          "description": "The source is private: text and source_title are empty and structured fields are left out; its cited task id, thread and anchors remain as references."
+        }
+      },
+      "required": [
+        "scope",
+        "thread",
+        "project",
+        "orchestrator",
+        "assignment",
+        "session_id",
+        "source_title",
+        "superseded",
+        "state",
+        "until",
+        "resolved_by",
+        "withheld"
       ],
       "additionalProperties": false
     }

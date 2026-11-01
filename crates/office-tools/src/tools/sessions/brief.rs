@@ -2,6 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use office_core::domain::session::listing::{
+    HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX, ListQuery, list,
+};
 use office_core::domain::session::{
     SessionContext, TaskInventory, agent_runs, agent_runs_external, assemble_for_session,
     assignment_project, handoffs, invalid, task_open, tasks,
@@ -20,7 +23,17 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::ReadOnly,
         mcp_scope: McpScope::Workspace,
     },
-    &["project", "orchestrator", "task", "session_start", "view"],
+    &[
+        "project",
+        "orchestrator",
+        "task",
+        "session_start",
+        "view",
+        "thread",
+        "include_closed",
+        "offset",
+        "limit",
+    ],
     run,
 );
 
@@ -71,15 +84,79 @@ fn session_start(call: &Call<'_>) -> Result<bool> {
     }
 }
 
-/// `view`: `brief` (the default) or `handoffs` (the `/handoff` command).
-fn handoffs_view(call: &Call<'_>) -> Result<bool> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum View {
+    Brief,
+    Handoffs,
+    List,
+}
+
+/// `view`: `brief` (the default), `handoffs` (the `/handoff` command) or
+/// `list` (the web app's handoff list).
+fn view(call: &Call<'_>) -> Result<View> {
     match call.input.get("view") {
-        None | Some(Value::Null) => Ok(false),
-        Some(Value::String(value)) if value == "brief" => Ok(false),
-        Some(Value::String(value)) if value == "handoffs" => Ok(true),
+        None | Some(Value::Null) => Ok(View::Brief),
+        Some(Value::String(value)) if value == "brief" => Ok(View::Brief),
+        Some(Value::String(value)) if value == "handoffs" => Ok(View::Handoffs),
+        Some(Value::String(value)) if value == "list" => Ok(View::List),
         Some(_) => Err(Error::InvalidArgument(
-            "session-brief view must be brief or handoffs".into(),
+            "session-brief view must be brief, handoffs or list".into(),
         )),
+    }
+}
+
+/// An optional non-negative integer no larger than `max`.
+fn optional_count(call: &Call<'_>, key: &str, max: usize) -> Result<Option<usize>> {
+    match call.input.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .filter(|n| *n <= max)
+            .map(Some)
+            .ok_or_else(|| {
+                Error::InvalidArgument(format!(
+                    "session-brief {key} must be an integer from 0 to {max}"
+                ))
+            }),
+    }
+}
+
+/// Largest `offset` the list view accepts.
+const OFFSET_MAX: usize = 100_000;
+
+/// The `view: list` request: filters narrow `history`; paging bounds it.
+fn list_query(call: &Call<'_>, context: &SessionContext) -> Result<ListQuery> {
+    let include_closed = match call.input.get("include_closed") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(value)) => *value,
+        Some(_) => {
+            return Err(Error::InvalidArgument(
+                "session-brief include_closed must be a boolean".into(),
+            ));
+        }
+    };
+    let limit = optional_count(call, "limit", HISTORY_PAGE_MAX)?.unwrap_or(HISTORY_PAGE_DEFAULT);
+    if limit == 0 {
+        return Err(Error::InvalidArgument(format!(
+            "session-brief limit must be an integer from 1 to {HISTORY_PAGE_MAX}"
+        )));
+    }
+    Ok(ListQuery {
+        project: context.project.clone(),
+        orchestrator: context.orchestrator.clone(),
+        thread: optional_context(call, "thread")?,
+        include_closed,
+        offset: optional_count(call, "offset", OFFSET_MAX)?.unwrap_or(0),
+        limit,
+        now: context.now.clone(),
+    })
+}
+
+fn library_changed() -> Error {
+    Error::Library {
+        code: "library_changed",
+        message: "Library changed while reading the session brief; retry".into(),
     }
 }
 
@@ -147,27 +224,37 @@ fn run(call: &Call<'_>) -> Result<Value> {
     };
     let task = optional_task(call)?;
     let start = session_start(call)?;
-    let view = handoffs_view(call)?;
+    let view = view(call)?;
     if task.is_some() && !start {
         return Err(Error::InvalidArgument(
             "session-brief task is the SessionStart fallback and requires session_start".into(),
         ));
     }
-    if view && start {
+    if view != View::Brief && start {
         return Err(Error::InvalidArgument(
-            "session-brief view handoffs cannot be combined with session_start".into(),
+            "session-brief view handoffs or list cannot be combined with session_start".into(),
         ));
     }
+    let list_keys = ["thread", "include_closed", "offset", "limit"];
+    if view != View::List && list_keys.iter().any(|key| call.input.contains_key(*key)) {
+        return Err(Error::InvalidArgument(
+            "session-brief thread, include_closed, offset and limit require view list".into(),
+        ));
+    }
+    let query = match view {
+        View::List => Some(list_query(call, &context)?),
+        View::Brief | View::Handoffs => None,
+    };
     let library = &call.ports.library;
     let head = library.head_commit()?;
     let sources = library.source_documents()?;
-    if view {
-        let brief = handoffs(&sources, &context)?;
+    if view != View::Brief {
+        let brief = match &query {
+            Some(query) => list(&sources, query)?,
+            None => handoffs(&sources, &context)?,
+        };
         if library.head_commit()? != head {
-            return Err(Error::Library {
-                code: "library_changed",
-                message: "Library changed while reading the session brief; retry".into(),
-            });
+            return Err(library_changed());
         }
         return serde_json::to_value(brief).map_err(|_| invalid("brief response"));
     }
@@ -239,10 +326,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         &context,
     )?;
     if library.head_commit()? != head {
-        return Err(Error::Library {
-            code: "library_changed",
-            message: "Library changed while reading the session brief; retry".into(),
-        });
+        return Err(library_changed());
     }
     serde_json::to_value(brief).map_err(|_| invalid("brief response"))
 }

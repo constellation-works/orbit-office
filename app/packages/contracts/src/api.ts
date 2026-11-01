@@ -747,3 +747,73 @@ export interface ScribeAnswer {
   /** `<route> <model>` of the one model call, when one was made. */
   model: string | null;
 }
+
+/** A structured handoff's fields, in display order (specs/sessions.md, "Structured handoff contract"). */
+export interface HandoffFields {
+  objective: string;
+  next: string;
+  /** Empty when none was recorded. */
+  authorization: string;
+  observations: Array<{ text: string; observed_at: string; recheck: string }>;
+  evidence: string[];
+}
+
+/** The `resolved` entry that closed a handoff. */
+export interface HandoffClosing {
+  /** `<source-id>#L<n>`. */
+  id: string;
+  /** Null when its source is private. */
+  text: string | null;
+  time: string;
+}
+
+/**
+ * One handoff as Scribe › Handoffs and Today show it, from
+ * `office.session-brief` with `view: list` (specs/sessions.md, "Handoff list").
+ */
+export interface ScribeHandoff {
+  /** `<source-id>#L<n>`: the conversation source and the handoff's line. */
+  id: string;
+  source_id: string;
+  line: number;
+  time: string;
+  /** The rendered text; empty when withheld. */
+  text: string;
+  /** Structured fields, or null for a legacy or withheld handoff. */
+  fields: HandoffFields | null;
+  /** A historical one-line handoff, shown as text. */
+  legacy: boolean;
+  /** A private source: listed by reference only. */
+  withheld: boolean;
+  scope: "project" | "global";
+  /** The thread key, passed back as the history filter; null for a global. */
+  thread: string | null;
+  project: string | null;
+  orchestrator: string | null;
+  /** The first Orbit task id the handoff cites. */
+  assignment: string | null;
+  session_id: string | null;
+  /** `claude --resume <session-id>`. */
+  resume: string | null;
+  source_title: string;
+  superseded: boolean;
+  state: "open" | "resolved" | "expired";
+  until: string | null;
+  resolved_by: HandoffClosing | null;
+}
+
+/** `GET /api/scribe/handoffs[?project&orchestrator&thread&offset]`. Filters and paging apply to `history` only. */
+export interface ScribeHandoffs {
+  /** Each open thread's current handoff, newest first. */
+  threads: ScribeHandoff[];
+  threads_total: number;
+  /** Global handoffs, newest first, open and closed (each with its state). */
+  global: ScribeHandoff[];
+  global_total: number;
+  /** Project handoffs, newest first, one page. */
+  history: ScribeHandoff[];
+  history_total: number;
+  history_offset: number;
+  /** More history follows this page. */
+  history_more: boolean;
+}

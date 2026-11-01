@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { createScribeFeature } from "../dist/features/scribe/index.js";
 import { noteEntry } from "../dist/features/scribe/model.js";
 import { OrbitExitError } from "../dist/orbit/client.js";
-import { NOW, OLDER, RECENT, office, scribeServer } from "./scribe-fixture.mjs";
+import { NOW, OLDER, RECENT, handoffs, office, scribeServer } from "./scribe-fixture.mjs";
 
 const get = async (url) => { const response = await fetch(url); return { status: response.status, body: await response.json() }; };
 const post = async (url, body) => {
@@ -238,4 +238,52 @@ test("the ask box cites SCR file:line, drops a quote not on its cited line, and 
     ["not_captured", [], "2026-10-31", "2026-11-01", ["recall", "scribe"], 2]);
   assert.deepEqual((await post(`${url}/api/scribe/ask`, { question: "x", limit: 3 })).body, { error: "invalid_input" });
   assert.deepEqual((await post(`${url}/api/scribe/ask`, { question: " " })).body, { error: "question_required" });
+});
+
+const listed = (output, kind) => output.sections.find((section) => section.kind === kind);
+
+test("handoffs read office.session-brief view list once and keep its order, states and anchors", async (t) => {
+  const { url, calls } = await scribeServer(t);
+  const { status, body } = await get(`${url}/api/scribe/handoffs`);
+  assert.equal(status, 200);
+  assert.deepEqual(calls.map((call) => [call.name, call.input]), [["office.session-brief", { view: "list", include_closed: true, limit: 50 }]]);
+  const output = handoffs.all.output;
+  for (const kind of ["threads", "global", "history"]) {
+    assert.deepEqual(body[kind].map((item) => item.id), listed(output, kind).items.map((item) => item.id), kind);
+    assert.equal(body[`${kind}_total`], listed(output, kind).total, kind);
+  }
+  assert.equal(body.history_offset, 0);
+  assert.equal(body.history_more, false);
+  const [structured] = body.threads;
+  assert.equal(structured.source_id, "src-20261031-office");
+  assert.equal(structured.line, 5);
+  assert.equal(structured.assignment, "ORB-21075");
+  assert.equal(structured.resume, "claude --resume 7f3c2a10-5b1e-4c0d-9a8e-2f6b1c4d9e01");
+  assert.deepEqual(Object.keys(structured.fields), ["objective", "next", "authorization", "observations", "evidence"]);
+  assert.equal(structured.legacy, false);
+  // Codex sessions do not resume with claude; private sources stay withheld.
+  const orbit = body.threads.find((item) => item.project === "orbit");
+  assert.equal(orbit.resume, null);
+  assert.equal(orbit.legacy, true);
+  const hidden = body.threads.find((item) => item.withheld);
+  assert.deepEqual([hidden.text, hidden.fields, hidden.source_title, hidden.legacy], ["", null, "", false]);
+  assert.deepEqual(body.global.map((item) => item.state), ["resolved", "expired", "open"]);
+  assert.equal(body.global[0].resolved_by.id, "src-20261031-constellation#L1");
+  assert.equal(body.global[1].until, "2026-10-31T12:00:00Z");
+  assert.deepEqual(body.history.map((item) => item.superseded), [false, false, false, true, true, false]);
+});
+
+test("handoff filters and the page offset pass through to the tool; unknown or malformed parameters are refused", async (t) => {
+  const { url, calls } = await scribeServer(t);
+  for (const [query, recorded] of [["project=constellation", "project"], ["orchestrator=codex", "orchestrator"], [`thread=${encodeURIComponent("task:ORB-21001")}`, "thread"], ["offset=4", "page"]]) {
+    const { status, body } = await get(`${url}/api/scribe/handoffs?${query}`);
+    assert.equal(status, 200, query);
+    assert.deepEqual(calls.at(-1).input, handoffs[recorded].input, query);
+    assert.deepEqual(body.history.map((item) => item.id), listed(handoffs[recorded].output, "history").items.map((item) => item.id), query);
+  }
+  const before = calls.length;
+  for (const query of ["view=brief", "offset=-1", "offset=abc", "offset=100001", `project=${"x".repeat(257)}`, "thread=%0A", "project=%20"]) {
+    assert.deepEqual(await get(`${url}/api/scribe/handoffs?${query}`), { status: 400, body: { error: "invalid_input" } }, query);
+  }
+  assert.equal(calls.length, before, "refused before any tool call");
 });

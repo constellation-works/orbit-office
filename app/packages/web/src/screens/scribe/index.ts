@@ -2,7 +2,8 @@
  * Scribe: a compact window over scribe v1's SCR files (specs/scribe.md;
  * specs/web-app.md, "Screens"). The feed of entries, newest first, with the
  * most recent session first; the canned Pending, Preferences, Landed and
- * Why views; Daniel's own note; and an ask box with a cited answer. Polls;
+ * Why views; the read-only Handoffs view (Current, Global, History); Daniel's
+ * own note; and an ask box with a cited answer. Polls;
  * v1 is commanded only, so there is no capture switch or heartbeat.
  */
 import type {
@@ -15,44 +16,25 @@ import { pill } from "../../ui/index.js";
 import {
   emptyView, leadingTag, messageFor, NOTE_TAGS, notCapturedText, sessionMeta, sessionTitle, suggestedTag, timeLabel, VIEW_TITLES,
 } from "./model.js";
+import { el, resumeRow } from "./dom.js";
+import { createHandoffsView } from "./handoffs.js";
 import { styles } from "./style.js";
 
 /** How often the feed and the open view refresh. */
 const POLL_MS = 10_000;
 
-type Tab = "feed" | ScribeView;
-const TABS: readonly Tab[] = ["feed", "pending", "pref", "landed", "why"];
+type Tab = "feed" | ScribeView | "handoffs";
+const TABS: readonly Tab[] = ["feed", "pending", "pref", "landed", "why", "handoffs"];
+const tabTitle = (tab: Tab): string => tab === "feed" ? "Feed" : tab === "handoffs" ? "Handoffs" : VIEW_TITLES[tab];
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text = "", className = ""): HTMLElementTagNameMap[K] => {
-  const node = document.createElement(tag);
-  node.textContent = text;
-  if (className) node.className = className;
-  return node;
-};
 const codeOf = (error: unknown): string => error instanceof ApiError ? error.code : "unknown";
-
-async function copy(text: string, button: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-    button.textContent = "Copied";
-  } catch {
-    button.textContent = "Select to copy";
-  }
-}
 
 /** The citation anchor: `SCR file:line`, the message id, and a copyable resume command. */
 function citation(fileLine: string | null, msg: string | null, resume: string | null): HTMLElement {
   const row = el("div", "", "scribe-cite");
   if (fileLine) { const code = el("code", fileLine); code.title = "SCR file:line"; row.append(code); }
   if (msg) row.append(el("span", msg));
-  if (resume) {
-    const command = el("code", resume);
-    const button = el("button", "Copy resume");
-    button.type = "button";
-    button.setAttribute("aria-label", `Copy ${resume}`);
-    button.addEventListener("click", () => { void copy(resume, button); });
-    row.append(command, button);
-  }
+  if (resume) row.append(...resumeRow(resume));
   return row;
 }
 
@@ -223,10 +205,12 @@ async function render(root: HTMLElement): Promise<void> {
   const stated = el("p", "", "scribe-stated");
   const panel = el("div", "", "scribe-results");
   panel.setAttribute("role", "tabpanel");
-  let tab: Tab = "feed";
+  const handoffs = createHandoffsView(POLL_MS);
+  // Today links here with `?scribe=handoffs`.
+  let tab: Tab = new URLSearchParams(window.location.search).get("scribe") === "handoffs" ? "handoffs" : "feed";
   const buttons = new Map<Tab, HTMLButtonElement>();
   for (const name of TABS) {
-    const button = el("button", name === "feed" ? "Feed" : VIEW_TITLES[name]);
+    const button = el("button", tabTitle(name));
     button.type = "button";
     button.setAttribute("role", "tab");
     button.addEventListener("click", () => { tab = name; drawTabs(); void refresh(true); });
@@ -236,10 +220,12 @@ async function render(root: HTMLElement): Promise<void> {
   const drawTabs = (): void => {
     for (const [name, button] of buttons) button.setAttribute("aria-selected", String(name === tab));
     aboutForm.hidden = tab !== "pref" && tab !== "why";
+    handoffs.bar.hidden = tab !== "handoffs";
   };
   aboutForm.addEventListener("submit", (event) => { event.preventDefault(); void refresh(true); });
+  handoffs.onChange(() => { if (tab === "handoffs") void refresh(true); });
 
-  page.append(askForm, noteForm, tabs, aboutForm, stated, panel);
+  page.append(askForm, noteForm, tabs, aboutForm, handoffs.bar, stated, panel);
   drawTabs();
 
   const fillSessions = (feed: ScribeFeed): void => {
@@ -260,6 +246,12 @@ async function render(root: HTMLElement): Promise<void> {
     const current = ++generation; const showing = tab;
     if (loading) { panel.replaceChildren(el("p", "Loading.", "scribe-status")); stated.textContent = ""; }
     try {
+      if (showing === "handoffs") {
+        const draw = await handoffs.load();
+        if (!alive() || current !== generation) return;
+        draw(panel, stated);
+        return;
+      }
       if (showing === "feed") {
         const feed = await getJson<ScribeFeed>("/api/scribe/feed");
         if (!alive() || current !== generation) return;

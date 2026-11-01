@@ -760,6 +760,42 @@ workspace: malformed, unreadable or unavailable evidence from it, or a
 Library commit changing during assembly, refuses the call so an unknown
 state cannot appear empty.
 
+### Handoff list
+
+Built ([ORB-21075]). `office.session-brief` with `view: list` is the
+read-only list behind the web app's Scribe › Handoffs view and Today's
+Handoffs section ([web-app.md](./web-app.md#screens)). It reads only the
+Library (no Orbit task reads, no model call) and returns exactly three
+sections, each always present; every item carries `listing` (scope, thread,
+project, orchestrator, cited assignment, session id, source title,
+`superseded`, `state`, `until`, `resolved_by`, `withheld`).
+
+- **`threads` (Current):** each thread's current handoff, the one the brief
+  would show for it (see [Per thread](#handoff)), newest first, capped at
+  200. A thread is open until a `resolved` entry closes its current
+  handoff by the rule globals use: recorded at or after it and citing its
+  full `<source-id>#L<n>` from any conversation, or its `#L<n>` later in its
+  own source. A closed thread leaves Current and stays in History, marked
+  `resolved`; a newer handoff in the thread reopens it.
+- **`global`:** open global handoffs, newest first, capped at 200. With
+  `include_closed: true`, expired (`until` at or before the Clock port's
+  now) and resolved ones too, each with its `state`, and `resolved_by`
+  naming the earliest `resolved` entry that closed it.
+- **`history`:** every project-scoped handoff, newest first, `superseded`
+  when it is not its thread's current handoff (a newer one in its thread,
+  or in its own conversation). `project` (normalized), `orchestrator` and
+  `thread` (a `listing.thread` value) filter it; `offset` (0 to 100000) and
+  `limit` (1 to 100, default 50) page it. `total` counts every match,
+  `truncated` means more follow the page, and `offset` echoes the page's
+  start. Filters and paging apply to `history` only.
+- **Private sources.** Items from a `sensitivity: private` conversation keep
+  their anchors, time, cited task id, thread, project, orchestrator and
+  session id as references, with empty `text` and `source_title`, no
+  structured fields, and `withheld: true`; a private resolving entry's text
+  is null. The brief itself is unchanged.
+- The list keys (`thread`, `include_closed`, `offset`, `limit`) are refused
+  without `view: list`, and `view: list` is refused with `session_start`.
+
 ### Extra workspaces (`brief.task_workspaces`)
 
 The Library setting `brief.task_workspaces` in the Library's `.office/config.yaml`
@@ -868,6 +904,7 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-20755] — reserved the planned `office.recall-answer` and `office.scribe-control` scaffold (registry rows, reserved manifest blocks, this section).
 - [ORB-21060] — built per-thread handoffs within a project and the `other_sessions` section.
 - [ORB-21063] — built global-scoped handoffs (scope, expiry, resolution, the `global` section), the `brief.handoff` auto/manual setting with the assignment fallback, the `projects` section, `view: handoffs` and the Claude Code `/handoff` command.
+- [ORB-21075] — built the `view: list` handoff list behind Scribe › Handoffs and Today's Handoffs section.
 - [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
