@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-ask response",
-  "description": "A cited answer over SCR evidence. Claims survive only when every cite names a shortlisted SCR line and the quote matches that line verbatim; others are dropped and counted. Private SCR entries are cited by reference only when no open-weights route is configured. With nothing found, not_captured is true and the searched range, topics and sessions (with scribed_through) are reported.",
+  "description": "A cited answer over SCR evidence. Claims survive only when every cite names a shortlisted SCR line and the quote matches that line verbatim; others are dropped and counted. Private SCR entries are always cited by reference only to the caller (content_withheld), regardless of endpoint configuration; a configured open-weights route authorizes only that endpoint to read the evidence in the model request. With nothing found, not_captured is true and the searched range, topics and sessions (with scribed_through) are reported.",
   "type": "object",
   "properties": {
     "question": { "type": "string" },
@@ -41,7 +41,7 @@
       },
       "additionalProperties": true
     },
-    "shortlist": { "type": "array", "items": { "type": "object" }, "description": "The model-free shortlist (scribe-query shaped entries); private entries are by reference when no route is configured." },
+    "shortlist": { "type": "array", "items": { "type": "object" }, "description": "The model-free shortlist (scribe-query shaped entries); private entries are always by reference with content_withheld, regardless of endpoint configuration." },
     "evidence": { "type": "array", "items": { "type": "object" } },
     "private_references": { "type": "array", "items": { "type": "object" } },
     "searched": { "type": "object" },

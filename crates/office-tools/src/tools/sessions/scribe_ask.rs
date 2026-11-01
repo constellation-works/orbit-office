@@ -8,9 +8,10 @@
 //! section, default `haiku@low`, mapped to `ModelTier::Standard`, the tier
 //! the port supports). Every returned claim cites `SCR file:line` and a
 //! message id, and its quoted span must match the cited line verbatim;
-//! unmatched quotes are dropped. Private SCR entries are cited by
-//! reference only when no open-weights route is configured, as
-//! `recall-answer` does.
+//! unmatched quotes are dropped. Private SCR entries are always cited
+//! by reference only to the caller: a configured open-weights route
+//! authorizes that endpoint to read the evidence in the model request,
+//! never the MCP caller, as `recall-answer` does.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -283,9 +284,11 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .copied()
         .collect();
 
+    // Caller-visible shortlist/evidence: private entries are always
+    // withheld, whether or not a private route let the model read them.
     let shortlist: Vec<Value> = shortlist_entries
         .iter()
-        .map(|e| render_entry(e, !routed && is_private(e)))
+        .map(|e| render_entry(e, is_private(e)))
         .collect();
 
     let searched = json!({
