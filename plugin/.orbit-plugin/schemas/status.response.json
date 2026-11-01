@@ -6,7 +6,7 @@
     "version": { "type": "string", "description": "The plugin version answering the call." },
     "secrets": {
       "type": "object",
-      "description": "Each declared secret name mapped to whether Orbit delivered a value. Never a value.",
+      "description": "Each declared secret name mapped to whether Orbit delivered a non-empty value (an empty string reads as unset, matching model routing). Never a value.",
       "properties": {
         "meta_api_key": { "$ref": "#/$defs/presence" },
         "open_weights_token": { "$ref": "#/$defs/presence" },

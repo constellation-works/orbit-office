@@ -27,6 +27,20 @@ fn status_round_trip() {
 }
 
 #[test]
+fn status_reports_an_empty_secret_as_unset() {
+    let fx = Fixture::new();
+    let request = serde_json::json!({"schema_version": 1, "tool": "office.status", "input": {}, "context": {"secrets": {"meta_api_key": ""}}})
+        .to_string();
+    let out = fx.ok(&["orbit-tool"], &request);
+    let response = json(&out.stdout);
+    assert_eq!(
+        response["output"]["secrets"]["meta_api_key"],
+        serde_json::json!("unset")
+    );
+    assert!(out.stderr.is_empty(), "stderr: {}", text(&out.stderr));
+}
+
+#[test]
 fn an_unknown_tool_is_an_error_envelope_with_exit_zero() {
     // The protocol reports tool failures in the envelope; the process
     // itself served the call, so it exits 0.

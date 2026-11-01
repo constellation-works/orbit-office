@@ -28,6 +28,25 @@ fn status_reports_set_and_unset_secrets_without_values() {
 }
 
 #[test]
+fn status_reports_an_empty_secret_as_unset_like_model_routing() {
+    let input = Map::new();
+    let mut context = Map::new();
+    context.insert(
+        "secrets".to_string(),
+        json!({ "meta_api_key": "", "open_weights_token": "", "baseten_token": "" }),
+    );
+    let output = run(&Call {
+        ports: &office_testkit::fakes::PortsBuilder::default().build(),
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(output["secrets"]["meta_api_key"], json!("unset"));
+    assert_eq!(output["secrets"]["open_weights_token"], json!("unset"));
+    assert_eq!(output["secrets"]["baseten_token"], json!("unset"));
+}
+
+#[test]
 fn status_reports_library_health_and_counts_by_kind() {
     let input = Map::new();
     let context = Map::new();
