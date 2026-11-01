@@ -192,6 +192,7 @@ test('when the subagent is refused the ask box renders office.recall cited evide
 
   const answer = await ui.find({ type: 'Text', text: /Decision: stay local \[src-fixture#L1\]/ })
   expect(answer?.text).toContain('Local memory, claude --resume session-one')
+  expect(answer?.text).toMatch(/\(cited evidence from office.recall; recall agent refused: no agents here\)$/)
   await ui.unmount()
 })
 
@@ -237,5 +238,33 @@ test('the kind filter and paging narrow a long feed', OPTIONS, async ($, on) => 
   await ui.select({ key: 'kind-filter', value: 'decision' })
   const shown = await ui.findAll({ type: 'Text', text: /^line / })
   expect(shown.map((t: any) => t.text)).toEqual(['line 1'])
+  await ui.unmount()
+})
+
+test('when the subagent is refused Haiku answers in the pane from office.recall', OPTIONS, async ($, on) => {
+  const calls: { argv: string[] }[] = []
+  const prompts: any[] = []
+  seed(on, calls)
+  on('agent.spawn', () => ({ deny: 'auto mode gave no verdict. Retry once.' }))
+  on('fs.read', () => ({ value: '---\nname: recall\n---\nCite src anchors.' }))
+  on('model.complete', (_$: any, e: any) => {
+    prompts.push(e)
+    const text =
+      prompts.length === 1
+        ? '{"searches": ["hosting decision"]}'
+        : 'Stay local [src-fixture#L1], Local memory, claude --resume session-one'
+    return { value: { isAnswered: true, text, usage: { inputTokens: 1, outputTokens: 1 } } }
+  })
+  const ui = await open($)
+  await ui.input({ key: 'ask', text: 'what did we decide about hosting?' })
+
+  const searches = calls
+    .filter(c => c.argv[3] === 'office.recall')
+    .map(c => JSON.parse(c.argv[c.argv.indexOf('--input') + 1]!).question)
+  expect(searches).toContain('hosting decision')
+  expect(prompts[1].system).toContain('Cite src anchors.')
+  expect(prompts[1].system).not.toContain('name: recall')
+  const answer = await ui.find({ type: 'Text', text: /Stay local \[src-fixture#L1\]/ })
+  expect(answer?.text).toContain('(answered in the pane; recall agent refused: auto mode gave no verdict.)')
   await ui.unmount()
 })
