@@ -568,3 +568,19 @@ class PluginBehavior(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProcessGroupSweep(unittest.TestCase):
+    def test_exited_group_eperm_keeps_the_result(self):
+        # macOS answers EPERM from killpg when only the unreaped leader is left
+        # (ORB-20814); the finished call's output must survive the sweep.
+        sys.path.insert(0, str(PLUGIN / "scripts"))
+        import process
+        from unittest import mock
+
+        def refuse(_pid, _sig):
+            raise PermissionError(1, "Operation not permitted")
+
+        with mock.patch.object(process.os, "killpg", refuse):
+            result = process.run([sys.executable, "-c", "print('{\"ok\": true}')"], str(PLUGIN), 5)
+        self.assertEqual(result, {"ok": True})

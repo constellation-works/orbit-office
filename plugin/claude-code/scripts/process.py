@@ -12,6 +12,18 @@ import time
 LIMIT = 512 * 1024
 
 
+def signal_group(pid: int, sig: int) -> None:
+    """Signal a child's process group, ignoring a group that is already gone.
+
+    macOS answers EPERM, not ESRCH, when the only member left is the unreaped
+    leader, so both mean nothing is left to signal.
+    """
+    try:
+        os.killpg(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 class Failure(Exception):
     """A fixed diagnostic safe to log (never upstream text or input)."""
 
@@ -83,7 +95,7 @@ def run(argv: list[str], cwd: str, timeout: float) -> dict:
                 break
             if time.monotonic() >= deadline or max(size.values()) > LIMIT:
                 failed = True
-                os.killpg(child.pid, signal.SIGTERM)
+                signal_group(child.pid, signal.SIGTERM)
                 grace = time.monotonic() + 0.1
                 while time.monotonic() < grace:
                     time.sleep(0.01)
@@ -91,17 +103,11 @@ def run(argv: list[str], cwd: str, timeout: float) -> dict:
     except BaseException:
         # Cancellation and unexpected faults get the same polite termination
         # before the final sweep; the leader remains unreaped throughout.
-        try:
-            os.killpg(child.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        signal_group(child.pid, signal.SIGTERM)
         time.sleep(0.1)
         raise
     finally:
-        try:
-            os.killpg(child.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        signal_group(child.pid, signal.SIGKILL)
         child.wait(timeout=1)
         streams.close()
         if observer is not None:
