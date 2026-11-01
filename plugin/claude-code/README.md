@@ -139,9 +139,10 @@ and shows:
 - a **Missed something…** box, its kind chosen with a selector and stored
   verbatim with `by: user`;
 - an ask box;
-- a link to the web Scribe screen for other conversations (the
-  `scribe_url` option, default `http://localhost:4317/scribe`; empty hides
-  it).
+- a link to the web Scribe screen for other conversations, once the
+  `scribe_url` option names it (for example
+  `http://localhost:4317/scribe`). It is empty by default, which hides the
+  link, until that screen ships (ORB-20696).
 
 Mobile has no fields yet, so there the pane shows the feed and its buttons.
 
@@ -157,9 +158,14 @@ The pane reaches Office only through `orbit tool run office.*` run with
   `CLAUDE_PLUGIN_OPTION_*` variables the command hooks receive.
 
 The ask box spawns the plugin's `recall` subagent and renders its answer
-when that agent's turn completes. If the spawn is refused or no answer comes
-within three minutes, it renders the same cited evidence from
-`office.recall` directly. The pane refreshes on a 30-second timer and after
+when that agent's turn completes. In an auto-mode session the engine's
+classifier refuses a spawn that no user request asked for, and a pane press
+is not one. When the spawn is refused or no answer comes within three
+minutes, the pane does what the agent does with plain Haiku completions
+(no tools): one picks the literal search terms, the pane runs
+`office.recall` for each, and one answers from the replies under
+`agents/recall.md`'s own rules. The answer says why the agent gave none.
+The raw cited evidence from `office.recall` is the last resort. The pane refreshes on a 30-second timer and after
 each main-loop turn, never holding the turn. When Orbit is unreachable it
 shows a single `scribe unavailable` line with a Retry button: no error loop,
 and the session stays responsive. A failed control press shows one dim
