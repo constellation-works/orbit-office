@@ -61,6 +61,11 @@ if tool == 'office.session-brief':
     print(json.dumps({'sections': [], 'pending': []}))
 elif tool == 'office.scribe-pending':
     sid = payload['session_id']
+    fail = home / ('fail-' + sid + '.json')
+    if fail.exists():
+        spec = json.loads(fail.read_text())
+        print(json.dumps({'ok': False, 'error': {'code': spec['code'], 'message': spec['message'], 'input': payload}}))
+        sys.exit(3)
     transcript = pathlib.Path(payload['transcript']).resolve()
     assert str(transcript).startswith(str(pathlib.Path(workspace).resolve()) + '/'), 'stage inside the workspace'
     all_messages = messages(transcript)
@@ -519,6 +524,30 @@ class ScribeV1(unittest.TestCase):
         before = len(self.calls())
         self.assertTrue(self.scribe("backfill --since 2026-09-15")["done"])
         self.assertEqual(self.calls()[before:], [])
+        self.assert_no_model_process()
+
+    def test_backfill_skips_non_sessions_and_reports_refusals_by_office_code(self):
+        (self.providers / "notes-only.jsonl").write_text(
+            json.dumps({"type": "summary", "summary": "not a conversation"}) + "\n")
+        self.transcript([("user", "a renamed transcript")],
+                        path=self.providers / "renamed.jsonl", sid="different-id")
+        self.transcript([("user", "a failing session")],
+                        path=self.providers / "eee-fail.jsonl", sid="eee-fail")
+        (self.home / "fail-eee-fail.json").write_text(json.dumps(
+            {"code": "session_transcript_too_large", "message": "UPSTREAM-SECRET-XYZ"}))
+
+        reply = self.scribe("backfill")
+        self.assertTrue(reply["done"])
+        self.assertEqual(reply["refused"], 1)
+        self.assertEqual(reply["refusals"],
+                         {"session_transcript_too_large": {"count": 1, "example": "eee-fail"}})
+        self.assertIn("notes-only", reply["skipped"])
+        self.assertIn("renamed", reply["skipped"])
+        self.assertIn("skipped", reply["display"])
+        self.assertIn("session_transcript_too_large", reply["display"])
+        self.assertIn("eee-fail", reply["display"])
+        self.assertNotIn("UPSTREAM-SECRET-XYZ", json.dumps(reply))
+        self.assertNotIn("different-id", json.dumps(reply["refusals"]))
         self.assert_no_model_process()
 
     def test_backfill_project_filter_and_exclusions(self):

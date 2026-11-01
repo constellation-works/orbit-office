@@ -795,7 +795,33 @@ class V1:
         cache_path = self.state / "backfill.json"
         cache = load(cache_path)
         done = cache.get("done", {})
-        candidates, refused, scribed = [], 0, 0
+        candidates, scribed = [], 0
+        not_sessions: list[str] = []
+        refusals: dict[str, dict] = {}
+
+        def note_refusal(error: BaseException, example: str) -> None:
+            # A Failure's first token is its reason code (see process.run);
+            # anything else is grouped under a fixed local code, never its text.
+            reason = re.split(r"[;\s]", str(error), 1)[0] if isinstance(error, Failure) else "invalid_session_transcript"
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", reason):
+                reason = "invalid_session_transcript"
+            group = refusals.setdefault(reason, {"count": 0, "example": example})
+            group["count"] += 1
+
+        def refusal_summary() -> str:
+            total = sum(group["count"] for group in refusals.values())
+            if not total:
+                return ""
+            groups = "; ".join("{} (e.g. {}){}".format(
+                reason, group["example"], " x{}".format(group["count"]) if group["count"] > 1 else "")
+                for reason, group in sorted(refusals.items()))
+            return " {} refused: {}.".format(total, groups)
+
+        def totals() -> dict:
+            return {"skipped": skipped + not_sessions, "non_sessions": list(not_sessions),
+                    "refused": sum(group["count"] for group in refusals.values()),
+                    "refusals": {reason: dict(group) for reason, group in sorted(refusals.items())}}
+
         for path in (Path.home() / ".claude/projects").glob("*/*.jsonl"):
             try:
                 info = path.lstat()
@@ -806,7 +832,11 @@ class V1:
                     continue
                 head = self.head(path)
                 if not head or head["session_id"] != path.stem:
-                    raise Failure("not_a_session_transcript")
+                    # No conversational head, or the head names another
+                    # session (sidechains, summary-only, renamed files):
+                    # not a session transcript, so skipped, not refused.
+                    not_sessions.append(path.stem)
+                    continue
                 started = dt.datetime.fromisoformat(head["timestamp"].replace("Z", "+00:00"))
                 if started.tzinfo is None:
                     raise Failure("timestamp_needs_offset")
@@ -818,34 +848,39 @@ class V1:
                 if self.client.excluded_project(head["cwd"]):
                     continue
                 candidates.append((started, str(path), head, info))
-            except (Failure, OSError, ValueError, TypeError, KeyError):
-                refused += 1
+            except (Failure, OSError, ValueError, TypeError, KeyError) as error:
+                note_refusal(error, path.stem)
         candidates.sort(key=lambda c: (c[0], c[1]))
         skipped: list[str] = []
         for started, path, head, info in candidates:
             if time.monotonic() - self.client.started >= BUDGET - CALL_CAP:
-                return {"display": "Backfill paused at the command budget; run it again to continue.",
-                        "continue": True, "skipped": skipped, "model_call": False}
+                return {"display": "Backfill paused at the command budget; run it again to continue." + refusal_summary(),
+                        "continue": True, "model_call": False, **totals()}
             sid = head["session_id"]
             try:
                 result = self.catchup_session(sid, path, head["cwd"], backfill=True)
-            except Failure:
-                refused += 1
+            except Failure as error:
+                note_refusal(error, sid)
                 continue
             if result.get("agent"):
                 remaining = len(candidates) - len(skipped) - 1
                 result["display"] = ("Backfill: {} session(s) skipped as already scribed to their end; "
                                      "scribing {} (started {}), {} more after it.").format(
                                          scribed + len(skipped), sid, started.isoformat(), max(0, remaining))
-                result.update({"continue": True, "skipped": skipped, "started": started.isoformat()})
+                result["display"] += refusal_summary()
+                if not_sessions:
+                    result["display"] += " {} non-session file(s) skipped.".format(len(not_sessions))
+                result.update({"continue": True, "started": started.isoformat(), **totals()})
                 return result
             skipped.append(sid)
             if result.get("new_count") == 0 or result.get("withheld") or result.get("excluded"):
                 done[path] = [info.st_size, info.st_mtime_ns]
                 save(cache_path, {"done": done})
-        return {"display": "Backfill done: {} session(s) already scribed to their end, {} refused.".format(
-                    scribed + len(skipped), refused),
-                "done": True, "skipped": skipped, "refused": refused, "model_call": False}
+        return {"display": "Backfill done: {} session(s) already scribed to their end, "
+                           "{} non-session file(s) skipped,{}.".format(
+                               scribed + len(skipped), len(not_sessions),
+                               refusal_summary() or " 0 refused"),
+                "done": True, "model_call": False, **totals()}
 
 
 def dispatch(args: dict) -> dict:

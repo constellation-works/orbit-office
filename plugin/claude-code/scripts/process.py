@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import select
 import selectors
 import signal
@@ -30,6 +31,29 @@ class Failure(Exception):
 
 class NotSent(Failure):
     """Startup refused before the child could send a mutating request."""
+
+
+_CODE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
+
+
+def _error_code(value) -> str | None:
+    """The structured `error.code` of an error envelope, and nothing else.
+
+    The envelope may be the tool reply itself or the `result` of the exec
+    response envelope. Only a token-shaped code is surfaced: upstream
+    message text, detail and the echoed input never reach a Failure.
+    """
+    if not isinstance(value, dict):
+        return None
+    error = value.get("error")
+    if isinstance(error, dict):
+        code = error.get("code")
+        if isinstance(code, str) and _CODE.fullmatch(code):
+            return code
+    result = value.get("result")
+    if isinstance(result, dict):
+        return _error_code(result)
+    return None
 
 
 def run(argv: list[str], cwd: str, timeout: float) -> dict:
@@ -116,14 +140,24 @@ def run(argv: list[str], cwd: str, timeout: float) -> dict:
         child.stderr.close()
     if failed:
         raise Failure("orbit_timeout_or_output_limit; mutation outcome unknown")
-    if child.returncode != 0:
-        raise Failure("orbit_call_failed; mutation outcome may be unknown")
+    # A non-zero exit still carries the tool's error envelope on stdout:
+    # decode it before reducing the call to a generic failure, so the
+    # structured code survives whichever exit the child chose.
     try:
         value = json.loads(output)
     except (ValueError, UnicodeDecodeError):
+        if child.returncode != 0:
+            raise Failure("orbit_call_failed; mutation outcome may be unknown") from None
         raise Failure("orbit_invalid_reply; mutation outcome unknown") from None
     if not isinstance(value, dict):
+        if child.returncode != 0:
+            raise Failure("orbit_call_failed; mutation outcome may be unknown")
         raise Failure("orbit_invalid_reply; mutation outcome unknown")
+    code = _error_code(value)
+    if code is not None:
+        raise Failure(code)
+    if child.returncode != 0:
+        raise Failure("orbit_call_failed; mutation outcome may be unknown")
     if value.get("ok") is False or value.get("status") in ("error", "failed") or value.get("error"):
         raise Failure("orbit_tool_refused")
     # `--json --full` returns the tool object; tolerate the exec response envelope.
