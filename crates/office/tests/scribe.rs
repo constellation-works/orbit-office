@@ -334,3 +334,86 @@ fn a_note_at_the_queried_cursor_adds_one_user_line_and_keeps_the_cursor() {
     assert_eq!(after["results"][0]["msg"], "note");
     assert_eq!(after["results"][0]["quote"], "call the venue at 3pm");
 }
+
+/// A batch whose every entry is refused is a failed capture: it writes no SCR
+/// file, makes no commit and leaves the cursor unset, so the messages stay
+/// pending and a corrected entry captures them.
+#[test]
+fn an_all_refused_batch_writes_nothing_and_a_corrected_retry_captures_the_messages() {
+    let f = Fixture::new();
+    f.pending(4);
+    let head = f.git(&["rev-parse", "HEAD"]);
+    let rejected = f.ok(
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-0004","entries":[
+            {"msg":"m-0003","quote":"never spoken","tag":"decision","topics":[]}]}),
+    );
+    assert_eq!(rejected["refused"][0]["reason"], "quote_not_verbatim");
+    assert_eq!(rejected["written"], false, "{rejected}");
+    assert_eq!(rejected["scribed_through"], Value::Null, "{rejected}");
+    let path = rejected["path"].as_str().unwrap();
+    assert!(!f.library().join(path).exists(), "{rejected}");
+    assert_eq!(f.git(&["rev-parse", "HEAD"]), head);
+    assert_eq!(f.git(&["status", "--porcelain"]), "");
+
+    let pending = f.pending(4);
+    assert_eq!(pending["new_count"], 4, "{pending}");
+    let retry = f.ok(
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-0004","entries":[
+            {"msg":"m-0003","quote":"ship parse and append first","tag":"decision","topics":[]}]}),
+    );
+    assert_eq!(retry["refused"], json!([]));
+    assert_eq!(retry["written"], true, "{retry}");
+    assert_eq!(retry["scribed_through"], "m-0004");
+    let text = std::fs::read_to_string(f.library().join(path)).unwrap();
+    assert!(text.contains("\"ship parse and append first\""), "{text}");
+    assert!(!text.contains("never spoken"), "{text}");
+}
+
+/// The same rule for a file that already exists: a refused batch that also
+/// carries a new title keeps the file's name, its cursor and the Library's
+/// history, and the corrected retry captures the next message.
+#[test]
+fn an_all_refused_batch_into_an_existing_file_keeps_its_name_and_cursor() {
+    let f = Fixture::new();
+    f.pending(4);
+    let first = f.ok(
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-0002","entries":[
+            {"msg":"m-0001","quote":"Plan the scribe v1 rollout.","tag":"decision","topics":[]}]}),
+    );
+    assert_eq!(first["scribed_through"], "m-0002");
+    let path = first["path"].as_str().unwrap().to_owned();
+    let before = std::fs::read_to_string(f.library().join(&path)).unwrap();
+    let head = f.git(&["rev-parse", "HEAD"]);
+
+    let rejected = f.ok(
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-0004","title":"Scribe v1 rollout","entries":[
+            {"msg":"m-0003","quote":"never spoken","tag":"decision","topics":[]}]}),
+    );
+    assert_eq!(rejected["refused"][0]["reason"], "quote_not_verbatim");
+    assert_eq!(rejected["written"], false, "{rejected}");
+    assert_eq!(rejected["renamed_from"], Value::Null, "{rejected}");
+    assert_eq!(rejected["path"], path.as_str(), "{rejected}");
+    assert_eq!(rejected["previous_through"], "m-0002");
+    assert_eq!(rejected["scribed_through"], "m-0002", "{rejected}");
+    assert_eq!(
+        std::fs::read_to_string(f.library().join(&path)).unwrap(),
+        before
+    );
+    assert_eq!(f.git(&["rev-parse", "HEAD"]), head);
+    assert_eq!(f.git(&["status", "--porcelain"]), "");
+
+    let retry = f.ok(
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-0004","entries":[
+            {"msg":"m-0003","quote":"ship parse and append first","tag":"decision","topics":[]}]}),
+    );
+    assert_eq!(retry["refused"], json!([]));
+    assert_eq!(retry["path"], path.as_str());
+    assert_eq!(retry["scribed_through"], "m-0004");
+    let text = std::fs::read_to_string(f.library().join(&path)).unwrap();
+    assert!(text.contains("\"ship parse and append first\""), "{text}");
+}

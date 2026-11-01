@@ -117,7 +117,12 @@ transcript ──parse (no model)──▶ <library>/.office/state/scribe/<sessi
      reported, never written.
    - It appends one line per entry, merges new topics into the front matter
      and moves `scribed_through` to the last message given to the agent,
-     whether or not that message produced an entry.
+     whether or not that message produced an entry. The exception is a batch
+     that refuses something and captures nothing: it writes no file, makes no
+     commit and keeps the cursor and the file's name, so the messages stay
+     pending and a corrected retry captures them. An empty batch (a catch-up)
+     and a batch with at least one new line advance the cursor. A batch of
+     only duplicates refuses nothing and advances too.
    - It commits to the Library repository like any source capture.
 
    The model never edits the file, so a bad run cannot corrupt earlier

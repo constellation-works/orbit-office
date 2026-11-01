@@ -1597,6 +1597,28 @@ pub fn append(
             }),
         }
     }
+    // A batch that refuses something and captures nothing is a failed
+    // capture: it writes no file, keeps the file's name and cursor, so the
+    // messages stay pending and a corrected retry can capture them. An empty
+    // batch (a catch-up) and a batch with a new line still advance the cursor.
+    if !entries.is_empty() && added.is_empty() && !refused.is_empty() {
+        let (front, path) = match existing {
+            Some(file) => (file.front.clone(), file.path.clone()),
+            None => (front, path),
+        };
+        return Ok(Plan {
+            id: front.id.clone(),
+            path,
+            previous,
+            markdown: None,
+            added,
+            duplicates,
+            refused,
+            renamed_from: None,
+            previous_through,
+            front,
+        });
+    }
     front.topics = topics;
     front.scribed_through = Some(message_id(through));
     let unchanged = |front: &Front| {
