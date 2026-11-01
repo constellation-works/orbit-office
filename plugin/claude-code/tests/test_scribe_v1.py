@@ -558,7 +558,7 @@ class ScribeV1(unittest.TestCase):
         other = self.home / ".claude/projects/-elsewhere"
         other.mkdir()
         self.transcript([("user", "elsewhere work")], path=other / "zzz.jsonl", sid="zzz")
-        reply = self.scribe("backfill --project constellation")
+        reply = self.scribe("backfill --project constellation", sid="driver")
         self.assertEqual(reply["session_id"], self.sid)
         self.env["CLAUDE_PLUGIN_OPTION_EXCLUDED_PROJECTS"] = json.dumps([str(self.project)])
         excluded = self.scribe("backfill --project constellation")
@@ -594,6 +594,69 @@ class ScribeV1(unittest.TestCase):
         pended = [c["input"]["session_id"] for c in self.calls("office.scribe-pending")]
         self.assertIn("chat-one", pended)
         self.assertNotIn("worker-one", pended)
+        self.assert_no_model_process()
+
+    def test_backfill_skips_calling_session_and_leaves_it_to_scribe(self):
+        self.transcript([("user", "caller live decision")], date="2026-10-01")
+        self.transcript([("user", "other session decision")],
+                        path=self.providers / "other.jsonl", sid="other", date="2026-10-02")
+        first = self.scribe("backfill --since 2026-09-15")
+        self.assertTrue(first["continue"])
+        self.assertEqual(first["session_id"], "other")
+        self.assertIn(self.sid, first["caller_skipped"])
+        self.assertIn(self.sid, first["skipped"])
+        self.assertIn("left to /scribe", first["display"])
+        self.assertIn(self.sid, first["display"])
+        pended = [c["input"]["session_id"] for c in self.calls("office.scribe-pending")]
+        self.assertIn("other", pended)
+        self.assertNotIn(self.sid, pended)
+        self.agent_catchup(first, [{"msg": "m-0001", "quote": "other session decision", "tag": "decision"}])
+        second = self.scribe("backfill --since 2026-09-15")
+        self.assertTrue(second["done"])
+        self.assertEqual(second["continue"], False)
+        self.assertIn(self.sid, second["caller_skipped"])
+        self.assertIn("left to /scribe", second["display"])
+        self.assertIn(self.sid, second["display"])
+        self.assert_no_model_process()
+
+    def test_backfill_skips_scribe_only_sessions(self):
+        def session(sid, date, turns, entrypoint="claude-desktop"):
+            return self.transcript(turns, path=self.providers / (sid + ".jsonl"),
+                                   sid=sid, date=date, entrypoint=entrypoint)
+        session("driver-one", "2026-10-01",
+                [("user", "<command-message>office-scribe:scribe backfill --since 2026-09-15</command-message>"),
+                 ("assistant", "Backfill done.")])
+        session("driver-two", "2026-10-01", [("user", "/scribe backfill --since 2026-09-15")])
+        session("chat-one", "2026-10-02", [("user", "interactive session decision")])
+        self.transcript([("user", "<command-message>office-scribe:scribe backfill</command-message>"),
+                         ("user", "mixed session decision")],
+                        path=self.providers / "mixed.jsonl", sid="mixed", date="2026-10-03")
+        first = self.scribe("backfill --since 2026-09-01", sid="driver")
+        self.assertTrue(first["continue"])
+        self.assertEqual(first["session_id"], "chat-one")
+        self.assertEqual(sorted(first["scribe_only"]), ["driver-one", "driver-two"])
+        self.assertIn("driver-one", first["skipped"])
+        self.assertIn("scribe-only", first["display"])
+        pended = [c["input"]["session_id"] for c in self.calls("office.scribe-pending")]
+        self.assertIn("chat-one", pended)
+        self.assertNotIn("driver-one", pended)
+        self.assertNotIn("driver-two", pended)
+        appended = [c["input"]["session_id"] for c in self.calls("office.scribe-append")]
+        self.assertEqual(appended, [])
+        self.agent_catchup(first, [{"msg": "m-0001", "quote": "interactive session decision", "tag": "decision"}])
+        second = self.scribe("backfill --since 2026-09-01", sid="driver")
+        self.assertTrue(second["continue"])
+        self.assertEqual(second["session_id"], "mixed")
+        self.assertEqual(sorted(second["scribe_only"]), ["driver-one", "driver-two"])
+        self.agent_catchup(second, [{"msg": "m-0002", "quote": "mixed session decision", "tag": "decision"}])
+        third = self.scribe("backfill --since 2026-09-01", sid="driver")
+        self.assertTrue(third["done"])
+        self.assertEqual(third["continue"], False)
+        self.assertEqual(sorted(third["scribe_only"]), ["driver-one", "driver-two"])
+        self.assertIn("scribe-only", third["display"])
+        # A direct /scribe catch-up in a scribe-only session still runs.
+        direct = self.scribe("", sid="driver-one")
+        self.assertTrue(direct["model_call"])
         self.assert_no_model_process()
 
     def test_scribe_in_sdk_cli_session_still_catches_up(self):

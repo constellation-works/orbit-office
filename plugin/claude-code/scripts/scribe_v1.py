@@ -184,6 +184,77 @@ def _strip_record(record: dict) -> dict:
     return out
 
 
+SCRIBE_COMMAND = "office-scribe:scribe"
+
+
+def _is_scribe_command_text(text: str) -> bool:
+    """One `/scribe` command invocation as a transcript keeps it.
+
+    A real invocation is wrapped, for example
+    ``<command-message>office-scribe:scribe backfill ...</command-message>``
+    (the ORB-20840 filenames slugify exactly that wrapper), while a driver
+    may record the bare ``/scribe ...`` form. A passing mention of the
+    plugin name in prose is not an invocation.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if "office-scribe:scribe" in stripped and "<command-" in stripped \
+            and stripped.lstrip().startswith("<"):
+        return True
+    low = stripped.lower()
+    return low == "/scribe" or low.startswith("/scribe ") or low.startswith("/office-scribe:scribe")
+
+
+def _is_scribe_only_session(path_str: str) -> bool:
+    """True when every user text message invokes `/scribe`.
+
+    Backfill-only: a session that only ran `/scribe` is not a conversation
+    to scribe, so backfill skips it. A direct `/scribe` catch-up still runs
+    (see `V1.catchup_session`), as does a mixed session. False on any read
+    or parse problem, so an unreadable file follows the normal path.
+    """
+    found = False
+    try:
+        fd = os.open(path_str, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return False
+    try:
+        with os.fdopen(fd, "rb") as stream:
+            for raw in stream:
+                if not raw.strip():
+                    continue
+                try:
+                    record = json.loads(raw)
+                except ValueError:
+                    continue
+                if not isinstance(record, dict) or record.get("type") != "user":
+                    continue
+                if record.get("isMeta") or record.get("isSidechain") or record.get("isCompactSummary"):
+                    continue
+                message = record.get("message")
+                if not isinstance(message, dict) or message.get("role") != "user":
+                    continue
+                content = message.get("content")
+                if isinstance(content, str):
+                    text = content
+                elif isinstance(content, list):
+                    parts = [b.get("text") for b in content
+                             if isinstance(b, dict) and b.get("type") == "text"
+                             and isinstance(b.get("text"), str)]
+                    text = " ".join(parts)
+                else:
+                    continue
+                if not text.strip():
+                    continue
+                if not _is_scribe_command_text(text):
+                    return False
+                found = True
+        return found
+    except OSError:
+        return False
+
+
 def message_index(msg_id: str) -> int:
     return int(msg_id.split("-", 1)[1])
 
@@ -409,7 +480,7 @@ class V1:
         if head == "title":
             return self.title(sid, rest)
         if head == "backfill":
-            return self.backfill(rest)
+            return self.backfill(rest, caller=sid)
         return {"display": USAGE, "model_call": False, "usage": True}
 
     # ---- catch-up -------------------------------------------------------
@@ -778,7 +849,18 @@ class V1:
 
     # ---- backfill -------------------------------------------------------
 
-    def backfill(self, rest: str) -> dict:
+    def backfill(self, rest: str, caller: str | None = None) -> dict:
+        """Oldest-first catch-up over existing transcripts.
+
+        `caller` is the session running the backfill (from the `/scribe`
+        command context). It is never selected: the live session keeps
+        growing while backfill runs, so selecting it loops with
+        `continue: true` and no cursor progress. It is left to `/scribe`.
+        Sessions whose only user messages invoke `/scribe` are skipped as
+        scribe-only: a driver that only ran `/scribe` is not a conversation.
+        Both exclusions apply to backfill candidates only; a direct
+        `/scribe` catch-up still scribes such a session.
+        """
         tokens = rest.split()
         since = project = None
         while tokens:
@@ -799,6 +881,8 @@ class V1:
         candidates, scribed = [], 0
         not_sessions: list[str] = []
         headless: list[str] = []
+        scribe_only: list[str] = []
+        caller_skipped: list[str] = []
         refusals: dict[str, dict] = {}
 
         def note_refusal(error: BaseException, example: str) -> None:
@@ -820,8 +904,11 @@ class V1:
             return " {} refused: {}.".format(total, groups)
 
         def totals() -> dict:
-            return {"skipped": skipped + not_sessions + headless, "non_sessions": list(not_sessions),
+            return {"skipped": skipped + not_sessions + headless + scribe_only + caller_skipped,
+                    "non_sessions": list(not_sessions),
                     "headless": list(headless),
+                    "scribe_only": list(scribe_only),
+                    "caller_skipped": list(caller_skipped),
                     "refused": sum(group["count"] for group in refusals.values()),
                     "refusals": {reason: dict(group) for reason, group in sorted(refusals.items())}}
 
@@ -857,6 +944,17 @@ class V1:
                     # inside such a session still scribes it (see catchup).
                     headless.append(path.stem)
                     continue
+                if caller is not None and head["session_id"] == caller:
+                    # The live session running this backfill: it grows on
+                    # every pass (its own scribe tool traffic), so selecting
+                    # it loops with `continue: true` and no cursor progress.
+                    # It is left to `/scribe`.
+                    caller_skipped.append(path.stem)
+                    continue
+                if _is_scribe_only_session(str(path)):
+                    # Only `/scribe` command invocations, no conversation.
+                    scribe_only.append(path.stem)
+                    continue
                 candidates.append((started, str(path), head, info))
             except (Failure, OSError, ValueError, TypeError, KeyError) as error:
                 note_refusal(error, path.stem)
@@ -882,17 +980,29 @@ class V1:
                     result["display"] += " {} non-session file(s) skipped.".format(len(not_sessions))
                 if headless:
                     result["display"] += " {} headless session(s) skipped.".format(len(headless))
+                if scribe_only:
+                    result["display"] += " {} scribe-only session(s) skipped.".format(len(scribe_only))
+                if caller_skipped:
+                    result["display"] += " {} calling session(s) left to /scribe: {}.".format(
+                        len(caller_skipped), ", ".join(sorted(caller_skipped)))
                 result.update({"continue": True, "started": started.isoformat(), **totals()})
                 return result
             skipped.append(sid)
             if result.get("new_count") == 0 or result.get("withheld") or result.get("excluded"):
                 done[path] = [info.st_size, info.st_mtime_ns]
                 save(cache_path, {"done": done})
-        return {"display": "Backfill done: {} session(s) already scribed to their end, "
-                           "{} non-session file(s) skipped, {} headless session(s) skipped,{}.".format(
-                               scribed + len(skipped), len(not_sessions), len(headless),
-                               refusal_summary() or " 0 refused"),
-                "done": True, "model_call": False, **totals()}
+        done_display = ("Backfill done: {} session(s) already scribed to their end, "
+                          "{} non-session file(s) skipped, {} headless session(s) skipped, "
+                          "{} scribe-only session(s) skipped,{}").format(
+                              scribed + len(skipped), len(not_sessions), len(headless),
+                              len(scribe_only), refusal_summary() or " 0 refused")
+        if caller_skipped:
+            done_display += " {} calling session(s) left to /scribe: {}.".format(
+                len(caller_skipped), ", ".join(sorted(caller_skipped)))
+        else:
+            done_display += " 0 calling session(s) left to /scribe."
+        return {"display": done_display, "done": True, "continue": False,
+                "model_call": False, **totals()}
 
 
 def dispatch(args: dict) -> dict:
