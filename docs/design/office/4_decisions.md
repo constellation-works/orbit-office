@@ -1862,7 +1862,7 @@ is the same move as a standalone step.
 
 ## A live scribe extracts the conversation while it runs
 
-**Recorded:** 2026-11-01 · proposed, pending review
+**Recorded:** 2026-11-01 · approved by the user (PR #250)
 **Code anchors:** none yet; [specs/sessions.md](./specs/sessions.md#live-scribe-planned)
 
 ### Context
