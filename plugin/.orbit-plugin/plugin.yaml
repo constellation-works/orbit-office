@@ -409,6 +409,16 @@ spec:
       input_schema: { $ref: schemas/scribe-append.request.json }
       output_schema: { $ref: schemas/scribe-append.response.json }
 
+    # - name: scribe-query
+    #   description: >-
+    #     Filter the session SCR lines by tag, matter, topic, author, date
+    #     range, refs or session, and resolve the links between lines.
+    #     Model-free.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/scribe-query.request.json }
+    #   output_schema: { $ref: schemas/scribe-query.response.json }
+
     # ---- recall ----
 
     - name: recall
