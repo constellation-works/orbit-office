@@ -13,8 +13,8 @@ mod page;
 
 pub use page::{
     Citation, MAX_PAGE_WORDS, POLICY_TAG, Page, PageFile, PageRef, PageStatus, PageView,
-    Performable, RefTarget, RefView, Submission, SubmissionVia, page_kind_for_id, parse_citation,
-    resolve_anchor,
+    Performable, RefTarget, RefView, SCRIBE_RULES_PAGE, Submission, SubmissionVia,
+    page_kind_for_id, parse_citation, resolve_anchor,
 };
 
 /// Which kind of document the Library holds.

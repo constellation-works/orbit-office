@@ -55,6 +55,10 @@ pub struct Selection {
     pub line: usize,
     /// decision, direction, fact, action or open; no handoff or resolved.
     pub kind: String,
+    /// Zero-based assistant question line a user reply answers. Lets a
+    /// short reply become a `decision` only when the answer checks pass.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<usize>,
 }
 /// Transcript capture request, separate from upload and WebVTT capture.
 pub struct Request {
@@ -69,6 +73,9 @@ pub struct Request {
     /// First line this pass considers (zero-based, inclusive); earlier lines
     /// are read-only context and selecting one refuses the write.
     pub from_line: Option<usize>,
+    /// Crew-written scribe handoff, present only when the rules page
+    /// enables it; written by [`append_handoff`] or dropped.
+    pub handoff: Option<String>,
 }
 fn invalid(message: &'static str) -> Error {
     Error::Library {
@@ -351,6 +358,156 @@ fn explicit_kind(line: &Line) -> &'static str {
         "open"
     }
 }
+/// Replies that accept a yes/no question, matched as a leading phrase.
+const AFFIRMATIVES: &[&str] = &[
+    "yes",
+    "yeah",
+    "yep",
+    "yup",
+    "sure",
+    "ok",
+    "okay",
+    "do it",
+    "go ahead",
+    "go for it",
+    "sounds good",
+    "ship it",
+    "please do",
+    "lgtm",
+    "agreed",
+    "approved",
+];
+/// Replies that decline a yes/no question, matched as a leading phrase.
+const NEGATIVES: &[&str] = &[
+    "no",
+    "nope",
+    "not now",
+    "not yet",
+    "no thanks",
+    "don't",
+    "do not",
+];
+/// Words that qualify a reply, so it no longer simply answers the question.
+const QUALIFIERS: &[&str] = &["but", "except", "unless", "instead", "wait"];
+/// Words that turn an affirmative into something else.
+const NEGATIONS: &[&str] = &["no", "not", "nope", "don't", "dont", "never"];
+/// Question words that make a question open rather than yes/no.
+const WH_WORDS: &[&str] = &[
+    "what", "which", "where", "when", "who", "whom", "whose", "why", "how",
+];
+
+fn normalized(text: &str) -> String {
+    text.trim().to_lowercase().replace('\u{2019}', "'")
+}
+
+fn words(text: &str) -> Vec<&str> {
+    text.split(|c: char| !(c.is_alphanumeric() || c == '\''))
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+/// True when `text` begins with `phrase` followed by a non-word character.
+fn leads_with(text: &str, phrase: &str) -> bool {
+    text.strip_prefix(phrase).is_some_and(|rest| {
+        rest.chars()
+            .next()
+            .is_none_or(|c| !(c.is_alphanumeric() || c == '\''))
+    })
+}
+
+/// Option labels a question offers: `(a)`, `a)`, `(1)`, `1)` or `option a`.
+fn option_labels(question: &str) -> Vec<String> {
+    let lower = normalized(question);
+    let tokens: Vec<&str> = lower.split_whitespace().collect();
+    let mut labels = Vec::new();
+    let short = |label: &str| {
+        (1..=2).contains(&label.len()) && label.chars().all(|c| c.is_ascii_alphanumeric())
+    };
+    for (index, token) in tokens.iter().enumerate() {
+        let token = token.trim_end_matches([',', ';', ':', '.', '?']);
+        let bare = token.strip_prefix('(').unwrap_or(token);
+        if let Some(label) = bare.strip_suffix(')')
+            && short(label)
+        {
+            labels.push(label.to_string());
+        }
+        if (token == "option" || token == "options")
+            && let Some(next) = tokens.get(index + 1)
+        {
+            let label = next.trim_end_matches([',', ';', ':', '.', '?']);
+            if short(label) {
+                labels.push(label.to_string());
+            }
+        }
+    }
+    labels.sort();
+    labels.dedup();
+    labels
+}
+
+/// The rendered answer text when `reply` answers `question` under the
+/// deterministic checks (specs/sessions.md, Answers to questions):
+/// `question` is the nearest assistant line before the reply with no user
+/// line between them and ends in `?`; the reply carries no uncertainty
+/// marker and is not a question; it is an affirmative or negative to a
+/// yes/no question, or an option label the question offered.
+fn answer(session: &Session, reply: usize, question: usize) -> Option<String> {
+    let asked = session.lines.get(question)?;
+    let said = session.lines.get(reply)?;
+    // Lines are numbered by position, so the nearest earlier assistant line
+    // with no user line in between is exactly the previous line.
+    // Private sessions stay on the local conservative path, which never
+    // has crew answers.
+    if session.sensitivity == "private"
+        || question.checked_add(1) != Some(reply)
+        || asked.role != "assistant"
+        || said.role != "user"
+        || !asked.text.trim_end().ends_with('?')
+        || ambiguous(&said.text)
+    {
+        return None;
+    }
+    let reply_text = normalized(&said.text);
+    let reply_words = words(&reply_text);
+    if reply_words.iter().any(|word| QUALIFIERS.contains(word)) {
+        return None;
+    }
+    let labels = option_labels(&asked.text);
+    let verb = if labels.is_empty() {
+        let question_text = normalized(&asked.text);
+        let question_words = words(&question_text);
+        let yes_no = question_words
+            .first()
+            .is_some_and(|first| !WH_WORDS.contains(first))
+            && !question_words.contains(&"or");
+        if !yes_no {
+            return None;
+        }
+        if AFFIRMATIVES.iter().any(|p| leads_with(&reply_text, p))
+            && !reply_words.iter().any(|word| NEGATIONS.contains(word))
+        {
+            "answering"
+        } else if NEGATIVES.iter().any(|p| leads_with(&reply_text, p)) {
+            "declining"
+        } else {
+            return None;
+        }
+    } else {
+        let choice = reply_text.trim_end_matches(['.', '!']);
+        let choice = choice.strip_prefix("option ").unwrap_or(choice);
+        let choice = choice.strip_prefix('(').unwrap_or(choice);
+        let choice = choice.strip_suffix(')').unwrap_or(choice);
+        if !labels.iter().any(|label| label == choice) {
+            return None;
+        }
+        "answering"
+    };
+    Some(format!(
+        "\"{}\" ({verb} #L{question}: \"{}\")",
+        said.text, asked.text
+    ))
+}
+
 /// Validate model selections and render exact evidence lines. An unclear or
 /// non-user decision/direction becomes open even if a model misclassifies it.
 pub fn entries(session: &Session, request: &Request) -> Result<Vec<String>> {
@@ -388,6 +545,7 @@ pub fn entries(session: &Session, request: &Request) -> Result<Vec<String>> {
                     all.push(Selection {
                         line: line.line,
                         kind: kind.into(),
+                        answers: None,
                     });
                 }
             }
@@ -402,6 +560,7 @@ pub fn entries(session: &Session, request: &Request) -> Result<Vec<String>> {
                 .map(|l| Selection {
                     line: l.line,
                     kind: explicit_kind(l).into(),
+                    answers: None,
                 })
                 .collect::<Vec<_>>();
             &defaults
@@ -422,12 +581,20 @@ pub fn entries(session: &Session, request: &Request) -> Result<Vec<String>> {
             .get(selection.line)
             .ok_or_else(|| invalid("selection line is outside the transcript"))?;
         let mut kind = selection.kind.as_str();
+        let mut text = line.text.clone();
         // A command's kind is fixed by its cue, not by the crew's choice.
         let forced = (line.role == "user")
             .then(|| note_kind(&line.text))
             .flatten();
         if let Some(forced) = forced {
             kind = forced;
+        } else if kind == "decision"
+            && explicit_kind(line) != kind
+            && let Some(answer) = selection
+                .answers
+                .and_then(|question| answer(session, selection.line, question))
+        {
+            text = answer;
         } else if (["decision", "direction"].contains(&kind) && explicit_kind(line) != kind)
             || (kind == "fact" && (line.role != "user" || ambiguous(&line.text)))
             || (kind == "action" && line.role != "assistant")
@@ -436,7 +603,7 @@ pub fn entries(session: &Session, request: &Request) -> Result<Vec<String>> {
         }
         ordered.push((
             selection.line,
-            format_conversation_entry(&line.timestamp, kind, &line.text)?,
+            format_conversation_entry(&line.timestamp, kind, &text)?,
         ));
     }
     ordered.sort_by_key(|(line, _)| *line);
@@ -591,4 +758,207 @@ pub fn merge(
     result.push_str(&body);
     validate_provenance(&result)?;
     Ok(result)
+}
+
+/// Library path of the scribe rules page (`dom-scribe-rules`).
+pub const RULES_PAGE_PATH: &str = "knowledge/domain/dom-scribe-rules.md";
+/// Word limit of a scribe handoff.
+pub const HANDOFF_WORD_LIMIT: usize = 60;
+
+/// The scribe rules page as the crew and the adapter see it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Rules {
+    /// Always `dom-scribe-rules`.
+    pub id: String,
+    /// Library-relative path.
+    pub path: String,
+    /// `scribe.handoff`; false when absent.
+    pub handoff: bool,
+    /// The page body, passed to the crew as data; `None` for a private page,
+    /// which never reaches the crew.
+    pub body: Option<String>,
+}
+
+/// Parse the rules page. Rules only steer the crew: nothing here changes
+/// the deterministic guard in [`entries`].
+pub fn rules(markdown: &str) -> Result<Rules> {
+    let page = crate::domain::knowledge::Page::from_markdown(markdown)?;
+    if page.id != crate::domain::knowledge::SCRIBE_RULES_PAGE {
+        return Err(Error::InvalidFrontmatter {
+            field: "id".into(),
+            reason: "the scribe rules page has the id dom-scribe-rules",
+        });
+    }
+    let private = page.sensitivity == office_common::Sensitivity::Private;
+    Ok(Rules {
+        id: page.id,
+        path: RULES_PAGE_PATH.into(),
+        handoff: page.scribe_handoff.unwrap_or(false),
+        body: (!private).then_some(page.body),
+    })
+}
+
+/// What happened to a crew-written scribe handoff.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HandoffOutcome {
+    /// The Markdown with the `handoff: (scribe) …` entry appended.
+    Written(String),
+    /// Dropped for the given reason; the pass's other entries still land.
+    Dropped(&'static str),
+}
+
+/// `#L<n>` and `#L<n>-<m>` anchors cited in `text`, or `None` for a
+/// malformed one (no digits, overflow or a reversed range).
+fn cited_anchors(text: &str) -> Option<Vec<usize>> {
+    let mut lines = Vec::new();
+    for (at, _) in text.match_indices("#L") {
+        let rest = &text[at + 2..];
+        let digits = |s: &str| -> Option<(usize, usize)> {
+            let len = s.chars().take_while(char::is_ascii_digit).count();
+            (len > 0).then(|| s[..len].parse().ok().map(|n| (n, len)))?
+        };
+        let (start, len) = digits(rest)?;
+        lines.push(start);
+        if let Some(range) = rest[len..].strip_prefix('-')
+            && let Some((end, _)) = digits(range)
+        {
+            if end < start {
+                return None;
+            }
+            lines.push(end);
+        }
+    }
+    Some(lines)
+}
+
+/// Append a crew-written scribe handoff to `merged` (the source after this
+/// pass's entries were merged into `base`). It lands only when the pass
+/// added a decision, direction or action, the text is one line of at most
+/// [`HANDOFF_WORD_LIMIT`] words, and it cites at least one `#L<n>` anchor
+/// of the merged source with every cited anchor naming a log entry. It is
+/// written as kind `handoff` with a leading `(scribe)` marker, so every
+/// existing log reader accepts it and the session brief shows the marker.
+pub fn append_handoff(base: &str, merged: &str, text: &str, at: &str) -> Result<HandoffOutcome> {
+    let text = scrub(text);
+    let text = text.trim();
+    let text = text.strip_prefix("(scribe)").unwrap_or(text).trim();
+    if text.is_empty() || text.contains(['\n', '\r']) {
+        return Ok(HandoffOutcome::Dropped("invalid"));
+    }
+    if text.split_whitespace().count() > HANDOFF_WORD_LIMIT {
+        return Ok(HandoffOutcome::Dropped("too_long"));
+    }
+    let before = super::source_body(base).lines().count();
+    let body = super::source_body(merged);
+    let log = crate::domain::session::entries(&body)?;
+    if !log.iter().any(|entry| {
+        entry.line > before && ["decision", "direction", "action"].contains(&entry.kind.as_str())
+    }) {
+        return Ok(HandoffOutcome::Dropped("no_plan_change"));
+    }
+    let Some(cited) = cited_anchors(text) else {
+        return Ok(HandoffOutcome::Dropped("unresolved_anchor"));
+    };
+    if cited.is_empty() {
+        return Ok(HandoffOutcome::Dropped("no_anchor"));
+    }
+    if !cited
+        .iter()
+        .all(|line| log.iter().any(|entry| entry.line == *line))
+    {
+        return Ok(HandoffOutcome::Dropped("unresolved_anchor"));
+    }
+    let entry = format_conversation_entry(at, "handoff", &format!("(scribe) {text}"))?;
+    let mut result = merged.to_string();
+    if !result.ends_with('\n') {
+        result.push('\n');
+    }
+    result.push_str(&entry);
+    result.push('\n');
+    Ok(HandoffOutcome::Written(result))
+}
+
+/// Apply the request's scribe handoff, if any, to `merged`; returns the
+/// Markdown to write and the handoff outcome token for the response.
+pub fn with_handoff(
+    request: &Request,
+    session: &Session,
+    base: &str,
+    merged: String,
+    at: &str,
+) -> Result<(String, Option<String>)> {
+    let Some(handoff) = &request.handoff else {
+        return Ok((merged, None));
+    };
+    // A private session never reaches the crew, so it has no handoff.
+    if session.sensitivity == "private" {
+        return Ok((merged, Some("private".into())));
+    }
+    Ok(match append_handoff(base, &merged, handoff, at)? {
+        HandoffOutcome::Written(text) => (text, Some("written".into())),
+        HandoffOutcome::Dropped(reason) => (merged, Some(reason.into())),
+    })
+}
+
+/// Where the session's conversation source stands, for an incremental
+/// preview: where the next pass starts and which anchor its first new
+/// entry will take.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Cursor {
+    /// Source id.
+    pub id: String,
+    /// Library-relative path of `source.md`.
+    pub path: String,
+    /// Last transcript line an earlier pass considered; `None` before the
+    /// incremental scheme. The next pass uses `from_line` one past it.
+    pub extracted_through: Option<usize>,
+    /// One-based body line (`#L<n>`) the next appended entry will take.
+    pub next_anchor: usize,
+}
+
+/// The cursor of the conversation source recording `session_id`, if any.
+/// Several sources with one session id refuse, as capture does.
+pub fn cursor(sources: &[crate::ports::LibraryText], session_id: &str) -> Result<Option<Cursor>> {
+    let mut found = None;
+    for file in sources {
+        let Some(markdown) = file.markdown.as_deref() else {
+            continue;
+        };
+        let fields = crate::domain::metrics::metadata(markdown)?;
+        if fields.get("session_id").and_then(Value::as_str) != Some(session_id) {
+            continue;
+        }
+        if found.is_some() {
+            return Err(Error::Library {
+                code: "session_source_conflict",
+                message: "multiple sources have this session id; reconcile them before capture"
+                    .into(),
+            });
+        }
+        let (extracted_through, _) = extracted_state(markdown)?;
+        found = Some(Cursor {
+            id: super::parse_source_meta(markdown).id,
+            path: file.path.clone(),
+            extracted_through,
+            next_anchor: super::source_body(markdown).lines().count() + 1,
+        });
+    }
+    Ok(found)
+}
+
+/// The user's own scribe rules page among `pages`, if it exists.
+pub fn find_rules(pages: &[crate::ports::LibraryText]) -> Result<Option<Rules>> {
+    pages
+        .iter()
+        .find(|file| file.path == RULES_PAGE_PATH)
+        .map(|file| {
+            file.markdown
+                .as_deref()
+                .ok_or_else(|| Error::Library {
+                    code: "library_document_unreadable",
+                    message: format!("cannot read {}", file.path),
+                })
+                .and_then(rules)
+        })
+        .transpose()
 }

@@ -147,11 +147,12 @@ pasted documents too, including unmarked pastes that an adapter cannot detect.
 The live scribe adds two narrow ways a user line becomes a decision
 or direction without these cues: an explicit `Note:` command (built,
 [ORB-20685]) and an answer
-to a concrete question ([below](#answers-to-questions), planned).
+to a concrete question ([below](#answers-to-questions), built, [ORB-20686]).
 
 Directions and facts retain the exact selected line, apart from credential
 redaction and outer whitespace. Multiline text contributes separate lines.
-The extractor cannot write `handoff` or `resolved`. The orchestrator still
+The extractor cannot write `resolved`, and writes a `handoff` only as the
+opt-in [scribe handoff](#scribe-handoff). Otherwise the orchestrator still
 writes the rolling handoff and explicit resolutions via ordinary `append_to`.
 When the first handoff is needed before extraction, call session capture once,
 keep its returned source id, then append the handoff. An existing manual log
@@ -229,9 +230,9 @@ privacy; a source changed to private stays private on later extraction.
 ## Live scribe
 
 Status: partly built. The incremental passes and the user `Note:`/`Scribe:`
-commands below are built ([ORB-20685]); the switch, trigger and debounce,
-rules page, answers to questions, scribe handoff and feedback sections
-remain specified, not built. Everything above still applies; this section
+commands below are built ([ORB-20685]); the rules page, answers to
+questions and scribe handoff are built ([ORB-20686]); the switch, trigger
+and debounce, and feedback sections remain specified, not built. Everything above still applies; this section
 changes when extraction runs, how much of the transcript each pass reads,
 and three narrow rules about what it may write.
 
@@ -307,6 +308,8 @@ A pass reads only what earlier passes have not.
 
 ### Rules page
 
+Built ([ORB-20686]).
+
 What the scribe notes is the user's to define, on a Library page with the
 id `dom-scribe-rules` (a one-per-Library template, `scribe-rules`). Its
 body has three sections: **Note** (what to capture, for example standing
@@ -314,8 +317,13 @@ directions, decisions with their reason, rejected options and why, changes
 to crews, pools and configuration, facts about hosts and people), **Skip**
 (for example status chatter, restated plans, anything about a named
 private topic) and **Kinds** (guidance for borderline lines). The page is
-passed to the crew with each preview, as data. It changes only through
-proposals, so the user holds the pen.
+passed to the crew with each preview, as data: the session preview returns
+`rules` (`id`, `path`, `handoff`, and `body`, which is null for a `private`
+page so it never reaches the crew) or null. It changes only through
+proposals, so the user holds the pen. The preview also returns `source`,
+the session's conversation source (`id`, `path`, `extracted_through` and
+`next_anchor`, the `#L<n>` the pass's first new entry takes), or null
+before its first capture, when the first entry takes `#L1`.
 
 Rules can narrow what is captured and steer the choice between kinds. They
 cannot widen authority: the deterministic guard still runs after the crew,
@@ -338,6 +346,8 @@ extraction task apply.
 
 ### Answers to questions
 
+Built ([ORB-20686]).
+
 Most decisions are a short reply to a concrete question ("Yes, file it").
 The cue guard keeps those `open`. The scribe may record such a reply as a
 `decision` when all of these hold, each checked deterministically:
@@ -354,25 +364,63 @@ The cue guard keeps those `open`. The scribe may record such a reply as a
 
 The adapter copies both lines: `decision: "Yes, file it" (answering #L41:
 "File the claim-verification sweep as an Orbit task?")`. Neither text is
-model-authored. A question asked through a provider's question tool rather
+model-authored. A negative reads `(declining #L<n>: …)`. The raw
+transcript is not persisted, so `#L<n>` here names the question's
+transcript line, the same zero-based preview number `answers` gave, not a
+body anchor; the quote carries its text. A question asked through a provider's question tool rather
 than in message text (a structured ask with buttons) counts as assistant
 text only when its adapter maps that tool's question field explicitly; tool
-input is otherwise excluded as today.
+input is otherwise excluded as today. No adapter maps one yet: the Claude
+Code adapter reads only `text` content blocks, and no recorded transcript
+in this repository shows where its question tool's text lands, so such
+asks are a known gap.
+
+As built, the checks are deliberately narrower than the list above:
+
+- "nearest assistant line with no user line between" means the question is
+  the line just before the reply; a reply after a later line of the same
+  message, or after another user line, stays `open`;
+- the reply must lead with an affirmative or negative phrase; an
+  affirmative that also carries a negation, or any reply with `but`,
+  `except`, `unless`, `instead` or `wait`, stays `open`;
+- a yes/no question offers no options, does not start with a question word
+  (what, which, where, when, who, whom, whose, why, how) and has no `or`;
+  affirmatives as well as negatives answer only such questions;
+- options are labels written in the question line itself, `(a)`, `a)`,
+  `(1)`, `1)` or `option a`; the reply must be the label alone, optionally
+  as `(a)` or `option a`;
+- `answers` counts only on a `decision` selection, may name the read-only
+  context line of a `from_line` preview, and is ignored in private
+  sessions.
 
 ### Scribe handoff
 
+Built ([ORB-20686]).
+
 Optional, off by default: `scribe.handoff: true` in the rules page's
-frontmatter. When on, a pass whose new lines change the plan (a new
-decision, direction or `action`) also writes one `handoff` entry, in the
-form `handoff (scribe): <text>`, at most 60 words. Unlike every other
-entry it is model-authored, so:
+frontmatter, written as the one-level mapping `scribe:` with
+`handoff: true`. When on, a pass whose new lines change the plan (a new
+decision, direction or `action`) also writes one `handoff` entry, at most
+60 words. The crew sends it as the capture field `handoff` beside its
+`selections`. It is written as kind `handoff` with the marker leading the
+text, `[<time>] handoff: (scribe) <text>`, stamped with the capture time:
+the log grammar has one kind token per entry, so a `handoff (scribe)`
+kind would be refused by every log reader. Unlike every other entry it is
+model-authored, so:
 
 - the `(scribe)` marker is part of the line, and the session brief shows it;
-- it must cite at least one entry anchor (`#L<n>`) of the current source,
-  and every anchor it cites must resolve, or the handoff is dropped (the
-  pass's other entries still land);
+- it must cite at least one entry anchor (`#L<n>` or `#L<n>-<m>`) of the
+  current source after this pass's entries, and every anchor it cites must
+  name a log entry, or the handoff is dropped (the pass's other entries
+  still land);
 - the newest handoff wins, whoever wrote it, so an orchestrator handoff
   written later replaces it in the brief; nothing is edited or removed.
+
+A handoff offered while the setting is off, in a private session, or by a
+pass that adds no decision, direction or action is dropped too. The
+capture response then carries `handoff`: `written`, or the reason it was
+dropped (`disabled`, `private`, `invalid`, `too_long`, `no_plan_change`,
+`no_anchor`, `unresolved_anchor`).
 
 This is what lets the orchestrator stop maintaining the handoff. Without
 it, the orchestrator keeps doing so as today.
@@ -404,7 +452,8 @@ assembled from Orbit and the Library, with no model call, so it is free,
 always current and cannot invent anything:
 
 - **Handoff:** the newest `handoff` entry of the previous session, verbatim,
-  with its time. Absent when that session wrote none.
+  with its time; a [scribe handoff](#scribe-handoff) keeps its leading
+  `(scribe)` marker. Absent when that session wrote none.
 - **Since:** the time the last conversation source was appended to.
 - **Waiting on you:** proposals awaiting approval, agent to-dos in `review`,
   and open `owner:you` to-dos, oldest first.
@@ -561,5 +610,7 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-19706] — built federated workspace reads for plugin callbacks.
 - [ORB-19733] — built cross-host session-brief routing to federated workspaces.
 - [ORB-20242] — built conversation transcript extraction through the `office.capture` session mode and the SessionEnd sweep.
+- [ORB-20685] — built the live scribe's incremental passes and `Note:`/`Scribe:` commands.
+- [ORB-20686] — built the live scribe's rules page, answers to questions and scribe handoff.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

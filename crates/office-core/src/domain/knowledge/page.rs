@@ -43,7 +43,12 @@ const FIELDS: &[&str] = &[
     "as_of",
     "performable",
     "submission",
+    "scribe",
 ];
+
+/// The one page whose frontmatter may carry `scribe` settings
+/// (specs/sessions.md, Live scribe).
+pub const SCRIBE_RULES_PAGE: &str = "dom-scribe-rules";
 
 /// A page's lifecycle (`status`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -186,6 +191,8 @@ pub struct Page {
     pub performable: Option<Performable>,
     /// How a performable runbook is submitted.
     pub submission: Option<Submission>,
+    /// `scribe.handoff` on the scribe rules page; `None` when absent.
+    pub scribe_handoff: Option<bool>,
     /// Markdown after the frontmatter, verbatim.
     pub body: String,
 }
@@ -270,6 +277,7 @@ impl Page {
             Some(_) => return Err(invalid("performable", "expected agent or you")),
         };
         let submission = get("submission").map(submission).transpose()?;
+        let scribe_handoff = get("scribe").map(scribe).transpose()?.flatten();
         let refs = match get("refs") {
             None => Vec::new(),
             Some(Value::Array(items)) => items.iter().map(page_ref).collect::<Result<_>>()?,
@@ -295,6 +303,7 @@ impl Page {
             as_of,
             performable,
             submission,
+            scribe_handoff,
             body: body.to_string(),
         })
     }
@@ -329,6 +338,12 @@ impl Page {
             if self.submission.is_some() {
                 return Err(invalid("submission", "only runbooks have a submission"));
             }
+        }
+        if self.scribe_handoff.is_some() && self.id != SCRIBE_RULES_PAGE {
+            return Err(invalid(
+                "scribe",
+                "scribe settings belong on dom-scribe-rules",
+            ));
         }
         if self.kind == DocumentKind::Runbook && !self.refs.is_empty() {
             return Err(invalid("refs", "pointers belong on domain pages"));
@@ -1034,6 +1049,21 @@ fn list(value: Option<&Value>, field: &str) -> Result<Vec<String>> {
             .collect(),
         Some(Value::String(text)) if !text.trim().is_empty() => Ok(vec![text.clone()]),
         Some(_) => Err(invalid(field, "expected a list of strings")),
+    }
+}
+
+/// The `scribe` mapping: only `handoff`, a boolean.
+fn scribe(value: &Value) -> Result<Option<bool>> {
+    let Value::Object(map) = value else {
+        return Err(invalid("scribe", "expected a mapping"));
+    };
+    if map.keys().any(|key| key != "handoff") {
+        return Err(invalid("scribe", "unknown key; expected handoff"));
+    }
+    match map.get("handoff") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Bool(on)) => Ok(Some(*on)),
+        Some(_) => Err(invalid("scribe", "handoff must be true or false")),
     }
 }
 

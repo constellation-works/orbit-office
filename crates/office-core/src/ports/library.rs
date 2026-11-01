@@ -403,6 +403,9 @@ pub struct SourceOutcome {
     pub appended: usize,
     /// The version.
     pub version: u32,
+    /// Session capture only: `written`, or why a crew-written scribe
+    /// handoff was dropped. `None` when no handoff was offered.
+    pub handoff: Option<String>,
 }
 
 /// A source read back for `office.source-show`.

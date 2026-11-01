@@ -281,6 +281,35 @@ fn newest_session_without_handoff_does_not_fall_back_to_an_old_session() {
 }
 
 #[test]
+fn scribe_handoff_shows_its_marker_and_a_later_orchestrator_handoff_wins() {
+    let library = FakeLibrary::initialized();
+    let body = "[2026-10-27T09:00:00Z] decision: Ship Friday.\n[2026-10-27T09:05:00Z] handoff: (scribe) Ship Friday per #L1.\n";
+    let path = source(&library, "src-live", "2026-10-27T08:00:00Z", body);
+    let (ports, _, _) = fixture(library, json!([]));
+    let response = call(&ports, json!({}));
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(
+        items(&response, "handoff"),
+        [
+            json!({"id":"src-live#L2","link":format!("{path}#L2"),"text":"(scribe) Ship Friday per #L1.","time":"2026-10-27T09:05:00Z","entry_kind":"handoff","status":null,"template":null})
+        ]
+    );
+    let library = FakeLibrary::initialized();
+    source(
+        &library,
+        "src-live",
+        "2026-10-27T08:00:00Z",
+        &format!("{body}[2026-10-27T09:10:00Z] handoff: Orchestrator takes over.\n"),
+    );
+    let (ports, _, _) = fixture(library, json!([]));
+    let response = call(&ports, json!({}));
+    assert_eq!(
+        items(&response, "handoff")[0]["text"],
+        "Orchestrator takes over."
+    );
+}
+
+#[test]
 fn onboarding_disappears_when_each_singleton_has_a_page() {
     let library = FakeLibrary::with_bundled_templates();
     let (ports, _, _) = fixture(library, json!([]));
@@ -295,6 +324,7 @@ fn onboarding_disappears_when_each_singleton_has_a_page() {
             "dom-glossary",
             "dom-goals",
             "dom-rhythm",
+            "dom-scribe-rules",
             "dom-standing-directions",
             "dom-systems",
             "dom-user"

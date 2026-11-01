@@ -129,11 +129,21 @@
               "action",
               "open"
             ]
+          },
+          "answers": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based assistant question line this user reply answers. The reply becomes a decision only when the adapter's answer checks pass (the question is the line just before the reply and ends in ?, the reply is unhedged and an affirmative or negative to a yes/no question or an offered option label); otherwise it is open. Both lines are copied verbatim."
           }
         },
         "additionalProperties": false
       },
-      "description": "Cheap crew evidence choices by line number; quotes are copied by the adapter, and uncertain/non-user decisions become open. Without selections classification is conservative."
+      "description": "Cheap crew evidence choices by line number; quotes are copied by the adapter, and uncertain/non-user decisions become open unless answers passes the answer checks. Without selections classification is conservative."
+    },
+    "handoff": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Session mode with selections only: a scribe handoff of at most 60 words, written as a handoff entry marked (scribe) when the dom-scribe-rules page sets scribe.handoff: true. It must cite at least one #L<n> body anchor of the source after this pass's entries, each naming a log entry, and the pass must add a decision, direction or action; otherwise it is dropped and the other entries still land."
     }
   },
   "additionalProperties": false

@@ -22,6 +22,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         "transcript_sha256",
         "selections",
         "from_line",
+        "handoff",
         "event_key",
         "kind",
         "title",
@@ -113,6 +114,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "transcript_sha256",
         "selections",
         "from_line",
+        "handoff",
     ]
     .iter()
     .any(|key| call.input.contains_key(*key))
@@ -229,7 +231,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
 }
 
 fn capture_session(call: &Call<'_>) -> Result<Value> {
-    use office_core::domain::source::conversation::Request;
+    use office_core::domain::source::conversation::{self, Request};
     if call.input.keys().any(|key| {
         ![
             "session_transcript_path",
@@ -238,6 +240,7 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
             "transcript_sha256",
             "selections",
             "from_line",
+            "handoff",
         ]
         .contains(&key.as_str())
     }) {
@@ -278,9 +281,12 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
         }
     };
     if preview {
-        if call.input.contains_key("selections") || call.input.contains_key("transcript_sha256") {
+        if ["selections", "transcript_sha256", "handoff"]
+            .iter()
+            .any(|key| call.input.contains_key(*key))
+        {
             return Err(Error::InvalidArgument(
-                "preview cannot accept selections or transcript_sha256".into(),
+                "preview cannot accept selections, transcript_sha256 or handoff".into(),
             ));
         }
         let session = call.ports.library.session_transcript(&path, &session_id)?;
@@ -308,8 +314,14 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
                 lines
             }
         };
+        // The rules page and the source cursor are data for the crew: where
+        // the next pass starts, which anchor its first entry takes, and what
+        // the user wants noted. Neither widens the guard capture applies.
+        let rules = conversation::find_rules(&call.ports.library.knowledge_pages()?)?;
+        let source =
+            conversation::cursor(&call.ports.library.source_documents()?, &session.session_id)?;
         return Ok(
-            json!({"session_id":session.session_id,"orchestrator":session.orchestrator,"model":session.model,"transcript_sha256":session.transcript_sha256,"sensitivity":session.sensitivity,"content_withheld":session.sensitivity == "private","lines":lines}),
+            json!({"session_id":session.session_id,"orchestrator":session.orchestrator,"model":session.model,"transcript_sha256":session.transcript_sha256,"sensitivity":session.sensitivity,"content_withheld":session.sensitivity == "private","lines":lines,"rules":rules,"source":source}),
         );
     }
     let selections = call
@@ -318,17 +330,33 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
         .map(|value| {
             serde_json::from_value(value.clone()).map_err(|_| {
                 Error::InvalidArgument(
-                    "selections must be an array of {line, kind} with no other keys".into(),
+                    "selections must be an array of {line, kind, answers?} with no other keys"
+                        .into(),
                 )
             })
         })
         .transpose()?;
+    let handoff = string_field(call, "handoff")?;
+    if handoff.is_some() && selections.is_none() {
+        return Err(Error::InvalidArgument(
+            "handoff requires selections; only a crew pass writes a scribe handoff".into(),
+        ));
+    }
+    // The scribe handoff is off unless the rules page turns it on; a
+    // handoff offered while it is off is dropped, never written.
+    let enabled = match handoff {
+        Some(_) => conversation::find_rules(&call.ports.library.knowledge_pages()?)?
+            .is_some_and(|rules| rules.handoff),
+        None => false,
+    };
+    let offered = handoff.is_some();
     let request = Request {
         path,
         session_id,
         selections,
         expected_sha256: string_field(call, "transcript_sha256")?,
         from_line,
+        handoff: handoff.filter(|_| enabled),
     };
     if request.selections.is_none() && request.expected_sha256.is_some() {
         return Err(Error::InvalidArgument(
@@ -339,7 +367,9 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
         .ports
         .library
         .capture_session(&request, &format_rfc3339_utc(call.ports.clock.now()))?;
-    Ok(
-        json!({"id":outcome.id,"kind":outcome.kind,"title":outcome.title,"path":outcome.path,"sha256":outcome.sha256,"bytes":outcome.bytes,"media_type":outcome.media_type,"sensitivity":outcome.sensitivity,"deduplicated":outcome.deduplicated,"appended":outcome.appended,"version":outcome.version}),
-    )
+    let mut response = json!({"id":outcome.id,"kind":outcome.kind,"title":outcome.title,"path":outcome.path,"sha256":outcome.sha256,"bytes":outcome.bytes,"media_type":outcome.media_type,"sensitivity":outcome.sensitivity,"deduplicated":outcome.deduplicated,"appended":outcome.appended,"version":outcome.version});
+    if offered {
+        response["handoff"] = json!(outcome.handoff.unwrap_or_else(|| "disabled".into()));
+    }
+    Ok(response)
 }

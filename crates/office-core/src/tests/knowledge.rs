@@ -195,6 +195,35 @@ fn word_cap_policy_and_layer_rules() {
 }
 
 #[test]
+fn scribe_settings_parse_only_on_the_scribe_rules_page() {
+    let on = page(
+        "---\nid: dom-scribe-rules\ntemplate: scribe-rules\ntitle: Scribe rules\nscribe:\n  handoff: true\n---\n## Note\nx\n",
+    );
+    assert_eq!(on.scribe_handoff, Some(true));
+    on.check_base_rules()
+        .expect("scribe settings on the rules page");
+    let absent = page("---\nid: dom-scribe-rules\ntitle: Scribe rules\n---\n");
+    assert_eq!(absent.scribe_handoff, None);
+    let elsewhere = "---\nid: dom-user\ntitle: Me\nscribe: { handoff: false }\n---\n";
+    assert_eq!(
+        code(page(elsewhere).check_base_rules()),
+        "invalid_frontmatter"
+    );
+    for value in [
+        "scribe: true",
+        "scribe: { handoff: yes }",
+        "scribe: { notes: true }",
+    ] {
+        let markdown = format!("---\nid: dom-scribe-rules\ntitle: Scribe rules\n{value}\n---\n");
+        assert_eq!(
+            code(Page::from_markdown(&markdown)),
+            "invalid_frontmatter",
+            "{value}"
+        );
+    }
+}
+
+#[test]
 fn frontmatter_refusals_name_the_field() {
     for (markdown, field) in [
         ("---\nid: dom-a\ntitle: A\nowner: me\n---\n", "owner"),

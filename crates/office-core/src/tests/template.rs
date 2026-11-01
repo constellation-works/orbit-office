@@ -90,6 +90,13 @@ fn every_bundled_template_has_the_spec_rules_and_a_usable_skeleton() {
             &["Recurring meetings"],
         ),
         (
+            "scribe-rules",
+            "dom-scribe-rules",
+            true,
+            AttachPolicy::Never,
+            &["Note"],
+        ),
+        (
             "runbook",
             "rb-<slug>",
             false,

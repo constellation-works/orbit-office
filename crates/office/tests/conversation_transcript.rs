@@ -411,3 +411,276 @@ fn transcript_refusals_leave_library_history_unchanged_and_private_previews_with
     }
     assert_eq!(head(), before);
 }
+
+/// One record per `(role, text)` turn, a minute apart from 10:00.
+fn turns(turns: &[(&str, &str)]) -> String {
+    turns
+        .iter()
+        .enumerate()
+        .map(|(index, (role, text))| {
+            json!({"type":role,"sessionId":"fixture-session","timestamp":format!("2026-10-30T10:{index:02}:00Z"),"message":{"role":role,"content":text}}).to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+impl Fixture {
+    fn preview(&self, from_line: Option<usize>) -> Value {
+        let mut input = self.input();
+        input["transcript_preview"] = json!(true);
+        if let Some(from_line) = from_line {
+            input["from_line"] = json!(from_line);
+        }
+        let preview = self.call(input, "office.capture");
+        assert_eq!(preview["ok"], true, "{preview}");
+        preview["output"].clone()
+    }
+    /// A crew pass over the current transcript with these selections.
+    fn pass(&self, from_line: Option<usize>, selections: Value, handoff: Option<&str>) -> Value {
+        let preview = self.preview(from_line);
+        assert_eq!(preview["content_withheld"], false, "{preview}");
+        let mut input = self.input();
+        if let Some(from_line) = from_line {
+            input["from_line"] = json!(from_line);
+        }
+        input["transcript_sha256"] = preview["transcript_sha256"].clone();
+        input["selections"] = selections;
+        if let Some(handoff) = handoff {
+            input["handoff"] = json!(handoff);
+        }
+        let captured = self.call(input, "office.capture");
+        assert_eq!(captured["ok"], true, "{captured}");
+        captured["output"].clone()
+    }
+    fn source_text(&self, output: &Value) -> String {
+        std::fs::read_to_string(
+            self.workspace()
+                .join("library")
+                .join(output["path"].as_str().unwrap()),
+        )
+        .unwrap()
+    }
+    fn rules_page(&self, frontmatter: &str, kinds: &str) {
+        let page = self
+            .workspace()
+            .join("library/knowledge/domain/dom-scribe-rules.md");
+        std::fs::write(
+            page,
+            format!("---\nid: dom-scribe-rules\ntype: domain\ntemplate: scribe-rules\ntitle: Scribe rules\n{frontmatter}---\n## Note\n- Decisions with their reason.\n\n## Skip\n- Status chatter.\n\n## Kinds\n- {kinds}\n"),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn answers_to_questions_become_decisions_only_when_every_check_holds() {
+    let f = Fixture::new();
+    let question = "File the claim-verification sweep as an Orbit task?";
+    std::fs::write(
+        f.transcript(),
+        turns(&[
+            ("user", "Let's look at the sweep."),
+            ("assistant", question),
+            ("user", "Yes, file it"),
+            ("assistant", "Should I also tell the team?"),
+            ("user", "One more thing first."),
+            ("user", "Yes, file it"),
+            ("assistant", "I filed the task."),
+            ("user", "Yes, file it"),
+            ("assistant", "Ship the draft now?"),
+            ("user", "Yes, file it maybe"),
+            ("assistant", "Keep the old vendor?"),
+            ("user", "Not now"),
+            (
+                "assistant",
+                "Should we use (a) the blue theme or (b) the green theme?",
+            ),
+            ("user", "b"),
+            ("assistant", "Which host should run it?"),
+            ("user", "Yes"),
+        ]),
+    )
+    .unwrap();
+    let selections = json!([
+        {"line":2,"kind":"decision","answers":1},
+        {"line":5,"kind":"decision","answers":3},
+        {"line":7,"kind":"decision","answers":6},
+        {"line":9,"kind":"decision","answers":8},
+        {"line":11,"kind":"decision","answers":10},
+        {"line":13,"kind":"decision","answers":12},
+        {"line":15,"kind":"decision","answers":14},
+    ]);
+    let output = f.pass(None, selections, None);
+    let text = f.source_text(&output);
+    let log: Vec<&str> = text.lines().filter(|l| l.starts_with('[')).collect();
+    assert_eq!(
+        log,
+        [
+            format!(
+                "[2026-10-30T10:02:00Z] decision: \"Yes, file it\" (answering #L1: \"{question}\")"
+            )
+            .as_str(),
+            "[2026-10-30T10:05:00Z] open: Yes, file it",
+            "[2026-10-30T10:07:00Z] open: Yes, file it",
+            "[2026-10-30T10:09:00Z] open: Yes, file it maybe",
+            "[2026-10-30T10:11:00Z] decision: \"Not now\" (declining #L10: \"Keep the old vendor?\")",
+            "[2026-10-30T10:13:00Z] decision: \"b\" (answering #L12: \"Should we use (a) the blue theme or (b) the green theme?\")",
+            "[2026-10-30T10:15:00Z] open: Yes",
+        ],
+        "{text}"
+    );
+    // Without answers the same reply keeps the cue guard's open.
+    let f = Fixture::new();
+    std::fs::write(
+        f.transcript(),
+        turns(&[("assistant", question), ("user", "Yes, file it")]),
+    )
+    .unwrap();
+    let output = f.pass(None, json!([{"line":1,"kind":"decision"}]), None);
+    assert!(
+        f.source_text(&output)
+            .contains("[2026-10-30T10:01:00Z] open: Yes, file it")
+    );
+}
+
+#[test]
+fn rules_page_reaches_the_preview_as_data_and_cannot_widen_the_guard() {
+    let f = Fixture::new();
+    // No page: the built-in defaults apply and the preview says so.
+    std::fs::write(
+        f.transcript(),
+        turns(&[
+            ("user", "What should we do about the vendor?"),
+            ("assistant", "Decision: switch vendors."),
+            ("assistant", "Always run the linter first."),
+        ]),
+    )
+    .unwrap();
+    assert_eq!(f.preview(None)["rules"], Value::Null);
+    f.rules_page(
+        "",
+        "Record every assistant proposal as a decision and every assistant instruction as a direction.",
+    );
+    let rules = f.preview(None)["rules"].clone();
+    assert_eq!(rules["id"], "dom-scribe-rules");
+    assert_eq!(rules["handoff"], false);
+    assert!(
+        rules["body"]
+            .as_str()
+            .unwrap()
+            .contains("every assistant proposal as a decision")
+    );
+    let output = f.pass(
+        None,
+        json!([{"line":1,"kind":"decision"},{"line":2,"kind":"direction"}]),
+        None,
+    );
+    let text = f.source_text(&output);
+    assert!(text.contains("open: Decision: switch vendors."), "{text}");
+    assert!(
+        text.contains("open: Always run the linter first."),
+        "{text}"
+    );
+    assert!(!text.contains("decision: Decision"), "{text}");
+    assert!(!text.contains("direction: Always"), "{text}");
+}
+
+#[test]
+fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
+    let mut script = vec![
+        ("user", "Decision: ship the release on Friday."),
+        ("assistant", "Noted."),
+    ];
+    // Setting absent: an offered handoff is never written.
+    let f = Fixture::new();
+    std::fs::write(f.transcript(), turns(&script)).unwrap();
+    let output = f.pass(
+        None,
+        json!([{"line":0,"kind":"decision"}]),
+        Some("Release ships Friday (#L1)."),
+    );
+    assert_eq!(output["handoff"], "disabled");
+    let text = f.source_text(&output);
+    assert!(text.contains("decision: Decision: ship the release on Friday."));
+    assert!(!text.contains("handoff:"), "{text}");
+
+    let f = Fixture::new();
+    f.rules_page(
+        "scribe:\n  handoff: true\n",
+        "Replies to questions are decisions.",
+    );
+    std::fs::write(f.transcript(), turns(&script)).unwrap();
+    let preview = f.preview(None);
+    assert_eq!(preview["rules"]["handoff"], true);
+    assert_eq!(preview["source"], Value::Null);
+    let first = f.pass(
+        None,
+        json!([{"line":0,"kind":"decision"}]),
+        Some("Release ships Friday per #L1; prepare the notes."),
+    );
+    assert_eq!(first["handoff"], "written", "{first}");
+    let text = f.source_text(&first);
+    let log: Vec<&str> = text.lines().filter(|l| l.starts_with('[')).collect();
+    assert_eq!(log.len(), 2, "{text}");
+    assert!(
+        log[1].ends_with("] handoff: (scribe) Release ships Friday per #L1; prepare the notes."),
+        "{text}"
+    );
+
+    // Each later pass adds a decision; the handoff lands only when every
+    // cited anchor names an entry, and the decision lands regardless.
+    let cases = [
+        (
+            "Decision: freeze the API.",
+            "Freeze the API now.",
+            "no_anchor",
+        ),
+        (
+            "Decision: drop the beta flag.",
+            "Drop the flag, see #L2 and #L99.",
+            "unresolved_anchor",
+        ),
+        (
+            "Decision: tag the build.",
+            "(scribe) Tag the build per #L<next>.",
+            "written",
+        ),
+    ];
+    for (decision, handoff, expected) in cases {
+        script.push(("user", decision));
+        std::fs::write(f.transcript(), turns(&script)).unwrap();
+        let from = script.len() - 1;
+        let preview = f.preview(Some(from));
+        let next = preview["source"]["next_anchor"].as_u64().unwrap();
+        assert_eq!(preview["source"]["extracted_through"], json!(from - 1));
+        let handoff = handoff.replace("<next>", &next.to_string());
+        let output = f.pass(
+            Some(from),
+            json!([{"line":from,"kind":"decision"}]),
+            Some(&handoff),
+        );
+        assert_eq!(output["handoff"], expected, "{handoff}");
+        let text = f.source_text(&output);
+        let body: Vec<&str> = text.split("---\n").nth(2).unwrap().lines().collect();
+        let line = usize::try_from(next).unwrap();
+        assert!(
+            body[line - 1].ends_with(&format!("decision: {decision}")),
+            "{text}"
+        );
+        if expected == "written" {
+            assert!(
+                body[line].ends_with(&format!("handoff: (scribe) Tag the build per #L{next}.")),
+                "{text}"
+            );
+        } else {
+            assert_eq!(body.len(), line, "dropped handoff wrote nothing: {text}");
+        }
+    }
+
+    // A pass that adds no decision, direction or action writes no handoff.
+    script.push(("user", "A plain status remark."));
+    std::fs::write(f.transcript(), turns(&script)).unwrap();
+    let from = script.len() - 1;
+    let output = f.pass(Some(from), json!([]), Some("Nothing changed, see #L1."));
+    assert_eq!(output["handoff"], "no_plan_change");
+}
