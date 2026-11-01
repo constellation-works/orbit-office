@@ -115,6 +115,16 @@ types are ignored. Mixed-session files, unsupported provider formats, truncated
 records and missing timestamps refuse without writing. Stage the final file
 atomically after the provider closes it; a growing file may require a retry.
 
+Harness wrapper text injected into a user message is not the user's words
+and is excluded the same way: `<system-reminder>` blocks and
+`<local-command-*>` output (stdout, stderr and caveats) are dropped whole,
+for string and block content alike, before lines are taken. A slash-command
+invocation (`<command-message>`, `<command-name>` and `<command-args>`)
+renders as one `/<name> <args>` line instead of the tags, with exactly one
+leading slash on the name. A user record left with no text after this
+stripping contributes no line. Pasted content is kept: it is the user's own
+material, however it was framed.
+
 The adapter records `orchestrator: claude`, the last non-synthetic assistant
 `message.model` (exact spelling, null if absent), and `session_id` in source
 frontmatter. The provider comes from the validated record format; these fields
