@@ -2639,6 +2639,255 @@ keep honest, and a standing exception a reviewer must keep bounded to
 temp roots — if the fixture ever needs a real root, that is a new
 decision, not an extension of this one.
 
+## Scribe v2: opt-in sessions, marker-only tags, ledgers and the SCR as handoff
+
+**Recorded:** 2026-11-01 · [ORB-21083]
+**Code anchors:** none yet; [specs/scribe.md](./specs/scribe.md),
+[specs/sessions.md](./specs/sessions.md#scribe-v2-the-latest-scr-is-the-handoff)
+
+### Context
+
+In use, scribe v1 was noisy. Every session was scribed, most `why` entries
+had no rationale, and the feed listed dozens of untitled sessions.
+Daniel's direction of 2026-11-01, given in the orbit-office on-call
+session ([ORB-20840]), is captured verbatim in Library note
+`src-20261101-scribe-v2-redesign-direction`. His decision to retire
+`sources/note` with no window is in `src-20261101-retire-sources-note-outright`.
+His request that decision entries serve as precedent for a decision model
+([ORB-21089], [ORB-21090]) came the same day. Four tasks built on v1 had
+already shipped: [ORB-21063], [ORB-21065], [ORB-21075] and [ORB-21079].
+
+### Decision
+
+Each point traces to the direction (D1–D13 in
+[specs/scribe.md](./specs/scribe.md#spec-scribe-v2)):
+
+1. **Opt-in** (D1). Sessions default off. `/scribe on|off|update` is the
+   surface. A Stop hook starts a pass every N minutes or N user turns,
+   with no timer. Orchestrators may turn it on in an interactive session
+   (`on_by: agent`) or ask.
+2. **Markers, with a model-free trust rule** (D2). `#preferences`,
+   `#decision` and `#scribe <tag>` count only in the user's own typed
+   turns. Detection is in `office.scribe-pending`, and append refuses any
+   marker it did not detect. Agent markers are recorded `by: agent` and
+   never put a preference into effect.
+3. **Two default tags** (D3), `preferences` and `decisions`. `why`,
+   `pending`, `todo`, `landed` and the agent tags are removed. User action
+   items become `owner:you` Orbit to-dos; agent work stays Orbit tasks
+   cited from Next. `lesson` is not a default, and no sink writes polaris.
+4. **Stores** (D4): an append-only decision ledger per scope and a
+   preference page per scope
+   ([store paths](#scribe-v2-store-paths-a-decisions-source-kind-and-templated-preference-pages)).
+5. **Contradictions** (D5) are checked when a preference is proposed, and
+   weekly by a disabled-by-default auto-task.
+6. **One SCR per session** (D6) with rewritten Summary, Goals, Outcome and
+   Blockers and Next, append-only Tags entries with `T<n>` ids, and
+   `previous:` in its scope. The title comes from the Summary.
+7. **The latest SCR is the handoff** (D7), per project and global, and the
+   brief merges both. Handoff log entries retire after the window.
+8. **Feed** (D8): one card per project plus one global card; history
+   only through `previous:`.
+9. **Tags in Library settings** (D9)
+   ([tag definitions](#scribe-v2-tag-definitions-live-in-library-settings-app-saves-wait-on-orb-20363)).
+10. **Scheduling markers** (D10) file a proposed task with `not_before`.
+    The scribe never dispatches.
+11. **Migration** (D11) maps the v1 commands and queries for 30 days and
+    backfills preferences and decisions as proposals.
+12. **`sources/note` is retired outright** (D12)
+    ([below](#retire-sourcesnote-outright-into-the-decision-ledgers)).
+13. **Ledger entries are precedent** (D13): question, options or
+    `unrecoverable`, chosen, verbatim quote and ref, scope, context,
+    `decided_by`, `decided_at`, `reverses` (with derived `reversed_by`)
+    and source id, as one JSON object per line.
+
+### Alternatives rejected
+
+- **Keep scribing every session and filter the feed.** That keeps paying
+  for passes nobody reads, and the noise was in what got recorded, not
+  only in what was shown.
+- **Let the scribe agent decide which lines matter, as in v1.** Inference
+  produced the untagged `why` noise. Markers make the user's intent
+  explicit and checkable without a model. Inferred capture stays as a
+  per-tag opt-in that only proposes.
+- **Honour markers anywhere in the transcript.** A pasted document or a
+  tool result could then plant `#preferences`. Only typed user turns
+  count, and paste-sized turns never apply directly.
+- **A long-lived timer or daemon for cadence.** It runs when no one is
+  talking and needs supervising. The Stop hook already fires on every
+  turn.
+- **Keep handoff entries beside SCRs.** Two handoffs per session would
+  disagree. The SCR is rewritten anyway, so it is the current state.
+- **Keep per-thread handoffs (ORB-21060) inside a project.** Daniel asked
+  for one card per project. Concurrent sessions stay visible through
+  `other_sessions`, and per-assignment state belongs on the assignment
+  task.
+- **Store `reversed_by` on the reversed entry.** That would edit an
+  append-only ledger. It is derived on read.
+
+### Consequences
+
+- An unscribed session leaves no SCR and no handoff. Its record is its
+  Orbit tasks.
+- Headless sessions, including unattended on-call shifts, cannot be
+  scribed. Their assignment task is their record.
+- An unmarked paste can still pass as typed text. Default propose mode and
+  the paste-size limit bound the harm to a proposal the user must accept.
+- The decision model gets a schema now ([ORB-21090]), at the price of the
+  scribe reading surrounding turns for question and options.
+
+Cost: three shipped features (ORB-21063, ORB-21065, ORB-21075) are
+reworked within weeks of landing. There is a 30-day window carrying both
+the v1 and v2 surfaces, and two more Library stores to index.
+
+## Scribe v2 store paths: a decisions source kind and templated preference pages
+
+**Recorded:** 2026-11-01 · [ORB-21083]
+**Code anchors:** none yet; [specs/scribe.md](./specs/scribe.md#tag-stores),
+[specs/library.md](./specs/library.md#layout)
+
+### Context
+
+The direction named `sources/decisions/<project>.md` and
+`sources/decisions/global.md` for decisions, and
+`knowledge/preferences/<project>.md` and `knowledge/preferences/global.md`
+for preferences, and asked that the paths be confirmed against the
+Library model and template rules. The model puts sources at
+`sources/<kind>/YYYY/MM/<source-id>/source.md`. It puts knowledge pages
+only at `knowledge/domain/<id>.md` and `knowledge/runbooks/<id>.md`, with
+the id prefix deciding the folder. `office.knowledge-write` refuses
+anything else. "Decision log" already names the per-session conversation
+source.
+
+### Decision
+
+- **Decisions keep the direction's paths.** `decisions` is a source kind,
+  since a decision is evidence. Ledgers are single files directly under
+  `sources/decisions/`, a third layout beside the per-source directories
+  and the single-file SCRs. Citations use entry ids (`dec-<scope>-<n>`),
+  so the path never has to move. The store is always called the decision
+  *ledger*, leaving "decision log" to the conversation source.
+- **Preferences move to `knowledge/domain/dom-preferences-<scope>.md`.**
+  They follow a bundled `preferences` template (id pattern, one
+  `## <matter>` section each, an attach policy). The intent of "one page
+  per project plus global" is kept, and the folder name is not.
+
+### Alternatives rejected
+
+- **A `knowledge/preferences/` folder with a third page type.** It
+  needs a new id prefix, `office.knowledge-write` path rules, index,
+  search, attach, shared-library and back-link support. It buys nothing a
+  template does not.
+- **Ledgers in the per-source layout (`sources/decisions/YYYY/MM/<id>/`).**
+  A ledger is long-lived, so either one directory holds years of entries
+  under a misleading month, or a scope's decisions split across many
+  sources and grep has to find them all.
+- **Decisions as SCR lines only, as in v1.** That gives no per-scope
+  store a precedent reader can load, and decisions made outside a scribed
+  session would have nowhere to go.
+
+### Consequences
+
+- Library enumeration, indexing and citation resolution learn a third
+  source layout and the `dec-` prefix.
+- Preference pages share the 1,200-word cap. The weekly routine proposes
+  consolidation before a page reaches it.
+
+Cost: one more source layout to keep in every reader, and preference
+paths that differ from the direction's wording.
+
+## Scribe v2 tag definitions live in Library settings; app saves wait on ORB-20363
+
+**Recorded:** 2026-11-01 · [ORB-21083]
+**Code anchors:** none yet; [specs/scribe.md](./specs/scribe.md#configuration)
+
+### Context
+
+Daniel wants to create, edit and delete tags in the Scribe tab. The
+direction asks for an app-writable settings file, because the app has no
+operator authority, and otherwise asks the design to state the dependency
+on [ORB-20363]. The app calls Orbit as `local-cli` holding Agent. Every
+Library settings write goes through `office.config-set`, which is
+`mcp_scope: none` and refused to that authority. [ORB-20363], which wires
+the app to Orbit's scoped application authority ([ORB-20362]), is blocked.
+
+### Decision
+
+Tag definitions and cadence are a `scribe:` block in the Library's
+`.office/config.yaml`, written only by `office.config-set` and validated
+by `office-core`. App saves therefore depend on [ORB-20363], whose
+operation list must add `office.config-set`, limited to `scribe.*` keys.
+Until it lands, the Tags editor is read-only, reports a save as
+`not_permitted`, and shows the operator command.
+
+### Alternatives rejected
+
+- **An app-owned settings file outside the Library.** Office tools could
+  not read it (their grants are the Library and plugin state). The app
+  would become a second writer of scribe policy with no audit.
+- **The app writing the Library or plugin state directly.** That bypasses
+  the writer lock and the rule that the app never touches `.orbit/` or
+  Library files.
+- **Making tag writes agent-callable, or an agent-callable office tool.**
+  A tag's mode decides whether a preference applies without a proposal,
+  so an agent able to change it could promote its own preferences.
+- **Tags on `dom-scribe-rules` through proposals.** Acceptance is also
+  blocked on [ORB-20363], so it does not escape the dependency, and every
+  tag edit becomes a two-step approval.
+
+### Consequences
+
+- From the CLI, an operator can change tags at once. From the app, tags
+  can be changed only after [ORB-20363].
+- No agent can change scribe policy.
+
+Cost: the Tags editor ships read-only and stays that way until a blocked
+authority task lands.
+
+## Retire `sources/note` outright, into the decision ledgers
+
+**Recorded:** 2026-11-01 · [ORB-21083]
+**Code anchors:** `crates/office-store/src/repository/library.rs` (the
+`SourceKind::Note` capture fallback); `crates/office-core/src/domain/source.rs`
+(`SourceKind`); `crates/office-core/src/domain/settings.rs`;
+`crates/office-testkit/src/fakes/library.rs`
+
+### Context
+
+`office.capture` with plain text and no `kind` falls back to the `note`
+kind. Five note sources exist, all Daniel's directions of 2026-11-01.
+Daniel: "there are no users for this. so we can deprecate outright"
+(`src-20261101-retire-sources-note-outright`). The workspace guide's
+contract rule says to add and never rename, and the plan for v1 retirements
+is a 30-day window.
+
+### Decision
+
+No compatibility window for `note`, per Daniel. Plain-text capture without
+`kind` is refused with `source_kind_required`, naming the paste kinds and
+the `decision` input. It is never appended to a ledger by default. `note`
+leaves the domain, the settings kinds and the app's retention kinds. The
+five notes move into the decision ledgers in one commit, and their old
+`src-…` ids resolve through the ledger's `moved_sources`, so citations
+hold.
+
+### Alternatives rejected
+
+- **Default plain text into the decisions ledger,** which the direction
+  allowed. A pasted Slack thread is not a decision, and a ledger that
+  precedent is read from must not fill with pastes.
+- **A 30-day window like the other v1 surfaces.** No caller uses `note`,
+  so a window would only carry dead code.
+
+### Consequences
+
+- A caller that relied on the fallback now gets a typed refusal naming
+  the fix. This is a deliberate contract removal, which Daniel authorized.
+- The constellation `AGENTS.md` rule that sends decisions to
+  `office.capture` changes in a separate ws_constellation task.
+
+Cost: a breaking change to `office.capture`'s accepted input, and alias
+resolution for five ids kept indefinitely.
+
 ## Task References
 
 - [ORB-20946] — ships the disposable-data QA fixture (`make qa-exec`) for mutating office tools Orbit refuses to agents.
@@ -2670,5 +2919,13 @@ decision, not an extension of this one.
 - [ORB-20849] — made long, tool-heavy sessions scribable by stripping tool payloads at staging.
 - [ORB-20696] — built the web Scribe screen over scribe v1.
 - [ORB-20884] — bound the private-route token to the endpoint origin it was saved for.
+- [ORB-20840] — the orbit-office on-call session where Daniel gave the scribe v2 direction.
+- [ORB-21063] — built global handoffs and `/handoff <project>`; reworked by scribe v2.
+- [ORB-21065] — built structured handoffs; their fields map onto the v2 SCR sections.
+- [ORB-21075] — built the Scribe › Handoffs view; it becomes the v2 one-card feed.
+- [ORB-21079] — gave scribe sessions a first-pass title; v2 derives it from the SCR summary.
+- [ORB-21083] — designed scribe v2: opt-in sessions, marker-only tags, ledgers, SCR as handoff, `note` retired.
+- [ORB-21089] — plans Orbit's decision model, which reads decision precedent.
+- [ORB-21090] — plans the office precedent provider over the v2 decision ledger schema.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
