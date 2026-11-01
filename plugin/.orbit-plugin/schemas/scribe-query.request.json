@@ -50,6 +50,11 @@
       "pattern": "^[A-Za-z0-9_-]{1,128}$",
       "description": "Only entries from this session's SCR file."
     },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Only entries whose SCR file names this project (exact match on its front-matter project)."
+    },
     "limit": {
       "type": "integer",
       "minimum": 1,

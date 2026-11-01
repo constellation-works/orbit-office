@@ -356,8 +356,9 @@ refs). Reading then needs a model only for questions that structure cannot
 answer. Answering has two levels.
 
 1. **Query, model-free.** The Office tool `office.scribe-query` filters SCR
-   lines by tag, `matter`, topic, `by`, date range, refs and session, and
-   resolves the links between lines:
+   lines by tag, `matter`, topic, `by`, date range, refs, session and
+   project (the SCR file's project, exact match), and resolves the links
+   between lines:
    - a `resolved` closes a `pending`;
    - `supersedes` retires a preference;
    - a `#why` note fills a `#no-why`.
