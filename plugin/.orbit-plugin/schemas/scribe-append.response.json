@@ -93,7 +93,17 @@
               "invalid_due",
               "missing_resolves",
               "unresolved_pending",
-              "resolves_not_allowed"
+              "resolves_not_allowed",
+              "why_not_verbatim",
+              "why_not_allowed",
+              "missing_matter",
+              "unknown_matter",
+              "matter_not_allowed",
+              "invalid_review_by",
+              "review_by_not_allowed",
+              "invalid_supersedes",
+              "supersedes_not_allowed",
+              "unresolved_decision"
             ]
           },
           "message": {

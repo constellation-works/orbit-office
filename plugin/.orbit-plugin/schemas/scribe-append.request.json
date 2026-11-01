@@ -62,7 +62,50 @@
               "string",
               "null"
             ],
-            "description": "resolved only: <SCR id>#L<n> of an existing pending line."
+            "description": "<SCR id>#L<n>: resolved names a pending line, why names a decision line, a preference note names a decision line it promotes."
+          },
+          "why": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "decision, agent-decision and preference only: the reason, checked verbatim against its message or note.",
+            "properties": {
+              "msg": {
+                "type": "string",
+                "pattern": "^m-[0-9]{4,}$"
+              },
+              "note": {
+                "description": "true (quote from the entry's own note text) or the reason note text."
+              },
+              "quote": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Exact substring of the cited message or note."
+              }
+            },
+            "additionalProperties": false
+          },
+          "matter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "preference only: a matter slug from the scribe rules."
+          },
+          "review_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "preference only: review date; 90 days after the entry by default."
+          },
+          "supersedes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "preference only: <SCR id>#L<n> of an existing preference line on the same matter."
           },
           "by": {
             "type": [

@@ -172,7 +172,7 @@ fn append_commits_the_scr_file_and_a_title_renames_it_in_one_commit() {
     assert_eq!(body.len(), 2);
     assert_eq!(
         body[0],
-        "- m-0003 2026-11-01T03:02+00:00 #decision #constellation \"ship parse and append first\""
+        "- m-0003 2026-11-01T03:02+00:00 #decision #no-why #constellation \"ship parse and append first\""
     );
     assert!(body[1].starts_with("- note "));
     assert!(body[1].ends_with(" #pending \"CI for the scribe tools\" by: opus"));

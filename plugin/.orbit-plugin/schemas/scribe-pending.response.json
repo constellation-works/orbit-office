@@ -146,7 +146,7 @@
     },
     "rules": {
       "type": "object",
-      "description": "The Tags, Topics and Capture sections of dom-scribe-rules, or the spec defaults (topics: the project name).",
+      "description": "The Tags, Topics, Matters and Capture sections of dom-scribe-rules, or the spec defaults (topics: the project name).",
       "properties": {
         "source": {
           "enum": [
@@ -199,13 +199,20 @@
           "items": {
             "type": "string"
           }
+        },
+        "matters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
         "source",
         "tags",
         "topics",
-        "capture"
+        "capture",
+        "matters"
       ],
       "additionalProperties": false
     }
