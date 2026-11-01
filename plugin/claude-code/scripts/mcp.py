@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
 import sys
 
@@ -29,6 +30,63 @@ SCRIBE = {
 }
 
 
+def _operation(arguments) -> str:
+    """The scribe operation a tools/call asked for, without echoing its text.
+
+    Only the command word is named: `/scribe note <text>` can carry private
+    note text, so the full argument string never reaches an error message.
+    """
+    if not isinstance(arguments, dict):
+        return "scribe tool call"
+    action = arguments.get("action")
+    if isinstance(action, str) and action:
+        return "scribe action '{}'".format(action)
+    raw = arguments.get("args")
+    if isinstance(raw, str):
+        head = raw.strip().split(None, 1)[0].lower() if raw.strip() else ""
+        return "/scribe {}".format(head) if head else "/scribe catch-up"
+    return "scribe tool call"
+
+
+def _error_path(error: BaseException) -> str | None:
+    """The filesystem path an error names, when the OS reported one."""
+    for attribute in ("filename", "filename2"):
+        value = getattr(error, attribute, None)
+        if value:
+            return os.fsdecode(value)
+    for value in getattr(error, "args", ()):
+        if isinstance(value, str) and "/" in value:
+            return value
+    return None
+
+
+def _render_error(error: Exception, arguments) -> str:
+    """One actionable line for an unexpected tool failure.
+
+    `Failure` diagnostics are fixed local tokens and pass through unchanged.
+    Anything else (a `PermissionError` from a stale plugin process running
+    pre-upgrade code, a sandbox denial, an OS fault) must name the operation,
+    the path when the OS reported one and the recovery, never a bare class
+    name. Arbitrary exception text is not echoed: only the class and, for
+    `OSError`, the OS strerror/errno are shown, so upstream or input text
+    cannot leak through this channel.
+    """
+    if isinstance(error, Failure):
+        return str(error)
+    text = "scribe failed during {}: {}".format(_operation(arguments), type(error).__name__)
+    if isinstance(error, OSError):
+        if error.strerror:
+            text += ": {}".format(error.strerror)
+        if error.errno is not None:
+            text += " (errno {})".format(error.errno)
+    path = _error_path(error)
+    text += "; path: {}".format(path) if path else "; path: no path reported by this error"
+    text += ("; recovery: restart the session to reload the plugin, then retry; "
+             "if it still fails, check the ownership and permissions of the path above "
+             "(a long-lived session may be running plugin code from before an upgrade)")
+    return text
+
+
 def dispatch(message: dict) -> dict | None:
     if "id" not in message:
         return None
@@ -42,9 +100,12 @@ def dispatch(message: dict) -> dict | None:
     elif method == "tools/list":
         response["result"] = {"tools": [SCRIBE]}
     elif method == "tools/call":
+        arguments: dict = {}
         try:
             params = message["params"]
             args = params.get("arguments", {})
+            if isinstance(args, dict):
+                arguments = args
             if not isinstance(args, dict):
                 raise Failure("invalid_arguments")
             if params["name"] != "scribe":
@@ -52,7 +113,7 @@ def dispatch(message: dict) -> dict | None:
             result = scribe_v1.dispatch(args)
             response["result"] = {"content": [{"type": "text", "text": json.dumps(result)}], "isError": False}
         except Exception as error:  # keep a failed tool call inside the MCP error channel
-            response["result"] = {"content": [{"type": "text", "text": str(error) if isinstance(error, Failure) else type(error).__name__}], "isError": True}
+            response["result"] = {"content": [{"type": "text", "text": _render_error(error, arguments)}], "isError": True}
     else:
         response["error"] = {"code": -32601, "message": "Method not found"}
     return response

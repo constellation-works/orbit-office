@@ -770,6 +770,52 @@ class ScribeV1(unittest.TestCase):
 
     # ---- the tool surface -----------------------------------------------
 
+    def test_mcp_permission_error_names_operation_path_and_restart_recovery(self):
+        from unittest import mock
+        sys.path.insert(0, str(PLUGIN / "scripts"))
+        import mcp
+        denied = self.workspace / ".orbit/tmp/scribe/session-one.lock"
+        error = PermissionError(13, "Permission denied", str(denied))
+        for raw, operation in (("", "catch-up"), ("pending", "pending")):
+            with self.subTest(args=raw), mock.patch.object(mcp.scribe_v1, "dispatch", side_effect=error):
+                response = mcp.dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                         "params": {"name": "scribe",
+                                                    "arguments": {"session_id": self.sid, "args": raw}}})
+                result = response["result"]
+                self.assertTrue(result["isError"])
+                text = result["content"][0]["text"]
+                self.assertNotEqual(text, "PermissionError")
+                self.assertIn("PermissionError", text)
+                self.assertIn(operation, text)
+                self.assertIn(str(denied), text)
+                self.assertIn("restart the session to reload the plugin", text)
+        # An error with no path still names the operation and the recovery,
+        # and says no path was reported instead of a bare class name.
+        with mock.patch.object(mcp.scribe_v1, "dispatch", side_effect=ValueError("bad")):
+            response = mcp.dispatch({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                     "params": {"name": "scribe",
+                                                "arguments": {"session_id": self.sid, "action": "pending"}}})
+            text = response["result"]["content"][0]["text"]
+            self.assertNotEqual(text, "ValueError")
+            self.assertIn("pending", text)
+            self.assertIn("no path reported", text)
+            self.assertIn("restart the session to reload the plugin", text)
+
+    def test_scribe_catchup_permission_error_through_bridge_names_the_lock_path(self):
+        self.transcript([("user", "hello scribe")])
+        state = self.workspace / ".orbit/tmp/scribe"
+        state.mkdir(parents=True, mode=0o700)
+        (self.workspace / ".orbit").chmod(0o755)
+        (self.workspace / ".orbit/tmp").chmod(0o755)
+        state.chmod(0o500)
+        self.addCleanup(state.chmod, 0o700)
+        text = self.tool({"session_id": self.sid, "args": ""}, error=True)
+        self.assertNotEqual(text, "PermissionError")
+        self.assertIn("PermissionError", text)
+        self.assertIn("catch-up", text)
+        self.assertIn(str(state / (self.sid + ".lock")), text)
+        self.assertIn("restart the session to reload the plugin", text)
+
     def test_one_structured_scribe_tool_refuses_mixed_or_unknown_fields(self):
         listed = self.mcp({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})[0]["result"]["tools"]
         self.assertEqual([t["name"] for t in listed], ["scribe"])

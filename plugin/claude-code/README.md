@@ -40,7 +40,9 @@ Change options later through Claude's plugin configuration UI.
 | `default_on` | `false` | Legacy: with `auto_capture` on, whether live Stop passes start on. |
 | `scribe_url` | empty | The web Scribe screen, linked from the desktop pane. |
 
-Restart Claude after installation and check `/agents` (the `scribe` agent),
+Restart Claude after installation — and after upgrading the plugin
+checkout under a running session, which keeps the plugin code it loaded at
+start — and check `/agents` (the `scribe` agent),
 `/mcp` (the `office` server and its `scribe` tool) and `/hooks`. The command's
 stable provider-qualified form is `/office-scribe:scribe`; `/scribe` below
 means that command under Claude's standard namespacing. Permission prompts
