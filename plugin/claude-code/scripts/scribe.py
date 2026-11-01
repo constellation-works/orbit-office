@@ -22,6 +22,7 @@ MAX_TRANSCRIPT = 8 * 1024 * 1024
 SESSION = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 TERMINAL = {"done", "rejected", "archived", "cancelled", "canceled"}
 TOOLS = {"office.session-brief", "office.capture", "office.recall", "office.scribe-control",
+         "office.scribe-pending", "office.scribe-append", "office.scribe-query",
          "orbit.task.add", "orbit.task.show"}
 
 
@@ -133,6 +134,9 @@ class Scribe:
             raise Failure("excluded_projects_must_be_absolute_paths")
         self.excluded = [Path(p).expanduser().resolve() for p in excluded]
         self.default_on = os.environ.get("CLAUDE_PLUGIN_OPTION_DEFAULT_ON", "false").lower() == "true"
+        # Scribe v1: `/scribe` is the only trigger. The automatic Stop and
+        # SessionEnd passes run only when the user turns this option on.
+        self.auto_capture = os.environ.get("CLAUDE_PLUGIN_OPTION_AUTO_CAPTURE", "false").lower() == "true"
         self.timeout = max(0.05, min(2.0, float(os.environ.get("CLAUDE_PLUGIN_OPTION_TIMEOUT", "1"))))
         self.started = time.monotonic()
         # Do not create local state for recall-only calls.
@@ -153,14 +157,15 @@ class Scribe:
         private_dir(self.state)
         private_dir(self.staging)
 
-    def call(self, tool: str, payload: dict) -> dict:
+    def call(self, tool: str, payload: dict, cap: float = 2.0) -> dict:
+        """One Orbit tool call within the shared budget; `cap` bounds this call alone."""
         if tool not in TOOLS:
             raise Failure("tool_not_allowed")
         remaining = self.timeout - (time.monotonic() - self.started)
         if remaining <= 0:
             raise NotSent("hook_deadline; request_not_sent")
         return run(["orbit", "tool", "run", tool, "--json", "--full", "--workspace", str(self.workspace),
-                    "--input", json.dumps(payload)], str(self.workspace), min(2.0, remaining))
+                    "--input", json.dumps(payload)], str(self.workspace), min(cap, remaining))
 
     def excluded_project(self, project: str) -> bool:
         if not isinstance(project, str) or not Path(project).is_absolute():
@@ -347,6 +352,9 @@ class Scribe:
 
     def hook(self, event: str, context: dict) -> dict:
         sid = self.session_id(context.get("session_id"))
+        if event in ("Stop", "SessionEnd") and not self.auto_capture:
+            # Off by default (specs/scribe.md): no Office call, no staging, no state.
+            return {"auto_capture": False}
         if self.excluded_project(context.get("cwd")):
             return {"excluded": True}
         with self.locked(sid):

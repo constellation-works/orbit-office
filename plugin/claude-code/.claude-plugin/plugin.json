@@ -1,7 +1,7 @@
 {
   "name": "office-scribe",
   "version": "0.1.0",
-  "description": "Local conversation scribe and cited recall through Orbit Office.",
+  "description": "Scribe v1: commanded, tagged, grep-able notes of each session and cited answers through Orbit Office.",
   "author": {
     "name": "Constellation Works"
   },
@@ -14,17 +14,23 @@
       "required": true,
       "description": "Absolute local registered Orbit checkout on this Mac. An absolute path is an Orbit workspace selector; remote selectors are refused."
     },
+    "auto_capture": {
+      "type": "boolean",
+      "title": "Automatic Stop/SessionEnd capture (legacy)",
+      "default": false,
+      "description": "Off by default: /scribe is the only trigger. On, the legacy Stop and SessionEnd hooks stage transcripts and queue extraction tasks."
+    },
     "default_on": {
       "type": "boolean",
-      "title": "Live scribe on for new sessions",
+      "title": "Live scribe on for new sessions (legacy)",
       "default": false,
-      "description": "SessionEnd still captures when live passes are off. Excluded projects are always skipped."
+      "description": "With automatic capture on: whether live Stop passes start on. SessionEnd still captures when live passes are off. Excluded projects are always skipped."
     },
     "excluded_projects": {
       "type": "string",
       "title": "Excluded project paths",
       "default": "[]",
-      "description": "JSON array of absolute paths. These paths and their physical descendants are never staged or captured, including by backfill."
+      "description": "JSON array of absolute paths. These paths and their physical descendants are never staged, scribed or captured, including by backfill."
     },
     "scribe_url": {
       "type": "string",

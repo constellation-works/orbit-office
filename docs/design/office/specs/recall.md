@@ -13,7 +13,11 @@ Status: the Orbit backend is built (ORB-20688): session context and title
 ownership, deterministic stored refs, read-only `office.recall`, and append-only
 corrections with repeated-correction signals (ORB-20695). The Claude Code
 provider plugin, commands/subagent and backfill are built (ORB-20689); see the
-[installation guide](../../../../plugin/claude-code/README.md). The desktop
+[installation guide](../../../../plugin/claude-code/README.md). Scribe v1
+(ORB-20799) replaced `/recall` and the `recall` subagent with `/scribe ask`
+and the `scribe` agent, and turned the automatic Stop/SessionEnd passes off
+by default (plugin option `auto_capture`); the pane's ask box now answers in
+the pane. The desktop
 Scribe pane is built (ORB-20697); the web Scribe screen remains specified.
 PR refs resolve live through a `gh` source (ORB-20710, below). Recall feed
 mode, `office.recall-answer` and the Office-owned scribe control state
