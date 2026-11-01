@@ -6,6 +6,9 @@ last_validated: 2026-11-01
 
 # Spec: Recall
 
+> Scribe v1 ([scribe.md](./scribe.md)) answers questions by grep over
+> per-session SCR files; the surfaces below are unused by v1.
+
 Status: the Orbit backend is built (ORB-20688): session context and title
 ownership, deterministic stored refs, read-only `office.recall`, and append-only
 corrections with repeated-correction signals (ORB-20695). The Claude Code
