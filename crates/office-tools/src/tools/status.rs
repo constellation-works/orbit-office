@@ -2,10 +2,12 @@
 //! (never a secret value; STD-05), Library and index health, the
 //! configured private endpoint (`open_weights`, or null), the shared library
 //! (`shared`, or null), and the followed workspaces (`brief`, or null).
-//! The token is only `set` or `unset` under `secrets`.
+//! The token is only `set` or `unset` under `secrets`, and
+//! `open_weights_token_binding` says whether it was saved for the configured
+//! endpoint's origin (never the token or that origin).
 //! Reading creates no Library state.
 
-use office_core::domain::endpoint::Capability;
+use office_core::domain::endpoint::{Capability, TokenBinding};
 use office_core::domain::settings::{BriefSettings, OpenWeights};
 use office_core::domain::sharing::SharedSettings;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
@@ -68,21 +70,39 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
     // An uninitialized Library has no settings file. A configured one is
     // read afresh; a refusal (invalid config, pending write) stays an error
     // rather than looking like "no endpoint".
-    let (open_weights, shared, brief) = if health.initialized {
-        match call.ports.library.settings() {
-            Ok(settings) => (
-                project_open_weights(settings.open_weights.as_ref()),
-                project_shared(settings.shared.as_ref()),
-                project_brief(&settings.brief),
-            ),
-            Err(error) => return Err(error),
-        }
+    let settings = if health.initialized {
+        Some(call.ports.library.settings()?)
     } else {
-        (Value::Null, Value::Null, Value::Null)
+        None
+    };
+    let endpoint = settings
+        .as_ref()
+        .and_then(|settings| settings.open_weights.as_ref())
+        .map(|block| block.endpoint.as_str());
+    // Routing reads only `open_weights_token`, so a context still carrying
+    // only the retired alias has no token any call would send.
+    let stored = call
+        .context
+        .get("secrets")
+        .and_then(|secrets| secrets.get("open_weights_token"))
+        .and_then(Value::as_str);
+    let binding = if open_weights_present && stored.is_none() {
+        TokenBinding::Unbound
+    } else {
+        TokenBinding::of(stored, endpoint)
+    };
+    let (open_weights, shared, brief) = match &settings {
+        Some(settings) => (
+            project_open_weights(settings.open_weights.as_ref()),
+            project_shared(settings.shared.as_ref()),
+            project_brief(&settings.brief),
+        ),
+        None => (Value::Null, Value::Null, Value::Null),
     };
     Ok(json!({
         "version": VERSION,
         "secrets": secrets,
+        "open_weights_token_binding": binding.as_str(),
         "library": {
             "initialized": health.initialized,
             "documents": health.documents_total,

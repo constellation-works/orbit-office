@@ -59,8 +59,13 @@ orbit plugin test "$out" --grant fs,network
 orbit plugin add /tmp/office-plugin-<sha>
 orbit plugin enable office --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools --grant agent_tools
 orbit plugin secret set office meta_api_key
-orbit plugin secret set office open_weights_token   # optional: the private endpoint's token
+orbit plugin secret set office open_weights_token   # optional: the private endpoint's token record
 ```
+
+The private endpoint's token is bound to the endpoint origin it was saved for
+and is sent nowhere else. Settings › Private route stores it that way; by hand,
+enter the record `{"origin":"https://<host>[:<port>]","token":"<token>"}` at the
+prompt. A bare token is never sent.
 
 Enabling is the operator's consent to the plugin's filesystem and network
 access; agents do not run `orbit plugin add`/`enable`.

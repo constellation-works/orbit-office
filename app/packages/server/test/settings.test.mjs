@@ -651,7 +651,7 @@ test("private route sends the token only on stdin, then checks once", { timeout:
   const token = "private-route-token-$()\nline-two";
   const before = await server.call("/api/settings/private-route");
   assert.equal(before.status, 200);
-  assert.deepEqual(JSON.parse(before.body), { route: null, token: "unset" });
+  assert.deepEqual(JSON.parse(before.body), { route: null, token: "unset", token_binding: "unset" });
   assert.ok(!before.body.includes(".office"));
   const saved = await server.call("/api/settings/private-route", { ...privateRoute, token });
   assert.equal(saved.status, 200);
@@ -665,7 +665,8 @@ test("private route sends the token only on stdin, then checks once", { timeout:
   assert.ok(!saved.body.includes(".office"));
   assert.ok(!saved.body.includes(token));
   const stdin = (await readFile(join(server.fake.state, "secret-stdin.log"), "utf8")).trim().split("\n").map(JSON.parse);
-  assert.deepEqual(stdin, [{ slot: "open_weights_token", value: token }]);
+  // One record: the token bound to the endpoint's origin, never the path.
+  assert.deepEqual(stdin, [{ slot: "open_weights_token", value: JSON.stringify({ origin: "https://muse.internal.example", token }) }]);
   const invocations = await invocationsOf(server.fake.state);
   assert.deepEqual(invocations.filter((args) => args[0] === "plugin"), [["plugin", "secret", "set", "office", "open_weights_token"]]);
   const names = invocations.map((args) => args[0] === "plugin" ? `secret:${args[4]}` : args[2]);
@@ -680,6 +681,7 @@ test("private route sends the token only on stdin, then checks once", { timeout:
   const after = await server.call("/api/settings/private-route");
   assert.equal(after.status, 200);
   assert.equal(JSON.parse(after.body).token, "set");
+  assert.equal(JSON.parse(after.body).token_binding, "this_endpoint");
   assert.equal(JSON.parse(after.body).route.endpoint, privateRoute.endpoint);
   assert.equal(JSON.parse(after.body).route.capabilities.includes("text"), true);
   assert.ok(!after.body.includes(token));
@@ -694,6 +696,116 @@ test("private route without a token writes the block and checks exactly once", {
   const invocations = await invocationsOf(server.fake.state);
   assert.deepEqual(invocations.map((args) => args[0] === "plugin" ? args : args[2]), ["office.config-set", "office.private-route-check"]);
   await assert.rejects(readFile(join(server.fake.state, "secret-stdin.log")), { code: "ENOENT" });
+});
+
+const providerRoute = {
+  endpoint: "https://new-provider.example/v1",
+  model: "muse-spark-open",
+  kind: "provider",
+  label: "New provider",
+};
+
+function secretLog(state) {
+  return readFile(join(state, "secret-stdin.log"), "utf8").then((text) => text.trim().split("\n").filter(Boolean).map(JSON.parse));
+}
+
+function callNames(invocations) {
+  return invocations.map((args) => args[0] === "plugin" ? `secret:${args[2]}` : args[2]);
+}
+
+test("changing the endpoint origin without a token writes no secret and leaves the old token bound to its origin", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  const token = "company-a-token-do-not-forward";
+  assert.equal((await server.call("/api/settings/private-route", { ...privateRoute, token })).status, 200);
+  const before = (await invocationsOf(server.fake.state)).length;
+
+  const moved = await server.call("/api/settings/private-route", providerRoute);
+  assert.equal(moved.status, 200);
+  const invocations = (await invocationsOf(server.fake.state)).slice(before);
+  // No secret call at all: the old record still names the old origin, so
+  // the office binary sends the new endpoint nothing, check included.
+  assert.deepEqual(callNames(invocations), ["office.config-set", "office.private-route-check"]);
+  assert.deepEqual((await secretLog(server.fake.state)).map((line) => JSON.parse(line.value).origin), ["https://muse.internal.example"]);
+  const status = JSON.parse((await server.call("/api/settings/private-route")).body);
+  assert.equal(status.token, "set");
+  assert.equal(status.token_binding, "other_endpoint");
+  for (const response of server.responses) assert.ok(!JSON.stringify(response).includes(token));
+  for (const line of server.logs) assert.ok(!line.includes(token));
+
+  // Back on the original origin (another path), a blank token reuses it.
+  const back = await server.call("/api/settings/private-route", { ...privateRoute, endpoint: "https://muse.internal.example/v2" });
+  assert.equal(back.status, 200);
+  assert.equal(JSON.parse((await server.call("/api/settings/private-route")).body).token_binding, "this_endpoint");
+  assert.equal((await secretLog(server.fake.state)).length, 1);
+});
+
+test("a token typed for a new origin is bound to that origin in one secret write", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  assert.equal((await server.call("/api/settings/private-route", { ...privateRoute, token: "company-a-token" })).status, 200);
+  const saved = await server.call("/api/settings/private-route", { ...providerRoute, token: "provider-b-token" });
+  assert.equal(saved.status, 200);
+  const records = (await secretLog(server.fake.state)).map((line) => JSON.parse(line.value));
+  assert.deepEqual(records, [
+    { origin: "https://muse.internal.example", token: "company-a-token" },
+    { origin: "https://new-provider.example", token: "provider-b-token" },
+  ]);
+  assert.equal(JSON.parse((await server.call("/api/settings/private-route")).body).token_binding, "this_endpoint");
+  const argvText = await readFile(join(server.fake.state, "invocations.log"), "utf8");
+  assert.ok(!argvText.includes("company-a-token") && !argvText.includes("provider-b-token"));
+});
+
+test("clear_token removes the saved token for an endpoint that takes none", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  for (const body of [
+    { ...privateRoute, clear_token: false },
+    { ...privateRoute, clear_token: "yes" },
+    { ...privateRoute, clear_token: true, token: "both" },
+  ]) assert.equal((await server.call("/api/settings/private-route", body)).status, 400);
+  await assert.rejects(readFile(join(server.fake.state, "invocations.log")), { code: "ENOENT" });
+
+  assert.equal((await server.call("/api/settings/private-route", { ...privateRoute, token: "company-a-token" })).status, 200);
+  const before = (await invocationsOf(server.fake.state)).length;
+  const cleared = await server.call("/api/settings/private-route", { ...privateRoute, clear_token: true });
+  assert.equal(cleared.status, 200);
+  const invocations = (await invocationsOf(server.fake.state)).slice(before);
+  assert.deepEqual(callNames(invocations), ["office.config-set", "secret:rm", "office.private-route-check"]);
+  assert.deepEqual(invocations[1], ["plugin", "secret", "rm", "office", "open_weights_token"]);
+  const status = JSON.parse((await server.call("/api/settings/private-route")).body);
+  assert.deepEqual([status.token, status.token_binding], ["unset", "unset"]);
+});
+
+test("a failed token write after an origin change leaves the old origin's binding, so the new endpoint gets none", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t, { FAKE_SECRET_FAIL: "1" });
+  await writeFile(join(server.fake.state, "office.json"), JSON.stringify({
+    token: "set",
+    tokenOrigin: "https://muse.internal.example",
+    blocks: { open_weights: privateRoute },
+  }));
+  const saved = await server.call("/api/settings/private-route", { ...providerRoute, token: "provider-b-token" });
+  assert.equal(saved.status, 502);
+  assert.deepEqual(JSON.parse(saved.body), { error: "secret_not_saved", route_saved: true });
+  assert.deepEqual(callNames(await invocationsOf(server.fake.state)), ["office.config-set", "secret:set"]);
+  const status = JSON.parse((await server.call("/api/settings/private-route")).body);
+  assert.equal(status.route.endpoint, providerRoute.endpoint);
+  assert.equal(status.token_binding, "other_endpoint");
+  assert.ok(!JSON.stringify(server.responses).includes("provider-b-token"));
+});
+
+test("private route status without a known token binding is refused", { timeout: 15000 }, async (t) => {
+  const server = await gatewayServer(t);
+  for (const binding of [undefined, "everywhere"]) {
+    await writeFile(join(server.fake.state, "office.json"), JSON.stringify({
+      tools: { "office.status": { ok: true, output: {
+        version: "0.1.0",
+        secrets: { meta_api_key: "unset", open_weights_token: "set" },
+        ...(binding === undefined ? {} : { open_weights_token_binding: binding }),
+        open_weights: null,
+      } } },
+    }));
+    const response = await server.call("/api/settings/private-route");
+    assert.equal(response.status, 502);
+    assert.equal(JSON.parse(response.body).error, "private_route_unavailable");
+  }
 });
 
 test("a private-route token failure does not check and does not leak the token", { timeout: 15000 }, async (t) => {
@@ -741,7 +853,7 @@ test("a private-route check that echoes the token is refused", { timeout: 15000 
   const argvText = await readFile(join(server.fake.state, "invocations.log"), "utf8");
   assert.ok(!argvText.includes(token));
   const stdin = JSON.parse((await readFile(join(server.fake.state, "secret-stdin.log"), "utf8")).trim());
-  assert.equal(stdin.value, token);
+  assert.equal(JSON.parse(stdin.value).token, token);
 });
 
 test("private route status drops an unexpected field instead of returning it", { timeout: 15000 }, async (t) => {

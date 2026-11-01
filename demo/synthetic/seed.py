@@ -10,6 +10,7 @@ from contextlib import ExitStack
 from datetime import date, timedelta
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import sys
@@ -225,7 +226,10 @@ def seed(root, binary, video=None, provider_config=None):
                     raise ValueError('live KT evidence needs an explicit HTTPS hosted provider')
                 token_path = config.pop('token_file', None)
                 if token_path:
-                    demo.context['secrets']['open_weights_token'] = Path(token_path).read_text().strip()
+                    # The token is bound to the endpoint's origin, as Settings stores it.
+                    origin = re.match(r'https?://[^/?#]+', config['endpoint']).group(0)
+                    demo.context['secrets']['open_weights_token'] = json.dumps(
+                        {'origin': origin, 'token': Path(token_path).read_text().strip()})
                 demo.call('office.config-set', {'key': 'open_weights', 'value': config})
                 demo.call('office.private-route-check')
             target = inputs / 'lantern-kt.mp4'

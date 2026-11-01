@@ -52,6 +52,7 @@ export type {
   PrivateRouteSaved,
   PrivateRouteStatus,
   PrivateRouteWrite,
+  PrivateTokenBinding,
   RouteCapability,
   ReviewItem,
   ReviewList,

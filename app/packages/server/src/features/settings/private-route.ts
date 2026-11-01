@@ -2,16 +2,20 @@
  * Private route: read the configured endpoint from `office.status` and save
  * it with `office.config-set`, then exactly one `office.private-route-check`.
  * A token, when the user typed one, goes only to
- * `orbit plugin secret set office open_weights_token` on stdin.
+ * `orbit plugin secret set office open_weights_token` on stdin, bound to the
+ * new endpoint's origin. A saved token is sent only to the origin it was
+ * saved for; the office binary enforces that on every call, so leaving the
+ * token empty reuses it only while the origin is unchanged.
  */
-import type { EndpointKind, PrivateRouteCheck, PrivateRouteCheckLine, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, RouteCapability } from "@orbit-office/contracts";
+import type { EndpointKind, PrivateRouteCheck, PrivateRouteCheckLine, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, PrivateTokenBinding, RouteCapability } from "@orbit-office/contracts";
 
 import type { OrbitToolClient } from "../../orbit/client.js";
 import { object, SettingsError } from "./gateway.js";
-import { SecretError, writeOpenWeightsToken, type SecretOptions } from "./secret.js";
+import { removeOpenWeightsToken, SecretError, writeOpenWeightsToken, type SecretOptions } from "./secret.js";
 
 const KINDS: readonly EndpointKind[] = ["company", "provider", "own_hardware"];
 const CAPABILITIES: readonly RouteCapability[] = ["text", "image", "audio"];
+const BINDINGS: readonly PrivateTokenBinding[] = ["unset", "this_endpoint", "other_endpoint", "unbound"];
 const BLOCK_KEYS = ["endpoint", "model", "kind", "label", "capabilities", "verified_at"];
 
 export async function readPrivateRoute(client: OrbitToolClient): Promise<PrivateRouteStatus> {
@@ -21,7 +25,7 @@ export async function readPrivateRoute(client: OrbitToolClient): Promise<Private
 
 /** Validate before any tool call. The stored label and token are not trimmed. */
 export function privateRouteInput(value: unknown): PrivateRouteWrite {
-  const keys = ["endpoint", "model", "kind", "label", "token"];
+  const keys = ["endpoint", "model", "kind", "label", "token", "clear_token"];
   if (!object(value) || Object.keys(value).some((key) => !keys.includes(key))) failInput();
   const endpoint = value.endpoint;
   const model = value.model;
@@ -35,15 +39,35 @@ export function privateRouteInput(value: unknown): PrivateRouteWrite {
   if (value.token !== undefined) {
     const token = value.token;
     if (typeof token !== "string" || token.length === 0 || token.length > 4096 || token.trim().length === 0) failInput();
+    if (value.clear_token !== undefined || endpointOrigin(endpoint) === undefined) failInput();
     input.token = token;
   }
+  if (value.clear_token !== undefined) {
+    if (value.clear_token !== true) failInput();
+    input.clear_token = true;
+  }
   return input;
+}
+
+/**
+ * The scheme and authority of an endpoint URL: the origin a token is bound
+ * to. The office binary compares origins by scheme, host and port.
+ */
+export function endpointOrigin(endpoint: string): string | undefined {
+  return /^(https?:\/\/[^/?#]+)/u.exec(endpoint)?.[1];
 }
 
 /**
  * `config-set` first. The secret write and the single check run only after
  * that call reports the block was written. Any later failure says the route
  * was saved and never includes the token or a tool diagnostic.
+ *
+ * No ordering is trusted to keep a token off another origin: the token and
+ * its origin are one secret record, and every call pairs it only with an
+ * endpoint on that origin. If the token write fails after the endpoint
+ * moved, the old record still names the old origin, so the new endpoint is
+ * sent nothing. `clear_token` removes the record for an endpoint that takes
+ * no token.
  */
 export async function savePrivateRoute(
   client: OrbitToolClient,
@@ -58,7 +82,13 @@ export async function savePrivateRoute(
     throw new SettingsError(502, "private_route_unavailable");
   }
   try {
-    if (input.token !== undefined) await writeOpenWeightsToken(input.token, secretOptions);
+    if (input.token !== undefined) {
+      const origin = endpointOrigin(input.endpoint);
+      if (origin === undefined) throw new SettingsError(502, "private_route_unavailable");
+      await writeOpenWeightsToken(origin, input.token, secretOptions);
+    } else if (input.clear_token === true) {
+      await removeOpenWeightsToken(secretOptions);
+    }
     const checked = officeOutput(await client.callTool("office.private-route-check", {}), "private_route_check_failed");
     return {
       route: { endpoint: input.endpoint, model: input.model, kind: input.kind, label: input.label },
@@ -109,7 +139,11 @@ function projectStatus(output: Record<string, unknown>): PrivateRouteStatus {
   if (!object(output.secrets)) throw new SettingsError(502, "private_route_unavailable");
   const token = output.secrets.open_weights_token;
   if (token !== "set" && token !== "unset") throw new SettingsError(502, "private_route_unavailable");
-  return { route: projectBlock(output.open_weights), token };
+  const binding = output.open_weights_token_binding;
+  if (typeof binding !== "string" || !(BINDINGS as readonly string[]).includes(binding)) {
+    throw new SettingsError(502, "private_route_unavailable");
+  }
+  return { route: projectBlock(output.open_weights), token, token_binding: binding as PrivateTokenBinding };
 }
 
 function projectBlock(value: unknown): PrivateRouteStatus["route"] {

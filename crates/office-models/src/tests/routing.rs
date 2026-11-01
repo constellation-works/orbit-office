@@ -7,7 +7,8 @@ use office_core::ports::{ExtractRequest, ImageRequest, Models, TranscribeRequest
 use serde_json::json;
 
 use super::{
-    FakeServer, PRIVATE_MODEL, chat_reply, client, hosted_config, open_weights, open_weights_with,
+    FIXTURE_TOKEN, FakeServer, PRIVATE_MODEL, bound_token, chat_reply, client, client_as_stored,
+    hosted_config, open_weights, open_weights_with,
 };
 
 fn extract(sensitivity: Sensitivity) -> ExtractRequest {
@@ -326,4 +327,75 @@ fn careful_private_calls_refuse_missing_or_unverified_routes_without_hosted_fall
         assert!(meta.requests().is_empty());
         assert!(private.requests().is_empty());
     }
+}
+
+/// Every `Authorization` value `server` received.
+fn authorizations(server: &FakeServer) -> Vec<Option<String>> {
+    server
+        .requests()
+        .into_iter()
+        .map(|request| request.authorization)
+        .collect()
+}
+
+#[test]
+fn a_token_saved_for_one_origin_is_never_sent_to_another() {
+    let company_a = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
+    let provider_b = FakeServer::start_replies(vec![
+        (200, chat_reply("{}")),
+        (200, chat_reply("{}")),
+        (200, chat_reply("{}")),
+        (200, chat_reply(r#"{"ok":true}"#)),
+    ]);
+    let mut config = hosted_config("http://127.0.0.1:1/v1");
+    // The endpoint moved to B; the stored token is still A's.
+    config.open_weights_token = Some(bound_token(&company_a.base_url, "company-a-secret"));
+    config.open_weights = Some(open_weights(&provider_b.base_url));
+    let models = client_as_stored(config);
+
+    // The capability check sends to B before anything is known about it.
+    let check = models.check_private_route().expect("check");
+    assert_eq!(check.endpoint, provider_b.base_url);
+    models
+        .extract(&extract(Sensitivity::Private))
+        .expect("an unauthenticated private extract");
+
+    let requests = provider_b.requests();
+    assert_eq!(requests.len(), 4);
+    for request in &requests {
+        assert_eq!(request.authorization, None);
+        assert!(!request.body.contains("company-a-secret"));
+    }
+    assert!(company_a.requests().is_empty());
+}
+
+#[test]
+fn a_token_saved_for_the_same_origin_is_reused_on_another_path() {
+    let company = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
+    let mut config = hosted_config("http://127.0.0.1:1/v1");
+    config.open_weights_token = Some(bound_token(&company.base_url, "company-secret"));
+    // Same scheme, host and port: the trusted origin is unchanged.
+    config.open_weights = Some(open_weights(&format!("{}/", company.base_url)));
+    client_as_stored(config)
+        .extract(&extract(Sensitivity::Private))
+        .expect("extract");
+
+    assert_eq!(
+        authorizations(&company),
+        vec![Some("Bearer company-secret".to_string())]
+    );
+}
+
+#[test]
+fn a_token_stored_without_an_origin_is_never_sent() {
+    let company = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
+    let mut config = hosted_config("http://127.0.0.1:1/v1");
+    config.open_weights = Some(open_weights(&company.base_url));
+    // A bare token, as `orbit plugin secret set` stores one typed raw.
+    assert_eq!(config.open_weights_token.as_deref(), Some(FIXTURE_TOKEN));
+    client_as_stored(config)
+        .extract(&extract(Sensitivity::Private))
+        .expect("an unauthenticated private extract");
+
+    assert_eq!(authorizations(&company), vec![None]);
 }

@@ -125,6 +125,14 @@ fn fake_endpoint(statuses: &[u16], count: usize) -> (String, Received) {
     (base, received)
 }
 
+/// The `open_weights_token` record Settings stores: `token` bound to the
+/// origin (scheme and authority) of `endpoint`.
+fn bound_token(endpoint: &str, token: &str) -> String {
+    let (scheme, rest) = endpoint.split_once("://").expect("an http(s) URL");
+    let authority = rest.split('/').next().unwrap_or_default();
+    json!({"origin": format!("{scheme}://{authority}"), "token": token}).to_string()
+}
+
 fn read_request(stream: &mut std::net::TcpStream) -> (Option<String>, String) {
     let mut raw = Vec::new();
     let mut buf = [0_u8; 8192];
@@ -170,7 +178,7 @@ fn the_check_records_exactly_what_the_endpoint_accepts_and_commits_it() {
     let response = env.tool(
         "office.private-route-check",
         json!({}),
-        json!({"open_weights_token": "fixture-token"}),
+        json!({"open_weights_token": bound_token(&endpoint, "fixture-token")}),
     );
 
     assert_eq!(response["ok"], true, "{response}");
@@ -325,4 +333,75 @@ fn status_reports_the_open_weights_token_by_presence_only() {
         json!({"meta_api_key": "unset", "open_weights_token": "set", "baseten_token": "set"})
     );
     assert!(!response.to_string().contains("fixture-token"));
+}
+
+#[test]
+fn a_token_saved_for_one_endpoint_never_reaches_the_next_one() {
+    let env = Env::new();
+    let (company_a, received_a) = fake_endpoint(&[200], 3);
+    let (provider_b, received_b) = fake_endpoint(&[200], 3);
+    // Settings saved company A with its token: the record is bound to A.
+    let secrets = json!({"open_weights_token": bound_token(&company_a, "company-a-secret")});
+    env.configured(&company_a);
+    let status = env.tool("office.status", json!({}), secrets.clone());
+    assert_eq!(
+        status["output"]["open_weights_token_binding"],
+        "this_endpoint"
+    );
+    let first = env.tool("office.private-route-check", json!({}), secrets.clone());
+    assert_eq!(first["ok"], true, "{first}");
+
+    // A direct config change moves the route to provider B, with no new
+    // token: the capability check reaches B unauthenticated.
+    let moved = env.tool(
+        "office.config-set",
+        json!({"key": "open_weights.endpoint", "value": provider_b}),
+        json!({}),
+    );
+    assert_eq!(moved["ok"], true, "{moved}");
+    let status = env.tool("office.status", json!({}), secrets.clone());
+    assert_eq!(
+        status["output"]["open_weights_token_binding"],
+        "other_endpoint"
+    );
+    let second = env.tool("office.private-route-check", json!({}), secrets.clone());
+    assert_eq!(second["ok"], true, "{second}");
+    assert_eq!(second["output"]["routable"], json!(true));
+
+    let received_b = received_b.lock().unwrap().clone();
+    assert_eq!(received_b.len(), 3);
+    for (authorization, body) in &received_b {
+        assert_eq!(authorization, &None, "A's token reached B");
+        assert!(!body.contains("company-a-secret"));
+    }
+    let received_a = received_a.lock().unwrap().clone();
+    assert_eq!(received_a.len(), 3);
+    for (authorization, _) in &received_a {
+        assert_eq!(authorization.as_deref(), Some("Bearer company-a-secret"));
+    }
+    for response in [&status, &first, &second] {
+        assert!(!response.to_string().contains("company-a-secret"));
+    }
+    assert!(!env.config().contains("company-a-secret"));
+}
+
+#[test]
+fn a_bare_token_without_an_origin_is_never_sent() {
+    let env = Env::new();
+    let (endpoint, received) = fake_endpoint(&[200], 3);
+    env.configured(&endpoint);
+    let secrets = json!({"open_weights_token": "fixture-token"});
+
+    let status = env.tool("office.status", json!({}), secrets.clone());
+    assert_eq!(status["output"]["open_weights_token_binding"], "unbound");
+    let response = env.tool("office.private-route-check", json!({}), secrets);
+    assert_eq!(response["ok"], true, "{response}");
+
+    let received = received.lock().unwrap().clone();
+    assert_eq!(received.len(), 3);
+    assert!(
+        received
+            .iter()
+            .all(|(authorization, _)| authorization.is_none())
+    );
 }

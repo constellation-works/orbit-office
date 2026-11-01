@@ -1,3 +1,4 @@
+mod endpoint;
 mod knowledge;
 mod proposal;
 mod protocol;

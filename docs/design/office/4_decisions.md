@@ -2407,6 +2407,48 @@ and the session cursor that `office.scribe-append` needs as `through`.
   refuses a screen note with `scribe_not_parsed`; the note waits for a local
   `/scribe`.
 
+## Private-route token bound to its endpoint origin
+
+**Recorded:** 2026-11-01 · [ORB-20884]
+**Code anchors:** `crates/office-core/src/domain/endpoint.rs` (`BoundToken`,
+`TokenBinding`), `crates/office-models/src/routing.rs` (`private_endpoint`),
+`crates/office-tools/src/tools/status.rs` (`open_weights_token_binding`),
+`app/packages/server/src/features/settings/private-route.ts`
+(`savePrivateRoute`), `app/packages/server/src/features/settings/secret.ts`;
+[specs/models-and-privacy.md](./specs/models-and-privacy.md#the-private-routes-token)
+
+### Context
+
+Saving the private route with the token left empty kept the saved token,
+whatever the new endpoint was. Moving from a company's endpoint to another
+provider therefore sent the company's token to that provider, starting
+with the capability check. A direct `office.config-set` reached the same
+state, since the token and the endpoint were stored independently.
+
+### Decision
+
+- The secret `open_weights_token` holds one JSON record, `{"origin",
+  "token"}`, written in one `orbit plugin secret set` call on stdin. The
+  binding lives with the credential: Library config can be written by
+  `office.config-set`, so a binding there could be forged by one call.
+- Every model call pairs the token only with an endpoint whose origin
+  (scheme, host and port) equals the bound one, from the same call's
+  settings and context. Anything else is sent unauthenticated. Ordering of
+  the Settings writes is not relied on for safety.
+- A value that is not the record (a bare token from the installer or a
+  hand-typed `secret set`) is unbound and never sent. Settings asks for it
+  again; the installer is unchanged, since it knows no endpoint.
+- `office.status` gains `open_weights_token_binding` (additive); Settings
+  words the token field from it and offers *Remove the saved token*
+  (`clear_token`, which runs `orbit plugin secret rm`).
+
+### Consequences
+
+- An installer-stored token stops being sent until it is entered in
+  Settings (or stored as the record by hand).
+- Returning to the token's original origin with the field empty reuses it
+  there, since that is the origin it was approved for.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
@@ -2436,5 +2478,6 @@ and the session cursor that `office.scribe-append` needs as `through`.
 - [ORB-20825] — moved local calendar events into the Library's ignored state, inside the plugin's write grant.
 - [ORB-20849] — made long, tool-heavy sessions scribable by stripping tool payloads at staging.
 - [ORB-20696] — built the web Scribe screen over scribe v1.
+- [ORB-20884] — bound the private-route token to the endpoint origin it was saved for.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

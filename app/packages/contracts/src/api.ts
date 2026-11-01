@@ -121,19 +121,36 @@ export interface PrivateRouteBlock {
   verified_at: string | null;
 }
 
+/**
+ * Where the saved private-route token may be sent. A token is bound to the
+ * endpoint origin (scheme, host and port) it was saved for and is sent
+ * nowhere else. `this_endpoint`: saved for the configured endpoint's origin.
+ * `other_endpoint`: saved for another origin, so the configured endpoint is
+ * sent no token. `unbound`: stored outside Settings without an origin, so it
+ * is never sent. `unset`: no token.
+ */
+export type PrivateTokenBinding = "unset" | "this_endpoint" | "other_endpoint" | "unbound";
+
 /** `GET /api/settings/private-route`. */
 export interface PrivateRouteStatus {
   route: PrivateRouteBlock | null;
   token: "set" | "unset";
+  token_binding: PrivateTokenBinding;
 }
 
-/** `POST /api/settings/private-route`. Omit `token` to leave the saved one. */
+/**
+ * `POST /api/settings/private-route`. `token` is saved for this endpoint's
+ * origin only. Omit it to keep the saved token, which is still sent only to
+ * the origin it was saved for: a different origin gets no token. Set
+ * `clear_token` (never with `token`) to remove the saved token.
+ */
 export interface PrivateRouteWrite {
   endpoint: string;
   model: string;
   kind: EndpointKind;
   label: string;
   token?: string;
+  clear_token?: true;
 }
 
 /** One probe, in plain words. Tool error codes are not part of this contract. */

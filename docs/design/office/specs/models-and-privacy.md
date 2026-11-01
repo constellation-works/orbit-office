@@ -34,7 +34,7 @@ Source: spec §9.
 - **Redirects.** The model HTTP client does not follow redirects. Each request therefore stays on the host checked by the model endpoint allowlist before the socket opens.
 - **Artifacts inherit sensitivity:** an artifact's `sensitivity` is the strictest of what it cites ([library.md](./library.md)).
 - **Selections from private objects carry no quote** ([selection-sharing.md](./selection-sharing.md)); the agent re-reads through the tools so the routing applies.
-- **Secrets.** The Meta API key and the private route's token (`open_weights_token`) are stored with `orbit plugin secret set office <name>`, never in config or the Library. Knowledge pages never hold secrets; `refs` name files, links, contacts, accounts and artifacts only.
+- **Secrets.** The Meta API key and the private route's token (`open_weights_token`, bound to the endpoint origin it was saved for; [below](#the-private-routes-token)) are stored with `orbit plugin secret set office <name>`, never in config or the Library. Knowledge pages never hold secrets; `refs` name files, links, contacts, accounts and artifacts only.
 - **Contact details never reach a model.** Model inputs and task attachments carry a page's model view, in which each `contact` ref keeps its label and loses its value; page bodies may not contain email addresses or phone numbers ([knowledge-templates.md](./knowledge-templates.md#contact-details)).
 - **Other people's words.** Pasted chats contain third parties' messages. They stay local unless the user marks the source shareable, which sends them only to the team's shared library ([shared-library.md](./shared-library.md)). The demo uses synthetic content only.
 
@@ -82,6 +82,42 @@ The endpoint's token, when it needs one, is the declared secret
 release the old installer inputs and the old status field stay accepted
 as deprecated aliases with a warning (see the deviation recorded in
 [4_decisions.md](../4_decisions.md), STD-01@2 §R10 and §R35).
+
+### The private route's token
+
+A token is bound to the endpoint **origin** (scheme, host and port) it was
+saved for, and is sent to no other origin:
+
+- **Stored as one record.** The secret's value is the JSON record
+  `{"origin": "https://muse.internal.acme.example", "token": "<token>"}`,
+  written with one `orbit plugin secret set office open_weights_token` call
+  on stdin. The token and its origin change together or not at all. The
+  binding lives with the credential, not in Library config:
+  `office.config-set` cannot write a secret, so changing the endpoint
+  (from Settings or directly) cannot move a token to a new origin.
+- **Checked on every call.** Each model call, `office.private-route-check`
+  included, reads the endpoint and the record once and sends the token as
+  `Authorization: Bearer` only when the endpoint's origin equals the bound
+  origin; otherwise the request carries no `Authorization` header. A
+  changed endpoint, a failed token write, an interleaved save or a
+  concurrent call can only leave a call unauthenticated, never pair a token
+  with an origin it was not saved for.
+- **Reuse.** Leaving the token empty in Settings keeps the saved token for
+  an unchanged origin (another path on the same origin counts as
+  unchanged). Saving an endpoint on another origin with the token empty
+  makes it an unauthenticated endpoint: the old token stays saved for its
+  origin and is not sent. *Remove the saved token* (`clear_token`) runs
+  `orbit plugin secret rm office open_weights_token`.
+- **Unbound values are never sent.** A value that is not that record (for
+  example a bare token typed at the installer's prompt or into
+  `orbit plugin secret set`) is not tied to an origin, so no call sends it.
+  Enter the token in Settings, or store the record yourself with
+  `orbit plugin secret set office open_weights_token` (the prompt does not
+  echo).
+- **Status.** `office.status` reports the token as `set` or `unset` under
+  `secrets`, and `open_weights_token_binding` as `this_endpoint`,
+  `other_endpoint`, `unbound` or `unset`; never the token or its origin.
+  Settings words the token field from it.
 
 ### Honest wording
 

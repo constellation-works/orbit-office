@@ -15,6 +15,11 @@
       "required": ["meta_api_key", "open_weights_token", "baseten_token"],
       "additionalProperties": false
     },
+    "open_weights_token_binding": {
+      "type": "string",
+      "enum": ["unset", "this_endpoint", "other_endpoint", "unbound"],
+      "description": "Where the stored open_weights_token may be sent. this_endpoint: it was saved for the configured endpoint's origin (scheme, host and port), so private calls there send it. other_endpoint: it was saved for another origin, or no endpoint is configured; nothing sends it. unbound: stored without an origin (for example a bare token), never sent. unset: no token. Never the token or its origin."
+    },
     "library": {
       "type": "object",
       "description": "Library and index health. Counts come from the index; an uninitialized Library reports zero counts.",
@@ -110,7 +115,7 @@
       ]
     }
   },
-  "required": ["version", "secrets", "library", "open_weights", "shared", "brief"],
+  "required": ["version", "secrets", "open_weights_token_binding", "library", "open_weights", "shared", "brief"],
   "additionalProperties": false,
   "$defs": {
     "presence": { "type": "string", "enum": ["set", "unset"] }
