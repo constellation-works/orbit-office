@@ -165,6 +165,84 @@ fn private_entries_are_cited_by_reference_only_without_open_weights_route() {
 }
 
 #[test]
+fn private_entries_stay_withheld_from_caller_with_open_weights_route() {
+    let mut library = FakeLibrary::initialized();
+    library.settings.open_weights = Some(office_core::domain::settings::OpenWeights {
+        endpoint: "http://127.0.0.1:11434/v1".into(),
+        model: "fake-private".into(),
+        kind: office_core::domain::endpoint::EndpointKind::Company,
+        label: "Loopback".into(),
+        capabilities: Some(vec![office_core::domain::endpoint::Capability::Text]),
+        verified_at: Some("2026-10-30T00:00:00Z".into()),
+    });
+    // Also mark conversations private through settings, as the QA scenario
+    // does via config-set, in addition to the file's own sensitivity.
+    library
+        .settings
+        .sensitivity
+        .insert("conversation".into(), Sensitivity::Private);
+    let p = scr_with(
+        ID_P,
+        "session-p",
+        "sensitivity: \"private\"\n",
+        &["- m-0001 2026-10-30T10:00-07:00 #decision #scribe \"secret roadmap decision approved\"".into()],
+    );
+    library.insert_scribe_file(PATH_P, &p);
+    let (ports, models) = ports(library);
+    models.extract_replies.borrow_mut().push_back(json!({
+        "not_captured": false,
+        "claims": [{"text": "The roadmap decision was approved.", "quote": "secret roadmap decision approved", "cites": [format!("{ID_P}#L22")]}]
+    }));
+    let response = ask(&ports, json!({"question": "secret roadmap decision"}));
+    assert_eq!(response["ok"], true, "{response}");
+    let out = &response["output"];
+    // The claim citing private evidence is returned by reference only.
+    assert_eq!(out["claims"][0]["text"], Value::Null, "{response}");
+    assert_eq!(out["claims"][0]["quote"], Value::Null, "{response}");
+    assert_eq!(out["claims"][0]["content_withheld"], true, "{response}");
+    assert_eq!(out["claims"][0]["scr_id"], ID_P, "{response}");
+    // Caller-visible shortlist and evidence are withheld regardless of route.
+    for field in ["shortlist", "evidence"] {
+        assert_eq!(
+            out[field][0]["content_withheld"], true,
+            "{field}: {response}"
+        );
+        assert_eq!(out[field][0]["scr_id"], ID_P, "{field}: {response}");
+        assert_eq!(
+            out[field][0]["cite"],
+            format!("{ID_P}#L22"),
+            "{field}: {response}"
+        );
+        assert!(out[field][0].get("text").is_none(), "{field}: {response}");
+        assert!(out[field][0].get("quote").is_none(), "{field}: {response}");
+        assert!(
+            out[field][0].get("line_text").is_none(),
+            "{field}: {response}"
+        );
+    }
+    assert!(
+        !response
+            .to_string()
+            .contains("secret roadmap decision approved"),
+        "private text/quote must not appear anywhere in the response: {response}"
+    );
+    // The model still received the private evidence, at Private sensitivity,
+    // so it goes only to the configured open-weights route.
+    let requests = models.extract_requests.borrow();
+    assert_eq!(requests.len(), 1, "exactly one model call");
+    assert_eq!(requests[0].sensitivity, Sensitivity::Private);
+    assert!(
+        requests[0]
+            .text
+            .contains("secret roadmap decision approved")
+    );
+    assert_eq!(
+        out["derived_by"],
+        json!({"route": "private:company", "model": "fake-private"})
+    );
+}
+
+#[test]
 fn unknown_keys_and_missing_question_are_refused() {
     let (ports, _models) = ports(fixture_library());
     for input in [

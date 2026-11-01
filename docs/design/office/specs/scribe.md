@@ -395,11 +395,15 @@ answer. Answering has two levels.
    with the searched date range, topics, and the sessions searched with
    their `scribed_through` cursor (sessions not scribed past their last
    message). Private SCR entries follow
-   [models-and-privacy.md](./models-and-privacy.md): with no open-weights
-   route they are cited by reference only (`private_references`, no quote
-   sent to any model), as `office.recall-answer` does; on a configured
-   route the call is `private` and citing claims return with
-   `content_withheld`.
+   [models-and-privacy.md](./models-and-privacy.md): they are always
+   withheld from the caller, regardless of endpoint configuration. With
+   no open-weights route they are cited by reference only
+   (`private_references`, no quote sent to any model), as
+   `office.recall-answer` does; on a configured route the call is
+   `private` — the route authorizes only that endpoint to read the
+   evidence in the model request, never the MCP caller — and citing
+   claims, `shortlist` and `evidence` entries return by reference with
+   `content_withheld` and no private text or quote.
 
 The `scribe` agent answers from the SCR files only. Its tools are the query
 tool, Grep and Read over the Library's `sources/conversation/`; it has no
