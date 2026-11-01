@@ -26,6 +26,54 @@ retains its last handoff. The recovery sweep extracts its available transcript;
 until extraction finishes, the brief has the existing evidence, not a promise
 that the last session has already been processed.
 
+Scribe v2 replaces the Handoff piece: the latest SCR of a scribed session
+is the handoff ([below](#scribe-v2-the-latest-scr-is-the-handoff)).
+
+## Scribe v2: the latest SCR is the handoff
+
+Status: designed ([ORB-21083]), not built. The sections below this one
+describe what is built today, and they stay in force until slice [ORB-21119]
+lands. Direction points D7 and D8 are in
+[scribe.md](./scribe.md#spec-scribe-v2).
+
+In v2 the handoff is no longer an entry the agent writes into a
+conversation log. It is the latest **SCR** of a scribed session
+([scribe.md](./scribe.md#the-scr-file)), whose Summary, Goals, Outcome and
+Blockers and Next sections are rewritten on every scribe pass.
+
+- **Project handoff.** The latest SCR (by `updated`) with `scope: project`
+  for a project is that project's handoff (D7).
+- **Global handoff.** The latest SCR with `scope: global` is the global
+  handoff (D7).
+- **The brief merges both** (D7). `office.session-brief` puts the
+  project's handoff first, rendered from its SCR (title, `updated`,
+  Summary, Goals, Outcome and Blockers, Next, with the `(scribe)` marker
+  and the SCR id as its link), then the global handoff. In manual output
+  and with no project, the `projects` section lists the latest SCR per
+  project, newest first, at most 20. `other_sessions` becomes the other
+  SCRs in the same scope updated within seven days of the newest
+  (concurrent sessions in one project fork the `previous` chain, and this
+  section keeps the sibling visible), at most five.
+- **No thread key.** One handoff per project replaces ORB-21060's thread
+  per project, orchestrator and cited assignment. Two concurrent sessions
+  in one project show as the handoff plus an `other_sessions` item. A
+  per-assignment record is the assignment task, as the context-boundary
+  rule already says.
+- **Unscribed and headless sessions** write no SCR and therefore no
+  handoff. A headless on-call orchestrator records its state on its
+  assignment task, and the brief's Agents working on already lists it.
+- **Read surfaces.** `/handoff <project>` returns that project's SCR then
+  the global SCR. `/handoff` alone returns the global SCR and the
+  `projects` list. `view: handoffs` reads only the Library, as today.
+
+### Shipped handoff work in v2
+
+| Shipped | Kept | Reworked | Retired | Slice |
+|---|---|---|---|---|
+| [ORB-21063] global handoffs, `brief.handoff` auto/manual, `projects`, `view: handoffs`, `/handoff <project>` | `brief.handoff` and its auto/manual project choice (including the assignment fallback); the `global` and `projects` sections; `view: handoffs`; `/handoff [<project>]`. | The global section shows the latest global SCR. `projects` lists the latest SCR per project. The assignment fallback finds the project of the newest SCR whose Next cites the task. | Global handoff log entries (`scope: global`, `until`, closing by `resolved`) and the cap of five open globals. During the 30-day window, open legacy globals are still listed after the global SCR, marked legacy. After it, capture refuses `handoff` with `handoff_retired`. | [ORB-21119], [ORB-21123] |
+| [ORB-21065] structured handoffs | The validator: complete task ids, no bare numbers, single-line text, observation times with offsets and rechecks, no inferred consent, per-field budgets. The SCR's rewritten sections use it. | Fields map onto SCR sections: `objective` to Goals (with the assignment id); `next` to Next (each item cites a task id); `authorization` to each Next item's `owner:` and verbatim `authorized:` clause; `observations` to Outcome and Blockers lines with `observed_at` and `recheck`; `evidence` to the citations in those sections. | `{kind:"handoff", structured_handoff}` capture input and the scribe handoff (`scribe.handoff`). Legacy structured and one-line entries stay readable in their sources but leave the brief after the window. | [ORB-21117], [ORB-21119], [ORB-21123] |
+| [ORB-21075] Scribe › Handoffs view and `view: list` | The read-only, Library-only, model-free contract and private withholding. | The view becomes the Scribe feed: one card per project plus the global card ([scribe.md](./scribe.md#feed)). Current maps to the project cards, Global to the global card, and History to each card's `previous:` chain. `view: list` returns those cards, or one SCR with its `previous` given `id`. | Thread grouping, `superseded`, `resolved_by`, the `include_closed` toggle, and History paging and filters. During the window the old shape stays available as `view: list` with `legacy: true`; after it, it is removed. | [ORB-21120], [ORB-21123] |
+
 ## Decision log
 
 One `conversation` source per orchestrator session ([library.md](./library.md#sources)).
@@ -60,6 +108,10 @@ One `conversation` source per orchestrator session ([library.md](./library.md#so
   its own source first, and the log cites it.
 
 ### Handoff
+
+> Scribe v2 replaces handoff entries with the latest SCR per project and
+> global ([Scribe v2](#scribe-v2-the-latest-scr-is-the-handoff)); this
+> section stays in force until then and through the 30-day window.
 
 The handoff is the agent's note to its next session: what it was about to
 do, what the user is waiting on it for, and the context the structured state
@@ -411,8 +463,9 @@ The switch is Office-owned per-session state, kept in plugin state
 holds the switch, a pending **Capture now** request, the user's title and
 the last Scribe window heartbeat. The web Scribe window and the provider
 plugin read and write the same record, so both hosts share one switch.
-A provider command (`/scribe on|off|now|status|title` for Claude Code)
-writes it; the default for new sessions is a setting of the provider
+A provider command (`/scribe on|off|now|status|title` for Claude Code;
+scribe v2 maps `now` to `update` and defaults every session off,
+[scribe.md](./scribe.md#turning-it-on)) writes it; the default for new sessions is a setting of the provider
 plugin, not of the Library. Turning the scribe off stops new passes; it
 never removes evidence already captured. The hooks and commands ship as a
 per-user provider plugin from this repository
@@ -762,6 +815,9 @@ state cannot appear empty.
 
 ### Handoff list
 
+> Scribe v2 reworks this list into SCR cards and the `previous:` chain
+> ([Shipped handoff work in v2](#shipped-handoff-work-in-v2)).
+
 Built ([ORB-21075]). `office.session-brief` with `view: list` is the
 read-only list behind the web app's Scribe › Handoffs view and Today's
 Handoffs section ([web-app.md](./web-app.md#screens)). It reads only the
@@ -905,6 +961,12 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-21060] — built per-thread handoffs within a project and the `other_sessions` section.
 - [ORB-21063] — built global-scoped handoffs (scope, expiry, resolution, the `global` section), the `brief.handoff` auto/manual setting with the assignment fallback, the `projects` section, `view: handoffs` and the Claude Code `/handoff` command.
 - [ORB-21075] — built the `view: list` handoff list behind Scribe › Handoffs and Today's Handoffs section.
+- [ORB-21083] — designed scribe v2, where the latest SCR per project and global is the handoff.
+- [ORB-21079] — gave scribe sessions a title on the first pass (v2 derives it from the SCR summary).
+- [ORB-21117] — proposed scribe v2 slice S4.
+- [ORB-21119] — proposed scribe v2 slice S6.
+- [ORB-21120] — proposed scribe v2 slice S7.
+- [ORB-21123] — proposed scribe v2 slice S10.
 - [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
