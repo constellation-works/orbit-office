@@ -14,13 +14,15 @@ export type FeatureName =
   | "review"
   | "selection"
   | "settings"
-  | "agents";
+  | "agents"
+  | "scribe";
 
 /** Web screens, one folder each under `web/src/screens/`. */
 export type ScreenId =
   | "today"
   | "agents"
   | "calendar"
+  | "scribe"
   | "source"
   | "todos"
   | "routines"

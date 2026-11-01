@@ -94,6 +94,16 @@ Refs are stored on the entry. Their status is never stored: recall reads
 it live (`orbit.task.show`, the PR's state and merge commit), so an answer
 says what is true now, not what was true when the line was captured.
 
+### Live PR state
+
+Task refs resolve through `orbit.task.show`, which the plugin already holds.
+PR refs have no live source yet. Reading PR state would need `gh`: a program
+the backend runs through a new port, declared in `spec.requires.programs`. The
+scaffold does not add it, so until a later task adds a PR source, every PR ref
+reads `unresolved` with reason `no_pr_source`. No program was added, so this
+decision needs no plugin upgrade or re-enable. When a later task adds `gh`, that
+task records the plugin upgrade and the re-enable as an operator step.
+
 ## Asking
 
 ### The tool: `office.recall`

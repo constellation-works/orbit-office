@@ -11,6 +11,7 @@ import { screen as insights } from "./screens/insights/index.js";
 import { screen as library } from "./screens/library/index.js";
 import { screen as review } from "./screens/review/index.js";
 import { screen as routines } from "./screens/routines/index.js";
+import { screen as scribe } from "./screens/scribe/index.js";
 import { screen as settings } from "./screens/settings/index.js";
 import { screen as source } from "./screens/source/index.js";
 import { screen as today } from "./screens/today/index.js";
@@ -22,6 +23,7 @@ export const SCREENS: readonly Screen[] = [
   calendar,
   todos,
   agents,
+  scribe,
   routines,
   library,
   insights,
