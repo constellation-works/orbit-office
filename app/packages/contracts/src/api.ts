@@ -361,6 +361,15 @@ export interface TodoScheduleRequest {
 }
 export interface TodoScheduled { ok: true; scheduled: string | null }
 
+/**
+ * `POST /api/todos/create`: create one of the user's own to-dos.
+ * Answers {@link TodoCreated}; the new to-do then appears in `GET /api/todos`.
+ */
+export interface TodoCreateRequest {
+  title: string;
+}
+export interface TodoCreated { ok: true; id: string; title: string }
+
 /** Generated review bodies returned by GET /api/review. */
 export interface ReviewItem {
   title: string;

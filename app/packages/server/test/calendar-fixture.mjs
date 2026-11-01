@@ -172,10 +172,17 @@ export function fakeCalendarClient(overrides = {}) {
       }
       case 'orbit.task.show':
         return project(state.tasks.find(task => task.id === input.id) ?? {}, input.fields);
+      case 'orbit.task.add': {
+        const created = { id: `FIXTURE-NEW-${state.tasks.length + 1}`, title: input.title, status: 'backlog', terminal: false, tags: [...(input.tags ?? [])], created_at: '2026-10-28T11:00:00Z', artifacts: [], not_before: null, history: [] };
+        state.tasks.push(created);
+        return created;
+      }
       case 'orbit.task.update': {
         const task = state.tasks.find(item => item.id === input.id);
         if (!task) throw Object.assign(new Error('task not found'), { code: 'exit_nonzero' });
         if (typeof input.not_before === 'string') task.not_before = input.not_before === '' ? null : input.not_before;
+        if (typeof input.status === 'string') task.status = input.status;
+        if (typeof input.execution_summary === 'string') task.execution_summary = input.execution_summary;
         return task;
       }
       case 'orbit.auto_task.list':

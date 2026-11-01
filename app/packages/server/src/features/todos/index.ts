@@ -6,7 +6,7 @@
  */
 import type { Feature } from "../../http/types.js";
 import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
-import { handleClose, handleList, handleSchedule } from "./http.js";
+import { handleClose, handleCreate, handleList, handleSchedule } from "./http.js";
 
 /** Routes bound to one Orbit client. Tests pass a fake client. */
 export function createTodoFeature(client: OrbitToolClient): Feature {
@@ -28,6 +28,16 @@ export function createTodoFeature(client: OrbitToolClient): Feature {
         method: "POST",
         path: "/api/todos/schedule",
         handle: (request, response) => handleSchedule(client, request, response),
+      },
+      {
+        method: "POST",
+        path: "/api/todos/create",
+        handle: (request, response) => handleCreate(client, request, response),
+      },
+      {
+        method: "POST",
+        path: "/api/todos",
+        handle: (request, response) => handleCreate(client, request, response),
       },
     ],
   };

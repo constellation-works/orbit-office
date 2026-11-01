@@ -84,6 +84,8 @@ export type {
   TodayNeedGroup,
   TodayNeedKind,
   TodayResult,
+  TodoCreateRequest,
+  TodoCreated,
   TodoItem,
   TodoList,
   TodoScheduled,

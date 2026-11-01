@@ -19,6 +19,12 @@ export interface TodoDrawOptions {
   onEdit?: (id: string | null) => void;
   /** The clock scheduled times are read against. Default now. */
   now?: Date;
+  /** Create a to-do with this title. Without it, no create form shows. */
+  onCreate?: (title: string) => Promise<void>;
+  /** Draft title kept across poll redraws while the user is typing. */
+  createDraft?: string;
+  /** Record the draft title as the user types, without redrawing. */
+  onCreateDraft?: (title: string) => void;
 }
 
 interface ScheduleActions {
@@ -53,6 +59,11 @@ const STYLE = `
 .card-content p.todos-when { margin: 0; font-size: 12px; padding: 3px 7px; border-radius: 4px; background: var(--highlight-bg); color: var(--fg); }
 .todos-schedule-action { min-height: 32px; padding: 4px 10px; font-size: 12px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--fg); cursor: pointer; }
 .todos-schedule-action:hover { background: var(--bg-hover); }
+.todos-create { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 0 0 14px; padding: 12px; background: var(--bg-rail); border: 1px solid var(--border); border-radius: var(--radius); }
+.todos-create label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-mute); flex: 1 1 220px; min-width: 0; }
+.todos-create input { min-height: 36px; width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--fg); font: inherit; color-scheme: dark; box-sizing: border-box; }
+.todos-create .todos-create-status { flex: 1 0 100%; margin: 0; font-size: 12px; color: var(--attention-fg); }
+.todos-create .todos-create-status:empty { display: none; }
 @media (max-width: 720px) {
   .todos-columns { grid-template-columns: minmax(0, 1fr); }
 }
@@ -89,7 +100,9 @@ export function drawTodoScreen(root: HTMLElement, model: TodoList, options: Todo
     column("you", "You", "Close these when you are finished.", model.you, options.onClose, schedule),
     column("agents", "Agents", "These stay with the agents.", model.agents, options.onClose, schedule),
   );
-  page.append(heading, intro, columns);
+  page.append(heading, intro);
+  if (options.onCreate !== undefined) page.append(createForm(options.onCreate, options.createDraft ?? "", options.onCreateDraft));
+  page.append(columns);
   if (model.more) {
     const more = document.createElement("p");
     more.className = "intro todos-more";
@@ -101,6 +114,58 @@ export function drawTodoScreen(root: HTMLElement, model: TodoList, options: Todo
   if (options.marker !== undefined) children.push(options.marker);
   children.push(style, page);
   root.replaceChildren(...children);
+}
+
+/** A title field and **Add to-do**, above the columns. An empty title is refused here and on the server. */
+function createForm(
+  onCreate: (title: string) => Promise<void>,
+  draft: string,
+  onCreateDraft: ((title: string) => void) | undefined,
+): HTMLFormElement {
+  const form = document.createElement("form");
+  form.className = "todos-create";
+  form.setAttribute("aria-label", "New to-do");
+  const label = document.createElement("label");
+  const caption = document.createElement("span");
+  caption.textContent = "New to-do";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "What needs doing?";
+  input.setAttribute("aria-label", "New to-do title");
+  (input as HTMLInputElement).value = draft;
+  input.addEventListener("input", () => onCreateDraft?.((input as HTMLInputElement).value));
+  label.append(caption, input);
+  const add = document.createElement("button");
+  add.type = "submit";
+  add.className = "primary-action";
+  add.textContent = "Add to-do";
+  const status = document.createElement("p");
+  status.className = "todos-create-status";
+  status.setAttribute("role", "status");
+  let busy = false;
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (busy) return;
+    const title = (input as HTMLInputElement).value.trim();
+    if (title === "") {
+      status.textContent = "Give the to-do a title.";
+      return;
+    }
+    busy = true;
+    add.disabled = true;
+    status.textContent = "";
+    void onCreate(title).then(() => {
+      (input as HTMLInputElement).value = "";
+      onCreateDraft?.("");
+    }).catch(() => {
+      status.textContent = "That to-do could not be added. Try again in a moment.";
+    }).finally(() => {
+      busy = false;
+      add.disabled = false;
+    });
+  });
+  form.append(label, add, status);
+  return form;
 }
 
 function column(

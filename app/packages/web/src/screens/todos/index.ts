@@ -1,13 +1,14 @@
 /**
  * To-dos: You and Agents columns. Each to-do shows its source and attached
- * knowledge, and the user can close their own. Any open to-do can be
+ * knowledge, and the user can close their own. A new to-do can be created
+ * from the form above the columns. Any open to-do can be
  * scheduled for a date and time, rescheduled or cleared; the poll waits
- * while the picker is open (docs/design/office/specs/web-app.md).
+ * while the picker is open or a draft title is being typed (docs/design/office/specs/web-app.md).
  */
 import type { TodoList } from "@orbit-office/contracts";
 
 import type { Screen } from "../../screen.js";
-import { ApiError, getJson, scheduleTodo } from "../../api/client.js";
+import { ApiError, createTodo, getJson, scheduleTodo } from "../../api/client.js";
 import { errorState } from "../../ui/index.js";
 import { drawTodoScreen, modelFromPayload } from "./view.js";
 
@@ -22,6 +23,8 @@ async function renderTodos(root: HTMLElement): Promise<void> {
   /** The to-do whose picker is open; polling leaves the page alone meanwhile. */
   let editing: string | null = null;
   let shown: TodoList | null = null;
+  /** Draft of the new to-do being typed; a non-empty draft holds the poll. */
+  let createDraft = "";
 
   const stop = (): void => {
     stopped = true;
@@ -48,7 +51,25 @@ async function renderTodos(root: HTMLElement): Promise<void> {
   }
 
   function draw(model: TodoList): void {
-    drawTodoScreen(root, model, { marker, onClose, onSchedule, onEdit, editing, now: new Date() });
+    drawTodoScreen(root, model, {
+      marker, onClose, onSchedule, onEdit, editing, now: new Date(),
+      onCreate, createDraft, onCreateDraft: (title) => { createDraft = title; },
+    });
+  }
+
+  async function onCreate(title: string): Promise<void> {
+    if (!alive()) return;
+    busy = true;
+    try {
+      await createTodo(title);
+      createDraft = "";
+      await refresh();
+    } catch (error) {
+      // The form shows its own refusal; keep the draft so the title is not lost.
+      throw error;
+    } finally {
+      busy = false;
+    }
   }
 
   async function tick(): Promise<void> {
@@ -56,7 +77,7 @@ async function renderTodos(root: HTMLElement): Promise<void> {
       stop();
       return;
     }
-    if (busy || editing !== null) return;
+    if (busy || editing !== null || createDraft.trim() !== "") return;
     try {
       await refresh();
     } catch {

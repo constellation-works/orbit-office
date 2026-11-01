@@ -2,7 +2,7 @@
 import type {
   CalendarSources, LocalCalendarChange, AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
-  SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoScheduled,
+  SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoCreated, TodoScheduled,
   ConflictChoice, ShareDocument, SharedLastSync, SharedLibraryBlock, SharedLibrarySaved, SharedLibraryStatus, SharedSync, ShareRequest, ShareResult,
 } from "@orbit-office/contracts";
 
@@ -136,6 +136,11 @@ export function shareDocument(input: ShareRequest): Promise<ShareResult> {
 /** POST JSON and read the JSON answer, with the same error path as {@link getJson}. */
 export function postJson<T>(path: string, body: unknown): Promise<T> {
   return requestJson<T>(path, body);
+}
+
+/** Create one of the user's own to-dos; it then appears in `GET /api/todos`. */
+export function createTodo(title: string): Promise<TodoCreated> {
+  return postJson<TodoCreated>("/api/todos/create", { title });
 }
 
 /** Set an open to-do's scheduled start (an RFC 3339 instant), or clear it with null. */

@@ -33,6 +33,25 @@ async function shot(page, name) {
 }
 const todo = (page, title) => page.locator('.todos-column .card', { has: page.getByRole('heading', { name: title, exact: true }) });
 
+test('Add to-do creates a to-do that persists in the list and can be closed', { timeout: 60000 }, async t => {
+  const { page, url, state } = await browserFixture(t);
+  await page.goto(`${url}/#todos`);
+  const form = page.getByRole('form', { name: 'New to-do' });
+  await form.waitFor();
+  await form.getByLabel('New to-do title').fill('Buy stamps');
+  await form.getByRole('button', { name: 'Add to-do' }).click();
+  const created = todo(page, 'Buy stamps');
+  await created.waitFor();
+  assert.ok(state.tasks.some(task => task.title === 'Buy stamps' && task.tags.includes('owner:you')), 'the fixture Orbit holds the new owner:you to-do');
+  // It persists through a reload (the list is re-read from the server).
+  await page.reload();
+  await todo(page, 'Buy stamps').waitFor();
+  await shot(page, 'todos-created');
+  // And it can be completed from the screen.
+  await todo(page, 'Buy stamps').getByRole('button', { name: 'Close' }).click();
+  await page.waitForFunction(() => !document.body.innerText.includes('Buy stamps'));
+});
+
 test('Schedule… sets a to-do’s time, which then reads in words, and Clear schedule removes it', { timeout: 60000 }, async t => {
   const { page, url, state, calls } = await browserFixture(t);
   const stored = id => state.tasks.find(task => task.id === id).not_before;
