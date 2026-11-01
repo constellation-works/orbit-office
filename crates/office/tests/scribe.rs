@@ -290,3 +290,47 @@ fn append_commits_the_scr_file_and_a_title_renames_it_in_one_commit() {
     assert!(changed.contains(&format!("D\t{path}")), "{changed}");
     assert!(changed.contains(&format!("A\t{new_path}")), "{changed}");
 }
+
+/// The web Scribe screen's note: read the session's cursor from
+/// `office.scribe-query`, then append one `by: user` note at that cursor.
+#[test]
+fn a_note_at_the_queried_cursor_adds_one_user_line_and_keeps_the_cursor() {
+    let f = Fixture::new();
+    f.pending(4);
+    f.ok(
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-0003","title":"Scribe screen","entries":[
+            {"msg":"m-0003","quote":"ship parse and append first","tag":"decision","topics":[]}]}),
+    );
+    let lines = f.ok(
+        "office.scribe-query",
+        json!({"session_id":SESSION,"limit":1}),
+    );
+    let line = &lines["results"][0];
+    assert_eq!(line["title"], "Scribe screen", "{lines}");
+    assert_eq!(line["project"], "constellation");
+    assert_eq!(line["scribed_through"], "m-0003");
+
+    let note = f.ok(
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":line["scribed_through"],"entries":[
+            {"text":"call the venue at 3pm","tag":"todo","by":"user"}]}),
+    );
+    assert_eq!(note["refused"], json!([]));
+    assert_eq!(note["scribed_through"], "m-0003", "the cursor did not move");
+    let added = note["added"].as_array().unwrap();
+    assert_eq!(added.len(), 1);
+    assert!(
+        added[0]["text"]
+            .as_str()
+            .unwrap()
+            .ends_with(" #todo \"call the venue at 3pm\" by: user"),
+        "{note}"
+    );
+    let after = f.ok(
+        "office.scribe-query",
+        json!({"session_id":SESSION,"by":"user"}),
+    );
+    assert_eq!(after["results"][0]["msg"], "note");
+    assert_eq!(after["results"][0]["quote"], "call the venue at 3pm");
+}

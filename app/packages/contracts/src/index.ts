@@ -6,6 +6,15 @@
  * built.
  */
 export type {
+  ScribeAnswer,
+  ScribeClaim,
+  ScribeEntry,
+  ScribeFeed,
+  ScribeNoteRequest,
+  ScribeNoteResult,
+  ScribeQueryResult,
+  ScribeSession,
+  ScribeView,
   AcceptAllRequest,
   AcceptAllResult,
   AcceptRequest,

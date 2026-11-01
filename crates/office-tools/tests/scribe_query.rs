@@ -287,3 +287,37 @@ fn invalid_mode_and_dates_are_refused_without_a_model_call() {
     }
     assert_eq!(models.calls.get(), 0);
 }
+
+#[test]
+fn each_line_carries_its_session_title_project_and_cursor() {
+    let library = fixture_library();
+    let titled = scr(
+        "SCR-01-0800-web-screen",
+        "session-c",
+        "orchestrator",
+        &["- m-0002 2026-11-01T08:10-07:00 #todo #scribe \"build the screen\"".into()],
+    )
+    .replace("title: null", "title: \"Web screen\"")
+    .replace("project: \"constellation\"", "project: \"orbit-office\"")
+    .replace("scribed_through: null", "scribed_through: \"m-0004\"");
+    library.insert_scribe_file(
+        "sources/conversation/2026/11/SCR-01-0800-web-screen.md",
+        &titled,
+    );
+    let (mut ports, models) = ports();
+    ports.library = Box::new(library);
+
+    let out = query(&ports, json!({"session_id":"session-c"}));
+    let line = &out["results"][0];
+    assert_eq!(line["quote"], "build the screen", "{out}");
+    assert_eq!(line["title"], "Web screen");
+    assert_eq!(line["project"], "orbit-office");
+    assert_eq!(line["scribed_through"], "m-0004");
+
+    // A file still untitled, never advanced, reports both as null.
+    let untitled = query(&ports, json!({"session_id":"session-b"}));
+    assert_eq!(untitled["results"][0]["title"], Value::Null);
+    assert_eq!(untitled["results"][0]["project"], "constellation");
+    assert_eq!(untitled["results"][0]["scribed_through"], Value::Null);
+    assert_eq!(models.calls.get(), 0);
+}

@@ -18,7 +18,8 @@ provider plugin, commands/subagent and backfill are built (ORB-20689); see the
 and the `scribe` agent, and turned the automatic Stop/SessionEnd passes off
 by default (plugin option `auto_capture`); the pane's ask box now answers in
 the pane. The desktop
-Scribe pane is built (ORB-20697); the web Scribe screen remains specified.
+Scribe pane is built (ORB-20697). The web Scribe screen is built over scribe
+v1 instead of recall (ORB-20696, [scribe.md](./scribe.md#relation-to-what-is-built)).
 PR refs resolve live through a `gh` source (ORB-20710, below). Recall feed
 mode, `office.recall-answer` and the Office-owned scribe control state
 (`office.scribe-control`) are built (ORB-20756, below).
@@ -351,7 +352,7 @@ the user's choice, written through `office.capture` with `append_to`.
   entries ([proposals.md](./proposals.md#signals)).
 
 The correction backend is built; the desktop pane's controls are built
-(the web Scribe screen's controls remain planned).
+(the web Scribe screen, built over scribe v1, has no correction controls).
 Append through `office.capture`, for example:
 
 ```json

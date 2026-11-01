@@ -244,3 +244,32 @@ client (`packages/server/test/calendar-fixture.mjs`, a synthetic week in UTC
 with the clock fixed), covering the week, the day view, the meeting panel,
 capture, the three states and Today's card at 1440px and 375px with no
 horizontal overflow.
+
+## Scribe
+
+Scribe sits under Work after Agent work. It is a compact window over scribe
+v1's SCR files, laid out from 320px so it works as an installed PWA window:
+the feed (newest first, the most recent session first, the others under their
+title and project; each line with its tags, quote, time, `SCR file:line`,
+message id and a copyable `claude --resume <session-id>`), the Pending,
+Preferences, Landed and Why views, **Add a note** and an **Ask** box. It polls
+every 10 seconds and is commanded only: nothing is captured automatically.
+
+The server reads `office.scribe-query` for `GET /api/scribe/feed` and
+`GET /api/scribe/query?view=pending|pref|landed|why[&about=<matter or topic>]`,
+appends a note through `office.scribe-append` at the session's own
+`scribed_through` for `POST /api/scribe/note` (`{session_id, text, tag?}`), and
+calls `office.scribe-ask` for `POST /api/scribe/ask` (`{question}`). The spec
+is `docs/design/office/specs/scribe.md`.
+
+After building, run the Scribe browser suite from the repository root with the
+verified browser kit:
+
+```sh
+. "$ORBIT_BROWSER_KIT_ENV"
+SCRIBE_SCREENSHOTS_DIR="$PWD/.orbit/tmp/screenshots" node --test app/packages/web/test/scribe.browser.mjs
+```
+
+It runs the production screen and feature on a two-session fixture Library
+whose query and append outputs were produced by the `office` binary
+(`packages/server/test/scribe-fixture.json`), at 320px and 1440px.
