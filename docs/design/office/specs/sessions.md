@@ -93,6 +93,61 @@ anchor and id.
   would match no source. Work that needs one thread per crew or per task
   cites its assignment id, which keys the thread instead (ORB-21063).
 
+
+#### Structured handoff contract
+
+Write `{kind:"handoff", structured_handoff:{...}}` instead of `text`.
+The old text keys remain accepted; existing one-line entries render unchanged
+with `legacy:true` (and `/handoff` labels them `(legacy)`). A structured entry
+cannot also supply text, correction or by. `scope` and `until` work as before.
+
+The brief and `/handoff` render these fields in this order:
+
+| Field | Meaning | Budget (Unicode characters) |
+|---|---|---|
+| `objective` | Goal and complete assignment task id; required | 500 |
+| `next` | Immediate action, acceptance checks, evidence location and blockers; required | 1000 |
+| `authorization` | Owner of the next step, what Daniel already authorized, and constraints | 1000 |
+| `observations` | Live facts as `{text, observed_at, recheck}` | 2000 total, including timestamps and rechecks |
+| `evidence` | Specific task, comment, PR or report links/references | 2000 total |
+
+Optional fields default to empty; the display says when none was recorded.
+Do not infer consent or invent observation times. Every observation requires a
+nonempty `text`, RFC 3339 `observed_at` with an offset, and nonempty `recheck`.
+Keep completed work only when it affects the next decision; its full history
+belongs on the assignment task. Use plain sentences and complete task ids,
+with linked PRs instead of compressed numbers.
+
+Capture refuses unknown fields, credentials, control characters, empty required
+fields (`handoff_required_field`), incomplete task references
+(`handoff_task_id_incomplete`), missing observation times
+(`handoff_observed_at_required`), invalid times (`handoff_observed_at_invalid`),
+and any over-budget field (`handoff_budget_exceeded`). Missing an assignment id
+in the objective is `handoff_assignment_required`; malformed shapes are
+`handoff_structure_invalid`. Bare numeric tokens of four or more digits, and
+bare numbers after task/tasks/assignment labels, are ambiguous and refused.
+Use complete task ids, links, timestamps, versions or numbers with units for
+other quantities. The validator cannot determine the semantics of every number.
+All strings must be single-line text. The structured object is stored as compact
+JSON after `(structured)` on one physical log line, retaining `#L<n>` anchors;
+global and scribe markers precede it. The brief exposes `structured_handoff`
+alongside the ordered rendered `text`, keeping timestamps and evidence links.
+
+Good example (replace angle-bracket placeholders before capture):
+
+```json
+{"append_to":"<source-id>","entries":[{"kind":"handoff","structured_handoff":{"objective":"Finish the repair for ORB-<id>.","next":"Run the acceptance checks on the repair and read its report before requesting publication. Waiting on the report.","authorization":"The orchestrator owns the repair. Daniel authorized edits and checks; publication requires his approval.","observations":[{"text":"Two workers were active.","observed_at":"2026-11-01T10:00:00Z","recheck":"Recheck worker state before dispatch."}],"evidence":["orbit://task/ORB-<id>","https://github.com/<owner>/<repo>/pull/<number>#issuecomment-<comment>"]}}]}
+```
+
+Bad example (bare task numbers and an observation with no timestamp):
+
+```json
+{"append_to":"<source-id>","entries":[{"kind":"handoff","structured_handoff":{"objective":"Finish the repair for ORB-<id>.","next":"Repair task 12345/67890 next.","observations":[{"text":"Workers active.","recheck":"Before dispatch."}]}}]}
+```
+
+This is refused, not saved as an opaque line. Restore the complete task ids
+and record when the live fact was observed before resubmitting.
+
 #### Scopes
 
 A handoff is project-scoped (the thread rules above) unless its writer
@@ -549,10 +604,11 @@ Built ([ORB-20686]).
 Optional, off by default: `scribe.handoff: true` in the rules page's
 frontmatter, written as the one-level mapping `scribe:` with
 `handoff: true`. When on, a pass whose new lines change the plan (a new
-decision, direction or `action`) also writes one `handoff` entry, at most
-60 words. The crew sends it as the capture field `handoff` beside its
-`selections`. It is written as kind `handoff` with the marker leading the
-text, `[<time>] handoff: (scribe) <text>`, stamped with the capture time:
+decision, direction or `action`) may offer one structured handoff using the
+capture field `structured_handoff` beside `selections`, following the fields,
+checks and budgets above. The compatible `handoff` string remains accepted,
+but unstructured prose is dropped as `structured_required`. A valid offer is
+written as `[<time>] handoff: (scribe) (structured) <compact JSON>`;
 the log grammar has one kind token per entry, so a `handoff (scribe)`
 kind would be refused by every log reader. Unlike every other entry it is
 model-authored, so:
@@ -570,8 +626,9 @@ model-authored, so:
 A handoff offered while the setting is off, in a private session, or by a
 pass that adds no decision, direction or action is dropped too. The
 capture response then carries `handoff`: `written`, or the reason it was
-dropped (`disabled`, `private`, `invalid`, `too_long`, `no_plan_change`,
-`no_anchor`, `unresolved_anchor`).
+dropped (`disabled`, `private`, `invalid`, `structured_required`,
+`no_plan_change`, `no_anchor`, `unresolved_anchor`, or the specific structured
+validation error above). The other extracted evidence still lands.
 
 This is what lets the orchestrator stop maintaining the handoff. Without
 it, the orchestrator keeps doing so as today.
@@ -603,8 +660,9 @@ assembled from Orbit and the Library, with no model call, so it is free,
 always current and cannot invent anything:
 
 - **Handoff:** the newest `handoff` entry of the current session's thread
-  (see [Per thread](#handoff)), verbatim, with its time; a
-  [scribe handoff](#scribe-handoff) keeps its leading `(scribe)` marker.
+  (see [Per thread](#handoff)), with its time. Structured fields render in the
+  order above; historical one-line notes keep their text and `legacy:true`.
+  A [scribe handoff](#scribe-handoff) keeps its leading `(scribe)` marker.
   The current thread is the caller's project, preferring threads whose
   conversation's `orchestrator` matches the caller's: inside one project,
   each orchestrator (and each assignment a handoff cites) keeps its own
@@ -612,7 +670,7 @@ always current and cannot invent anything:
   one in the project wrote no handoff. Absent when no conversation in
   the project wrote one, and in manual output (below). Global-scoped
   handoffs are never chosen here.
-- **Global:** the open [global handoffs](#scopes), verbatim with their
+- **Global:** the open [global handoffs](#scopes), rendered with their
   `(global …)` marker, newest first, at most five; one the handoff cites is
   always listed once. Present in every brief while one is open.
 - **Projects:** only in manual output ([Choosing the

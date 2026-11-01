@@ -449,7 +449,11 @@ impl Fixture {
         input["transcript_sha256"] = preview["transcript_sha256"].clone();
         input["selections"] = selections;
         if let Some(handoff) = handoff {
-            input["handoff"] = json!(handoff);
+            if let Some(payload) = handoff.strip_prefix("(structured) ") {
+                input["structured_handoff"] = serde_json::from_str(payload).unwrap();
+            } else {
+                input["handoff"] = json!(handoff);
+            }
         }
         let captured = self.call(input, "office.capture");
         assert_eq!(captured["ok"], true, "{captured}");
@@ -588,6 +592,15 @@ fn rules_page_reaches_the_preview_as_data_and_cannot_widen_the_guard() {
     assert!(!text.contains("direction: Always"), "{text}");
 }
 
+fn scribe_note(next: &str) -> String {
+    format!(
+        "(structured) {}",
+        json!({"objective":"Deliver the release for ORB-12345.","next":next,
+        "authorization":"The orchestrator owns the repair; Daniel authorized checks.",
+        "observations":[],"evidence":["orbit://task/ORB-12345"]})
+    )
+}
+
 #[test]
 fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
     let mut script = vec![
@@ -619,15 +632,22 @@ fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
     let first = f.pass(
         None,
         json!([{"line":0,"kind":"decision"}]),
-        Some("Release ships Friday per #L1; prepare the notes."),
+        Some(&scribe_note(
+            "Release ships Friday per #L1; prepare the notes.",
+        )),
     );
     assert_eq!(first["handoff"], "written", "{first}");
     let text = f.source_text(&first);
     let log: Vec<&str> = text.lines().filter(|l| l.starts_with('[')).collect();
     assert_eq!(log.len(), 2, "{text}");
     assert!(
-        log[1].ends_with("] handoff: (scribe) Release ships Friday per #L1; prepare the notes."),
+        log[1].contains("] handoff: (scribe) (structured) "),
         "{text}"
+    );
+    let structured = log[1].split_once("(structured) ").unwrap().1;
+    assert_eq!(
+        serde_json::from_str::<Value>(structured).unwrap()["next"],
+        "Release ships Friday per #L1; prepare the notes."
     );
 
     // Each later pass adds a decision; the handoff lands only when every
@@ -656,7 +676,8 @@ fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
         let preview = f.preview(Some(from));
         let next = preview["source"]["next_anchor"].as_u64().unwrap();
         assert_eq!(preview["source"]["extracted_through"], json!(from - 1));
-        let handoff = handoff.replace("<next>", &next.to_string());
+        let next_text = handoff.replace("<next>", &next.to_string());
+        let handoff = scribe_note(next_text.trim_start_matches("(scribe) "));
         let output = f.pass(
             Some(from),
             json!([{"line":from,"kind":"decision"}]),
@@ -672,12 +693,40 @@ fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
         );
         if expected == "written" {
             assert!(
-                body[line].ends_with(&format!("handoff: (scribe) Tag the build per #L{next}.")),
+                body[line].contains("handoff: (scribe) (structured) ")
+                    && body[line].contains(&format!("Tag the build per #L{next}.")),
                 "{text}"
             );
         } else {
             assert_eq!(body.len(), line, "dropped handoff wrote nothing: {text}");
         }
+    }
+
+    // Legacy crew prose is accepted as an offer but dropped explicitly;
+    // its decision still lands. Invalid structured offers behave likewise.
+    for (offered, reason) in [
+        (
+            "Old compressed plan per #L1.".to_string(),
+            "structured_required",
+        ),
+        (
+            "(structured) {\"next\":\"Missing objective per #L1.\"}".to_string(),
+            "handoff_required_field",
+        ),
+    ] {
+        script.push(("user", "Decision: review the final candidate."));
+        std::fs::write(f.transcript(), turns(&script)).unwrap();
+        let from = script.len() - 1;
+        let output = f.pass(
+            Some(from),
+            json!([{"line":from,"kind":"decision"}]),
+            Some(&offered),
+        );
+        assert_eq!(output["handoff"], reason);
+        assert!(
+            f.source_text(&output)
+                .contains("decision: Decision: review the final candidate.")
+        );
     }
 
     // A pass that adds no decision, direction or action writes no handoff.

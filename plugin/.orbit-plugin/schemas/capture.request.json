@@ -74,6 +74,9 @@
                 "type": "string",
                 "format": "date-time",
                 "description": "With scope: global only. RFC 3339 expiry after the capture time; stored as (global until <until>)."
+              },
+              "structured_handoff": {
+                "$ref": "#/$defs/structured_handoff"
               }
             },
             "anyOf": [
@@ -88,11 +91,59 @@
                 ]
               }
             ],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "required": [
+                    "structured_handoff"
+                  ]
+                },
+                "then": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "text"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "message"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "content"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "by"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "correction"
+                        ]
+                      }
+                    ]
+                  },
+                  "properties": {
+                    "kind": {
+                      "const": "handoff"
+                    },
+                    "type": {
+                      "const": "handoff"
+                    }
+                  }
+                }
+              }
+            ]
           }
         ]
       },
-      "description": "Entries as {kind,text} or \"<kind>: <text>\"; kinds: decision, direction, fact, action, open, resolved, handoff, correction. Aliases type/message/content are accepted. For a correction, append {kind:\"correction\",correction:{anchor:\"#L1\",choice:\"not_decision\"|\"kind\"|\"wording\"|\"remove\",kind?:<new kind>,text?:<new wording>}} to an existing source. A JSON correction string in text is also accepted. User additions use {kind:\"direction\"|\"decision\"|\"fact\",text:<verbatim>,by:\"user\"}; by records attribution, not authenticated identity. Corrections require append_to; missing targets and malformed choices refuse the complete batch. A handoff may declare {kind:\"handoff\",text:<text>,scope:\"global\",until?:<RFC 3339>}; it is stored as handoff: (global) <text> or (global until <until>) <text>."
+      "description": "Entries as {kind,text} or \"<kind>: <text>\"; kinds: decision, direction, fact, action, open, resolved, handoff, correction. Aliases type/message/content are accepted. For a correction, append {kind:\"correction\",correction:{anchor:\"#L1\",choice:\"not_decision\"|\"kind\"|\"wording\"|\"remove\",kind?:<new kind>,text?:<new wording>}} to an existing source. A JSON correction string in text is also accepted. User additions use {kind:\"direction\"|\"decision\"|\"fact\",text:<verbatim>,by:\"user\"}; by records attribution, not authenticated identity. Corrections require append_to; missing targets and malformed choices refuse the complete batch. A handoff may declare {kind:\"handoff\",text:<text>,scope:\"global\",until?:<RFC 3339>}; it is stored as handoff: (global) <text> or (global until <until>) <text>. Structured entries use {kind:\"handoff\",structured_handoff:{objective,next,authorization?,observations?,evidence?}} instead of text, retaining scope/until. Stored as (structured) JSON on one physical line. Legacy text still renders with legacy:true."
     },
     "entry_kind": {
       "type": "string",
@@ -195,7 +246,7 @@
     "handoff": {
       "type": "string",
       "minLength": 1,
-      "description": "Session mode with selections only: a scribe handoff of at most 60 words, written as a handoff entry marked (scribe) when the dom-scribe-rules page sets scribe.handoff: true. It must cite at least one #L<n> body anchor of the source after this pass's entries, each naming a log entry, and the pass must add a decision, direction or action; otherwise it is dropped and the other entries still land."
+      "description": "Compatibility string for a scribe offer with selections. Plain text is dropped as structured_required when enabled. A canonical (structured) JSON string uses the same checks as structured_handoff. Prefer structured_handoff. Disabled/private/no-plan-change offers are dropped with those reasons."
     },
     "project": {
       "type": [
@@ -262,6 +313,10 @@
         null
       ],
       "description": "Session mode only, with title: scribe (default) or user. Scribe titles have at most eight words; a user title is never replaced by a scribe."
+    },
+    "structured_handoff": {
+      "$ref": "#/$defs/structured_handoff",
+      "description": "Session mode with selections only: structured scribe offer, incompatible with handoff. With scribe.handoff enabled it must pass the same structure/budget rules, add a plan-changing entry and cite valid local source anchors. Otherwise dropped with a reason; other evidence still lands."
     }
   },
   "additionalProperties": false,
@@ -352,6 +407,64 @@
           }
         }
       ]
+    },
+    "structured_handoff": {
+      "type": "object",
+      "description": "Ordered handoff: objective, next, authorization, observations, evidence. Character budgets (Unicode scalar values): 500, 1000, 1000, 2000 total observation text+observed_at+recheck, 2000 total evidence. Objective and next are required, single-line and nonempty. Objective cites the complete assignment task ID. Task references must be complete: bare numeric tokens of 4+ digits and bare numbers after task/tasks/assignment are refused; use links, timestamps, versions or units for other numbers. Authorization records ownership and Daniel's prior authorization and constraints, never grants it. Unknown keys and credentials are refused.",
+      "properties": {
+        "objective": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "next": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "authorization": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "recheck": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "text",
+              "observed_at",
+              "recheck"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "objective",
+        "next"
+      ],
+      "additionalProperties": false
     }
   }
 }

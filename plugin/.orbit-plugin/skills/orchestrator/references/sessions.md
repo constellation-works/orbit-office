@@ -34,7 +34,7 @@ The response is `sections`, in this order. Each section has `kind`, `items`,
 
 | `kind` | Present | What it holds | What to do |
 |---|---|---|---|
-| `handoff` | only if your thread wrote one | Your thread's newest project-scoped `handoff` entry, verbatim, with time (your project, preferring your orchestrator; a thread is the first task id its handoff cites, else its conversation's project plus orchestrator) | Resume from it (below) |
+| `handoff` | only if your thread wrote one | Your thread's newest project-scoped `handoff` entry, rendered in structured field order (legacy text is marked), with time (your project, preferring your orchestrator; a thread is the first task id its handoff cites, else its conversation's project plus orchestrator) | Resume from it (below) |
 | `global` | only while a global handoff is open | Open `scope: global` handoffs from any project (text starts `(global)` or `(global until <time>)`), newest first, at most five; one your handoff cites is always listed, once | Apply them alongside your own handoff |
 | `projects` | only in manual output (no project chosen) | One item per project with a handoff thread, newest first: `id`/`text` name the project, `time` is its newest handoff's | Ask which project, or run `/handoff <project>` |
 | `other_sessions` | only with a project, when another recent thread wrote one | One cited handoff item per other thread, newest first, within seven days and at most five | Note in one line; do not resume from another thread's handoff |
@@ -115,7 +115,7 @@ Append handoffs to that id. The extractor later updates the same source,
 preserving every handoff and anchor. It never generates handoffs or resolutions.
 
 ```json
-{"append_to":"<source-id>","entries":[{"kind":"handoff","text":"Next: draft the renewal deck; the user wants to review wording first."}]}
+{"append_to":"<source-id>","entries":[{"kind":"handoff","structured_handoff":{"objective":"Prepare the renewal deck for ORB-<id>.","next":"Draft the deck for the user's wording review.","authorization":"The orchestrator owns the draft; the user authorized drafting only.","evidence":["orbit://task/ORB-<id>"]}}]}
 ```
 
 The plugin ships a disabled `office-conversation-extract` recovery auto-task;
@@ -126,7 +126,8 @@ Until those prerequisites are installed, continue the existing manual log
 extracted duplicate of a legacy manual source. Capture a fact immediately when
 an onboarding or knowledge proposal needs a citation before session end.
 
-Each entry is `{kind, text}` (or the string `"<kind>: <text>"`). Capture adds
+Ordinary entries are `{kind, text}` (or the string `"<kind>: <text>"`);
+new handoffs use `{kind:"handoff", structured_handoff:{...}}` below. Capture adds
 the timestamp. Each entry becomes one line, anchorable as `#L<n>`. The
 capture response does not return line numbers: call `office.source-show`
 with the source `id` to find them.
@@ -150,23 +151,65 @@ with the source `id` to find them.
 
 ## The rolling handoff
 
-Append a **new one-line `handoff` whenever the plan changes**:
+Append a new structured handoff whenever the plan changes: after a decision
+that changes next steps, after filing or finishing work, and when the user
+signals they are done. Keep the last note ready for an abrupt session end.
+The newest note supersedes earlier ones in its thread; never edit them.
+Do not write an end-of-session summary.
 
-- after a decision that changes next steps;
-- after filing or finishing work;
-- when the user signals they are done ("thanks, that's all").
+### Structured handoff contract
 
-A handoff says:
+Write `{kind:"handoff", structured_handoff:{...}}` instead of `text`.
+The old text keys remain accepted; existing one-line entries render unchanged
+with `legacy:true` (and `/handoff` labels them `(legacy)`). A structured entry
+cannot also supply text, correction or by. `scope` and `until` work as before.
 
-- what you were about to do next;
-- what the user is waiting on you for, or you on them;
-- context task state cannot show: why something is paused, what the user
-  prefers next.
+The brief and `/handoff` render these fields in this order:
 
-Cite the relevant entries (`#L<n>`) and task ids. The newest handoff
-supersedes the earlier ones in its thread; never edit them. **Do not write
-an end-of-session summary.** If the terminal closes now, the last handoff
-must already be enough.
+| Field | Meaning | Budget (Unicode characters) |
+|---|---|---|
+| `objective` | Goal and complete assignment task id; required | 500 |
+| `next` | Immediate action, acceptance checks, evidence location and blockers; required | 1000 |
+| `authorization` | Owner of the next step, what Daniel already authorized, and constraints | 1000 |
+| `observations` | Live facts as `{text, observed_at, recheck}` | 2000 total, including timestamps and rechecks |
+| `evidence` | Specific task, comment, PR or report links/references | 2000 total |
+
+Optional fields default to empty; the display says when none was recorded.
+Do not infer consent or invent observation times. Every observation requires a
+nonempty `text`, RFC 3339 `observed_at` with an offset, and nonempty `recheck`.
+Keep completed work only when it affects the next decision; its full history
+belongs on the assignment task. Use plain sentences and complete task ids,
+with linked PRs instead of compressed numbers.
+
+Capture refuses unknown fields, credentials, control characters, empty required
+fields (`handoff_required_field`), incomplete task references
+(`handoff_task_id_incomplete`), missing observation times
+(`handoff_observed_at_required`), invalid times (`handoff_observed_at_invalid`),
+and any over-budget field (`handoff_budget_exceeded`). Missing an assignment id
+in the objective is `handoff_assignment_required`; malformed shapes are
+`handoff_structure_invalid`. Bare numeric tokens of four or more digits, and
+bare numbers after task/tasks/assignment labels, are ambiguous and refused.
+Use complete task ids, links, timestamps, versions or numbers with units for
+other quantities. The validator cannot determine the semantics of every number.
+All strings must be single-line text. The structured object is stored as compact
+JSON after `(structured)` on one physical log line, retaining `#L<n>` anchors;
+global and scribe markers precede it. The brief exposes `structured_handoff`
+alongside the ordered rendered `text`, keeping timestamps and evidence links.
+
+Good example (replace angle-bracket placeholders before capture):
+
+```json
+{"append_to":"<source-id>","entries":[{"kind":"handoff","structured_handoff":{"objective":"Finish the repair for ORB-<id>.","next":"Run the acceptance checks on the repair and read its report before requesting publication. Waiting on the report.","authorization":"The orchestrator owns the repair. Daniel authorized edits and checks; publication requires his approval.","observations":[{"text":"Two workers were active.","observed_at":"2026-11-01T10:00:00Z","recheck":"Recheck worker state before dispatch."}],"evidence":["orbit://task/ORB-<id>","https://github.com/<owner>/<repo>/pull/<number>#issuecomment-<comment>"]}}]}
+```
+
+Bad example (bare task numbers and an observation with no timestamp):
+
+```json
+{"append_to":"<source-id>","entries":[{"kind":"handoff","structured_handoff":{"objective":"Finish the repair for ORB-<id>.","next":"Repair task 12345/67890 next.","observations":[{"text":"Workers active.","recheck":"Before dispatch."}]}}]}
+```
+
+This is refused, not saved as an opaque line. Restore the complete task ids
+and record when the live fact was observed before resubmitting.
 
 **Global handoffs.** For something every project's orchestrator must know
 (an Orbit binary to upgrade, a common Orbit defect and its workaround),
@@ -217,3 +260,8 @@ changes. Every line cites its evidence. It is promoted without review.
 Approved scripts that run on a schedule go through routines and
 `office.script-run`, which you do not call. Proposing one is in
 [proposals-and-insights.md](proposals-and-insights.md).
+
+When the opt-in scribe offers a handoff, it uses the same structure. Invalid
+or legacy offers are dropped with a reason, retaining the pass's other
+evidence. A valid scribe note also needs a plan-changing entry and valid
+local `#L<n>` citations; its `(scribe)` marker remains visible.

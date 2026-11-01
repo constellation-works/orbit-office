@@ -1093,8 +1093,6 @@ pub fn merge(
 
 /// Library path of the scribe rules page (`dom-scribe-rules`).
 pub const RULES_PAGE_PATH: &str = "knowledge/domain/dom-scribe-rules.md";
-/// Word limit of a scribe handoff.
-pub const HANDOFF_WORD_LIMIT: usize = 60;
 
 /// The scribe rules page as the crew and the adapter see it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -1162,22 +1160,15 @@ fn cited_anchors(text: &str) -> Option<Vec<usize>> {
     Some(lines)
 }
 
-/// Append a crew-written scribe handoff to `merged` (the source after this
-/// pass's entries were merged into `base`). It lands only when the pass
-/// added a decision, direction or action, the text is one line of at most
-/// [`HANDOFF_WORD_LIMIT`] words, and it cites at least one `#L<n>` anchor
-/// of the merged source with every cited anchor naming a log entry. It is
-/// written as kind `handoff` with a leading `(scribe)` marker, so every
-/// existing log reader accepts it and the session brief shows the marker.
+/// Append a validated structured scribe handoff after a plan-changing pass.
+/// Legacy prose and invalid structures are dropped with an explicit reason.
+/// Source anchors must resolve, and the stored line retains `(scribe)`.
 pub fn append_handoff(base: &str, merged: &str, text: &str, at: &str) -> Result<HandoffOutcome> {
     let text = scrub(text);
     let text = text.trim();
     let text = text.strip_prefix("(scribe)").unwrap_or(text).trim();
     if text.is_empty() || text.contains(['\n', '\r']) {
         return Ok(HandoffOutcome::Dropped("invalid"));
-    }
-    if text.split_whitespace().count() > HANDOFF_WORD_LIMIT {
-        return Ok(HandoffOutcome::Dropped("too_long"));
     }
     let before = super::source_body(base).lines().count();
     let body = super::source_body(merged);
@@ -1187,7 +1178,13 @@ pub fn append_handoff(base: &str, merged: &str, text: &str, at: &str) -> Result<
     }) {
         return Ok(HandoffOutcome::Dropped("no_plan_change"));
     }
-    let Some(cited) = cited_anchors(text) else {
+    let handoff = match crate::domain::session::handoff::decode(text) {
+        Ok(Some(handoff)) => handoff,
+        Ok(None) => return Ok(HandoffOutcome::Dropped("structured_required")),
+        Err(error) => return Ok(HandoffOutcome::Dropped(error.code())),
+    };
+    let rendered = handoff.render();
+    let Some(cited) = cited_anchors(&rendered) else {
         return Ok(HandoffOutcome::Dropped("unresolved_anchor"));
     };
     if cited.is_empty() {
@@ -1199,7 +1196,8 @@ pub fn append_handoff(base: &str, merged: &str, text: &str, at: &str) -> Result<
     {
         return Ok(HandoffOutcome::Dropped("unresolved_anchor"));
     }
-    let entry = format_conversation_entry(at, "handoff", &format!("(scribe) {text}"))?;
+    let entry =
+        format_conversation_entry(at, "handoff", &format!("(scribe) {}", handoff.encode()?))?;
     let mut result = merged.to_string();
     if !result.ends_with('\n') {
         result.push('\n');

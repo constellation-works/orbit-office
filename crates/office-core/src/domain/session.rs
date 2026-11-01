@@ -1,6 +1,8 @@
 //! Deterministic session continuity. All inputs are recorded data; nothing here
 //! interprets a quoted entry as an instruction or performs I/O.
 
+pub mod handoff;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
@@ -56,6 +58,9 @@ pub fn entries(body: &str) -> Result<Vec<Entry>> {
         if !is_conversation_kind(kind) || text.trim().is_empty() {
             return Err(invalid("log entry kind or text"));
         }
+        if kind == "handoff" {
+            handoff::decode(&text)?;
+        }
         result.push(Entry {
             line: index + 1,
             time: time.into(),
@@ -75,7 +80,8 @@ pub struct Item {
     pub id: String,
     /// Library-relative path (with optional anchor), or an Orbit task URI.
     pub link: String,
-    /// Verbatim entry text or the recorded object's title.
+    /// Verbatim ordinary entry or object title; handoffs render structured
+    /// fields in order while retaining scope and scribe markers.
     pub text: String,
     /// Recorded timestamp; never manufactured from the current clock.
     pub time: Option<String>,
@@ -96,6 +102,12 @@ pub struct Item {
     /// Explicit user attribution on a captured entry.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub by: Option<String>,
+    /// Structured handoff data, absent on ordinary and historical entries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured_handoff: Option<handoff::Structured>,
+    /// Historical unstructured handoff; its original text is retained.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legacy: Option<bool>,
 }
 
 /// A section in display order; optional sections are absent from the array.
@@ -374,10 +386,18 @@ impl Conversation {
             && cites(&entry.text, &format!("#L{}", global.entry.line)))
     }
     fn item(&self, entry: &Entry) -> Item {
+        // conversations() validates the effective entries before projection.
+        let structured_handoff = (entry.kind == "handoff")
+            .then(|| handoff::decode(&entry.text).ok().flatten())
+            .flatten();
+        let legacy = (entry.kind == "handoff" && structured_handoff.is_none()).then_some(true);
+        let text = structured_handoff
+            .as_ref()
+            .map_or_else(|| entry.text.clone(), |h| handoff::render(&entry.text, h));
         Item {
             id: format!("{}#L{}", self.id, entry.line),
             link: format!("{}#L{}", self.path, entry.line),
-            text: entry.text.clone(),
+            text,
             time: Some(entry.time.clone()),
             entry_kind: Some(entry.kind.clone()),
             status: None,
@@ -385,6 +405,8 @@ impl Conversation {
             workspace: None,
             corrected: entry.corrected.then_some(true),
             by: entry.by.clone(),
+            structured_handoff,
+            legacy,
         }
     }
     fn reference(&self) -> Item {
@@ -399,6 +421,8 @@ impl Conversation {
             workspace: None,
             corrected: None,
             by: None,
+            structured_handoff: None,
+            legacy: None,
         }
     }
 }
@@ -539,6 +563,8 @@ fn task_item(row: &Value, at: &str, status: &str, workspace: Option<&str>) -> Re
         workspace: workspace.map(str::to_string),
         corrected: None,
         by: None,
+        structured_handoff: None,
+        legacy: None,
     })
 }
 
@@ -1001,6 +1027,8 @@ fn project_threads(conversations: &[Conversation]) -> Result<Vec<Item>> {
             workspace: None,
             corrected: None,
             by: None,
+            structured_handoff: None,
+            legacy: None,
         })
         .collect())
 }
@@ -1119,6 +1147,8 @@ pub fn assemble_for_session(
                     workspace: Some(selector),
                     corrected: None,
                     by: None,
+                    structured_handoff: None,
+                    legacy: None,
                 })
                 .collect(),
         ));
@@ -1193,6 +1223,8 @@ pub fn assemble_for_session(
                 workspace: None,
                 corrected: None,
                 by: None,
+                structured_handoff: None,
+                legacy: None,
             }],
         ));
     }
@@ -1219,6 +1251,8 @@ pub fn assemble_for_session(
                 workspace: None,
                 corrected: None,
                 by: None,
+                structured_handoff: None,
+                legacy: None,
             });
         }
     }

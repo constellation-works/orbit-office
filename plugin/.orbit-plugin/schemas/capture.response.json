@@ -57,7 +57,16 @@
             "too_long",
             "no_plan_change",
             "no_anchor",
-            "unresolved_anchor"
+            "unresolved_anchor",
+            "structured_required",
+            "handoff_required_field",
+            "handoff_observed_at_required",
+            "handoff_observed_at_invalid",
+            "handoff_task_id_incomplete",
+            "handoff_budget_exceeded",
+            "handoff_structure_invalid",
+            "handoff_field_invalid",
+            "handoff_assignment_required"
           ],
           "description": "Present only when the request offered a handoff: written, or why it was dropped (disabled when dom-scribe-rules does not set scribe.handoff: true)."
         }

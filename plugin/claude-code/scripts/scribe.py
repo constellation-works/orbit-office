@@ -117,7 +117,8 @@ def render_handoff(project: str | None, brief: dict) -> str:
             if kind == "projects":
                 out.append("- {} (last handoff {})".format(item.get("text"), item.get("time")))
             else:
-                out.append("- [{}] {} ({})".format(item.get("time"), item.get("text"), item.get("id")))
+                marker = "(legacy) " if item.get("legacy") else ""
+                out.append("- [{}] {}{} ({})".format(item.get("time"), marker, item.get("text"), item.get("id")))
         section = sections.get(kind, {})
         if section.get("truncated"):
             out.append("- … {} in total".format(section.get("total")))
