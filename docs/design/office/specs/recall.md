@@ -10,9 +10,11 @@ Status: the Orbit backend is built (ORB-20688): session context and title
 ownership, deterministic stored refs, read-only `office.recall`, and append-only
 corrections with repeated-correction signals (ORB-20695). The Claude Code
 provider plugin, commands/subagent and backfill are built (ORB-20689); see the
-[installation guide](../../../../plugin/claude-code/README.md). The Scribe UI
-remains specified.
-PR refs resolve live through a `gh` source (ORB-20710, below).
+[installation guide](../../../../plugin/claude-code/README.md). The desktop
+Scribe pane is built (ORB-20697); the web Scribe screen remains specified.
+PR refs resolve live through a `gh` source (ORB-20710, below). Recall feed
+mode, `office.recall-answer` and the Office-owned scribe control state
+(`office.scribe-control`) are built (ORB-20756, below).
 
 One scribe follows the user across every agent conversation they hold, in
 every project, and answers "where did we discuss X?", "what did we decide
@@ -173,14 +175,16 @@ the backend; until then PR refs read `unresolved` /
 ### The tool: `office.recall`
 
 Read-only, `mcp_scope: workspace`, agent-callable. Input:
-`{"question": "<text>"}` plus optional `since`, `until`, `project` and
-`limit` (1–50, default 20). It makes no model call. It returns:
+`{"question": "<text>"}` plus optional `session_id`, `since`, `until`,
+`project` and `limit` (1–50, default 20). Without a question it runs in
+**feed mode** (below). It makes no model call. It returns:
 
 - `entries`: the matching conversation entries (full-text over entry
   text, source titles and refs), newest first, each with its source id,
   line anchor, kind, text, time and refs;
 - `sessions`: one item per source that contributed an entry, with its
-  title, project, branch, started/last-active times and `resume`;
+  title, project, branch, started/last-active times, `resume` and
+  `session_id` (null on sources captured without one);
 - `refs`: each distinct ref with its live status (task status and
   workspace; PR state, merged-at and merge commit), or `unresolved` with
   the reason;
@@ -188,6 +192,18 @@ Read-only, `mcp_scope: workspace`, agent-callable. Input:
   private, and providers not captured, so an empty result can say why.
 
 Private sources contribute session items and refs but never entry text.
+
+### Feed mode (built)
+
+With `question` absent or null, `office.recall` returns every entry newest
+first, under the same filters and the same response shape: this is the
+Scribe window's feed. `limit` is 1–200 in feed mode (default 20), so a
+window can show a long session; with a question it stays 1–50. `session_id`
+is an exact match on the source's engine session identity, in both modes:
+only that session's conversation source contributes, so a window scopes the
+feed to its own session without relying on the search terms. Private
+entries still count toward the limit and contribute only their session
+item and refs.
 
 ### Query behavior (built)
 
@@ -255,16 +271,19 @@ second writer.
   Library path or credentials. Built: `plugin/claude-code/mod/scribe-pane.tsx`,
   validated with `claude plugin validate` and
   `claude plugin test`. Its feed is `office.recall` queried with the
-  engine-supplied session id (recall matches the id against each source's
-  session identity and returns that session's entries newest first);
+  engine-supplied session id as the question (recall matches the id
+  against each source's session identity and returns that session's
+  entries newest first; feed mode's exact `session_id` filter, above, is
+  the contract the web screen uses);
   corrections are one `office.capture` `append_to` append per choice; the
   switch, **Capture now** and title controls go through the plugin's
   structured pane control (`scripts/pane.py`); the ask box spawns the
   `recall` subagent, renders its answer from that agent's `turn.complete`,
   and falls back to rendering `office.recall`'s cited evidence when the
-  spawn is refused or no answer comes. Until `office.scribe-control`
-  carries the heartbeat and shared switch, both stay the plugin's local
-  files under `.orbit/tmp/scribe/`. When Orbit is
+  spawn is refused or no answer comes. The pane control writes the switch,
+  Capture-now request, title and heartbeat through `office.scribe-control`
+  (below) and keeps the plugin's files under `.orbit/tmp/scribe/` as their
+  local cache. When Orbit is
   unreachable the pane shows a single `scribe unavailable` line.
 
 ### What it shows
@@ -283,15 +302,28 @@ second writer.
   named with its resume command, live status for refs, "not captured" with
   coverage. Answers open feed entries and conversations by link.
 
-### Controls
+### Controls (built)
 
-Per-session scribe control state is owned by Office behind the planned
-`office.scribe-control` tool (`get`, `set_switch`, `request_now`,
-`set_title`, `heartbeat`), specified in
-[sessions.md](./sessions.md#live-scribe). The provider plugin's hooks read
-that state, so the web window and the plugin share one switch. The flag
-file (`.orbit/tmp/scribe/<session-id>`) is the plugin's local cache of
-that Office-owned state.
+Per-session scribe control state is owned by Office behind
+`office.scribe-control` (`get`, `set_switch`, `request_now`,
+`consume_now`, `set_title`, `heartbeat`), specified in
+[sessions.md](./sessions.md#switch) and kept in plugin state
+(`plugin_state/scribe_control.sqlite`), not the Library. The provider
+plugin's hooks read that state, so the web window and the plugin share one
+switch:
+
+- **Switch:** the window calls `set_switch`; the session's next end-of-turn
+  hook mirrors it into the flag file (`.orbit/tmp/scribe/<session-id>`),
+  the plugin's local cache. `/scribe on|off` writes Office first.
+- **Capture now:** the window calls `request_now`; the next end-of-turn
+  hook queues a forced pass and then `consume_now`s that request, once.
+  While an earlier pass is pending the request waits. `/scribe now` records
+  the request and runs it at once.
+- **Title:** the window calls `set_title`; the next end-of-turn hook (switch
+  on) applies it once through `office.capture` with `title_by: user`.
+  `/scribe title` writes both.
+- **Status line:** `get` reports the switch, a pending request and whether
+  a window heartbeat is fresh.
 
 ### Corrections
 
@@ -361,24 +393,49 @@ session, its debounce tightens to `max_turns: 2` (the time bound unchanged),
 and **Capture now** covers the rest. With no window open, the defaults of
 [sessions.md](./sessions.md#trigger-and-debounce) apply.
 
-The window-open heartbeat is a file the window refreshes while it is open:
-`.orbit/tmp/scribe/<session-id>.window-open` in the Office workspace
-(touched by the desktop pane on every refresh, through the plugin's pane
-control). The end-of-turn hook treats a heartbeat under two minutes old as
-"window open" and applies the tighter turn bound. The web Scribe screen
-refreshes the same file for its session when it is built. Once
-`office.scribe-control` is built, windows record the heartbeat through its
-`heartbeat` op and the file remains the plugin's local cache of that
-Office-owned state.
+A window records its heartbeat with `office.scribe-control`'s `heartbeat`
+op while it is open (the desktop pane on every refresh, through the
+plugin's pane control; the web Scribe screen for its session). The
+end-of-turn hook reads the record once per turn and treats a heartbeat
+under two minutes old (`window_open`) as "window open", applying the
+tighter turn bound. The desktop pane also refreshes
+`.orbit/tmp/scribe/<session-id>.window-open` in the Office workspace, the
+plugin's local cache, which the hook uses when Office cannot be read.
 
 ### Answering in each host
 
-`office.recall` stays model-free. A separate planned tool,
-`office.recall-answer`, takes a question, runs recall, then makes one
+`office.recall` stays model-free. A separate tool, `office.recall-answer`
+(built, ORB-20756; read-only, `mcp_scope: workspace`, not `agent_callable`
+— read-only tools keep ordinary Agent access), takes a question and
+`office.recall`'s filters (`session_id`, `since`, `until`, `project`,
+`limit` 1–50; no feed mode), runs recall, then makes at most one
 Standard-tier call through the Models port under the privacy routing of
-[models-and-privacy.md](./models-and-privacy.md#routing-rules): private
-sources are named by reference only unless an open-weights route is
-configured. It returns a cited answer plus the recall payload.
+[models-and-privacy.md](./models-and-privacy.md#routing-rules). It
+returns `{answer, derived_by, recall}`, where `recall` is the full
+`office.recall` payload and `answer` holds:
+
+- `claims`, each with `cites` (`<source-id>#L<n>` anchors). A claim
+  survives only when every cite names an evidence anchor sent to the
+  model; others are dropped and counted in `dropped_claims`.
+- `conversations`: each cited conversation with title, project, date,
+  `session_id` and its `resume` command.
+- `refs`: the live status (from recall) of the cited entries' refs.
+- `coverage`, and `status`: `answered`; `not_captured` when no evidence
+  answers (no model call when recall found nothing, so `derived_by` is
+  null); or `reference_only` when only private sources matched and no
+  open-weights route is configured.
+- `text`: the rendered answer — cited claims, conversations with their
+  resume commands, live status, or the "not captured" line with coverage.
+
+Private entries reach the model only when the Library settings carry an
+open-weights route; the call is then `private`, so the Models adapter
+routes it to that endpoint. Even then, a claim citing a private anchor
+returns by reference only (`text: null`, `content_withheld: true`): the
+tool is MCP-visible, and derived private text is withheld like every
+MCP-visible read ([4_decisions.md](../4_decisions.md#private-content-is-withheld-from-mcp-visible-read-tools)).
+Without the route, private sources are listed in `private_references`
+(source id, title, path, project, session id, resume) and their text goes
+to no model.
 
 - In Claude Code, `/recall` and the mod's ask box use the `recall` subagent.
 - In the web app, the server calls `office.recall-answer`, so the same

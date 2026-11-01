@@ -21,7 +21,8 @@ from process import Failure, NotSent, run
 MAX_TRANSCRIPT = 8 * 1024 * 1024
 SESSION = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 TERMINAL = {"done", "rejected", "archived", "cancelled", "canceled"}
-TOOLS = {"office.session-brief", "office.capture", "office.recall", "orbit.task.add", "orbit.task.show"}
+TOOLS = {"office.session-brief", "office.capture", "office.recall", "office.scribe-control",
+         "orbit.task.add", "orbit.task.show"}
 
 
 def user_turn(record: dict) -> bool:
@@ -137,6 +138,8 @@ class Scribe:
         # Do not create local state for recall-only calls.
         self.state = self.workspace / ".orbit/tmp/scribe"
         self.staging = self.workspace / ".orbit/tmp/session-transcripts"
+        # Office's shared control record, read once per end-of-turn hook.
+        self.shared: dict | None = None
 
     def setup(self):
         # Workspace/.orbit may already be public metadata. Orbit may have created
@@ -185,8 +188,31 @@ class Scribe:
         finally:
             os.close(fd)
 
-    def window_open(self, sid: str) -> bool:
-        """True while a Scribe window heartbeat for this session is fresh."""
+    def control(self, sid: str, op: str, **fields) -> dict:
+        """One `office.scribe-control` call: the Office-owned record both hosts share."""
+        return self.call("office.scribe-control", {"op": op, "session_id": sid, **fields})
+
+    def shared_state(self, sid: str) -> dict | None:
+        """Office's record for this session, or None when Orbit cannot answer.
+
+        Hooks fail open: an unreachable Orbit, an older office plugin without
+        the tool, or the hook deadline fall back to the local cache files.
+        """
+        try:
+            state = self.control(sid, "get")
+        except Failure:
+            return None
+        return state if isinstance(state.get("window_open"), bool) else None
+
+    def window_open(self, sid: str, shared: dict | None = None) -> bool:
+        """True while a Scribe window heartbeat for this session is fresh.
+
+        Office's record is authoritative (`window_open`: a heartbeat under two
+        minutes old); the local heartbeat file is the cache used when Office
+        cannot be read, and is refreshed by this host's own pane.
+        """
+        if shared is not None and shared.get("window_open") is True:
+            return True
         try:
             heartbeat = self.state / (sid + ".window-open")
             if heartbeat.is_symlink():
@@ -196,15 +222,30 @@ class Scribe:
             return False
 
     def heartbeat(self, sid: str) -> dict:
-        """Refresh the window-open heartbeat the Stop hook reads."""
+        """Record the window-open heartbeat in Office and refresh the local cache."""
         self.session_id(sid)
         self.setup()
         publish(self.state / (sid + ".window-open"), b"open\n")
-        return {"window_open": True}
+        shared = self.control(sid, "heartbeat")
+        return {"window_open": shared.get("window_open") is True}
 
-    def switch(self, sid: str, state: dict) -> bool:
+    def mirror(self, sid: str, on: bool) -> None:
+        """Write the shared switch into the local flag file (its cache)."""
         flag = self.state / sid
-        if not state.get("initialized"):
+        if flag.is_symlink():
+            raise Failure("unsafe_switch_file")
+        if on:
+            publish(flag, b"on\n")
+        elif flag.exists():
+            flag.unlink()  # owned session switch, not captured evidence
+
+    def switch(self, sid: str, state: dict, shared: dict | None = None) -> bool:
+        flag = self.state / sid
+        if shared is not None and isinstance(shared.get("on"), bool):
+            # Office's switch wins; the flag file mirrors it.
+            self.mirror(sid, shared["on"])
+            state["initialized"] = True
+        elif not state.get("initialized"):
             if self.default_on:
                 publish(flag, b"on\n")
             state["initialized"] = True
@@ -271,7 +312,7 @@ class Scribe:
             # this session it refreshes a window-open heartbeat; the turn
             # bound tightens to 2 (specs/recall.md, "Pace while the window
             # is open"). The time bound is unchanged.
-            turns_needed = 2 if self.window_open(sid) else 8
+            turns_needed = 2 if self.window_open(sid, self.shared) else 8
             if now - state["last_queued_at"] < 300 and snap["turns"] - state.get("last_turns", 0) < turns_needed:
                 return {"queued": False, "reason": "debounced"}
         # An indeterminate mutation is never blindly retried. Staged descriptor survives.
@@ -310,16 +351,60 @@ class Scribe:
             return {"excluded": True}
         with self.locked(sid):
             state = load(self.state / (sid + ".json"))
-            on = self.switch(sid, state)
+            # The end-of-turn hook reads Office's shared record once per turn
+            # (the window and /scribe write it); other events keep the cache.
+            self.shared = self.shared_state(sid) if event == "Stop" else None
+            on = self.switch(sid, state, self.shared)
             # Persist the real hook context for structured /scribe calls (never shell args).
             save(self.state / (sid + ".context.json"), {k: context[k] for k in ("session_id", "cwd", "transcript_path") if k in context})
             save(self.state / (sid + ".json"), state)
             if event == "SessionStart":
                 return {"brief": self.call("office.session-brief", {})}
-            if event == "Stop" and not on:
+            if self.shared is not None and self.shared.get("on") is None:
+                # First turn Office sees: publish this host's switch (the
+                # plugin default) so the window shows the same state.
+                with contextlib.suppress(Failure):
+                    self.control(sid, "set_switch", on=on)
+            now_requested = self.shared is not None and self.shared.get("now_requested") is True
+            if event == "Stop" and not on and not now_requested:
                 return {"on": False}
             snap = self.snapshot(context, "final" if event == "SessionEnd" else "live")
-            return self.queue(sid, state, snap, force=event == "SessionEnd") if snap else {"queued": False}
+            if not snap:
+                return {"queued": False}
+            if event == "Stop" and now_requested:
+                result = self.capture_now(sid, state, snap, self.shared.get("now_requested_at"))
+            else:
+                result = self.queue(sid, state, snap, force=event == "SessionEnd")
+            if event == "Stop" and on:
+                self.apply_shared_title(sid, state, context, snap)
+            return result
+
+    def capture_now(self, sid: str, state: dict, snap: dict, requested_at) -> dict:
+        """Run a pending Capture-now request as a forced pass, then consume it.
+
+        Consumption names the request read this turn, so a newer request made
+        meanwhile survives. While an earlier pass is still pending the request
+        stays pending and runs at a later turn. A consumption that fails after
+        queuing is retried next turn and deduplicates on the same snapshot.
+        """
+        result = self.queue(sid, state, snap, force=True)
+        if result.get("queued") or result.get("reason") == "already_queued":
+            consumed = self.control(sid, "consume_now", requested_at=requested_at)
+            result["capture_now"] = "consumed" if consumed.get("consumed") else "already_consumed"
+        else:
+            result["capture_now"] = "pending"
+        return result
+
+    def apply_shared_title(self, sid: str, state: dict, context: dict, snap: dict) -> None:
+        """Apply a title set in another host (the window) once, as a user title."""
+        title = (self.shared or {}).get("title")
+        if not isinstance(title, str) or not title.strip() or title == state.get("applied_title"):
+            return
+        with contextlib.suppress(Failure):
+            self.call("office.capture", {"session_transcript_path": snap["path"], "session_id": sid,
+                "project": context["cwd"], "title": title, "title_by": "user"})
+            state["applied_title"] = title
+            save(self.state / (sid + ".json"), state)
 
     def command(self, args: dict) -> dict:
         if set(args) - {"session_id", "action", "title", "since"}:
@@ -342,10 +427,18 @@ class Scribe:
             if flag.is_symlink():
                 raise Failure("unsafe_switch_file")
             queued = state.get("last_queued_at")
-            return {"on": flag.exists() if state.get("initialized") else self.default_on,
-                    "last_queued_task": state.get("pending"), "task_status": "not_checked",
+            on = flag.exists() if state.get("initialized") else self.default_on
+            # Office's shared record is authoritative when it answers; status
+            # still reads (and writes nothing locally) when it cannot.
+            shared = self.shared_state(sid)
+            if shared is not None and isinstance(shared.get("on"), bool):
+                on = shared["on"]
+            return {"on": on, "last_queued_task": state.get("pending"), "task_status": "not_checked",
                     "queue_outcome_unknown": state.get("queue_unknown", False),
-                    "last_queued_at": dt.datetime.fromtimestamp(queued, dt.timezone.utc).isoformat() if queued else None}
+                    "last_queued_at": dt.datetime.fromtimestamp(queued, dt.timezone.utc).isoformat() if queued else None,
+                    "shared_state": shared is not None,
+                    "now_requested": bool(shared and shared.get("now_requested")),
+                    "window_open": self.window_open(sid, shared)}
         if action == "backfill":
             return self.backfill(args.get("since"))
         with self.locked(sid):
@@ -355,21 +448,27 @@ class Scribe:
             state = load(self.state / (sid + ".json"))
             on = self.switch(sid, state)
             if action in ("on", "off"):
-                if action == "on":
-                    publish(self.state / sid, b"on\n")
-                elif (self.state / sid).exists():
-                    (self.state / sid).unlink()  # owned session switch, not captured evidence
+                # Office first: it is the shared switch; the flag file mirrors it.
+                self.control(sid, "set_switch", on=action == "on")
+                self.mirror(sid, action == "on")
                 save(self.state / (sid + ".json"), state)
                 return {"on": action == "on"}
             if action == "title" and (not isinstance(args.get("title"), str) or not args["title"].strip()):
                 raise Failure("title_required")
+            if action == "title":
+                self.control(sid, "set_title", title=args["title"])
+            else:
+                requested = self.control(sid, "request_now")
             snap = self.snapshot(context, "live")
             if not snap:
                 return {"queued": False, "reason": "no_eligible_records"}
             if action == "title":
-                return self.call("office.capture", {"session_transcript_path": snap["path"], "session_id": sid,
+                result = self.call("office.capture", {"session_transcript_path": snap["path"], "session_id": sid,
                     "project": context["cwd"], "title": args["title"], "title_by": "user"})
-            return self.queue(sid, state, snap, force=True)
+                state["applied_title"] = args["title"].strip()
+                save(self.state / (sid + ".json"), state)
+                return result
+            return self.capture_now(sid, state, snap, requested.get("now_requested_at"))
 
     def backfill(self, since: str | None) -> dict:
         after = dt.date.fromisoformat(since) if since is not None else None

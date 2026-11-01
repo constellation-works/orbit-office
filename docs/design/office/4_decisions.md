@@ -2142,6 +2142,43 @@ an adapter crate, wired in the binary's `ports()`), and existing complete
   re-enable it for `gh` to be granted. Until then PR refs read
   `unresolved` / `pr_source_unavailable`.
 
+## Recall answers and scribe control: authority and private withholding
+
+**Recorded:** 2026-11-01 · [ORB-20756]
+**Code anchors:** `office-tools/src/tools/recall/answer.rs`,
+`office-tools/src/tools/sessions/scribe_control.rs`,
+`office-core/src/domain/scribe_control.rs`,
+`office-core/src/ports/scribe_control.rs` (`ScribeControls`),
+`office-store/src/scribe_control.rs` (`ScribeControlStore`);
+[specs/recall.md](./specs/recall.md#answering-in-each-host),
+[specs/sessions.md](./specs/sessions.md).
+
+- **No `agent_callable` for either tool.** `office.recall-answer` costs a
+  model call and `office.scribe-control` writes plugin state, and the
+  installer's consented agent verb set is exactly the four verbs in
+  "Scoped agent preparation" above (repair refuses any other set). Both
+  therefore stay Operator/Runner tools: the web window and the user's own
+  `orbit` CLI reach them, and a plugin hook running inside an Orbit-managed
+  agent session is refused and fails open on its local flag and heartbeat
+  files. Widening the verb set is a separate, consented change.
+- **Private-derived claims are withheld.** recall-answer is MCP-visible, so
+  it follows "Private content is withheld from MCP-visible read tools":
+  without an open-weights route private sources are listed by reference
+  only and never sent to a model; with one they are sent on the private
+  route, and any claim citing them returns `text: null`,
+  `content_withheld: true` with its citations. Public claims are returned
+  in full.
+- **Control state is a new port.** Scribe control is Office-owned plugin
+  state, not Library evidence, so it lives in its own SQLite file in the
+  plugin state directory behind `Ports.scribe_control`, following the PR
+  source precedent: existing complete `Ports` literals receive the refusing
+  `UnavailableScribeControls`, the testkit builder a shared in-memory fake.
+  No crate or dependency edge is added. Records untouched for 30 days are
+  dropped on the next write.
+- **Integrator follow-up:** `ARCHITECTURE.md` still lists both tools as
+  planned and does not name `scribe_control.sqlite`; that file is
+  integrator-owned and is updated in its own task.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
@@ -2165,5 +2202,6 @@ an adapter crate, wired in the binary's `ports()`), and existing complete
 - [ORB-20362] — landed Orbit's scoped, audited application authority for user-approved tool calls.
 - [ORB-20363] — wires the office app's approval actions to that scoped application authority.
 - [ORB-20685] — built the live scribe's incremental capture and `Note:` commands.
+- [ORB-20756] — built recall answers, recall feed mode and Office-owned scribe control.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -378,41 +378,40 @@ spec:
       input_schema: { $ref: schemas/digest.request.json }
       output_schema: { $ref: schemas/digest.response.json }
 
-    # - name: scribe-control
-    #   description: >-
-    #     Own per-session scribe control state: get the switch, set it,
-    #     request Capture now, set the title and record the window-open
-    #     heartbeat. The provider plugin's hooks read this state; the flag
-    #     file is their local cache.
-    #   execution_kind: mutating
-    #   agent_callable: true
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/scribe-control.request.json }
-    #   output_schema: { $ref: schemas/scribe-control.response.json }
+    - name: scribe-control
+      description: >-
+        Own per-session scribe control state: get the switch, set it,
+        request Capture now (and consume it), set the title and record the
+        window-open heartbeat. The provider plugin's hooks read this state;
+        the flag file is their local cache. Plugin state only.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/scribe-control.request.json }
+      output_schema: { $ref: schemas/scribe-control.response.json }
 
     # ---- recall ----
 
     - name: recall
       description: >-
         Answer where a conversation discussed a topic, what was decided and
-        whether it landed, from captured entries. No model call; private
-        sources give no entry text.
+        whether it landed, from captured entries; without a question, list
+        entries newest first (optionally one session's) for the Scribe feed.
+        No model call; private sources give no entry text.
       execution_kind: read_only
       mcp_scope: workspace
       input_schema: { $ref: schemas/recall.request.json }
       output_schema: { $ref: schemas/recall.response.json }
 
-    # - name: recall-answer
-    #   description: >-
-    #     Answer a recall question with one Standard-tier model call over
-    #     recall evidence, then return the cited answer plus the recall
-    #     payload. Private sources are named by reference only unless an
-    #     open-weights route is configured. The web server calls this tool.
-    #   execution_kind: read_only
-    #   agent_callable: true
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/recall-answer.request.json }
-    #   output_schema: { $ref: schemas/recall-answer.response.json }
+    - name: recall-answer
+      description: >-
+        Answer a recall question with one Standard-tier model call over
+        recall evidence, then return the cited answer plus the recall
+        payload. Private sources are named by reference only unless an
+        open-weights route is configured. The web server calls this tool.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/recall-answer.request.json }
+      output_schema: { $ref: schemas/recall-answer.response.json }
 
     # ---- scripts ----
 

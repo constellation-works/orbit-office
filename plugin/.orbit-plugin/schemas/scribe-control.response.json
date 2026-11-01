@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-control response",
+  "description": "The session's record after the op. on is null until someone sets the switch (the provider plugin's default then applies). window_open is true while the last heartbeat is under two minutes old. Records untouched for 30 days are dropped.",
+  "type": "object",
+  "properties": {
+    "op": {
+      "enum": [
+        "get",
+        "set_switch",
+        "request_now",
+        "consume_now",
+        "set_title",
+        "heartbeat"
+      ]
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "on": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "now_requested": {
+      "type": "boolean"
+    },
+    "now_requested_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "heartbeat_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "window_open": {
+      "type": "boolean"
+    },
+    "updated_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "consumed": {
+      "type": "boolean",
+      "description": "consume_now only: whether a pending request was cleared by this call."
+    }
+  },
+  "required": [
+    "op",
+    "session_id",
+    "on",
+    "now_requested",
+    "now_requested_at",
+    "title",
+    "heartbeat_at",
+    "window_open",
+    "updated_at"
+  ],
+  "additionalProperties": false
+}

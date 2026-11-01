@@ -17,16 +17,37 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::ReadOnly,
         mcp_scope: McpScope::Workspace,
     },
-    &["question", "since", "until", "project", "limit"],
+    &[
+        "question",
+        "session_id",
+        "since",
+        "until",
+        "project",
+        "limit",
+    ],
     run,
 );
 
 fn run(call: &Call<'_>) -> Result<Value> {
     let query: Query = serde_json::from_value(Value::Object(call.input.clone())).map_err(|_| {
-        Error::InvalidArgument("recall requires question and valid optional filters".into())
+        Error::InvalidArgument(
+            "recall accepts an optional question and valid optional filters".into(),
+        )
     })?;
+    Ok(read(call, &query)?.payload)
+}
+
+/// One consistent recall read: the response payload plus the private entries
+/// that the payload withholds (used only by `office.recall-answer`).
+pub(crate) struct Read {
+    pub(crate) payload: Value,
+    pub(crate) private_entries: Vec<Value>,
+}
+
+/// Select, resolve live refs and refuse a Library change during the reads.
+pub(crate) fn read(call: &Call<'_>, query: &Query) -> Result<Read> {
     let head = call.ports.library.head_commit()?;
-    let matches = recall::select(&call.ports.library.source_documents()?, &query)?;
+    let matches = recall::select(&call.ports.library.source_documents()?, query)?;
     let refs: Vec<_> = matches.refs.iter().map(|r| live_ref(call, r)).collect();
     if call.ports.library.head_commit()? != head {
         return Err(Error::Library {
@@ -34,9 +55,10 @@ fn run(call: &Call<'_>) -> Result<Value> {
             message: "Library changed while reading recall; retry".into(),
         });
     }
-    Ok(
-        json!({"entries":matches.entries,"sessions":matches.sessions,"refs":refs,"coverage":matches.coverage}),
-    )
+    Ok(Read {
+        payload: json!({"entries":matches.entries,"sessions":matches.sessions,"refs":refs,"coverage":matches.coverage}),
+        private_entries: matches.private_entries,
+    })
 }
 
 fn unresolved(reference: &Reference, reason: &str) -> Value {

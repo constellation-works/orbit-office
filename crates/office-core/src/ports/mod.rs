@@ -6,6 +6,7 @@ mod library;
 mod models;
 mod orbit;
 mod pr;
+mod scribe_control;
 mod scripts;
 mod selection;
 mod shared;
@@ -23,6 +24,7 @@ pub use models::{
 pub use office_common::Sensitivity;
 pub use orbit::Orbit;
 pub use pr::{PrError, PrState, PrView, PullRequests, UnavailablePullRequests, parse_pr_id};
+pub use scribe_control::{ScribeControls, UnavailableScribeControls};
 pub use scripts::ScriptRunner;
 pub use selection::{Selections, UnavailableSelections};
 pub use shared::{
@@ -50,4 +52,6 @@ pub struct Ports<'a> {
     pub shared: Box<dyn SharedRepository + 'a>,
     /// Live pull-request state through `gh`.
     pub pr: Box<dyn PullRequests + 'a>,
+    /// Per-session scribe control state in plugin state.
+    pub scribe_control: Box<dyn ScribeControls + 'a>,
 }

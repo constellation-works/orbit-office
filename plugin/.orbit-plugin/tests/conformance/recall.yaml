@@ -6,9 +6,14 @@ tests:
     input: {"question":"not-captured"}
     expect:
       output: {"entries":[],"sessions":[],"refs":[],"coverage":{"earliest_session_at":null,"private_sessions_skipped":0,"providers_not_captured":["codex"]}}
-  - name: recall_requires_question
+  - name: recall_feed_empty_library
     tool: recall
-    input: {}
+    input: {"session_id":"session-one","limit":200}
+    expect:
+      output: {"entries":[],"sessions":[],"refs":[],"coverage":{"earliest_session_at":null,"private_sessions_skipped":0,"providers_not_captured":["codex"]}}
+  - name: recall_feed_limit_bounds
+    tool: recall
+    input: {"limit":201}
     expect:
       error: {"code":"invalid_argument"}
   - name: recall_limit_bounds

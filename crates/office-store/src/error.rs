@@ -166,6 +166,17 @@ pub enum Error {
         #[source]
         source: rusqlite::Error,
     },
+    /// The scribe control database failed. It is separate from the index.
+    #[error("scribe control database {}: {detail}", path.display())]
+    ScribeControlSqlite {
+        /// `plugin_state/scribe_control.sqlite`.
+        path: PathBuf,
+        /// The operation and SQLite's message.
+        detail: String,
+        /// The underlying SQLite error.
+        #[source]
+        source: rusqlite::Error,
+    },
     /// The index was written by a newer build; refuse rather than rewrite
     /// state this build does not understand.
     #[error("index database {} uses schema {found}, but this build reads schema {supported} or older; upgrade office", path.display())]
@@ -215,6 +226,7 @@ impl Error {
             Self::Corrupt { .. } => "library_document_corrupt",
             Self::Sqlite { .. } => "index_sqlite_error",
             Self::SelectionSqlite { .. } => "selection_sqlite_error",
+            Self::ScribeControlSqlite { .. } => "scribe_control_sqlite_error",
             Self::NewerSchema { .. } => "index_schema_too_new",
         }
     }
@@ -233,6 +245,18 @@ impl Error {
 
     pub(crate) fn sqlite(path: &std::path::Path, phase: &str, source: rusqlite::Error) -> Self {
         Self::Sqlite {
+            path: path.to_path_buf(),
+            detail: format!("{phase}: {source}"),
+            source,
+        }
+    }
+
+    pub(crate) fn scribe_control_sqlite(
+        path: &std::path::Path,
+        phase: &str,
+        source: rusqlite::Error,
+    ) -> Self {
+        Self::ScribeControlSqlite {
             path: path.to_path_buf(),
             detail: format!("{phase}: {source}"),
             source,
@@ -313,6 +337,7 @@ impl From<Error> for office_core::Error {
             | Error::Corrupt { .. }
             | Error::Sqlite { .. }
             | Error::SelectionSqlite { .. }
+            | Error::ScribeControlSqlite { .. }
             | Error::NewerSchema { .. }) => Self::Library {
                 code: other.code(),
                 message: other.to_string(),

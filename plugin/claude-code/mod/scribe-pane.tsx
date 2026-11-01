@@ -89,10 +89,10 @@ async function runPaneControl($: EngineInterface, args: Record<string, unknown>)
   )
 }
 
-// Window-open heartbeat, kept while the pane is shown. Stub: until
-// office.scribe-control (ORB-20755, ORB-20756) carries the heartbeat and the
-// shared switch, this refreshes the plugin's local
-// `.orbit/tmp/scribe/<session-id>.window-open` file, which the Stop hook reads.
+// Window-open heartbeat, kept while the pane is shown. The pane control
+// records it in Office (office.scribe-control `heartbeat`), which the Stop
+// hook reads, and refreshes the local cache file
+// `.orbit/tmp/scribe/<session-id>.window-open`.
 async function heartbeat($: EngineInterface, sessionId: string): Promise<void> {
   const shown = (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
   if (shown) await runPaneControl($, { session_id: sessionId, action: 'heartbeat' })

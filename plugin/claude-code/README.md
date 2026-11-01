@@ -61,15 +61,22 @@ but leaving both hooks enabled can still create redundant extraction tasks.
 
 ## Commands
 
-- `/scribe on` / `/scribe off`: change this session's live switch. Off keeps
-  existing captured evidence and still permits SessionEnd extraction.
-- `/scribe now`: stage complete records and request a live pass immediately,
-  bypassing the time/turn debounce. An unchanged snapshot is a no-op; an
-  outstanding live pass is reused instead of starting concurrent extraction.
-- `/scribe status`: read the switch and last queued task without creating
-  state or querying its lifecycle. `task_status: not_checked` is explicit;
+- `/scribe on` / `/scribe off`: change this session's live switch, in Office
+  (`office.scribe-control`, shared with the Scribe window) and then in the
+  local flag file. Off keeps existing captured evidence and still permits
+  SessionEnd extraction.
+- `/scribe now`: record a Capture-now request in Office, stage complete
+  records and run it immediately, bypassing the time/turn debounce, then
+  consume the request. An unchanged snapshot is a no-op; an outstanding live
+  pass is reused instead of starting concurrent extraction, and the request
+  stays pending for a later turn (`capture_now: pending`).
+- `/scribe status`: read the switch (Office's shared record when it answers,
+  else the local flag), a pending Capture-now request, whether a window
+  heartbeat is fresh and the last queued task, without creating local state
+  or querying the task's lifecycle. `task_status: not_checked` is explicit;
   queued does not mean captured.
-- `/scribe title <text>`: set `title_by: user` through `office.capture`.
+- `/scribe title <text>`: store the title in Office's shared record and set
+  `title_by: user` through `office.capture`.
   This performs conservative local capture of the current complete snapshot,
   ensuring a title change cannot skip unselected evidence. Later crew title
   proposals cannot overwrite it. No model call occurs in this command.
@@ -89,8 +96,14 @@ but leaving both hooks enabled can still create redundant extraction tasks.
 ## Runtime and recovery
 
 Hook input is Claude's JSON on stdin. SessionStart supplies the deterministic
-brief and records the session context. Stop stages only while on; it copies
-through the last newline and ignores a trailing partial record. SessionEnd
+brief and records the session context. Stop reads Office's shared control
+record for the session once (`office.scribe-control` `get`), mirrors its
+switch into the flag file (publishing the plugin default on the session's
+first turn), runs a pending Capture-now request as a forced pass and then
+consumes it once, and applies a title set in the window once. It stages only
+while on (or for a pending Capture now); it copies through the last newline
+and ignores a trailing partial record. When Office cannot answer, Stop fails
+open on the local flag and heartbeat files. SessionEnd
 requires a complete final JSONL file. Each immutable snapshot is published
 `0600` in `0700` `.orbit/tmp/session-transcripts/`, then its sibling descriptor
 is published last with session id, absolute transcript path, SHA-256, byte
@@ -104,7 +117,8 @@ symlink and is not group- or other-writable; otherwise every action, including
 `status`, refuses with `unsafe_state_directory`.
 
 Per-session locks serialize publications and queue decisions, without waiting
-on a busy lock. Live debounce is five minutes **or** eight new user turns;
+on a busy lock. Live debounce is five minutes **or** eight new user turns (two
+while a Scribe window heartbeat is under two minutes old);
 live dedupe is session plus snapshot length. One live task may be outstanding.
 A final descriptor always requests a separate digest-deduplicated final task;
 when a live task is outstanding, the final task depends on it, so extraction
@@ -113,7 +127,8 @@ last descriptor scan and SessionEnd. No crew/model is pinned for extraction.
 The shipped instruction follows the Office extraction definition, including
 private local capture, incremental cursors, rules and opt-in handoffs.
 
-Hooks have a one-second total Orbit budget (plus at most 100 ms termination
+Hooks have a one-second total Orbit budget shared by all their calls (the
+control-record read adds one call per turn; plus at most 100 ms termination
 grace), a three-second provider timeout, bounded stdout/stderr capture, process
 group cleanup and no inference waits. They log fixed diagnostic codes to
 stderr and exit 0 on failure; upstream stderr and transcript contents are
@@ -178,14 +193,21 @@ and the session stays responsive. A failed control press shows one dim
 notice.
 
 While the pane is placed it keeps the window-open heartbeat, behind one
-function (`heartbeat` in the mod). Until `office.scribe-control` (ORB-20755,
-ORB-20756) carries the heartbeat and the shared switch, that function runs
-the pane control's `heartbeat` action, which touches
-`.orbit/tmp/scribe/<session-id>.window-open`; the switch stays the local flag
-file `.orbit/tmp/scribe/<session-id>`. The end-of-turn hook reads the
-heartbeat and, while it is under two minutes old, tightens the live debounce
-to two new turns, the time bound unchanged, as in
+function (`heartbeat` in the mod), which runs the pane control's `heartbeat`
+action: it refreshes the local cache file
+`.orbit/tmp/scribe/<session-id>.window-open` and records the heartbeat in
+Office with `office.scribe-control` (the action fails when Office cannot be
+written). The switch, Capture now and title likewise go to Office's shared
+record, so the web Scribe window and this pane control one state; the local
+flag file `.orbit/tmp/scribe/<session-id>` is its cache. The end-of-turn hook
+reads the record's `window_open` (or, when Office cannot answer, the cache
+file) and, while the heartbeat is under two minutes old, tightens the live
+debounce to two new turns, the time bound unchanged, as in
 `docs/design/office/specs/recall.md` § "Pace while the window is open".
+
+`office.scribe-control` is a mutating Office tool outside the consented agent
+verbs, so the hooks and commands reach it through your own `orbit` CLI; inside
+an Orbit-managed agent session it is refused and the hooks use the cache.
 
 ## Verification
 

@@ -242,7 +242,8 @@ privacy; a source changed to private stays private on later extraction.
 Status: partly built. The incremental passes and the user `Note:`/`Scribe:`
 commands below are built ([ORB-20685]); the rules page, answers to
 questions and scribe handoff are built ([ORB-20686]); the Claude Code
-switch, trigger and debounce are built ([ORB-20689]). The feedback section
+switch, trigger and debounce are built ([ORB-20689]), and the switch is
+Office-owned state shared with the Scribe window ([ORB-20756]). The feedback section
 remains specified, not built. Everything above still applies; this section
 changes when extraction runs, how much of the transcript each pass reads,
 and three narrow rules about what it may write.
@@ -257,10 +258,14 @@ never posts into the conversation.
 
 ### Switch
 
-A per-session flag file, `.orbit/tmp/scribe/<session-id>`, owner-only, in
-the office workspace beside the transcript staging directory. Present means
-on. A provider command (`/scribe on|off|now|status` for Claude Code) creates
-or removes it; the default for new sessions is a setting of the provider
+The switch is Office-owned per-session state, kept in plugin state
+(`plugin_state/scribe_control.sqlite`) behind `office.scribe-control`
+(built, [ORB-20756]); it is not Library evidence. One record per session
+holds the switch, a pending **Capture now** request, the user's title and
+the last Scribe window heartbeat. The web Scribe window and the provider
+plugin read and write the same record, so both hosts share one switch.
+A provider command (`/scribe on|off|now|status|title` for Claude Code)
+writes it; the default for new sessions is a setting of the provider
 plugin, not of the Library. Turning the scribe off stops new passes; it
 never removes evidence already captured. The hooks and commands ship as a
 per-user provider plugin from this repository
@@ -268,17 +273,43 @@ per-user provider plugin from this repository
 covers every project; answering questions across conversations is
 [recall.md](./recall.md).
 
-Per-session scribe control state is owned by Office behind the planned
-`office.scribe-control` tool (`get`, `set_switch`, `request_now`,
-`set_title`, `heartbeat`). The provider plugin's hooks read that state, so
-the web Scribe window and the plugin share one switch. The flag file above
-is the plugin's local cache of that Office-owned state.
+The plugin's per-session flag file, `.orbit/tmp/scribe/<session-id>`,
+owner-only, in the office workspace beside the transcript staging
+directory (present means on), is its local cache of that record. Each
+end-of-turn hook reads the record once and mirrors the switch into the
+flag file; on the first turn Office sees for a session (switch unset) the
+hook publishes its own switch (the plugin default) so the window shows the
+same state. `/scribe on|off` writes Office first, then the flag file. When
+Orbit cannot answer (unreachable, an older office plugin, the one-second
+hook budget spent) the hook fails open on the cached flag file.
+
+`office.scribe-control` takes `op` and `session_id` (1–128 ASCII letters,
+digits, `-` or `_`) and returns the record after the op:
+
+| op | Extra input | Effect |
+|---|---|---|
+| `get` | — | Read. An unknown session reads as `on: null` (unset), nothing pending. |
+| `set_switch` | `on` | Set the switch. |
+| `request_now` | — | Record a pending Capture-now request; an existing one keeps its time. |
+| `consume_now` | optional `requested_at` | Clear the pending request and report `consumed`. With `requested_at` (the `now_requested_at` read earlier), clear only that request, so a newer one survives. |
+| `set_title` | `title` | Store a single-line user title (at most 4096 bytes, trimmed). |
+| `heartbeat` | — | Record that a Scribe window is open now. |
+
+The record reports `on`, `now_requested`, `now_requested_at`, `title`,
+`heartbeat_at`, `window_open` (heartbeat under two minutes old by the
+Office clock) and `updated_at`. Records untouched for 30 days are dropped
+on a later write. The tool is `mutating`, `mcp_scope: workspace` and not
+`agent_callable`, like every Office mutation outside the four consented
+agent verbs ([plugin-surface.md](./plugin-surface.md#agent-authority-inventory));
+the plugin's hooks and commands call it through the user's own `orbit`
+CLI. A hook running inside an Orbit-managed agent session is therefore
+refused and falls back to the flag file.
 
 ### Trigger and debounce
 
-The provider's end-of-turn hook (`Stop` in Claude Code) checks the flag and,
-when it is on, stages a snapshot and may queue a pass. It never waits for
-inference.
+The provider's end-of-turn hook (`Stop` in Claude Code) reads the shared
+record (above), checks the switch and, when it is on, stages a snapshot and
+may queue a pass. It never waits for inference.
 
 - **Snapshot.** The hook copies the live transcript up to its last complete
   record (the last newline), never a partial record, and publishes it
@@ -288,8 +319,14 @@ inference.
 - **Debounce.** At most one pass is queued or running per session. A new
   pass is queued only when the previous one was queued at least
   `min_interval` ago (default 5 minutes) or at least `max_turns` new user
-  turns (default 8) have arrived since it. `/scribe now` queues a pass
+  turns (default 8) have arrived since it; `max_turns` is 2 while the
+  record's window heartbeat is fresh ([recall.md](./recall.md#pace-while-the-window-is-open)).
+  `/scribe now` records a Capture-now request in Office and runs it
   immediately, ignoring the debounce, while reusing an outstanding live task.
+  A request made in the window runs at the session's next end-of-turn hook,
+  even with the switch off. Either way the request is consumed only after
+  its pass is queued (or found already queued), naming the request it read;
+  while an earlier pass is still pending it stays pending for a later turn.
   SessionEnd always requests a digest-deduplicated final task; it depends on
   an outstanding live task so no extraction runs concurrently for the session.
   This closes the race with a live worker finishing its last descriptor scan.
@@ -638,5 +675,6 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-20686] — built the live scribe's rules page, answers to questions and scribe handoff.
 - [ORB-20689] — built the per-user Claude Code hooks, commands, debounce and backfill.
 - [ORB-20755] — reserved the planned `office.recall-answer` and `office.scribe-control` scaffold (registry rows, reserved manifest blocks, this section).
+- [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

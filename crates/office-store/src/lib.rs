@@ -33,8 +33,10 @@ pub use driver::script::ScriptStore;
 pub use error::{Error, Result};
 pub use pr::GhPullRequests;
 pub use repository::LibraryStore;
+pub use scribe_control::ScribeControlStore;
 pub use selection::SelectionStore;
 
+mod scribe_control;
 mod selection;
 
 #[cfg(test)]

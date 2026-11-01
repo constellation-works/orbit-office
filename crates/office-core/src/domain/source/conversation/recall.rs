@@ -392,20 +392,29 @@ pub fn with_refs(markdown: &str) -> Result<String> {
 }
 
 /// Parsed and validated query. The tool performs only port reads afterwards.
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Query {
     /// Literal case-insensitive terms, all required in text/title/refs.
-    pub question: String,
+    /// Absent (or null) selects feed mode: every entry, newest first.
+    pub question: Option<String>,
+    /// Exact engine session identity; only that session's source contributes.
+    pub session_id: Option<String>,
     /// Inclusive RFC 3339 timestamp or UTC date lower bound.
     pub since: Option<String>,
     /// Inclusive RFC 3339 timestamp or UTC date upper bound.
     pub until: Option<String>,
     /// Exact project selector.
     pub project: Option<String>,
-    /// Maximum public entries plus private matching entries considered.
+    /// Maximum public entries plus private matching entries considered:
+    /// 1–50 with a question, 1–200 in feed mode.
     pub limit: Option<usize>,
 }
+
+/// Largest `limit` with a question.
+pub const QUESTION_LIMIT: usize = 50;
+/// Largest `limit` in feed mode (no question), sized for the Scribe window feed.
+pub const FEED_LIMIT: usize = 200;
 fn date(value: &str) -> Result<chrono::DateTime<chrono::FixedOffset>> {
     chrono::DateTime::parse_from_rfc3339(value).map_err(|_| invalid("invalid recall timestamp"))
 }
@@ -433,6 +442,10 @@ fn bound(value: &str, end: bool) -> Result<chrono::DateTime<chrono::FixedOffset>
 pub struct Matches {
     /// Public entries only, in descending time order.
     pub entries: Vec<Value>,
+    /// Private entries within the limit, in descending time order. Never part
+    /// of a recall response; only a caller with a private model route may
+    /// send them on (`office.recall-answer`).
+    pub private_entries: Vec<Value>,
     /// One metadata-only item per contributing source.
     pub sessions: Vec<Value>,
     /// Distinct refs from public and private contributions.
@@ -445,10 +458,30 @@ pub struct Matches {
 /// returned. Stored refs are read, never inferred anew during recall.
 pub fn select(files: &[LibraryText], query: &Query) -> Result<Matches> {
     let limit = query.limit.unwrap_or(20);
-    if query.question.trim().is_empty() || query.question.len() > 4096 || !(1..=50).contains(&limit)
+    match query.question.as_deref() {
+        Some(question)
+            if question.trim().is_empty()
+                || question.len() > 4096
+                || !(1..=QUESTION_LIMIT).contains(&limit) =>
+        {
+            return Err(Error::InvalidArgument(
+                "recall needs a question of 1–4096 bytes and limit 1–50".into(),
+            ));
+        }
+        None if !(1..=FEED_LIMIT).contains(&limit) => {
+            return Err(Error::InvalidArgument(
+                "recall feed mode (no question) needs limit 1–200".into(),
+            ));
+        }
+        Some(_) | None => {}
+    }
+    if query
+        .session_id
+        .as_ref()
+        .is_some_and(|id| !single_line(id, 256))
     {
         return Err(Error::InvalidArgument(
-            "recall needs question (1–4096 bytes) and limit (1–50)".into(),
+            "recall session_id must be a single-line identity of at most 256 bytes".into(),
         ));
     }
     let since = query
@@ -462,7 +495,7 @@ pub fn select(files: &[LibraryText], query: &Query) -> Result<Matches> {
             "recall since must not be after until".into(),
         ));
     }
-    let question = query.question.to_lowercase();
+    let question = query.question.as_deref().unwrap_or("").to_lowercase();
     let terms: Vec<_> = question.split_whitespace().collect();
     let mut candidates = Vec::new();
     let mut sources = BTreeMap::new();
@@ -503,6 +536,10 @@ pub fn select(files: &[LibraryText], query: &Query) -> Result<Matches> {
             .project
             .as_ref()
             .is_some_and(|p| fields.get("project").and_then(Value::as_str) != Some(p))
+            || query
+                .session_id
+                .as_ref()
+                .is_some_and(|id| fields.get("session_id").and_then(Value::as_str) != Some(id))
         {
             continue;
         }
@@ -584,6 +621,7 @@ pub fn select(files: &[LibraryText], query: &Query) -> Result<Matches> {
     });
     candidates.truncate(limit);
     let mut entries = Vec::new();
+    let mut private_entries = Vec::new();
     let mut sessions = Vec::new();
     let mut seen = BTreeSet::new();
     let mut refs = BTreeSet::new();
@@ -594,12 +632,15 @@ pub fn select(files: &[LibraryText], query: &Query) -> Result<Matches> {
             sessions.push(source);
         }
         refs.extend(entry_refs);
-        if !private {
+        if private {
+            private_entries.push(entry);
+        } else {
             entries.push(entry);
         }
     }
     Ok(Matches {
         entries,
+        private_entries,
         sessions,
         refs,
         coverage: json!({

@@ -10,6 +10,7 @@ pub mod endpoint;
 pub mod knowledge;
 pub mod metrics;
 pub mod proposal;
+pub mod scribe_control;
 pub mod script;
 pub mod selection;
 pub mod session;

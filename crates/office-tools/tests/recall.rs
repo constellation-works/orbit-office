@@ -175,10 +175,13 @@ fn recall_filters_are_inclusive_limits_are_bounded_and_legacy_sources_are_readab
         "Newer entry."
     );
     for input in [
-        json!({}),
         json!({"question":" "}),
         json!({"question":"a","limit":0}),
         json!({"question":"a","limit":51}),
+        json!({"limit":0}),
+        json!({"limit":201}),
+        json!({"session_id":""}),
+        json!({"session_id":"two\nlines"}),
         json!({"question":"a","since":"bad"}),
         json!({"question":"a","since":"2026-10-29","until":"2026-10-28"}),
         json!({"question":"a","unknown":true}),
@@ -318,5 +321,183 @@ fn conformance_golden_runs_through_public_dispatch() {
             }
         }
     }
-    assert_eq!(count, 4, "all golden cases executed");
+    assert_eq!(count, 5, "all golden cases executed");
+}
+
+/// Every object in `items` has the schema's required keys and no others.
+fn assert_closed_shape(items: &Value, schema: &Value) {
+    let properties = schema["properties"].as_object().unwrap();
+    for item in items.as_array().unwrap() {
+        let item = item.as_object().unwrap();
+        for key in schema["required"].as_array().unwrap() {
+            assert!(
+                item.contains_key(key.as_str().unwrap()),
+                "{key} in {item:?}"
+            );
+        }
+        for key in item.keys() {
+            assert!(properties.contains_key(key), "schema lists {key}");
+        }
+    }
+}
+
+fn session_source(
+    library: &FakeLibrary,
+    id: &str,
+    session: Option<&str>,
+    private: bool,
+    body: &str,
+) {
+    let session = session.map_or(String::new(), |s| format!("session_id: {s}\n"));
+    library
+        .write_document(
+            Path::new(&format!("sources/conversation/2026/10/{id}/source.md")),
+            &format!(
+                "---\nid: {id}\nkind: conversation\ntitle: Title {id}\nproject: /work/a\nsensitivity: {}\ncaptured_at: \"2026-10-28T00:00:00Z\"\n{session}entry_refs: {{}}\n---\n{body}",
+                if private { "private" } else { "normal" }
+            ),
+        )
+        .unwrap();
+}
+
+#[test]
+fn feed_mode_without_question_lists_newest_first_scoped_to_one_session_up_to_200() {
+    let library = FakeLibrary::initialized();
+    // 210 entries in the window's session, spread over minutes so order is total.
+    let body: String = (0..210)
+        .map(|n| {
+            format!(
+                "[2026-10-28T{:02}:{:02}:00Z] fact: Entry {n}.\n",
+                8 + n / 60,
+                n % 60
+            )
+        })
+        .collect();
+    session_source(&library, "src-mine", Some("session-mine"), false, &body);
+    session_source(
+        &library,
+        "src-other",
+        Some("session-other"),
+        false,
+        "[2026-10-29T00:00:00Z] decision: Newest elsewhere.\n",
+    );
+    session_source(
+        &library,
+        "src-legacy",
+        None,
+        false,
+        "[2026-10-29T01:00:00Z] fact: No session identity.\n",
+    );
+    session_source(
+        &library,
+        "src-private",
+        Some("session-private"),
+        true,
+        "[2026-10-29T02:00:00Z] fact: PRIVATE FEED TEXT\n",
+    );
+    let (ports, _, models, _pr) = fixture(library);
+
+    // Whole-Library feed: newest first across sources, private text withheld.
+    let response = call(&ports, json!({"limit":3}));
+    assert_eq!(response["ok"], true, "{response}");
+    let out = &response["output"];
+    let texts: Vec<&str> = out["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        texts,
+        ["No session identity.", "Newest elsewhere."],
+        "the private entry counts toward the limit but is withheld"
+    );
+    assert!(!response.to_string().contains("PRIVATE FEED TEXT"));
+    let ids: Vec<&Value> = out["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| &s["session_id"])
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            &json!("session-private"),
+            &json!(null),
+            &json!("session-other")
+        ]
+    );
+
+    // One session's feed, at the window's full limit of 200.
+    let response = call(&ports, json!({"session_id":"session-mine","limit":200}));
+    assert_eq!(response["ok"], true, "{response}");
+    let out = &response["output"];
+    let entries = out["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 200);
+    assert_eq!(entries[0]["text"], "Entry 209.");
+    assert_eq!(entries[199]["text"], "Entry 10.");
+    assert!(entries.iter().all(|e| e["source_id"] == "src-mine"));
+    let times: Vec<&str> = entries
+        .iter()
+        .map(|e| e["time"].as_str().unwrap())
+        .collect();
+    assert!(times.windows(2).all(|w| w[0] > w[1]), "newest first");
+    assert_eq!(out["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(out["sessions"][0]["session_id"], "session-mine");
+
+    // The session filter is an exact source identity, not a search term:
+    // a prefix matches nothing, and it composes with a question.
+    let response = call(&ports, json!({"session_id":"session-mi"}));
+    assert_eq!(response["output"]["entries"], json!([]));
+    let response = call(
+        &ports,
+        json!({"question":"elsewhere","session_id":"session-mine"}),
+    );
+    assert_eq!(response["output"]["entries"], json!([]));
+    let response = call(
+        &ports,
+        json!({"question":"entry 209","session_id":"session-mine"}),
+    );
+    assert_eq!(response["output"]["entries"].as_array().unwrap().len(), 1);
+    // Default feed limit is 20; a question still caps at 50.
+    assert_eq!(
+        call(&ports, json!({"session_id":"session-mine"}))["output"]["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        20
+    );
+    assert_eq!(
+        call(&ports, json!({"question":"entry","limit":200}))["error"]["code"],
+        "invalid_argument"
+    );
+    assert!(
+        models.extract_requests.borrow().is_empty(),
+        "recall makes no model call"
+    );
+
+    // The output matches the shipped response schema's closed item shapes.
+    let schema: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../plugin/.orbit-plugin/schemas/recall.response.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let response = call(&ports, json!({"limit":200}));
+    assert_closed_shape(
+        &response["output"]["sessions"],
+        &schema["properties"]["sessions"]["items"],
+    );
+    assert_closed_shape(
+        &response["output"]["entries"],
+        &schema["properties"]["entries"]["items"],
+    );
+    assert!(
+        schema["properties"]["sessions"]["items"]["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("session_id"))
+    );
 }

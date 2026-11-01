@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-control request",
+  "description": "Read or change one session's scribe control record in Office plugin state. get, request_now and heartbeat take only op and session_id; set_switch takes on; set_title takes title; consume_now takes an optional requested_at (clears the pending Capture-now request only if it is still that request).",
+  "type": "object",
+  "properties": {
+    "op": {
+      "enum": [
+        "get",
+        "set_switch",
+        "request_now",
+        "consume_now",
+        "set_title",
+        "heartbeat"
+      ]
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "description": "Provider (engine) session identity."
+    },
+    "on": {
+      "type": "boolean",
+      "description": "set_switch only: the new switch state."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "set_title only: a single-line user title."
+    },
+    "requested_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "consume_now only: the now_requested_at value read earlier; omit to clear any pending request."
+    }
+  },
+  "required": [
+    "op",
+    "session_id"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "set_switch"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "on"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "set_title"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "title"
+        ]
+      }
+    }
+  ]
+}
