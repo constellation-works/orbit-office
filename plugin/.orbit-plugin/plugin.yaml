@@ -389,25 +389,25 @@ spec:
       input_schema: { $ref: schemas/scribe-control.request.json }
       output_schema: { $ref: schemas/scribe-control.response.json }
 
-    # - name: scribe-pending
-    #   description: >-
-    #     Parse a session transcript into the scribe's message file and return
-    #     the messages after the session's scribed_through, with its SCR
-    #     metadata and the scribe rules. Model-free.
-    #   execution_kind: read_only
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/scribe-pending.request.json }
-    #   output_schema: { $ref: schemas/scribe-pending.response.json }
+    - name: scribe-pending
+      description: >-
+        Parse a session transcript into the scribe's message file and return
+        the messages after the session's scribed_through, with its SCR
+        metadata and the scribe rules. Model-free.
+      execution_kind: read_only
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/scribe-pending.request.json }
+      output_schema: { $ref: schemas/scribe-pending.response.json }
 
-    # - name: scribe-append
-    #   description: >-
-    #     Validate the scribe's entries against the transcript and append them
-    #     to the session's SCR file, refusing any quote that is not an exact
-    #     substring of its message; commit to the Library. Model-free.
-    #   execution_kind: mutating
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/scribe-append.request.json }
-    #   output_schema: { $ref: schemas/scribe-append.response.json }
+    - name: scribe-append
+      description: >-
+        Validate the scribe's entries against the transcript and append them
+        to the session's SCR file, refusing any quote that is not an exact
+        substring of its message; commit to the Library. Model-free.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/scribe-append.request.json }
+      output_schema: { $ref: schemas/scribe-append.response.json }
 
     # ---- recall ----
 

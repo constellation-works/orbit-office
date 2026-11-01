@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-pending response",
+  "description": "The messages after scribed_through, preceded by up to 10 earlier messages marked context, with the SCR metadata and the rules. A private session is withheld: no file is written and no message is returned.",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "parsed": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Workspace-relative path of the message file; null when withheld."
+    },
+    "content_withheld": {
+      "type": "boolean"
+    },
+    "message_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "new_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "scr": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "The session's SCR file, or (exists false) the name a new one takes; null while the session has no messages.",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scribed_through": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_scribed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "counterpart": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "counterpart_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "exists",
+        "id",
+        "path",
+        "title",
+        "scribed_through",
+        "last_scribed_at",
+        "topics",
+        "aliases",
+        "counterpart",
+        "counterpart_name"
+      ],
+      "additionalProperties": false
+    },
+    "scribed_through": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^m-[0-9]{4,}$",
+            "description": "Stable: the nth kept message is always m-<n>."
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "text": {
+            "type": "string"
+          },
+          "context": {
+            "const": true,
+            "description": "Present on earlier, already scribed messages: read-only context, never cited."
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "at",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "rules": {
+      "type": "object",
+      "description": "The Tags, Topics and Capture sections of dom-scribe-rules, or the spec defaults (topics: the project name).",
+      "properties": {
+        "source": {
+          "enum": [
+            "page",
+            "defaults"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "meaning": {
+                "type": "string"
+              },
+              "examples": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "authors": {
+                "enum": [
+                  "user",
+                  "agent",
+                  "any"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "meaning",
+              "examples",
+              "authors"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "capture": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "source",
+        "tags",
+        "topics",
+        "capture"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "session_id",
+    "provider",
+    "parsed",
+    "content_withheld",
+    "message_count",
+    "new_count",
+    "scr",
+    "scribed_through",
+    "messages",
+    "rules"
+  ],
+  "additionalProperties": false
+}

@@ -2215,6 +2215,52 @@ by default. The web Scribe screen (ORB-20696) is parked.
 Cost: one more source layout, and the built recall surfaces sit unused until
 v1 has proven what to keep.
 
+## Scribe v1 parse and append: where files live and who may take a tag
+
+**Recorded:** 2026-11-01 · [ORB-20780]
+**Code anchors:** `office-core/src/domain/source/conversation/scribe.rs`,
+`office-tools/src/tools/sessions/scribe_pending.rs`,
+`office-tools/src/tools/sessions/scribe_append.rs`,
+`office-core/src/ports/library.rs` (`write_scribe_parse`, `scribe_files`,
+`write_scribe_file`, `host_name`), `office-core/src/ports/clock.rs`
+(`time_zone`), `office-store/src/scribe_parse.rs` (`ScribeParseStore`);
+[specs/scribe.md](./specs/scribe.md#pipeline).
+
+- **A message is one transcript record.** `office.scribe-pending` reuses
+  the conversation adapter unchanged and joins the kept lines of one record
+  with newlines; the nth such message is `m-<nnnn>` (from `m-0001`). Records
+  are only appended, so a longer transcript only adds ids. A private
+  session (configured private or holding a scrubbed credential) is
+  withheld exactly as the capture preview is: nothing is written or returned.
+- **Session facts ride beside the message file.** `office.scribe-append`
+  takes no transcript, so pending also writes `<session-id>.meta.json`
+  (provider, model, host, project, cwd, branch, transcript, start) next to
+  the `.jsonl`, both owner-only in a `0700` directory under the workspace's
+  `.orbit/tmp/scribe/`. Append refuses with `scribe_not_parsed` without them.
+- **SCR files are Library files, not indexed sources.** They commit through
+  a new journaled write kind (version 10) that writes the file and removes
+  its previous name in one commit, under the writer lock, refusing a stale
+  read (`scribe_changed`). Reindex keeps scanning only `source.md`, so the
+  existing conversation sources and their readers are untouched.
+- **Front matter is fixed-shape.** Every key is always present on one line,
+  so an entry's file line (`#L<n>`, what grep and `resolves` cite) never
+  moves when topics merge or the file is renamed. An untitled session has
+  `title: null` and a slug from Daniel's first message; a title change
+  renames the file and records the old id in `aliases` (the same title again
+  does nothing).
+- **Authors are fixed by the guard, not the page.** `decision`, `direction`,
+  `todo`, `question` and `reminder` come only from user messages or
+  `by: user` notes ("Assistant lines are scribed only for landed and fact");
+  `agent-decision`, `pending`, `resolved` and `incident` need `by: <crew>`
+  on an assistant message or agent note; any other tag, including one the
+  page adds, takes either. The page's `Tags`, `Topics` and `Capture`
+  sections steer the agent and set the allowed names; a missing section keeps
+  its default.
+- **Local time comes from the clock port.** `Clock::time_zone` (default
+  UTC) names the host's IANA zone; the binary reads `TZ`, then the
+  `/etc/localtime` link. Names and entry times use it; message files keep
+  the transcript's RFC 3339 times.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
@@ -2240,5 +2286,6 @@ v1 has proven what to keep.
 - [ORB-20685] — built the live scribe's incremental capture and `Note:` commands.
 - [ORB-20756] — built recall answers, recall feed mode and Office-owned scribe control.
 - [ORB-20690] — orchestrated the scribe and recall push; recorded scribe v1.
+- [ORB-20780] — built `office.scribe-pending` and `office.scribe-append`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

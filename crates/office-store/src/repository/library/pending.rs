@@ -21,7 +21,8 @@ pub(super) struct PendingWrite {
     pub(super) original: Option<PendingOriginal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) bundle: Option<Vec<ArtifactFile>>,
-    /// Proposal pages a version-9 move removes in the same commit.
+    /// Proposal pages a version-9 move, or the previous name a version-10
+    /// SCR rename, removes in the same commit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) removed: Option<Vec<String>>,
 }
@@ -58,6 +59,7 @@ pub(super) fn normalize_upload_extension(extension: &str) -> String {
 /// Version 8 commits non-indexed proposal records; older readers refuse it.
 /// Version 9 moves a proposal page between status folders: it writes the page
 /// and removes its previous paths in one commit.
+/// Version 10 writes one scribe SCR file and removes its previous name.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawPendingWrite {
@@ -79,7 +81,7 @@ pub(super) struct RawPendingWrite {
 impl RawPendingWrite {
     /// Apply the version gate and produce the replayable decision.
     pub(super) fn into_pending(self, path: &Path) -> Result<PendingWrite> {
-        if self.removed.is_some() != (self.version == 9) {
+        if self.removed.is_some() != matches!(self.version, 9 | 10) {
             return Err(Error::Journal {
                 path: path.to_path_buf(),
             });
@@ -95,6 +97,7 @@ impl RawPendingWrite {
             (7, Some(WriteKind::SourceProcessing), None, Some(_)) => WriteKind::SourceProcessing,
             (8, Some(WriteKind::Proposal), None, None) => WriteKind::Proposal,
             (9, Some(WriteKind::ProposalMove), None, None) => WriteKind::ProposalMove,
+            (10, Some(WriteKind::Scribe), None, None) => WriteKind::Scribe,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -127,4 +130,5 @@ pub(super) enum WriteKind {
     SourceProcessing,
     Proposal,
     ProposalMove,
+    Scribe,
 }

@@ -194,6 +194,9 @@ impl Clock for SystemClock {
     fn now(&self) -> SystemTime {
         SystemTime::now()
     }
+    fn time_zone(&self) -> Option<String> {
+        office_store::scribe_parse::time_zone()
+    }
 }
 
 fn context_path(context: &Context, keys: &[&str]) -> Option<PathBuf> {
@@ -354,6 +357,16 @@ impl RealLibrary {
         Ok(store.with_upload_roots(roots))
     }
 
+    /// Parsed scribe files live under the granted workspace's `.orbit/tmp`.
+    fn scribe_parse(&self) -> office_core::Result<office_store::ScribeParseStore> {
+        self.ensure_grant()?;
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or(office_core::Error::LibraryUnavailable)?;
+        Ok(office_store::ScribeParseStore::new(workspace))
+    }
+
     fn looks_initialized(&self) -> bool {
         self.library.as_ref().is_some_and(|root| {
             root.join(".office/config.yaml").exists() && root.join(".git").exists()
@@ -483,6 +496,32 @@ impl Library for RealLibrary {
     }
     fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::knowledge_pages(&self.store()?)?)
+    }
+    fn write_scribe_parse(
+        &self,
+        session_id: &str,
+        messages: &str,
+        meta: &str,
+    ) -> office_core::Result<String> {
+        self.scribe_parse()?.write(session_id, messages, meta)
+    }
+    fn read_scribe_parse(
+        &self,
+        session_id: &str,
+    ) -> office_core::Result<Option<office_core::ports::ScribeParse>> {
+        self.scribe_parse()?.read(session_id)
+    }
+    fn scribe_files(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(LibraryStore::scribe_files(&self.store()?)?)
+    }
+    fn write_scribe_file(
+        &self,
+        write: &office_core::ports::ScribeWrite,
+    ) -> office_core::Result<()> {
+        LibraryStore::write_scribe_file(&self.store()?, write)
+    }
+    fn host_name(&self) -> Option<String> {
+        office_store::scribe_parse::host_name()
     }
     fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::source_documents(&self.store()?)?)

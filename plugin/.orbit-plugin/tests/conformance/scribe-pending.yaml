@@ -1,0 +1,13 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: scribe_pending_refuses_unsafe_session_id
+    tool: scribe-pending
+    input: {"session_id":"../other","transcript":"session.jsonl","provider":"claude-code","cwd":"/work/project"}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: scribe_pending_requires_cwd
+    tool: scribe-pending
+    input: {"session_id":"session-one","transcript":"session.jsonl","provider":"claude-code"}
+    expect:
+      error: {"code":"invalid_argument"}
