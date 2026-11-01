@@ -36,8 +36,7 @@ spec:
   permissions:
     fs:
       read: ["{{workspace}}", "{{plugin_state}}"]
-      # The scribe's parse files live outside the Library (specs/scribe.md, "Pipeline").
-      write: ["{{workspace}}/library", "{{workspace}}/.orbit/tmp/scribe", "{{plugin_state}}"]
+      write: ["{{workspace}}/library", "{{plugin_state}}"]
     # Meta Model API and the open-weights endpoint only (enforced in code).
     network: any
     orbit_tools:
