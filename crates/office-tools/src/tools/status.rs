@@ -27,24 +27,28 @@ pub(crate) const TOOL: Tool = Tool::built(
 );
 
 pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
-    let present: Vec<&str> = call
-        .context
-        .get("secrets")
-        .and_then(Value::as_object)
-        .map(|secrets| secrets.keys().map(String::as_str).collect())
-        .unwrap_or_default();
+    let delivered = call.context.get("secrets").and_then(Value::as_object);
+    // Presence mirrors model routing (`crates/office/src/app.rs`
+    // `client_with_settings`): only a non-empty string counts as set, so an
+    // empty stored secret reads as unset everywhere status is shown.
+    let is_set = |name: &str| {
+        delivered
+            .and_then(|secrets| secrets.get(name))
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
+    };
     // STD-01@2 §R35: `baseten_token` was renamed to `open_weights_token`;
     // the old name stays as a deprecated alias for one release, mirroring
     // the new field, and a context still carrying only the old name
-    // counts as set. The alias is removed after that release.
-    let open_weights_present =
-        present.contains(&"open_weights_token") || present.contains(&"baseten_token");
+    // with a non-empty value counts as set. The alias is removed after that
+    // release.
+    let open_weights_present = is_set("open_weights_token") || is_set("baseten_token");
     let mut secrets: Map<String, Value> = SECRET_NAMES
         .iter()
         .map(|name| {
             let state = if *name == "open_weights_token" {
                 if open_weights_present { "set" } else { "unset" }
-            } else if present.contains(name) {
+            } else if is_set(name) {
                 "set"
             } else {
                 "unset"
