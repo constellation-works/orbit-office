@@ -2449,6 +2449,51 @@ state, since the token and the endpoint were stored independently.
 - Returning to the token's original origin with the field empty reuses it
   there, since that is the origin it was approved for.
 
+## Scribe parse: task notifications, side-session briefs and worktree project names
+
+**Recorded:** 2026-11-01 · [ORB-20919]
+**Code anchors:** `crates/office-core/src/domain/source/conversation.rs::strip_harness`,
+`parse` (brief role, title record), `crates/office-core/src/domain/source/conversation/scribe.rs::planned`
+(slug source), `crates/office-tools/src/tools/sessions/scribe_pending.rs` (`project` input),
+`plugin/claude-code/scripts/scribe_v1.py::repo_project`, `_is_scribe_only_session`;
+[specs/scribe.md](./specs/scribe.md), [specs/sessions.md](./specs/sessions.md#adapter-and-provenance)
+
+### Context
+
+The 2026-11-01 regenerated backfill still polluted SCR files three ways:
+`<task-notification>` user records kept as Daniel's text (so `/scribe
+backfill` driver sessions were not scribe-only), desktop side sessions
+named from their orchestrator-written opening brief, and sessions in a
+git worktree recording the worktree directory as `project`/topic.
+
+### Decision
+
+- `<task-notification>` blocks are stripped with `<system-reminder>`, in
+  the Rust adapter and in the plugin's scribe-only check.
+- A side session's opening brief keeps its message and `m-<n>` id but is
+  an assistant message: it never takes Daniel's tags and never names the
+  file. The slug comes from the transcript's title/summary record, else
+  the brief's task-title line, else Daniel's first real message. This
+  supersedes the slug-from-Daniel's-first-message rule above for side
+  sessions only; all other sessions keep that rule.
+- `project` is the git repository name (the main worktree's top-level
+  directory). For a session at a repository or linked-worktree root,
+  the plugin resolves it with `git rev-parse
+  --git-common-dir` and passes it to `office.scribe-pending`; when git
+  cannot resolve it that way (a non-git directory, a plain
+  subdirectory, or a worktree removed by GC)
+  the `cwd` basename fallback stands, reproducing the worktree slug in
+  that case. The backfill `--project` filter uses the same name.
+
+### Consequences
+
+- Driver sessions of only `/scribe` plus task notifications are
+  scribe-only and write no SCR file.
+- Side-session SCR files are named for their own work, and no brief text
+  is attributed to Daniel.
+- Worktree sessions record the repository as `project`, and default
+  topics carry no worktree slug.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.

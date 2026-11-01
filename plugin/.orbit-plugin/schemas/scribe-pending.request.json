@@ -25,7 +25,13 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 4096,
-      "description": "The session's working directory; its last component is the project name and the default topic."
+      "description": "The session's working directory; used to derive the project name when no resolved project is provided."
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Optional caller-resolved repository name used as the SCR project and default topic; absent, the project is derived from the cwd basename."
     }
   },
   "required": [

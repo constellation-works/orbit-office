@@ -116,7 +116,8 @@ records and missing timestamps refuse without writing. Stage the final file
 atomically after the provider closes it; a growing file may require a retry.
 
 Harness wrapper text injected into a user message is not the user's words
-and is excluded the same way: `<system-reminder>` blocks and
+and is excluded the same way: `<system-reminder>` blocks,
+`<task-notification>` blocks and
 `<local-command-*>` output (stdout, stderr and caveats) are dropped whole,
 for string and block content alike, before lines are taken. A slash-command
 invocation (`<command-message>`, `<command-name>` and `<command-args>`)

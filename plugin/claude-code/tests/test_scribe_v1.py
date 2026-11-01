@@ -659,6 +659,61 @@ class ScribeV1(unittest.TestCase):
         self.assertTrue(direct["model_call"])
         self.assert_no_model_process()
 
+    def test_backfill_skips_scribe_only_sessions_with_task_notifications(self):
+        def session(sid, date, turns):
+            return self.transcript(turns, path=self.providers / (sid + ".jsonl"),
+                                   sid=sid, date=date)
+        session("driver-notif", "2026-10-01",
+                [("user", "<command-message>office-scribe:scribe backfill --since 2026-09-15</command-message>"),
+                 ("user", "<task-notification>\n<task-id>task-1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n<status>completed</status>\n</task-notification>"),
+                 ("assistant", "Backfill done.")])
+        session("chat-one", "2026-10-02", [("user", "interactive session decision")])
+        first = self.scribe("backfill --since 2026-09-01", sid="driver")
+        self.assertTrue(first["continue"])
+        self.assertEqual(first["session_id"], "chat-one")
+        self.assertEqual(first["scribe_only"], ["driver-notif"])
+        pended = [c["input"]["session_id"] for c in self.calls("office.scribe-pending")]
+        self.assertNotIn("driver-notif", pended)
+        self.assert_no_model_process()
+
+    def test_backfill_project_matches_the_repository_not_the_worktree(self):
+        repo = self.root / "orbit"
+        repo.mkdir()
+        env = dict(os.environ, GIT_AUTHOR_NAME="Test", GIT_AUTHOR_EMAIL="t@example.com",
+                   GIT_COMMITTER_NAME="Test", GIT_COMMITTER_EMAIL="t@example.com")
+        subprocess.run(["git", "init", "-q", str(repo)], env=env, check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "init"],
+                       env=env, check=True, capture_output=True)
+        worktree = self.root / "orb-20919-worktree-slug"
+        subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", str(worktree)],
+                       env=env, check=True, capture_output=True)
+        path = self.providers / "wt-one.jsonl"
+        with path.open("w") as stream:
+            stream.write(json.dumps({"type": "user", "sessionId": "wt-one", "cwd": str(worktree),
+                                     "timestamp": "2026-10-02T00:00:00Z",
+                                     "message": {"role": "user", "content": "worktree session decision"}}) + "\n")
+        reply = self.scribe("backfill --project orbit", sid="driver")
+        self.assertTrue(reply["continue"])
+        self.assertEqual(reply["session_id"], "wt-one")
+        pending = self.calls("office.scribe-pending")[0]["input"]
+        self.assertEqual(pending["cwd"], str(worktree))
+        self.assertEqual(pending["project"], "orbit")
+        other = self.scribe("backfill --project orb-20919-worktree-slug", sid="driver")
+        self.assertTrue(other["done"])
+        self.assert_no_model_process()
+
+    def test_staging_preserves_the_title_record_and_brief_of_a_side_session(self):
+        self.write_records([
+            {"type": "summary", "summary": "Repair the gateway", "sessionId": self.sid},
+            self.record("user", "Background from the session that started this one.\nTask: Fix the gateway deploy", 0),
+            self.record("user", "Ship the real thing.", 1),
+        ])
+        self.scribe("")
+        staged = self.staged_path().read_text()
+        self.assertIn("Repair the gateway", staged)
+        self.assertIn("Background from the session", staged)
+        self.assert_no_model_process()
+
     def test_scribe_in_sdk_cli_session_still_catches_up(self):
         self.transcript([("user", "orchestrator decision here")], entrypoint="sdk-cli")
         reply = self.scribe("")

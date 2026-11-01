@@ -26,7 +26,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::ReadOnly,
         mcp_scope: McpScope::Workspace,
     },
-    &["session_id", "transcript", "provider", "cwd"],
+    &["session_id", "transcript", "provider", "cwd", "project"],
     run,
 );
 
@@ -45,6 +45,27 @@ fn required(call: &Call<'_>, key: &str) -> Result<String> {
         })
 }
 
+/// Optional caller-resolved project (the git repository name). The
+/// plugin resolves it from the repository's main worktree, since `cwd`
+/// alone names a linked worktree's directory; absent, the project falls
+/// back to the `cwd` basename (a non-git directory, or a worktree git
+/// can no longer resolve).
+fn optional_project(call: &Call<'_>) -> Result<Option<String>> {
+    match call.input.get("project") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value))
+            if !value.trim().is_empty()
+                && value.len() <= 4096
+                && !value.chars().any(char::is_control) =>
+        {
+            Ok(Some(value.clone()))
+        }
+        Some(_) => Err(Error::InvalidArgument(
+            "scribe-pending project must be a nonempty single-line string".into(),
+        )),
+    }
+}
+
 fn run(call: &Call<'_>) -> Result<Value> {
     let session_id = required(call, "session_id")?;
     validate_session_id(&session_id)?;
@@ -61,7 +82,10 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let session = library.session_transcript(&transcript, &session_id)?;
     let withheld = session.sensitivity == "private";
     let messages = scribe::messages(&session);
-    let project = scribe::project_of(&cwd);
+    let project = match optional_project(call)? {
+        Some(project) => Some(project),
+        None => scribe::project_of(&cwd),
+    };
     let parsed = Parsed {
         session_id: session_id.clone(),
         provider: provider.clone(),
@@ -73,6 +97,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         transcript,
         parsed: library.scribe_parse_path(&session_id)?,
         started_at: session.started_at.clone(),
+        session_title: session.title.clone(),
     };
     let files = scribe::scr_files(&library.scribe_files()?)?;
     let existing = scribe::find_session(&files, &session_id)?;
