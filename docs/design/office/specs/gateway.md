@@ -318,14 +318,17 @@ through a shell), `region`/`project`.
   get-secret-value`, `ssm get-parameter`/`get-parameters` with
   `--with-decryption`, `kms decrypt`, `s3api get-object`, `lambda
   get-function`, `ecr get-login-password`, `ec2 get-password-data`,
-  `rds generate-db-auth-token`, `eks get-token`, `gcloud secrets versions
+  `rds generate-db-auth-token`, `eks get-token`, `apigateway get-api-key`
+  with `--include-value`, `apigateway get-api-keys` with `--include-values`,
+  `appsync list-api-keys`, `gcloud secrets versions
   access`, `gcloud auth print-access-token`/`print-identity-token`,
   `gcloud sql generate-login-token`, `gcloud container clusters
   get-credentials`, and more of the same kind: temporary credentials and
   registry, database and identity tokens (`sts get-session-token`,
   `ecr get-authorization-token`, …), `dynamodb get-item`, `kinesis
   get-records`, `glacier get-job-output`, and the CLIs' own `aws configure`
-  and `gcloud config` (the full list is `DENY` in `cloud.py`). A refusal is
+  and `gcloud config` (the full list is `DENY` in `cloud.py`; an abbreviated
+  flag that uniquely prefixes a denied flag counts as that flag). A refusal is
   `command_not_allowed` and names the rule.
 - The child gets an allowlisted environment (STD-05@1 §R10), a 60-second
   timeout, and output capped at 1 MiB. Output is redacted with the same
