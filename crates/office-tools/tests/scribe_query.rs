@@ -355,3 +355,141 @@ fn each_line_carries_its_session_title_project_and_cursor() {
     assert_eq!(untitled["results"][0]["scribed_through"], Value::Null);
     assert_eq!(models.calls.get(), 0);
 }
+
+/// Two SCR files, one session each, in two projects: `alpha` and `beta`.
+fn two_project_ports() -> (Ports<'static>, RefusingModels) {
+    let library = FakeLibrary::initialized();
+    let alpha = scr(
+        "SCR-40-0900-alpha-session",
+        "session-alpha",
+        "orchestrator",
+        &[
+            "- m-0001 2026-10-30T09:00-07:00 #landed #scribe \"alpha landed earlier\" by: opus"
+                .into(),
+            "- m-0002 2026-11-01T09:00-07:00 #pending #scribe \"alpha open item\" by: opus".into(),
+            "- m-0003 2026-11-01T10:00-07:00 #landed #scribe \"alpha landed today\" by: opus"
+                .into(),
+        ],
+    )
+    .replace("project: \"constellation\"", "project: \"alpha\"");
+    let beta = scr(
+        "SCR-41-0900-beta-session",
+        "session-beta",
+        "orchestrator",
+        &[
+            "- m-0001 2026-11-01T09:30-07:00 #pending #scribe \"beta open item\" by: opus".into(),
+            "- m-0002 2026-11-01T11:00-07:00 #landed #scribe \"beta landed today\" by: opus".into(),
+        ],
+    )
+    .replace("project: \"constellation\"", "project: \"beta\"");
+    library.insert_scribe_file(
+        "sources/conversation/2026/11/SCR-40-0900-alpha-session.md",
+        &alpha,
+    );
+    library.insert_scribe_file(
+        "sources/conversation/2026/11/SCR-41-0900-beta-session.md",
+        &beta,
+    );
+    let (mut ports, models) = ports();
+    ports.library = Box::new(library);
+    (ports, models)
+}
+
+#[test]
+fn project_selects_only_that_projects_lines_and_composes_with_other_filters() {
+    let (ports, models) = two_project_ports();
+
+    let alpha = query(&ports, json!({"project": "alpha"}));
+    assert_eq!(
+        quotes(&alpha),
+        [
+            "alpha landed earlier",
+            "alpha open item",
+            "alpha landed today"
+        ],
+        "{alpha}"
+    );
+    assert_eq!(alpha["count"], 3, "{alpha}");
+    assert!(
+        alpha["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|line| line["project"] == "alpha"),
+        "{alpha}"
+    );
+
+    let beta = query(&ports, json!({"project": "beta"}));
+    assert_eq!(
+        quotes(&beta),
+        ["beta open item", "beta landed today"],
+        "{beta}"
+    );
+
+    // Composes with the local date range.
+    let dated = query(
+        &ports,
+        json!({"project": "alpha", "since": "2026-11-01", "until": "2026-11-01"}),
+    );
+    assert_eq!(
+        quotes(&dated),
+        ["alpha open item", "alpha landed today"],
+        "{dated}"
+    );
+
+    // Composes with the session: alpha's session holds no beta line.
+    let same_session = query(
+        &ports,
+        json!({"project": "alpha", "session_id": "session-alpha"}),
+    );
+    assert_eq!(same_session["count"], 3, "{same_session}");
+    let crossed = query(
+        &ports,
+        json!({"project": "beta", "session_id": "session-alpha"}),
+    );
+    assert_eq!(crossed["results"], json!([]), "{crossed}");
+
+    // Composes with the limit: the newest alpha lines are kept, count is total.
+    let limited = query(&ports, json!({"project": "alpha", "limit": 2}));
+    assert_eq!(limited["count"], 3, "{limited}");
+    assert_eq!(
+        quotes(&limited),
+        ["alpha open item", "alpha landed today"],
+        "{limited}"
+    );
+
+    // Composes with the canned modes.
+    let pending = query(&ports, json!({"mode": "pending", "project": "beta"}));
+    assert_eq!(quotes(&pending), ["beta open item"], "{pending}");
+    let landed = query(
+        &ports,
+        json!({
+            "mode": "landed",
+            "project": "alpha",
+            "since": "2026-11-01",
+            "until": "2026-11-01"
+        }),
+    );
+    assert_eq!(quotes(&landed), ["alpha landed today"], "{landed}");
+
+    // A project with no lines is an empty answer, not a refusal.
+    let none = query(&ports, json!({"project": "gamma"}));
+    assert_eq!(none["results"], json!([]), "{none}");
+    assert_eq!(none["count"], 0, "{none}");
+    assert_eq!(models.calls.get(), 0, "scribe-query makes no model call");
+}
+
+#[test]
+fn project_must_be_a_string_and_is_refused_without_a_model_call() {
+    let (ports, models) = two_project_ports();
+    let request = office_core::protocol::parse(&envelope::request(
+        "office.scribe-query",
+        json!({"project": 7}),
+        json!({}),
+    ))
+    .unwrap();
+    let response = envelope::response(&office_tools::serve(&request, &ports)).unwrap();
+    assert_eq!(response["ok"], false, "{response}");
+    assert_eq!(response["error"]["code"], "invalid_argument", "{response}");
+    assert_eq!(models.calls.get(), 0);
+}

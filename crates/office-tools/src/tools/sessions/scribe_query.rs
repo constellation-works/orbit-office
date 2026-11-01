@@ -35,6 +35,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         "until",
         "refs",
         "session_id",
+        "project",
         "limit",
     ],
     run,
@@ -381,6 +382,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         optional_text(input, "topic")?.map(|topic| topic.trim_start_matches('#').to_owned());
     let by_filter = optional_text(input, "by")?;
     let session_filter = optional_text(input, "session_id")?;
+    let project_filter = optional_text(input, "project")?;
     let refs_filter = ref_filter(input)?;
     let mut since = optional_date(input, "since")?;
     let mut until = optional_date(input, "until")?;
@@ -505,6 +507,11 @@ fn run(call: &Call<'_>) -> Result<Value> {
             }
             if let Some(session) = &session_filter
                 && entry.session_id != *session
+            {
+                return false;
+            }
+            if let Some(project) = &project_filter
+                && entry.project.as_deref() != Some(project.as_str())
             {
                 return false;
             }
