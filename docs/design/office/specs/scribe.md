@@ -10,7 +10,7 @@ Status: build step 1 built (`office.scribe-pending`, `office.scribe-append`;
 see [Build order](#build-order)). Step 2's Claude Code plugin part is built
 (ORB-20799): the `scribe` agent, the `/scribe` commands and automatic hooks
 off by default ([plugin guide](../../../../plugin/claude-code/README.md));
-`office.scribe-query` is being built separately. The web Scribe screen is
+`office.scribe-query` is built (ORB-20798). The web Scribe screen is
 built over v1 (ORB-20696; [web-app.md](./web-app.md#screens)).
 Supersedes, as the default way to capture
 conversations, the automatic live scribe in
@@ -523,6 +523,7 @@ web access, no writes and no Orbit calls.
      zone from the clock port.
 2. **The query tool, the `scribe` agent and commands.**
    - `office.scribe-query`, model-free, through an integrator scaffold.
+     Built (ORB-20798).
    - In the Claude Code plugin: `/scribe`, `note`, `pending`, `pref`,
      `landed`, `why`, `ask` and `title`, and the subagent definition with
      its model and tools. Turn the automatic hooks off by default. The
