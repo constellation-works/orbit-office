@@ -377,6 +377,28 @@ answer. Answering has two levels.
    - A cheap model therefore cannot misquote; at worst it leaves something
      out.
 
+   The Office tool `office.scribe-ask` is this level for callers without a
+   subagent (the web Scribe screen calls it through `orbit tool run`). Its
+   input is `question`, plus optional `since`, `until`, `project`,
+   `session_id` and `limit`; unknown keys are refused. The shortlist is
+   model-free: the same date, session and project filtering as
+   `office.scribe-query`, plus lexical matching of the question against
+   tags, `matter`, topics and quotes, bounded by `limit`. It then makes
+   one call through the Models port at the `ask` level (default
+   `haiku@low`, mapped to the `Standard` tier the port supports). Every
+   returned claim cites `SCR file:line` and the message id, and its quoted
+   span must match the cited SCR line verbatim; unmatched quotes (and
+   claims citing lines outside the shortlist) are dropped and counted in
+   `dropped_claims`. With nothing found it returns `not_captured: true`
+   with the searched date range, topics, and the sessions searched with
+   their `scribed_through` cursor (sessions not scribed past their last
+   message). Private SCR entries follow
+   [models-and-privacy.md](./models-and-privacy.md): with no open-weights
+   route they are cited by reference only (`private_references`, no quote
+   sent to any model), as `office.recall-answer` does; on a configured
+   route the call is `private` and citing claims return with
+   `content_withheld`.
+
 The `scribe` agent answers from the SCR files only. Its tools are the query
 tool, Grep and Read over the Library's `sources/conversation/`; it has no
 web access, no writes and no Orbit calls.
