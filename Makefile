@@ -37,7 +37,9 @@ help:
 	@echo "  make baseline         Every stack's gate: ci + gateway + app typecheck/tests"
 	@echo "  make app-deps         Install app/node_modules from the lockfile when missing or stale"
 	@echo "  make plugin-install   Build HEAD into the local Orbit office plugin and enable it"
-	@echo "                        (PLUGIN_WORKSPACE=<w> also enables it in that workspace)"
+	@echo "                        (PLUGIN_WORKSPACE=<w> also enables it in that workspace"
+	@echo "                         and runs office.init there, so new templates and"
+	@echo "                         layout migrations arrive with the upgrade)"
 	@echo "  make build | fmt | install | clean"
 
 build:
@@ -90,6 +92,7 @@ deny-policy:
 # they are a second leg; the core crate carries at least one (STD-04 R14).
 test: claude-code-test
 	./scripts/plugin/test-export.sh
+	./scripts/plugin/test-plugin-install.sh
 	@if $(CARGO) nextest --version >/dev/null 2>&1; then \
 		$(CARGO) nextest run --workspace --all-targets $(LOCKED) --no-tests=fail; \
 	else \
@@ -176,7 +179,9 @@ claude-code-test:
 PLUGIN_NAME := office
 PLUGIN_GRANTS ?= --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools --grant agent_tools
 # `make plugin-install PLUGIN_WORKSPACE=office-constellation` also enables the
-# plugin in that workspace; left empty, the workspace toggle is untouched.
+# plugin in that workspace and runs office.init there, so a later plugin
+# version's new templates and layout migrations arrive on the upgrade; left
+# empty, the workspace toggle is untouched and office.init is not run.
 PLUGIN_WORKSPACE ?=
 
 install:
@@ -203,6 +208,20 @@ plugin-install:
 	fi; \
 	if [ -n "$(PLUGIN_WORKSPACE)" ]; then \
 		orbit plugin enable $(PLUGIN_NAME) --scope workspace --workspace "$(PLUGIN_WORKSPACE)"; \
+		echo "plugin-install: running office.init in workspace $(PLUGIN_WORKSPACE)"; \
+		init_status=0; \
+		if [ -n "$${ORBIT_MANAGED_RUN_CONTEXT:-}" ] || [ "$${ORBIT_TASK_ACTOR_KIND:-}" = "agent" ]; then \
+			orbit tool run office.init --workspace "$(PLUGIN_WORKSPACE)" --json --full --input '{}' > "$$parent/office-init.out" || init_status=$$?; \
+		else \
+			ORBIT_OPERATOR=1 orbit tool run office.init --workspace "$(PLUGIN_WORKSPACE)" --json --full --input '{}' > "$$parent/office-init.out" || init_status=$$?; \
+		fi; \
+		cat "$$parent/office-init.out"; \
+		if [ "$$init_status" -ne 0 ]; then \
+			echo "error: office.init failed in workspace $(PLUGIN_WORKSPACE) (exit: $$init_status)." >&2; exit "$$init_status"; \
+		fi; \
+		if grep -Eq '"ok"[[:space:]]*:[[:space:]]*false' "$$parent/office-init.out"; then \
+			echo "error: office.init returned an error envelope in workspace $(PLUGIN_WORKSPACE)." >&2; exit 1; \
+		fi; \
 	fi; \
 	orbit plugin show $(PLUGIN_NAME) | sed -n '1,7p'
 
