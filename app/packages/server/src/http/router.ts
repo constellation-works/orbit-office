@@ -23,6 +23,7 @@ import { feature as insights } from "../features/insights/index.js";
 import { feature as library } from "../features/library/index.js";
 import { feature as review } from "../features/review/index.js";
 import { feature as routines } from "../features/routines/index.js";
+import { feature as scribe } from "../features/scribe/index.js";
 import { feature as selection } from "../features/selection/index.js";
 import { feature as settings } from "../features/settings/index.js";
 import { feature as sources } from "../features/sources/index.js";
@@ -45,6 +46,7 @@ export const FEATURES: readonly Feature[] = [
   insights,
   review,
   selection,
+  scribe,
   settings,
 ];
 

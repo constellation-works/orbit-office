@@ -82,6 +82,7 @@ crates/office-tools/src/
   dispatch.rs            envelope → tool → envelope
   tools/
     status.rs
+    recall.rs            (specs/recall.md)
     sources/             capture  transcribe  video_plan  frames  extract  show   (specs/library.md, specs/kt-videos.md)
     knowledge/           list  show  write                            (specs/library.md)
     artifacts/           list  show  promote                          (specs/library.md)
@@ -137,7 +138,7 @@ app/packages/
                      auto-task names with the routine listing (shared by routines and calendar)
     dispatch/        the 30-second dispatch pass
     features/<f>/    one folder per feature: today, calendar, sources, todos, agents,
-                     approvals, routines, library, insights, review, selection, settings
+                     approvals, routines, library, insights, review, selection, scribe, settings
   web/
     static/          index.html, demo.html, manifest.webmanifest, icons/, fonts/, style.css
     src/
@@ -149,7 +150,7 @@ app/packages/
       ui/            shared pieces (cards, pills, tiles, provenance links, primary actions)
                      and the schedule reader Routines and Calendar share
       screens/<s>/   one folder per screen: today, calendar, source, todos, agents,
-                     routines, library, insights, review, settings
+                     routines, library, insights, review, scribe, settings
 ```
 
 A feature or screen is a module exporting one constant with `status: "planned"` until it is
