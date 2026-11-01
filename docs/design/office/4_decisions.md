@@ -1310,6 +1310,9 @@ The template's note-store decisions (persistence module, one module per noun, au
 - [ORB-20243] — partitioned Library sources by kind.
 - [ORB-20246] — kept local calendar events as workspace writes.
 - [ORB-20247] — partitioned Library proposals by status.
+- [ORB-20245] — made the app report a missing approval authority plainly instead of granting itself Operator.
+- [ORB-20362] — landed Orbit's scoped, audited application authority for user-approved tool calls.
+- [ORB-20363] — wires the office app's approval actions to that scoped application authority.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 
