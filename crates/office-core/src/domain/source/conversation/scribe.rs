@@ -175,6 +175,11 @@ pub struct Parsed {
     /// SCR file from it; see [`planned`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_title: Option<String>,
+    /// Latest `customTitle`, from the transcript's `custom-title`
+    /// records or the caller. A set custom title names the SCR file
+    /// for every session; see [`planned`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_title: Option<String>,
 }
 
 /// Workspace-relative path of a session's message file, given the
@@ -189,14 +194,24 @@ pub fn parse_path(library_dir: &str, session_id: &str) -> String {
     }
 }
 
-/// The last path component of a working directory, as a project name.
+/// The project name of a working directory. A Claude Code worktree
+/// cwd (`<repo>/.claude/worktrees/<name>`) names its repository, even
+/// when that worktree directory no longer exists; any other directory
+/// names itself (its last path component).
 #[must_use]
 pub fn project_of(cwd: &str) -> Option<String> {
-    cwd.trim_end_matches(['/', '\\'])
-        .rsplit(['/', '\\'])
-        .next()
-        .filter(|name| !name.is_empty())
-        .map(str::to_owned)
+    let parts: Vec<&str> = cwd
+        .trim_end_matches(['/', '\\'])
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.len() >= 4
+        && parts[parts.len() - 2] == "worktrees"
+        && parts[parts.len() - 3] == ".claude"
+    {
+        return Some(parts[parts.len() - 4].to_owned()).filter(|name| !name.is_empty());
+    }
+    parts.last().map(|name| (*name).to_owned())
 }
 
 // ---- time -------------------------------------------------------------
@@ -828,14 +843,27 @@ fn brief_message(messages: &[Message]) -> Option<&Message> {
         .find(|m| super::is_side_session_brief(&m.text))
 }
 
-/// Slug source for a new file: an explicit title wins; a side session
-/// then takes the transcript's own title, else its brief's task-title
-/// line; every other session takes Daniel's first message.
+/// Slug source for a new file: an explicit title wins, then a set
+/// custom title (the latest `customTitle`) for every session; a side
+/// session then takes the transcript's title/summary record, else its
+/// brief's task-title line, else the brief's first prose sentence
+/// after the preamble (never the preamble itself); every other
+/// session takes Daniel's first message.
 fn planned_slug(parsed: &Parsed, messages: &[Message], title: Option<&str>) -> String {
     if let Some(title) = title {
         return slug(title);
     }
-    if brief_message(messages).is_some() {
+    if let Some(title) = parsed
+        .custom_title
+        .as_deref()
+        .filter(|t| !t.trim().is_empty())
+    {
+        let value = slug(title);
+        if !value.is_empty() {
+            return value;
+        }
+    }
+    if let Some(brief) = brief_message(messages) {
         if let Some(title) = parsed
             .session_title
             .as_deref()
@@ -846,8 +874,14 @@ fn planned_slug(parsed: &Parsed, messages: &[Message], title: Option<&str>) -> S
                 return value;
             }
         }
-        if let Some(task) = brief_message(messages).and_then(|m| super::brief_task_title(&m.text)) {
+        if let Some(task) = super::brief_task_title(&brief.text) {
             let value = slug(&task);
+            if !value.is_empty() {
+                return value;
+            }
+        }
+        if let Some(sentence) = super::brief_first_sentence(&brief.text) {
+            let value = slug(&sentence);
             if !value.is_empty() {
                 return value;
             }

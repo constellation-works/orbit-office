@@ -2494,6 +2494,47 @@ git worktree recording the worktree directory as `project`/topic.
 - Worktree sessions record the repository as `project`, and default
   topics carry no worktree slug.
 
+## Scribe: real side-session preamble, custom titles and GC'd worktrees
+
+**Recorded:** 2026-11-01 · [ORB-20935]
+**Code anchors:** `crates/office-core/src/domain/source/conversation.rs::is_side_session_brief`,
+`brief_first_sentence`, `parse` (latest `custom-title`),
+`crates/office-core/src/domain/source/conversation/scribe.rs::planned_slug`, `project_of`,
+`crates/office-tools/src/tools/sessions/scribe_pending.rs` (`custom_title` input),
+`plugin/claude-code/scripts/scribe_v1.py::repo_project`, `V1.stage`, `V1.pending`;
+[specs/scribe.md](./specs/scribe.md)
+
+### Context
+
+The regenerated backfill after ORB-20919 still named SCR files
+`SCR-…-background-from-the-session-that-started-this-on.md` and recorded
+worktree directories as `project`. The earlier decision had quoted the
+desktop brief preamble without its parentheses and colon, so the match
+never fired for the real text; it also left GC'd worktrees on the `cwd`
+basename fallback.
+
+### Decision
+
+- Both brief forms match, case-insensitively, ignoring the parentheses
+  and the trailing colon. This supersedes the preamble quote in the
+  ORB-20919 decision above.
+- The latest `custom-title` record's `customTitle` is the slug and
+  title source for every session; the stager passes it to
+  `office.scribe-pending` as `custom_title`. A side session without one
+  falls back to its title/summary record, then the brief's task-title
+  line, then the brief's first prose sentence after the preamble.
+- A `<repo>/.claude/worktrees/<name>` cwd names `<repo>` by that path
+  rule, applied before the git resolution and the basename fallback, so
+  a worktree removed by GC still records its repository.
+
+### Consequences
+
+- Real desktop side-session briefs are assistant text, take no Daniel
+  tags, and never name a file from their preamble.
+- Sessions with a set custom title are named from it, whatever kind of
+  session they are.
+- GC'd Claude Code worktrees record the repository as `project`.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.

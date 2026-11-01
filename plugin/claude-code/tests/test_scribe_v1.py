@@ -702,16 +702,47 @@ class ScribeV1(unittest.TestCase):
         self.assertTrue(other["done"])
         self.assert_no_model_process()
 
+    def test_backfill_project_matches_a_gc_worktree_by_its_path(self):
+        gone = self.root / "orbit" / ".claude" / "worktrees" / "orb-20524-rail-snap-visible-span-993033"
+        path = self.providers / "gc-one.jsonl"
+        with path.open("w") as stream:
+            stream.write(json.dumps({"type": "user", "sessionId": "gc-one", "cwd": str(gone),
+                                     "timestamp": "2026-10-02T00:00:00Z",
+                                     "message": {"role": "user", "content": "gc worktree decision"}}) + "\n")
+        reply = self.scribe("backfill --project orbit", sid="driver")
+        self.assertTrue(reply["continue"])
+        self.assertEqual(reply["session_id"], "gc-one")
+        pending = self.calls("office.scribe-pending")[0]["input"]
+        self.assertEqual(pending["cwd"], str(gone))
+        self.assertEqual(pending["project"], "orbit")
+        other = self.scribe("backfill --project orb-20524-rail-snap-visible-span-993033", sid="driver")
+        self.assertTrue(other["done"])
+        self.assert_no_model_process()
+
+    def test_pending_passes_the_latest_custom_title(self):
+        self.write_records([
+            {"type": "custom-title", "customTitle": "ORB-11111: an earlier title"},
+            self.record("user", "Daniel's own opening words here", 0),
+            {"type": "custom-title", "customTitle": "ORB-20524: phone rail snap regression"},
+            self.record("assistant", "Working on it.", 1),
+        ])
+        self.scribe("")
+        pending = self.calls("office.scribe-pending")[0]["input"]
+        self.assertEqual(pending["custom_title"], "ORB-20524: phone rail snap regression")
+        staged = self.staged_path().read_text()
+        self.assertIn("ORB-20524: phone rail snap regression", staged)
+        self.assert_no_model_process()
+
     def test_staging_preserves_the_title_record_and_brief_of_a_side_session(self):
         self.write_records([
             {"type": "summary", "summary": "Repair the gateway", "sessionId": self.sid},
-            self.record("user", "Background from the session that started this one.\nTask: Fix the gateway deploy", 0),
+            self.record("user", "Background (from the session that started this one):\nFix the gateway deploy first. Then ship it.", 0),
             self.record("user", "Ship the real thing.", 1),
         ])
         self.scribe("")
         staged = self.staged_path().read_text()
         self.assertIn("Repair the gateway", staged)
-        self.assertIn("Background from the session", staged)
+        self.assertIn("Background (from the session that started this one):", staged)
         self.assert_no_model_process()
 
     def test_scribe_in_sdk_cli_session_still_catches_up(self):

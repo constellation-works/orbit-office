@@ -26,7 +26,15 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::ReadOnly,
         mcp_scope: McpScope::Workspace,
     },
-    &["session_id", "transcript", "provider", "cwd", "project"],
+    &[
+        "session_id",
+        "transcript",
+        "provider",
+        "cwd",
+        "project",
+        "custom_title",
+        "session_title",
+    ],
     run,
 );
 
@@ -66,6 +74,31 @@ fn optional_project(call: &Call<'_>) -> Result<Option<String>> {
     }
 }
 
+/// Optional caller-passed latest `customTitle` (the transcript's
+/// `custom-title` record; `session_title` is accepted as its alias).
+/// When present it is the session title for every session, ahead of
+/// any title record the adapter read.
+fn optional_title(call: &Call<'_>) -> Result<Option<String>> {
+    for key in ["custom_title", "session_title"] {
+        match call.input.get(key) {
+            None | Some(Value::Null) => {}
+            Some(Value::String(value))
+                if !value.trim().is_empty()
+                    && value.len() <= 4096
+                    && !value.chars().any(char::is_control) =>
+            {
+                return Ok(Some(value.trim().to_owned()));
+            }
+            Some(_) => {
+                return Err(Error::InvalidArgument(format!(
+                    "scribe-pending {key} must be a nonempty single-line string"
+                )));
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn run(call: &Call<'_>) -> Result<Value> {
     let session_id = required(call, "session_id")?;
     validate_session_id(&session_id)?;
@@ -98,6 +131,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         parsed: library.scribe_parse_path(&session_id)?,
         started_at: session.started_at.clone(),
         session_title: session.title.clone(),
+        custom_title: optional_title(call)?.or_else(|| session.custom_title.clone()),
     };
     let files = scribe::scr_files(&library.scribe_files()?)?;
     let existing = scribe::find_session(&files, &session_id)?;
