@@ -560,6 +560,79 @@ fn latest_custom_title_names_any_session_and_caller_title_wins() {
 }
 
 #[test]
+fn placeholder_custom_title_is_absent_and_a_real_title_still_names_the_file() {
+    // The desktop app titles an unnamed session "New session" (any case,
+    // with or without a trailing number). That is no title: the slug falls
+    // back to Daniel's first real message, from the transcript or from the
+    // caller. A real title that only starts with those words still names
+    // the file.
+    let mut library = FakeLibrary::initialized();
+    for (fixture, title) in [
+        ("placeholder.jsonl", "New session"),
+        ("placeholder-numbered.jsonl", "new session 2"),
+        ("real-prefix.jsonl", "New session planning"),
+    ] {
+        library.session_transcripts.insert(
+            fixture.into(),
+            [
+                json!({"type":"custom-title","customTitle":title}).to_string(),
+                record(
+                    "user",
+                    7,
+                    &json!("Is opus medium good enough for hard tasks?"),
+                ),
+                record("assistant", 9, &json!("Working on it.")),
+            ]
+            .join("\n")
+                + "\n",
+        );
+    }
+    let ports = ports(library);
+    for fixture in ["placeholder.jsonl", "placeholder-numbered.jsonl"] {
+        assert_eq!(
+            pending(&ports, fixture)["scr"]["path"],
+            "sources/conversation/2026/10/SCR-31-2007-is-opus-medium-good-enough-for-hard-tasks.md",
+            "{fixture}"
+        );
+    }
+    assert_eq!(
+        pending(&ports, "real-prefix.jsonl")["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-new-session-planning.md"
+    );
+
+    // The caller-passed latest customTitle (plugin staging) is the same.
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = output(
+        &ports,
+        "office.scribe-pending",
+        json!({"session_id":SESSION,"transcript":"short.jsonl","provider":"claude-code",
+                "cwd":"/Users/daniel/workspace/constellation",
+                "custom_title":"New session"}),
+    );
+    assert_eq!(
+        first["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-scribe-v1-design-lets-go-one-step-at-a-time.md"
+    );
+
+    // A side session's placeholder session title (the same record) is no
+    // title either, so the brief's task line names the file.
+    let mut library = FakeLibrary::initialized();
+    library.session_transcripts.insert(
+        "side-placeholder.jsonl".into(),
+        side_transcript(
+            Some(json!({"type":"custom-title","customTitle":"New session"}).to_string()),
+            "Background from the session that started this one (session parent-1).\nTask: Fix the gateway deploy\nThe orchestrator wrote this context.",
+            "Ship the real thing.",
+        ),
+    );
+    let ports = crate::ports(library);
+    assert_eq!(
+        pending(&ports, "side-placeholder.jsonl")["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-fix-the-gateway-deploy.md"
+    );
+}
+
+#[test]
 fn gc_worktree_cwd_records_the_repository_project() {
     let ports = crate::ports(FakeLibrary::initialized());
     let first = output(

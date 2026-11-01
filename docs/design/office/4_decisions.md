@@ -2535,6 +2535,38 @@ basename fallback.
   session they are.
 - GC'd Claude Code worktrees record the repository as `project`.
 
+## Scribe: placeholder session titles are no title
+
+**Recorded:** 2026-11-01 · [ORB-20950]
+**Code anchors:** `crates/office-core/src/domain/source/conversation/scribe.rs::placeholder_title`,
+`named_title`, `planned_slug`; regression test
+`crates/office-tools/tests/scribe.rs::placeholder_custom_title_is_absent_and_a_real_title_still_names_the_file`;
+[specs/scribe.md](./specs/scribe.md)
+
+### Context
+
+The desktop app titles an unnamed session `New session`. Once the latest
+`custom-title` record named the SCR file (the ORB-20935 decision above),
+two sessions carrying that placeholder were filed as `…-new-session.md`,
+though one's first message was a far better name.
+
+### Decision
+
+- A custom title or session title of `New session` is no title, whatever
+  its case and with or without one trailing number. The slug skips it
+  exactly as it skips a blank title.
+- The match is whole-title: `New session planning` is a real title and
+  still names the file.
+- This refines the custom-title rule above for the placeholder case only.
+
+### Consequences
+
+- A session whose latest custom title is the placeholder takes its slug
+  from Daniel's first real message. A side session takes its brief's
+  task-title line or first sentence, as it does without any title.
+- An earlier real custom title is not consulted once the latest record
+  is a placeholder, since only the latest `customTitle` is kept.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.

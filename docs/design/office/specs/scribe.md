@@ -291,12 +291,16 @@ stripping never names the file, and a bare slash command such as
 `/scribe backfill` names it when nothing else exists. A set custom
 title — the transcript's latest `custom-title` record (or the
 caller-passed latest `customTitle`) — wins for every session, not
-only side sessions. A side session (one opening with the orchestrator
-brief above) without one takes its slug from the session's own
-title/summary record when present, else the brief's task-title line,
-else the brief's first prose sentence after the preamble — and never
-from the brief's preamble itself. `/scribe title` renames the file
-once and records the old name in `aliases`.
+only side sessions. The desktop app's placeholder `New session` (any
+letter case, with or without one trailing number) is not a set title:
+the custom title and a side session's title/summary record skip it, so
+the slug falls through as if no title were set. A side session (one
+opening with the orchestrator brief above) without one takes its slug
+from the session's own title/summary record when present, else the
+brief's task-title line, else the brief's first prose sentence after
+the preamble — and never from the brief's preamble itself.
+`/scribe title` renames the file once and records the old name in
+`aliases`.
 
 ```markdown
 ---
