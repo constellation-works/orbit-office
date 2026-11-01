@@ -280,6 +280,16 @@ second writer.
   named with its resume command, live status for refs, "not captured" with
   coverage. Answers open feed entries and conversations by link.
 
+### Controls
+
+Per-session scribe control state is owned by Office behind the planned
+`office.scribe-control` tool (`get`, `set_switch`, `request_now`,
+`set_title`, `heartbeat`), specified in
+[sessions.md](./sessions.md#live-scribe). The provider plugin's hooks read
+that state, so the web window and the plugin share one switch. The flag
+file (`.orbit/tmp/scribe/<session-id>`) is the plugin's local cache of
+that Office-owned state.
+
 ### Corrections
 
 Each feed entry offers **Not a decision**, **Wrong kind…**, **Wrong
@@ -353,16 +363,23 @@ The window-open heartbeat is a file the window refreshes while it is open:
 (touched by the desktop pane on every refresh, through the plugin's pane
 control). The end-of-turn hook treats a heartbeat under two minutes old as
 "window open" and applies the tighter turn bound. The web Scribe screen
-refreshes the same file for its session when it is built.
+refreshes the same file for its session when it is built. Once
+`office.scribe-control` is built, windows record the heartbeat through its
+`heartbeat` op and the file remains the plugin's local cache of that
+Office-owned state.
 
 ### Answering in each host
 
+`office.recall` stays model-free. A separate planned tool,
+`office.recall-answer`, takes a question, runs recall, then makes one
+Standard-tier call through the Models port under the privacy routing of
+[models-and-privacy.md](./models-and-privacy.md#routing-rules): private
+sources are named by reference only unless an open-weights route is
+configured. It returns a cited answer plus the recall payload.
+
 - In Claude Code, `/recall` and the mod's ask box use the `recall` subagent.
-- In the web app, the server makes one low-cost model call through the
-  Models port, so the privacy routing of
-  [models-and-privacy.md](./models-and-privacy.md#routing-rules) applies:
-  private sources are answered by reference only unless an open-weights
-  route is configured.
+- In the web app, the server calls `office.recall-answer`, so the same
+  cited-answer rules apply without involving an orchestrator.
 
 ## Backfill
 

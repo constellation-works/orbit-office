@@ -378,6 +378,18 @@ spec:
       input_schema: { $ref: schemas/digest.request.json }
       output_schema: { $ref: schemas/digest.response.json }
 
+    # - name: scribe-control
+    #   description: >-
+    #     Own per-session scribe control state: get the switch, set it,
+    #     request Capture now, set the title and record the window-open
+    #     heartbeat. The provider plugin's hooks read this state; the flag
+    #     file is their local cache.
+    #   execution_kind: mutating
+    #   agent_callable: true
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/scribe-control.request.json }
+    #   output_schema: { $ref: schemas/scribe-control.response.json }
+
     # ---- recall ----
 
     - name: recall
@@ -390,6 +402,18 @@ spec:
       mcp_scope: workspace
       input_schema: { $ref: schemas/recall.request.json }
       output_schema: { $ref: schemas/recall.response.json }
+
+    # - name: recall-answer
+    #   description: >-
+    #     Answer a recall question with one Standard-tier model call over
+    #     recall evidence, then return the cited answer plus the recall
+    #     payload. Private sources are named by reference only unless an
+    #     open-weights route is configured. The web server calls this tool.
+    #   execution_kind: read_only
+    #   agent_callable: true
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/recall-answer.request.json }
+    #   output_schema: { $ref: schemas/recall-answer.response.json }
 
     # ---- scripts ----
 
