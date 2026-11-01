@@ -12,7 +12,7 @@ corrections with repeated-correction signals (ORB-20695). The Claude Code
 provider plugin, commands/subagent and backfill are built (ORB-20689); see the
 [installation guide](../../../../plugin/claude-code/README.md). The Scribe UI
 remains specified.
-PR status remains unresolved until a live PR source is added (below).
+PR refs resolve live through a `gh` source (ORB-20710, below).
 
 One scribe follows the user across every agent conversation they hold, in
 every project, and answers "where did we discuss X?", "what did we decide
@@ -142,15 +142,31 @@ it exists and is readable across workspaces; unregistered/unreadable ids are
 unresolved. PR URLs normalize to `owner/repo#n`; action hashes normalize to
 lowercase (7–64 hex characters). Other entry kinds never infer commit refs.
 
-### Live PR state
+### Live PR state (built)
 
 Task refs resolve through `orbit.task.show`, which the plugin already holds.
-PR refs have no live source yet. Reading PR state would need `gh`: a program
-the backend runs through a new port, declared in `spec.requires.programs`. The
-scaffold does not add it, so until a later task adds a PR source, every PR ref
-reads `unresolved` with reason `no_pr_source`. No program was added, so this
-decision needs no plugin upgrade or re-enable. When a later task adds `gh`, that
-task records the plugin upgrade and the re-enable as an operator step.
+PR refs resolve live through `gh` (ORB-20710): a `PullRequests` port in
+`office-core` (`ports/pr.rs`), implemented by the supervised `gh` adapter in
+`office-store` (`pr.rs`, `GhPullRequests`), wired in the binary's `ports()`.
+For each distinct PR ref the adapter runs, once and never retried,
+`gh pr view <owner/repo#n> --json state,mergedAt,mergeCommit` under the
+shared bounded supervisor (15-second deadline, capped output, cleared
+environment forwarding only what `gh` needs to authenticate). A resolved
+ref reports `status` as `open`, `closed` or `merged`, with `merged_at` and
+`merge_commit` (each null when `gh` reports none).
+
+On any failure the ref reads `unresolved` and the call still succeeds, with
+a reason naming the cause: `pr_source_unavailable` when `gh` is missing or
+not granted (it cannot be started), `pr_lookup_failed` when `gh` runs but
+fails, times out or exceeds its bound, `invalid_pr_response` when its reply
+does not match the expected shape, and `invalid_pr_ref` when the stored id
+is not a canonical `owner/repo#n`. Program output is never echoed.
+
+`gh` is declared in `spec.requires.programs` in
+`plugin/.orbit-plugin/plugin.yaml`. **Operator step:** because that grant
+changed, upgrade the office plugin and re-enable it so `gh` is granted to
+the backend; until then PR refs read `unresolved` /
+`pr_source_unavailable` while task refs keep resolving.
 
 ## Asking
 
@@ -193,7 +209,9 @@ Every distinct task ref gets a fresh `orbit.task.show` read. Task workspace
 is returned when Orbit supplies a workspace selector/id/path, otherwise null
 (the current task projection has no workspace field). Callback failures and
 invalid replies are `unresolved` with fixed reasons, without upstream error
-text. PR refs use `no_pr_source`, commit refs `no_commit_source`. The call
+text. PR refs resolve live through `gh` (see Live PR state above) and fall
+back to `unresolved` with a cause-naming reason; commit refs use
+`no_commit_source`. The call
 writes nothing, and refuses a Library change during its reads so the caller
 can retry. Backend contract and offline conformance checks live in
 `schemas/recall.{request,response}.json` and `tests/conformance/recall.yaml`

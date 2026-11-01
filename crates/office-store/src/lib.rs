@@ -25,11 +25,13 @@
 pub mod contracts;
 mod driver;
 mod error;
+pub mod pr;
 mod repository;
 
 pub use contracts::{DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit};
 pub use driver::script::ScriptStore;
 pub use error::{Error, Result};
+pub use pr::GhPullRequests;
 pub use repository::LibraryStore;
 pub use selection::SelectionStore;
 

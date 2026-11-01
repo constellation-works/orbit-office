@@ -2108,6 +2108,40 @@ it", while the plugin-surface inventory says Operator/Runner only.
   the Orbit child process, a server-route test exercises accept through the
   real authority path, and this decision and the proposal spec are revised.
 
+## Recall resolves PR refs live through a granted `gh` source
+
+**Recorded:** 2026-11-01
+**Code anchors:** `office-core/src/ports/pr.rs` (`PullRequests`, `PrView`,
+`PrError`), `office-store/src/pr.rs` (`GhPullRequests`),
+`office-tools/src/tools/recall.rs` (PR arm of `live_ref`),
+`plugin/.orbit-plugin/plugin.yaml` (`spec.requires.programs`);
+[specs/recall.md](./specs/recall.md#live-pr-state-built).
+
+This task (ORB-20710) is the narrow integrator-ownership exception for the
+one-line `gh` entry in `spec.requires.programs`, authorized by the task
+itself following the calendar precedent above; it is not a general
+exception for other manifest or architecture edits. No crate or internal
+dependency edge is added: the port follows the existing pattern (one file
+per port in `office-core`, a fake in `office-testkit`, the real adapter in
+an adapter crate, wired in the binary's `ports()`), and existing complete
+`Ports` literals receive the refusing `UnavailablePullRequests` adapter.
+
+- The adapter runs `gh pr view <owner/repo#n> --json
+  state,mergedAt,mergeCommit` once, never retried, under
+  `office_common::process::run_captured_with_deadline` with a 15-second
+  deadline. The child environment is cleared except `PATH`, `HOME`,
+  `XDG_CONFIG_HOME`, `GH_TOKEN` and `GH_HOST`, so `gh` can authenticate
+  without inheriting Office or Orbit authority variables.
+- Resolved refs report `status` (`open`/`closed`/`merged`), `merged_at`
+  and `merge_commit`. Failures are `unresolved` with a cause-naming fixed
+  reason (`pr_source_unavailable`, `pr_lookup_failed`,
+  `invalid_pr_response`, `invalid_pr_ref`) and never fail the call or echo
+  program output.
+- **Operator step:** adding `gh` to `spec.requires.programs` changes the
+  granted programs, so the operator must upgrade the office plugin and
+  re-enable it for `gh` to be granted. Until then PR refs read
+  `unresolved` / `pr_source_unavailable`.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.

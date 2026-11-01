@@ -1,5 +1,6 @@
 //! `office.recall`: read-only selection of captured evidence and live refs.
 use office_core::domain::source::conversation::recall::{self, Query, Reference};
+use office_core::ports::{PrError, parse_pr_id};
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Value, json};
@@ -73,7 +74,21 @@ fn live_ref(call: &Call<'_>, reference: &Reference) -> Value {
                 Err(_) => unresolved(reference, "task_unavailable"),
             }
         }
-        "pr" => unresolved(reference, "no_pr_source"),
+        "pr" => {
+            if parse_pr_id(&reference.id).is_err() {
+                return unresolved(reference, "invalid_pr_ref");
+            }
+            match call.ports.pr.pr_view(&reference.id) {
+                Ok(view) => json!({"kind":"pr","id":reference.id,"status":view.state.as_str(),
+                    "merged_at":view.merged_at,"merge_commit":view.merge_commit}),
+                // Adapter errors name only the cause class; never echo program
+                // output or upstream text to a recall caller.
+                Err(PrError::Unavailable) => unresolved(reference, "pr_source_unavailable"),
+                Err(PrError::Failed) => unresolved(reference, "pr_lookup_failed"),
+                Err(PrError::InvalidResponse) => unresolved(reference, "invalid_pr_response"),
+                Err(PrError::InvalidRef) => unresolved(reference, "invalid_pr_ref"),
+            }
+        }
         "commit" => unresolved(reference, "no_commit_source"),
         _ => unresolved(reference, "unsupported_ref"),
     }

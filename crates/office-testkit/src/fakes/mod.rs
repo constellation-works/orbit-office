@@ -5,6 +5,7 @@ mod clock;
 mod library;
 mod models;
 mod orbit;
+mod pr;
 mod scripts;
 mod selection;
 mod shared;
@@ -14,6 +15,7 @@ pub use clock::FakeClock;
 pub use library::{FakeLibrary, FakeStaging};
 pub use models::FakeModels;
 pub use orbit::{FakeOrbit, OrbitCall};
+pub use pr::FakePullRequests;
 pub use scripts::FakeScripts;
 pub use selection::FakeSelections;
 pub use shared::FakeShared;
@@ -51,6 +53,7 @@ impl PortsBuilder {
             clock: Box::new(FakeClock(self.now)),
             selections: Box::new(FakeSelections::default()),
             shared: Box::new(FakeShared::default()),
+            pr: Box::new(FakePullRequests::default()),
         }
     }
 }

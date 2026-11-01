@@ -114,6 +114,7 @@ fn stub_ffmpeg_and_timestamp_free_models_publish_anchorable_video_versions_with_
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_core::ports::UnavailableSelections),
         shared: Box::new(office_core::ports::UnavailableShared),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let preview = call(&ports, "office.video-plan", json!({"id":source.id}));
     assert_eq!(preview["ok"], true, "{preview}");

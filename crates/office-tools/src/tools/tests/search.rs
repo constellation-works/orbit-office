@@ -52,6 +52,7 @@ fn ports() -> Ports<'static> {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     }
 }
 
@@ -158,6 +159,7 @@ fn a_private_hit_is_listed_without_its_snippet() {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     let response = search(&ports, json!({ "query": "quixotic" }));
     assert_eq!(response["ok"], json!(true), "{response}");

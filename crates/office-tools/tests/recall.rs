@@ -2,10 +2,10 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 use std::path::Path;
 
-use office_core::ports::{Library, Ports};
+use office_core::ports::{Library, Ports, PrError, PrState, PrView};
 use office_testkit::{
     envelope,
-    fakes::{FakeLibrary, FakeModels, FakeOrbit},
+    fakes::{FakeLibrary, FakeModels, FakeOrbit, FakePullRequests},
 };
 use serde_json::{Value, json};
 
@@ -45,14 +45,16 @@ fn source(
         "---\nid: {id}\nkind: conversation\ntitle: {title}\nproject: {project}\nsensitivity: {}\ncaptured_at: \"2026-10-28T00:00:00Z\"\nentry_refs: {refs}\n---\n{body}", if private { "private" } else { "normal" }
     )).unwrap();
 }
-fn fixture(library: FakeLibrary) -> (Ports<'static>, FakeOrbit, FakeModels) {
+fn fixture(library: FakeLibrary) -> (Ports<'static>, FakeOrbit, FakeModels, FakePullRequests) {
     let mut ports = office_testkit::fakes::PortsBuilder::default().build();
     let orbit = FakeOrbit::default();
     let models = FakeModels::new();
+    let pr = FakePullRequests::default();
     ports.library = Box::new(library);
     ports.orbit = Box::new(orbit.clone());
     ports.models = Box::new(models.clone());
-    (ports, orbit, models)
+    ports.pr = Box::new(pr.clone());
+    (ports, orbit, models, pr)
 }
 
 #[test]
@@ -86,7 +88,7 @@ fn recall_matches_titles_text_and_stored_refs_orders_by_instant_and_reads_live_s
         "[2026-10-28T10:01:00Z] fact: PRIVATE BODY MUST NOT ESCAPE\n",
         json!({"L1":[{"kind":"pr","id":"acme/office#99"}]}),
     );
-    let (ports, orbit, models) = fixture(library);
+    let (ports, orbit, models, _pr) = fixture(library);
     let before = ports.library.head_commit().unwrap();
     orbit.push_response(Ok(
         json!({"id":"DANI-10","status":"review","workspace":"daniel"}),
@@ -116,7 +118,7 @@ fn recall_matches_titles_text_and_stored_refs_orders_by_instant_and_reads_live_s
         && r["reason"] == "task_unavailable"));
     assert!(
         refs.iter()
-            .any(|r| r["id"] == "acme/office#12" && r["reason"] == "no_pr_source")
+            .any(|r| r["id"] == "acme/office#12" && r["reason"] == "pr_source_unavailable")
     );
     assert_eq!(
         out["coverage"],
@@ -159,7 +161,7 @@ fn recall_filters_are_inclusive_limits_are_bounded_and_legacy_sources_are_readab
         "[2026-10-28T23:59:59.999Z] fact: Older entry.\n[2026-10-29T00:00:00Z] fact: Newer entry.\n",
         json!({}),
     );
-    let (ports, orbit, _) = fixture(library);
+    let (ports, orbit, _, _pr) = fixture(library);
     let response = call(
         &ports,
         json!({"question":"FIND entry","since":"2026-10-28","until":"2026-10-28","project":"work-a"}),
@@ -198,7 +200,7 @@ fn unavailable_and_malformed_task_statuses_never_fail_recall_or_echo_callback_er
         "[2026-10-28T10:00:00Z] action: Ship.\n",
         json!({"L1":[{"kind":"task","id":"ORB-42"}]}),
     );
-    let (ports, orbit, _) = fixture(library);
+    let (ports, orbit, _, _pr) = fixture(library);
     for reply in [
         Err(office_core::Error::InvalidArgument(
             "private callback detail".into(),
@@ -222,6 +224,49 @@ fn unavailable_and_malformed_task_statuses_never_fail_recall_or_echo_callback_er
 }
 
 #[test]
+fn recall_pr_refs_report_merged_and_name_unavailable_or_failed_causes() {
+    let library = FakeLibrary::initialized();
+    source(
+        &library,
+        "src-a",
+        "Topic",
+        "work",
+        false,
+        "[2026-10-28T10:00:00Z] action: Ship it.\n",
+        json!({"L1":[{"kind":"pr","id":"acme/office#12"}]}),
+    );
+    let (ports, _orbit, _models, pr) = fixture(library);
+    pr.push_response(Ok(PrView {
+        state: PrState::Merged,
+        merged_at: Some("2026-10-28T11:00:00Z".into()),
+        merge_commit: Some("0123456789abcdef".into()),
+    }));
+    let response = call(&ports, json!({"question":"topic"}));
+    assert_eq!(response["ok"], true, "{response}");
+    let merged = &response["output"]["refs"][0];
+    assert_eq!(merged["kind"], "pr");
+    assert_eq!(merged["id"], "acme/office#12");
+    assert_eq!(merged["status"], "merged");
+    assert_eq!(merged["merged_at"], "2026-10-28T11:00:00Z");
+    assert_eq!(merged["merge_commit"], "0123456789abcdef");
+    assert_eq!(pr.calls(), vec!["acme/office#12".to_string()]);
+
+    for (reply, reason) in [
+        (Err(PrError::Unavailable), "pr_source_unavailable"),
+        (Err(PrError::Failed), "pr_lookup_failed"),
+        (Err(PrError::InvalidResponse), "invalid_pr_response"),
+        (Err(PrError::InvalidRef), "invalid_pr_ref"),
+    ] {
+        pr.push_response(reply);
+        let response = call(&ports, json!({"question":"topic"}));
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["output"]["refs"][0]["status"], "unresolved");
+        assert_eq!(response["output"]["refs"][0]["reason"], reason);
+        assert!(!response.to_string().contains("gh secret diagnostics"));
+    }
+}
+
+#[test]
 fn conformance_golden_runs_through_public_dispatch() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../plugin/.orbit-plugin/tests/conformance/recall.yaml");
@@ -234,7 +279,7 @@ fn conformance_golden_runs_through_public_dispatch() {
         for (prefix, success) in [("      output: ", true), ("      error: ", false)] {
             if let Some(value) = line.strip_prefix(prefix) {
                 let expected: Value = serde_json::from_str(value).unwrap();
-                let (ports, _, _) = fixture(FakeLibrary::initialized());
+                let (ports, _, _, _pr) = fixture(FakeLibrary::initialized());
                 let response = call(&ports, input.take().unwrap());
                 assert_eq!(response["ok"], success, "{response}");
                 if success {

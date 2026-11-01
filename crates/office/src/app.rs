@@ -14,7 +14,7 @@ use office_core::ports::{
 use office_core::ports::{SharedRepository, UnavailableShared};
 use office_core::protocol::{self, Context};
 use office_orbit::{CALLBACK_ENV_NAMES, OrbitCallbacks};
-use office_store::{LibraryStore, SharedStore};
+use office_store::{GhPullRequests, LibraryStore, SharedStore};
 use serde_json::Value;
 
 use crate::error::Result;
@@ -622,6 +622,7 @@ fn ports(context: &Context, bootstrap_read_only: bool) -> Ports<'_> {
         selections: Box::new(RealSelections { context }),
         shared: shared(context),
         calendar: Box::new(RealCalendar { context }),
+        pr: Box::new(GhPullRequests::new()),
     }
 }
 

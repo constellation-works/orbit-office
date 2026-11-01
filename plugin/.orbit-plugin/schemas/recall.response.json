@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.recall response",
-  "description": "Captured evidence newest first. Private matches contribute session metadata and refs, never entry text. Task status is read live; workspace is null when not supplied by Orbit. PRs are unresolved/no_pr_source, commits unresolved/no_commit_source. coverage spans the whole Library, independent of filters.",
+  "description": "Captured evidence newest first. Private matches contribute session metadata and refs, never entry text. Task status is read live; workspace is null when not supplied by Orbit. PR state, merged_at and merge_commit are read live through gh; a missing grant or a gh failure is unresolved with a reason naming the cause. Commits are unresolved/no_commit_source. coverage spans the whole Library, independent of filters.",
   "type": "object",
   "$defs": {
     "ref": {
@@ -206,6 +206,18 @@
               "null"
             ]
           },
+          "merged_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merge_commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reason": {
             "type": "string",
             "minLength": 1
@@ -232,8 +244,30 @@
               ]
             },
             "else": {
-              "required": [
-                "workspace"
+              "anyOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "pr"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "merged_at",
+                      "merge_commit"
+                    ]
+                  },
+                  "else": {
+                    "required": [
+                      "workspace"
+                    ]
+                  }
+                }
               ]
             }
           }

@@ -16,6 +16,7 @@ fn fixture() -> (Ports<'static>, FakeOrbit) {
         calendar: Box::new(office_core::ports::UnavailableCalendar),
         selections: Box::new(FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
     };
     (ports, orbit)
 }

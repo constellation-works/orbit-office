@@ -25,12 +25,15 @@ impl Fixture {
         self.workspace().join("session.jsonl")
     }
     fn call(&self, input: Value, tool: &str) -> Value {
+        self.call_with_path(input, tool, &std::env::var("PATH").unwrap())
+    }
+    fn call_with_path(&self, input: Value, tool: &str, path: &str) -> Value {
         std::fs::create_dir_all(self.workspace()).unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_office"))
             .arg("orbit-tool")
             .env_clear()
             .env("HOME", self.root.path().join("home"))
-            .env("PATH", std::env::var("PATH").unwrap())
+            .env("PATH", path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -779,8 +782,78 @@ fn recall_session_context_titles_refs_and_private_text_are_preserved() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|r| r["id"] == "acme/office#99" && r["reason"] == "no_pr_source")
+            .any(|r| r["id"] == "acme/office#99" && r["status"] == "unresolved")
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn recall_pr_refs_use_fixture_gh_and_name_missing_or_failing_gh() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new();
+    let captured = f.call(
+        json!({"kind":"conversation","title":"PR session","entries":[{"kind":"action","text":"Landed acme/office#12"}]}),
+        "office.capture",
+    );
+    assert_eq!(captured["ok"], true, "{captured}");
+    // A PATH holding only git: `gh` cannot be started there.
+    let git_binary = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|directory| directory.join("git"))
+        .find(|path| path.is_file())
+        .unwrap();
+    let bin = f.workspace().join("gh-bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink(&git_binary, bin.join("git")).unwrap();
+    let path = bin.to_str().unwrap().to_string();
+    let missing = f.call_with_path(json!({"question":"acme/office"}), "office.recall", &path);
+    assert_eq!(missing["ok"], true, "{missing}");
+    let pr_ref = missing["output"]["refs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == "acme/office#12")
+        .unwrap()
+        .clone();
+    assert_eq!(pr_ref["status"], "unresolved");
+    assert_eq!(pr_ref["reason"], "pr_source_unavailable");
+
+    let gh = bin.join("gh");
+    std::fs::write(
+        &gh,
+        r#"#!/bin/sh
+[ "$1" = pr ] && [ "$2" = view ] && [ "$3" = "acme/office#12" ] && [ "$4" = --json ] && [ "$5" = "state,mergedAt,mergeCommit" ] || exit 11
+printf '%s' '{"state":"MERGED","mergedAt":"2026-10-30T12:00:00Z","mergeCommit":{"oid":"0123abc"}}'
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let merged = f.call_with_path(json!({"question":"acme/office"}), "office.recall", &path);
+    assert_eq!(merged["ok"], true, "{merged}");
+    let pr_ref = merged["output"]["refs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == "acme/office#12")
+        .unwrap()
+        .clone();
+    assert_eq!(pr_ref["status"], "merged", "{merged}");
+    assert_eq!(pr_ref["merged_at"], "2026-10-30T12:00:00Z");
+    assert_eq!(pr_ref["merge_commit"], "0123abc");
+
+    std::fs::write(&gh, "#!/bin/sh\necho 'gh secret diagnostics' >&2\nexit 3\n").unwrap();
+    std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let failed = f.call_with_path(json!({"question":"acme/office"}), "office.recall", &path);
+    assert_eq!(failed["ok"], true, "{failed}");
+    let pr_ref = failed["output"]["refs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == "acme/office#12")
+        .unwrap()
+        .clone();
+    assert_eq!(pr_ref["status"], "unresolved");
+    assert_eq!(pr_ref["reason"], "pr_lookup_failed");
+    assert!(!failed.to_string().contains("gh secret diagnostics"));
 }
 
 #[test]
