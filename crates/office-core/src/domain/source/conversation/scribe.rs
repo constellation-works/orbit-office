@@ -170,6 +170,11 @@ pub struct Parsed {
     pub parsed: String,
     /// First conversational record's timestamp.
     pub started_at: Option<String>,
+    /// Title from the transcript's title/summary record, if any. Only a
+    /// side session (one opening with an orchestrator brief) names its
+    /// SCR file from it; see [`planned`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_title: Option<String>,
 }
 
 /// Workspace-relative path of a session's message file, given the
@@ -803,7 +808,8 @@ pub fn free_id(files: &[ScrFile], id: &str, session_id: &str) -> Result<String> 
 
 /// The slug source of an untitled session: the first user message with
 /// remaining text. A message emptied by harness stripping is skipped; a
-/// bare slash command counts when nothing else exists.
+/// bare slash command counts when nothing else exists. A side-session
+/// brief is an assistant message, so it never names the file here.
 #[must_use]
 pub fn first_words(messages: &[Message]) -> String {
     messages
@@ -813,6 +819,41 @@ pub fn first_words(messages: &[Message]) -> String {
         .and_then(|m| m.text.lines().find(|line| !line.trim().is_empty()))
         .map(slug)
         .unwrap_or_default()
+}
+
+/// The side-session brief among `messages`, if the session has one.
+fn brief_message(messages: &[Message]) -> Option<&Message> {
+    messages
+        .iter()
+        .find(|m| super::is_side_session_brief(&m.text))
+}
+
+/// Slug source for a new file: an explicit title wins; a side session
+/// then takes the transcript's own title, else its brief's task-title
+/// line; every other session takes Daniel's first message.
+fn planned_slug(parsed: &Parsed, messages: &[Message], title: Option<&str>) -> String {
+    if let Some(title) = title {
+        return slug(title);
+    }
+    if brief_message(messages).is_some() {
+        if let Some(title) = parsed
+            .session_title
+            .as_deref()
+            .filter(|t| !t.trim().is_empty())
+        {
+            let value = slug(title);
+            if !value.is_empty() {
+                return value;
+            }
+        }
+        if let Some(task) = brief_message(messages).and_then(|m| super::brief_task_title(&m.text)) {
+            let value = slug(&task);
+            if !value.is_empty() {
+                return value;
+            }
+        }
+    }
+    first_words(messages)
 }
 
 /// Session start as written in front matter and used for the name.
@@ -838,7 +879,7 @@ pub fn planned(
     zone: Option<&str>,
 ) -> Result<(String, String)> {
     let start = session_start(parsed, messages, zone)?;
-    let slug = title.map_or_else(|| first_words(messages), slug);
+    let slug = planned_slug(parsed, messages, title);
     let id = free_id(files, &scr_id(start, &slug), &parsed.session_id)?;
     let path = scr_path(start, &id);
     Ok((id, path))

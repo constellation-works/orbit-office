@@ -62,7 +62,7 @@ on the session it is run in, identified by `${CLAUDE_SESSION_ID}`.
 | `/scribe note <text>` | Record `<text>` verbatim as Daniel's own entry. The scribe agent picks the tag unless the text starts with one (`#todo …`). |
 | `/scribe pending`, `/scribe pref <matter>`, `/scribe landed [today\|<date>]`, `/scribe why <matter\|topic>` | Model-free queries over the tags; instant, cited lines ([Answering](#answering)). |
 | `/scribe ask <question>` | Answer a free-form question with citations; runs the queries first and calls the model only on the shortlist. |
-| `/scribe backfill [--since <date>] [--project <name>]` | Run the catch-up over the user's existing transcripts, oldest first. Each session gets its SCR file; sessions already scribed to their end are skipped. The calling session is never selected: it is left to `/scribe` (counted as `caller_skipped`). Sessions whose only user messages invoke `/scribe` (`office-scribe:scribe`) are skipped as scribe-only (counted as `scribe_only`): a driver that only ran `/scribe` is not a conversation, never refused and never handed to the scribe agent. Headless agent-to-agent runs, whose first conversational record carries `entrypoint: sdk-cli` (Orbit workers, `claude -p`), are skipped as headless: counted in `skipped`, never refused and never handed to the scribe agent. An explicit `/scribe` inside a calling, scribe-only or headless session still scribes it. A finished backfill reports `done` with `continue: false`. |
+| `/scribe backfill [--since <date>] [--project <name>]` | Run the catch-up over the user's existing transcripts, oldest first. Each session gets its SCR file; sessions already scribed to their end are skipped. The calling session is never selected: it is left to `/scribe` (counted as `caller_skipped`). Sessions whose only user messages invoke `/scribe` (`office-scribe:scribe`) are skipped as scribe-only (counted as `scribe_only`): a driver that only ran `/scribe` is not a conversation, never refused and never handed to the scribe agent. `<task-notification>` blocks are stripped before that judgment, so a driver whose other user records are only background-task notifications still counts as scribe-only. Headless agent-to-agent runs, whose first conversational record carries `entrypoint: sdk-cli` (Orbit workers, `claude -p`), are skipped as headless: counted in `skipped`, never refused and never handed to the scribe agent. An explicit `/scribe` inside a calling, scribe-only or headless session still scribes it. A finished backfill reports `done` with `continue: false`. |
 | `/scribe title <text>` | Set the session title, which renames the SCR file once (below). |
 
 Orchestrators reach the same agent as the `scribe` subagent: "ask the
@@ -93,9 +93,22 @@ transcript ──parse (no model)──▶ <library>/.office/state/scribe/<sessi
    That adapter keeps only the text exchanged between Daniel and the agent:
    no tool calls, tool results, thinking or sidechains. Credentials are
    scrubbed as today. Harness wrapper text in a user message is not Daniel's
-   words: `<system-reminder>` blocks and `<local-command-*>` output are
+   words: `<system-reminder>` blocks, `<task-notification>` blocks and
+   `<local-command-*>` output are
    dropped, and a slash command is kept as one `/<name> <args>` line
-   ([sessions.md](./sessions.md#adapter-and-provenance)). Output is
+   ([sessions.md](./sessions.md#adapter-and-provenance)). A desktop side
+   session's opening brief ("Background from the session that started this
+   one…") is the orchestrator's text, not Daniel's: it is kept as an
+   assistant message, so it keeps its `m-<n>` id but never takes Daniel's
+   tags. The session's `project` is the git repository name: for a
+   session at a repository or linked-worktree root, the plugin
+   resolves the main worktree's top-level directory (through
+   `git rev-parse --git-common-dir`) and passes it to
+   `office.scribe-pending`, falling back to the `cwd` basename when git
+   cannot resolve it that way (a non-git directory, a plain
+   subdirectory, or a worktree removed by GC).
+   Default topics come from that project name, so no worktree slug reaches
+   them. Output is
    `<library>/.office/state/scribe/<session-id>.jsonl`, one message per line:
    `{"id":"m-0042","role":"user|assistant","at":"<rfc3339>","text":"…"}`.
    Ids are stable: the nth kept message is always `m-<n>`, so re-parsing a
@@ -268,7 +281,11 @@ file `SCR-<dd-hhmm>-<title-slug>.md`.
 Until a title is set, the slug comes from Daniel's first message with
 remaining text after harness stripping (above): a message emptied by
 stripping never names the file, and a bare slash command such as
-`/scribe backfill` names it when nothing else exists. `/scribe
+`/scribe backfill` names it when nothing else exists. A side session
+(one opening with the orchestrator brief above) is the exception: its
+slug comes from the session's own title — the transcript's title/summary
+record when present, else the brief's task-title line, else Daniel's
+first real message — and never from the brief's preamble. `/scribe
 title` renames the file once and records the old name in `aliases`.
 
 ```markdown

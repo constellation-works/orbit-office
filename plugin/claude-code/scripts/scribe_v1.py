@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import time
 
 from process import Failure
@@ -187,6 +188,53 @@ def _strip_record(record: dict) -> dict:
 SCRIBE_COMMAND = "office-scribe:scribe"
 
 
+_TASK_NOTIFICATION = re.compile(r"<task-notification(?:\s[^>]*)?>.*?</task-notification\s*>", re.S)
+
+
+def _strip_task_notifications(text: str) -> str:
+    """Drop `<task-notification>` blocks, as Office's parser does.
+
+    Claude Code injects background-task completions as user records; they
+    are harness text, not Daniel's words. An unclosed block drops the
+    rest, mirroring the Rust strip.
+    """
+    out = _TASK_NOTIFICATION.sub("", text)
+    start = out.find("<task-notification")
+    if start != -1:
+        out = out[:start]
+    return out.replace("</task-notification>", "")
+
+
+def repo_project(cwd: str) -> str:
+    """The repository name for a working directory.
+
+    For a session at a repository or linked-worktree root, the main
+    worktree's top-level directory name, resolved through
+    `git rev-parse --git-common-dir` (whose parent is that directory),
+    so a session in a linked worktree records the repository, not the
+    worktree directory. Falls back to the `cwd` basename when git cannot
+    resolve it that way: a non-git directory, a plain subdirectory, or a
+    worktree removed by GC.
+    """
+    fallback = cwd.rstrip("/").rsplit("/", 1)[-1]
+    try:
+        done = subprocess.run(["git", "-C", cwd, "rev-parse", "--git-common-dir", "--show-toplevel"],
+                              capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return fallback
+    lines = done.stdout.splitlines() if done.returncode == 0 else []
+    if len(lines) < 2:
+        return fallback
+    common, toplevel = lines[0].strip(), lines[1].strip()
+    if not common or Path(toplevel).resolve() != Path(cwd).resolve():
+        return fallback
+    path = Path(common)
+    if not path.is_absolute():
+        path = Path(cwd) / path
+    name = path.resolve().parent.name
+    return name or fallback
+
+
 def _is_scribe_command_text(text: str) -> bool:
     """One `/scribe` command invocation as a transcript keeps it.
 
@@ -245,6 +293,7 @@ def _is_scribe_only_session(path_str: str) -> bool:
                     text = " ".join(parts)
                 else:
                     continue
+                text = _strip_task_notifications(text)
                 if not text.strip():
                     continue
                 if not _is_scribe_command_text(text):
@@ -490,7 +539,8 @@ class V1:
         if staged is None:
             return None
         reply = self.office("office.scribe-pending", {"session_id": sid, "transcript": str(staged),
-                                                      "provider": PROVIDER, "cwd": cwd})
+                                                      "provider": PROVIDER, "cwd": cwd,
+                                                      "project": repo_project(cwd)})
         return staged, reply
 
     def catchup(self, sid: str) -> dict:
@@ -932,7 +982,7 @@ class V1:
                     raise Failure("timestamp_needs_offset")
                 if since and started.astimezone().date() < since:
                     continue
-                name = head["cwd"].rstrip("/").rsplit("/", 1)[-1]
+                name = repo_project(head["cwd"])
                 if project and project not in (name, path.parent.name):
                     continue
                 if self.client.excluded_project(head["cwd"]):

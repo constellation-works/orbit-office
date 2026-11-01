@@ -103,6 +103,40 @@ fn wrapped_transcript() -> String {
         + "\n"
 }
 
+fn notification_transcript() -> String {
+    [
+        record(
+            "user",
+            7,
+            &json!("<command-message>office-scribe:scribe</command-message>\n<command-name>/scribe</command-name>\n<command-args>backfill</command-args>"),
+        ),
+        record(
+            "user",
+            8,
+            &json!("<task-notification>\n<task-id>task-1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n<status>completed</status>\n</task-notification>"),
+        ),
+        record(
+            "user",
+            9,
+            &json!("<task-notification><task-id>task-2</task-id></task-notification>\nReal decision here."),
+        ),
+        record("assistant", 10, &json!("Working on it.")),
+    ]
+    .join("\n")
+        + "\n"
+}
+
+fn side_transcript(title_record: Option<String>, brief: &str, real: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    if let Some(title) = title_record {
+        lines.push(title);
+    }
+    lines.push(record("user", 7, &json!(brief)));
+    lines.push(record("user", 8, &json!(real)));
+    lines.push(record("assistant", 9, &json!("Working on it.")));
+    lines.join("\n") + "\n"
+}
+
 fn command_only_transcript() -> String {
     [
         record(
@@ -129,6 +163,36 @@ fn ports(mut library: FakeLibrary) -> Ports<'static> {
     library
         .session_transcripts
         .insert("long.jsonl".into(), transcript(17));
+    library
+        .session_transcripts
+        .insert("notification.jsonl".into(), notification_transcript());
+    library.session_transcripts.insert(
+        "side-title.jsonl".into(),
+        side_transcript(
+            Some(
+                json!({"type":"summary","summary":"Repair the gateway"})
+                    .to_string(),
+            ),
+            "Background from the session that started this one (session parent-1).\nTask: Fix the gateway deploy\nThe orchestrator wrote this context.",
+            "Ship the real thing.",
+        ),
+    );
+    library.session_transcripts.insert(
+        "side-task.jsonl".into(),
+        side_transcript(
+            None,
+            "Background from the session that started this one.\nTask: Fix the gateway deploy\nThe orchestrator wrote this context.",
+            "Ship the real thing.",
+        ),
+    );
+    library.session_transcripts.insert(
+        "side-plain.jsonl".into(),
+        side_transcript(
+            None,
+            "Background from the session that started this one.\nThe orchestrator wrote this context.",
+            "Ship the real thing.",
+        ),
+    );
     library.host = Some("macbook".into());
     let mut ports = office_testkit::fakes::PortsBuilder::default().build();
     ports.library = Box::new(library);
@@ -336,6 +400,109 @@ fn pending_strips_harness_wrappers_and_renders_slash_commands() {
         first["scr"]["path"],
         "sources/conversation/2026/10/SCR-31-2007-scribe-backfill.md"
     );
+}
+
+#[test]
+fn pending_strips_task_notification_blocks() {
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = pending(&ports, "notification.jsonl");
+    let messages = first["messages"].as_array().unwrap();
+    let texts: Vec<&str> = messages
+        .iter()
+        .map(|m| m["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        texts,
+        ["/scribe backfill", "Real decision here.", "Working on it."]
+    );
+    for text in &texts {
+        assert!(!text.contains("task-notification"), "{text:?}");
+        assert!(!text.contains("task-1"), "{text:?}");
+    }
+    let parsed = ports.library.read_scribe_parse(SESSION).unwrap().unwrap();
+    assert!(!parsed.messages.contains("task-notification"));
+}
+
+#[test]
+fn side_session_brief_is_assistant_and_slug_comes_from_title_then_task_line() {
+    // Transcript title wins over the brief's task line and the preamble.
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = pending(&ports, "side-title.jsonl");
+    let messages = first["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "assistant",
+        "the brief is not Daniel's"
+    );
+    assert!(
+        messages[0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("Background from the session")
+    );
+    assert_eq!(messages[1]["role"], "user");
+    assert_eq!(
+        first["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-repair-the-gateway.md"
+    );
+    // The brief cannot take one of Daniel's tags through append.
+    let brief_id = messages[0]["id"].as_str().unwrap().to_string();
+    let out = append(
+        &ports,
+        json!({"through": brief_id, "entries":[
+            {"msg": brief_id, "quote": "The orchestrator wrote this context.", "tag": "decision", "topics": []}
+        ]}),
+    );
+    assert_eq!(out["added"], json!([]));
+    assert_eq!(out["refused"][0]["reason"], "tag_not_permitted");
+
+    // No title record: the brief's task-title line names the file.
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = pending(&ports, "side-task.jsonl");
+    assert_eq!(first["messages"][0]["role"], "assistant");
+    assert_eq!(
+        first["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-fix-the-gateway-deploy.md"
+    );
+
+    // Neither: Daniel's first real message names the file.
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = pending(&ports, "side-plain.jsonl");
+    assert_eq!(
+        first["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-ship-the-real-thing.md"
+    );
+}
+
+#[test]
+fn pending_records_caller_resolved_project_not_the_worktree_name() {
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = output(
+        &ports,
+        "office.scribe-pending",
+        json!({"session_id":SESSION,"transcript":"short.jsonl","provider":"claude-code",
+                "cwd":"/Users/daniel/workspace/orb-20524-rail-snap-visible-span-993033",
+                "project":"orbit"}),
+    );
+    assert_eq!(first["rules"]["topics"], json!(["orbit"]));
+    let meta: Value = serde_json::from_str(
+        &ports
+            .library
+            .read_scribe_parse(SESSION)
+            .unwrap()
+            .unwrap()
+            .meta,
+    )
+    .unwrap();
+    assert_eq!(meta["project"], "orbit");
+    append(
+        &ports,
+        json!({"through":"m-0001","entries":[
+            {"msg":"m-0001","quote":"lets go one step at a time","tag":"decision","topics":["orbit"]}
+        ]}),
+    );
+    let (_, text) = scr(&ports);
+    assert!(text.contains("project: \"orbit\""), "{text}");
+    assert!(text.contains("topics: [\"orbit\"]"), "{text}");
 }
 
 #[test]

@@ -32,11 +32,74 @@ pub struct Line {
     #[serde(default, skip_serializing_if = "is_false")]
     pub context: bool,
 }
+/// First line of the brief a desktop side session opens with: the
+/// orchestrator that started the session wrote it, not Daniel.
+pub const SIDE_SESSION_BRIEF_PREFIX: &str = "Background from the session that started this one";
+
+/// True when `text` opens with the side-session brief preamble.
+#[must_use]
+pub fn is_side_session_brief(text: &str) -> bool {
+    text.trim_start().starts_with(SIDE_SESSION_BRIEF_PREFIX)
+}
+
+/// The brief's task-title line: a `Task:`/`Title:` line (optionally
+/// Markdown-bold) after the preamble, if the brief carries one.
+#[must_use]
+pub fn brief_task_title(text: &str) -> Option<String> {
+    if !is_side_session_brief(text) {
+        return None;
+    }
+    for line in text.lines().skip(1) {
+        let plain = line.trim().trim_start_matches('#').trim();
+        let plain = plain.strip_prefix("**").unwrap_or(plain);
+        let lower = plain.to_ascii_lowercase();
+        for label in ["task:", "title:"] {
+            if let Some(rest) = lower.strip_prefix(label) {
+                let at = plain.len() - rest.len();
+                let value = plain[at..]
+                    .trim()
+                    .trim_end_matches("**")
+                    .trim()
+                    .trim_matches('"');
+                if !value.is_empty() {
+                    return Some(value.to_owned());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// A title carried by a non-conversational record, if any: a `summary`
+/// record's summary, or an `aiTitle`/`customTitle`/`title` field. Values
+/// over 256 bytes are dropped, as staging drops them.
+fn record_title(record: &Value, kind: &str) -> Option<String> {
+    let keys: &[&str] = if kind == "summary" {
+        &["summary", "title", "aiTitle", "customTitle"]
+    } else if kind.contains("title") {
+        &["aiTitle", "customTitle", "title", "summary"]
+    } else {
+        &["aiTitle", "customTitle"]
+    };
+    keys.iter().find_map(|key| {
+        record
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| {
+                !value.is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
+            })
+            .map(scrub)
+    })
+}
+
 /// Parsed Claude Code session; future providers implement this same shape.
 #[derive(Clone, Debug, Serialize)]
 pub struct Session {
     /// Provider inferred from the adapter's record format.
     pub orchestrator: String,
+    /// Title from the transcript's title/summary record, if any.
+    pub title: Option<String>,
     /// Last non-synthetic model reported by an assistant message.
     pub model: Option<String>,
     /// Working directory and branch of the first conversational record.
@@ -255,6 +318,7 @@ fn strip_prefixed_blocks(text: &str, prefix: &str) -> String {
 /// caller renders the invocation from the extracted name and args.
 fn strip_harness(text: &str) -> String {
     let out = strip_tag_blocks(text, "system-reminder");
+    let out = strip_tag_blocks(&out, "task-notification");
     let out = strip_prefixed_blocks(&out, "local-command-");
     let out = strip_tag_blocks(&out, "command-message");
     let out = strip_tag_blocks(&out, "command-name");
@@ -274,6 +338,7 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
     }
     let mut session = Session {
         orchestrator: "claude".into(),
+        title: None,
         model: None,
         project: None,
         branch: None,
@@ -287,6 +352,7 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
         line_prefix_sha256: vec![],
     };
     let mut offset = 0usize;
+    let mut first_user_seen = false;
     for raw_line in raw.split_inclusive('\n') {
         offset += raw_line.len();
         if raw_line.trim().is_empty() {
@@ -303,6 +369,11 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
             .get("type")
             .and_then(Value::as_str)
             .ok_or_else(|| invalid("transcript record needs a type"))?;
+        if session.title.is_none()
+            && let Some(title) = record_title(&record, kind)
+        {
+            session.title = Some(title);
+        }
         if !["user", "assistant"].contains(&kind) {
             continue;
         }
@@ -431,6 +502,21 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
         if let Some((at, command)) = command {
             cleaned.insert(at.min(cleaned.len()), command);
         }
+        // A desktop side session opens with an orchestrator-written brief
+        // as its first user record. It is the orchestrator's text, not
+        // Daniel's: keep its message (and id) but as an assistant message,
+        // so it never takes Daniel's tags and never names the SCR file.
+        let effective_role = if kind == "user" && !first_user_seen {
+            first_user_seen = true;
+            let joined = cleaned.join("\n");
+            if is_side_session_brief(&joined) {
+                "assistant"
+            } else {
+                kind
+            }
+        } else {
+            kind
+        };
         for text in &cleaned {
             let mut fenced = false;
             for text in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
@@ -443,7 +529,7 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
                 }
                 session.lines.push(Line {
                     line: session.lines.len(),
-                    role: kind.into(),
+                    role: effective_role.into(),
                     timestamp: timestamp.into(),
                     text: text.into(),
                     context: false,
