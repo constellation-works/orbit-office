@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: orchestrator — the user's agent CLI running the office skill: role, tool surface, behaviours and guardrails"
-last_validated: 2026-10-26
+last_validated: 2026-11-01
 ---
 
 # Spec: Orchestrator
@@ -25,8 +25,8 @@ from that surface, not from instructions.
   one shown in the demo, which keeps the conversation on Meta models.
   Claude Code and Codex work too, because the surface is Orbit MCP plus a
   skill. The installer registers one CLI per run: Claude Code by default
-  (its own `--agent` default), or Muse Code or Codex with
-  `--agent muse` or `--agent codex` ([install.md](./install.md)).
+  (the installer's own `--agent` default is `claude`), or Muse Code or
+  Codex with `--agent muse` or `--agent codex` ([install.md](./install.md)).
 - **Skill discovery.** The plugin's skill links as `office-orchestrator`
   into Orbit's skill roots. Muse Code also loads Claude Code and Codex
   personal skills unless that is turned off, so one linked skill reaches

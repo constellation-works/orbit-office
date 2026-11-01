@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: the KT pack — an hour-long knowledge-transfer video becomes a chaptered index with tangents folded away, cited knowledge proposals, a runbook and questions for the presenter, behind a cost preview"
-last_validated: 2026-10-26
+last_validated: 2026-11-01
 ---
 
 # Spec: KT videos (the hero pack)

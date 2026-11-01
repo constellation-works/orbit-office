@@ -2,7 +2,7 @@
 type: design
 summary: "Spec: delivery — hackathon compliance, the 3-minute demo script and the day-by-day build plan"
 last_updated: 2026-10-27
-last_validated: 2026-10-26
+last_validated: 2026-11-01
 ---
 
 # Spec: Delivery

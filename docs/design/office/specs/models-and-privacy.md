@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: models and privacy routing — which model does what, and the private route: Meta's open-weights Muse Spark Open on an endpoint the user chooses"
-last_validated: 2026-10-26
+last_validated: 2026-11-01
 ---
 
 # Spec: Models and privacy routing
