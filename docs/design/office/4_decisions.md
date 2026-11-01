@@ -1869,7 +1869,10 @@ and wanted a Claude desktop app mod in particular.
 ## One scribe per user, queried through recall
 
 **Recorded:** 2026-11-01 · approved by the user in conversation
-**Code anchors:** none yet; [specs/recall.md](./specs/recall.md)
+**Code anchors:** `office-core/src/domain/source/conversation/recall.rs`
+(session context, stored refs, selection), `office-tools/src/tools/recall.rs`
+(read-only dispatch and live task status); [specs/recall.md](./specs/recall.md).
+Orbit backend built in ORB-20688; provider UI/client remains planned.
 
 ### Context
 

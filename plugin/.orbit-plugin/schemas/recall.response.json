@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.recall response",
+  "description": "Captured evidence newest first. Private matches contribute session metadata and refs, never entry text. Task status is read live; workspace is null when not supplied by Orbit. PRs are unresolved/no_pr_source, commits unresolved/no_commit_source. coverage spans the whole Library, independent of filters.",
+  "type": "object",
+  "$defs": {
+    "ref": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "task",
+            "pr",
+            "commit"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "anchor": {
+            "type": "string",
+            "pattern": "^#L[1-9][0-9]*$"
+          },
+          "kind": {
+            "enum": [
+              "decision",
+              "direction",
+              "fact",
+              "action",
+              "open",
+              "resolved",
+              "handoff"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "required": [
+          "source_id",
+          "anchor",
+          "kind",
+          "text",
+          "time",
+          "refs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_active_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resume": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "provider",
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "title_by": {
+            "enum": [
+              "scribe",
+              "user",
+              null
+            ]
+          },
+          "content_withheld": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source_id",
+          "path",
+          "title",
+          "project",
+          "branch",
+          "started_at",
+          "last_active_at",
+          "resume",
+          "title_by",
+          "content_withheld"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "task",
+              "pr",
+              "commit"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "status"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "unresolved"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "reason"
+              ]
+            },
+            "else": {
+              "required": [
+                "workspace"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "earliest_session_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "private_sessions_skipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "providers_not_captured": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "earliest_session_at",
+        "private_sessions_skipped",
+        "providers_not_captured"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "entries",
+    "sessions",
+    "refs",
+    "coverage"
+  ],
+  "additionalProperties": false
+}

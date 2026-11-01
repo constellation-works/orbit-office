@@ -6,7 +6,10 @@ last_validated: 2026-11-01
 
 # Spec: Recall
 
-Status: specified, not built.
+Status: the Orbit backend is built (ORB-20688): session context and title
+ownership, deterministic stored refs, and read-only `office.recall`. The
+provider plugin, commands/subagent, Scribe UI and backfill remain specified.
+PR status remains unresolved until a live PR source is added (below).
 
 One scribe follows the user across every agent conversation they hold, in
 every project, and answers "where did we discuss X?", "what did we decide
@@ -80,6 +83,28 @@ title_by: scribe                                  # scribe | user
   session link) is recorded in `resume` when the hook can read it; the
   command form is always present for Claude Code.
 
+### Capture contract (built)
+
+Session-mode `office.capture` accepts optional `project`, `branch`, `resume`,
+`repository`, `title` and `title_by` alongside its existing transcript fields.
+The first conversational record's `cwd` and `gitBranch` take precedence over
+hook fallbacks; start context is retained across later passes. Activity time
+advances to the latest conversational record, even when the crew selects no
+entries. `resume` defaults to a safely quoted `claude --resume <session-id>`;
+a later hook can supply its provider link. No resume value is executed.
+
+The crew passes its proposed title with `title_by: scribe` (the default).
+With no proposal, the first user line supplies at most eight words. Private
+capture ignores scribe proposals and uses that local fallback; an explicit
+user title is retained. A hook can set or change a user title with `title`
+and `title_by: user`, including on an unchanged transcript. Later scribe
+passes cannot replace it. No model call is added to capture.
+
+`repository` is a known GitHub `owner/repo` supplied by the hook, for projects
+whose filesystem path does not identify their repository. A project that is
+itself `owner/repo` or a GitHub repository URL also supplies this context.
+Ambiguous lines naming multiple repositories never bind a bare `#n`.
+
 ## Linking talk to outcomes
 
 Captured lines that name work carry `refs`, extracted deterministically
@@ -93,6 +118,22 @@ by the adapter from the copied text, never by the model:
 Refs are stored on the entry. Their status is never stored: recall reads
 it live (`orbit.task.show`, the PR's state and merge commit), so an answer
 says what is true now, not what was true when the line was captured.
+
+### Stored refs (built)
+
+`entry_refs` in source frontmatter maps body-relative anchors (`L1`, `L2`, …)
+to arrays of `{kind: task|pr|commit, id: <canonical identity>}`. This keeps
+entry text verbatim and existing body citations stable. Normal conversation
+capture, append and transcript passes index new entries; existing stored
+identities are retained. Old sources without this field remain readable,
+with empty refs until a later capture indexes them. Status is never written.
+
+Task candidates use the general uppercase workspace-prefix/id syntax rather
+than a hardcoded ORB/DANI/ORBA list. Recall sends each distinct identity to
+Orbit's registered task router (`orbit.task.show`), which determines whether
+it exists and is readable across workspaces; unregistered/unreadable ids are
+unresolved. PR URLs normalize to `owner/repo#n`; action hashes normalize to
+lowercase (7–64 hex characters). Other entry kinds never infer commit refs.
 
 ### Live PR state
 
@@ -124,6 +165,32 @@ Read-only, `mcp_scope: workspace`, agent-callable. Input:
   private, and providers not captured, so an empty result can say why.
 
 Private sources contribute session items and refs but never entry text.
+
+### Query behavior (built)
+
+The question is a literal case-insensitive search: all whitespace-separated
+terms must occur across the entry text, source title and stored ref ids.
+There is no natural-language inference or model call. `since` and `until`
+are inclusive RFC 3339 timestamps or UTC dates (a date's entire day is
+included); `project` is an exact match. Ordering compares instants, including
+offsets and fractional seconds, with stable source/anchor tie breaks. `limit`
+bounds matching public and private entries together. Each contributing source
+appears once in `sessions`; private matches contribute metadata and refs only.
+
+`coverage.earliest_session_at` spans the whole Library and falls back to
+`occurred_at`/`captured_at` for old sources. `private_sessions_skipped` counts
+all private conversation sources, independently of filters; the
+`providers_not_captured` list currently contains `codex`.
+
+Every distinct task ref gets a fresh `orbit.task.show` read. Task workspace
+is returned when Orbit supplies a workspace selector/id/path, otherwise null
+(the current task projection has no workspace field). Callback failures and
+invalid replies are `unresolved` with fixed reasons, without upstream error
+text. PR refs use `no_pr_source`, commit refs `no_commit_source`. The call
+writes nothing, and refuses a Library change during its reads so the caller
+can retry. Backend contract and offline conformance checks live in
+`schemas/recall.{request,response}.json` and `tests/conformance/recall.yaml`
+under `plugin/.orbit-plugin/`.
 
 ### Answering: the `recall` subagent
 

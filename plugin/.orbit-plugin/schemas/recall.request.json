@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.recall request",
+  "type": "object",
+  "properties": {
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Literal case-insensitive whitespace-separated terms; all terms match across entry text, session title and stored refs. No model call."
+    },
+    "since": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Inclusive RFC 3339 timestamp or YYYY-MM-DD (UTC start of day)."
+    },
+    "until": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Inclusive RFC 3339 timestamp or YYYY-MM-DD (UTC end of day)."
+    },
+    "project": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Exact session project selector."
+    },
+    "limit": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 50,
+      "default": 20,
+      "description": "Maximum matching public or private entries contributing to this result."
+    }
+  },
+  "required": [
+    "question"
+  ],
+  "additionalProperties": false
+}

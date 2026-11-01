@@ -1,0 +1,23 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: recall_empty_library
+    tool: recall
+    input: {"question":"not-captured"}
+    expect:
+      output: {"entries":[],"sessions":[],"refs":[],"coverage":{"earliest_session_at":null,"private_sessions_skipped":0,"providers_not_captured":["codex"]}}
+  - name: recall_requires_question
+    tool: recall
+    input: {}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: recall_limit_bounds
+    tool: recall
+    input: {"question":"topic","limit":51}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: recall_unknown_keys
+    tool: recall
+    input: {"question":"topic","invent":true}
+    expect:
+      error: {"code":"invalid_argument"}

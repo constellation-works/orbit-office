@@ -380,16 +380,16 @@ spec:
 
     # ---- recall ----
 
-    # - name: recall
-    #   description: >-
-    #     Answer where a conversation discussed a topic, what was decided and
-    #     whether it landed, from captured entries. No model call; private
-    #     sources give no entry text.
-    #   execution_kind: read_only
-    #   agent_callable: true
-    #   mcp_scope: workspace
-    #   input_schema: { $ref: schemas/recall.request.json }
-    #   output_schema: { $ref: schemas/recall.response.json }
+    - name: recall
+      description: >-
+        Answer where a conversation discussed a topic, what was decided and
+        whether it landed, from captured entries. No model call; private
+        sources give no entry text.
+      execution_kind: read_only
+      agent_callable: true
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/recall.request.json }
+      output_schema: { $ref: schemas/recall.response.json }
 
     # ---- scripts ----
 

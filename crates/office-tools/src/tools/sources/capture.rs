@@ -23,6 +23,11 @@ pub(crate) const TOOL: Tool = Tool::built(
         "selections",
         "from_line",
         "handoff",
+        "project",
+        "branch",
+        "resume",
+        "repository",
+        "title_by",
         "event_key",
         "kind",
         "title",
@@ -115,6 +120,11 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "selections",
         "from_line",
         "handoff",
+        "project",
+        "branch",
+        "resume",
+        "repository",
+        "title_by",
     ]
     .iter()
     .any(|key| call.input.contains_key(*key))
@@ -241,6 +251,12 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
             "selections",
             "from_line",
             "handoff",
+            "project",
+            "branch",
+            "resume",
+            "repository",
+            "title",
+            "title_by",
         ]
         .contains(&key.as_str())
     }) {
@@ -281,12 +297,22 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
         }
     };
     if preview {
-        if ["selections", "transcript_sha256", "handoff"]
-            .iter()
-            .any(|key| call.input.contains_key(*key))
+        if [
+            "selections",
+            "transcript_sha256",
+            "handoff",
+            "project",
+            "branch",
+            "resume",
+            "repository",
+            "title",
+            "title_by",
+        ]
+        .iter()
+        .any(|key| call.input.contains_key(*key))
         {
             return Err(Error::InvalidArgument(
-                "preview cannot accept selections, transcript_sha256 or handoff".into(),
+                "preview cannot accept extraction or session context fields".into(),
             ));
         }
         let session = call.ports.library.session_transcript(&path, &session_id)?;
@@ -357,6 +383,20 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
         expected_sha256: string_field(call, "transcript_sha256")?,
         from_line,
         handoff: handoff.filter(|_| enabled),
+        context: serde_json::from_value(Value::Object(
+            [
+                "project",
+                "branch",
+                "resume",
+                "repository",
+                "title",
+                "title_by",
+            ]
+            .into_iter()
+            .filter_map(|key| call.input.get(key).map(|v| (key.into(), v.clone())))
+            .collect(),
+        ))
+        .map_err(|_| Error::InvalidArgument("invalid session context fields".into()))?,
     };
     if request.selections.is_none() && request.expected_sha256.is_some() {
         return Err(Error::InvalidArgument(

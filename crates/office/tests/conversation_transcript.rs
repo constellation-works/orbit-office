@@ -684,3 +684,256 @@ fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
     let output = f.pass(Some(from), json!([]), Some("Nothing changed, see #L1."));
     assert_eq!(output["handoff"], "no_plan_change");
 }
+
+#[test]
+fn recall_session_context_titles_refs_and_private_text_are_preserved() {
+    let f = Fixture::new();
+    let record = |time: &str, role: &str, text: &str| {
+        json!({"type":role,"sessionId":"fixture-session","cwd":"/work/constellation","gitBranch":"feature-recall","timestamp":time,"message":{"role":role,"content":text}}).to_string()
+    };
+    let first_record = record(
+        "2026-10-30T10:00:00Z",
+        "user",
+        "Decision: follow ORB-123, DANI-45 and ORBA-67 in acme/office#12 and https://github.com/acme/office/pull/13; bare #14.",
+    );
+    std::fs::write(f.transcript(), &first_record).unwrap();
+    let mut input = f.input();
+    input["title"] = json!("Recall first pass");
+    input["title_by"] = json!("scribe");
+    let first = f.call(input.clone(), "office.capture");
+    assert_eq!(first["ok"], true, "{first}");
+    let path = f
+        .workspace()
+        .join("library")
+        .join(first["output"]["path"].as_str().unwrap());
+    let meta =
+        office_core::domain::metrics::metadata(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(meta["project"], "/work/constellation");
+    assert_eq!(meta["branch"], "feature-recall");
+    assert_eq!(meta["started_at"], "2026-10-30T10:00:00Z");
+    assert_eq!(meta["last_active_at"], "2026-10-30T10:00:00Z");
+    assert_eq!(meta["resume"]["command"], "claude --resume fixture-session");
+    assert_eq!(meta["title"], "Recall first pass");
+    let refs = meta["entry_refs"]["L1"].as_array().unwrap();
+    for id in [
+        "ORB-123",
+        "DANI-45",
+        "ORBA-67",
+        "acme/office#12",
+        "acme/office#13",
+        "acme/office#14",
+    ] {
+        assert!(refs.iter().any(|r| r["id"] == id), "{id}: {refs:?}");
+    }
+    let second_record = record(
+        "2026-10-30T10:02:00Z",
+        "assistant",
+        "Action: landed deadbeef in acme/office#12.",
+    );
+    std::fs::write(f.transcript(), format!("{first_record}\n{second_record}")).unwrap();
+    input["from_line"] = json!(1);
+    input["title"] = json!("Recall next pass");
+    let second = f.call(input.clone(), "office.capture");
+    assert_eq!(second["ok"], true, "{second}");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let meta = office_core::domain::metrics::metadata(&text).unwrap();
+    assert_eq!(meta["title"], "Recall next pass");
+    assert_eq!(meta["last_active_at"], "2026-10-30T10:02:00Z");
+    assert_eq!(meta["started_at"], "2026-10-30T10:00:00Z");
+    assert!(
+        meta["entry_refs"]["L2"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == "deadbeef")
+    );
+    // Setting a user title works even on an unchanged transcript.
+    input["title"] = json!("My durable title");
+    input["title_by"] = json!("user");
+    assert_eq!(f.call(input.clone(), "office.capture")["ok"], true);
+    input["title"] = json!("Scribe tries again");
+    input["title_by"] = json!("scribe");
+    assert_eq!(f.call(input, "office.capture")["ok"], true);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        office_core::domain::metrics::metadata(&text).unwrap()["title"],
+        "My durable title"
+    );
+    let result = f.call(json!({"question":"acme/office"}), "office.recall");
+    assert_eq!(result["ok"], true, "{result}");
+    assert_eq!(result["output"]["entries"].as_array().unwrap().len(), 2);
+    assert_eq!(result["output"]["entries"][0]["anchor"], "#L2");
+    assert_eq!(result["output"]["sessions"].as_array().unwrap().len(), 1);
+    let private = f.call(json!({"kind":"conversation","sensitivity":"private","title":"Private session","entries":[{"kind":"decision","text":"secret direction for acme/office#99"}]}), "office.capture");
+    assert_eq!(private["ok"], true, "{private}");
+    let result = f.call(json!({"question":"acme/office"}), "office.recall");
+    assert_eq!(
+        result["output"]["sessions"].as_array().unwrap().len(),
+        2,
+        "{result}"
+    );
+    assert!(!result.to_string().contains("secret direction"));
+    assert_eq!(result["output"]["coverage"]["private_sessions_skipped"], 1);
+    assert!(
+        result["output"]["refs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == "acme/office#99" && r["reason"] == "no_pr_source")
+    );
+}
+
+#[test]
+fn captured_refs_use_exact_tokens_repository_context_and_action_only_hashes() {
+    let f = Fixture::new();
+    for (kind, text, expected) in [
+        ("fact", "A bare #123 has no repository.", json!([])),
+        (
+            "fact",
+            "A filesystem path /work/project does not qualify #124.",
+            json!([]),
+        ),
+        ("fact", "Keep abcdef0123 as ordinary text.", json!([])),
+        (
+            "action",
+            "Land abcdef0 and ABCDEF1234567.",
+            json!(["abcdef0", "abcdef1234567"]),
+        ),
+        (
+            "action",
+            "Not hex abcdef or aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.",
+            json!([]),
+        ),
+        (
+            "fact",
+            "Follow (DANI-123), `ORBA-456` and ORB-789.",
+            json!(["DANI-123", "ORBA-456", "ORB-789"]),
+        ),
+        ("fact", "In acme/repo, follow #21.", json!(["acme/repo#21"])),
+        (
+            "fact",
+            "Merged https://github.com/acme/repo/pull/22 and acme/repo#23.",
+            json!(["acme/repo#22", "acme/repo#23"]),
+        ),
+        (
+            "fact",
+            "Ambiguous acme/one#21 and acme/two#22, so #23 is not linked.",
+            json!(["acme/one#21", "acme/two#22"]),
+        ),
+        (
+            "fact",
+            "Reject https://github.com.evil/acme/repo/pull/24 and bad#25.",
+            json!([]),
+        ),
+    ] {
+        let response = f.call(
+            json!({"kind":"conversation","entries":[{"kind":kind,"text":text}]}),
+            "office.capture",
+        );
+        assert_eq!(response["ok"], true, "{response}");
+        let path = f
+            .workspace()
+            .join("library")
+            .join(response["output"]["path"].as_str().unwrap());
+        let meta = office_core::domain::metrics::metadata(&std::fs::read_to_string(path).unwrap())
+            .unwrap();
+        let actual: Vec<_> = meta["entry_refs"]["L1"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].clone())
+            .collect();
+        let mut actual = actual;
+        actual.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+        let mut expected = expected.as_array().unwrap().clone();
+        expected.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+        assert_eq!(actual, expected, "{text}");
+    }
+}
+
+#[test]
+fn private_titles_and_hook_context_are_local_and_session_only_fields_are_guarded() {
+    let f = Fixture::new();
+    // Settings make this a private session without needing a credential fixture.
+    assert_eq!(
+        f.call(
+            json!({"key":"sensitivity.conversation","value":"private"}),
+            "office.config-set"
+        )["ok"],
+        true
+    );
+    let raw = [
+        json!({"type":"user","sessionId":"fixture-session","timestamp":"2026-10-30T10:00:00Z","message":{"role":"user","content":"Always keep these eight words as the title forever please."}}),
+        json!({"type":"assistant","sessionId":"fixture-session","timestamp":"2026-10-30T10:05:00Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"fixture","input":{}}]}}),
+    ].iter().map(Value::to_string).collect::<Vec<_>>().join("\n");
+    std::fs::write(f.transcript(), raw).unwrap();
+    let mut input = f.input();
+    input["project"] = json!("/hook/project");
+    input["repository"] = json!("acme/office");
+    input["resume"] = json!({"provider":"claude","command":"claude --resume fixture-session","url":"https://example.test/session"});
+    input["title"] = json!("An ignored crew proposal");
+    let response = f.call(input, "office.capture");
+    assert_eq!(response["ok"], true, "{response}");
+    let path = f
+        .workspace()
+        .join("library")
+        .join(response["output"]["path"].as_str().unwrap());
+    let text = std::fs::read_to_string(&path).unwrap();
+    let meta = office_core::domain::metrics::metadata(&text).unwrap();
+    assert_eq!(meta["title"], "Always keep these eight words as the title");
+    assert_eq!(meta["title_by"], "scribe");
+    assert_eq!(meta["project"], "/hook/project");
+    assert!(meta["branch"].is_null());
+    assert_eq!(meta["last_active_at"], "2026-10-30T10:05:00Z");
+    assert_eq!(meta["resume"]["url"], "https://example.test/session");
+    let append = f.call(json!({"append_to":response["output"]["id"],"entries":[{"kind":"action","text":"Follow #12, then commit:abc1234 and task:ORB-42."}]}), "office.capture");
+    assert_eq!(append["ok"], true, "{append}");
+    let meta =
+        office_core::domain::metrics::metadata(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let refs = meta["entry_refs"]["L2"].as_array().unwrap();
+    for id in ["acme/office#12", "abc1234", "ORB-42"] {
+        assert!(refs.iter().any(|r| r["id"] == id), "{refs:?}");
+    }
+    assert!(refs.iter().all(|r| r.get("status").is_none()));
+    for key in ["project", "branch", "resume", "repository", "title_by"] {
+        let mut bad = json!({"text":"Ordinary pasted source"});
+        bad[key] = json!("must not be silently ignored");
+        assert_eq!(f.call(bad, "office.capture")["ok"], false, "{key}");
+    }
+    let mut preview = f.input();
+    preview["transcript_preview"] = json!(true);
+    preview["title"] = json!("Not a write");
+    assert_eq!(f.call(preview, "office.capture")["ok"], false);
+}
+
+#[test]
+fn transcript_context_credentials_are_scrubbed_before_persistence() {
+    for secret in [
+        "sk-context-abcdefghijklmnopqrstuvwxyz123456",
+        "https://user:fixture-password@example.test",
+    ] {
+        let f = Fixture::new();
+        let raw = json!({"type":"user","sessionId":"fixture-session","timestamp":"2026-10-30T10:00:00Z","cwd":secret,"gitBranch":secret,"message":{"role":"user","content":"Always keep the context local."}}).to_string();
+        std::fs::write(f.transcript(), raw).unwrap();
+        let response = f.call(f.input(), "office.capture");
+        assert_eq!(response["ok"], true, "{response}");
+        let path = f
+            .workspace()
+            .join("library")
+            .join(response["output"]["path"].as_str().unwrap());
+        let text = std::fs::read_to_string(path).unwrap();
+        assert!(
+            !text.contains(secret),
+            "credentials in copied transcript context must be scrubbed"
+        );
+        let meta = office_core::domain::metrics::metadata(&text).unwrap();
+        assert_eq!(meta["sensitivity"], "private");
+        assert_eq!(meta["branch"], "[REDACTED]");
+        let mut bad = f.input();
+        bad["resume"] =
+            json!({"provider":"claude","command":"claude --resume fixture-session","url":secret});
+        let response = f.call(bad, "office.capture");
+        assert_eq!(response["ok"], false);
+        assert!(!response.to_string().contains(secret));
+    }
+}
