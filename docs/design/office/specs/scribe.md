@@ -57,6 +57,7 @@ on the session it is run in, identified by `${CLAUDE_SESSION_ID}`.
 | `/scribe note <text>` | Record `<text>` verbatim as Daniel's own entry. The scribe agent picks the tag unless the text starts with one (`#todo …`). |
 | `/scribe pending`, `/scribe pref <matter>`, `/scribe landed [today\|<date>]`, `/scribe why <matter\|topic>` | Model-free queries over the tags; instant, cited lines ([Answering](#answering)). |
 | `/scribe ask <question>` | Answer a free-form question with citations; runs the queries first and calls the model only on the shortlist. |
+| `/scribe backfill [--since <date>] [--project <name>]` | Run the catch-up over the user's existing transcripts, oldest first. Each session gets its SCR file; sessions already scribed to their end are skipped. |
 | `/scribe title <text>` | Set the session title, which renames the SCR file once (below). |
 
 Orchestrators reach the same agent as the `scribe` subagent: "ask the
