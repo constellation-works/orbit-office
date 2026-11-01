@@ -89,7 +89,7 @@ crates/office-tools/src/
     library/             init  reindex  config_set  search  attach  private_route_check   (specs/library.md, plugin-surface.md, models-and-privacy.md)
     proposals/           signals_scan  create  accept  reconcile      (specs/proposals.md)
     selection/           get  put                                     (specs/selection-sharing.md)
-    sessions/            brief  digest  scribe_control (scribe-control)  scribe_pending (planned: scribe-pending)  scribe_append (planned: scribe-append)   (specs/sessions.md, specs/scribe.md)
+    sessions/            brief  digest  scribe_control (scribe-control)  scribe_pending (scribe-pending)  scribe_append (scribe-append)  scribe_query (planned: scribe-query)   (specs/sessions.md, specs/scribe.md)
     scripts/             run                                          (specs/scripts.md)
     bootstrap/           batch_plan  consolidate  status              (specs/library-bootstrap.md)
     calendar/            sync  list                                  (specs/calendar.md)
