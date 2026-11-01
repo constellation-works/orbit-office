@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-query request",
+  "description": "Filter the session SCR lines by canned mode (pending, pref, landed, why) or by tag, matter, topic, author, local date range, refs or session, resolving the links between lines. Model-free; read-only.",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "enum": ["pending", "pref", "landed", "why"],
+      "description": "Canned query: pending (open items, oldest first), pref (current preference for a matter, with stale flag), landed (in the local date range; today when no range is given), why (decisions with their reasons)."
+    },
+    "tag": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Entry tag, with or without a leading #."
+    },
+    "matter": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Preference matter slug; in why mode it also matches a decision topic."
+    },
+    "topic": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Entry topic, with or without a leading #."
+    },
+    "by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Author of the entry: user, or a crew name."
+    },
+    "since": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}",
+      "description": "First local date included (YYYY-MM-DD), in the host zone named by the result."
+    },
+    "until": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}",
+      "description": "Last local date included (YYYY-MM-DD), in the host zone named by the result."
+    },
+    "refs": {
+      "description": "Reference (or references) an entry must carry, such as ORB-20780 or PR#268.",
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      ]
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "description": "Only entries from this session's SCR file."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "description": "Most results returned; 100 by default."
+    }
+  },
+  "additionalProperties": false
+}
