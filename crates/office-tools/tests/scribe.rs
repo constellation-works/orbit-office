@@ -168,11 +168,17 @@ fn pending_writes_stable_ids_and_returns_new_messages_with_context_and_default_r
             "reminder",
             "fact",
             "landed",
+            "preference",
+            "why",
             "agent-decision",
             "pending",
             "resolved",
             "incident"
         ]
+    );
+    assert_eq!(
+        first["rules"]["matters"],
+        json!(["release-with-open-defects"])
     );
 
     let short = ports.library.read_scribe_parse(SESSION).unwrap().unwrap();
@@ -270,12 +276,12 @@ fn append_creates_then_appends_merges_topics_advances_and_reruns_add_nothing() {
     assert_eq!(
         text,
         format!(
-            "---\nid: \"SCR-31-2007-scribe-v1-design-lets-go-one-step-at-a-time\"\ntitle: null\nsession_id: \"{SESSION}\"\nprovider: \"claude-code\"\nmodel: \"claude-opus-5-5\"\ncounterpart: \"orchestrator\"\ncounterpart_name: \"opus orchestrator\"\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/Users/daniel/workspace/constellation\"\nbranch: \"agent-main\"\ntranscript: \"short.jsonl\"\nparsed: \".orbit/tmp/scribe/{SESSION}.jsonl\"\nstarted_at: \"2026-10-31T20:07:00-07:00\"\nlast_scribed_at: \"2026-10-31T22:00-07:00\"\nscribed_through: \"m-0002\"\ntopics: [\"constellation\"]\naliases: []\n---\n- m-0001 2026-10-31T20:07-07:00 #decision #constellation \"lets go one step at a time\" refs: ORB-20690\n"
+            "---\nid: \"SCR-31-2007-scribe-v1-design-lets-go-one-step-at-a-time\"\ntitle: null\nsession_id: \"{SESSION}\"\nprovider: \"claude-code\"\nmodel: \"claude-opus-5-5\"\ncounterpart: \"orchestrator\"\ncounterpart_name: \"opus orchestrator\"\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/Users/daniel/workspace/constellation\"\nbranch: \"agent-main\"\ntranscript: \"short.jsonl\"\nparsed: \".orbit/tmp/scribe/{SESSION}.jsonl\"\nstarted_at: \"2026-10-31T20:07:00-07:00\"\nlast_scribed_at: \"2026-10-31T22:00-07:00\"\nscribed_through: \"m-0002\"\ntopics: [\"constellation\"]\naliases: []\n---\n- m-0001 2026-10-31T20:07-07:00 #decision #no-why #constellation \"lets go one step at a time\" refs: ORB-20690\n"
         )
     );
     assert_eq!(
         first["added"],
-        json!([{"line":21,"text":"- m-0001 2026-10-31T20:07-07:00 #decision #constellation \"lets go one step at a time\" refs: ORB-20690"}])
+        json!([{"line":21,"text":"- m-0001 2026-10-31T20:07-07:00 #decision #no-why #constellation \"lets go one step at a time\" refs: ORB-20690"}])
     );
     let head = ports.library.head_commit().unwrap();
 
@@ -296,7 +302,7 @@ fn append_creates_then_appends_merges_topics_advances_and_reruns_add_nothing() {
     assert_eq!(
         body,
         [
-            "- m-0001 2026-10-31T20:07-07:00 #decision #constellation \"lets go one step at a time\" refs: ORB-20690",
+            "- m-0001 2026-10-31T20:07-07:00 #decision #no-why #constellation \"lets go one step at a time\" refs: ORB-20690",
             "- m-0004 2026-10-31T20:13-07:00 #todo #constellation \"User message 4.\" due: 2026-11-01T15:00-07:00",
             "- m-0005 2026-10-31T20:14-07:00 #landed \"reply 5\"",
         ]
@@ -497,4 +503,203 @@ fn a_name_clash_takes_the_session_suffix_and_a_title_renames_once() {
     assert_eq!(out["renamed_from"], Value::Null);
     assert_eq!(out["written"], false);
     assert_eq!(ports.library.head_commit().unwrap(), head);
+}
+
+#[test]
+fn decision_with_why_writes_why_and_without_why_gets_no_why() {
+    let ports = ports(FakeLibrary::initialized());
+    pending(&ports, "long.jsonl");
+    let out = append(
+        &ports,
+        json!({"through":"m-0005","entries":[
+            {"msg":"m-0001","quote":"lets go one step at a time","tag":"decision","topics":["constellation"],"why":{"msg":"m-0001","quote":"Keep the SCR file grep-able."}},
+            {"msg":"m-0004","quote":"User message 4.","tag":"decision","topics":[]},
+            {"msg":"m-0001","quote":"lets go","tag":"decision","topics":[],"why":{"msg":"m-0001","quote":"not in the message"}},
+            {"msg":"m-0002","quote":"Merged as 7266911","tag":"agent-decision","topics":[],"by":"opus","why":{"msg":"m-0002","quote":"PR#268 is in."}},
+            {"msg":"m-0005","quote":"reply 5","tag":"agent-decision","topics":[],"by":"opus"},
+        ]}),
+    );
+    assert_eq!(out["refused"].as_array().unwrap().len(), 1);
+    assert_eq!(out["refused"][0]["index"], 2);
+    assert_eq!(out["refused"][0]["reason"], "why_not_verbatim");
+    let (_, text) = scr(&ports);
+    let body: Vec<&str> = text.lines().skip(20).collect();
+    assert_eq!(
+        body,
+        [
+            "- m-0001 2026-10-31T20:07-07:00 #decision #constellation \"lets go one step at a time\" why: m-0001 \"Keep the SCR file grep-able.\"",
+            "- m-0004 2026-10-31T20:13-07:00 #decision #no-why \"User message 4.\"",
+            "- m-0002 2026-10-31T20:08-07:00 #agent-decision \"Merged as 7266911\" why: m-0002 \"PR#268 is in.\" by: opus",
+            "- m-0005 2026-10-31T20:14-07:00 #agent-decision #no-why \"reply 5\" by: opus",
+        ]
+    );
+}
+
+#[test]
+fn why_note_resolves_an_existing_decision_line_only() {
+    let ports = ports(FakeLibrary::initialized());
+    pending(&ports, "long.jsonl");
+    append(
+        &ports,
+        json!({"through":"m-0004","entries":[
+            {"msg":"m-0001","quote":"lets go one step at a time","tag":"decision","topics":[]},
+            {"msg":"m-0004","quote":"User message 4.","tag":"todo","topics":[]},
+        ]}),
+    );
+    let (path, _) = scr(&ports);
+    let id = path.rsplit('/').next().unwrap().trim_end_matches(".md");
+    let out = append(
+        &ports,
+        json!({"through":"m-0005","entries":[
+            {"text":"because the file must stay grep-able","tag":"why","topics":[],"by":"user","resolves":format!("{id}#L21")},
+            {"text":"wrong target","tag":"why","topics":[],"by":"user","resolves":format!("{id}#L22")},
+            {"text":"missing target","tag":"why","topics":[],"by":"opus","resolves":format!("{id}#L99")},
+        ]}),
+    );
+    let reasons: Vec<&str> = out["refused"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["reason"].as_str().unwrap())
+        .collect();
+    assert_eq!(reasons, ["unresolved_decision", "unresolved_decision"]);
+    assert_eq!(
+        scr(&ports).1.lines().nth(22).unwrap(),
+        format!(
+            "- note 2026-10-31T22:00-07:00 #why \"because the file must stay grep-able\" resolves: {id}#L21 by: user"
+        )
+    );
+}
+
+#[test]
+fn preference_requires_user_listed_matter_and_defaults_review_by() {
+    let ports = ports(FakeLibrary::initialized());
+    let pend = pending(&ports, "long.jsonl");
+    assert_eq!(
+        pend["rules"]["matters"],
+        json!(["release-with-open-defects"])
+    );
+    let out = append(
+        &ports,
+        json!({"through":"m-0005","entries":[
+            {"msg":"m-0001","quote":"lets go one step at a time","tag":"preference","topics":[],"matter":"release-with-open-defects"},
+            {"msg":"m-0004","quote":"User message 4.","tag":"preference","topics":[],"matter":"release-with-open-defects","by":"opus"},
+            {"msg":"m-0004","quote":"User message 4.","tag":"preference","topics":[],"matter":"unlisted-matter"},
+            {"msg":"m-0004","quote":"User message 4.","tag":"preference","topics":[]},
+            {"text":"always ship early","tag":"preference","topics":[],"by":"opus","matter":"release-with-open-defects"},
+            {"msg":"m-0002","quote":"Merged as 7266911","tag":"preference","topics":[],"matter":"release-with-open-defects"},
+        ]}),
+    );
+    let reasons: Vec<&str> = out["refused"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["reason"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        reasons,
+        [
+            "author_mismatch",
+            "unknown_matter",
+            "missing_matter",
+            "tag_not_permitted",
+            "tag_not_permitted"
+        ]
+    );
+    // m-0001 is 2026-10-31 local; 90 days later is 2027-01-29.
+    assert_eq!(
+        scr(&ports).1.lines().nth(20).unwrap(),
+        "- m-0001 2026-10-31T20:07-07:00 #preference \"lets go one step at a time\" matter: release-with-open-defects review_by: 2027-01-29"
+    );
+    // An explicit review_by is kept.
+    let out = append(
+        &ports,
+        json!({"through":"m-0005","entries":[
+            {"text":"always review early","tag":"preference","topics":[],"by":"user","matter":"release-with-open-defects","review_by":"2027-06-01"},
+        ]}),
+    );
+    assert_eq!(out["refused"], json!([]));
+    assert!(
+        scr(&ports)
+            .1
+            .contains("matter: release-with-open-defects review_by: 2027-06-01")
+    );
+}
+
+#[test]
+fn preference_supersedes_same_matter_only_and_preference_note_promotes_decision() {
+    let library = FakeLibrary::initialized();
+    library
+        .write_document(
+            Path::new("knowledge/domain/dom-scribe-rules.md"),
+            "---\nid: dom-scribe-rules\ntype: domain\ntemplate: scribe-rules\ntitle: Scribe rules\n---\n## Matters\n- release-with-open-defects\n- other-matter\n",
+        )
+        .unwrap();
+    let ports = ports(library);
+    let pend = pending(&ports, "long.jsonl");
+    assert_eq!(
+        pend["rules"]["matters"],
+        json!(["release-with-open-defects", "other-matter"])
+    );
+    append(
+        &ports,
+        json!({"through":"m-0004","entries":[
+            {"msg":"m-0001","quote":"lets go one step at a time","tag":"decision","topics":[]},
+            {"msg":"m-0004","quote":"User message 4.","tag":"preference","topics":[],"matter":"release-with-open-defects"},
+        ]}),
+    );
+    let (path, _) = scr(&ports);
+    let id = path.rsplit('/').next().unwrap().trim_end_matches(".md");
+    // Decision is L21, first preference is L22.
+    let out = append(
+        &ports,
+        json!({"through":"m-0005","entries":[
+            {"msg":"m-0005","quote":"reply 5","tag":"preference","topics":[],"matter":"release-with-open-defects"},
+            {"text":"promoted preference","tag":"preference","topics":[],"by":"user","matter":"other-matter","resolves":format!("{id}#L21")},
+        ]}),
+    );
+    // m-0005 is an assistant message, so that preference attempt is refused
+    // on authorship; the promotion note is accepted.
+    assert_eq!(out["refused"].as_array().unwrap().len(), 1);
+    assert_eq!(out["refused"][0]["reason"], "tag_not_permitted");
+    assert!(
+        scr(&ports)
+            .1
+            .contains(&format!("resolves: {id}#L21 by: user"))
+    );
+    // Superseding a preference on a different matter is refused.
+    let out = append(
+        &ports,
+        json!({"through":"m-0005","entries":[
+            {"text":"other preference","tag":"preference","topics":[],"by":"user","matter":"other-matter","supersedes":format!("{id}#L22")},
+        ]}),
+    );
+    assert_eq!(out["refused"][0]["reason"], "invalid_supersedes");
+}
+
+#[test]
+fn preference_supersedes_same_matter_and_refuses_non_preference() {
+    // Supersedes: same matter accepted, different matter and non-preference refused.
+    let ports2 = ports(FakeLibrary::initialized());
+    pending(&ports2, "long.jsonl");
+    append(
+        &ports2,
+        json!({"through":"m-0004","entries":[
+            {"msg":"m-0001","quote":"lets go one step at a time","tag":"decision","topics":[]},
+            {"msg":"m-0004","quote":"User message 4.","tag":"preference","topics":[],"matter":"release-with-open-defects"},
+        ]}),
+    );
+    let (path2, _) = scr(&ports2);
+    let id2 = path2.rsplit('/').next().unwrap().trim_end_matches(".md");
+    let out = append(
+        &ports2,
+        json!({"through":"m-0005","entries":[
+            {"text":"ship early from now on","tag":"preference","topics":[],"by":"user","matter":"release-with-open-defects","supersedes":format!("{id2}#L22")},
+            {"text":"wrong matter","tag":"preference","topics":[],"by":"user","matter":"release-with-open-defects","supersedes":format!("{id2}#L21")},
+        ]}),
+    );
+    assert_eq!(out["refused"].as_array().unwrap().len(), 1);
+    assert_eq!(out["refused"][0]["index"], 1);
+    assert_eq!(out["refused"][0]["reason"], "invalid_supersedes");
+    assert!(scr(&ports2).1.contains(&format!("supersedes: {id2}#L22")));
 }

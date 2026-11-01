@@ -29,8 +29,19 @@ pub const PROVIDER: &str = "claude-code";
 /// Longest note text, in bytes.
 pub const NOTE_MAX: usize = 4096;
 
-const USER_TAGS: &[&str] = &["decision", "direction", "todo", "question", "reminder"];
+const USER_TAGS: &[&str] = &[
+    "decision",
+    "direction",
+    "todo",
+    "question",
+    "reminder",
+    "preference",
+];
 const AGENT_TAGS: &[&str] = &["agent-decision", "pending", "resolved", "incident"];
+/// Matter slugs the spec names as defaults; rules may add more.
+const DEFAULT_MATTERS: &[&str] = &["release-with-open-defects"];
+/// Days after a preference is stated when it comes up for review.
+pub const PREFERENCE_REVIEW_DAYS: i64 = 90;
 const COUNTERPARTS: &[&str] = &["orchestrator", "agent", "coworker", "meeting", "self"];
 
 fn refusal(code: &'static str, message: impl Into<String>) -> Error {
@@ -238,6 +249,8 @@ pub struct ScribeRules {
     pub tags: Vec<Tag>,
     /// Allowed topics.
     pub topics: Vec<String>,
+    /// Allowed preference matters: the spec defaults plus the rules' list.
+    pub matters: Vec<String>,
     /// Capture guidance for the agent.
     pub capture: Vec<String>,
 }
@@ -268,6 +281,14 @@ fn default_tags() -> Vec<Tag> {
             "A PR merged or a task done, reported in the chat.",
         ),
         (
+            "preference",
+            "Daniel's standing answer to a class of question, with matter.",
+        ),
+        (
+            "why",
+            "The reason for an earlier decision, named by resolves: <SCR id>#L<n>.",
+        ),
+        (
             "agent-decision",
             "An orchestrator settles a choice within its delegated scope.",
         ),
@@ -290,7 +311,7 @@ fn default_tags() -> Vec<Tag> {
 
 fn default_capture() -> Vec<String> {
     [
-        "Only Daniel's messages and by: user notes take decision, direction, todo, question and reminder.",
+        "Only Daniel's messages and by: user notes take decision, direction, todo, question, reminder and preference.",
         "Assistant messages take landed and fact, and the agent tags agent-decision, pending, resolved and incident with by: <crew>.",
         "Skip status chatter and restated plans.",
     ]
@@ -325,13 +346,15 @@ pub fn scribe_rules(page: Option<&Rules>, project: Option<&str>) -> ScribeRules 
         source: "defaults",
         tags: default_tags(),
         topics: project.and_then(topic_of).into_iter().collect(),
+        matters: DEFAULT_MATTERS.iter().map(|s| (*s).to_owned()).collect(),
         capture: default_capture(),
     };
     let Some(body) = page.and_then(|page| page.body.as_deref()) else {
         return rules;
     };
     let mut section = String::new();
-    let (mut tags, mut topics, mut capture) = (Vec::<Tag>::new(), Vec::new(), Vec::new());
+    let (mut tags, mut topics, mut capture, mut matters) =
+        (Vec::<Tag>::new(), Vec::new(), Vec::new(), Vec::new());
     for line in body.lines() {
         let trimmed = line.trim();
         if let Some(heading) = trimmed.strip_prefix('#') {
@@ -380,6 +403,14 @@ pub fn scribe_rules(page: Option<&Rules>, project: Option<&str>) -> ScribeRules 
                     topics.push(name);
                 }
             }
+            "matters" | "matter" if !nested => {
+                let name = item.split_once(':').map_or(item, |(name, _)| name);
+                if let Some(name) = token(name)
+                    && !matters.contains(&name)
+                {
+                    matters.push(name);
+                }
+            }
             "capture" if !nested => capture.push(item.trim().to_owned()),
             _ => {}
         }
@@ -395,6 +426,14 @@ pub fn scribe_rules(page: Option<&Rules>, project: Option<&str>) -> ScribeRules 
     if !capture.is_empty() {
         rules.capture = capture;
         rules.source = "page";
+    }
+    if !matters.is_empty() {
+        rules.source = "page";
+    }
+    for matter in matters {
+        if !rules.matters.contains(&matter) {
+            rules.matters.push(matter);
+        }
     }
     rules
 }
@@ -735,6 +774,33 @@ pub fn planned(
 
 // ---- entries ----------------------------------------------------------
 
+/// The note form of a `why`: `true` (the reason is quoted from the entry's
+/// own note text) or the reason text itself.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum WhyNote {
+    /// `note: true`: the quote comes from the entry's own note text.
+    Flag(bool),
+    /// `note: "<text>"`: the reason text, quoted exactly.
+    Text(String),
+}
+
+/// Why a decision was made: a cited message or a note, with its verbatim
+/// reason quote.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Why {
+    /// Message giving the reason.
+    #[serde(default)]
+    pub msg: Option<String>,
+    /// Note giving the reason.
+    #[serde(default)]
+    pub note: Option<WhyNote>,
+    /// Exact substring of the cited message or note.
+    #[serde(default)]
+    pub quote: Option<String>,
+}
+
 /// One scribe entry: a cited message (`msg` and `quote`) or a note (`text`).
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -765,6 +831,19 @@ pub struct Entry {
     /// `user` or a crew name.
     #[serde(default)]
     pub by: Option<String>,
+    /// Why a `decision`, `agent-decision` or `preference` was made.
+    #[serde(default)]
+    pub why: Option<Why>,
+    /// Matter slug a `preference` settles.
+    #[serde(default)]
+    pub matter: Option<String>,
+    /// When a `preference` comes up for review; 90 days after the entry
+    /// by default.
+    #[serde(default)]
+    pub review_by: Option<String>,
+    /// `<SCR id>#L<n>` of the preference line this preference replaces.
+    #[serde(default)]
+    pub supersedes: Option<String>,
 }
 
 /// Parse and shape-check the `entries` input.
@@ -779,15 +858,33 @@ pub fn parse_entries(value: Option<&Value>) -> Result<Vec<Entry>> {
         .map(|item| {
             let entry: Entry = serde_json::from_value(item.clone()).map_err(|_| {
                 invalid(
-                    "each entry is {msg, quote} or {text}, with tag and optional topics, refs, due, resolves and by; no other keys",
+                    "each entry is {msg, quote} or {text}, with tag and optional topics, refs, due, resolves, by, why, matter, review_by and supersedes; no other keys",
                 )
             })?;
             match (&entry.msg, &entry.quote, &entry.text) {
-                (Some(_), Some(_), None) | (None, None, Some(_)) => Ok(entry),
-                _ => Err(invalid(
-                    "an entry cites a message with msg and quote, or is a note with text alone",
-                )),
+                (Some(_), Some(_), None) | (None, None, Some(_)) => {}
+                _ => {
+                    return Err(invalid(
+                        "an entry cites a message with msg and quote, or is a note with text alone",
+                    ));
+                }
             }
+            if let Some(why) = &entry.why {
+                let shape_ok = match (&why.msg, &why.note, &why.quote) {
+                    (Some(_), None, Some(quote)) => !quote.is_empty(),
+                    (None, Some(WhyNote::Flag(true)), Some(quote)) => !quote.is_empty(),
+                    (None, Some(WhyNote::Text(text)), quote) => {
+                        !text.is_empty() && quote.as_ref().is_none_or(|q| !q.is_empty())
+                    }
+                    _ => false,
+                };
+                if !shape_ok {
+                    return Err(invalid(
+                        "why is {msg, quote} or {note, quote} with a verbatim reason quote",
+                    ));
+                }
+            }
+            Ok(entry)
         })
         .collect()
 }
@@ -883,14 +980,28 @@ fn identity(line: &str) -> String {
         .join(" ")
 }
 
-/// Whether line `n` (1-based) of `markdown` is a `#pending` entry.
-fn pending_at(markdown: &str, n: usize) -> bool {
-    n.checked_sub(1)
-        .and_then(|index| markdown.lines().nth(index))
-        .is_some_and(|line| {
-            let mut parts = line.split(' ');
-            parts.next() == Some("-") && parts.nth(2) == Some("#pending")
-        })
+/// The tag of the entry on line `n` (1-based) of `markdown`, without `#`.
+fn tag_at(markdown: &str, n: usize) -> Option<String> {
+    let line = n
+        .checked_sub(1)
+        .and_then(|index| markdown.lines().nth(index))?;
+    let mut parts = line.split(' ');
+    (parts.next()? == "-")
+        .then(|| parts.nth(2))
+        .flatten()
+        .and_then(|tag| tag.strip_prefix('#'))
+        .map(str::to_owned)
+}
+
+/// The `matter:` value on line `n` (1-based) of `markdown`.
+fn matter_at(markdown: &str, n: usize) -> Option<String> {
+    let line = n
+        .checked_sub(1)
+        .and_then(|index| markdown.lines().nth(index))?;
+    line.split(' ')
+        .zip(line.split(' ').skip(1))
+        .find(|(key, _)| *key == "matter:")
+        .map(|(_, value)| value.to_owned())
 }
 
 fn split_body(markdown: &str) -> String {
@@ -1031,24 +1142,176 @@ impl Ctx<'_> {
                     );
                 }
             }
+            ("why", None) => {
+                return fail("missing_resolves", "a why entry names its decision line");
+            }
+            ("why", Some(target)) => {
+                let named = self.referenced(target, own, own_ids);
+                if !matches!(named.as_deref(), Some("decision" | "agent-decision")) {
+                    return fail(
+                        "unresolved_decision",
+                        "resolves does not name an existing decision line",
+                    );
+                }
+            }
+            ("preference", Some(target)) => {
+                let named = self.referenced(target, own, own_ids);
+                if named.as_deref() != Some("decision") {
+                    return fail(
+                        "unresolved_decision",
+                        "resolves does not name an existing decision line",
+                    );
+                }
+            }
+            ("preference", None) => {}
             (_, Some(_)) => {
                 return fail(
                     "resolves_not_allowed",
-                    "only a resolved entry takes resolves",
+                    "only resolved, why and preference entries take resolves",
                 );
             }
             (_, None) => {}
         }
+        // Why: checked verbatim against its cited message or note.
+        let why_rendered: Option<(String, String)> = match &entry.why {
+            None => None,
+            Some(why) => {
+                if !matches!(
+                    tag.name.as_str(),
+                    "decision" | "agent-decision" | "preference"
+                ) {
+                    return fail(
+                        "why_not_allowed",
+                        "only decision, agent-decision and preference entries take why",
+                    );
+                }
+                match (&why.msg, &why.note) {
+                    (Some(msg), None) => {
+                        let quote = why.quote.as_deref().unwrap_or_default();
+                        let Some(index) = message_index(msg).filter(|i| *i < self.messages.len())
+                        else {
+                            return fail("unknown_message", "no parsed message has this id");
+                        };
+                        if quote.is_empty() || !self.messages[index].text.contains(quote) {
+                            return fail(
+                                "why_not_verbatim",
+                                "the why quote is not an exact substring of the cited message",
+                            );
+                        }
+                        Some((msg.clone(), quote.to_owned()))
+                    }
+                    (None, Some(WhyNote::Text(text))) => {
+                        let quote = why.quote.as_deref().unwrap_or(text.as_str());
+                        if quote.is_empty() || !text.contains(quote) {
+                            return fail(
+                                "why_not_verbatim",
+                                "the why quote is not an exact substring of the cited note",
+                            );
+                        }
+                        Some(("note".to_owned(), quote.to_owned()))
+                    }
+                    (None, Some(WhyNote::Flag(true))) => {
+                        let quote = why.quote.as_deref().unwrap_or_default();
+                        let note = entry.text.as_deref().unwrap_or_default();
+                        if entry.text.is_none() || quote.is_empty() || !note.contains(quote) {
+                            return fail(
+                                "why_not_verbatim",
+                                "the why quote is not an exact substring of the cited note",
+                            );
+                        }
+                        Some(("note".to_owned(), quote.to_owned()))
+                    }
+                    _ => {
+                        return fail(
+                            "why_not_verbatim",
+                            "the why quote is not an exact substring of the cited message",
+                        );
+                    }
+                }
+            }
+        };
+        // Preference matter, review_by and supersedes.
+        let mut review_by: Option<String> = None;
+        if tag.name == "preference" {
+            let Some(matter) = entry.matter.as_deref() else {
+                return fail("missing_matter", "a preference entry names its matter");
+            };
+            if token(matter).as_deref() != Some(matter) {
+                return fail("unknown_matter", "matter is a short slug");
+            }
+            if !self.rules.matters.iter().any(|m| m == matter) {
+                return fail("unknown_matter", "the matter is not in the scribe rules");
+            }
+            if let Some(explicit) = &entry.review_by {
+                if !valid_due(explicit) {
+                    return fail(
+                        "invalid_review_by",
+                        "review_by is an RFC 3339 time or a YYYY-MM-DD date",
+                    );
+                }
+                review_by = Some(explicit.clone());
+            } else {
+                review_by = Some(
+                    (at + chrono::Duration::days(PREFERENCE_REVIEW_DAYS))
+                        .format("%Y-%m-%d")
+                        .to_string(),
+                );
+            }
+            if let Some(target) = &entry.supersedes {
+                let ok = self.referenced_matter(target, own, own_ids).is_some_and(
+                    |(named_tag, named_matter)| {
+                        named_tag == "preference" && named_matter.as_deref() == Some(matter)
+                    },
+                );
+                if !ok {
+                    return fail(
+                        "invalid_supersedes",
+                        "supersedes does not name an existing preference line on the same matter",
+                    );
+                }
+            }
+        } else {
+            if entry.matter.is_some() {
+                return fail("matter_not_allowed", "only a preference entry takes matter");
+            }
+            if entry.review_by.is_some() {
+                return fail(
+                    "review_by_not_allowed",
+                    "only a preference entry takes review_by",
+                );
+            }
+            if entry.supersedes.is_some() {
+                return fail(
+                    "supersedes_not_allowed",
+                    "only a preference entry takes supersedes",
+                );
+            }
+        }
         let mut line = format!("- {head} {} #{}", line_time(at), tag.name);
+        if matches!(tag.name.as_str(), "decision" | "agent-decision") && why_rendered.is_none() {
+            line.push_str(" #no-why");
+        }
         for topic in topics {
             line.push_str(&format!(" #{topic}"));
         }
         line.push_str(&format!(" \"{}\"", escape(&quote)));
+        if let Some((source, reason)) = &why_rendered {
+            line.push_str(&format!(" why: {source} \"{}\"", escape(reason)));
+        }
         if !entry.refs.is_empty() {
             line.push_str(&format!(" refs: {}", entry.refs.join(", ")));
         }
         if let Some(due) = &entry.due {
             line.push_str(&format!(" due: {due}"));
+        }
+        if let Some(matter) = &entry.matter {
+            line.push_str(&format!(" matter: {matter}"));
+        }
+        if let Some(review) = &review_by {
+            line.push_str(&format!(" review_by: {review}"));
+        }
+        if let Some(target) = &entry.supersedes {
+            line.push_str(&format!(" supersedes: {target}"));
         }
         if let Some(target) = &entry.resolves {
             line.push_str(&format!(" resolves: {target}"));
@@ -1060,23 +1323,34 @@ impl Ctx<'_> {
     }
 
     fn resolves(&self, target: &str, own: &str, own_ids: &[String]) -> bool {
-        let Some((id, line)) = target.split_once("#L") else {
-            return false;
-        };
-        let Some(n) = line
+        self.referenced(target, own, own_ids).as_deref() == Some("pending")
+    }
+
+    /// The tag of the line `target` (`<SCR id>#L<n>`) names, if it exists.
+    fn referenced(&self, target: &str, own: &str, own_ids: &[String]) -> Option<String> {
+        self.referenced_matter(target, own, own_ids)
+            .map(|(tag, _)| tag)
+    }
+
+    /// The tag and matter of the line `target` names, if it exists.
+    fn referenced_matter(
+        &self,
+        target: &str,
+        own: &str,
+        own_ids: &[String],
+    ) -> Option<(String, Option<String>)> {
+        let (id, line) = target.split_once("#L")?;
+        let n = line
             .parse::<usize>()
             .ok()
-            .filter(|_| line.bytes().all(|b| b.is_ascii_digit()))
-        else {
-            return false;
-        };
+            .filter(|_| line.bytes().all(|b| b.is_ascii_digit()))?;
         if own_ids.iter().any(|own_id| own_id == id) {
-            return pending_at(own, n);
+            return tag_at(own, n).map(|tag| (tag, matter_at(own, n)));
         }
         self.files
             .iter()
             .filter(|f| f.front.id == id || f.front.aliases.iter().any(|a| a == id))
-            .any(|f| pending_at(&f.markdown, n))
+            .find_map(|f| tag_at(&f.markdown, n).map(|tag| (tag, matter_at(&f.markdown, n))))
     }
 }
 
