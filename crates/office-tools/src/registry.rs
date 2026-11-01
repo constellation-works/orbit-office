@@ -124,6 +124,8 @@ static TOOLS: &[Tool] = &[
     sessions::brief::TOOL,
     sessions::digest::TOOL,
     sessions::scribe_control::TOOL,
+    sessions::scribe_pending::TOOL,
+    sessions::scribe_append::TOOL,
     // recall (specs/recall.md)
     recall::TOOL,
     recall::answer::TOOL,
