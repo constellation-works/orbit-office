@@ -71,6 +71,50 @@ test("a window holding more lines than the limit narrows until the newest fit", 
   assert.equal(body.since, "2026-11-01");
 });
 
+test("an exact-cap day is shown whole and an over-cap day keeps its newest lines", async (t) => {
+  // Rows as the real general scribe-query returns them: ascending
+  // (time, path, line), bounded to the newest `limit`, count = full total.
+  // All rows share one timestamp, so line order is the tie-break.
+  const template = office.feed.results[0];
+  const denseClient = (count) => {
+    const rows = Array.from({ length: count }, (_, i) => {
+      const line = 21 + i;
+      const label = `event ${String(i).padStart(4, "0")}`;
+      return {
+        ...template, citation: `${template.id}#L${line}`, file_line: `${template.path}:${line}`, line,
+        msg: `m-${String(i).padStart(4, "0")}`, time: "2026-11-01T09:00:00-07:00", quote: label,
+        text: `- note 2026-11-01T09:00:00-07:00 #fact "${label}"`,
+      };
+    });
+    return {
+      async pollTool(_name, input) {
+        const matched = rows.filter((row) => row.time.slice(0, 10) >= input.since)
+          .sort((a, b) => a.time.localeCompare(b.time) || a.path.localeCompare(b.path) || a.line - b.line);
+        return {
+          ...structuredClone(office.feed), results: structuredClone(matched.slice(-input.limit)),
+          count: matched.length, since: input.since,
+        };
+      },
+      async callTool() { throw new Error("unexpected"); },
+    };
+  };
+
+  const exactUrl = await serve(t, denseClient(1000));
+  const exact = (await get(`${exactUrl}/api/scribe/feed`)).body;
+  assert.deepEqual([exact.total, exact.shown, exact.since], [1000, 1000, "2026-10-03"]);
+  assert.equal(exact.sessions[0].entries[0].quote, "event 0999");
+  assert.equal(exact.sessions[0].entries.at(-1).quote, "event 0000");
+
+  const overUrl = await serve(t, denseClient(1002));
+  const over = (await get(`${overUrl}/api/scribe/feed`)).body;
+  assert.deepEqual([over.total, over.shown, over.since], [1002, 1000, "2026-11-01"]);
+  const quotes = over.sessions[0].entries.map((entry) => entry.quote);
+  assert.equal(quotes.length, 1000);
+  assert.deepEqual([quotes[0], quotes[1]], ["event 1001", "event 1000"], "the newest lines are kept, newest first");
+  assert.ok(!quotes.includes("event 0000") && !quotes.includes("event 0001"), "the oldest lines are the truncated ones");
+  assert.equal(quotes.at(-1), "event 0002");
+});
+
 test("Pending, Preferences, Landed and Why return exactly the lines office.scribe-query returns for the same query", async (t) => {
   const { url, calls } = await scribeServer(t);
   for (const view of ["pending", "pref", "landed", "why"]) {

@@ -23,9 +23,11 @@ const MAX_BODY_BYTES = 16_384;
 /** Lines the feed asks for at most. */
 const FEED_LIMIT = 1000;
 /**
- * Feed windows in days, widest first. `office.scribe-query` returns the
- * oldest lines first, so when a window holds more than the limit the feed
- * narrows it until the newest lines fit.
+ * Feed windows in days, widest first. The general `office.scribe-query`
+ * keeps the newest lines up to the limit (oldest first within that bound),
+ * so when a window holds more than the limit the feed narrows it to report
+ * a tighter `since`; even the final one-day window keeps its newest lines,
+ * with `total`/`shown` reporting the truncation.
  */
 const FEED_WINDOWS = [30, 7, 1] as const;
 const CODE = /^[a-z][a-z0-9_]{0,63}$/;

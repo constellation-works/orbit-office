@@ -289,6 +289,40 @@ fn invalid_mode_and_dates_are_refused_without_a_model_call() {
 }
 
 #[test]
+fn general_query_keeps_newest_at_and_over_limit_canned_keeps_oldest() {
+    // Five same-time pending lines in one file: (time, path, line) is the
+    // deterministic order, so the newest are the highest line numbers.
+    let entries: Vec<String> = (0..5)
+        .map(|i| {
+            format!("- m-{i:04} 2026-11-01T09:00-07:00 #pending #scribe \"event {i}\" by: opus")
+        })
+        .collect();
+    let library = FakeLibrary::initialized();
+    library.insert_scribe_file(PATH_A, &scr(ID_A, "session-a", "orchestrator", &entries));
+    let (mut ports, _) = ports();
+    ports.library = Box::new(library);
+
+    // Exact cap: every line is returned, oldest first.
+    let exact = query(&ports, json!({"since": "2026-11-01", "limit": 5}));
+    assert_eq!(exact["count"], 5);
+    assert_eq!(
+        quotes(&exact),
+        ["event 0", "event 1", "event 2", "event 3", "event 4"]
+    );
+
+    // Over cap: the general query keeps the newest bounded rows, still in
+    // ascending (time, path, line) order; count reports the full total.
+    let over = query(&ports, json!({"since": "2026-11-01", "limit": 3}));
+    assert_eq!(over["count"], 5, "{over}");
+    assert_eq!(quotes(&over), ["event 2", "event 3", "event 4"], "{over}");
+
+    // Canned modes preserve their semantics: pending keeps the oldest first.
+    let canned = query(&ports, json!({"mode": "pending", "limit": 2}));
+    assert_eq!(canned["count"], 5);
+    assert_eq!(quotes(&canned), ["event 0", "event 1"], "{canned}");
+}
+
+#[test]
 fn each_line_carries_its_session_title_project_and_cursor() {
     let library = fixture_library();
     let titled = scr(

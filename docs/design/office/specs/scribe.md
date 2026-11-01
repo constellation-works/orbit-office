@@ -356,8 +356,17 @@ answer. Answering has two levels.
    - `supersedes` retires a preference;
    - a `#why` note fills a `#no-why`.
 
-   It returns the matching lines with file:line. These questions are canned
-   queries:
+   It returns the matching lines with file:line, ordered by time, then
+   path, then line. `count` always reports every matching line. In the
+   general query (no `mode`), a result over `limit` keeps the newest
+   `limit` lines in that order and truncates the oldest, so the web feed's
+   recent window cannot lose its newest entries to an over-cap day. The
+   canned modes below keep their own truncation (for example `pending`
+   stays oldest first). The feed narrows its 30-, 7-, then 1-day windows
+   while `count` exceeds the lines shown, and reports the final window as
+   `since` with `total` and `shown`, so an over-cap final day still shows
+   its newest bounded lines and names the truncation. These questions are
+   canned queries:
 
    | Question | Query |
    |---|---|
