@@ -83,6 +83,7 @@ cat > "$HOME10/.claude/settings.json" <<'EOF'
 }
 EOF
 printf 'agent_registered\n' > "$HOME10/.local/share/orbit-office/install-state"
+chmod 600 "$HOME10/.local/share/orbit-office/install-state"
 OUT_REPAIR="$ROOT/out-repair.txt"
 run_install "$HOME10" -- > "$OUT_REPAIR" 2>&1 \
     || { cat "$OUT_REPAIR" >&2; fail "claude repair install exits 0"; }

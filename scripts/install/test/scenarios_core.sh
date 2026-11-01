@@ -141,6 +141,68 @@ if run_office "$HOME1" bogus > "$ROOT/office-usage" 2>&1; then fail "office reje
 else _usage_rc=$?; check "office usage exits 2" test "$_usage_rc" -eq 2; fi
 }
 
+scenario_25() {
+# ---------------------------------------------------------------------------
+# 25. Group-writable umask: installer-owned state stays private (0600),
+#     reruns and state_clear replacements keep it, unsafe pre-existing
+#     state is still refused by the installed launcher
+# ---------------------------------------------------------------------------
+
+UMASK_HOME="$ROOT/home-umask"
+mkdir -p "$UMASK_HOME"
+OUT_UMASK="$ROOT/out-umask.txt"
+TEST_UMASK=0002 run_install "$UMASK_HOME" -- > "$OUT_UMASK" 2>&1 \
+    || { cat "$OUT_UMASK" >&2; fail "install under umask 0002 exits 0"; }
+ok "install under umask 0002 exits 0"
+UMASK_STATE="$UMASK_HOME/.local/share/orbit-office/install-state"
+check "install under umask 0002 does not refuse its own state" \
+    sh -c '! grep -q "unsafe install state" "$1"' sh "$OUT_UMASK"
+check "install under umask 0002 reaches the Library scaffold" \
+    test -f "$UMASK_HOME/orbit/library/.office/config.yaml"
+check "state created under umask 0002 is private 600" \
+    test "$(file_mode "$UMASK_STATE")" = 600
+printf 'keep-umask\n' > "$UMASK_HOME/orbit/library/umask-keep.txt"
+OUT_UMASK2="$ROOT/out-umask2.txt"
+TEST_UMASK=0002 run_install "$UMASK_HOME" -- > "$OUT_UMASK2" 2>&1 \
+    || { cat "$OUT_UMASK2" >&2; fail "rerun under umask 0002 exits 0"; }
+ok "rerun under umask 0002 exits 0"
+check "rerun under umask 0002 keeps state private 600" \
+    test "$(file_mode "$UMASK_STATE")" = 600
+check "rerun under umask 0002 retains Library data" \
+    grep -qx keep-umask "$UMASK_HOME/orbit/library/umask-keep.txt"
+# Uninstall drives state_clear replacements through the generated installer.
+OUT_UMASK_UN="$ROOT/out-umask-uninstall.txt"
+TEST_UMASK=0002 run_install "$UMASK_HOME" -- --uninstall > "$OUT_UMASK_UN" 2>&1 \
+    || { cat "$OUT_UMASK_UN" >&2; fail "uninstall under umask 0002 exits 0"; }
+ok "uninstall under umask 0002 exits 0"
+check "state_clear replacement under umask 0002 keeps state private 600" \
+    test "$(file_mode "$UMASK_STATE")" = 600
+check "state_clear replacement removes the cleared marker" \
+    sh -c '! grep -qx agent_registered "$1"' sh "$UMASK_STATE"
+check "uninstall under umask 0002 retains Library data" \
+    grep -qx keep-umask "$UMASK_HOME/orbit/library/umask-keep.txt"
+
+# A group-writable state file the installer did not create privately is
+# refused, not silently repaired, and its mode is left unchanged.
+UNSAFE_HOME="$ROOT/home-umask-unsafe"
+UNSAFE_STATE="$UNSAFE_HOME/.local/share/orbit-office/install-state"
+mkdir -p "$UNSAFE_HOME/.local/share/orbit-office"
+printf 'preexisting=1\n' > "$UNSAFE_STATE"
+chmod 664 "$UNSAFE_STATE"
+OUT_UNSAFE="$ROOT/out-umask-unsafe.txt"
+if TEST_UMASK=0002 run_install "$UNSAFE_HOME" -- > "$OUT_UNSAFE" 2>&1; then
+    fail "unsafe pre-existing state under umask 0002 is refused"
+else
+    ok "unsafe pre-existing state under umask 0002 is refused"
+fi
+check "unsafe pre-existing state refusal names the state file" \
+    grep -F "unsafe install state: $UNSAFE_STATE" "$OUT_UNSAFE"
+check "unsafe pre-existing state mode is not repaired" \
+    test "$(file_mode "$UNSAFE_STATE")" = 664
+check "unsafe pre-existing state creates no Library scaffold" \
+    test ! -e "$UNSAFE_HOME/orbit/library/.office/config.yaml"
+}
+
 scenario_2() {
 # ---------------------------------------------------------------------------
 # 2. Older Orbit stops; newer warns and continues
