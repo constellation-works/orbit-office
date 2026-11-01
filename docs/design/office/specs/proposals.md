@@ -187,6 +187,67 @@ auto-task mints agent review work that may file knowledge proposals and leaves
 them proposed. All three are registered under `spec.definitions`. Installing
 these definitions does not enable either schedule.
 
+## Rolling verification (`office-knowledge-verify`)
+
+The staleness signal above is passive: it needs a newer citing source, so a
+page whose world changed without one arriving is never flagged. The disabled
+daily `office-knowledge-verify` auto-task
+(`plugin/.orbit-plugin/definitions/auto_tasks/office-knowledge-verify.yaml`,
+`enabled: false`, template complexity `low`) closes that gap by checking
+pages against what a run can actually observe, whether or not a new source
+exists. Its definition file ships with this spec; registering it in
+`plugin.yaml` under `spec.definitions.auto_tasks` is integrator-owned and a
+separate task, so the file alone loads and enables nothing.
+
+**Batch selection.** Each run verifies a bounded batch of 6 pages. The agent
+lists the corpus with `office.knowledge-list`, reads each page with
+`office.knowledge-show` for its `last_verified`, `status` and `sensitivity`,
+excludes retired pages, and orders the rest with pages that have no
+`last_verified` first, then by oldest `last_verified`, breaking ties by page
+id. The first 6 form the batch, so never-verified pages are checked before
+any page is re-checked.
+
+**Checks and verdicts.** For each page the agent extracts its checkable
+claims — file paths, commands, tool names, config keys, Orbit task or crew
+state, and statements its cited sources make — and checks each against what
+the run can observe (the workspace, `orbit.task.show`/`orbit.task.list`/
+`orbit.search`, and `office.source-show`/`office.knowledge-show` for cited
+sources), recording the evidence (the command and its outcome, or the cited
+anchor) behind every check. The per-page verdict is `drifted` when any
+checked claim is contradicted, else `unverifiable` when any checkable claim
+could not be checked or the page has no checkable claim, else `current` —
+only when every checkable claim was checked and agreed. A private page,
+whose body `office.knowledge-show` withholds (`content_withheld`), is always
+`unverifiable` and is never proposed against; its `sha256` is still returned,
+since a digest names the revision without its text.
+
+**Drifted pages.** A drifted page gets one `knowledge_update` proposal whose
+`base_sha256` pins the page's `sha256` from `office.knowledge-show` — the
+SHA-256 of the page file's exact bytes that `office.proposal-create` checks,
+so a page that moved since it was shown refuses creation with
+`proposal_revision_changed`. The proposal's replacement markdown corrects
+each contradicted claim to match the evidence and marks a superseded
+decision superseded rather than deleting it; its description and evidence
+quote the contradicting evidence verbatim. Dismissal memory applies as for
+any proposal: a suppressed creation is recorded, not refiled.
+
+**How the verification stamp lands.** A `current` page's verification is
+recorded as a stamp-only `knowledge_update` proposal, pinned to the same
+`sha256`: the replacement markdown is the shown page unchanged except
+`last_verified` set to the run date and `status: current`. It is reviewed
+like any other proposal and lands only when the user accepts it, applying
+the stamp in the acceptance commit — agents never write a Library page
+directly, and an unearned stamp is impossible because `current` requires
+every checkable claim to have been checked. Until acceptance the page keeps
+its old `last_verified` and stays in the rotation. An `unverifiable` page
+gets no proposal and no stamp; it stays in the rotation.
+
+**Run report.** Every run attaches `knowledge-verify-report.json` to its
+task: one entry per page in the batch, in batch order, with the page id, its
+verdict, the evidence or reason behind it, and the proposal id (or the
+suppressed or refused outcome) when one was filed. What was left
+unverifiable, and why, is in the report and nowhere else.
+
 ## Decision — 2026-10-27
 
 Daniel decided that recurring proposals become auto-task proposals. Orbit has

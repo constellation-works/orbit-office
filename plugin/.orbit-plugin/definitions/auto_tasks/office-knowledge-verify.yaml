@@ -1,0 +1,89 @@
+schemaVersion: 1
+name: office-knowledge-verify
+description: Rolling verification of Library pages against observable evidence.
+enabled: false
+schedule:
+  cron: "45 0 * * *"
+dedupe: skip_if_open
+template:
+  title: Verify a batch of Library pages
+  description: |-
+    Rolling verification: check a small batch of Library pages against what
+    this run can actually observe, file proposals for what drifted, record
+    verification for what checks out, and report the rest. Never write a
+    Library page directly, and never accept, publish or enable anything;
+    every change below lands only if the user accepts the proposal.
+
+    Batch selection (bounded batch of 6): call office.knowledge-list, then
+    office.knowledge-show for each listed page to read its last_verified,
+    status and sensitivity. Consider only pages whose status is not retired.
+    Order them with pages that have no last_verified first, then by oldest
+    last_verified, breaking ties by page id, and take the first 6. Use the
+    run date (this task's recorded creation date, UTC, YYYY-MM-DD) wherever
+    a date is needed below.
+
+    For each page in the batch, in that order:
+    - If office.knowledge-show returns content_withheld true (a private
+      page, whose body is withheld), record verdict unverifiable with
+      reason "content_withheld: private page body is withheld". Never file
+      a proposal against a private page, even though its sha256 is shown.
+    - Otherwise extract the page's checkable claims: file paths, commands,
+      tool names, config keys, Orbit task or crew state, and statements the
+      page's cited sources make. Check each claim against what this run can
+      actually observe: read the named path or run the named command in
+      this workspace, call orbit.task.show, orbit.task.list or orbit.search
+      for Orbit state, and office.source-show or office.knowledge-show for
+      a cited source's statement. Record the evidence behind every check
+      (the command and its outcome, or the cited source anchor).
+    - Verdict, per page: drifted when any checked claim is contradicted by
+      the observed evidence; otherwise unverifiable when any checkable
+      claim could not be checked, or the page has no checkable claim;
+      otherwise current, only when every checkable claim was checked and
+      agreed. Only stamp what was verified: a page is never current on
+      unchecked claims.
+
+    Act on the verdict:
+    - drifted: file one office.proposal-create with a knowledge_update
+      payload pinned to the page's sha256 from office.knowledge-show as
+      base_sha256. Its markdown is the full replacement page: the shown
+      page with each contradicted claim corrected to match the evidence,
+      and a superseded decision marked superseded rather than deleted.
+      Quote the contradicting evidence verbatim in the proposal
+      description and evidence. If proposal-create returns suppressed,
+      a dismissed equivalent is within its memory: record that and file
+      nothing more for the page. A proposal_revision_changed refusal
+      means the page moved since it was shown; record it, do not retry
+      against a digest this run did not read.
+    - current: record the verification as a stamp-only knowledge_update
+      proposal through office.proposal-create, pinned to the page's
+      sha256: the replacement markdown is the shown page unchanged except
+      last_verified set to the run date and status current. Say in its
+      description that it is a verification stamp and name the evidence
+      checked. The stamp lands only when the user accepts it, which takes
+      the page out of the rotation; until then it changes nothing.
+    - unverifiable: file nothing and stamp nothing. The page stays in the
+      rotation and is named in the report with the reason.
+
+    Run report: write knowledge-verify-report.json under .orbit/tmp/ and
+    attach it with orbit.task.artifact.put (id: this task's id from
+    orbit.task.show, path: knowledge-verify-report.json). It is a JSON
+    array with one entry per page in the batch, in batch order:
+    {id, verdict, evidence or reason, proposal id or suppressed/refused
+    outcome when one was filed}. List what was left unverifiable and why.
+    Attach the report even when the batch is empty.
+  acceptance_criteria:
+    - The batch is at most 6 pages, ordered no last_verified first, then oldest last_verified, ties by id, with retired pages excluded.
+    - Every page in the batch has a verdict (current, drifted or unverifiable) in knowledge-verify-report.json with the evidence or reason behind it, and the report is attached to this task.
+    - Each drifted page has a knowledge_update proposal pinned to its knowledge-show sha256 quoting the contradicting evidence, or a recorded suppression or refusal; superseded decisions are marked superseded, not deleted.
+    - Each current page has a stamp-only knowledge_update proposal setting last_verified to the run date, and no other page is stamped.
+    - No Library page is written directly, no private page is proposed against, and nothing is accepted, published or enabled.
+  task_type: chore
+  tags: [office, owner:agent, office-knowledge-verify, no-diff-expected]
+  required_tools: [office.knowledge-list, office.knowledge-show, office.source-show, office.proposal-create, orbit.task.show, orbit.task.list, orbit.search, orbit.task.artifact.put]
+  status: backlog
+  priority: low
+  complexity: low
+created_by: office
+created_at: 2026-11-01T00:00:00Z
+updated_by: office
+updated_at: 2026-11-01T00:00:00Z

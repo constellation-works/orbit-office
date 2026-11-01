@@ -109,3 +109,17 @@ completed transcripts and queue one extraction task/job immediately, with this s
 instruction, complexity and required tools; the sweep only catches missed sessions.
 See the host placement, staging and privacy contract in
 `docs/design/office/specs/sessions.md` (in the repository).
+
+`auto_tasks/office-knowledge-verify.yaml` ships a disabled daily rolling
+verification of Library pages (batch of 6, template complexity `low`). It
+checks each page's checkable claims against observable evidence, files
+`knowledge_update` proposals pinned to the page's `office.knowledge-show`
+`sha256` for drifted pages, records a stamp-only proposal for verified
+pages, and attaches a per-page verdict report; private pages are reported
+unverifiable and never proposed against.
+
+This definition is **not registered yet**: `plugin.yaml` registration is
+integrator-owned and a separate task adds
+`definitions/auto_tasks/office-knowledge-verify.yaml` under
+`spec.definitions.auto_tasks`; enabling it remains an operator decision.
+See `docs/design/office/specs/proposals.md` ("Rolling verification").

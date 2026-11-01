@@ -45,6 +45,7 @@ tests:
           performable: null
           submission: null
           body: "## Name\nDee\n\n## Role\nOperations lead.\n"
+          sha256: "390c54165127776f5b8f6bab5d51f196e22fcbc50aa1d187c587c0e404469b60"
         backlinks:
           - {id: dom-client-acme, kind: domain, title: Acme, path: knowledge/domain/dom-client-acme.md, via: [cites, related]}
   - name: knowledge_show_refuses_an_unknown_page

@@ -13,6 +13,7 @@
 use std::path::Path;
 
 use office_core::domain::knowledge::{Page, parse_citation};
+use office_core::domain::source::sha256_hex;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Value, json};
@@ -70,6 +71,10 @@ fn run(call: &Call<'_>) -> Result<Value> {
     }
     output["page"]["layer"] = json!(record.layer);
     output["page"]["shared_by"] = json!(record.shared_by);
+    // The digest of the file's exact bytes, as proposal-create checks it
+    // as base_sha256. It is returned even for a private page, whose body
+    // is withheld above: a digest names the revision without its text.
+    output["page"]["sha256"] = json!(sha256_hex(markdown.as_bytes()));
     if history {
         crate::history::append(library.as_ref(), Path::new(path), &mut output)?;
     }
