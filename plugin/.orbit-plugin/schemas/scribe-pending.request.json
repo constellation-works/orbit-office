@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-pending request",
-  "description": "Parse one session transcript through the conversation adapter (text between the user and the agent only, credentials scrubbed) into .orbit/tmp/scribe/<session_id>.jsonl, owner-only, and return what the scribe has not read yet. Model-free; no Library write.",
+  "description": "Parse one session transcript through the conversation adapter (text between the user and the agent only, credentials scrubbed) into <library>/.office/state/scribe/<session_id>.jsonl (the Library's git-ignored state), owner-only, and return what the scribe has not read yet. Model-free; no Library commit.",
   "type": "object",
   "properties": {
     "session_id": {

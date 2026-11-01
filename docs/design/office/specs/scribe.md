@@ -75,7 +75,7 @@ nothing and says so.
 ## Pipeline
 
 ```
-transcript ──parse (no model)──▶ .orbit/tmp/scribe/<session-id>.jsonl
+transcript ──parse (no model)──▶ <library>/.office/state/scribe/<session-id>.jsonl
                                         │  messages after scribed_through
                                         ▼
                          scribe agent (cheap model) ──▶ entries (JSON)
@@ -87,12 +87,18 @@ transcript ──parse (no model)──▶ .orbit/tmp/scribe/<session-id>.jsonl
    existing conversation adapter ([sessions.md](./sessions.md#adapter-and-provenance)).
    That adapter keeps only the text exchanged between Daniel and the agent:
    no tool calls, tool results, thinking or sidechains. Credentials are
-   scrubbed as today. Output is `.orbit/tmp/scribe/<session-id>.jsonl`, one
-   message per line:
+   scrubbed as today. Output is
+   `<library>/.office/state/scribe/<session-id>.jsonl`, one message per line:
    `{"id":"m-0042","role":"user|assistant","at":"<rfc3339>","text":"…"}`.
    Ids are stable: the nth kept message is always `m-<n>`, so re-parsing a
    longer transcript only adds lines. The file is rewritten on every run and
-   stays private (`0600`, private directory).
+   stays private (`0600`, private directory). It sits in the Library's
+   git-ignored `.office/state/`, inside the plugin's `{{workspace}}/library`
+   write grant (Orbit refuses any plugin write grant under the workspace's
+   `.orbit`), and follows a configured `library_dir`. The `parsed` path
+   (tool output and SCR front matter) is workspace-relative, such as
+   `library/.office/state/scribe/<session-id>.jsonl`. The Claude Code
+   plugin's own hook files stay under `.orbit/tmp/scribe/`.
 2. **Scribe: cheap model.** The `scribe` agent (Haiku or Luna class) gets the
    rules and the messages after `scribed_through`, plus up to 10 earlier
    messages as read-only context. It returns entries:
@@ -223,7 +229,7 @@ project: constellation
 cwd: ~/workspace/constellation
 branch: agent-main
 transcript: ~/.claude/projects/-Users-daniel-workspace-constellation/0a31040c-….jsonl
-parsed: .orbit/tmp/scribe/0a31040c-….jsonl
+parsed: library/.office/state/scribe/0a31040c-….jsonl
 started_at: 2026-10-31T20:07:00-07:00
 last_scribed_at: 2026-10-31T22:41:00-07:00
 scribed_through: m-0187

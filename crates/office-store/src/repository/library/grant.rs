@@ -55,7 +55,7 @@ pub(super) fn resolve_within_grant(candidate: &Path, workspace_root: &Path) -> R
 }
 
 /// Lexically resolve `.` and `..` without requiring the path to exist.
-pub(super) fn normalize_path(path: &Path) -> PathBuf {
+pub(crate) fn normalize_path(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {

@@ -325,10 +325,15 @@ pub trait Library {
     fn reindex(&self) -> Result<u32> {
         Err(Error::LibraryUnavailable)
     }
+    /// The workspace-relative path of a session's parsed message file,
+    /// `<library>/.office/state/scribe/<id>.jsonl`, without I/O.
+    fn scribe_parse_path(&self, _session_id: &str) -> Result<String> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Write a session's parsed scribe messages and its session facts
-    /// (`<id>.jsonl` and `<id>.meta.json`) under the workspace's
-    /// `.orbit/tmp/scribe/`, owner-only, replacing earlier copies. Returns
-    /// the workspace-relative path of the `.jsonl`.
+    /// (`<id>.jsonl` and `<id>.meta.json`) under the Library's git-ignored
+    /// `.office/state/scribe/`, owner-only, replacing earlier copies.
+    /// Returns the workspace-relative path of the `.jsonl`.
     fn write_scribe_parse(
         &self,
         _session_id: &str,

@@ -29,7 +29,8 @@ use crate::{Error, Result};
 mod grant;
 mod pending;
 
-use grant::{normalize_path, resolve_existing_ancestor, resolve_within_grant};
+pub(crate) use grant::normalize_path;
+use grant::{resolve_existing_ancestor, resolve_within_grant};
 use pending::{
     PendingOriginal, PendingWrite, RawPendingWrite, WriteKind, normalize_upload_extension,
 };

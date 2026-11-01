@@ -75,7 +75,7 @@ elif tool == 'office.scribe-pending':
         view = {'exists': True, 'id': record['id'], 'path': record['path'], 'title': record.get('title'),
                 'scribed_through': through, 'last_scribed_at': None, 'topics': [], 'aliases': [],
                 'counterpart': None, 'counterpart_name': None}
-    print(json.dumps({'session_id': sid, 'provider': payload['provider'], 'parsed': '.orbit/tmp/scribe/' + sid + '.jsonl',
+    print(json.dumps({'session_id': sid, 'provider': payload['provider'], 'parsed': 'library/.office/state/scribe/' + sid + '.jsonl',
                       'content_withheld': False, 'message_count': len(all_messages),
                       'new_count': len(all_messages) - start, 'scr': view, 'scribed_through': through,
                       'messages': returned,

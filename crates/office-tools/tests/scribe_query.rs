@@ -74,7 +74,7 @@ impl Models for RefusingModels {
 
 fn scr(id: &str, session: &str, counterpart: &str, entries: &[String]) -> String {
     let mut text = format!(
-        "---\nid: \"{id}\"\ntitle: null\nsession_id: \"{session}\"\nprovider: \"claude-code\"\nmodel: null\ncounterpart: \"{counterpart}\"\ncounterpart_name: null\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/work/constellation\"\nbranch: \"agent-main\"\ntranscript: \"t.jsonl\"\nparsed: \".orbit/tmp/scribe/{session}.jsonl\"\nstarted_at: \"2026-10-29T09:00:00-07:00\"\nlast_scribed_at: null\nscribed_through: null\ntopics: [\"scribe\"]\naliases: []\n---\n"
+        "---\nid: \"{id}\"\ntitle: null\nsession_id: \"{session}\"\nprovider: \"claude-code\"\nmodel: null\ncounterpart: \"{counterpart}\"\ncounterpart_name: null\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/work/constellation\"\nbranch: \"agent-main\"\ntranscript: \"t.jsonl\"\nparsed: \"library/.office/state/scribe/{session}.jsonl\"\nstarted_at: \"2026-10-29T09:00:00-07:00\"\nlast_scribed_at: null\nscribed_through: null\ntopics: [\"scribe\"]\naliases: []\n---\n"
     );
     for entry in entries {
         text.push_str(entry);

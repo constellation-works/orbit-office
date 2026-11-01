@@ -1016,7 +1016,11 @@ impl Library for FakeLibrary {
                 meta: meta.to_string(),
             },
         );
-        Ok(office_core::domain::source::conversation::scribe::parse_path(session_id))
+        self.scribe_parse_path(session_id)
+    }
+
+    fn scribe_parse_path(&self, session_id: &str) -> Result<String> {
+        Ok(office_core::domain::source::conversation::scribe::parse_path("library", session_id))
     }
 
     fn read_scribe_parse(&self, session_id: &str) -> Result<Option<ScribeParse>> {
