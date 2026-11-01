@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.session-brief response",
-  "description": "Ordered sections. Handoff, other_sessions, latest_digest, workspace_unavailable and onboarding are absent when empty. The other five sections are always present. Handoff is the newest handoff of the current session's thread (its project, preferring its orchestrator; a thread is the first Orbit task id its handoff cites, else its conversation's project plus orchestrator); other_sessions lists one cited handoff item per other thread, newest first, for handoffs no more than seven days older than the newest conversation source, capped at five items with total and truncated reporting the window count and cap. Other_sessions is present only when the request carried a project; without a project the output is the legacy single-conversation brief. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence from the office workspace refuses the whole brief; an unreadable extra workspace (brief.task_workspaces) appears as one workspace_unavailable item instead. Task items from an extra workspace carry workspace (its selector); office-workspace items omit it.",
+  "description": "Ordered sections. Handoff, global, projects, other_sessions, latest_digest, workspace_unavailable and onboarding are absent when empty. The other five sections are always present. Handoff is the newest project-scoped handoff of the current session's thread (its project, preferring its orchestrator; a thread is the first Orbit task id its handoff cites, else its conversation's project plus orchestrator). Global lists the open scope: global handoffs (stored with a leading (global) or (global until <time>) marker; not expired and not cited by a later resolved entry), newest first, capped at five; a global the project handoff cites by anchor is always listed, exactly once; total counts every open global. Projects is present only in manual output (session_start with brief.handoff manual, auto with no project found, or view handoffs without a project): one item per project with a handoff thread, newest first, capped at twenty; id and text name the project, link and time are its newest handoff's. other_sessions lists one cited handoff item per other thread, newest first, for handoffs no more than seven days older than the newest conversation source, capped at five items with total and truncated reporting the window count and cap. Other_sessions is present only when a project is used; without a project the output is the legacy single-conversation brief plus global. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence from the office workspace refuses the whole brief; an unreadable extra workspace (brief.task_workspaces) appears as one workspace_unavailable item instead. Task items from an extra workspace carry workspace (its selector); office-workspace items omit it. view handoffs returns only handoff, global and projects.",
   "type": "object",
   "properties": {
     "sections": {
@@ -13,6 +13,8 @@
             "type": "string",
             "enum": [
               "handoff",
+              "global",
+              "projects",
               "other_sessions",
               "since",
               "waiting_on_you",

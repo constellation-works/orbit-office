@@ -67,6 +67,32 @@ pub struct BriefSettings {
     /// host-qualified `hm_…/<workspace>` federated selector). Empty means
     /// the office workspace only, as before.
     pub task_workspaces: Vec<String>,
+    /// How a SessionStart brief chooses its project handoff
+    /// (`brief.handoff`, specs/sessions.md#choosing-the-project). Omitted
+    /// from the config when `auto`, the default.
+    #[serde(skip_serializing_if = "HandoffMode::is_auto")]
+    pub handoff: HandoffMode,
+}
+
+/// `brief.handoff`: whether the SessionStart hook picks the project.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HandoffMode {
+    /// The hook picks the project from its working directory, else from the
+    /// caller's open assignment, else behaves as `manual`.
+    #[default]
+    Auto,
+    /// The hook's brief carries only global handoffs and the projects with
+    /// a thread; `/handoff <project>` picks one.
+    Manual,
+}
+
+impl HandoffMode {
+    /// Whether this is the default, `auto`.
+    #[must_use]
+    pub fn is_auto(&self) -> bool {
+        *self == Self::Auto
+    }
 }
 
 /// Demo-history facts the app's labels read. Records themselves stay unmarked.
@@ -328,6 +354,11 @@ impl Settings {
                 .get_mut("brief")
                 .and_then(Value::as_object_mut)
                 .and_then(|map| map.get_mut("task_workspaces")),
+            // Omitted while `auto`, so the leaf is inserted before it is set.
+            Some(("brief", "handoff")) => encoded
+                .get_mut("brief")
+                .and_then(Value::as_object_mut)
+                .map(|map| map.entry("handoff").or_insert(Value::Null)),
             None if key == "packs" => encoded.get_mut(key),
             _ => None,
         }
@@ -547,6 +578,14 @@ impl TryFrom<Value> for Settings {
                         .ok_or_else(|| invalid(key, "expected a mapping"))?;
                     for (name, value) in items {
                         let dotted = format!("brief.{name}");
+                        if name == "handoff" {
+                            settings.brief.handoff = match value.as_str() {
+                                Some("auto") => HandoffMode::Auto,
+                                Some("manual") => HandoffMode::Manual,
+                                _ => return Err(invalid(&dotted, "expected auto or manual")),
+                            };
+                            continue;
+                        }
                         if name != "task_workspaces" {
                             return Err(invalid(&dotted, "unknown brief setting"));
                         }

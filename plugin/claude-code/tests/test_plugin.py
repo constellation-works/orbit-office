@@ -83,6 +83,8 @@ elif tool == 'office.capture':
         print(json.dumps({'ok': False, 'error': {'code': 'invalid_argument'}}))
         sys.exit(0)
     print(json.dumps({'source_id': 'src-fixture', 'title': payload.get('title')}))
+elif tool == 'office.session-brief' and (home / 'brief.json').exists():
+    print((home / 'brief.json').read_text())
 else:
     print(json.dumps({'sections': [], 'pending': []}))
 '''
@@ -173,7 +175,75 @@ class PluginBehavior(unittest.TestCase):
         self.hook("SessionStart")
         briefs = self.calls("office.session-brief")
         self.assertEqual(len(briefs), 1)
-        self.assertEqual(briefs[0]["input"], {"project": "project", "orchestrator": "claude"})
+        # `session_start` lets Office apply brief.handoff (auto | manual).
+        self.assertEqual(briefs[0]["input"], {"session_start": True, "project": "project",
+                                              "orchestrator": "claude"})
+
+    def test_session_start_in_a_parent_of_repositories_passes_the_assignment_not_a_project(self):
+        root = self.root / "constellation"
+        for name in ("orbit", "orbit-office"):
+            (root / "codebases" / name / ".git").mkdir(parents=True)
+        (root / ".git").mkdir()
+        context = dict(self.context, cwd=str(root))
+        self.env["ORBIT_TASK_ID"] = "ORB-77"
+        start = self.hook("SessionStart", context)
+        self.assertEqual(start.returncode, 0, start.stderr)
+        self.assertEqual(self.calls("office.session-brief")[-1]["input"],
+                         {"session_start": True, "orchestrator": "claude", "task": "ORB-77"})
+        # No assignment (or a malformed id): Office returns the manual output.
+        self.env["ORBIT_TASK_ID"] = "not an id"
+        self.hook("SessionStart", context)
+        self.assertEqual(self.calls("office.session-brief")[-1]["input"],
+                         {"session_start": True, "orchestrator": "claude"})
+        # A repository inside that root is still a single project.
+        self.hook("SessionStart", dict(self.context, cwd=str(root / "codebases" / "orbit")))
+        self.assertEqual(self.calls("office.session-brief")[-1]["input"],
+                         {"session_start": True, "project": "orbit", "orchestrator": "claude"})
+
+    def mcp_handoff(self, arguments):
+        message = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                   "params": {"name": "handoff", "arguments": arguments}}
+        process = subprocess.run([sys.executable, "-I", str(PLUGIN / "scripts/bridge.py")],
+                                 input=json.dumps(message) + "\n", text=True, env=self.env, cwd=self.root,
+                                 capture_output=True, timeout=30)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        return json.loads(process.stdout.splitlines()[0])["result"]
+
+    def test_handoff_command_returns_the_merged_project_handoff_or_lists_projects(self):
+        item = lambda id_, text, time_: {"id": id_, "link": "sources/x/source.md#L1", "text": text,
+                                         "time": time_, "entry_kind": "handoff", "status": None, "template": None}
+        (self.home / "brief.json").write_text(json.dumps({"sections": [
+            {"kind": "handoff", "items": [item("src-o#L3", "Orbit next: cut 0.9.2.", "2026-10-30T10:03:00Z")],
+             "total": 1, "truncated": False},
+            {"kind": "global", "items": [item("src-a#L1", "(global) Upgrade orbit to 0.9.", "2026-10-30T09:00:00Z")],
+             "total": 1, "truncated": False}]}))
+        result = self.mcp_handoff({"project": " orbit "})
+        self.assertFalse(result["isError"], result)
+        reply = json.loads(result["content"][0]["text"])
+        self.assertEqual(self.calls("office.session-brief")[-1]["input"],
+                         {"view": "handoffs", "project": "orbit", "orchestrator": "claude"})
+        display = reply["display"].splitlines()
+        self.assertEqual(display, ["Handoff for orbit:",
+                                   "- [2026-10-30T10:03:00Z] Orbit next: cut 0.9.2. (src-o#L3)",
+                                   "Global handoffs:",
+                                   "- [2026-10-30T09:00:00Z] (global) Upgrade orbit to 0.9. (src-a#L1)"])
+
+        (self.home / "brief.json").write_text(json.dumps({"sections": [
+            {"kind": "projects", "items": [{"id": "orbit", "link": "sources/x/source.md#L3", "text": "orbit",
+                                            "time": "2026-10-30T10:03:00Z", "entry_kind": None, "status": None,
+                                            "template": None}], "total": 1, "truncated": False}]}))
+        reply = json.loads(self.mcp_handoff({})["content"][0]["text"])
+        self.assertEqual(self.calls("office.session-brief")[-1]["input"], {"view": "handoffs"})
+        self.assertEqual(reply["display"].splitlines(), [
+            "Global handoffs:", "- none open",
+            "Projects with a handoff thread (newest first):", "- orbit (last handoff 2026-10-30T10:03:00Z)",
+            "Run /handoff <project> to load one."])
+
+        refused = self.mcp_handoff({"project": "two words"})
+        self.assertTrue(refused["isError"])
+        self.assertEqual(refused["content"][0]["text"], "project_must_be_one_name")
+        self.assertEqual(self.mcp_handoff({"project": "orbit", "extra": 1})["content"][0]["text"],
+                         "unknown_command_field")
 
     def test_start_brief_stop_debounce_switch_now_and_final(self):
         start = self.hook("SessionStart")

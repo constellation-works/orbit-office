@@ -946,3 +946,351 @@ fn changing_library_refuses_a_mixed_brief_without_timing_or_threads() {
     let response = call(&ports, json!({}));
     assert_eq!(response["error"]["code"], "library_changed", "{response}");
 }
+
+/// Ports at a fixed instant with a queue of Orbit replies, in call order.
+fn at(
+    library: FakeLibrary,
+    now: &str,
+    replies: Vec<office_core::Result<Value>>,
+) -> (Ports<'static>, FakeOrbit) {
+    let seconds = office_core::domain::metrics::timestamp(now).unwrap();
+    let mut ports = office_testkit::fakes::PortsBuilder::default()
+        .now(
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(u64::try_from(seconds).unwrap()),
+        )
+        .build();
+    let orbit = FakeOrbit::default();
+    for reply in replies {
+        orbit.push_response(reply);
+    }
+    ports.library = Box::new(library);
+    ports.orbit = Box::new(orbit.clone());
+    (ports, orbit)
+}
+
+fn empty_tasks() -> office_core::Result<Value> {
+    Ok(json!({"tasks":[],"total":0,"truncated":false}))
+}
+
+fn kinds(response: &Value) -> Vec<String> {
+    response["output"]["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["kind"].as_str().unwrap().to_string())
+        .collect()
+}
+
+fn ids(response: &Value, kind: &str) -> Vec<String> {
+    items(response, kind)
+        .iter()
+        .map(|i| i["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+fn mode_library(mode: &str) -> FakeLibrary {
+    let mut library = FakeLibrary::initialized();
+    library.settings = library
+        .settings
+        .with_setting("brief.handoff", json!(mode))
+        .unwrap();
+    library
+}
+
+#[test]
+fn global_handoffs_reach_every_project_until_they_expire_or_are_resolved() {
+    for project in ["orbit-office", "orbit"] {
+        let (ports, _) = at(
+            globals_library(),
+            "2026-10-30T12:00:00Z",
+            vec![empty_tasks()],
+        );
+        let response = call(
+            &ports,
+            json!({"project": project, "orchestrator": "claude"}),
+        );
+        assert_eq!(response["ok"], true, "{response}");
+        // Before the expiry both open globals reach both projects; the
+        // resolved ones (cited by full id elsewhere, or by local anchor) never do.
+        assert_eq!(
+            ids(&response, "global"),
+            ["src-a#L2", "src-a#L1"],
+            "{project}"
+        );
+        let lead = items(&response, "handoff");
+        assert!(
+            lead[0]["text"].as_str().unwrap().contains("next"),
+            "{response}"
+        );
+        // Globals never become a project thread's handoff or another session.
+        let others = items(&response, "other_sessions");
+        assert!(
+            others
+                .iter()
+                .all(|i| !i["text"].as_str().unwrap().starts_with("(global"))
+        );
+    }
+    // After `until` passes it is left out; the brief without a project
+    // carries the open globals too.
+    let (ports, _) = at(
+        globals_library(),
+        "2026-10-31T00:00:00Z",
+        vec![empty_tasks()],
+    );
+    let response = call(&ports, json!({"project": "orbit"}));
+    assert_eq!(ids(&response, "global"), ["src-a#L1"]);
+    let (ports, _) = at(
+        globals_library(),
+        "2026-11-01T00:00:00Z",
+        vec![empty_tasks()],
+    );
+    let response = call(&ports, json!({}));
+    assert_eq!(ids(&response, "global"), ["src-a#L1"]);
+    assert_eq!(ids(&response, "handoff"), ["src-b#L3"]);
+    let global = &items(&response, "global")[0];
+    assert_eq!(
+        global["text"],
+        "(global) Upgrade orbit to 0.9 on every host."
+    );
+    assert_eq!(global["entry_kind"], "handoff");
+}
+
+fn globals_library() -> FakeLibrary {
+    let library = FakeLibrary::initialized();
+    source_in(
+        &library,
+        "src-a",
+        "2026-10-30T08:00:00Z",
+        "orbit-office",
+        "claude",
+        concat!(
+            "[2026-10-30T09:00:00Z] handoff: (global) Upgrade orbit to 0.9 on every host.\n",
+            "[2026-10-30T09:01:00Z] handoff: (global until 2026-10-31T00:00:00Z) Drain paused until Friday.\n",
+            "[2026-10-30T09:02:00Z] handoff: (global) Orbit defect: rerun drains with --resume.\n",
+            "[2026-10-30T09:03:00Z] handoff: (global) Local scope note.\n",
+            "[2026-10-30T09:04:00Z] resolved: #L4 closed here.\n",
+            "[2026-10-30T09:05:00Z] handoff: Office next: ship the brief.\n",
+        ),
+    );
+    source_in(
+        &library,
+        "src-b",
+        "2026-10-30T10:00:00Z",
+        "orbit",
+        "claude",
+        concat!(
+            "[2026-10-30T10:01:00Z] resolved: src-a#L3 — fixed in orbit 0.9.1.\n",
+            "[2026-10-30T10:02:00Z] resolved: src-a#L30 is another entry.\n",
+            "[2026-10-30T10:03:00Z] handoff: Orbit next: cut 0.9.2.\n",
+        ),
+    );
+    library
+}
+
+#[test]
+fn project_handoff_leads_then_capped_globals_newest_first_with_a_cited_global_once() {
+    let library = FakeLibrary::initialized();
+    let globals: String = (0..7)
+        .map(|n| format!("[2026-10-29T0{n}:00:00Z] handoff: (global) Global note {n}.\n"))
+        .collect();
+    source_in(
+        &library,
+        "src-g",
+        "2026-10-29T00:00:00Z",
+        "orbit",
+        "claude",
+        &globals,
+    );
+    source_in(
+        &library,
+        "src-p",
+        "2026-10-30T00:00:00Z",
+        "orbit-office",
+        "claude",
+        "[2026-10-30T01:00:00Z] handoff: Next: follow src-g#L1 and src-g#L7 before shipping.\n",
+    );
+    let (ports, _) = at(library, "2026-10-30T12:00:00Z", vec![empty_tasks()]);
+    let response = call(
+        &ports,
+        json!({"project": "orbit-office", "orchestrator": "claude"}),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(kinds(&response)[..2], ["handoff", "global"]);
+    assert_eq!(ids(&response, "handoff"), ["src-p#L1"]);
+    // Newest first, capped at five; the cited oldest global stays listed and
+    // the cited newest one is not repeated.
+    assert_eq!(
+        ids(&response, "global"),
+        [
+            "src-g#L7", "src-g#L6", "src-g#L5", "src-g#L4", "src-g#L3", "src-g#L1"
+        ]
+    );
+    let global = section(&response, "global").unwrap();
+    assert_eq!(global["total"], 7);
+    assert_eq!(global["truncated"], true);
+}
+
+#[test]
+fn session_start_mode_manual_lists_projects_and_auto_leads_with_the_project() {
+    let write = |library: &FakeLibrary| {
+        source_in(
+            library,
+            "src-office",
+            "2026-10-30T00:00:00Z",
+            "orbit-office",
+            "claude",
+            "[2026-10-30T01:00:00Z] handoff: Office next.\n[2026-10-30T01:01:00Z] handoff: (global) Orbit 0.9 is out.\n",
+        );
+        source_in(
+            library,
+            "src-orbit",
+            "2026-10-30T02:00:00Z",
+            "orbit",
+            "claude",
+            "[2026-10-30T03:00:00Z] handoff: Orbit next.\n",
+        );
+    };
+    let manual = mode_library("manual");
+    write(&manual);
+    let (ports, _) = at(manual, "2026-10-30T12:00:00Z", vec![empty_tasks()]);
+    let input = json!({"project": "orbit-office", "orchestrator": "claude", "session_start": true});
+    let response = call(&ports, input.clone());
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(kinds(&response)[..3], ["global", "projects", "since"]);
+    assert_eq!(ids(&response, "global"), ["src-office#L2"]);
+    assert_eq!(ids(&response, "projects"), ["orbit", "orbit-office"]);
+    let project = &items(&response, "projects")[0];
+    assert_eq!(project["link"], "sources/2026/10/src-orbit/source.md#L1");
+    assert_eq!(project["time"], "2026-10-30T03:00:00Z");
+
+    let auto = FakeLibrary::initialized();
+    write(&auto);
+    let (ports, _) = at(auto, "2026-10-30T12:00:00Z", vec![empty_tasks()]);
+    let response = call(&ports, input);
+    assert_eq!(
+        kinds(&response)[..3],
+        ["handoff", "global", "other_sessions"]
+    );
+    assert_eq!(ids(&response, "handoff"), ["src-office#L1"]);
+    assert!(section(&response, "projects").is_none());
+
+    // The mode governs only the SessionStart brief: an explicit request in
+    // manual mode still gets the project it names.
+    let manual = mode_library("manual");
+    write(&manual);
+    let (ports, _) = at(manual, "2026-10-30T12:00:00Z", vec![empty_tasks()]);
+    let response = call(
+        &ports,
+        json!({"project": "orbit-office", "orchestrator": "claude"}),
+    );
+    assert_eq!(ids(&response, "handoff"), ["src-office#L1"]);
+}
+
+#[test]
+fn auto_without_a_project_falls_back_to_the_open_assignment_or_to_manual_output() {
+    let write = |library: &FakeLibrary| {
+        source_in(
+            library,
+            "src-orbit",
+            "2026-10-30T00:00:00Z",
+            "orbit",
+            "claude",
+            "[2026-10-30T01:00:00Z] handoff: ORB-77: next, land the drain fix.\n",
+        );
+        source_in(
+            library,
+            "src-office",
+            "2026-10-30T02:00:00Z",
+            "orbit-office",
+            "claude",
+            "[2026-10-30T03:00:00Z] handoff: Office next.\n",
+        );
+    };
+    // The caller's open assignment names the thread's project.
+    let library = FakeLibrary::initialized();
+    write(&library);
+    let (ports, orbit) = at(
+        library,
+        "2026-10-30T12:00:00Z",
+        vec![
+            Ok(json!({"id":"ORB-77","status":"in-progress"})),
+            empty_tasks(),
+        ],
+    );
+    let input = json!({"orchestrator": "claude", "session_start": true, "task": "ORB-77"});
+    let response = call(&ports, input.clone());
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(ids(&response, "handoff"), ["src-orbit#L1"]);
+    assert!(section(&response, "projects").is_none());
+    let calls = orbit.calls();
+    assert_eq!(calls[0].input["id"], "ORB-77");
+    // A finished, unknown or unreadable assignment falls back to manual.
+    for reply in [
+        Ok(json!({"id":"ORB-77","status":"done"})),
+        Err(office_core::Error::OrbitUnavailable),
+    ] {
+        let library = FakeLibrary::initialized();
+        write(&library);
+        let (ports, _) = at(library, "2026-10-30T12:00:00Z", vec![reply, empty_tasks()]);
+        let response = call(&ports, input.clone());
+        assert_eq!(response["ok"], true, "{response}");
+        assert!(section(&response, "handoff").is_none(), "{response}");
+        assert_eq!(ids(&response, "projects"), ["orbit-office", "orbit"]);
+    }
+    // No assignment at all: manual output, and no Orbit task lookup.
+    let library = FakeLibrary::initialized();
+    write(&library);
+    let (ports, orbit) = at(library, "2026-10-30T12:00:00Z", vec![empty_tasks()]);
+    let response = call(
+        &ports,
+        json!({"orchestrator": "claude", "session_start": true}),
+    );
+    assert!(section(&response, "handoff").is_none(), "{response}");
+    assert_eq!(ids(&response, "projects"), ["orbit-office", "orbit"]);
+    assert_eq!(orbit.calls().len(), 1);
+    // `task` is only the SessionStart fallback.
+    let (ports, _) = at(FakeLibrary::initialized(), "2026-10-30T12:00:00Z", vec![]);
+    let response = call(&ports, json!({"task": "ORB-77"}));
+    assert_eq!(response["error"]["code"], "invalid_argument", "{response}");
+}
+
+#[test]
+fn handoffs_view_returns_the_merged_handoff_or_the_projects_without_task_reads() {
+    let library = FakeLibrary::initialized();
+    source_in(
+        &library,
+        "src-office",
+        "2026-10-30T00:00:00Z",
+        "orbit-office",
+        "claude",
+        "[2026-10-30T01:00:00Z] handoff: Office next.\n[2026-10-30T01:01:00Z] handoff: (global) Orbit 0.9 is out.\n",
+    );
+    source_in(
+        &library,
+        "src-orbit",
+        "2026-10-30T02:00:00Z",
+        "orbit",
+        "claude",
+        "[2026-10-30T03:00:00Z] handoff: Orbit next.\n",
+    );
+    let (ports, orbit) = at(library, "2026-10-30T12:00:00Z", vec![]);
+    let response = call(
+        &ports,
+        json!({"view": "handoffs", "project": "orbit", "orchestrator": "claude"}),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(kinds(&response), ["handoff", "global"]);
+    assert_eq!(ids(&response, "handoff"), ["src-orbit#L1"]);
+    assert_eq!(ids(&response, "global"), ["src-office#L2"]);
+    let response = call(&ports, json!({"view": "handoffs"}));
+    assert_eq!(kinds(&response), ["global", "projects"]);
+    assert_eq!(ids(&response, "projects"), ["orbit", "orbit-office"]);
+    assert!(orbit.calls().is_empty(), "the handoff view reads no tasks");
+    for input in [
+        json!({"view": "handoffs", "session_start": true}),
+        json!({"view": "everything"}),
+    ] {
+        let response = call(&ports, input);
+        assert_eq!(response["error"]["code"], "invalid_argument", "{response}");
+    }
+}

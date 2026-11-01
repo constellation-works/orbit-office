@@ -152,3 +152,33 @@ fn careful_model_settings_default_roundtrip_update_and_closed_validation() {
         crate::domain::source::video::settings_digest(&changed).unwrap()
     );
 }
+
+#[test]
+fn brief_handoff_mode_defaults_to_auto_and_accepts_only_auto_or_manual() {
+    use crate::domain::settings::HandoffMode;
+    use serde_json::json;
+    let defaults = Settings::from_yaml("brief:\n  task_workspaces: []\n").unwrap();
+    assert_eq!(defaults.brief.handoff, HandoffMode::Auto);
+    let manual = Settings::from_yaml("brief:\n  handoff: manual\n").unwrap();
+    assert_eq!(manual.brief.handoff, HandoffMode::Manual);
+    assert_eq!(
+        Settings::from_yaml(&manual.to_yaml().unwrap()).unwrap(),
+        manual
+    );
+    let set = Settings::default()
+        .with_setting("brief.handoff", json!("manual"))
+        .unwrap();
+    assert_eq!(set.brief.handoff, HandoffMode::Manual);
+    let back = set.with_setting("brief.handoff", json!("auto")).unwrap();
+    assert_eq!(back, Settings::default());
+    for value in [json!("hook"), json!(true), json!(null)] {
+        assert_eq!(
+            Settings::default()
+                .with_setting("brief.handoff", value)
+                .unwrap_err()
+                .code(),
+            "invalid_library_setting"
+        );
+    }
+    assert!(Settings::from_yaml("brief:\n  handoff: command\n").is_err());
+}

@@ -62,6 +62,18 @@
               },
               "correction": {
                 "$ref": "#/$defs/correction"
+              },
+              "scope": {
+                "enum": [
+                  "global",
+                  "project"
+                ],
+                "description": "handoff only. global: the handoff appears in every project's brief until its until passes or a later resolved entry cites it; project (the default) keeps the thread rule. Never inferred from the text: handoff text starting with (global) is refused without it."
+              },
+              "until": {
+                "type": "string",
+                "format": "date-time",
+                "description": "With scope: global only. RFC 3339 expiry after the capture time; stored as (global until <until>)."
               }
             },
             "anyOf": [
@@ -80,7 +92,7 @@
           }
         ]
       },
-      "description": "Entries as {kind,text} or \"<kind>: <text>\"; kinds: decision, direction, fact, action, open, resolved, handoff, correction. Aliases type/message/content are accepted. For a correction, append {kind:\"correction\",correction:{anchor:\"#L1\",choice:\"not_decision\"|\"kind\"|\"wording\"|\"remove\",kind?:<new kind>,text?:<new wording>}} to an existing source. A JSON correction string in text is also accepted. User additions use {kind:\"direction\"|\"decision\"|\"fact\",text:<verbatim>,by:\"user\"}; by records attribution, not authenticated identity. Corrections require append_to; missing targets and malformed choices refuse the complete batch."
+      "description": "Entries as {kind,text} or \"<kind>: <text>\"; kinds: decision, direction, fact, action, open, resolved, handoff, correction. Aliases type/message/content are accepted. For a correction, append {kind:\"correction\",correction:{anchor:\"#L1\",choice:\"not_decision\"|\"kind\"|\"wording\"|\"remove\",kind?:<new kind>,text?:<new wording>}} to an existing source. A JSON correction string in text is also accepted. User additions use {kind:\"direction\"|\"decision\"|\"fact\",text:<verbatim>,by:\"user\"}; by records attribution, not authenticated identity. Corrections require append_to; missing targets and malformed choices refuse the complete batch. A handoff may declare {kind:\"handoff\",text:<text>,scope:\"global\",until?:<RFC 3339>}; it is stored as handoff: (global) <text> or (global until <until>) <text>."
     },
     "entry_kind": {
       "type": "string",

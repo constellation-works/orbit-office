@@ -10,7 +10,9 @@ The brief uses existing state and may lag while extraction is queued.
 
 1. Call `office.session-brief` with `{}` (the SessionStart hook already
    passes your `project` and `orchestrator`; a direct call may pass them
-   too). It is read-only, makes no model call and writes nothing.
+   too). It is read-only, makes no model call and writes nothing. The
+   `orchestrator` is the provider name sources record (`claude`, `codex`),
+   not your crew name.
 2. Call it **before** you open this session's conversation source. The brief
    treats the conversation with the newest entry as "the previous session".
    Opening a new source first would hide the real previous session.
@@ -32,7 +34,9 @@ The response is `sections`, in this order. Each section has `kind`, `items`,
 
 | `kind` | Present | What it holds | What to do |
 |---|---|---|---|
-| `handoff` | only if your thread wrote one | Your thread's newest `handoff` entry, verbatim, with time (your project, preferring your orchestrator; a thread is the first task id its handoff cites, else its conversation's project plus orchestrator) | Resume from it (below) |
+| `handoff` | only if your thread wrote one | Your thread's newest project-scoped `handoff` entry, verbatim, with time (your project, preferring your orchestrator; a thread is the first task id its handoff cites, else its conversation's project plus orchestrator) | Resume from it (below) |
+| `global` | only while a global handoff is open | Open `scope: global` handoffs from any project (text starts `(global)` or `(global until <time>)`), newest first, at most five; one your handoff cites is always listed, once | Apply them alongside your own handoff |
+| `projects` | only in manual output (no project chosen) | One item per project with a handoff thread, newest first: `id`/`text` name the project, `time` is its newest handoff's | Ask which project, or run `/handoff <project>` |
 | `other_sessions` | only with a project, when another recent thread wrote one | One cited handoff item per other thread, newest first, within seven days and at most five | Note in one line; do not resume from another thread's handoff |
 | `since` | always (empty with no previous session) | The newest conversation source in your project: id, path, title, last entry time | Note the time; "since" means since then |
 | `waiting_on_you` | always | Proposals awaiting a decision, agent to-dos in `review`, open `owner:you` to-dos; oldest first | Open with these |
@@ -42,6 +46,18 @@ The response is `sections`, in this order. Each section has `kind`, `items`,
 | `last_session` | always | The previous source, then its last five `decision` and `direction` entries | Respect those decisions and directions |
 | `latest_digest` | only if one exists | The newest `digest-daily` report | Read it with `office.artifact-show` when the user asks what happened |
 | `onboarding` | only while one-per-Library pages are missing | One item per missing template | See [onboarding.md](onboarding.md) |
+
+**Choosing the project (`brief.handoff`).** The Library setting
+`brief.handoff` is `auto` (default) or `manual`; the user edits it in
+`.office/config.yaml`, you never set it. It governs only the SessionStart
+brief. In `auto` the hook's working directory names the project; started in
+a parent of several repositories (the constellation root), the project is
+the one your open assignment's thread was recorded in, and with no such
+assignment the brief is the manual output. In `manual` the hook's brief has
+no `handoff` and no `other_sessions`, only `global` and `projects`. In either
+mode, `/handoff <project>` (Claude Code) or `office.session-brief` with
+`{"view":"handoffs","project":"<project>"}` loads a project's handoff merged
+with the globals, also mid-session; `/handoff` alone lists the projects.
 
 Links:
 
@@ -148,9 +164,24 @@ A handoff says:
   prefers next.
 
 Cite the relevant entries (`#L<n>`) and task ids. The newest handoff
-supersedes the earlier ones; never edit them. **Do not write an
-end-of-session summary.** If the terminal closes now, the last handoff
+supersedes the earlier ones in its thread; never edit them. **Do not write
+an end-of-session summary.** If the terminal closes now, the last handoff
 must already be enough.
+
+**Global handoffs.** For something every project's orchestrator must know
+(an Orbit binary to upgrade, a common Orbit defect and its workaround),
+declare the scope explicitly; it is never inferred from the text:
+
+```json
+{"append_to":"<source-id>","entries":[{"kind":"handoff","text":"Orbit 0.9 drains need --resume after a host restart.","scope":"global","until":"2026-11-08T00:00:00Z"}]}
+```
+
+`until` (RFC 3339, after now) is optional. A global stays in every
+project's brief until `until` passes or a later `resolved` entry cites it:
+`{"kind":"resolved","text":"<source-id>#L<n> — fixed in Orbit 0.9.1."}`
+(from any conversation; `#L<n>` alone works only in its own source). A
+global never replaces your project handoff, and your project handoff never
+replaces a global. Text starting with `(global)` without `scope` is refused.
 
 ## The daily digest
 
