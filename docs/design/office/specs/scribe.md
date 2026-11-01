@@ -53,7 +53,8 @@ on the session it is run in, identified by `${CLAUDE_SESSION_ID}`.
 |---|---|
 | `/scribe` | Catch up: parse the transcript, scribe the messages after the cursor, report what was added (counts per tag and the new lines). |
 | `/scribe note <text>` | Record `<text>` verbatim as Daniel's own entry. The scribe agent picks the tag unless the text starts with one (`#todo …`). |
-| `/scribe ask <question>` | Answer from the SCR files with citations. |
+| `/scribe pending`, `/scribe pref <matter>`, `/scribe landed [today\|<date>]`, `/scribe why <matter\|topic>` | Model-free queries over the tags; instant, cited lines ([Answering](#answering)). |
+| `/scribe ask <question>` | Answer a free-form question with citations; runs the queries first and calls the model only on the shortlist. |
 | `/scribe title <text>` | Set the session title, which renames the SCR file once (below). |
 
 Orchestrators reach the same agent as the `scribe` subagent: "ask the
@@ -274,9 +275,39 @@ name.
 
 ## Answering
 
-The `scribe` agent answers from the SCR files only. Its tools are Grep and
-Read over the Library's `sources/conversation/`; it has no web access, no
-writes and no Orbit calls.
+The model is spent at write time: the scribe agent reads each message once
+and attaches the structure grep cannot infer (tag, `matter`, topics, `why`,
+refs). Reading then needs a model only for questions that structure cannot
+answer. Answering has two levels.
+
+1. **Query, model-free.** The Office tool `office.scribe-query` filters SCR
+   lines by tag, `matter`, topic, `by`, date range, refs and session, and
+   resolves the links between lines:
+   - a `resolved` closes a `pending`;
+   - `supersedes` retires a preference;
+   - a `#why` note fills a `#no-why`.
+
+   It returns the matching lines with file:line. These questions are canned
+   queries:
+
+   | Question | Query |
+   |---|---|
+   | What's pending? | `#pending` with no `#resolved` naming it, oldest first |
+   | Preference on X? | the current `#preference` with `matter: X`, with stale flag |
+   | What landed today? | `#landed` in today's local date range |
+   | Why is X like this? | `#decision`/`#agent-decision` on that matter or topic, with `why` |
+
+   Orchestrators use the query to check for a preference before asking
+   Daniel, so that check costs nothing. Any structured part of an answer can
+   be reproduced with grep.
+2. **Ask, model on the shortlist.** For free-form questions the `scribe`
+   agent first runs queries and Grep to narrow the candidates. It then reads
+   only that shortlist and composes the cited answer. It never reads the
+   whole Library.
+
+The `scribe` agent answers from the SCR files only. Its tools are the query
+tool, Grep and Read over the Library's `sources/conversation/`; it has no
+web access, no writes and no Orbit calls.
 
 - Every answer cites `SCR file:line` and the message id. It quotes the entry
   and names the counterpart and the session (`claude --resume <session-id>`).
@@ -318,9 +349,11 @@ writes and no Orbit calls.
    - `office.scribe-append` validates and writes entries.
    - New tool slots go through an integrator scaffold first (ARCHITECTURE.md
      § Integrator-owned files).
-2. **The `scribe` agent and commands** in the Claude Code plugin: `/scribe`,
-   `note`, `ask`, `title`, and the subagent definition with its model and
-   tools. Turn the automatic hooks off by default. The constellation
+2. **The query tool, the `scribe` agent and commands.**
+   - `office.scribe-query`, model-free, through an integrator scaffold.
+   - In the Claude Code plugin: `/scribe`, `note`, `pending`, `pref`,
+     `landed`, `why`, `ask` and `title`, and the subagent definition with
+     its model and tools. Turn the automatic hooks off by default. The constellation
    `orchestration-session` skill then requires orchestrators to scribe
    decisions and open issues as they happen.
 3. **Rules page sections:** a proposal to `dom-scribe-rules` with the default
