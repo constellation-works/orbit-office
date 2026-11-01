@@ -1,0 +1,11 @@
+{
+  "office": {
+    "command": "python3",
+    "args": ["-I", "${CLAUDE_PLUGIN_ROOT}/scripts/bridge.py"],
+    "env": {
+      "CLAUDE_PLUGIN_OPTION_WORKSPACE": "${user_config.workspace}",
+      "CLAUDE_PLUGIN_OPTION_DEFAULT_ON": "${user_config.default_on}",
+      "CLAUDE_PLUGIN_OPTION_EXCLUDED_PROJECTS": "${user_config.excluded_projects}"
+    }
+  }
+}

@@ -8,8 +8,10 @@ last_validated: 2026-11-01
 
 Status: the Orbit backend is built (ORB-20688): session context and title
 ownership, deterministic stored refs, read-only `office.recall`, and append-only
-corrections with repeated-correction signals (ORB-20695). The
-provider plugin, commands/subagent, Scribe UI and backfill remain specified.
+corrections with repeated-correction signals (ORB-20695). The Claude Code
+provider plugin, commands/subagent and backfill are built (ORB-20689); see the
+[installation guide](../../../../plugin/claude-code/README.md). The Scribe UI
+remains specified.
 PR status remains unresolved until a live PR source is added (below).
 
 One scribe follows the user across every agent conversation they hold, in
@@ -40,8 +42,8 @@ each project's settings.
   `commands/`, `agents/`), installable from a marketplace. It carries:
   - the SessionStart hook (the brief), the end-of-turn hook (live passes)
     and the SessionEnd hook (final pass and staging), as specified in
-    [sessions.md](./sessions.md#live-scribe-planned);
-  - commands `/scribe on|off|now|status|backfill` and `/recall <question>`;
+    [sessions.md](./sessions.md#live-scribe);
+  - commands `/scribe on|off|now|status|title|backfill` and `/recall <question>`;
   - the `recall` subagent.
 - **Codex** gets an equivalent package once its transcript adapter exists;
   until then Codex sessions are not captured and recall says so.
@@ -51,8 +53,12 @@ each project's settings.
   captured whatever the switch says.
 - The plugin talks to Office only through Orbit's tool surface
   (`orbit tool run office.<tool>`); it holds no Library path and no
-  credentials, and hooks fail open (log and exit 0) so a broken scribe
-  never slows a conversation.
+  credentials, and hooks fail open (fixed diagnostic and exit 0) with a
+  one-second Orbit budget so a broken scribe cannot block a conversation.
+  The workspace selector is an absolute local checkout path, which Orbit
+  accepts as a selector; remote selectors are refused. The marketplace and
+  per-user configuration ship inside `plugin/claude-code/`. Claude namespaces
+  the commands as `/office-scribe:scribe` and `/office-scribe:recall`.
 
 The Orbit plugin (`plugin/.orbit-plugin/`) stays the only writer of the
 Library. The provider plugin is a client of it.

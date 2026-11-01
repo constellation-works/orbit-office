@@ -1,4 +1,4 @@
-.PHONY: help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-audit app-check plugin-export plugin-check plugin-install install clean
+.PHONY: claude-code-check claude-code-test help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-audit app-check plugin-export plugin-check plugin-install install clean
 
 CARGO ?= cargo
 # Every build uses the committed Cargo.lock as is; a stale lock fails instead
@@ -88,7 +88,7 @@ deny-policy:
 # and fails a selection that matches no test (STD-04 R10); plain cargo test
 # does neither, so the fallback says so. nextest does not run doctests, so
 # they are a second leg; the core crate carries at least one (STD-04 R14).
-test:
+test: claude-code-test
 	./scripts/plugin/test-export.sh
 	@if $(CARGO) nextest --version >/dev/null 2>&1; then \
 		$(CARGO) nextest run --workspace --all-targets $(LOCKED) --no-tests=fail; \
@@ -126,7 +126,7 @@ standards-check:
 # Pre-handoff gate for agents: no compile, and every parity check CI runs
 # that needs no build (STD-04 R12). Goldens need the binary, so they are
 # their own target.
-ci-fast: fmt-check structure standards-check
+ci-fast: fmt-check structure standards-check claude-code-check
 
 ci-lint: clippy deny
 
@@ -159,6 +159,13 @@ app-test: app-deps
 # app/package-lock.json. Mirrors the audit step in .github/workflows/ci.yml.
 app-audit: app-deps
 	npm --prefix app audit --audit-level=moderate
+
+# Claude Code provider client: syntax in the static gate, behavior in make test.
+claude-code-check:
+	$(MAKE) -C plugin/claude-code check
+
+claude-code-test:
+	$(MAKE) -C plugin/claude-code test
 
 # ---------------------------------------------------------------------------
 # Install

@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: session continuity — the deterministic session brief, the append-only decision log, and the daily digest routine"
-last_validated: 2026-10-27
+last_validated: 2026-11-01
 ---
 
 # Spec: Session continuity
@@ -14,7 +14,7 @@ is the cheapest mechanism that can do its job
 
 | Piece | Written by | When | Model |
 |---|---|---|---|
-| **Decision log** | transcript extractor, through `office.capture` | SessionEnd; while the [live scribe](#live-scribe-planned) is on, every few turns; sweep recovers misses | configured low-complexity pool |
+| **Decision log** | transcript extractor, through `office.capture` | SessionEnd; while the [live scribe](#live-scribe) is on, every few turns; sweep recovers misses | configured low-complexity pool |
 | **Handoff** | the agent, as `handoff` entries in that log; optionally the live scribe (planned) | refreshed whenever the plan changes | none; the scribe's handoff uses the low-complexity pool |
 | **Session brief** | `office.session-brief`, computed on demand | at session start | none |
 | **Daily digest** | `office.digest`, from the `office-daily-digest` routine | once a day | one Muse Spark call |
@@ -166,9 +166,11 @@ continue using it until the host hook is installed, or reconcile it explicitly.
 
 ### Host, trigger and cheap crew
 
-**Run on the transcript-owning host.** Constellation needs a `SessionEnd` hook
-beside `operations/scripts/session-brief.py` (the SessionStart hook), e.g.
-`operations/scripts/session-extract.py`, with provider hook registration.
+**Run on the transcript-owning host.** The Claude Code provider plugin at
+`plugin/claude-code/` supplies SessionStart, Stop and SessionEnd hooks
+([installation](../../../../plugin/claude-code/README.md), ORB-20689).
+After installing it, the operator can retire constellation
+`operations/scripts/session-brief.py` and its legacy SessionEnd stager.
 It stages the completed `~/.claude/projects/**/<session>.jsonl` under the
 workspace's `.orbit/tmp/session-transcripts/`, together with its session id,
 using owner-only directories/files and atomic publication. Each completed input
@@ -179,7 +181,9 @@ The path passed to
 office must physically resolve inside the granted workspace or Library;
 symlink escapes and special files are refused. The plugin does not widen its
 grants to read the user's provider home or transfer raw transcripts to the
-owner. Local staging is an operator-authorized hook, outside this repository.
+owner. Local staging is the operator-authorized provider hook shipped in this
+repository; it never reads a Library path or transfers transcripts. Its
+`provider-scribe-` immutable filenames avoid legacy stager publication races.
 
 The hook queues one extraction task/job for that session on that host, using
 the instruction in `definitions/auto_tasks/office-conversation-extract.yaml`
@@ -197,8 +201,9 @@ capture succeeds; host retention owns their later removal.
 The auto-task is shipped **disabled** with `dedupe: skip_if_open` and
 `complexity: low`. Registration under `spec.definitions.auto_tasks` in
 `plugin.yaml` is a separate integrator task under ARCHITECTURE.md. This feature
-ships the definition but does not register or enable it. The constellation
-hook and host sweep are also deployment prerequisites, not changes made here.
+ships the definition but does not register or enable it. Installing the
+provider plugin on the transcript-owning host and enabling any desired
+recovery sweep remain operator deployment steps.
 
 ### Secrets, privacy and retries
 
@@ -236,8 +241,9 @@ privacy; a source changed to private stays private on later extraction.
 
 Status: partly built. The incremental passes and the user `Note:`/`Scribe:`
 commands below are built ([ORB-20685]); the rules page, answers to
-questions and scribe handoff are built ([ORB-20686]); the switch, trigger
-and debounce, and feedback sections remain specified, not built. Everything above still applies; this section
+questions and scribe handoff are built ([ORB-20686]); the Claude Code
+switch, trigger and debounce are built ([ORB-20689]). The feedback section
+remains specified, not built. Everything above still applies; this section
 changes when extraction runs, how much of the transcript each pass reads,
 and three narrow rules about what it may write.
 
@@ -277,7 +283,10 @@ inference.
   pass is queued only when the previous one was queued at least
   `min_interval` ago (default 5 minutes) or at least `max_turns` new user
   turns (default 8) have arrived since it. `/scribe now` queues a pass
-  immediately, ignoring the debounce. SessionEnd always queues a final pass.
+  immediately, ignoring the debounce, while reusing an outstanding live task.
+  SessionEnd always requests a digest-deduplicated final task; it depends on
+  an outstanding live task so no extraction runs concurrently for the session.
+  This closes the race with a live worker finishing its last descriptor scan.
 - **Dedupe** for live passes uses session id plus snapshot length, so a
   burst of hooks on an unchanged transcript queues nothing.
 
@@ -621,5 +630,6 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-20242] — built conversation transcript extraction through the `office.capture` session mode and the SessionEnd sweep.
 - [ORB-20685] — built the live scribe's incremental passes and `Note:`/`Scribe:` commands.
 - [ORB-20686] — built the live scribe's rules page, answers to questions and scribe handoff.
+- [ORB-20689] — built the per-user Claude Code hooks, commands, debounce and backfill.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
