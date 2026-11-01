@@ -239,6 +239,17 @@ class PluginBehavior(unittest.TestCase):
             "Projects with a handoff thread (newest first):", "- orbit (last handoff 2026-10-30T10:03:00Z)",
             "Run /handoff <project> to load one."])
 
+        ordered = "Objective: Finish the assignment.\nNext: Check the report.\nAuthorization: Daniel authorized checks.\nObservations:\n- Worker idle (observed at 2026-11-01T10:00:00Z); recheck: before dispatch.\nEvidence:\n- orbit://task/ORB-12345"
+        structured = item("src-s#L1", ordered, "2026-11-01T10:00:00Z")
+        legacy = item("src-old#L1", "Old plan.", "2026-10-30T10:00:00Z")
+        legacy["legacy"] = True
+        (self.home / "brief.json").write_text(json.dumps({"sections": [
+            {"kind": "handoff", "items": [structured], "total": 1, "truncated": False},
+            {"kind": "global", "items": [legacy], "total": 1, "truncated": False}]}))
+        reply = json.loads(self.mcp_handoff({"project": "office"})["content"][0]["text"])
+        self.assertIn(ordered, reply["display"])
+        self.assertIn("(legacy) Old plan.", reply["display"])
+
         refused = self.mcp_handoff({"project": "two words"})
         self.assertTrue(refused["isError"])
         self.assertEqual(refused["content"][0]["text"], "project_must_be_one_name")

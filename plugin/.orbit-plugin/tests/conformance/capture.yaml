@@ -42,3 +42,21 @@ tests:
     expect:
       error:
         code: invalid_argument
+  - name: capture_structured_handoff_requires_objective
+    tool: capture
+    input: {"kind":"conversation","entries":[{"kind":"handoff","structured_handoff":{"next":"Read the report."}}]}
+    expect:
+      error:
+        code: handoff_required_field
+  - name: capture_structured_handoff_requires_next
+    tool: capture
+    input: {"kind":"conversation","entries":[{"kind":"handoff","structured_handoff":{"objective":"Finish the assignment."}}]}
+    expect:
+      error:
+        code: handoff_required_field
+  - name: capture_structured_handoff_requires_observed_at
+    tool: capture
+    input: {"kind":"conversation","entries":[{"kind":"handoff","structured_handoff":{"objective":"Finish the assignment.","next":"Read the report.","observations":[{"text":"Worker active.","recheck":"Before dispatch."}]}}]}
+    expect:
+      error:
+        code: handoff_observed_at_required

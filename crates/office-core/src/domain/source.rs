@@ -539,6 +539,9 @@ pub fn format_conversation_entry(captured_at: &str, kind: &str, text: &str) -> R
     if kind == "correction" {
         conversation::corrections::Correction::parse(text)?;
     }
+    if kind == "handoff" {
+        crate::domain::session::handoff::decode(text.trim())?;
+    }
     let text = text.trim();
     if text.is_empty() {
         return Err(Error::InvalidArgument(

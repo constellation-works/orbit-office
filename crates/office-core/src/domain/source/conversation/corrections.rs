@@ -146,6 +146,7 @@ pub fn capture_entry(value: &Value) -> Result<crate::ports::ConversationEntry> {
         text: Option<String>,
         by: Option<String>,
         correction: Option<Value>,
+        structured_handoff: Option<Value>,
         scope: Option<String>,
         until: Option<String>,
     }
@@ -154,7 +155,16 @@ pub fn capture_entry(value: &Value) -> Result<crate::ports::ConversationEntry> {
             "capture entry needs kind and text (or correction), with no unknown fields".into(),
         )
     })?;
-    let text = if let Some(correction) = input.correction {
+    let text = if let Some(value) = input.structured_handoff {
+        if input.kind != "handoff"
+            || input.text.is_some()
+            || input.correction.is_some()
+            || input.by.is_some()
+        {
+            return Err(Error::InvalidArgument("structured_handoff requires kind handoff and cannot include text, correction or by".into()));
+        }
+        crate::domain::session::handoff::Structured::from_value(&value)?.encode()?
+    } else if let Some(correction) = input.correction {
         if input.kind != "correction" || input.text.is_some() || input.by.is_some() {
             return Err(invalid(
                 "correction payload requires kind correction and cannot include text or by",
@@ -241,6 +251,11 @@ pub fn effective_entries(body: &str) -> Result<Vec<Entry>> {
         target.corrected = true;
     }
     result.retain(|e| !removed.contains(&e.line));
+    for entry in &result {
+        if entry.kind == "handoff" {
+            crate::domain::session::handoff::decode(&entry.text)?;
+        }
+    }
     Ok(result)
 }
 

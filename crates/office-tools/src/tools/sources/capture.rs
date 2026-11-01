@@ -23,6 +23,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         "selections",
         "from_line",
         "handoff",
+        "structured_handoff",
         "project",
         "branch",
         "resume",
@@ -111,6 +112,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "selections",
         "from_line",
         "handoff",
+        "structured_handoff",
         "project",
         "branch",
         "resume",
@@ -242,6 +244,7 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
             "selections",
             "from_line",
             "handoff",
+            "structured_handoff",
             "project",
             "branch",
             "resume",
@@ -292,6 +295,7 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
             "selections",
             "transcript_sha256",
             "handoff",
+            "structured_handoff",
             "project",
             "branch",
             "resume",
@@ -353,7 +357,18 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
             })
         })
         .transpose()?;
-    let handoff = string_field(call, "handoff")?;
+    let legacy_handoff = string_field(call, "handoff")?;
+    let structured_handoff = call.input.get("structured_handoff");
+    if legacy_handoff.is_some() && structured_handoff.is_some() {
+        return Err(Error::InvalidArgument(
+            "use either handoff or structured_handoff, not both".into(),
+        ));
+    }
+    // Validate in the shared scribe path: a malformed offer is dropped with
+    // its reason while the pass's other evidence still lands.
+    let handoff = structured_handoff
+        .map(|value| format!("(structured) {value}"))
+        .or(legacy_handoff);
     if handoff.is_some() && selections.is_none() {
         return Err(Error::InvalidArgument(
             "handoff requires selections; only a crew pass writes a scribe handoff".into(),
