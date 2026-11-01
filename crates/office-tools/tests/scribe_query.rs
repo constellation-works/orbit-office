@@ -73,8 +73,18 @@ impl Models for RefusingModels {
 }
 
 fn scr(id: &str, session: &str, counterpart: &str, entries: &[String]) -> String {
+    scr_with(id, session, counterpart, "", entries)
+}
+
+fn scr_with(
+    id: &str,
+    session: &str,
+    counterpart: &str,
+    extra_front: &str,
+    entries: &[String],
+) -> String {
     let mut text = format!(
-        "---\nid: \"{id}\"\ntitle: null\nsession_id: \"{session}\"\nprovider: \"claude-code\"\nmodel: null\ncounterpart: \"{counterpart}\"\ncounterpart_name: null\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/work/constellation\"\nbranch: \"agent-main\"\ntranscript: \"t.jsonl\"\nparsed: \"library/.office/state/scribe/{session}.jsonl\"\nstarted_at: \"2026-10-29T09:00:00-07:00\"\nlast_scribed_at: null\nscribed_through: null\ntopics: [\"scribe\"]\naliases: []\n---\n"
+        "---\nid: \"{id}\"\ntitle: null\nsession_id: \"{session}\"\nprovider: \"claude-code\"\nmodel: null\ncounterpart: \"{counterpart}\"\ncounterpart_name: null\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/work/constellation\"\nbranch: \"agent-main\"\ntranscript: \"t.jsonl\"\nparsed: \"library/.office/state/scribe/{session}.jsonl\"\nstarted_at: \"2026-10-29T09:00:00-07:00\"\nlast_scribed_at: null\nscribed_through: null\ntopics: [\"scribe\"]\naliases: []\n{extra_front}---\n"
     );
     for entry in entries {
         text.push_str(entry);
@@ -116,9 +126,13 @@ fn fixture_library() -> FakeLibrary {
 }
 
 fn ports() -> (Ports<'static>, RefusingModels) {
+    ports_with(fixture_library())
+}
+
+fn ports_with(library: FakeLibrary) -> (Ports<'static>, RefusingModels) {
     let models = RefusingModels::default();
     let mut ports = office_testkit::fakes::PortsBuilder::default().build();
-    ports.library = Box::new(fixture_library());
+    ports.library = Box::new(library);
     ports.clock = Box::new(ZonedClock);
     ports.models = Box::new(models.clone());
     (ports, models)
@@ -477,6 +491,162 @@ fn project_selects_only_that_projects_lines_and_composes_with_other_filters() {
     assert_eq!(none["results"], json!([]), "{none}");
     assert_eq!(none["count"], 0, "{none}");
     assert_eq!(models.calls.get(), 0, "scribe-query makes no model call");
+}
+
+const SECRET_QUOTE: &str = "ship the violet parser first";
+const SECRET_REASON: &str = "violet private reason";
+
+fn private_library(conversation_private: bool, file_private: bool, routed: bool) -> FakeLibrary {
+    let mut library = FakeLibrary::initialized();
+    if conversation_private {
+        library.settings.sensitivity.insert(
+            "conversation".into(),
+            office_core::ports::Sensitivity::Private,
+        );
+    }
+    if routed {
+        library.settings.open_weights = Some(office_core::domain::settings::OpenWeights {
+            endpoint: "http://127.0.0.1:11434/v1".into(),
+            model: "fake-private".into(),
+            kind: office_core::domain::endpoint::EndpointKind::Company,
+            label: "Loopback".into(),
+            capabilities: Some(vec![office_core::domain::endpoint::Capability::Text]),
+            verified_at: Some("2026-10-30T00:00:00Z".into()),
+        });
+    }
+    let extra = if file_private {
+        "sensitivity: \"private\"\n"
+    } else {
+        ""
+    };
+    let text = scr_with(
+        ID_A,
+        "qa-session",
+        "orchestrator",
+        extra,
+        &[format!(
+            "- m-0001 2026-10-31T10:00-07:00 #decision #scribe \"{SECRET_QUOTE}\" why: m-0000 \"{SECRET_REASON}\""
+        )],
+    );
+    library.insert_scribe_file(PATH_A, &text);
+    library
+}
+
+fn assert_withheld(out: &Value) {
+    assert_eq!(out["count"], 1, "{out}");
+    let row = &out["results"][0];
+    assert_eq!(row["content_withheld"], true, "{out}");
+    assert_eq!(row["text"], "", "{out}");
+    assert_eq!(row["line_text"], "", "{out}");
+    assert_eq!(row["quote"], "", "{out}");
+    assert!(
+        row["why"].is_null() || row["why"] == "",
+        "why withheld: {out}"
+    );
+    assert!(
+        row["reason"].is_null() || row["reason"] == "",
+        "reason withheld: {out}"
+    );
+    // Safe references and anchors remain discoverable.
+    assert_eq!(row["scr_id"], ID_A, "{out}");
+    assert_eq!(row["id"], ID_A, "{out}");
+    assert_eq!(row["path"], PATH_A, "{out}");
+    assert_eq!(row["msg"], "m-0001", "{out}");
+    assert_eq!(row["message_id"], "m-0001", "{out}");
+    assert_eq!(row["session_id"], "qa-session", "{out}");
+    assert!(
+        row["citation"]
+            .as_str()
+            .is_some_and(|c| c.starts_with(&format!("{ID_A}#L"))),
+        "{out}"
+    );
+    assert!(
+        row["file_line"]
+            .as_str()
+            .is_some_and(|c| c.starts_with(&format!("{PATH_A}:"))),
+        "{out}"
+    );
+    let serialized = out.to_string();
+    assert!(!serialized.contains(SECRET_QUOTE), "{out}");
+    assert!(!serialized.contains(SECRET_REASON), "{out}");
+    assert!(!serialized.contains("violet"), "{out}");
+}
+
+#[test]
+fn private_conversation_setting_withholds_text_without_and_with_route() {
+    for routed in [false, true] {
+        let (ports, models) = ports_with(private_library(true, false, routed));
+        let out = query(&ports, json!({"session_id":"qa-session"}));
+        assert_withheld(&out);
+        assert_eq!(models.calls.get(), 0);
+    }
+}
+
+#[test]
+fn per_file_private_front_matter_withholds_text_without_and_with_route() {
+    for routed in [false, true] {
+        let (ports, models) = ports_with(private_library(false, true, routed));
+        let out = query(&ports, json!({"session_id":"qa-session"}));
+        assert_withheld(&out);
+        assert_eq!(models.calls.get(), 0);
+    }
+}
+
+#[test]
+fn public_scr_keeps_full_text_and_reports_content_not_withheld() {
+    let (ports, _) = ports_with(private_library(false, false, false));
+    let out = query(&ports, json!({"session_id":"qa-session"}));
+    let row = &out["results"][0];
+    assert_eq!(row["content_withheld"], false, "{out}");
+    assert_eq!(row["quote"], SECRET_QUOTE, "{out}");
+    assert_eq!(row["why"], SECRET_REASON, "{out}");
+    assert_eq!(row["reason"], SECRET_REASON, "{out}");
+    assert!(
+        row["text"]
+            .as_str()
+            .is_some_and(|t| t.contains(SECRET_QUOTE)),
+        "{out}"
+    );
+}
+
+#[test]
+fn public_decision_reason_from_private_why_note_is_withheld() {
+    let library = FakeLibrary::initialized();
+    let public = scr(
+        ID_A,
+        "qa-session",
+        "orchestrator",
+        &[
+            "- m-0001 2026-10-31T10:00-07:00 #decision #no-why #scribe \"public decision text\""
+                .into(),
+        ],
+    );
+    library.insert_scribe_file(PATH_A, &public);
+    let private = scr_with(
+        ID_B,
+        "session-b",
+        "self",
+        "sensitivity: \"private\"\n",
+        &[format!(
+            "- note 2026-10-31T11:00-07:00 #why \"{SECRET_REASON}\" resolves: {ID_A}#L21 by: user"
+        )],
+    );
+    library.insert_scribe_file(PATH_B, &private);
+    let (ports, _) = ports_with(library);
+    let out = query(&ports, json!({"session_id":"qa-session"}));
+    assert_eq!(out["count"], 1, "{out}");
+    let row = &out["results"][0];
+    assert_eq!(row["quote"], "public decision text", "{out}");
+    assert!(
+        row["why"].is_null() || row["why"] == "",
+        "reason withheld: {out}"
+    );
+    assert!(
+        row["reason"].is_null() || row["reason"] == "",
+        "reason withheld: {out}"
+    );
+    assert!(!out.to_string().contains(SECRET_REASON), "{out}");
+    assert!(!out.to_string().contains("violet"), "{out}");
 }
 
 #[test]

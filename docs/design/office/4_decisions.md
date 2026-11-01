@@ -1689,8 +1689,8 @@ The alternatives considered:
 ### Decision
 
 Uniform withholding on the MCP-visible read surface. For a `private`
-document, `office.source-show`, `office.search`, `office.knowledge-show`
-and `office.artifact-show` return metadata only — id, layer, kind,
+document, `office.source-show`, `office.search`, `office.knowledge-show`,
+`office.artifact-show` and `office.scribe-query` return metadata only — id, layer, kind,
 title, path, sensitivity, and (for sources) provenance, anchors as
 identifiers and citers — and mark the result `content_withheld: true`.
 Withheld, per tool: the source body/`text`/span, its `summary.md`
