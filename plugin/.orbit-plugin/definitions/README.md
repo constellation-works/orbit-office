@@ -7,7 +7,8 @@ Orbit's schemaVersion 2 Activity envelope and have no schedule switch or dedupe 
 - Routines: `office-kt-inbox` (every 15 minutes), `office-signals` (daily),
   `office-daily-digest` (daily), `office-bootstrap` (every 15 minutes),
   `office-shared-sync` (hourly).
-- Auto-tasks: `office-knowledge-maintenance` (weekly), `office-review` (period end).
+- Auto-tasks: `office-review` (period end), `office-knowledge-maintenance` (weekly),
+  `office-knowledge-verify` (daily), `office-conversation-extract` (every 30 minutes).
 - Activities: `office-agent-todo`.
 
 `activities/office-agent-todo.yaml` defines the agent loop for an
@@ -101,9 +102,8 @@ from the host's configured low-complexity pool. It previews staged transcripts w
 Private previews withhold content and use local conservative extraction instead.
 The orchestrator remains responsible for rolling handoffs.
 
-This definition is **not registered yet**: `plugin.yaml` outside reserved tool blocks
-is integrator-owned. A separate integration adds
-`definitions/auto_tasks/office-conversation-extract.yaml` under `spec.definitions.auto_tasks`;
+This definition is **registered** under `spec.definitions.auto_tasks` as
+`definitions/auto_tasks/office-conversation-extract.yaml`;
 enabling it remains an operator decision. Constellation's SessionEnd hook must stage
 completed transcripts and queue one extraction task/job immediately, with this same
 instruction, complexity and required tools; the sweep only catches missed sessions.
@@ -118,8 +118,7 @@ checks each page's checkable claims against observable evidence, files
 pages, and attaches a per-page verdict report; private pages are reported
 unverifiable and never proposed against.
 
-This definition is **not registered yet**: `plugin.yaml` registration is
-integrator-owned and a separate task adds
-`definitions/auto_tasks/office-knowledge-verify.yaml` under
-`spec.definitions.auto_tasks`; enabling it remains an operator decision.
+This definition is **registered** under `spec.definitions.auto_tasks` as
+`definitions/auto_tasks/office-knowledge-verify.yaml`;
+enabling it remains an operator decision.
 See `docs/design/office/specs/proposals.md` ("Rolling verification").
