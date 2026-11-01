@@ -244,10 +244,13 @@ never posts into the conversation.
 A per-session flag file, `.orbit/tmp/scribe/<session-id>`, owner-only, in
 the office workspace beside the transcript staging directory. Present means
 on. A provider command (`/scribe on|off|now|status` for Claude Code) creates
-or removes it; the default for new sessions is a setting of the
-constellation hook, per project, not of the Library. Turning the scribe off
-stops new passes; it never removes evidence already captured. The command
-and its hook registration are constellation-owned, like the SessionEnd hook.
+or removes it; the default for new sessions is a setting of the provider
+plugin, not of the Library. Turning the scribe off stops new passes; it
+never removes evidence already captured. The hooks and commands ship as a
+per-user provider plugin from this repository
+([recall.md](./recall.md#distribution-a-provider-plugin)), so one scribe
+covers every project; answering questions across conversations is
+[recall.md](./recall.md).
 
 ### Trigger and debounce
 

@@ -1860,6 +1860,48 @@ is the same move as a standalone step.
   its legacy copy until a person resolves it.
 
 
+## One scribe per user, queried through recall
+
+**Recorded:** 2026-11-01 · approved by the user in conversation
+**Code anchors:** none yet; [specs/recall.md](./specs/recall.md)
+
+### Context
+
+The live scribe ([below](#a-live-scribe-extracts-the-conversation-while-it-runs))
+was specified as constellation hooks. The user works across many
+conversations at once and loses track of where something was discussed,
+what was decided and whether it landed, and asks orchestrators again. They
+asked for the same scribe to be present in every conversation, to tell
+them apart, and to answer such questions itself, pointing back to the
+conversation, without bothering an orchestrator.
+
+### Decision
+
+- Ship the hooks and commands as a per-user provider plugin from this
+  repository (`plugin/claude-code/`), not as per-project hooks. The Orbit
+  plugin stays the only Library writer; the provider plugin is a client.
+- Give each conversation source the context to recognise it later:
+  project, branch, start and last-active times, a resume command and a
+  short title (scribe-proposed, user-overridable).
+- Extract task, PR and commit references from captured lines
+  deterministically; resolve their status live at question time, never
+  store it.
+- Answer through a read-only, model-free `office.recall` tool and a
+  low-cost `recall` subagent that cites every claim and says "not
+  captured" rather than guess.
+
+### Consequences
+
+- Questions about past conversations no longer cost an orchestrator's
+  context; the current conversation receives only the answer.
+- Recall is only as complete as capture: sessions before installation
+  need `/scribe backfill`, and Codex sessions are missing until their
+  adapter lands. `coverage` makes the gaps visible.
+- The scribe-proposed title is a second model-authored field, marked
+  `title_by: scribe` and replaced by any user title.
+- Cost: one low-cost model call per question, plus live Orbit and GitHub
+  reads for the references in the result.
+
 ## A live scribe extracts the conversation while it runs
 
 **Recorded:** 2026-11-01 · approved by the user (PR #250)
