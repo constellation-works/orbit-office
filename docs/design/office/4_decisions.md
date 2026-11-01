@@ -2567,8 +2567,81 @@ though one's first message was a far better name.
 - An earlier real custom title is not consulted once the latest record
   is a placeholder, since only the latest `customTitle` is kept.
 
+## QA fixture: a named, audited test-fixture exception for backend behaviour on disposable data
+
+**Recorded:** 2026-11-01 · [ORB-20946]
+**Code anchors:** `Makefile::qa-exec`; regression test
+`crates/office/tests/cli.rs::qa_exec_fixture_runs_init_in_its_temp_root`;
+runbook [../../qa-exec.md](../../qa-exec.md)
+
+### Context
+
+Full QA recorded 47 required scenarios as BLOCKED because QA agents
+cannot call mutating Operator/Runner-only office tools through Orbit.
+Their backend behaviour on disposable data is still worth checking each
+sweep. STD-05@1 §R3 requires permission to be decided by one
+authorization function on every entry surface, not by which surface
+lists a tool, and STD-05@1 §R4 requires any escape hatch that raises a
+caller's authority to be explicit, named and audited. Calling
+`office orbit-tool` directly from a shell would otherwise look like
+such a hatch with none of those properties: dispatch has no
+authorization step of its own because Orbit is that function for the
+real surface.
+
+### Decision
+
+- The `make qa-exec` fixture is an explicit, named **test-fixture
+  exception** under STD-05@1 §R3–R4. It is not an agent authority
+  route, and it leaves the Orbit authorization of the real surface
+  unchanged: no MCP scope, allowlist or plugin manifest changes.
+- It runs only a freshly built `office` binary, only against a temp
+  root it creates itself (or a root carrying its own fixture marker
+  under the system temp directory, so a QA area can chain `init` then
+  a second tool in the same disposable root). It never runs against a
+  real workspace, Library or task store, and it refuses any supplied
+  root outside its own temp directory and any input path that is
+  absolute outside that root or escapes it with `..`.
+- The call context carries only the root keys the backend reads —
+  `workspace_root`, `plugin_state` and `library_dir`, all inside the
+  temp root. It carries no identity or operator claim, never sets
+  `ORBIT_OPERATOR`, runs with a cleared environment and an empty
+  `HOME` inside the root, and makes Orbit callbacks unavailable
+  (`ORBIT_BIN=/bin/false`, no callback descriptor or `ORBIT_*`
+  callback state), so no run can reach a real task store.
+- Every run is audited under STD-05@1 §R4: an audit line naming the
+  tool, the temp root and the UTC time is appended inside the temp
+  root (`qa-exec-audit.log`) and printed on the target's stdout, so a
+  fixture run is never indistinguishable from an ordinary call.
+- This is an accident guard on a shared OS account, not a security
+  boundary against that account (STD-05@1 §R5): a caller who can run
+  `make` can run the binary directly. No other control is relaxed
+  because this fixture exists.
+
+### Alternative considered
+
+Hand each refused scenario to an operator to run through the existing
+operator path in a throwaway workspace each sweep. That needs no
+exception, but it puts a person in every full-QA sweep for behaviour
+that disposable-data automation can check.
+
+### Consequences
+
+- QA agents can check the backend behaviour of tools Orbit refuses to
+  agents, on throwaway data, under this documented exception. A pass
+  says nothing about Orbit authorization, which the fixture does not
+  exercise.
+- Tools whose handlers need Orbit callbacks, network or model routes
+  fail in the fixture by design; that failure is fixture evidence
+  about the disposable setup, not about the real surface.
+
+Cost: one Makefile target, one runbook and one end-to-end test to
+keep honest, and a standing exception a reviewer must keep bounded to
+temp roots — if the fixture ever needs a real root, that is a new
+decision, not an extension of this one.
+
 ## Task References
 
+- [ORB-20946] — ships the disposable-data QA fixture (`make qa-exec`) for mutating office tools Orbit refuses to agents.
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
 - [ORB-13117] — created the Rust CLI template this workspace was generated from.
 - [ORB-13134] — hardened the template's gates and goldens.

@@ -1,4 +1,4 @@
-.PHONY: claude-code-check claude-code-test help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-audit app-check plugin-export plugin-check plugin-install install clean
+.PHONY: claude-code-check claude-code-test help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-audit app-check plugin-export plugin-check plugin-install install clean qa-exec
 
 CARGO ?= cargo
 # Every build uses the committed Cargo.lock as is; a stale lock fails instead
@@ -8,6 +8,16 @@ BINARY := office
 INSTALL_BIN_DIR ?= $(HOME)/.cargo/bin
 # `make goldens UPDATE=1` rewrites the golden files instead of comparing.
 UPDATE ?=
+# qa-exec fixture (docs/qa-exec.md): TOOL is the full tool name and INPUT a
+# file holding that tool's input as one JSON object. QA_EXEC_ROOT reuses a
+# fixture-created root for a chained call; QA_EXEC_OFFICE_BIN overrides the
+# freshly built binary (used by the end-to-end test, which cargo has just
+# built); ROOT is accepted as an alias for QA_EXEC_ROOT.
+TOOL ?=
+INPUT ?=
+QA_EXEC_ROOT ?=
+ROOT ?=
+QA_EXEC_OFFICE_BIN ?=
 # `STANDARDS_STRICT=1` makes a missing docs/standards/ a failure (CI sets it).
 STANDARDS_STRICT ?=
 # GitHub Actions sets CI=true. There a missing gate tool fails the gate;
@@ -40,10 +50,66 @@ help:
 	@echo "                        (PLUGIN_WORKSPACE=<w> also enables it in that workspace"
 	@echo "                         and runs office.init there, so new templates and"
 	@echo "                         layout migrations arrive with the upgrade)"
+	@echo "  make qa-exec TOOL=<tool> INPUT=<file>  Run one office tool in a disposable temp root (docs/qa-exec.md)"
 	@echo "  make build | fmt | install | clean"
 
 build:
 	$(CARGO) build --workspace $(LOCKED)
+
+# Disposable-data QA fixture; see docs/qa-exec.md and the test-fixture
+# exception in docs/design/office/4_decisions.md (STD-05@1 §R3-R4,
+# ORB-20946). Not an authority route: the context carries only the three
+# root keys inside a temp root this target creates, no identity claim,
+# no ORBIT_OPERATOR, and Orbit callbacks are unavailable.
+qa-exec:
+	@test -n "$(TOOL)" || { echo "error: make qa-exec requires TOOL=<tool> (for example TOOL=office.init)." >&2; exit 2; }
+	@test -n "$(INPUT)" || { echo "error: make qa-exec requires INPUT=<file> holding the tool input as one JSON object." >&2; exit 2; }
+	@test -f "$(INPUT)" || { echo "error: INPUT file '$(INPUT)' does not exist." >&2; exit 2; }
+	@if [ -z "$(QA_EXEC_OFFICE_BIN)" ]; then $(CARGO) build $(LOCKED) --bin $(BINARY); fi
+	@set -eu; \
+	bin="$(QA_EXEC_OFFICE_BIN)"; \
+	if [ -z "$$bin" ]; then bin="target/debug/$(BINARY)"; fi; \
+	case "$$bin" in /*) ;; *) bin="$$PWD/$$bin" ;; esac; \
+	test -x "$$bin" || { echo "qa-exec: error: office binary '$$bin' is not executable." >&2; exit 2; }; \
+	supplied="$(QA_EXEC_ROOT)"; \
+	if [ -z "$$supplied" ]; then supplied="$(ROOT)"; fi; \
+	tmpbase=$$(python3 -c 'import os; print(os.path.realpath(os.environ.get("TMPDIR") or "/tmp"))'); \
+	if [ -n "$$supplied" ]; then \
+		root=$$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$$supplied"); \
+		case "$$root" in "$$tmpbase"/*) ;; *) echo "qa-exec: error: root '$$supplied' is outside its temp directory '$$tmpbase'; refusing." >&2; exit 2 ;; esac; \
+		test -f "$$root/qa-exec-audit.log" || { echo "qa-exec: error: root '$$supplied' is not a qa-exec fixture root (no qa-exec-audit.log); refusing." >&2; exit 2; }; \
+	else \
+		root=$$(mktemp -d "$${TMPDIR:-/tmp}/office-qa-exec.XXXXXX"); \
+		root=$$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$$root"); \
+	fi; \
+	mkdir -p "$$root/workspace" "$$root/plugin_state" "$$root/home" "$$root/tmp"; \
+	audit="qa-exec audit tool=$(TOOL) root=$$root time=$$(date -u +%Y-%m-%dT%H:%M:%SZ) fixture=make-qa-exec"; \
+	printf '%s\n' "$$audit" >> "$$root/qa-exec-audit.log"; \
+	printf '%s\n' "$$audit"; \
+	input="$(INPUT)"; \
+	case "$$input" in /*) ;; *) input="$$PWD/$$input" ;; esac; \
+	printf '%s\n' \
+		'import json, os, sys' \
+		'inp, root, tool, out = sys.argv[1:5]' \
+		'data = json.load(open(inp, encoding="utf-8"))' \
+		'if not isinstance(data, dict): sys.exit("qa-exec: error: INPUT must hold one JSON object; refusing.")' \
+		'stack = [data]' \
+		'while stack:' \
+		'    v = stack.pop()' \
+		'    if isinstance(v, dict): stack.extend(v.values())' \
+		'    elif isinstance(v, list): stack.extend(v)' \
+		'    elif isinstance(v, str):' \
+		'        if os.path.isabs(v) and os.path.realpath(v) != root and not os.path.realpath(v).startswith(root + os.sep): sys.exit("qa-exec: error: input path %r is outside the fixture root %r; refusing." % (v, root))' \
+		'        if ".." in v.split("/"): sys.exit("qa-exec: error: input path %r escapes the fixture root with ..; refusing." % v)' \
+		'envelope = {"schema_version": 1, "tool": tool, "input": data, "context": {"workspace_root": root + "/workspace", "plugin_state": root + "/plugin_state", "library_dir": root + "/workspace/library"}}' \
+		'json.dump(envelope, open(out, "w", encoding="utf-8"))' \
+		> "$$root/qa_validate.py"; \
+	python3 "$$root/qa_validate.py" "$$input" "$$root" "$(TOOL)" "$$root/request.json" || exit 2; \
+	status=0; \
+	env -i HOME="$$root/home" PATH="$$PATH" LANG=C.UTF-8 TMPDIR="$$root/tmp" ORBIT_BIN=/bin/false "$$bin" orbit-tool < "$$root/request.json" > "$$root/response.json" || status=$$?; \
+	cat "$$root/response.json"; \
+	printf '\n'; \
+	exit $$status
 
 # ---------------------------------------------------------------------------
 # Gates
