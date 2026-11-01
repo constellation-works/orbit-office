@@ -16,6 +16,7 @@ import type { PaneState, ScribeEntry } from '../contract'
 const PANE = 'scribe'
 const REFRESH_MS = 30_000
 const ASK_TIMEOUT_MS = 180_000
+const PAGE = 15
 const KINDS = ['decision', 'direction', 'fact', 'action', 'open', 'resolved', 'handoff'] as const
 const MISSED_KINDS = ['direction', 'decision', 'fact'] as const
 
@@ -29,12 +30,15 @@ const EMPTY: PaneState = {
   missedKind: 'direction',
   unavailable: false,
   notice: '',
+  expanded: null,
+  kindFilter: 'all',
+  shown: PAGE,
 }
 
 // Change the tag when PaneState's fields change: it declines what an earlier
 // version stored, which outlives a reload.
 const paneState = atom({ plugin: 'office-scribe', key: 'scribe-pane' } as const, EMPTY, {
-  shape: 'scribe-pane-2',
+  shape: 'scribe-pane-3',
 })
 
 type Config = { workspace: string; defaultOn: boolean; excluded: string; webUrl: string }
@@ -102,6 +106,12 @@ function newestFirst(entries: ScribeEntry[]): ScribeEntry[] {
   return [...entries].sort(
     (a, b) => String(b.time).localeCompare(String(a.time)) || line(b) - line(a),
   )
+}
+
+function clock(iso: string): string {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return iso
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
 }
 
 function ago(iso: string | null, now: number): string {
@@ -289,16 +299,26 @@ export const register: Register = (on, options: PluginOptions) => {
     }
 
     const sourceId = state.entries[0]?.source_id
+    const now = await $.clock.now()
+    const counts = new Map<string, number>()
+    for (const entry of state.entries) counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1)
+    const filtered =
+      state.kindFilter === 'all' ? state.entries : state.entries.filter(entry => entry.kind === state.kindFilter)
+    const visible = filtered.slice(0, state.shown)
     const switchText = state.on === null ? 'Scribe' : state.on ? 'Scribe on' : 'Scribe off'
     const statusLine =
       switchText +
       (state.title ? ` · ${state.title}` : '') +
-      ` · ${ago(state.lastPass, await $.clock.now())}` +
+      ` · ${ago(state.lastPass, now)}` +
       ` · ${state.entries.length} ${state.entries.length === 1 ? 'entry' : 'entries'}`
+    const pick = (patch: Partial<PaneState>) => update($, paneState, s => ({ ...s, ...patch }))
 
     return (
       <Box flexDirection="column" gap={1}>
-        <Text>{statusLine}</Text>
+        <Box flexDirection="column">
+          <Text weight="semibold">{statusLine}</Text>
+          {sourceId && <Text dimColor size="caption">{sourceId}</Text>}
+        </Box>
         <Box flexDirection="row" gap={1}>
           <Button
             key="toggle"
@@ -324,81 +344,102 @@ export const register: Register = (on, options: PluginOptions) => {
         </Box>
         {Input && (
           <Input
-            key="title"
-            label="Title"
-            placeholder={state.title ?? 'Set the session title'}
-            submitLabel="set title"
-            onSubmit={async text => {
-              if (!text.trim()) return
-              const sessionId = await $.session.id()
-              await act($, 'title not set', () =>
-                runPaneControl($, { session_id: sessionId, action: 'title', title: text }),
-              )
-            }}
+            key="ask"
+            placeholder="Ask: where did we discuss…, what was decided…"
+            submitLabel="ask"
+            onSubmit={text => ask($, text)}
           />
         )}
-        {state.notice !== '' && (
-          <Text dimColor>
-            {state.notice}
-          </Text>
-        )}
-        {state.entries.length === 0 && (
-          <Text dimColor>
-            Nothing captured for this session yet.
-          </Text>
-        )}
-        {state.entries.map(entry => (
-          <Box key={`entry-${entry.anchor}`} flexDirection="column">
-            <Text>
-              {`${entry.kind} · ${entry.time} · ${entry.source_id}${entry.anchor}` +
-                (entry.corrected ? ' · corrected' : '') +
-                (entry.by ? ` · by ${entry.by}` : '') +
-                `\n${entry.text}`}
-            </Text>
-            <Box flexDirection="row" gap={1}>
-              <Button
-                key={`not-decision-${entry.anchor}`}
-                label="Not a decision"
-                onPress={() => correct($, entry, 'not_decision')}
-              />
-              <Button
-                key={`remove-${entry.anchor}`}
-                label="Remove"
-                onPress={() => correct($, entry, 'remove')}
-              />
-            </Box>
-            {Select && (
-              <Select
-                key={`kind-${entry.anchor}`}
-                label="Wrong kind…"
-                value={entry.kind}
-                options={KINDS.map(value => ({ value }))}
-                onSelect={kind => {
-                  if (kind !== entry.kind) void correct($, entry, 'kind', { kind })
-                }}
-              />
-            )}
-            {Input && (
-              <Input
-                key={`wording-${entry.anchor}`}
-                label="Wrong wording"
-                placeholder="Replacement wording"
-                submitLabel="correct"
-                onSubmit={text => {
-                  if (text.trim()) void correct($, entry, 'wording', { text })
-                }}
-              />
-            )}
+        {state.asking && <Text dimColor>Asking the recall agent…</Text>}
+        {state.answer !== '' && (
+          <Box key="answer" flexDirection="column">
+            <Text>{state.answer}</Text>
+            <Button key="clear-answer" label="Clear" onPress={() => pick({ answer: '' })} />
           </Box>
-        ))}
+        )}
+        {state.notice !== '' && <Text dimColor>{state.notice}</Text>}
+        {state.entries.length === 0 && <Text dimColor>Nothing captured for this session yet.</Text>}
+        {Select && state.entries.length > 0 && (
+          <Select
+            key="kind-filter"
+            label="Show"
+            value={state.kindFilter}
+            options={[
+              { value: 'all', label: `all (${state.entries.length})` },
+              ...[...counts].map(([value, count]) => ({ value, label: `${value} (${count})` })),
+            ]}
+            onSelect={kind => pick({ kindFilter: kind, shown: PAGE, expanded: null })}
+          />
+        )}
+        {visible.map(entry => {
+          const isOpen = state.expanded === entry.anchor
+          const marks = (entry.corrected ? ' · corrected' : '') + (entry.by ? ` · by ${entry.by}` : '')
+          return (
+            <Box key={`entry-${entry.anchor}`} flexDirection="column">
+              <Box flexDirection="row" gap={1}>
+                <Text dimColor size="caption">{`${entry.kind} · ${clock(entry.time)} · ${entry.anchor}${marks}`}</Text>
+                <Button
+                  key={`edit-${entry.anchor}`}
+                  label={isOpen ? 'Done' : 'Correct…'}
+                  onPress={() => pick({ expanded: isOpen ? null : entry.anchor })}
+                />
+              </Box>
+              <Text>{entry.text}</Text>
+              {isOpen && (
+                <Box flexDirection="column">
+                  <Box flexDirection="row" gap={1}>
+                    <Button
+                      key={`not-decision-${entry.anchor}`}
+                      label="Not a decision"
+                      onPress={() => correct($, entry, 'not_decision')}
+                    />
+                    <Button
+                      key={`remove-${entry.anchor}`}
+                      label="Remove"
+                      onPress={() => correct($, entry, 'remove')}
+                    />
+                    {Select && (
+                      <Select
+                        key={`kind-${entry.anchor}`}
+                        label="Kind"
+                        value={entry.kind}
+                        options={KINDS.map(value => ({ value }))}
+                        onSelect={kind => {
+                          if (kind !== entry.kind) void correct($, entry, 'kind', { kind })
+                        }}
+                      />
+                    )}
+                  </Box>
+                  {Input && (
+                    <Input
+                      key={`wording-${entry.anchor}`}
+                      value={entry.text}
+                      submitLabel="correct wording"
+                      onSubmit={text => {
+                        if (text.trim() && text !== entry.text) void correct($, entry, 'wording', { text })
+                      }}
+                    />
+                  )}
+                </Box>
+              )}
+            </Box>
+          )
+        })}
+        {filtered.length > visible.length && (
+          <Button
+            key="more"
+            label={`Show ${Math.min(PAGE, filtered.length - visible.length)} more of ${filtered.length - visible.length}`}
+            onPress={() => pick({ shown: state.shown + PAGE })}
+          />
+        )}
         {Select && Input && sourceId && (
-          <Box key="missed" flexDirection="column">
+          <Box key="missed" flexDirection="row" gap={1}>
             <Select
               key="missed-kind"
-              label="Missed something…"
+              label="Missed"
               value={state.missedKind}
               options={MISSED_KINDS.map(value => ({ value }))}
-              onSelect={kind => void update($, paneState, s => ({ ...s, missedKind: kind }))}
+              onSelect={kind => pick({ missedKind: kind })}
             />
             <Input
               key="missed"
@@ -418,22 +459,20 @@ export const register: Register = (on, options: PluginOptions) => {
         )}
         {Input && (
           <Input
-            key="ask"
-            label="Ask"
-            placeholder="Where did we discuss…, what was decided…"
-            submitLabel="ask"
-            onSubmit={text => ask($, text)}
+            key="title"
+            label="Title"
+            placeholder={state.title ?? 'Set the session title'}
+            submitLabel="set title"
+            onSubmit={async text => {
+              if (!text.trim()) return
+              const sessionId = await $.session.id()
+              await act($, 'title not set', () =>
+                runPaneControl($, { session_id: sessionId, action: 'title', title: text }),
+              )
+            }}
           />
         )}
-        {state.asking && (
-          <Text dimColor>
-            Asking the recall agent…
-          </Text>
-        )}
-        {state.answer !== '' && <Text>{state.answer}</Text>}
-        {config.webUrl !== '' && (
-          <Link href={config.webUrl} label="Other conversations: Scribe screen" />
-        )}
+        {config.webUrl !== '' && <Link href={config.webUrl} label="Other conversations: Scribe screen" />}
       </Box>
     )
   })

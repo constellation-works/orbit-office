@@ -18,6 +18,9 @@ export type PaneState = {
   missedKind: string
   unavailable: boolean
   notice: string
+  expanded: string | null
+  kindFilter: string
+  shown: number
 }
 
 declare module 'claude-code' {

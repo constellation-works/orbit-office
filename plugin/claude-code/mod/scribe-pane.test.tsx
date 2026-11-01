@@ -70,7 +70,7 @@ function ran(value: unknown, exitCode = 0) {
   }
 }
 
-type Seed = { fail?: boolean }
+type Seed = { fail?: boolean; feed?: unknown }
 
 function seed(on: any, calls: { argv: string[]; env?: Record<string, string> }[], options: Seed = {}) {
   on('command.register', () => ({ value: { command: 'scribe-pane' } }))
@@ -92,7 +92,7 @@ function seed(on: any, calls: { argv: string[]; env?: Record<string, string> }[]
       return ran({ queued: true })
     }
     const tool = e.argv[3]
-    if (tool === 'office.recall') return ran(FEED)
+    if (tool === 'office.recall') return ran(options.feed ?? FEED)
     if (tool === 'office.capture') return ran({ appended: 1 })
     return ran({})
   })
@@ -117,11 +117,15 @@ test('the pane shows the current session entries newest first', OPTIONS, async (
   const older = texts.findIndex((t: string) => t.includes('Decision: stay local'))
   expect(newer).toBeGreaterThan(-1)
   expect(older).toBeGreaterThan(newer)
-  expect(texts[newer]).toContain('src-fixture#L3')
+  expect(texts[newer - 1]).toMatch(/^fact · \d\d:\d\d · #L3$/)
   // Another session's source matching the id as a search term stays out.
   expect(texts.some((t: string) => t.includes('Another session'))).toBe(false)
   const status = await ui.find({ type: 'Text', text: /^Scribe on/ })
   expect(status?.text).toBe('Scribe on · Local memory · last pass 5 min ago · 2 entries')
+  expect(await ui.find({ type: 'Text', text: 'src-fixture' })).toBeDefined()
+  // Corrections stay folded until the entry's Correct… is pressed.
+  expect(await ui.find({ key: 'remove-#L1' })).toBeUndefined()
+  await ui.press({ key: 'edit-#L1' })
   expect(await ui.find({ key: 'kind-#L1' })).toBeDefined()
   expect(await ui.find({ key: 'wording-#L1' })).toBeDefined()
   expect(await ui.find({ key: 'remove-#L1' })).toBeDefined()
@@ -133,6 +137,7 @@ test("choosing 'Not a decision' issues one office.capture append_to correction",
   const calls: { argv: string[] }[] = []
   seed(on, calls)
   const ui = await open($)
+  await ui.press({ key: 'edit-#L1' })
   await ui.press({ key: 'not-decision-#L1' })
 
   const captures = calls.filter(c => c.argv[0] === 'orbit' && c.argv[3] === 'office.capture')
@@ -210,5 +215,27 @@ test('mobile draws the feed and buttons without fields', OPTIONS, async ($, on) 
   await ui.press({ key: 'refresh' })
   expect(await ui.find({ type: 'Text', text: /Newer captured fact/ })).toBeDefined()
   expect(await ui.find({ key: 'capture-now' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the kind filter and paging narrow a long feed', OPTIONS, async ($, on) => {
+  const calls: { argv: string[] }[] = []
+  const many = Array.from({ length: 20 }, (_, i) => ({
+    source_id: 'src-fixture',
+    anchor: `#L${i + 1}`,
+    kind: i === 0 ? 'decision' : 'open',
+    refs: [],
+    text: `line ${i + 1}`,
+    time: '2026-10-30T10:00:00Z',
+  }))
+  seed(on, calls, { feed: { ...FEED, entries: many } })
+  const ui = await open($)
+  expect((await ui.findAll({ type: 'Text', text: /^line / })).length).toBe(15)
+  expect(await ui.find({ key: 'more' })).toBeDefined()
+  await ui.press({ key: 'more' })
+  expect((await ui.findAll({ type: 'Text', text: /^line / })).length).toBe(20)
+  await ui.select({ key: 'kind-filter', value: 'decision' })
+  const shown = await ui.findAll({ type: 'Text', text: /^line / })
+  expect(shown.map((t: any) => t.text)).toEqual(['line 1'])
   await ui.unmount()
 })
