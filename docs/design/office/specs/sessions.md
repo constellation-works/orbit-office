@@ -14,8 +14,8 @@ is the cheapest mechanism that can do its job
 
 | Piece | Written by | When | Model |
 |---|---|---|---|
-| **Decision log** | transcript extractor, through `office.capture` | SessionEnd; sweep recovers misses | configured low-complexity pool |
-| **Handoff** | the agent, as `handoff` entries in that log | refreshed whenever the plan changes | none |
+| **Decision log** | transcript extractor, through `office.capture` | SessionEnd; while the [live scribe](#live-scribe-planned) is on, every few turns; sweep recovers misses | configured low-complexity pool |
+| **Handoff** | the agent, as `handoff` entries in that log; optionally the live scribe (planned) | refreshed whenever the plan changes | none; the scribe's handoff uses the low-complexity pool |
 | **Session brief** | `office.session-brief`, computed on demand | at session start | none |
 | **Daily digest** | `office.digest`, from the `office-daily-digest` routine | once a day | one Muse Spark call |
 
@@ -144,6 +144,9 @@ invented consent. Facts must be unambiguous user statements. Assistant action
 lines are reported actions, not independent verification of their outcomes.
 Quoted external material is not a user's decision; the crew must exclude
 pasted documents too, including unmarked pastes that an adapter cannot detect.
+The live scribe (planned) adds two narrow ways a user line becomes a decision
+or direction without these cues: an explicit `Note:` command and an answer
+to a concrete question ([below](#answers-to-questions)).
 
 Directions and facts retain the exact selected line, apart from credential
 redaction and outer whitespace. Multiline text contributes separate lines.
@@ -221,6 +224,163 @@ The model selection digest prevents classifying different bytes from those
 previewed. A retry after a committed write is a no-op; journal recovery covers
 interrupted publication. Historical snapshots remain subject to the source's
 privacy; a source changed to private stays private on later extraction.
+
+## Live scribe (planned)
+
+Status: specified, not built. Everything above still applies; this section
+changes when extraction runs, how much of the transcript each pass reads,
+and three narrow rules about what it may write.
+
+SessionEnd extraction leaves the orchestrator writing captures by hand
+during the session, and a session that runs all day has an empty log until
+it ends. The live scribe is the same extractor run while the conversation is
+still going, switched on per session. It reads the conversation only — the
+adapter already drops tool calls, tool results, thinking and sidechains —
+and writes through `office.capture` as before. It is not a participant: it
+never posts into the conversation.
+
+### Switch
+
+A per-session flag file, `.orbit/tmp/scribe/<session-id>`, owner-only, in
+the office workspace beside the transcript staging directory. Present means
+on. A provider command (`/scribe on|off|now|status` for Claude Code) creates
+or removes it; the default for new sessions is a setting of the
+constellation hook, per project, not of the Library. Turning the scribe off
+stops new passes; it never removes evidence already captured. The command
+and its hook registration are constellation-owned, like the SessionEnd hook.
+
+### Trigger and debounce
+
+The provider's end-of-turn hook (`Stop` in Claude Code) checks the flag and,
+when it is on, stages a snapshot and may queue a pass. It never waits for
+inference.
+
+- **Snapshot.** The hook copies the live transcript up to its last complete
+  record (the last newline), never a partial record, and publishes it
+  atomically with a descriptor carrying `mode: live`, `session_id`, the
+  snapshot's byte length and SHA-256. The adapter's refusal of truncated
+  records therefore never fires on a live snapshot.
+- **Debounce.** At most one pass is queued or running per session. A new
+  pass is queued only when the previous one was queued at least
+  `min_interval` ago (default 5 minutes) or at least `max_turns` new user
+  turns (default 8) have arrived since it. `/scribe now` queues a pass
+  immediately, ignoring the debounce. SessionEnd always queues a final pass.
+- **Dedupe** for live passes uses session id plus snapshot length, so a
+  burst of hooks on an unchanged transcript queues nothing.
+
+Each pass is the existing low-complexity extraction task: no crew pinned,
+the configured pool chooses.
+
+### Incremental passes
+
+A pass reads only what earlier passes have not.
+
+- `office.capture` session preview accepts `from_line` (zero-based,
+  inclusive). It returns the lines from there on, plus the nearest earlier
+  assistant text line as read-only context (`context: true`) so a reply can
+  be read with the question it answers. Context lines cannot be selected.
+- The conversation source records `extracted_through` (the last line a pass
+  considered) and `extracted_prefix_sha256` (the SHA-256 of the transcript
+  bytes up to that line). The next pass starts at `extracted_through + 1`.
+- **Append, not version.** When the new snapshot's leading bytes hash to
+  `extracted_prefix_sha256`, the transcript only grew: the pass appends its
+  entries to the current source with no version bump and no `vN.md`
+  snapshot. Only a non-prefix change (compaction rewrite, edited history)
+  takes the existing changed-digest path, with a version and a snapshot.
+  Without this, an all-day session would journal a full copy every pass.
+- A pass that selects nothing still advances `extracted_through`, in one
+  commit.
+
+### Rules page
+
+What the scribe notes is the user's to define, on a Library page with the
+id `dom-scribe-rules` (a one-per-Library template, `scribe-rules`). Its
+body has three sections: **Note** (what to capture, for example standing
+directions, decisions with their reason, rejected options and why, changes
+to crews, pools and configuration, facts about hosts and people), **Skip**
+(for example status chatter, restated plans, anything about a named
+private topic) and **Kinds** (guidance for borderline lines). The page is
+passed to the crew with each preview, as data. It changes only through
+proposals, so the user holds the pen.
+
+Rules can narrow what is captured and steer the choice between kinds. They
+cannot widen authority: the deterministic guard still runs after the crew,
+an assistant line never becomes a decision or direction, and a rule that
+says otherwise is ignored. With no page, the built-in defaults in the
+extraction task apply.
+
+### Commands
+
+- **User:** a user line that begins with `Note:` (or `Scribe:`) is captured
+  without model judgment, verbatim apart from credential redaction. Its kind
+  is `direction` when the text after the prefix carries a direction cue,
+  `decision` when it carries a decision cue, and `fact` otherwise. The local
+  conservative classifier honours it too, so it works in private sessions.
+  The prefix is a cue for the guard, not an instruction to any model.
+- **Orchestrator:** `office.capture` with `append_to` is unchanged, for the
+  rare entry the conversation does not contain (an `action` with its task
+  id, a `resolved`). `/scribe now` flushes a pass. The orchestrator stops
+  capturing decisions and directions itself while the scribe is on.
+
+### Answers to questions
+
+Most decisions are a short reply to a concrete question ("Yes, file it").
+The cue guard keeps those `open`. The scribe may record such a reply as a
+`decision` when all of these hold, each checked deterministically:
+
+- the crew's selection carries `answers: <line>`, naming an assistant line;
+- that line is the nearest assistant text before the user line, with no
+  other user line between them, and its text ends in `?`;
+- the user line has no uncertainty marker from the guard's list, is not
+  itself a question, and is either an affirmative (yes, do it, go ahead,
+  ok, sounds good, ship it and their close variants) or, when the question
+  offered options, one of the option labels;
+- a negative ("no", "not now", "not yet") records a `decision` only when
+  the question was a yes/no question, and the entry says so.
+
+The adapter copies both lines: `decision: "Yes, file it" (answering #L41:
+"File the claim-verification sweep as an Orbit task?")`. Neither text is
+model-authored. A question asked through a provider's question tool rather
+than in message text (a structured ask with buttons) counts as assistant
+text only when its adapter maps that tool's question field explicitly; tool
+input is otherwise excluded as today.
+
+### Scribe handoff
+
+Optional, off by default: `scribe.handoff: true` in the rules page's
+frontmatter. When on, a pass whose new lines change the plan (a new
+decision, direction or `action`) also writes one `handoff` entry, in the
+form `handoff (scribe): <text>`, at most 60 words. Unlike every other
+entry it is model-authored, so:
+
+- the `(scribe)` marker is part of the line, and the session brief shows it;
+- it must cite at least one entry anchor (`#L<n>`) of the current source,
+  and every anchor it cites must resolve, or the handoff is dropped (the
+  pass's other entries still land);
+- the newest handoff wins, whoever wrote it, so an orchestrator handoff
+  written later replaces it in the brief; nothing is edited or removed.
+
+This is what lets the orchestrator stop maintaining the handoff. Without
+it, the orchestrator keeps doing so as today.
+
+### Feedback to the session
+
+Optional and constellation-owned: a `UserPromptSubmit` hook may add one
+line of context — "scribe captured N entries since <time> in <source id>"
+— so the orchestrator neither repeats a capture nor assumes one happened.
+It reads the source's entry count; it never quotes entries back.
+
+### Providers and limits
+
+- Claude Code only, like extraction. Codex rollout JSONL (Codex CLI, T3
+  Code) needs its adapter first; live mode refuses other formats exactly as
+  SessionEnd extraction does.
+- A pass's preview is bounded by the existing 8 MiB transcript limit and by
+  `max_turns`; a long backlog after the scribe is switched on mid-session is
+  read in successive passes, oldest first.
+- Privacy is unchanged: private sessions use the local conservative path,
+  which honours `Note:` commands but not answers to questions or the scribe
+  handoff, since both need the crew.
 
 ## Session brief
 
