@@ -325,6 +325,38 @@ pub trait Library {
     fn reindex(&self) -> Result<u32> {
         Err(Error::LibraryUnavailable)
     }
+    /// Write a session's parsed scribe messages and its session facts
+    /// (`<id>.jsonl` and `<id>.meta.json`) under the workspace's
+    /// `.orbit/tmp/scribe/`, owner-only, replacing earlier copies. Returns
+    /// the workspace-relative path of the `.jsonl`.
+    fn write_scribe_parse(
+        &self,
+        _session_id: &str,
+        _messages: &str,
+        _meta: &str,
+    ) -> Result<String> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Read a session's parsed messages and session facts, if present.
+    fn read_scribe_parse(&self, _session_id: &str) -> Result<Option<ScribeParse>> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Every SCR file (`sources/conversation/<yyyy>/<mm>/SCR-*.md`), in
+    /// path order. They are not indexed; symlinks are never followed.
+    fn scribe_files(&self) -> Result<Vec<LibraryText>> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// Create, update or rename one SCR file and commit it, under the
+    /// writer lock. Refused with `scribe_changed` when the file no longer
+    /// holds `previous` (or exists when `previous` is `None`), and with
+    /// `scribe_exists` when a rename target exists.
+    fn write_scribe_file(&self, _write: &ScribeWrite) -> Result<()> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// The host's name for SCR provenance; `None` when unknown.
+    fn host_name(&self) -> Option<String> {
+        None
+    }
     /// Library and index health, without creating Library state.
     fn health(&self) -> Result<LibraryHealth> {
         Ok(LibraryHealth {
@@ -332,6 +364,27 @@ pub trait Library {
             ..LibraryHealth::default()
         })
     }
+}
+
+/// A session's parsed scribe files, as read back.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScribeParse {
+    /// The `.jsonl` message file.
+    pub messages: String,
+    /// The `.meta.json` session facts.
+    pub meta: String,
+}
+
+/// One SCR file write: the new text at `path`, replacing `previous`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScribeWrite {
+    /// Library-relative SCR path to write.
+    pub path: String,
+    /// Full new Markdown.
+    pub text: String,
+    /// The file as read before planning (`path`, Markdown); a different
+    /// path is removed in the same commit (a rename).
+    pub previous: Option<(String, String)>,
 }
 
 /// One conversation entry to append (specs/sessions.md).

@@ -599,6 +599,88 @@ impl LibraryFs {
         Ok(write_atomic(&path, text.as_bytes())?)
     }
 
+    /// An SCR file path (specs/scribe.md), checked component by component.
+    pub(crate) fn validate_scribe_path(&self, relative: &Path) -> Result<()> {
+        office_core::domain::source::conversation::scribe::validate_scr_path(relative)?;
+        self.validate_relative_path(relative)
+    }
+
+    /// Write one SCR file atomically, owner-only.
+    pub(crate) fn write_scribe(&self, relative: &Path, text: &str) -> Result<()> {
+        self.validate_scribe_path(relative)?;
+        let path = self.root.join(relative);
+        if let Some(parent) = path.parent() {
+            Self::create_private_dirs(parent)?;
+        }
+        Ok(write_atomic(&path, text.as_bytes())?)
+    }
+
+    /// Remove an SCR file's previous name; an absent file is not an error,
+    /// so a replayed rename is idempotent.
+    pub(crate) fn remove_scribe(&self, relative: &Path) -> Result<()> {
+        self.validate_scribe_path(relative)?;
+        let path = self.root.join(relative);
+        match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(Error::io("remove renamed SCR file", path, error)),
+        }
+    }
+
+    /// One SCR file's text, `None` when absent.
+    pub(crate) fn read_scribe(&self, relative: &Path) -> Result<Option<String>> {
+        self.validate_scribe_path(relative)?;
+        let path = self.root.join(relative);
+        match std::fs::read_to_string(&path) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(Error::io("read SCR file", path, error)),
+        }
+    }
+
+    /// Every SCR file under `sources/conversation/<yyyy>/<mm>/`, in path
+    /// order. Symlinks and other names are skipped, never followed.
+    pub(crate) fn scribe_markdown(&self) -> Result<Vec<(String, String)>> {
+        fn entries(dir: &Path) -> Result<Vec<std::fs::DirEntry>> {
+            match std::fs::symlink_metadata(dir) {
+                Ok(metadata) if metadata.is_dir() => {}
+                Ok(_) => return Ok(vec![]),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+                Err(e) => return Err(Error::io("inspect Library directory", dir, e)),
+            }
+            std::fs::read_dir(dir)
+                .map_err(|e| Error::io("list Library directory", dir, e))?
+                .map(|entry| entry.map_err(|e| Error::io("list Library directory", dir, e)))
+                .collect()
+        }
+        let mut files = Vec::new();
+        let base = self.root.join("sources/conversation");
+        for year in entries(&base)? {
+            for month in entries(&year.path())? {
+                for file in entries(&month.path())? {
+                    let path = file.path();
+                    let Ok(relative) = path.strip_prefix(&self.root) else {
+                        continue;
+                    };
+                    let relative = relative.to_string_lossy().replace('\\', "/");
+                    let is_file = file
+                        .file_type()
+                        .map_err(|e| Error::io("inspect SCR file", &path, e))?
+                        .is_file();
+                    if is_file
+                        && office_core::domain::source::conversation::scribe::is_scr_path(&relative)
+                    {
+                        let text = std::fs::read_to_string(&path)
+                            .map_err(|e| Error::io("read SCR file", &path, e))?;
+                        files.push((relative, text));
+                    }
+                }
+            }
+        }
+        files.sort();
+        Ok(files)
+    }
+
     /// Remove one proposal page; an already absent page is not an error, so a
     /// replayed move is idempotent.
     pub(crate) fn remove_proposal(&self, relative: &Path) -> Result<()> {

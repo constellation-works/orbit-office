@@ -16,8 +16,8 @@ use office_core::domain::source::{
 };
 use office_core::domain::template::BUNDLED;
 use office_core::ports::{
-    CaptureSourceRequest, InitOutcome, Library, LibraryHealth, LibraryText, SourceOutcome,
-    SourceView, not_initialized_error,
+    CaptureSourceRequest, InitOutcome, Library, LibraryHealth, LibraryText, ScribeParse,
+    ScribeWrite, SourceOutcome, SourceView, not_initialized_error,
 };
 use office_core::{Error, Result};
 use std::path::PathBuf;
@@ -53,6 +53,12 @@ pub struct FakeLibrary {
     pub templates: Vec<LibraryText>,
     commits: RefCell<usize>,
     staging: FakeStaging,
+    /// Parsed scribe files by session id, in memory.
+    scribe_parses: RefCell<BTreeMap<String, ScribeParse>>,
+    /// SCR files by Library path, in memory.
+    scribe_texts: RefCell<BTreeMap<String, String>>,
+    /// Host name reported for SCR provenance.
+    pub host: Option<String>,
 }
 
 /// What `stage_attachment` wrote, shared across clones so a test keeps an
@@ -186,6 +192,13 @@ impl FakeLibrary {
         let record = self.read_document(relative)?;
         self.revisions.borrow_mut().insert(record.path, revisions);
         Ok(())
+    }
+
+    /// Place an SCR file, as another session's capture left it.
+    pub fn insert_scribe_file(&self, path: &str, text: &str) {
+        self.scribe_texts
+            .borrow_mut()
+            .insert(path.to_string(), text.to_string());
     }
 
     fn record_commit(&self) {
@@ -992,6 +1005,74 @@ impl Library for FakeLibrary {
         }
         state.removed.push(staged.to_string());
         Ok(())
+    }
+
+    fn write_scribe_parse(&self, session_id: &str, messages: &str, meta: &str) -> Result<String> {
+        self.ready()?;
+        self.scribe_parses.borrow_mut().insert(
+            session_id.to_string(),
+            ScribeParse {
+                messages: messages.to_string(),
+                meta: meta.to_string(),
+            },
+        );
+        Ok(office_core::domain::source::conversation::scribe::parse_path(session_id))
+    }
+
+    fn read_scribe_parse(&self, session_id: &str) -> Result<Option<ScribeParse>> {
+        self.ready()?;
+        Ok(self.scribe_parses.borrow().get(session_id).cloned())
+    }
+
+    fn scribe_files(&self) -> Result<Vec<LibraryText>> {
+        self.ready()?;
+        Ok(self
+            .scribe_texts
+            .borrow()
+            .iter()
+            .map(|(path, text)| LibraryText {
+                path: path.clone(),
+                markdown: Some(text.clone()),
+            })
+            .collect())
+    }
+
+    fn write_scribe_file(&self, write: &ScribeWrite) -> Result<()> {
+        use office_core::domain::source::conversation::scribe::validate_scr_path;
+        self.ready()?;
+        validate_scr_path(Path::new(&write.path))?;
+        let mut texts = self.scribe_texts.borrow_mut();
+        let changed = || Error::Library {
+            code: "scribe_changed",
+            message: "the SCR file changed since it was read; retry".into(),
+        };
+        match &write.previous {
+            Some((path, text)) => {
+                validate_scr_path(Path::new(path))?;
+                if texts.get(path) != Some(text) {
+                    return Err(changed());
+                }
+                if path != &write.path {
+                    if texts.contains_key(&write.path) {
+                        return Err(Error::Library {
+                            code: "scribe_exists",
+                            message: "an SCR file already has the new name".into(),
+                        });
+                    }
+                    texts.remove(path);
+                }
+            }
+            None if texts.contains_key(&write.path) => return Err(changed()),
+            None => {}
+        }
+        texts.insert(write.path.clone(), write.text.clone());
+        drop(texts);
+        self.record_commit();
+        Ok(())
+    }
+
+    fn host_name(&self) -> Option<String> {
+        self.host.clone()
     }
 
     fn is_initialized(&self) -> Result<bool> {

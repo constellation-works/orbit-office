@@ -4,6 +4,8 @@
 pub mod corrections;
 /// Stored reference extraction and model-free recall selection.
 pub mod recall;
+/// Scribe v1: parsed messages, rules sections and SCR files.
+pub mod scribe;
 use super::{format_conversation_entry, sha256_hex};
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};

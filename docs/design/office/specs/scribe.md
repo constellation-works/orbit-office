@@ -6,7 +6,9 @@ last_validated: 2026-11-01
 
 # Spec: Scribe v1
 
-Status: specified, not built. Supersedes, as the default way to capture
+Status: build step 1 built (`office.scribe-pending`, `office.scribe-append`;
+see [Build order](#build-order)); the agent and commands are not built yet.
+Supersedes, as the default way to capture
 conversations, the automatic live scribe in
 [sessions.md](./sessions.md#live-scribe) and the recall surfaces in
 [recall.md](./recall.md). Those stay in the tree but are off by default and
@@ -366,13 +368,23 @@ web access, no writes and no Orbit calls.
    - `office.scribe-append` validates and writes entries.
    - New tool slots go through an integrator scaffold first (ARCHITECTURE.md
      § Integrator-owned files).
+   - Built (ORB-20780). A message is one transcript record's kept text;
+     pending also writes `<session-id>.meta.json` beside the `.jsonl` (the
+     session facts append needs) and withholds a private session as the
+     capture preview does. Entries are `{msg, quote}` or a note `{text}`,
+     each with `tag` and optional `topics`, `refs`, `due`, `resolves`, `by`.
+     Every refused entry is returned with a reason code; a message at or
+     before the file's `scribed_through` is read-only context. Front matter
+     always carries every key above on one line (an untitled session has
+     `title: null`), so `#L<n>` file lines never move. Times use the host
+     zone from the clock port.
 2. **The query tool, the `scribe` agent and commands.**
    - `office.scribe-query`, model-free, through an integrator scaffold.
    - In the Claude Code plugin: `/scribe`, `note`, `pending`, `pref`,
      `landed`, `why`, `ask` and `title`, and the subagent definition with
-     its model and tools. Turn the automatic hooks off by default. The constellation
-   `orchestration-session` skill then requires orchestrators to scribe
-   decisions and open issues as they happen.
+     its model and tools. Turn the automatic hooks off by default. The
+     `orchestration-session` skill then requires orchestrators to scribe
+     decisions and open issues as they happen.
 3. **Rules page sections:** a proposal to `dom-scribe-rules` with the default
    tags, topics and capture rules.
 

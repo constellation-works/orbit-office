@@ -34,7 +34,7 @@ use pending::{
     PendingOriginal, PendingWrite, RawPendingWrite, WriteKind, normalize_upload_extension,
 };
 
-const LATEST_PENDING_WRITE_VERSION: u32 = 9;
+const LATEST_PENDING_WRITE_VERSION: u32 = 10;
 
 /// A Library and its index. Construction may create layout/index directories;
 /// read methods never create state or wait for the writer lock. Bounded media
@@ -915,6 +915,72 @@ impl LibraryStore {
         self.finish(&pending)
     }
 
+    /// Every SCR file with its Markdown, in path order. No writer-lock wait.
+    pub fn scribe_files(&self) -> Result<Vec<LibraryText>> {
+        self.read_ready()?;
+        self.require_initialized()?;
+        Ok(self
+            .files
+            .scribe_markdown()?
+            .into_iter()
+            .map(|(path, markdown)| LibraryText {
+                path,
+                markdown: Some(markdown),
+            })
+            .collect())
+    }
+
+    /// Create, update or rename one SCR file and commit it, under the writer
+    /// lock. The file must still hold what the caller planned against.
+    pub fn write_scribe_file(
+        &self,
+        write: &office_core::ports::ScribeWrite,
+    ) -> office_core::Result<()> {
+        use office_core::domain::source::video::refusal;
+        let _lock = WriterLock::acquire(&self.state)?;
+        self.recover()?;
+        self.require_initialized()?;
+        let target = Path::new(&write.path);
+        self.files.validate_scribe_path(target)?;
+        let mut removed = Vec::new();
+        match &write.previous {
+            Some((path, text)) => {
+                if self.files.read_scribe(Path::new(path))?.as_deref() != Some(text.as_str()) {
+                    return Err(refusal(
+                        "scribe_changed",
+                        "the SCR file changed since it was read; retry",
+                    ));
+                }
+                if path != &write.path {
+                    if self.files.read_scribe(target)?.is_some() {
+                        return Err(refusal(
+                            "scribe_exists",
+                            "an SCR file already has the new name",
+                        ));
+                    }
+                    removed.push(path.clone());
+                }
+            }
+            None => {
+                if self.files.read_scribe(target)?.is_some() {
+                    return Err(refusal(
+                        "scribe_changed",
+                        "the SCR file changed since it was read; retry",
+                    ));
+                }
+            }
+        }
+        let pending = self.decide_with(
+            WriteKind::Scribe,
+            &write.path,
+            &write.text,
+            None,
+            None,
+            Some(removed),
+        )?;
+        Ok(self.finish(&pending)?)
+    }
+
     /// Every proposal page with its Markdown, in path order. No writer-lock wait.
     pub fn proposal_pages(&self) -> Result<Vec<office_core::ports::LibraryText>> {
         self.read_ready()?;
@@ -1237,7 +1303,9 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: if matches!(kind, WriteKind::ProposalMove) {
+            version: if matches!(kind, WriteKind::Scribe) {
+                10
+            } else if matches!(kind, WriteKind::ProposalMove) {
                 9
             } else if matches!(kind, WriteKind::Proposal) {
                 8
@@ -1363,6 +1431,14 @@ impl LibraryStore {
                     self.files.validate_proposal_path(Path::new(path))?;
                 }
             }
+            WriteKind::Scribe => {
+                self.require_initialized()?;
+                self.files
+                    .validate_scribe_path(Path::new(&pending.relative))?;
+                for path in pending.removed.as_deref().unwrap_or_default() {
+                    self.files.validate_scribe_path(Path::new(path))?;
+                }
+            }
             WriteKind::Document => {
                 self.require_initialized()?;
                 self.files
@@ -1414,6 +1490,13 @@ impl LibraryStore {
                     .write_proposal(Path::new(&pending.relative), &pending.text)?;
                 for path in pending.removed.as_deref().unwrap_or_default() {
                     self.files.remove_proposal(Path::new(path))?;
+                }
+            }
+            WriteKind::Scribe => {
+                self.files
+                    .write_scribe(Path::new(&pending.relative), &pending.text)?;
+                for path in pending.removed.as_deref().unwrap_or_default() {
+                    self.files.remove_scribe(Path::new(path))?;
                 }
             }
             WriteKind::Document => {
@@ -2805,6 +2888,15 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::knowledge_pages(self)?)
+    }
+    fn scribe_files(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(Self::scribe_files(self)?)
+    }
+    fn write_scribe_file(
+        &self,
+        write: &office_core::ports::ScribeWrite,
+    ) -> office_core::Result<()> {
+        Self::write_scribe_file(self, write)
     }
     fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::source_documents(self)?)

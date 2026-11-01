@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-pending request",
+  "description": "Parse one session transcript through the conversation adapter (text between the user and the agent only, credentials scrubbed) into .orbit/tmp/scribe/<session_id>.jsonl, owner-only, and return what the scribe has not read yet. Model-free; no Library write.",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "description": "Provider (engine) session identity."
+    },
+    "transcript": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Transcript path inside the granted workspace or Library."
+    },
+    "provider": {
+      "enum": [
+        "claude-code"
+      ],
+      "description": "Transcript format; only claude-code has an adapter."
+    },
+    "cwd": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "The session's working directory; its last component is the project name and the default topic."
+    }
+  },
+  "required": [
+    "session_id",
+    "transcript",
+    "provider",
+    "cwd"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-append request",
+  "description": "Validate the scribe's entries against the parsed messages and the rules, append the accepted ones to the session's SCR file, merge topics, move scribed_through to through and commit. Run office.scribe-pending first.",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "description": "Provider (engine) session identity."
+    },
+    "through": {
+      "type": "string",
+      "pattern": "^m-[0-9]{4,}$",
+      "description": "The last message given to the scribe; never before the file's scribed_through."
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "A cited message (msg and quote) or a note (text alone, with by).",
+        "properties": {
+          "msg": {
+            "type": "string",
+            "pattern": "^m-[0-9]{4,}$"
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact substring of the cited message."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Note text, written verbatim (credentials scrubbed) with note in place of a message id."
+          },
+          "tag": {
+            "type": "string"
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9#._:/@-]{1,128}$"
+            }
+          },
+          "due": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolves": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "resolved only: <SCR id>#L<n> of an existing pending line."
+          },
+          "by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "user, or the crew name an agent tag requires."
+          }
+        },
+        "required": [
+          "tag"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "msg",
+              "quote"
+            ],
+            "not": {
+              "required": [
+                "text"
+              ]
+            }
+          },
+          {
+            "required": [
+              "text"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "msg"
+                  ]
+                },
+                {
+                  "required": [
+                    "quote"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Session title; a change renames the file once and records the old id in aliases."
+    },
+    "counterpart": {
+      "enum": [
+        "orchestrator",
+        "agent",
+        "coworker",
+        "meeting",
+        "self"
+      ]
+    },
+    "counterpart_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "session_id",
+    "through"
+  ],
+  "additionalProperties": false
+}
