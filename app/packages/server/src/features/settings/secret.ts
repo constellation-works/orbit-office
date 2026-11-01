@@ -18,10 +18,21 @@ export function isSlot(slot: unknown): slot is string {
   return typeof slot === "string" && /^conn_(0[1-9]|1[0-6])$/.test(slot);
 }
 
-/** The private-route token. The name is fixed; the value travels on stdin only. */
-export function writeOpenWeightsToken(value: string, options: SecretOptions = {}): Promise<void> {
-  if (value.length === 0) return Promise.reject(new SecretError("secret_not_saved"));
-  return runSecret("set", "office", "open_weights_token", value, "secret_not_saved", options);
+/**
+ * The private-route token, bound to the endpoint origin it is saved for:
+ * one secret write of the record `{"origin","token"}`, so the token and its
+ * binding change together or not at all. The office binary sends the token
+ * only to an endpoint on that origin. The name is fixed; the record travels
+ * on stdin only.
+ */
+export function writeOpenWeightsToken(origin: string, value: string, options: SecretOptions = {}): Promise<void> {
+  if (value.length === 0 || origin.length === 0) return Promise.reject(new SecretError("secret_not_saved"));
+  return runSecret("set", "office", "open_weights_token", JSON.stringify({ origin, token: value }), "secret_not_saved", options);
+}
+
+/** Forget the private-route token, so no endpoint is sent one. */
+export function removeOpenWeightsToken(options: SecretOptions = {}): Promise<void> {
+  return runSecret("rm", "office", "open_weights_token", undefined, "secret_cleanup_failed", options);
 }
 
 export async function writeSecret(

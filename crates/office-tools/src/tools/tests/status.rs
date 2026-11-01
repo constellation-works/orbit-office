@@ -2,7 +2,7 @@
 
 use crate::registry::Call;
 use crate::tools::status::run;
-use serde_json::{Map, json};
+use serde_json::{Map, Value, json};
 
 #[test]
 fn status_reports_set_and_unset_secrets_without_values() {
@@ -289,7 +289,70 @@ fn status_reports_a_configured_private_endpoint_and_never_its_token() {
         })
     );
     assert_eq!(output["secrets"]["open_weights_token"], json!("set"));
+    // A bare token was never saved for an endpoint, so nothing sends it.
+    assert_eq!(output["open_weights_token_binding"], json!("unbound"));
     assert!(!output.to_string().contains("do-not-echo-this"));
+}
+
+/// Status for a Library whose private endpoint is `endpoint`, with the
+/// stored `open_weights_token` record `stored`.
+fn status_with_endpoint(endpoint: &str, stored: &str) -> Value {
+    let input = Map::new();
+    let mut context = Map::new();
+    context.insert(
+        "secrets".to_string(),
+        json!({ "open_weights_token": stored }),
+    );
+    let mut library = office_testkit::fakes::FakeLibrary::initialized();
+    library.settings = office_core::domain::settings::Settings {
+        open_weights: Some(office_core::domain::settings::OpenWeights {
+            endpoint: endpoint.into(),
+            model: "muse".into(),
+            kind: office_core::domain::endpoint::EndpointKind::Company,
+            label: "Acme".into(),
+            capabilities: None,
+            verified_at: None,
+        }),
+        ..office_core::domain::settings::Settings::default()
+    };
+    let ports = office_core::ports::Ports {
+        scripts: Box::new(office_testkit::fakes::FakeScripts::default()),
+        library: Box::new(library),
+        models: Box::new(office_testkit::fakes::FakeModels::new()),
+        orbit: Box::new(office_testkit::fakes::FakeOrbit::default()),
+        clock: Box::new(office_testkit::fakes::FakeClock(
+            std::time::SystemTime::UNIX_EPOCH,
+        )),
+        calendar: Box::new(office_core::ports::UnavailableCalendar),
+        selections: Box::new(office_testkit::fakes::FakeSelections::default()),
+        shared: Box::new(office_testkit::fakes::FakeShared::default()),
+        pr: Box::new(office_core::ports::UnavailablePullRequests),
+        scribe_control: Box::new(office_core::ports::UnavailableScribeControls),
+    };
+    run(&Call {
+        ports: &ports,
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds")
+}
+
+#[test]
+fn status_says_whether_the_token_was_saved_for_the_configured_origin() {
+    let stored = json!({"origin": "https://a.example", "token": "do-not-echo-this"}).to_string();
+
+    let same = status_with_endpoint("https://a.example/v1", &stored);
+    assert_eq!(same["open_weights_token_binding"], json!("this_endpoint"));
+    let moved = status_with_endpoint("https://b.example/v1", &stored);
+    assert_eq!(moved["open_weights_token_binding"], json!("other_endpoint"));
+    assert_eq!(moved["secrets"]["open_weights_token"], json!("set"));
+    assert!(
+        !moved.to_string().contains("a.example"),
+        "the bound origin is not reported"
+    );
+    for output in [same, moved] {
+        assert!(!output.to_string().contains("do-not-echo-this"));
+    }
 }
 
 /// Health says the Library is initialized, but reading settings is refused.

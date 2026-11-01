@@ -29,7 +29,8 @@
 //!   as Baseten's Model APIs, <https://docs.baseten.co/inference/model-apis/overview>,
 //!   fetched 2026-10-27, or the user's own hardware): OpenAI-compatible
 //!   Chat Completions at `<endpoint>/chat/completions`, optional Bearer
-//!   credential (`open_weights_token`), and the model named as the server
+//!   credential (`open_weights_token`, sent only to the origin it was
+//!   saved for), and the model named as the server
 //!   names it (`open_weights.model`). Muse Spark Open accepts `json_schema`
 //!   but does not enforce it. Extraction on both routes parses the reply as
 //!   JSON and validates it locally against the requested schema. Non-JSON or
@@ -110,7 +111,10 @@ pub const DEFAULT_META_BASE_URL: &str = "https://api.meta.ai/v1";
 pub struct ModelConfig {
     /// Meta Model API key (hosted calls). Required for `normal` material.
     pub meta_api_key: Option<String>,
-    /// The private endpoint's token, when it needs one.
+    /// The stored `open_weights_token` record, exactly as Orbit delivered
+    /// it: the private endpoint's token bound to the origin it was saved
+    /// for ([`office_core::domain::endpoint::BoundToken`]). Routing sends
+    /// the token only to that origin; any other value is never sent.
     pub open_weights_token: Option<String>,
     /// Hosted Meta base URL.
     pub meta_base_url: String,

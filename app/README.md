@@ -58,7 +58,9 @@ kept in server memory only; `?settings=shared-library#settings` opens the
 section (docs/design/office/specs/web-app.md, "Shared library implementation").
 Private route saves the `open_weights` block with `office.config-set`, then runs
 `office.private-route-check` once. Its token goes only to
-`orbit plugin secret set office open_weights_token` on stdin. The footer and the
+`orbit plugin secret set office open_weights_token` on stdin, bound to the
+endpoint's origin; a saved token is never sent to another origin, and
+*Remove the saved token* runs `orbit plugin secret rm`. The footer and the
 section show "Built with Muse Spark Open" only when an endpoint is configured.
 Connection reads and full writes carry the optional `idempotency_header` gateway
 field; the Settings editor and enable/disable controls preserve existing values.

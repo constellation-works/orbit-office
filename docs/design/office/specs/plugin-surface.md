@@ -321,7 +321,11 @@ alone, an unknown kind, an unknown block key or a refused endpoint fails with
 synthesized by defaults. `office.status` reports that block as `open_weights`
 (or null when none is configured). `capabilities` and `verified_at` are null
 until a check records them. The token is not in the object;
-`secrets.open_weights_token` is `set` or `unset`.
+`secrets.open_weights_token` is `set` or `unset`, and
+`open_weights_token_binding` (`this_endpoint`, `other_endpoint`, `unbound` or
+`unset`) says whether the stored token was saved for the configured endpoint's
+origin, the only origin it is sent to
+([models-and-privacy.md](./models-and-privacy.md#the-private-routes-token)).
 These are Library policy settings, independent of plugin installation config.
 
 ### Private-route field limits

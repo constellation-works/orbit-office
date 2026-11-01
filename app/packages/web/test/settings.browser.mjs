@@ -157,7 +157,7 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
   assert.equal(JSON.parse((await postedRoute).postData()).token, routeToken);
   await privateRegion.getByText("this server doesn't take audio, so private videos can't be transcribed", { exact: true }).waitFor();
   await privateRegion.getByRole("status").filter({ hasText: "Private route saved." }).waitFor();
-  await privateRegion.getByText("A token is saved. Leave this empty to keep it. Stored with Orbit and never shown again.", { exact: true }).waitFor();
+  await privateRegion.getByText("A token is saved for this endpoint's origin. Leave this empty to keep using it there. It is never sent to a different origin.", { exact: true }).waitFor();
   await privateRegion.getByText("Built with Muse Spark Open", { exact: true }).waitFor();
   await page.locator("#site-footer").getByText("Built with Muse Spark Open", { exact: true }).waitFor();
   assert.equal(await page.getByText("Built with Muse Spark Open", { exact: true }).count(), 2);
@@ -170,8 +170,40 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
   const routeStart = routeNames.lastIndexOf("office.config-set");
   assert.deepEqual(routeNames.slice(routeStart, routeStart + 3), ["office.config-set", "secret:office:open_weights_token", "office.private-route-check"]);
   const routeStdin = JSON.parse((await readFile(resolve(fake.state, "secret-stdin.log"), "utf8")).trim().split("\n").at(-1));
-  assert.equal(routeStdin.value, routeToken);
+  assert.deepEqual(JSON.parse(routeStdin.value), { origin: "https://muse.internal.example", token: routeToken });
   assert.ok(!(await readFile(resolve(fake.state, "invocations.log"), "utf8")).includes(routeToken));
+
+  // Moving to another origin with the token left empty: the form says the
+  // saved token won't go there, posts no token, and no secret is written.
+  await settingsLink.click();
+  await page.getByRole("button", { name: "Private route", exact: true }).click();
+  const moved = page.getByRole("region", { name: "Private route", exact: true });
+  await moved.getByLabel("Endpoint URL", { exact: true }).fill("https://new-provider.example/v1");
+  await moved.getByText("This endpoint is on a different origin, so the saved token won't be sent to it. Enter its token if it needs one, or leave this empty for an endpoint that takes none.", { exact: true }).waitFor();
+  await moved.getByLabel("Endpoint kind", { exact: true }).selectOption("provider");
+  await capture("settings-private-route-origin-changed");
+  const secretWrites = (await readFile(resolve(fake.state, "secret-stdin.log"), "utf8")).trim().split("\n").length;
+  const postedMove = page.waitForRequest((request) => request.url().endsWith("/api/settings/private-route") && request.method() === "POST");
+  await moved.getByRole("button", { name: "Save private route", exact: true }).click();
+  const moveBody = JSON.parse((await postedMove).postData());
+  assert.equal("token" in moveBody, false);
+  assert.equal("clear_token" in moveBody, false);
+  await moved.getByRole("status").filter({ hasText: "Private route saved." }).waitFor();
+  await moved.getByText("The saved token was saved for a different endpoint, so this endpoint is sent no token. Enter this endpoint's token if it needs one.", { exact: true }).waitFor();
+  assert.equal((await readFile(resolve(fake.state, "secret-stdin.log"), "utf8")).trim().split("\n").length, secretWrites);
+  await capture("settings-private-route-other-endpoint");
+
+  // Removing the saved token for an endpoint that takes none.
+  await moved.getByLabel("Remove the saved token", { exact: true }).check();
+  assert.equal(await moved.getByLabel("Endpoint token", { exact: true }).isDisabled(), true);
+  const postedClear = page.waitForRequest((request) => request.url().endsWith("/api/settings/private-route") && request.method() === "POST");
+  await moved.getByRole("button", { name: "Save private route", exact: true }).click();
+  assert.equal(JSON.parse((await postedClear).postData()).clear_token, true);
+  await moved.getByText("No token is saved. A token you enter is sent only to this endpoint's origin, stored with Orbit and never shown again.", { exact: true }).waitFor();
+  assert.equal(await moved.getByLabel("Remove the saved token", { exact: true }).isHidden(), true);
+  const lastCall = (await readFile(resolve(fake.state, "invocations.log"), "utf8")).trim().split("\n").map(JSON.parse)
+    .filter((args) => args[0] === "plugin").at(-1);
+  assert.deepEqual(lastCall, ["plugin", "secret", "rm", "office", "open_weights_token"]);
   assert.deepEqual(errors, []);
 });
 

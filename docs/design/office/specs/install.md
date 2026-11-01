@@ -133,7 +133,12 @@ filter for them. Orbit must support `workspace init --preset`.
    on the secret. A required secret (the Meta API key) prints the
    `orbit plugin secret set office <name>` command to set it later. An optional secret
    (`open_weights_token`) prints only `secrets: open_weights_token skipped (optional)`,
-   with no command; set it later with `orbit plugin secret set office open_weights_token`.
+   with no command; set it later in Settings › Private route.
+   The private route's token is sent only to the endpoint origin it was saved for
+   ([models-and-privacy.md](./models-and-privacy.md#the-private-routes-token)). The
+   installer knows no endpoint, so a token it stores is not bound to an origin and is
+   never sent; `office.status` reports it as `open_weights_token_binding: unbound`
+   and Settings asks for it again with the endpoint.
    Values supplied through the environment are still stored in either case.
 7. **Scaffold.** Delegated to the same `orbit-office init` invocation, which runs `orbit tool run office.init --json --full`: the Library's layout, git
    repository, config, `.gitignore` and index, then the first Library commit. The CLI exits 0

@@ -380,7 +380,15 @@ always says "Private means not sent to Meta's hosted API, sent only to the
 endpoint you chose". Saving writes the whole `open_weights` block with
 `office.config-set`, then runs `office.private-route-check` once. A token, when
 one was typed, goes only to `orbit plugin secret set office open_weights_token`
-on stdin and is never shown again. The check's capabilities are shown in plain
+on stdin, as one record bound to the endpoint's origin, and is never shown
+again. A saved token is sent only to that origin
+([models-and-privacy.md](./models-and-privacy.md#the-private-routes-token)):
+leaving the field empty keeps it for an unchanged origin, and an endpoint on
+another origin is sent no token. The token hint follows
+`open_weights_token_binding` from `office.status`, and says so as soon as the
+typed endpoint leaves the saved token's origin. *Remove the saved token* sends
+`clear_token: true`, which runs `orbit plugin secret rm office
+open_weights_token`. The check's capabilities are shown in plain
 words (a refused audio probe says that private videos can't be transcribed).
 `GET /api/settings/private-route` reads the block from `office.status`
 (`open_weights`, or null). The footer and the section show "Built with Muse

@@ -1,6 +1,6 @@
 /** Private route: where private material goes, in plain words. */
-import type { PrivateRouteCheckLine, PrivateRouteStatus, PrivateRouteWrite, RouteCapability } from "@orbit-office/contracts";
-import { ApiError, savePrivateRoute } from "../../api/client.js";
+import type { PrivateRouteCheckLine, PrivateRouteStatus, PrivateRouteWrite, PrivateTokenBinding, RouteCapability } from "@orbit-office/contracts";
+import { ApiError, getPrivateRoute, savePrivateRoute } from "../../api/client.js";
 import { MUSE_SPARK_OPEN_ATTRIBUTION } from "../../ui/index.js";
 
 /** The sentence the private-route section always shows. */
@@ -32,6 +32,23 @@ const DESTINATIONS: Record<PrivateRouteWrite["kind"], string> = {
 };
 
 const ORDER: readonly RouteCapability[] = ["text", "image", "audio"];
+
+/** What the token field means for each saved-token state. A token goes only to the origin it was saved for. */
+export const TOKEN_HINTS: Record<PrivateTokenBinding, string> = {
+  unset: "No token is saved. A token you enter is sent only to this endpoint's origin, stored with Orbit and never shown again.",
+  this_endpoint: "A token is saved for this endpoint's origin. Leave this empty to keep using it there. It is never sent to a different origin.",
+  other_endpoint: "The saved token was saved for a different endpoint, so this endpoint is sent no token. Enter this endpoint's token if it needs one.",
+  unbound: "The saved token was set outside Settings and isn't tied to an endpoint, so it is never sent. Enter it here to use it with this endpoint.",
+};
+
+/** Shown while the typed endpoint is on another origin than the one the saved token is for. */
+export const ORIGIN_CHANGED_HINT =
+  "This endpoint is on a different origin, so the saved token won't be sent to it. Enter its token if it needs one, or leave this empty for an endpoint that takes none.";
+
+/** The scheme, host and port part of an endpoint URL: what a saved token is bound to. */
+export function endpointOrigin(endpoint: string): string | undefined {
+  return /^(https?:\/\/[^/?#]+)/u.exec(endpoint.trim())?.[1]?.toLowerCase();
+}
 
 export interface PrivateRouteMount {
   data: PrivateRouteStatus;
@@ -98,12 +115,38 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
   token.required = false;
   token.autocomplete = "new-password";
   token.setAttribute("aria-label", "Endpoint token");
-  const savedTokenHint = "A token is saved. Leave this empty to keep it. Stored with Orbit and never shown again.";
-  const hint = text("span", mount.data.token === "set"
-    ? savedTokenHint
-    : "No token is saved. Stored with Orbit and never shown again.");
+  let binding: PrivateTokenBinding = mount.data.token_binding;
+  let boundOrigin = binding === "this_endpoint" && route !== null ? endpointOrigin(route.endpoint) : undefined;
+  const hint = text("span", "");
   hint.className = "settings-hint";
+  hint.setAttribute("aria-live", "polite");
   token.parentElement?.append(hint);
+  const clearWrap = text("label", "");
+  clearWrap.className = "settings-check";
+  const clear = document.createElement("input");
+  clear.type = "checkbox";
+  clear.name = "clear_token";
+  clearWrap.append(clear, document.createTextNode("Remove the saved token"));
+  fields.append(clearWrap);
+  function showToken(): void {
+    clearWrap.hidden = binding === "unset";
+    if (clearWrap.hidden) clear.checked = false;
+    token.disabled = clear.checked;
+    if (clear.checked) token.value = "";
+    const moved = binding === "this_endpoint" && endpointOrigin(endpoint.value) !== boundOrigin;
+    hint.textContent = clear.checked
+      ? "The saved token will be removed. This endpoint will be sent no token."
+      : moved ? ORIGIN_CHANGED_HINT : TOKEN_HINTS[binding];
+  }
+  async function refreshToken(): Promise<void> {
+    try {
+      const fresh = await getPrivateRoute();
+      if (!mount.alive()) return;
+      binding = fresh.token_binding;
+      boundOrigin = binding === "this_endpoint" && fresh.route !== null ? endpointOrigin(fresh.route.endpoint) : undefined;
+    } catch { /* Keep the last known state; the next visit reads it again. */ }
+    showToken();
+  }
 
   const destination = text("p", "");
   destination.className = "settings-destination";
@@ -118,7 +161,10 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
   }
   kind.addEventListener("change", describe);
   label.addEventListener("input", describe);
+  endpoint.addEventListener("input", showToken);
+  clear.addEventListener("change", showToken);
   describe();
+  showToken();
 
   const notes = document.createElement("ul");
   notes.className = "capability-notes";
@@ -170,6 +216,7 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
     const selected = kind.value;
     if (selected !== "company" && selected !== "provider" && selected !== "own_hardware") return;
     const entered = token.value;
+    const removing = clear.checked && entered === "";
     token.value = "";
     const body: PrivateRouteWrite = {
       endpoint: endpoint.value,
@@ -177,6 +224,7 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
       kind: selected,
       label: label.value,
       ...(entered === "" ? {} : { token: entered }),
+      ...(removing ? { clear_token: true as const } : {}),
     };
     mount.setBusy(true);
     submit.disabled = true;
@@ -185,7 +233,9 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
         const saved = await savePrivateRoute(body);
         if (!mount.alive()) return;
         mount.onConfigured(true);
-        if (entered !== "") hint.textContent = savedTokenHint;
+        clear.checked = false;
+        await refreshToken();
+        if (!mount.alive()) return;
         notes.hidden = false;
         showNotes(capabilitySentences(saved.check.checks));
         showAttribution(true);
@@ -198,9 +248,9 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
         if (error instanceof ApiError && error.routeSaved) {
           mount.onConfigured(true);
           showAttribution(true);
-          if (entered !== "" && error.code !== "secret_not_saved" && error.code !== "secret_timeout") {
-            hint.textContent = savedTokenHint;
-          }
+          clear.checked = false;
+          await refreshToken();
+          if (!mount.alive()) return;
         }
         feedback.setAttribute("role", "alert");
         feedback.textContent = saveMessage(error);
@@ -216,6 +266,9 @@ function saveMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.routeSaved && (error.code === "secret_not_saved" || error.code === "secret_timeout")) {
       return "The private route was saved, but its token could not be saved. Enter the token again.";
+    }
+    if (error.routeSaved && error.code === "secret_cleanup_failed") {
+      return "The private route was saved, but the saved token could not be removed. Try removing it again.";
     }
     if (error.routeSaved && error.code === "private_route_check_failed") {
       return "The private route was saved, but its capabilities could not be checked. Try saving again.";

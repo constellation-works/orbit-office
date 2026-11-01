@@ -291,3 +291,105 @@ fn authority_has_userinfo(url: &str) -> bool {
     };
     rest.split('/').next().unwrap_or_default().contains('@')
 }
+
+/// The private route's stored credential (`open_weights_token`): the
+/// token and the endpoint origin it was saved for, as one JSON record
+/// `{"origin": "https://host[:port]", "token": "<token>"}` written in one
+/// secret call (specs/models-and-privacy.md, "The private route's token").
+///
+/// The token is only ever paired with an endpoint whose origin (scheme,
+/// host and port) equals the bound one. Library config cannot forge the
+/// binding: `office.config-set` never writes a secret. A stored value that
+/// is not such a record (for example a bare token set outside Settings) is
+/// not bound to any origin and is never sent.
+#[derive(Clone, PartialEq, Eq)]
+pub struct BoundToken {
+    origin: String,
+    token: String,
+}
+
+impl BoundToken {
+    /// Parse the stored record. Anything else, including a bare token, an
+    /// empty token, an extra key or an origin that is not an HTTP(S) URL,
+    /// is `None`: no binding, so nothing to send.
+    #[must_use]
+    pub fn parse(stored: &str) -> Option<Self> {
+        let serde_json::Value::Object(record) = serde_json::from_str(stored).ok()? else {
+            return None;
+        };
+        if record.len() != 2 {
+            return None;
+        }
+        let origin = record.get("origin")?.as_str()?;
+        let token = record.get("token")?.as_str()?;
+        if token.is_empty() || origin_of(origin).is_none() {
+            return None;
+        }
+        Some(Self {
+            origin: origin.to_string(),
+            token: token.to_string(),
+        })
+    }
+
+    /// The token, only when `endpoint` opens a socket to the bound origin.
+    #[must_use]
+    pub fn token_for(&self, endpoint: &str) -> Option<&str> {
+        let bound = origin_of(&self.origin)?;
+        (origin_of(endpoint)? == bound).then_some(self.token.as_str())
+    }
+}
+
+impl fmt::Debug for BoundToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The token never reaches a log or an error, even through Debug.
+        f.debug_struct("BoundToken")
+            .field("origin", &self.origin)
+            .finish_non_exhaustive()
+    }
+}
+
+/// How the stored private-route token relates to the configured endpoint,
+/// as `office.status` reports it (`open_weights_token_binding`). Never
+/// the token or its origin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenBinding {
+    /// No token is stored.
+    Unset,
+    /// Saved for the configured endpoint's origin: calls there send it.
+    ThisEndpoint,
+    /// Saved for another origin, or no endpoint is configured: nothing
+    /// sends it until the endpoint is back on that origin.
+    OtherEndpoint,
+    /// Stored without an endpoint binding (for example a bare token):
+    /// never sent.
+    Unbound,
+}
+
+impl TokenBinding {
+    /// Classify the stored value against the configured endpoint, if any.
+    #[must_use]
+    pub fn of(stored: Option<&str>, endpoint: Option<&str>) -> Self {
+        let Some(stored) = stored.filter(|value| !value.is_empty()) else {
+            return Self::Unset;
+        };
+        let Some(bound) = BoundToken::parse(stored) else {
+            return Self::Unbound;
+        };
+        match endpoint.and_then(|endpoint| bound.token_for(endpoint)) {
+            Some(_) => Self::ThisEndpoint,
+            None => Self::OtherEndpoint,
+        }
+    }
+
+    /// The status spelling: `unset`, `this_endpoint`, `other_endpoint` or
+    /// `unbound`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unset => "unset",
+            Self::ThisEndpoint => "this_endpoint",
+            Self::OtherEndpoint => "other_endpoint",
+            Self::Unbound => "unbound",
+        }
+    }
+}

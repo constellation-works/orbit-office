@@ -6,7 +6,9 @@
  * `<state>/events.log` so tests can replay concurrency, answers
  * `orbit.task.list`, `orbit.task.show` and `orbit.task.update` from
  * `<state>/tasks.json` when present (updates are written back), artifacts from
- * `<state>/artifacts.json` (`{task: {path: text}}`), and records `orbit run
+ * `<state>/artifacts.json` (`{task: {path: text}}`), models the office
+ * `open_weights_token` record (`secret set` binds it to the record's origin,
+ * `secret rm` removes it, `office.status` reports the binding), and records `orbit run
  * ship` ids in `<state>/ship.log`. Like Orbit, ship refuses a task whose
  * `not_before` is after `FAKE_ORBIT_NOW` (default the real clock) as
  * `task_scheduled` and ships nothing. Behaviour knobs arrive through the
@@ -47,6 +49,13 @@ async function main() {
           let office = {};
           try { office = JSON.parse(readFileSync(join(state, "office.json"), "utf8")); } catch {}
           office.token = "set";
+          // Like the office binary: only a {"origin","token"} record is bound.
+          let origin = null;
+          try {
+            const record = JSON.parse(value);
+            if (record && typeof record.origin === "string" && typeof record.token === "string" && Object.keys(record).length === 2) origin = record.origin;
+          } catch {}
+          office.tokenOrigin = origin;
           writeFileSync(join(state, "office.json"), JSON.stringify(office));
         }
         try {
@@ -57,6 +66,14 @@ async function main() {
           writeFileSync(join(state, "gateway.json"), JSON.stringify(fixtures));
         } catch {}
       }
+    }
+    if (args[2] === "rm" && args[3] === "office" && args[4] === "open_weights_token") {
+      if (process.env.FAKE_SECRET_FAIL === "1") { process.exitCode = 3; return; }
+      let office = {};
+      try { office = JSON.parse(readFileSync(join(state, "office.json"), "utf8")); } catch {}
+      delete office.token;
+      delete office.tokenOrigin;
+      writeFileSync(join(state, "office.json"), JSON.stringify(office));
     }
     return;
   }
@@ -230,6 +247,10 @@ async function main() {
           process.stdout.write(JSON.stringify({ ok: true, output: {
             version: "0.1.0",
             secrets: { meta_api_key: "unset", open_weights_token: office.token || "unset" },
+            open_weights_token_binding: office.token !== "set" ? "unset"
+              : typeof office.tokenOrigin !== "string" ? "unbound"
+              : openWeights !== null && openWeights.endpoint.toLowerCase().startsWith(office.tokenOrigin.toLowerCase() + "/") ? "this_endpoint"
+              : "other_endpoint",
             library: {
               initialized: openWeights !== null,
               documents: 0,

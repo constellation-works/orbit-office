@@ -14,6 +14,7 @@ tests:
           meta_api_key: unset
           open_weights_token: unset
           baseten_token: unset
+        open_weights_token_binding: unset
         library:
           initialized: true
           documents: 3

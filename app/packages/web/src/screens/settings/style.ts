@@ -22,6 +22,9 @@ export const style = `
 .settings .settings-wide { grid-column:1/-1; }
 .settings .settings-field[hidden], .settings [hidden] { display:none; }
 .settings .settings-hint { color:var(--fg-mute); font-size:12px; }
+.settings .settings-check { display:flex; align-items:center; gap:8px; align-self:start; margin-top:32px; font-size:13px; color:var(--fg-dim); }
+.settings .settings-check input { width:auto; margin:0; }
+.settings .settings-check[hidden] { display:none; }
 .settings .settings-feedback { margin:16px 0; }
 .settings .settings-feedback:empty { display:none; }
 .settings .api-calls { display:grid; gap:12px; padding:0; list-style:none; }
@@ -45,5 +48,5 @@ export const style = `
 .settings .settings-sync h3 { font-size:15px; margin:0 0 8px; }
 .settings .settings-sync-status { color:var(--fg); margin:0 0 14px; }
 .settings .settings-sync .settings-hint { margin-top:12px; }
-@media(max-width:600px) { .settings-fields { grid-template-columns:1fr; } .settings-form { padding:20px; } .settings .settings-heading { align-items:flex-start; flex-direction:column; } }
+@media(max-width:600px) { .settings-fields { grid-template-columns:1fr; } .settings .settings-check { margin-top:0; } .settings-form { padding:20px; } .settings .settings-heading { align-items:flex-start; flex-direction:column; } }
 `;

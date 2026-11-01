@@ -9,7 +9,7 @@
 
 use office_common::Sensitivity;
 use office_core::Error;
-use office_core::domain::endpoint::{Capability, ModelRoute};
+use office_core::domain::endpoint::{BoundToken, Capability, ModelRoute};
 use office_core::ports::{DerivedBy, ModelTier};
 
 use crate::http::Destination;
@@ -110,11 +110,23 @@ pub(crate) fn route(
 /// The configured private endpoint, whatever its last check found. Only
 /// `office.private-route-check` sends there without [`route`]'s
 /// capability gate, because it is what measures the capabilities.
+///
+/// The stored token goes with the call only when it was saved for this
+/// endpoint's origin ([`BoundToken`]). The endpoint and the token come
+/// from the same call's settings and context, so a config change, a
+/// failed token write or a concurrent save can only leave the call
+/// unauthenticated, never pair a token with an origin it was not saved
+/// for.
 pub(crate) fn private_endpoint(config: &crate::ModelConfig) -> Result<ResolvedCall, Error> {
     let block = config.open_weights.as_ref().ok_or_else(unconfigured)?;
+    let api_key = config
+        .open_weights_token
+        .as_deref()
+        .and_then(BoundToken::parse)
+        .and_then(|bound| bound.token_for(&block.endpoint).map(str::to_string));
     Ok(ResolvedCall {
         base_url: block.endpoint.trim_end_matches('/').to_string(),
-        api_key: config.open_weights_token.clone(),
+        api_key,
         model: block.model.clone(),
         route: ModelRoute::Private(block.kind),
     })

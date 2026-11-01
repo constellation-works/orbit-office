@@ -259,10 +259,7 @@ pub fn chat_reply(content: &str) -> String {
 
 /// Client config pointing the hosted endpoint at `hosted_base`.
 pub fn hosted_config(hosted_base: &str) -> ModelConfig {
-    let mut config = ModelConfig::new(
-        Some("test-meta-key".into()),
-        Some("test-open-weights-token".into()),
-    );
+    let mut config = ModelConfig::new(Some("test-meta-key".into()), Some(FIXTURE_TOKEN.into()));
     config.meta_base_url = hosted_base.to_string();
     config
 }
@@ -285,8 +282,37 @@ pub fn open_weights_with(endpoint: &str, capabilities: Option<&[Capability]>) ->
     }
 }
 
-/// Build the routed client for `config`.
-pub fn client(config: ModelConfig) -> RoutedClient {
+/// The fixture token every test config starts with.
+pub const FIXTURE_TOKEN: &str = "test-open-weights-token";
+
+/// The scheme and authority of `url`: the origin a token is saved for.
+pub fn origin(url: &str) -> String {
+    let (scheme, rest) = url.split_once("://").expect("an http(s) URL");
+    let authority = rest.split('/').next().unwrap_or_default();
+    format!("{scheme}://{authority}")
+}
+
+/// The stored `open_weights_token` record Settings writes: `token` bound
+/// to the origin of `endpoint`.
+pub fn bound_token(endpoint: &str, token: &str) -> String {
+    json!({"origin": origin(endpoint), "token": token}).to_string()
+}
+
+/// Build the routed client for `config`, as Settings would have stored the
+/// fixture token: a bare [`FIXTURE_TOKEN`] becomes the record bound to the
+/// configured private endpoint's origin. Any other stored value is used
+/// exactly as given ([`client_as_stored`]).
+pub fn client(mut config: ModelConfig) -> RoutedClient {
+    if let Some(block) = &config.open_weights
+        && config.open_weights_token.as_deref() == Some(FIXTURE_TOKEN)
+    {
+        config.open_weights_token = Some(bound_token(&block.endpoint, FIXTURE_TOKEN));
+    }
+    RoutedClient::new(config)
+}
+
+/// Build the routed client for `config` with its stored token unchanged.
+pub fn client_as_stored(config: ModelConfig) -> RoutedClient {
     RoutedClient::new(config)
 }
 
