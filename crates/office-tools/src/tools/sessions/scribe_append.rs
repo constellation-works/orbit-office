@@ -5,7 +5,9 @@
 //! refuses (and reports) every entry whose quote is not an exact substring
 //! of its message, whose tag or topic is not in the rules, or whose tag the
 //! author may not take, then appends one line per accepted entry, merges
-//! topics, advances `scribed_through` and commits to the Library.
+//! topics, advances `scribed_through` to `through` when one is supplied and
+//! commits to the Library. A note/title-only call may omit `through` and
+//! leaves `scribed_through` unchanged.
 
 use office_core::domain::scribe_control::validate_session_id;
 use office_core::domain::source::conversation::{
@@ -58,9 +60,17 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let session_id = optional(call, "session_id")?
         .ok_or_else(|| Error::InvalidArgument("scribe-append requires session_id".into()))?;
     validate_session_id(session_id)?;
-    let through = optional(call, "through")?
-        .ok_or_else(|| Error::InvalidArgument("scribe-append requires through".into()))?;
+    let through = optional(call, "through")?;
     let entries = scribe::parse_entries(call.input.get("entries"))?;
+    let title = optional(call, "title")?;
+    if through.is_none()
+        && (entries.iter().any(|entry| entry.msg.is_some())
+            || (entries.is_empty() && title.is_none()))
+    {
+        return Err(Error::InvalidArgument(
+            "scribe-append requires through".into(),
+        ));
+    }
     let library = &call.ports.library;
     let parse = library
         .read_scribe_parse(session_id)?
@@ -78,7 +88,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let request = scribe::Request {
         session_id,
         through,
-        title: optional(call, "title")?,
+        title,
         counterpart: optional(call, "counterpart")?,
         counterpart_name: optional(call, "counterpart_name")?,
         now: &now,

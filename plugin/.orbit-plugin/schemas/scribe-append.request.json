@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-append request",
-  "description": "Validate the scribe's entries against the parsed messages and the rules, append the accepted ones to the session's SCR file, merge topics, move scribed_through to through and commit. Run office.scribe-pending first.",
+  "description": "Validate the scribe's entries against the parsed messages and the rules, append the accepted ones to the session's SCR file, merge topics, move scribed_through to through and commit. A note/title-only call (no entry citing a message) may omit through; it writes the note or title and leaves scribed_through unchanged. Run office.scribe-pending first.",
   "type": "object",
   "properties": {
     "session_id": {
@@ -12,7 +12,7 @@
     "through": {
       "type": "string",
       "pattern": "^m-[0-9]{4,}$",
-      "description": "The last message given to the scribe; never before the file's scribed_through."
+      "description": "The last message given to the scribe; never before the file's scribed_through. Required when any entry cites a message or when the call carries neither a note entry nor a title; omitted only for a note/title-only append, which leaves scribed_through unchanged."
     },
     "entries": {
       "type": "array",
@@ -175,8 +175,7 @@
     }
   },
   "required": [
-    "session_id",
-    "through"
+    "session_id"
   ],
   "additionalProperties": false
 }
