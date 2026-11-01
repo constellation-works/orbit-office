@@ -11,7 +11,7 @@ import type { IncomingMessage } from "node:http";
 const STATE_CHANGING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const DEFAULT_HTTP_PORT = "80";
 
-/** True for `localhost`, any `127.0.0.0/8` address, or `::1`. */
+/** True for `localhost` and its subdomains, any `127.0.0.0/8` address, or `::1`. */
 export function isLoopbackHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, "");
   if (host === "localhost" || host.endsWith(".localhost")) return true;
@@ -23,7 +23,7 @@ export function isLoopbackHostname(hostname: string): boolean {
   return false;
 }
 
-/** Parse a `Host` header into hostname/port, or undefined when unparsable. */
+/** Parse a `Host` header into its hostname and authority (port included), or undefined when unparsable. */
 export function parseHostHeader(header: string | undefined): { hostname: string; host: string } | undefined {
   if (header === undefined) return undefined;
   const host = header.trim().toLowerCase();
@@ -66,8 +66,9 @@ export function checkLoopbackRequest(
       return { ok: false };
     }
     if (url.protocol !== "http:" || url.username !== "" || url.password !== "") return { ok: false };
-    // `URL.hostname` strips IPv6 brackets; `parsed.host` keeps the raw
-    // authority. Compare bare hostname plus effective port instead.
+    // `URL.hostname` keeps IPv6 brackets, and `parsed.host` keeps the raw
+    // authority. Compare the bare hostname (brackets stripped) plus the
+    // effective port instead.
     const originHostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
     if (!isLoopbackHostname(originHostname)) return { ok: false };
     const requestedPort = parsed.host.startsWith("[")

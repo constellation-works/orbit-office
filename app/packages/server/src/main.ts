@@ -1,6 +1,7 @@
 /**
- * App server composition: build the router from every feature and listen
- * on loopback. Nothing else lives here (ARCHITECTURE.md, "Web app").
+ * App server composition: start the dispatch pass and listen on loopback
+ * by default, serving the router's handler (`http/router.ts` builds it from
+ * every feature). Nothing else lives here (ARCHITECTURE.md, "Web app").
  *
  * The server is the only process the browser talks to. It calls Orbit as
  * the user through `orbit tool run --json` (orbit/client.ts) and runs
