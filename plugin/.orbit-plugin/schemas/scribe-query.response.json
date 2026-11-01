@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-query response",
+  "description": "The matching SCR lines, oldest first, each with its SCR id, file path and line, message id, author, time, counterpart and resume command. With no match, results is empty and the date range and file count searched are still reported. Model-free.",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": ["string", "null"],
+      "enum": ["pending", "pref", "landed", "why", null],
+      "description": "The canned mode requested, or null for a general filter query."
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "The full entry line as written in the SCR file." },
+          "line_text": { "type": "string" },
+          "quote": { "type": "string", "description": "The entry's quoted text." },
+          "id": { "type": "string", "description": "The SCR file id." },
+          "scr_id": { "type": "string" },
+          "path": { "type": "string", "description": "Library-relative SCR file path." },
+          "line": { "type": "integer", "minimum": 1 },
+          "file_line": { "type": "string", "description": "<path>:<line>." },
+          "citation": { "type": "string", "description": "<SCR id>#L<line>." },
+          "msg": { "type": "string", "description": "Message id, or note." },
+          "message_id": { "type": "string" },
+          "time": { "type": "string", "description": "The entry's local time as written on the line." },
+          "at": { "type": "string" },
+          "tag": { "type": "string" },
+          "topics": { "type": "array", "items": { "type": "string" } },
+          "refs": { "type": "array", "items": { "type": "string" } },
+          "by": { "type": ["string", "null"] },
+          "matter": { "type": ["string", "null"] },
+          "review_by": { "type": ["string", "null"] },
+          "stale": { "type": "boolean", "description": "A preference past its review_by." },
+          "due": { "type": ["string", "null"] },
+          "resolves": { "type": ["string", "null"] },
+          "supersedes": { "type": ["string", "null"] },
+          "session_id": { "type": "string" },
+          "counterpart": { "type": ["string", "null"] },
+          "counterpart_name": { "type": ["string", "null"] },
+          "resume": { "type": ["string", "null"], "description": "Resume command for the session." },
+          "resume_command": { "type": ["string", "null"] },
+          "why": { "type": ["string", "null"], "description": "The decision's reason: its inline why, or the #why note that filled its #no-why." },
+          "reason": { "type": ["string", "null"] },
+          "why_source": { "type": ["string", "null"] },
+          "why_filled_by": { "type": ["string", "null"], "description": "<SCR id>#L<line> of the #why note that filled this decision." },
+          "no_why": { "type": "boolean", "description": "A decision still missing its reason." }
+        },
+        "required": ["text", "line_text", "quote", "id", "scr_id", "path", "line", "file_line", "citation", "msg", "message_id", "time", "at", "tag", "topics", "refs", "by", "matter", "review_by", "stale", "due", "resolves", "supersedes", "session_id", "counterpart", "counterpart_name", "resume", "resume_command", "why", "reason", "why_source", "why_filled_by", "no_why"],
+        "additionalProperties": false
+      }
+    },
+    "count": { "type": "integer", "minimum": 0, "description": "Matches before the limit was applied." },
+    "files_searched": { "type": "integer", "minimum": 0 },
+    "file_count": { "type": "integer", "minimum": 0 },
+    "since": { "type": ["string", "null"], "description": "First local date searched." },
+    "until": { "type": ["string", "null"], "description": "Last local date searched." },
+    "date_range": {
+      "type": "object",
+      "properties": {
+        "since": { "type": ["string", "null"] },
+        "until": { "type": ["string", "null"] }
+      },
+      "required": ["since", "until"],
+      "additionalProperties": false
+    },
+    "time_zone": { "type": "string", "description": "The host zone the local dates were read in (IANA name, or UTC)." },
+    "today": { "type": "string", "description": "Today's local date in that zone." }
+  },
+  "required": ["mode", "results", "count", "files_searched", "file_count", "since", "until", "date_range", "time_zone", "today"],
+  "additionalProperties": false
+}
