@@ -157,7 +157,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 4096,
-      "description": "Session title; a change renames the file once and records the old id in aliases."
+      "description": "Session title; a user title change renames the file once and records the old id in aliases. Scribe/custom titles never rename."
     },
     "counterpart": {
       "enum": [
@@ -172,6 +172,15 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256
+    },
+    "title_by": {
+      "type": "string",
+      "enum": [
+        "user",
+        "custom",
+        "scribe"
+      ],
+      "description": "Who sets title: user (default, /scribe title, renames once), custom (transcript custom-title or side-session record, never renames) or scribe (agent proposal, at most eight words, never renames, refined only while scribe-set)."
     }
   },
   "required": [

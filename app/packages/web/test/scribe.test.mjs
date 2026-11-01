@@ -9,9 +9,9 @@ test("a line's time reads as written, without seconds or offset", () => {
   assert.equal(timeLabel("garbled"), "garbled");
 });
 
-test("a session reads by title and project, untitled ones plainly", () => {
-  const session = { session_id: "s", title: null, project: "constellation", counterpart_name: null, scribed_through: "m-0004", latest: "", entries: [{}, {}] };
-  assert.equal(sessionTitle(session), "Untitled session");
+test("a session reads by title and project, untitled ones by their filename slug", () => {
+  const session = { session_id: "s", id: "SCR-30-1135-pilot-admission-hold", title: null, title_by: null, project: "constellation", counterpart_name: null, scribed_through: "m-0004", latest: "", entries: [{}, {}] };
+  assert.equal(sessionTitle(session), "Pilot admission hold");
   assert.equal(sessionMeta(session), "constellation · 2 lines");
   assert.equal(sessionTitle({ ...session, title: "Scribe screen" }), "Scribe screen");
   assert.equal(sessionMeta({ ...session, project: null, entries: [{}] }), "1 line");

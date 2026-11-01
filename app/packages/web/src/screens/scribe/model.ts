@@ -21,8 +21,18 @@ export function timeLabel(time: string): string {
   return match ? `${match[1]} ${match[2]}` : time;
 }
 
+/** Humanized filename slug of an SCR id: `SCR-30-1135-pilot-admission-hold` reads `Pilot admission hold`. */
+export function humanizedSlug(id: string | null | undefined): string | null {
+  if (!id) return null;
+  const slug = id.replace(/^SCR-\d+-\d+-/, "");
+  if (slug === id || slug === "") return null;
+  const words = slug.replaceAll("-", " ").trim();
+  return words === "" ? null : words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function sessionTitle(session: ScribeSession): string {
-  return session.title ?? "Untitled session";
+  if (session.title) return session.title;
+  return humanizedSlug(session.id) ?? "Session";
 }
 
 /** Project and counterpart, when known. */

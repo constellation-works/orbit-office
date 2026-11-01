@@ -245,7 +245,7 @@ fn append_commits_the_scr_file_and_a_title_renames_it_in_one_commit() {
     assert_eq!(out["refused"][0]["reason"], "tag_not_permitted");
     let path = "sources/conversation/2026/11/SCR-01-0300-plan-the-scribe-v1-rollout.md";
     let text = std::fs::read_to_string(f.library().join(path)).unwrap();
-    let body: Vec<&str> = text.lines().skip(20).collect();
+    let body: Vec<&str> = text.lines().skip(21).collect();
     assert_eq!(body.len(), 2);
     assert_eq!(
         body[0],
@@ -270,7 +270,7 @@ fn append_commits_the_scr_file_and_a_title_renames_it_in_one_commit() {
         "office.scribe-append",
         json!({"session_id":SESSION,"through":"m-0004","title":"Scribe v1 rollout","entries":[
             {"msg":"m-0004","quote":"Waiting on CI.","tag":"resolved","topics":[],"by":"opus",
-             "resolves":"SCR-01-0300-plan-the-scribe-v1-rollout#L22"}]}),
+             "resolves":"SCR-01-0300-plan-the-scribe-v1-rollout#L23"}]}),
     );
     assert_eq!(renamed["refused"], json!([]));
     assert_eq!(

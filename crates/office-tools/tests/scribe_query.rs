@@ -362,9 +362,11 @@ fn each_line_carries_its_session_title_project_and_cursor() {
     assert_eq!(line["project"], "orbit-office");
     assert_eq!(line["scribed_through"], "m-0004");
 
-    // A file still untitled, never advanced, reports both as null.
+    // A file still untitled shows the humanized filename slug, never
+    // "Untitled session"; its cursor stays null and title_by stays null.
     let untitled = query(&ports, json!({"session_id":"session-b"}));
-    assert_eq!(untitled["results"][0]["title"], Value::Null);
+    assert_eq!(untitled["results"][0]["title"], "Second session");
+    assert_eq!(untitled["results"][0]["title_by"], Value::Null);
     assert_eq!(untitled["results"][0]["project"], "constellation");
     assert_eq!(untitled["results"][0]["scribed_through"], Value::Null);
     assert_eq!(models.calls.get(), 0);

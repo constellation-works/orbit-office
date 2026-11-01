@@ -51,7 +51,7 @@ def lines():
     found = []
     for path in sorted(home.glob('scr-*.json')):
         record = json.loads(path.read_text())
-        for number, text in enumerate(record['lines'], start=21):
+        for number, text in enumerate(record['lines'], start=22):
             found.append({'scr_id': record['id'], 'path': record['path'], 'line': number, 'text': text,
                           'msg': text.split(' ')[1], 'by': 'user', 'counterpart': 'orchestrator',
                           'resume': 'claude --resume ' + record['session_id']})
@@ -77,7 +77,7 @@ elif tool == 'office.scribe-pending':
     project = payload['cwd'].rstrip('/').rsplit('/', 1)[-1]
     view = None
     if record:
-        view = {'exists': True, 'id': record['id'], 'path': record['path'], 'title': record.get('title'),
+        view = {'exists': True, 'id': record['id'], 'path': record['path'], 'title': record.get('title'), 'title_by': record.get('title_by'),
                 'scribed_through': through, 'last_scribed_at': None, 'topics': [], 'aliases': [],
                 'counterpart': None, 'counterpart_name': None}
     print(json.dumps({'session_id': sid, 'provider': payload['provider'], 'parsed': 'library/.office/state/scribe/' + sid + '.jsonl',
@@ -93,7 +93,7 @@ elif tool == 'office.scribe-append':
         print(json.dumps({'ok': False, 'error': {'code': 'scribe_not_parsed'}}))
         sys.exit(0)
     by_id = {m['id']: m for m in json.loads(parsed.read_text())}
-    assert payload['through'] in by_id, 'through names a parsed message'
+    assert 'through' not in payload or payload['through'] in by_id, 'through names a parsed message'
     record = scr(sid) or {'session_id': sid, 'id': 'SCR-30-0000-' + sid, 'title': None,
                           'path': 'sources/conversation/2026/10/SCR-30-0000-' + sid + '.md', 'lines': []}
     added, refused = [], []
@@ -111,15 +111,17 @@ elif tool == 'office.scribe-append':
         if entry.get('by'):
             text += ' by: ' + entry['by']
         record['lines'].append(text)
-        added.append({'line': 20 + len(record['lines']), 'text': text})
+        added.append({'line': 21 + len(record['lines']), 'text': text})
     previous = record.get('scribed_through')
-    record['scribed_through'] = payload['through']
+    if payload.get('through'):
+        record['scribed_through'] = payload['through']
     if payload.get('title'):
         record['title'] = payload['title']
+        record['title_by'] = payload.get('title_by', 'user')
     (home / ('scr-' + sid + '.json')).write_text(json.dumps(record))
     print(json.dumps({'session_id': sid, 'id': record['id'], 'path': record['path'], 'created': previous is None,
                       'written': True, 'renamed_from': None, 'previous_through': previous,
-                      'scribed_through': payload['through'], 'topics': [], 'added': added,
+                      'scribed_through': payload.get('through'), 'title': record.get('title'), 'title_by': record.get('title_by'), 'topics': [], 'added': added,
                       'duplicates': 0, 'refused': refused}))
 elif tool == 'office.scribe-query':
     found = lines()
@@ -263,7 +265,7 @@ class ScribeV1(unittest.TestCase):
         self.assertEqual(append, {"session_id": self.sid, "through": "m-0002", "entries": entries})
         self.assertEqual(appended["added"], 2)
         self.assertEqual(appended["counts"], {"decision": 1, "landed": 1})
-        self.assertIn('L21 - m-0001 2026-10-30T10:00-07:00 #decision "keep the scribe local"', appended["display"])
+        self.assertIn('L22 - m-0001 2026-10-30T10:00-07:00 #decision "keep the scribe local"', appended["display"])
         self.assertIn("Scribed through m-0002.", appended["display"])
 
         again = self.scribe("")
@@ -407,7 +409,7 @@ class ScribeV1(unittest.TestCase):
         self.assertEqual(append["title"], "Scribe v1 design")
         self.assertEqual(self.scribe("title Renamed")["model_call"], False)
         self.assertEqual(self.calls("office.scribe-append")[-1]["input"],
-                         {"session_id": self.sid, "through": "m-0001", "entries": [], "title": "Renamed"})
+                         {"session_id": self.sid, "through": "m-0001", "entries": [], "title": "Renamed", "title_by": "user"})
 
     def test_untagged_note_asks_the_scribe_agent_for_a_tag(self):
         self.transcript([("user", "hello")])
@@ -527,6 +529,39 @@ class ScribeV1(unittest.TestCase):
         before = len(self.calls())
         self.assertTrue(self.scribe("backfill --since 2026-09-15")["done"])
         self.assertEqual(self.calls()[before:], [])
+        self.assert_no_model_process()
+
+    def test_agent_append_passes_a_scribe_title_through(self):
+        self.transcript([("user", "We decided to keep the scribe local because it is cheap")])
+        reply = self.scribe("")
+        pending = self.tool({"session_id": self.sid, "action": "pending"})
+        self.assertIsNone((pending.get("scr") or {}).get("title"))
+        appended = self.tool({"session_id": self.sid, "action": "append",
+                              "entries": [{"msg": "m-0001", "quote": "keep the scribe local", "tag": "decision"}],
+                              "title": "Keep the scribe local", "title_by": "scribe"})
+        append = self.calls("office.scribe-append")[0]["input"]
+        self.assertEqual(append["title"], "Keep the scribe local")
+        self.assertEqual(append["title_by"], "scribe")
+        record = json.loads((self.home / ("scr-" + self.sid + ".json")).read_text())
+        self.assertEqual(record["title_by"], "scribe")
+
+    def test_backfill_titles_fills_null_titles_without_renaming(self):
+        self.transcript([("user", "pilot admission hold discussion")],
+                        path=self.providers / "titled-one.jsonl", sid="titled-one", date="2026-10-05")
+        record_path = self.home / "scr-titled-one.json"
+        record_path.write_text(json.dumps({
+            "session_id": "titled-one", "id": "SCR-05-0900-pilot-admission-hold",
+            "path": "sources/conversation/2026/10/SCR-05-0900-pilot-admission-hold.md",
+            "title": None, "lines": [], "scribed_through": "m-0001"}))
+        reply = self.scribe("backfill --titles", sid="driver")
+        self.assertTrue(reply["done"])
+        self.assertEqual(reply["titled"], 1)
+        record = json.loads(record_path.read_text())
+        self.assertEqual(record["title"], "Pilot admission hold")
+        self.assertEqual(record["title_by"], "scribe")
+        self.assertEqual(record["path"], "sources/conversation/2026/10/SCR-05-0900-pilot-admission-hold.md")
+        appends = [c["input"] for c in self.calls("office.scribe-append")]
+        self.assertEqual(appends, [{"session_id": "titled-one", "title": "Pilot admission hold", "title_by": "scribe"}])
         self.assert_no_model_process()
 
     def test_backfill_skips_non_sessions_and_reports_refusals_by_office_code(self):

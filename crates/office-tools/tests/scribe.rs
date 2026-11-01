@@ -814,12 +814,12 @@ fn append_creates_then_appends_merges_topics_advances_and_reruns_add_nothing() {
     assert_eq!(
         text,
         format!(
-            "---\nid: \"SCR-31-2007-scribe-v1-design-lets-go-one-step-at-a-time\"\ntitle: null\nsession_id: \"{SESSION}\"\nprovider: \"claude-code\"\nmodel: \"claude-opus-5-5\"\ncounterpart: \"orchestrator\"\ncounterpart_name: \"opus orchestrator\"\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/Users/daniel/workspace/constellation\"\nbranch: \"agent-main\"\ntranscript: \"short.jsonl\"\nparsed: \"library/.office/state/scribe/{SESSION}.jsonl\"\nstarted_at: \"2026-10-31T20:07:00-07:00\"\nlast_scribed_at: \"2026-10-31T22:00-07:00\"\nscribed_through: \"m-0002\"\ntopics: [\"constellation\"]\naliases: []\n---\n- m-0001 2026-10-31T20:07-07:00 #decision #no-why #constellation \"lets go one step at a time\" refs: ORB-20690\n"
+            "---\nid: \"SCR-31-2007-scribe-v1-design-lets-go-one-step-at-a-time\"\ntitle: null\ntitle_by: null\nsession_id: \"{SESSION}\"\nprovider: \"claude-code\"\nmodel: \"claude-opus-5-5\"\ncounterpart: \"orchestrator\"\ncounterpart_name: \"opus orchestrator\"\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/Users/daniel/workspace/constellation\"\nbranch: \"agent-main\"\ntranscript: \"short.jsonl\"\nparsed: \"library/.office/state/scribe/{SESSION}.jsonl\"\nstarted_at: \"2026-10-31T20:07:00-07:00\"\nlast_scribed_at: \"2026-10-31T22:00-07:00\"\nscribed_through: \"m-0002\"\ntopics: [\"constellation\"]\naliases: []\n---\n- m-0001 2026-10-31T20:07-07:00 #decision #no-why #constellation \"lets go one step at a time\" refs: ORB-20690\n"
         )
     );
     assert_eq!(
         first["added"],
-        json!([{"line":21,"text":"- m-0001 2026-10-31T20:07-07:00 #decision #no-why #constellation \"lets go one step at a time\" refs: ORB-20690"}])
+        json!([{"line":22,"text":"- m-0001 2026-10-31T20:07-07:00 #decision #no-why #constellation \"lets go one step at a time\" refs: ORB-20690"}])
     );
     let head = ports.library.head_commit().unwrap();
 
@@ -836,7 +836,7 @@ fn append_creates_then_appends_merges_topics_advances_and_reruns_add_nothing() {
     assert_eq!(second["previous_through"], "m-0002");
     assert_eq!(second["scribed_through"], "m-0006");
     let (_, text) = scr(&ports);
-    let body: Vec<&str> = text.lines().skip(20).collect();
+    let body: Vec<&str> = text.lines().skip(21).collect();
     assert_eq!(
         body,
         [
@@ -907,7 +907,7 @@ fn append_refuses_and_never_writes_invalid_entries() {
             {"msg":"m-0002","quote":"Merged as 7266911","tag":"agent-decision","topics":[]},
             {"msg":"m-0001","quote":"lets go","tag":"decision","topics":[],"by":"opus"},
             {"msg":"m-0001","quote":"lets go","tag":"pending","topics":[]},
-            {"msg":"m-0002","quote":"Merged","tag":"resolved","topics":[],"by":"opus","resolves":"SCR-31-2007-nothing#L21"},
+            {"msg":"m-0002","quote":"Merged","tag":"resolved","topics":[],"by":"opus","resolves":"SCR-31-2007-nothing#L22"},
             {"msg":"m-0002","quote":"Merged","tag":"resolved","topics":[],"by":"opus"},
             {"msg":"m-0006","quote":"Assistant reply 7.","tag":"fact","topics":[]},
             {"msg":"m-0004","quote":"User message 4.","tag":"todo","topics":[]},
@@ -938,7 +938,7 @@ fn append_refuses_and_never_writes_invalid_entries() {
     );
     // Only the last entry is valid; the refused ones are not in the file.
     let (_, text) = scr(&ports);
-    let body: Vec<&str> = text.lines().skip(20).collect();
+    let body: Vec<&str> = text.lines().skip(21).collect();
     assert_eq!(
         body,
         ["- m-0004 2026-10-31T20:13-07:00 #todo \"User message 4.\""]
@@ -973,7 +973,7 @@ fn notes_write_note_with_by_and_resolved_names_an_earlier_pending_line() {
     let (path, text) = scr(&ports);
     let id = path.rsplit('/').next().unwrap().trim_end_matches(".md");
     assert_eq!(
-        text.lines().skip(20).collect::<Vec<_>>(),
+        text.lines().skip(21).collect::<Vec<_>>(),
         [
             "- note 2026-10-31T22:00-07:00 #todo \"buy a new SSD\\nfor the server\" by: user",
             "- note 2026-10-31T22:00-07:00 #pending #constellation \"waiting on CI for ORB-20780\" refs: ORB-20780 by: opus",
@@ -982,17 +982,17 @@ fn notes_write_note_with_by_and_resolved_names_an_earlier_pending_line() {
     let out = append(
         &ports,
         json!({"through":"m-0002","entries":[
-            {"msg":"m-0002","quote":"Merged as 7266911","tag":"resolved","topics":[],"by":"opus","resolves":format!("{id}#L22")},
-            {"text":"CI is green","tag":"resolved","topics":[],"by":"opus","resolves":format!("{id}#L21")},
+            {"msg":"m-0002","quote":"Merged as 7266911","tag":"resolved","topics":[],"by":"opus","resolves":format!("{id}#L23")},
+            {"text":"CI is green","tag":"resolved","topics":[],"by":"opus","resolves":format!("{id}#L22")},
         ]}),
     );
     assert_eq!(out["refused"].as_array().unwrap().len(), 1);
     assert_eq!(out["refused"][0]["index"], 1);
     assert_eq!(out["refused"][0]["reason"], "unresolved_pending");
     assert_eq!(
-        scr(&ports).1.lines().nth(22).unwrap(),
+        scr(&ports).1.lines().nth(23).unwrap(),
         format!(
-            "- m-0002 2026-10-31T20:08-07:00 #resolved \"Merged as 7266911\" resolves: {id}#L22 by: opus"
+            "- m-0002 2026-10-31T20:08-07:00 #resolved \"Merged as 7266911\" resolves: {id}#L23 by: opus"
         )
     );
 }
@@ -1061,7 +1061,7 @@ fn decision_with_why_writes_why_and_without_why_gets_no_why() {
     assert_eq!(out["refused"][0]["index"], 2);
     assert_eq!(out["refused"][0]["reason"], "why_not_verbatim");
     let (_, text) = scr(&ports);
-    let body: Vec<&str> = text.lines().skip(20).collect();
+    let body: Vec<&str> = text.lines().skip(21).collect();
     assert_eq!(
         body,
         [
@@ -1089,8 +1089,8 @@ fn why_note_resolves_an_existing_decision_line_only() {
     let out = append(
         &ports,
         json!({"through":"m-0005","entries":[
-            {"text":"because the file must stay grep-able","tag":"why","topics":[],"by":"user","resolves":format!("{id}#L21")},
-            {"text":"wrong target","tag":"why","topics":[],"by":"user","resolves":format!("{id}#L22")},
+            {"text":"because the file must stay grep-able","tag":"why","topics":[],"by":"user","resolves":format!("{id}#L22")},
+            {"text":"wrong target","tag":"why","topics":[],"by":"user","resolves":format!("{id}#L23")},
             {"text":"missing target","tag":"why","topics":[],"by":"opus","resolves":format!("{id}#L99")},
         ]}),
     );
@@ -1102,9 +1102,9 @@ fn why_note_resolves_an_existing_decision_line_only() {
         .collect();
     assert_eq!(reasons, ["unresolved_decision", "unresolved_decision"]);
     assert_eq!(
-        scr(&ports).1.lines().nth(22).unwrap(),
+        scr(&ports).1.lines().nth(23).unwrap(),
         format!(
-            "- note 2026-10-31T22:00-07:00 #why \"because the file must stay grep-able\" resolves: {id}#L21 by: user"
+            "- note 2026-10-31T22:00-07:00 #why \"because the file must stay grep-able\" resolves: {id}#L22 by: user"
         )
     );
 }
@@ -1146,7 +1146,7 @@ fn preference_requires_user_listed_matter_and_defaults_review_by() {
     );
     // m-0001 is 2026-10-31 local; 90 days later is 2027-01-29.
     assert_eq!(
-        scr(&ports).1.lines().nth(20).unwrap(),
+        scr(&ports).1.lines().nth(21).unwrap(),
         "- m-0001 2026-10-31T20:07-07:00 #preference \"lets go one step at a time\" matter: release-with-open-defects review_by: 2027-01-29"
     );
     // An explicit review_by is kept.
@@ -1188,12 +1188,12 @@ fn preference_supersedes_same_matter_only_and_preference_note_promotes_decision(
     );
     let (path, _) = scr(&ports);
     let id = path.rsplit('/').next().unwrap().trim_end_matches(".md");
-    // Decision is L21, first preference is L22.
+    // Decision is L22, first preference is L23.
     let out = append(
         &ports,
         json!({"through":"m-0005","entries":[
             {"msg":"m-0005","quote":"reply 5","tag":"preference","topics":[],"matter":"release-with-open-defects"},
-            {"text":"promoted preference","tag":"preference","topics":[],"by":"user","matter":"other-matter","resolves":format!("{id}#L21")},
+            {"text":"promoted preference","tag":"preference","topics":[],"by":"user","matter":"other-matter","resolves":format!("{id}#L22")},
         ]}),
     );
     // m-0005 is an assistant message, so that preference attempt is refused
@@ -1203,13 +1203,13 @@ fn preference_supersedes_same_matter_only_and_preference_note_promotes_decision(
     assert!(
         scr(&ports)
             .1
-            .contains(&format!("resolves: {id}#L21 by: user"))
+            .contains(&format!("resolves: {id}#L22 by: user"))
     );
     // Superseding a preference on a different matter is refused.
     let out = append(
         &ports,
         json!({"through":"m-0005","entries":[
-            {"text":"other preference","tag":"preference","topics":[],"by":"user","matter":"other-matter","supersedes":format!("{id}#L22")},
+            {"text":"other preference","tag":"preference","topics":[],"by":"user","matter":"other-matter","supersedes":format!("{id}#L23")},
         ]}),
     );
     assert_eq!(out["refused"][0]["reason"], "invalid_supersedes");
@@ -1320,12 +1320,100 @@ fn preference_supersedes_same_matter_and_refuses_non_preference() {
     let out = append(
         &ports2,
         json!({"through":"m-0005","entries":[
-            {"text":"ship early from now on","tag":"preference","topics":[],"by":"user","matter":"release-with-open-defects","supersedes":format!("{id2}#L22")},
-            {"text":"wrong matter","tag":"preference","topics":[],"by":"user","matter":"release-with-open-defects","supersedes":format!("{id2}#L21")},
+            {"text":"ship early from now on","tag":"preference","topics":[],"by":"user","matter":"release-with-open-defects","supersedes":format!("{id2}#L23")},
+            {"text":"wrong matter","tag":"preference","topics":[],"by":"user","matter":"release-with-open-defects","supersedes":format!("{id2}#L22")},
         ]}),
     );
     assert_eq!(out["refused"].as_array().unwrap().len(), 1);
     assert_eq!(out["refused"][0]["index"], 1);
     assert_eq!(out["refused"][0]["reason"], "invalid_supersedes");
-    assert!(scr(&ports2).1.contains(&format!("supersedes: {id2}#L22")));
+    assert!(scr(&ports2).1.contains(&format!("supersedes: {id2}#L23")));
+}
+
+#[test]
+fn first_pass_scribe_title_is_written_with_title_by_scribe() {
+    let ports = ports(FakeLibrary::initialized());
+    pending(&ports, "short.jsonl");
+    let out = append(
+        &ports,
+        json!({"through":"m-0001","title":"Scribe v1 design work","title_by":"scribe","entries":[]}),
+    );
+    assert_eq!(out["title"], "Scribe v1 design work");
+    assert_eq!(out["title_by"], "scribe");
+    let text = scr(&ports).1;
+    assert!(text.contains("title: \"Scribe v1 design work\""), "{text}");
+    assert!(text.contains("title_by: \"scribe\""), "{text}");
+    // A scribe title over eight words is refused.
+    let ports = crate::ports(FakeLibrary::initialized());
+    pending(&ports, "short.jsonl");
+    let response = call(
+        &ports,
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-0001","title":"one two three four five six seven eight nine","title_by":"scribe","entries":[]}),
+    );
+    assert_eq!(response["ok"], false, "{response}");
+    assert_eq!(response["error"]["code"], "invalid_argument");
+}
+
+#[test]
+fn user_title_is_never_replaced_and_scribe_refines_only_its_own() {
+    // User title (the default for a bare title) survives scribe and custom offers.
+    let ports = ports(FakeLibrary::initialized());
+    pending(&ports, "short.jsonl");
+    append(
+        &ports,
+        json!({"through":"m-0001","title":"My own title","entries":[]}),
+    );
+    let out = append(
+        &ports,
+        json!({"through":"m-0001","title":"Scribe proposal","title_by":"scribe","entries":[]}),
+    );
+    assert_eq!(out["title"], "My own title");
+    assert_eq!(out["title_by"], "user");
+    let out = append(
+        &ports,
+        json!({"through":"m-0001","title":"Custom offer","title_by":"custom","entries":[]}),
+    );
+    assert_eq!(out["title"], "My own title");
+    // A scribe title may be refined while still scribe-set, without renaming.
+    let ports = crate::ports(FakeLibrary::initialized());
+    pending(&ports, "short.jsonl");
+    let first = append(
+        &ports,
+        json!({"through":"m-0001","title":"First scribe title","title_by":"scribe","entries":[]}),
+    );
+    let path = scr(&ports).0;
+    let out = append(
+        &ports,
+        json!({"through":"m-0001","title":"Refined scribe title","title_by":"scribe","entries":[]}),
+    );
+    assert_eq!(out["title"], "Refined scribe title");
+    assert_eq!(out["renamed_from"], Value::Null);
+    assert_eq!(scr(&ports).0, path);
+    assert_eq!(first["title_by"], "scribe");
+}
+
+#[test]
+fn custom_title_beats_scribe_and_placeholder_never_becomes_a_title() {
+    // The transcript's latest real custom title wins over a scribe proposal.
+    let ports = ports(FakeLibrary::initialized());
+    pending(&ports, "custom-title.jsonl");
+    let out = append(
+        &ports,
+        json!({"through":"m-0001","title":"Scribe proposal","title_by":"scribe","entries":[]}),
+    );
+    assert_eq!(out["title"], "ORB-20524: phone rail snap regression");
+    assert_eq!(out["title_by"], "custom");
+    // The desktop placeholder, offered as scribe or custom, is no title.
+    for by in ["scribe", "custom"] {
+        let ports = crate::ports(FakeLibrary::initialized());
+        pending(&ports, "short.jsonl");
+        let out = append(
+            &ports,
+            json!({"through":"m-0001","title":"New session","title_by":by,"entries":[]}),
+        );
+        assert_eq!(out["title"], Value::Null, "{by}");
+        assert_eq!(out["title_by"], Value::Null, "{by}");
+        assert!(scr(&ports).1.contains("title: null"), "{by}");
+    }
 }

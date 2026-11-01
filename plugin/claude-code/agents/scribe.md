@@ -38,6 +38,16 @@ capture guidance) and the SCR file's front matter.
 - A `preference` (the user answers a class of question, or says "always",
   "from now on", "next time") carries `"matter": "<rule matter>"`. When
   unsure, tag `decision` instead.
+- Titles: when the session has no title yet (`scr.title` is null in the
+  pending step), propose a title of at most eight words in plain
+  language — what the session was about, not its first command — and
+  include `"title": "<your title>", "title_by": "scribe"` in the append
+  call below. Title precedence is user (`/scribe title`) above a real
+  transcript `custom-title` above a side session's title/summary record
+  above your proposal; Office enforces it, so never try to replace a
+  user title, and the desktop "New session" placeholder is never a
+  title. You may refine your own scribe title on a later pass only
+  while it is still scribe-set. A scribe title never renames the file.
 - Then call the scribe tool with
   `{"action": "append", "session_id": <id>, "entries": [...]}`, an empty
   list when nothing qualifies. The plugin sets the cursor; Office refuses

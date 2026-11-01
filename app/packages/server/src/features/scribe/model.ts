@@ -87,7 +87,7 @@ export function feedOf(output: Row, since: string): ScribeFeed {
     let session = sessions.get(entry.session_id);
     if (session === undefined) {
       session = {
-        session_id: entry.session_id, title: text(row.title), project: text(row.project),
+        session_id: entry.session_id, id: text(row.id) ?? text(row.scr_id), title: text(row.title), title_by: text(row.title_by), project: text(row.project),
         counterpart_name: text(row.counterpart_name), scribed_through: text(row.scribed_through), latest: entry.time, entries: [],
       };
       sessions.set(entry.session_id, session);

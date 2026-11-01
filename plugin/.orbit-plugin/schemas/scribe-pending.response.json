@@ -85,6 +85,18 @@
             "string",
             "null"
           ]
+        },
+        "title_by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "user",
+            "custom",
+            "scribe",
+            null
+          ]
         }
       },
       "required": [
@@ -92,6 +104,7 @@
         "id",
         "path",
         "title",
+        "title_by",
         "scribed_through",
         "last_scribed_at",
         "topics",
