@@ -1097,8 +1097,9 @@ pub struct Plan {
 pub struct Request<'a> {
     /// Provider session id.
     pub session_id: &'a str,
-    /// Last message given to the agent.
-    pub through: &'a str,
+    /// Last message given to the agent; `None` for a note/title-only
+    /// append, which leaves `scribed_through` unchanged.
+    pub through: Option<&'a str>,
     /// New title, renaming the file.
     pub title: Option<&'a str>,
     /// Counterpart kind.
@@ -1179,7 +1180,7 @@ struct Ctx<'a> {
     rules: &'a ScribeRules,
     files: &'a [ScrFile],
     after: Option<usize>,
-    through: usize,
+    through: Option<usize>,
     zone: Option<&'a str>,
     now: DateTime<FixedOffset>,
 }
@@ -1205,7 +1206,7 @@ impl Ctx<'_> {
                     "the message is at or before scribed_through; context is read-only",
                 );
             }
-            if index > self.through {
+            if self.through.is_none_or(|through| index > through) {
                 return fail("after_through", "the message is after through");
             }
             let message = &self.messages[index];
@@ -1548,14 +1549,19 @@ pub fn append(
             "counterpart_name must be a nonempty single line of at most 256 bytes",
         ));
     }
-    let through = message_index(request.through)
-        .filter(|i| *i < messages.len())
-        .ok_or_else(|| {
-            refusal(
-                "scribe_through_unknown",
-                "through must name a parsed message; run office.scribe-pending first",
-            )
-        })?;
+    let through = request
+        .through
+        .map(|through| {
+            message_index(through)
+                .filter(|i| *i < messages.len())
+                .ok_or_else(|| {
+                    refusal(
+                        "scribe_through_unknown",
+                        "through must name a parsed message; run office.scribe-pending first",
+                    )
+                })
+        })
+        .transpose()?;
     let existing = find_session(files, request.session_id)?;
     let previous_through = existing.and_then(|f| f.front.scribed_through.clone());
     let after = match &previous_through {
@@ -1567,7 +1573,7 @@ pub fn append(
             )
         })?),
     };
-    if after.is_some_and(|after| through < after) {
+    if through.is_some_and(|through| after.is_some_and(|after| through < after)) {
         return Err(refusal(
             "scribe_through_behind",
             "through is before the SCR file's scribed_through",
@@ -1714,7 +1720,9 @@ pub fn append(
         });
     }
     front.topics = topics;
-    front.scribed_through = Some(message_id(through));
+    if let Some(through) = through {
+        front.scribed_through = Some(message_id(through));
+    }
     let unchanged = |front: &Front| {
         previous
             .as_ref()

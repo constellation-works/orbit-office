@@ -137,7 +137,14 @@ transcript ──parse (no model)──▶ <library>/.office/state/scribe/<sessi
      reported, never written.
    - It appends one line per entry, merges new topics into the front matter
      and moves `scribed_through` to the last message given to the agent,
-     whether or not that message produced an entry. The exception is a batch
+     whether or not that message produced an entry. A note/title-only call
+     (notes or a title, no entry citing a message) may omit `through`: it
+     writes the note or title lines and leaves `scribed_through` exactly as
+     stored (absent for a new file), so a first `/scribe note` never marks
+     unread messages as scribed. A call with a cited entry and no `through`,
+     and an empty call with neither a note nor a title, are still refused;
+     a supplied `through` that names no parsed message or is behind the
+     stored cursor is still refused. The exception is a batch
      that refuses something and captures nothing: it writes no file, makes no
      commit and keeps the cursor and the file's name, so the messages stay
      pending and a corrected retry captures them. An empty batch (a catch-up)
@@ -508,7 +515,9 @@ web access, no writes and no Orbit calls.
    - `office.scribe-pending` parses the transcript, writes the `.jsonl`, and
      returns the SCR metadata, `scribed_through`, the messages after it and
      the rules.
-   - `office.scribe-append` validates and writes entries.
+   - `office.scribe-append` validates and writes entries. `through` is
+     required except for a note/title-only call (no entry citing a message),
+     which leaves `scribed_through` unchanged.
    - New tool slots go through an integrator scaffold first (ARCHITECTURE.md
      § Integrator-owned files).
    - Built (ORB-20780). A message is one transcript record's kept text;

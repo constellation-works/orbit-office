@@ -1216,6 +1216,94 @@ fn preference_supersedes_same_matter_only_and_preference_note_promotes_decision(
 }
 
 #[test]
+fn note_only_append_without_through_leaves_cursor_unchanged() {
+    // New file: a note-only append with no through writes the note and
+    // leaves scribed_through null.
+    let ports = crate::ports(FakeLibrary::initialized());
+    pending(&ports, "short.jsonl");
+    let out = append(
+        &ports,
+        json!({"entries":[
+            {"text":"remember the note-only path","tag":"todo","topics":[],"by":"user"}
+        ]}),
+    );
+    assert_eq!(out["written"], true);
+    assert_eq!(out["created"], true);
+    assert_eq!(out["scribed_through"], Value::Null);
+    assert_eq!(out["previous_through"], Value::Null);
+    let (_, text) = scr(&ports);
+    assert!(text.contains("scribed_through: null"), "{text}");
+    assert!(
+        text.contains(
+            "- note 2026-10-31T22:00-07:00 #todo \"remember the note-only path\" by: user"
+        ),
+        "{text}"
+    );
+
+    // Existing file: supplied through advances, then a note-only append
+    // with no through leaves the cursor exactly as stored.
+    let ports = crate::ports(FakeLibrary::initialized());
+    pending(&ports, "short.jsonl");
+    append(&ports, json!({"through":"m-0003","entries":[]}));
+    assert!(scr(&ports).1.contains("scribed_through: \"m-0003\""));
+    let out = append(
+        &ports,
+        json!({"entries":[
+            {"text":"second note","tag":"todo","topics":[],"by":"user"}
+        ]}),
+    );
+    assert_eq!(out["written"], true);
+    assert_eq!(out["scribed_through"], "m-0003");
+    assert_eq!(out["previous_through"], "m-0003");
+    assert!(scr(&ports).1.contains("scribed_through: \"m-0003\""));
+
+    // Title-only append with no through also succeeds on a new file.
+    let ports = crate::ports(FakeLibrary::initialized());
+    pending(&ports, "short.jsonl");
+    let out = append(&ports, json!({"title":"A titled session"}));
+    assert_eq!(out["written"], true);
+    assert_eq!(out["created"], true);
+    assert_eq!(out["scribed_through"], Value::Null);
+    assert!(scr(&ports).1.contains("title: \"A titled session\""));
+
+    // Cited entries and empty calls without through are still refused.
+    let ports = crate::ports(FakeLibrary::initialized());
+    pending(&ports, "short.jsonl");
+    let response = call(
+        &ports,
+        "office.scribe-append",
+        json!({"session_id":SESSION,"entries":[
+            {"msg":"m-0001","quote":"lets go one step at a time","tag":"decision","topics":[]}
+        ]}),
+    );
+    assert_eq!(response["ok"], false, "{response}");
+    assert_eq!(response["error"]["code"], "invalid_argument");
+    let response = call(
+        &ports,
+        "office.scribe-append",
+        json!({"session_id":SESSION,"entries":[]}),
+    );
+    assert_eq!(response["error"]["code"], "invalid_argument");
+
+    // Supplied unknown and behind-cursor through keep their refusals.
+    let response = call(
+        &ports,
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-9999","entries":[
+            {"text":"a note","tag":"todo","topics":[],"by":"user"}
+        ]}),
+    );
+    assert_eq!(response["error"]["code"], "scribe_through_unknown");
+    append(&ports, json!({"through":"m-0003","entries":[]}));
+    let response = call(
+        &ports,
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-0001","entries":[]}),
+    );
+    assert_eq!(response["error"]["code"], "scribe_through_behind");
+}
+
+#[test]
 fn preference_supersedes_same_matter_and_refuses_non_preference() {
     // Supersedes: same matter accepted, different matter and non-preference refused.
     let ports2 = ports(FakeLibrary::initialized());
