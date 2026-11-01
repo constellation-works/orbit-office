@@ -15,7 +15,6 @@ import type { PaneState, ScribeEntry } from '../contract'
 
 const PANE = 'scribe'
 const REFRESH_MS = 30_000
-const ASK_TIMEOUT_MS = 180_000
 const PAGE = 15
 const KINDS = ['decision', 'direction', 'fact', 'action', 'open', 'resolved', 'handoff'] as const
 const MISSED_KINDS = ['direction', 'decision', 'fact'] as const
@@ -44,8 +43,6 @@ const paneState = atom({ plugin: 'office-scribe', key: 'scribe-pane' } as const,
 type Config = { workspace: string; defaultOn: boolean; excluded: string; webUrl: string }
 let config: Config = { workspace: '', defaultOn: false, excluded: '[]', webUrl: '' }
 
-// Subagent answers arrive on that agent's own turn.complete.
-const asked = new Map<string, (answer: string) => void>()
 let refreshing: Promise<void> | undefined
 
 function parseReply(ran: ProcessRunResult): Record<string, unknown> {
@@ -186,8 +183,7 @@ function correct($: EngineInterface, entry: ScribeEntry, choice: string, extra: 
   )
 }
 
-// The same cited evidence the recall agent quotes, for when no subagent
-// answer comes back.
+// The cited evidence itself, for when no model answer comes back.
 async function recallEvidence($: EngineInterface, question: string): Promise<string> {
   const data = await runOrbit($, 'office.recall', { question, limit: 20 })
   const entries = Array.isArray(data.entries) ? (data.entries as ScribeEntry[]) : []
@@ -206,16 +202,17 @@ async function recallEvidence($: EngineInterface, question: string): Promise<str
     .join('\n')
 }
 
-// The recall agent's own rules (agents/recall.md, without its frontmatter),
-// for answering in the pane when the agent cannot be spawned.
+// The pane's rules for answering from office.recall (mod/recall-rules.md).
+// Scribe v1 retired the recall subagent: its `scribe` agent answers from SCR
+// files, while this legacy pane's feed is office.recall's.
 async function recallRules($: EngineInterface): Promise<string> {
-  const file = await $.fs.read(`${$.plugin.root}/agents/recall.md`)
+  const file = await $.fs.read(`${$.plugin.root}/mod/recall-rules.md`)
   return file.replace(/^---\n[\s\S]*?\n---\n/, '').trim()
 }
 
-// What the recall agent does, with the pane running office.recall: Haiku
-// picks the literal search terms (Office ANDs them), then answers from the
-// replies alone under the agent's rules. Plain completions, no tools.
+// Haiku picks the literal search terms (Office ANDs them), the pane runs
+// office.recall for each, then Haiku answers from the replies alone under
+// the rules. Plain completions, no tools and no subagent spawn.
 async function paneAnswer($: EngineInterface, question: string): Promise<string> {
   const planned = await $.model.complete({
     model: 'haiku',
@@ -263,42 +260,18 @@ async function ask($: EngineInterface, question: string): Promise<void> {
   const settle = async (answer: string) => {
     await update($, paneState, state => ({ ...state, answer, asking: false }))
   }
-  // Without the agent's answer, answer in the pane; failing that, Office's
-  // cited evidence as it stands. Either is led by why the agent gave none.
-  const fallback = async (why: string) => {
-    const reason = why.split(/(?<=\.)\s/)[0]!.slice(0, 160)
-    try {
-      await settle(`${await paneAnswer($, question)}\n(answered in the pane; ${reason})`)
-      return
-    } catch {
-      // Fall through to the evidence itself.
-    }
+  // Answer in the pane; failing that, Office's cited evidence as it stands.
+  try {
+    await settle(`${await paneAnswer($, question)}\n(answered in the pane from office.recall)`)
+    return
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
     try {
       await settle(`${await recallEvidence($, question)}\n(cited evidence from office.recall; ${reason})`)
     } catch {
       await settle(`recall unavailable (${reason})`)
     }
   }
-  let spawned: Awaited<ReturnType<EngineInterface['agent']['spawn']>>
-  try {
-    spawned = await $.agent.spawn({
-      subagentType: 'office-scribe:recall',
-      description: 'Scribe recall',
-      prompt: question,
-    })
-  } catch (error) {
-    return fallback(`recall agent not started: ${error instanceof Error ? error.message : String(error)}`)
-  }
-  if (spawned.deny !== undefined) return fallback(`recall agent refused: ${spawned.deny}`)
-  const agentId = spawned.agentId
-  if (!agentId) return fallback('recall agent not started')
-  const timer = $.clock.after(ASK_TIMEOUT_MS, () => {
-    if (asked.delete(agentId)) void fallback('recall agent gave no answer in time')
-  })
-  asked.set(agentId, answer => {
-    timer.cancel()
-    void (answer.trim() ? settle(answer) : fallback('recall agent answered nothing'))
-  })
 }
 
 export const register: Register = (on, options: PluginOptions) => {
@@ -329,16 +302,8 @@ export const register: Register = (on, options: PluginOptions) => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (e.agentId) {
-      const resolve = asked.get(e.agentId)
-      if (resolve) {
-        asked.delete(e.agentId)
-        resolve(e.answer)
-      }
-    } else {
-      // After each main-loop turn, without holding the session.
-      void refresh($)
-    }
+    // After each main-loop turn, without holding the session.
+    if (!e.agentId) void refresh($)
     return done
   })
 
@@ -411,7 +376,7 @@ export const register: Register = (on, options: PluginOptions) => {
             onSubmit={text => ask($, text)}
           />
         )}
-        {state.asking && <Text dimColor>Asking the recall agent…</Text>}
+        {state.asking && <Text dimColor>Asking…</Text>}
         {state.answer !== '' && (
           <Box key="answer" flexDirection="column">
             <Text>{state.answer}</Text>

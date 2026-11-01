@@ -7,7 +7,10 @@ last_validated: 2026-11-01
 # Spec: Scribe v1
 
 Status: build step 1 built (`office.scribe-pending`, `office.scribe-append`;
-see [Build order](#build-order)); the agent and commands are not built yet.
+see [Build order](#build-order)). Step 2's Claude Code plugin part is built
+(ORB-20799): the `scribe` agent, the `/scribe` commands and automatic hooks
+off by default ([plugin guide](../../../../plugin/claude-code/README.md));
+`office.scribe-query` is being built separately.
 Supersedes, as the default way to capture
 conversations, the automatic live scribe in
 [sessions.md](./sessions.md#live-scribe) and the recall surfaces in
@@ -386,6 +389,14 @@ web access, no writes and no Orbit calls.
      its model and tools. Turn the automatic hooks off by default. The
      `orchestration-session` skill then requires orchestrators to scribe
      decisions and open issues as they happen.
+   - Plugin part built (ORB-20799). A structured `scribe` MCP tool runs
+     each command: model-free ones finish there, and a catch-up, an
+     untagged note, `ask` and backfill return a request for the `scribe`
+     subagent. The plugin stages the transcript inside the workspace for
+     pending, sets `through` itself, holds a note or title on a session
+     with no `scribed_through` for the first catch-up, and quote-checks
+     answers before display. Decisions:
+     [claude-code-scribe](../../claude-code-scribe/4_decisions.md#scribe-v1-command-surface).
 3. **Rules page sections:** a proposal to `dom-scribe-rules` with the default
    tags, topics and capture rules.
 

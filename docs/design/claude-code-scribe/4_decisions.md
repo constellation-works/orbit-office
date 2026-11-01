@@ -7,11 +7,11 @@ status: Active
 feature: claude-code-scribe
 doc_role: decisions
 type: design
-summary: Local provider staging, serialized extraction tasks and a recall-only subagent bridge
+summary: Local provider staging, serialized extraction tasks, and the Scribe v1 command surface (structured router, scribe subagent, quote check)
 tags: [claude-code-scribe]
 paths: ["plugin/claude-code/**"]
 related_features: [office]
-related_artifacts: [ORB-20689]
+related_artifacts: [ORB-20689, ORB-20799]
 ---
 
 # Claude Code scribe — Decisions
@@ -88,8 +88,82 @@ Cost: users see the provider namespace, and generated answers still depend on
 the agent following its source-only instructions. Offline tests verify the
 bridge's actual evidence output without making a hosted inference call.
 
+## Scribe v1 command surface
+
+**Recorded:** 2026-11-01 · [ORB-20799]
+**Code anchors:** `plugin/claude-code/scripts/scribe_v1.py::V1`, `scripts/mcp.py`,
+`commands/scribe.md`, `agents/scribe.md`
+
+### Context
+
+Scribe v1 ([specs/scribe.md](../office/specs/scribe.md)) makes `/scribe` the
+only trigger, wants canned queries and tagged notes to cost no model, and
+wants every quote in an answer checked before display. A Claude Code slash
+command always runs through the session's model, and the Office tools
+(`office.scribe-pending`, `office.scribe-append`) read transcripts only inside
+the granted workspace and need a `through` cursor on every append.
+
+### Decision
+
+- **One structured router.** The command hands its arguments, as one data
+  string, to the plugin's `scribe` MCP tool, which parses them in code.
+  Model-free commands finish in the tool and return a `display` with
+  `model_call: false`; the command prints it. A catch-up, an untagged note,
+  `ask` and backfill return an `agent` request (subagent, model, prompt) that
+  the command passes to the `scribe` subagent. The agent works through the
+  same tool's steps (`pending`, `append`, `query`, `verify`), so transcript
+  text never passes through the parent session.
+- **The plugin owns the cursor.** It sets `through` to the last message it
+  handed the agent (at most about 40,000 characters of new text per pass),
+  never the model. A note or title on a session with no `scribed_through` is
+  held in private plugin state and written with the first catch-up: moving
+  the cursor to anchor a note would mark unread messages scribed.
+- **Staging.** Each run copies the provider transcript's complete records to
+  `.orbit/tmp/session-transcripts/scribe-<session-id>.jsonl` (`0600`); that
+  path is what Office reads and records. It carries no descriptor, so the
+  legacy extraction sweep ignores it.
+- **Quote check in code.** The `verify` step keeps a double-quoted span only
+  when the line its `[<SCR id>:<line>]` citation names, from this question's
+  query results or that line of a shortlisted file, contains it. Both the
+  agent and the command run it, so an orchestrator calling the agent
+  directly gets the same check.
+- **Ask shortlist.** `office.scribe-query` has no free-text filter, so the
+  plugin queries once (limit 500) and keeps the lines sharing the question's
+  key terms (at most 40). An empty shortlist answers "not captured" with no
+  model.
+- **Automatic passes off.** The `auto_capture` option (default false) gates
+  the Stop and SessionEnd hooks before any Office call. SessionStart keeps
+  the brief and records the session context the commands use.
+- **Recall retired from the plugin surface.** `/recall`, the `recall`
+  subagent and the bridge's `office.recall` tool are removed; the desktop
+  pane's ask box answers in the pane from `office.recall` under
+  `mod/recall-rules.md`.
+
+### Deviations and limits
+
+- **Models.** The rules returned by `office.scribe-pending` have no Models
+  section yet, so the defaults apply (`scribe: haiku@medium`,
+  `ask: haiku@low`); the plugin reads `rules.models` when Office returns it.
+  Claude Code takes a model per subagent call but effort only from the agent
+  definition, so both levels run at the agent's `effort: medium`.
+- **Query contract.** `office.scribe-query` was built in parallel
+  (ORB-20798). The plugin sends the filters that task names (`mode`,
+  `matter`, `topic`, `since`, `until`, `limit`) and reads result lines from
+  `results` (or `lines`, `matches`) with `text`, `path`, `line`, `scr_id` or
+  `id`, `msg`, `by`, `counterpart` and `resume`. `why <x>` asks by matter,
+  then by topic. Plugin tests use fixture responses.
+- **`by: <crew>`.** An orchestrator's note takes its crew from `--by <crew>`,
+  else `ORBIT_CREW`, else `ORBIT_AGENT_NAME` in an Orbit agent session.
+
+Cost: one more MCP round trip per agent step, plugin tickets under
+`.orbit/tmp/scribe/`, and a held note is not in the SCR file until the first
+catch-up. The command's routing still depends on the session model following
+`commands/scribe.md`; the deterministic parts are tested through the MCP
+entrypoint without inference.
+
 ## Task References
 
 - [ORB-20689] — built the Claude Code provider scribe and recall client.
+- [ORB-20799] — Scribe v1 agent and `/scribe` commands in the plugin.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

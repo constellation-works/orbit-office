@@ -1,4 +1,8 @@
-"""Behavior through the shipped hooks and MCP entrypoints; no real host state."""
+"""Legacy automatic capture through the shipped hooks and the pane control; no real host state.
+
+These passes are off by default in Scribe v1 (test_scribe_v1.py); this suite
+turns them on with the plugin's `auto_capture` option.
+"""
 import fcntl
 import json
 import os
@@ -106,7 +110,7 @@ class PluginBehavior(unittest.TestCase):
                     "OFFICE_WORKSPACE": str(self.workspace), "OFFICE_LIBRARY": str(self.root / "unused-library"),
                     "CLAUDE_PLUGIN_ROOT": str(PLUGIN), "CLAUDE_PLUGIN_OPTION_WORKSPACE": str(self.workspace),
                     "CLAUDE_PLUGIN_OPTION_DEFAULT_ON": "true", "CLAUDE_PLUGIN_OPTION_EXCLUDED_PROJECTS": "[]",
-                    "CLAUDE_PLUGIN_OPTION_TIMEOUT": "2"}
+                    "CLAUDE_PLUGIN_OPTION_TIMEOUT": "2", "CLAUDE_PLUGIN_OPTION_AUTO_CAPTURE": "true"}
         self.sid = "session-one"
         self.path = self.providers / (self.sid + ".jsonl")
         self.write_transcript(1)
@@ -131,18 +135,15 @@ class PluginBehavior(unittest.TestCase):
         return subprocess.run(shlex.split(command), input=json.dumps(context or self.context), text=True,
                               env=self.env, cwd=self.root, capture_output=True, timeout=5)
 
-    def mcp(self, *messages):
-        data = "".join(json.dumps(m) + "\n" for m in messages)
-        process = subprocess.run([sys.executable, "-I", str(PLUGIN / "scripts/bridge.py")], input=data,
-                                 text=True, env=self.env, cwd=self.root, capture_output=True, timeout=35)
-        self.assertEqual(process.returncode, 0, process.stderr)
-        return [json.loads(line) for line in process.stdout.splitlines()]
+    def pane(self, arguments):
+        """The structured control the desktop pane runs (scripts/pane.py)."""
+        return subprocess.run([sys.executable, "-I", str(PLUGIN / "scripts/pane.py"), json.dumps(arguments)],
+                              text=True, env=self.env, cwd=self.root, capture_output=True, timeout=35)
 
     def command(self, action, **args):
-        result = self.mcp({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-            "name": "scribe", "arguments": {"session_id": self.sid, "action": action, **args}}})[0]["result"]
-        self.assertFalse(result["isError"], result)
-        return json.loads(result["content"][0]["text"])
+        process = self.pane({"session_id": self.sid, "action": action, **args})
+        self.assertEqual(process.returncode, 0, process.stderr)
+        return json.loads(process.stdout)
 
     def calls(self, tool=None):
         path = self.home / "calls.jsonl"
@@ -468,9 +469,9 @@ class PluginBehavior(unittest.TestCase):
         status = self.command("status")
         self.assertTrue(status["on"])
         self.assertFalse((self.workspace / ".orbit").exists())
-        response = self.mcp({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-            "name": "scribe", "arguments": {"session_id": self.sid, "action": "status", "title": "ignored?"}}})[0]
-        self.assertTrue(response["result"]["isError"])
+        response = self.pane({"session_id": self.sid, "action": "status", "title": "ignored?"})
+        self.assertEqual(response.returncode, 1)
+        self.assertIn("field_not_valid_for_action", response.stderr)
         self.assertFalse((self.workspace / ".orbit").exists())
 
     def test_final_pass_is_queued_behind_an_outstanding_live_pass(self):
@@ -491,34 +492,6 @@ class PluginBehavior(unittest.TestCase):
         self.assertEqual(result["queued_count"], 1)
         self.assertEqual(result["refused_count"], 1)
 
-    def test_mcp_recall_answers_anchors_metadata_live_refs_and_empty_coverage(self):
-        data = {"entries": [{"source_id": "src-fixture", "anchor": "#L1", "kind": "decision",
-            "text": "Decision: stay local", "time": "2026-10-30T00:00:00Z", "refs": [{"kind": "task", "id": "TEST-1"}]}],
-            "sessions": [{"source_id": "src-fixture", "title": "Local memory", "project": str(self.project),
-                "started_at": "2026-10-30T00:00:00Z", "resume": {"provider": "claude", "command": "claude --resume session-one"}}],
-            "refs": [{"kind": "task", "id": "TEST-1", "status": "done", "workspace": None}],
-            "coverage": {"earliest_session_at": "2026-10-30T00:00:00Z", "private_sessions_skipped": 0, "providers_not_captured": ["codex"]}}
-        (self.home / "recall.json").write_text(json.dumps(data))
-        messages = [{"jsonrpc": "2.0", "id": 1, "method": "initialize"},
-            {"jsonrpc": "2.0", "method": "notifications/initialized"},
-            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "office.recall", "arguments": {"question": "local"}}}]
-        response = self.mcp(*messages)
-        self.assertEqual(len(response), 3)
-        self.assertEqual({t["name"] for t in response[1]["result"]["tools"]}, {"office.recall", "scribe"})
-        answer = json.loads(response[2]["result"]["content"][0]["text"])["evidence_answer"]
-        for text in ("src-fixture#L1", "Local memory", str(self.project), "2026-10-30", "claude --resume session-one", "done"):
-            self.assertIn(text, answer)
-        self.assertEqual([c["tool"] for c in self.calls()], ["office.recall"])
-        data["entries"] = []
-        data["sessions"] = []
-        (self.home / "recall.json").write_text(json.dumps(data))
-        response = self.mcp(messages[-1])[0]
-        answer = json.loads(response["result"]["content"][0]["text"])["evidence_answer"]
-        self.assertIn("not captured", answer)
-        self.assertIn('"providers_not_captured": ["codex"]', answer)
-        self.assertFalse((self.workspace / ".orbit").exists())
-
     def test_symlink_state_and_uncontained_transcripts_are_refused(self):
         self.hook("SessionStart")
         staging = self.workspace / ".orbit/tmp/session-transcripts"
@@ -532,8 +505,9 @@ class PluginBehavior(unittest.TestCase):
         self.assertEqual(list(outside.iterdir()), [])
 
     def status_result(self):
-        return self.mcp({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-            "name": "scribe", "arguments": {"session_id": self.sid, "action": "status"}}})[0]["result"]
+        process = self.pane({"session_id": self.sid, "action": "status"})
+        return {"isError": process.returncode != 0,
+                "content": [{"text": process.stderr.strip().removeprefix("office-scribe: ")}]}
 
     def test_orbit_created_tmp_at_0755_is_usable_and_scribe_state_stays_private(self):
         # Orbit creates .orbit/tmp at its own mode; scribe must work without it being changed.

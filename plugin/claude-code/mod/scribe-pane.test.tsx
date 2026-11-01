@@ -165,7 +165,7 @@ test('the switch runs the pane control with the plugin options', OPTIONS, async 
   await ui.unmount()
 })
 
-test('the ask box sends the question to the recall subagent', OPTIONS, async ($, on) => {
+test('the ask box answers in the pane without spawning a subagent', OPTIONS, async ($, on) => {
   const calls: { argv: string[] }[] = []
   const spawned: any[] = []
   seed(on, calls)
@@ -173,26 +173,25 @@ test('the ask box sends the question to the recall subagent', OPTIONS, async ($,
   const ui = await open($)
   await ui.input({ key: 'ask', text: 'what did we decide about hosting?' })
 
-  expect(spawned.length).toBe(1)
-  expect(spawned[0].subagent_type).toBe('office-scribe:recall')
-  expect(spawned[0].prompt).toBe('what did we decide about hosting?')
-  // The kit's spawn starts no agent (core alone sets agentId), so the pane
-  // renders the same cited evidence the agent quotes.
+  expect(spawned.length).toBe(0)
+  // The kit's model completion gives no answer, so the pane renders the
+  // cited evidence from office.recall.
   const answer = await ui.find({ type: 'Text', text: /Decision: stay local \[src-fixture#L1\]/ })
   expect(answer?.text).toContain('Local memory, claude --resume session-one')
   await ui.unmount()
 })
 
-test('when the subagent is refused the ask box renders office.recall cited evidence', OPTIONS, async ($, on) => {
+test('when no model answer comes the ask box renders office.recall cited evidence', OPTIONS, async ($, on) => {
   const calls: { argv: string[] }[] = []
   seed(on, calls)
-  on('agent.spawn', () => ({ deny: 'no agents here' }))
+  on('fs.read', () => ({ value: 'Cite src anchors.' }))
+  on('model.complete', () => ({ value: { isAnswered: false, text: '', usage: { inputTokens: 0, outputTokens: 0 } } }))
   const ui = await open($)
   await ui.input({ key: 'ask', text: 'hosting' })
 
   const answer = await ui.find({ type: 'Text', text: /Decision: stay local \[src-fixture#L1\]/ })
   expect(answer?.text).toContain('Local memory, claude --resume session-one')
-  expect(answer?.text).toMatch(/\(cited evidence from office.recall; recall agent refused: no agents here\)$/)
+  expect(answer?.text).toMatch(/\(cited evidence from office.recall; no_model_answer\)$/)
   await ui.unmount()
 })
 
@@ -241,12 +240,12 @@ test('the kind filter and paging narrow a long feed', OPTIONS, async ($, on) => 
   await ui.unmount()
 })
 
-test('when the subagent is refused Haiku answers in the pane from office.recall', OPTIONS, async ($, on) => {
+test('Haiku answers in the pane from office.recall under the pane rules', OPTIONS, async ($, on) => {
   const calls: { argv: string[] }[] = []
   const prompts: any[] = []
   seed(on, calls)
-  on('agent.spawn', () => ({ deny: 'auto mode gave no verdict. Retry once.' }))
-  on('fs.read', () => ({ value: '---\nname: recall\n---\nCite src anchors.' }))
+  const read: string[] = []
+  on('fs.read', (_$: any, e: any) => (read.push(e.path), { value: 'Cite src anchors.' }))
   on('model.complete', (_$: any, e: any) => {
     prompts.push(e)
     const text =
@@ -263,8 +262,8 @@ test('when the subagent is refused Haiku answers in the pane from office.recall'
     .map(c => JSON.parse(c.argv[c.argv.indexOf('--input') + 1]!).question)
   expect(searches).toContain('hosting decision')
   expect(prompts[1].system).toContain('Cite src anchors.')
-  expect(prompts[1].system).not.toContain('name: recall')
+  expect(read.some(path => path.endsWith('/mod/recall-rules.md'))).toBe(true)
   const answer = await ui.find({ type: 'Text', text: /Stay local \[src-fixture#L1\]/ })
-  expect(answer?.text).toContain('(answered in the pane; recall agent refused: auto mode gave no verdict.)')
+  expect(answer?.text).toContain('(answered in the pane from office.recall)')
   await ui.unmount()
 })

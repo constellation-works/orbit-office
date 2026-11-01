@@ -1,102 +1,202 @@
 # Office scribe for Claude Code
 
-A per-user Claude Code plugin with a session brief, local live/SessionEnd
-staging, `/scribe` controls and cited `/recall`. Requires Python 3.10+ on
-macOS or Linux, Claude Code with plugin user configuration, and a locally
-installed Orbit Office plugin with `office.capture`, `office.session-brief`
-and `office.recall`. No Library path, credentials, model SDK or third-party
+Scribe v1 ([spec](../../docs/design/office/specs/scribe.md)): a cheap `scribe`
+agent that you or an orchestrator command. `/scribe` scribes the messages of
+this session that are not scribed yet into one tagged, grep-able SCR file per
+session in the Library; `/scribe note` takes direct notes; the canned queries
+and `/scribe ask` answer with exact `SCR file:line` citations. The plugin also
+keeps the SessionStart brief.
+
+Requires Python 3.10+ on macOS or Linux, Claude Code with plugin user
+configuration, and a locally installed Orbit Office plugin with
+`office.session-brief`, `office.scribe-pending`, `office.scribe-append` and
+`office.scribe-query`. No Library path, credentials, model SDK or third-party
 Python packages are used here.
 
-## Install on the transcript-owning Mac
+## Install
 
-Clone this repository at a reviewed revision, then register its marketplace:
+Clone this repository at a reviewed revision, then register its marketplace
+and install the plugin for your user:
 
 ```sh
 claude plugin marketplace add /absolute/path/to/orbit-office/plugin/claude-code
 claude plugin install office-scribe@constellation-office --scope user \
   --config workspace=/absolute/path/to/local/office-workspace \
-  --config default_on=true \
   --config 'excluded_projects=["/absolute/path/to/excluded-project"]'
 ```
 
-The workspace value is an absolute local registered Orbit checkout. Orbit
-accepts that path as a workspace selector; remote host selectors are refused.
-Use the checkout that already has Office enabled and the intended Library
-attached. Configure these same options through Claude's plugin configuration
-UI to change them later. `default_on` defaults to false; it affects live
-passes in new sessions. SessionEnd always captures eligible projects.
-Exclusions apply to the physical directory and all descendants, including
-symlink aliases and transcript working directories, before staging. They
-apply to `now`, `title` and backfill too.
+The workspace value is an absolute local registered Orbit checkout that has
+Office enabled and the intended Library attached; remote host selectors are
+refused, so transcripts stay on this host. Exclusions cover the physical
+directory and all its descendants, including symlink aliases and every
+working directory a transcript records, for every command and for backfill.
+Change options later through Claude's plugin configuration UI.
 
-To keep extraction on this exact host, add the unique label
-`office-scribe-<hostname>` to this host's existing global Orbit configuration
-`[machine].labels` array. Use the value of Python's `socket.gethostname()`;
-keep any existing labels, and never assign this label to another host.
-The host must serve the selected workspace. Extraction tasks require that
-label plus this host's OS; missing placement is refused rather than routing
-transcripts elsewhere. The host's usual task admission, approval and dispatcher
-policy still applies: this client creates low-complexity tasks and never
-approves, dispatches or waits for inference. Enable the shipped, initially
-disabled `office-conversation-extract` recovery sweep through the normal
-operator workflow if desired; its manifest registration remains a separate
-integrator task. Staging is retained for recovery, never uploaded as task
-artifacts. Only staged paths, digests and session identifiers enter tasks.
+| Option | Default | Meaning |
+|---|---|---|
+| `workspace` | (required) | The local Office workspace. |
+| `excluded_projects` | `[]` | JSON array of absolute paths never scribed. |
+| `auto_capture` | `false` | The legacy automatic Stop/SessionEnd capture ([below](#legacy-automatic-capture-off-by-default)). Off: `/scribe` is the only trigger. |
+| `default_on` | `false` | Legacy: with `auto_capture` on, whether live Stop passes start on. |
+| `scribe_url` | empty | The web Scribe screen, linked from the desktop pane. |
 
-Restart Claude after installation and check `/hooks`, `/agents` and `/mcp`.
-The stable provider-qualified commands are `/office-scribe:scribe` and
-`/office-scribe:recall`; these are the plugin's `/scribe` and `/recall`
-commands under Claude's standard namespacing. `/recall` runs the plugin's
-Haiku `recall` subagent with only the bridge's `office.recall` tool allowed.
-The bridge also provides a structured `scribe` control tool to the command;
-that tool is absent from the recall agent's allowlist. Permission prompts
-remain governed by the user's Claude and Orbit settings.
+Restart Claude after installation and check `/agents` (the `scribe` agent),
+`/mcp` (the `office` server and its `scribe` tool) and `/hooks`. The command's
+stable provider-qualified form is `/office-scribe:scribe`; `/scribe` below
+means that command under Claude's standard namespacing. Permission prompts
+remain governed by your Claude and Orbit settings.
 
 After verifying this plugin's SessionStart brief, the operator can retire
-constellation's `operations/scripts/session-brief.py` hook. Replace its old
-SessionEnd stager too if installed. This repository does not modify either.
-The `provider-scribe-` filename prefix prevents publication collisions with
-legacy stagers; Office's session/digest idempotency prevents duplicate captures,
-but leaving both hooks enabled can still create redundant extraction tasks.
+constellation's `operations/scripts/session-brief.py` hook. This repository
+does not modify it.
 
 ## Commands
 
-- `/scribe on` / `/scribe off`: change this session's live switch, in Office
-  (`office.scribe-control`, shared with the Scribe window) and then in the
-  local flag file. Off keeps existing captured evidence and still permits
-  SessionEnd extraction.
-- `/scribe now`: record a Capture-now request in Office, stage complete
-  records and run it immediately, bypassing the time/turn debounce, then
-  consume the request. An unchanged snapshot is a no-op; an outstanding live
-  pass is reused instead of starting concurrent extraction, and the request
-  stays pending for a later turn (`capture_now: pending`).
-- `/scribe status`: read the switch (Office's shared record when it answers,
-  else the local flag), a pending Capture-now request, whether a window
-  heartbeat is fresh and the last queued task, without creating local state
-  or querying the task's lifecycle. `task_status: not_checked` is explicit;
-  queued does not mean captured.
-- `/scribe title <text>`: store the title in Office's shared record and set
-  `title_by: user` through `office.capture`.
-  This performs conservative local capture of the current complete snapshot,
-  ensuring a title change cannot skip unselected evidence. Later crew title
-  proposals cannot overwrite it. No model call occurs in this command.
-- `/scribe backfill [--since YYYY-MM-DD]`: process local top-level provider
-  transcripts, oldest first by their first conversational UTC timestamp.
-  Excluded projects and subagent files are omitted; incomplete or malformed
-  candidates count as refused. Repeating the command queues no duplicate
-  session/digest. A 30-second command budget bounds a batch; rerun to continue
-  after a deadline. This is additive capture, not a deletion or cleanup.
-- `/recall <question>`: return captured evidence with `src-…#L<n>` citations,
-  conversation title/project/date and a resume command. Status comes only
-  from live refs; unresolved PR/commit refs stay unresolved. An empty result
-  says **not captured**, citing coverage (earliest capture, private sessions,
-  uncaptured providers). Office uses literal AND search, so the recall agent
-  searches the question's key terms. Tool failure means unavailable, not empty.
+Each command acts on the session it is run in (`${CLAUDE_SESSION_ID}`).
 
-## Runtime and recovery
+| Command | Does | Model |
+|---|---|---|
+| `/scribe` | Catch up: scribe the messages after the SCR file's `scribed_through` and report what was added (counts per tag and the new lines). A run with nothing new adds nothing and says so. | `scribe` level |
+| `/scribe note <text>` | Record `<text>` verbatim as your entry (`by: user`). Starting with a tag (`#todo …`) it is written at once with no model; otherwise the agent picks the tag. | none with a tag |
+| `/scribe pending` | Open `#pending` lines with no `#resolved` naming them, oldest first. | none |
+| `/scribe pref <matter>` | The current preference on that matter, flagged when stale. | none |
+| `/scribe landed [today\|<date>]` | `#landed` lines on that local date (default today; the zone is stated). | none |
+| `/scribe why <matter\|topic>` | Decisions on that matter (then topic) with their `why`, or "no recorded reason". | none |
+| `/scribe ask <question>` | Free-form answer with citations: the plugin queries first, the agent reads only the shortlist, and quotes are checked before display. | `ask` level |
+| `/scribe title <text>` | Set the session title; Office renames the SCR file once and keeps the old id in `aliases`. | none |
+| `/scribe backfill [--since <date>] [--project <name>]` | Catch up over your existing transcripts, oldest first; sessions already scribed to their end are skipped. | `scribe` level per session |
+
+**Notes.** Keys go before the text, or after a quoted text:
+`/scribe note #todo due: 2026-11-01 write the v1 spec`,
+`/scribe note #pending refs: ORB-1 "waiting on the deploy"`,
+`/scribe note #why resolves: SCR-01-0307-scribe-v1-design#L12 "the reason"`,
+`/scribe note #preference matter: release-with-open-defects resolves: <SCR id>#L<n> "…"`.
+The keys are `resolves`, `matter`, `due`, `refs`, `review_by`, `supersedes`
+and `topics` (comma-separated lists for `refs` and `topics`). Run by an
+orchestrator, a note carries `by: <crew>`: the `--by <crew>` prefix
+(`/scribe note --by opus #agent-decision …`), else `ORBIT_CREW`, else
+`ORBIT_AGENT_NAME` in an Orbit agent session. Office refuses an agent tag
+without a crew and your tags (`decision`, `direction`, `todo`) with one.
+
+**Held notes and titles.** `office.scribe-append` moves the session's cursor
+to the last message it is given. On a session that has never been scribed
+there is no cursor to keep, and choosing one would mark unread messages as
+scribed, so a note or title there is held in the plugin's private state and
+written with the first `/scribe` catch-up. The reply says `Held`.
+
+**Orchestrators** reach the same agent as the `scribe` subagent ("ask the
+scribe whether Daniel decided on X"). It runs the query tool first, Grep and
+Read on the shortlisted SCR files only, and verifies its quotes. Write with
+`/scribe note #<tag> …` as things happen, and run `/scribe` at the end of each
+wake. A standalone scribe session (`claude --agent office-scribe:scribe`) is
+the place for meeting notes.
+
+## How it works
+
+```
+/scribe ─▶ scribe MCP tool ─▶ stage transcript ─▶ office.scribe-pending
+                                    │ (messages after scribed_through)
+                                    ▼
+                 scribe agent (haiku@medium) returns entries
+                                    │
+                      scribe MCP tool ─▶ office.scribe-append (validates, writes, commits)
+```
+
+- The command hands its arguments, as one data string, to the plugin's
+  structured `scribe` MCP tool. Model-free commands (tagged notes, titles,
+  `pending`, `pref`, `landed`, `why`, nothing new) finish there, and the reply
+  carries `model_call: false` and no agent request. Only a catch-up, an
+  untagged note, `ask` and backfill return an `agent` request, which the
+  command passes to the `scribe` subagent with its model.
+- **Staging.** Office reads transcripts only inside the granted workspace, so
+  each run copies the session's complete records to
+  `.orbit/tmp/session-transcripts/scribe-<session-id>.jsonl` (`0600`, private
+  directory; a trailing partial record is left out). That path is what the
+  SCR file's `transcript` key records. Office writes its parse and the SCR
+  file; the plugin never edits either.
+- **Writing level.** The agent calls the tool's `pending` step for the
+  messages (at most about 40,000 characters of new text per pass, with up to
+  10 earlier messages as read-only context; very long messages are cut and
+  marked), returns entries and calls `append`. The plugin sets `through` to
+  the last message it handed over, adds any held notes and title, and Office
+  refuses any quote that is not verbatim, any tag or topic not in the rules,
+  and any tag the author may not take. Refusals are reported, never written.
+  A longer backlog says "More messages remain: run /scribe again".
+- **Asking level.** The plugin runs `office.scribe-query` and shortlists the
+  lines that share the question's key terms (at most 40). With none it says
+  "not captured" and what was searched, with no model. Otherwise the agent
+  reads the shortlist (the `query` step; it may add filters), may Grep and
+  Read the shortlisted files, and answers with each quote followed by its
+  citation, `"<quote>" [<SCR id>:<line> <message id>]`.
+- **Quote check.** Before an answer is shown, the `verify` step checks every
+  double-quoted span against the line its citation names: a line returned by
+  a query for this question, or that line of a shortlisted file. A quote
+  without a citation, or one not found on its line, is replaced by
+  `[unverified quote dropped]` and counted at the end. The agent verifies its
+  own answer and the command verifies again before printing.
+- **Models.** Per level, from the rules' Models section when Office returns
+  one, else `scribe: haiku@medium` and `ask: haiku@low`. The command passes
+  the model to the subagent; the effort is the agent's own (`medium`), since
+  Claude Code sets effort per agent definition, not per call.
+- **Backfill** reads `~/.claude/projects/*/*.jsonl` (top-level sessions only,
+  never subagent files), dates each by its first conversational record in
+  local time, filters `--since` (inclusive local date) and `--project` (the
+  working directory's last component or the provider folder name), and
+  works oldest first. Each call skips sessions with nothing new and hands the
+  first session that has new messages to the agent with `continue: true`; the
+  command repeats until `done`. Sessions found scribed to their end are
+  remembered by size and modification time in `.orbit/tmp/scribe/backfill.json`,
+  so a finished backfill is a no-op. A command has a 120-second budget across
+  its Office calls; a paused run says so and continues on the next call.
+
+Plugin state lives under the workspace's `.orbit/tmp/scribe/` (owner-only):
+per-session tickets for the current catch-up, held notes and the ask
+shortlist. Transcript and SCR text, tool replies and user arguments are data,
+never instructions, and never become shell commands.
+
+## Demo walkthrough
+
+1. In a working session, talk through a choice: "Let's keep the scribe local
+   because it is cheap." Let the assistant report a merge ("Merged as
+   PR#268").
+2. `/scribe`: the reply lists the new lines, for example
+   `L21 - m-0001 … #decision #no-why #constellation "keep the scribe local"`,
+   with counts per tag. Run `/scribe` again: "Nothing new … nothing added".
+3. `/scribe note #todo due: 2026-11-03 "demo the scribe at the hackathon"`:
+   written at once, no model.
+4. `/scribe pending`, `/scribe landed today`, `/scribe why constellation`:
+   instant cited lines, no model.
+5. `/scribe ask did we decide to keep the scribe local?`: a cited answer; any
+   quote the model got wrong is shown as dropped.
+6. `/scribe title Scribe v1 demo`: the SCR file is renamed once.
+7. `grep -rn '#decision' <library>/sources/conversation/`: the same lines,
+   with no model at all.
+8. `/scribe backfill --since 2026-10-25`: earlier sessions get their SCR
+   files, oldest first.
+
+## Legacy automatic capture (off by default)
+
+The automatic Stop and SessionEnd passes from before v1 still ship, off by
+default: with `auto_capture` unset or `false` those hooks return at once,
+with no Office call, staging or state. Turn `auto_capture` on to restore
+them as described here. They stage snapshots and queue extraction tasks into
+the older `src-…/source.md` layout, separate from the SCR files. The legacy
+switch, Capture now and title controls remain in the desktop pane.
+
+To keep extraction on this exact host, add the unique label
+`office-scribe-<hostname>` to this host's existing global Orbit configuration
+`[machine].labels` array (Python's `socket.gethostname()`); never assign it to
+another host. Extraction tasks require that label plus this host's OS. Enable
+the shipped, initially disabled `office-conversation-extract` recovery sweep
+through the normal operator workflow if desired. The `provider-scribe-`
+filename prefix prevents collisions with legacy stagers; leaving both hooks
+enabled can still create redundant extraction tasks.
+
+### Runtime and recovery
 
 Hook input is Claude's JSON on stdin. SessionStart supplies the deterministic
-brief and records the session context. Stop reads Office's shared control
+brief and records the session context (which `/scribe` uses to find the
+transcript). With `auto_capture` on, Stop reads Office's shared control
 record for the session once (`office.scribe-control` `get`), mirrors its
 switch into the flag file (publishing the plugin default on the session's
 first turn), runs a pending Capture-now request as a forced pass and then
@@ -108,7 +208,7 @@ requires a complete final JSONL file. Each immutable snapshot is published
 `0600` in `0700` `.orbit/tmp/session-transcripts/`, then its sibling descriptor
 is published last with session id, absolute transcript path, SHA-256, byte
 length, completion time, project and mode. Provider input is bounded to 8 MiB.
-Nothing reads a Library directory or sends raw transcripts off-host.
+The hooks read no Library directory and send no raw transcript off-host.
 
 Scribe state lives under `.orbit/tmp/`. `scribe/` and `session-transcripts/`
 are created and checked owner-only (`0700`). An existing `.orbit/tmp` may keep
@@ -144,11 +244,11 @@ it merely because the caller timed out. State is under `.orbit/tmp/scribe/`;
 retaining it is necessary for queue idempotency. Do not delete queued snapshots
 until capture succeeds; host retention owns later removal.
 
-## Desktop pane
+## Desktop pane (legacy)
 
-The plugin also ships a Claude desktop mod (`mod/scribe-pane.tsx`, named in
-`hooks/hooks.json` under `modules`): a pane beside the chat for the session
-it sits in. It opens on session start (or with the `scribe-pane` command)
+The plugin also ships a Claude desktop mod, unused by Scribe v1
+(`mod/scribe-pane.tsx`, named in `hooks/hooks.json` under `modules`): a pane
+beside the chat for the session it sits in. It opens on session start (or with the `scribe-pane` command)
 and shows:
 
 - that session's captured entries, newest first, with kind, time,
@@ -174,20 +274,15 @@ The pane reaches Office only through `orbit tool run office.*` run with
   keeping only sources whose `session_id` is this session.
 - Each correction is one `office.capture` `append_to` append.
 - Switch, Capture now and title go through the plugin's structured pane
-  control (`scripts/pane.py`, the same command path as the `scribe` MCP
-  tool). The pane passes the plugin's options to it as the
+  control (`scripts/pane.py`, the legacy control path). The pane passes the plugin's options to it as the
   `CLAUDE_PLUGIN_OPTION_*` variables the command hooks receive.
 
-The ask box spawns the plugin's `recall` subagent and renders its answer
-when that agent's turn completes. In an auto-mode session the engine's
-classifier refuses a spawn that no user request asked for, and a pane press
-is not one. When the spawn is refused or no answer comes within three
-minutes, the pane does what the agent does with plain Haiku completions
-(no tools): one picks the literal search terms, the pane runs
-`office.recall` for each, and one answers from the replies under
-`agents/recall.md`'s own rules. The answer says why the agent gave none.
-The raw cited evidence from `office.recall` is the last resort. The pane refreshes on a 30-second timer and after
-each main-loop turn, never holding the turn. When Orbit is unreachable it
+The ask box answers in the pane from `office.recall`, with no subagent
+(Scribe v1 retired the `recall` subagent). Plain Haiku completions with no
+tools pick the literal search terms, the pane runs `office.recall` for each,
+and Haiku answers from the replies under `mod/recall-rules.md`. The raw cited
+evidence from `office.recall` is the last resort. The pane refreshes on a
+30-second timer and after each main-loop turn, never holding the turn. When Orbit is unreachable it
 shows a single `scribe unavailable` line with a Retry button: no error loop,
 and the session stays responsive. A failed control press shows one dim
 notice.
@@ -206,26 +301,30 @@ debounce to two new turns, the time bound unchanged, as in
 `docs/design/office/specs/recall.md` § "Pace while the window is open".
 
 `office.scribe-control` is a mutating Office tool outside the consented agent
-verbs, so the hooks and commands reach it through your own `orbit` CLI; inside
+verbs, so the hooks and the pane control reach it through your own `orbit` CLI; inside
 an Orbit-managed agent session it is refused and the hooks use the cache.
 
 ## Verification
 
 ```sh
 make -C plugin/claude-code test
-claude plugin validate plugin/claude-code/.claude-plugin/plugin.json
+claude plugin validate plugin/claude-code
 claude plugin test plugin/claude-code
 ```
 
 `make ci-fast` includes the Python syntax gate; `make test` includes this
-plugin's behavior suite. Tests drive the registered hook commands and stdio MCP entrypoint with a
-recording Orbit executable, isolated HOME/OFFICE roots and temporary provider
-files under the repository's ignored `.orbit/tmp/`. They do not run inference,
-contact services or inspect real transcripts. Linux verifies local installation
-and runtime behavior; the operator must perform the installation and smoke
-check on the transcript-owning Mac, including its native process observer.
+plugin's behavior suites. `tests/test_scribe_v1.py` drives the shipped MCP
+entrypoint and hooks with a recording `orbit` stub that plays
+`office.scribe-pending`, `office.scribe-append` and `office.scribe-query` over
+fixture files, plus a recording `claude` stub that proves the plugin starts no
+model process; the agent's steps are driven as the agent calls them.
+`tests/test_plugin.py` covers the legacy automatic capture with
+`auto_capture` on. Tests use isolated HOME/OFFICE roots and temporary
+provider files under the repository's ignored `.orbit/tmp/`; they run no
+inference, contact no service and read no real transcript. The operator
+performs the installation and a smoke check on the transcript-owning Mac.
 
 Provider contracts: [plugin manifests and user configuration](https://code.claude.com/docs/en/plugins-reference),
 [marketplaces](https://code.claude.com/docs/en/plugin-marketplaces),
-[subagent tool restriction](https://code.claude.com/docs/en/sub-agents),
-[isolated slash commands](https://code.claude.com/docs/en/skills#run-skills-in-a-subagent).
+[subagents](https://code.claude.com/docs/en/sub-agents),
+[slash commands](https://code.claude.com/docs/en/skills).
