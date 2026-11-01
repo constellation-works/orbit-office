@@ -40,6 +40,9 @@
           "session_id": { "type": "string" },
           "counterpart": { "type": ["string", "null"] },
           "counterpart_name": { "type": ["string", "null"] },
+          "title": { "type": ["string", "null"], "description": "The session title from the SCR file's front matter; null until /scribe title sets it." },
+          "project": { "type": ["string", "null"], "description": "The session's project from the SCR file's front matter." },
+          "scribed_through": { "type": ["string", "null"], "description": "The session's scribe cursor: the last message id scribed into its SCR file. office.scribe-append takes it as through to add a note without moving the cursor." },
           "resume": { "type": ["string", "null"], "description": "Resume command for the session." },
           "resume_command": { "type": ["string", "null"] },
           "why": { "type": ["string", "null"], "description": "The decision's reason: its inline why, or the #why note that filled its #no-why." },
@@ -48,7 +51,7 @@
           "why_filled_by": { "type": ["string", "null"], "description": "<SCR id>#L<line> of the #why note that filled this decision." },
           "no_why": { "type": "boolean", "description": "A decision still missing its reason." }
         },
-        "required": ["text", "line_text", "quote", "id", "scr_id", "path", "line", "file_line", "citation", "msg", "message_id", "time", "at", "tag", "topics", "refs", "by", "matter", "review_by", "stale", "due", "resolves", "supersedes", "session_id", "counterpart", "counterpart_name", "resume", "resume_command", "why", "reason", "why_source", "why_filled_by", "no_why"],
+        "required": ["text", "line_text", "quote", "id", "scr_id", "path", "line", "file_line", "citation", "msg", "message_id", "time", "at", "tag", "topics", "refs", "by", "matter", "review_by", "stale", "due", "resolves", "supersedes", "session_id", "counterpart", "counterpart_name", "title", "project", "scribed_through", "resume", "resume_command", "why", "reason", "why_source", "why_filled_by", "no_why"],
         "additionalProperties": false
       }
     },

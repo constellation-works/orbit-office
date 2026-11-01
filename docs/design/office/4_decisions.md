@@ -2235,7 +2235,9 @@ citations. Output is one `SCR-<dd-hhmm>-<title>.md` per session under
 provider, cursor and topics, and the body has one tagged, verbatim entry per
 line. The model only proposes entries; a model-free append step checks
 quotes, tags and topics and writes. Automatic Stop/SessionEnd passes are off
-by default. The web Scribe screen (ORB-20696) is parked.
+by default. The web Scribe screen (ORB-20696) was parked here; Daniel
+unparked it on 2026-11-01 and it is built over v1 (see
+[Web Scribe screen over scribe v1](#web-scribe-screen-over-scribe-v1)).
 
 ### Consequences
 
@@ -2353,6 +2355,53 @@ current remedy.
   with `office-core`, and a session whose text alone passes 8 MiB still
   cannot be scribed in one call.
 
+## Web Scribe screen over scribe v1
+
+**Recorded:** 2026-11-01 · [ORB-20696]
+**Code anchors:** `app/packages/server/src/features/scribe/index.ts`
+(`loadFeed`, `addNote`, `ask`), `app/packages/server/src/features/scribe/model.ts`
+(`noteEntry`, `answerOf`), `app/packages/web/src/screens/scribe/`,
+`crates/office-tools/src/tools/sessions/scribe_query.rs` (result keys
+`title`, `project`, `scribed_through`); [specs/scribe.md](./specs/scribe.md#relation-to-what-is-built),
+[specs/web-app.md](./specs/web-app.md#screens)
+
+### Context
+
+Daniel unparked the web Scribe screen for the scribe v1 demo and re-scoped
+it from the retired live scribe onto SCR files. The server feature may call
+only `orbit tool run`, so it cannot read SCR front matter or the parse state.
+Two inputs were missing: the session title and project to group the feed,
+and the session cursor that `office.scribe-append` needs as `through`.
+
+### Decision
+
+- `office.scribe-query` results gain three keys from the line's SCR front
+  matter: `title`, `project` and `scribed_through`. The change is additive;
+  no key is renamed or retyped.
+- A note from the screen is appended with `through` set to the session's own
+  `scribed_through`, so it never marks unread messages scribed. A session
+  with no cursor (never scribed) gets no note from the screen; `/scribe note`
+  holds one for the first catch-up instead.
+- The note is parsed as `/scribe note` parses it (`by: user`, leading
+  `#tag` and keys). Without a leading tag the screen sends the tag chosen in
+  its menu, preselected by a few model-free cues; it does not call the
+  scribe agent to pick one.
+- The feed is the general `office.scribe-query` over the last 30 days. The
+  tool returns the oldest lines first, so a window over the 1000-line limit
+  narrows to 7 days, then to today, until the newest lines fit. Resolved
+  pendings and superseded preferences are hidden, as the tool hides them.
+- The ask box shows `office.scribe-ask` claims after checking each quote
+  once more against the shortlisted line text the same response carries.
+  The server never reads Library files.
+
+### Consequences
+
+- The feed, the canned views and the ask box add no model call beyond the
+  one `office.scribe-ask` makes.
+- Cost: a session that was parsed on another host (no parse state here)
+  refuses a screen note with `scribe_not_parsed`; the note waits for a local
+  `/scribe`.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
@@ -2381,5 +2430,6 @@ current remedy.
 - [ORB-20780] — built `office.scribe-pending` and `office.scribe-append`.
 - [ORB-20825] — moved local calendar events into the Library's ignored state, inside the plugin's write grant.
 - [ORB-20849] — made long, tool-heavy sessions scribable by stripping tool payloads at staging.
+- [ORB-20696] — built the web Scribe screen over scribe v1.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

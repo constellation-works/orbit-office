@@ -601,3 +601,120 @@ export type LocalCalendarChange =
   | { action: "update"; key: string; event: LocalCalendarEvent }
   | { action: "delete"; key: string }
   | ({ action: "sources" } & CalendarSources);
+
+/**
+ * One SCR line as the Scribe screen shows it, copied from an
+ * `office.scribe-query` result (specs/scribe.md, "The SCR file").
+ */
+export interface ScribeEntry {
+  /** `<SCR id>#L<line>`. */
+  citation: string;
+  /** `<library path>:<line>`. */
+  file_line: string;
+  /** Message id, or `note` for a note. */
+  msg: string;
+  /** The entry's local time as written on the line. */
+  time: string;
+  tag: string;
+  topics: string[];
+  /** The verbatim quote (a note's own text). */
+  quote: string;
+  /** The decision's reason, inline or from the `#why` note that filled it. */
+  why: string | null;
+  /** A decision still missing its reason: "no recorded reason". */
+  no_why: boolean;
+  matter: string | null;
+  review_by: string | null;
+  /** A preference past its `review_by`. */
+  stale: boolean;
+  refs: string[];
+  by: string | null;
+  due: string | null;
+  session_id: string;
+  /** `claude --resume <session-id>`. */
+  resume: string | null;
+}
+
+/** One session's lines in the feed, newest first. */
+export interface ScribeSession {
+  session_id: string;
+  title: string | null;
+  project: string | null;
+  counterpart_name: string | null;
+  /** The session's scribe cursor; a note needs one. */
+  scribed_through: string | null;
+  /** Time of the newest line. */
+  latest: string;
+  entries: ScribeEntry[];
+}
+
+/** `GET /api/scribe/feed`: the current or most recent session first. */
+export interface ScribeFeed {
+  sessions: ScribeSession[];
+  /** Lines shown, and how many matched; fewer are shown when the window was narrowed. */
+  shown: number;
+  total: number;
+  /** First local date of the window searched. */
+  since: string;
+  time_zone: string;
+  today: string;
+}
+
+/** The canned queries: open pending, current preferences, landed today, and why. */
+export type ScribeView = "pending" | "pref" | "landed" | "why";
+
+/** `GET /api/scribe/query?view=<view>[&about=<matter or topic>]`. */
+export interface ScribeQueryResult {
+  view: ScribeView;
+  /** The lines `office.scribe-query` returned, in its order. */
+  entries: ScribeEntry[];
+  count: number;
+  since: string | null;
+  until: string | null;
+  time_zone: string;
+  today: string;
+  files_searched: number;
+}
+
+/** `POST /api/scribe/note`: Daniel's own entry, recorded verbatim. */
+export interface ScribeNoteRequest {
+  session_id: string;
+  text: string;
+  /** Used when the text does not start with `#<tag>`. */
+  tag?: string;
+}
+
+/** What the note append did. */
+export interface ScribeNoteResult {
+  added: Array<{ file_line: string; text: string }>;
+  /** Refusal reasons from `office.scribe-append`, such as `tag_not_permitted`. */
+  refused: string[];
+}
+
+/** One cited claim of an answer. */
+export interface ScribeClaim {
+  text: string | null;
+  /** Verbatim from the cited line; null when a private line is cited by reference only. */
+  quote: string | null;
+  cites: string[];
+  file_line: string | null;
+  msg: string | null;
+  resume: string | null;
+  withheld: boolean;
+}
+
+/** `POST /api/scribe/ask` with `{question}`: a cited answer, or "not captured". */
+export interface ScribeAnswer {
+  status: "answered" | "not_captured" | "reference_only";
+  claims: ScribeClaim[];
+  /** `file:line` of private lines that matched, cited by reference only (no open-weights route). */
+  references: string[];
+  /** Claims dropped because a quote did not match its cited line. */
+  dropped: number;
+  since: string | null;
+  until: string | null;
+  topics: string[];
+  files_searched: number;
+  /** `<route> <model>` of the one model call, when one was made. */
+  model: string | null;
+}

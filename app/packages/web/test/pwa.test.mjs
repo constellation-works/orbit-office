@@ -49,7 +49,7 @@ await import("../dist/pwa/sw.js");
 /** Fresh stub environment; `seed` pre-fills the shell cache like an install. */
 function useWorkerEnv({ seed = [], fetchImpl } = {}) {
   const addedAll = [];
-  const stores = new Map([["office-shell-v13", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
+  const stores = new Map([["office-shell-v14", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
   Object.defineProperty(globalThis, "self", {
     value: {
       location: { origin: "http://office.test" },
@@ -145,6 +145,8 @@ const SHELL = [
   "/screens/routines/index.js",
   "/screens/routines/style.js",
   "/screens/scribe/index.js",
+  "/screens/scribe/model.js",
+  "/screens/scribe/style.js",
   "/screens/settings/index.js",
   "/screens/settings/calendar.js",
   "/screens/settings/editor.js",
@@ -228,7 +230,7 @@ test("activate drops old caches and keeps the current shell", async () => {
   let waited = null;
   listeners.activate({ waitUntil: (promise) => { waited = promise; } });
   await waited;
-  assert.deepEqual([...stores.keys()], ["office-shell-v13"]);
+  assert.deepEqual([...stores.keys()], ["office-shell-v14"]);
 });
 
 test("live-data requests are left to the network, never answered from cache", async () => {
@@ -267,11 +269,11 @@ test("other same-origin requests go to the network and are not stored", async ()
     fetchImpl: async () => new Response("live"),
   });
   const listeners = workerListeners;
-  const before = stores.get("office-shell-v13").size;
+  const before = stores.get("office-shell-v14").size;
   const { event, answered } = fetchEvent("http://office.test/demo.html");
   listeners.fetch(event);
   assert.equal(await (await answered()).text(), "live");
-  assert.equal(stores.get("office-shell-v13").size, before);
+  assert.equal(stores.get("office-shell-v14").size, before);
 });
 
 test("a failed navigation falls back to the cached shell", async () => {

@@ -10,7 +10,8 @@ Status: build step 1 built (`office.scribe-pending`, `office.scribe-append`;
 see [Build order](#build-order)). Step 2's Claude Code plugin part is built
 (ORB-20799): the `scribe` agent, the `/scribe` commands and automatic hooks
 off by default ([plugin guide](../../../../plugin/claude-code/README.md));
-`office.scribe-query` is being built separately.
+`office.scribe-query` is being built separately. The web Scribe screen is
+built over v1 (ORB-20696; [web-app.md](./web-app.md#screens)).
 Supersedes, as the default way to capture
 conversations, the automatic live scribe in
 [sessions.md](./sessions.md#live-scribe) and the recall surfaces in
@@ -45,7 +46,8 @@ v1 does not do:
 - Reminders that fire at a time.
 - Voice.
 - A viewer for parsed conversations.
-- The web Scribe screen or the desktop pane.
+- The desktop pane. (The web Scribe screen, first listed here, is built
+  over v1's SCR files: ORB-20696.)
 
 These are later steps; v1 leaves room for them.
 
@@ -432,7 +434,8 @@ web access, no writes and no Orbit calls.
 | Stop/SessionEnd automatic passes, debounce, window heartbeat | Off by default; `/scribe` is the only trigger. |
 | Conversation sources as `src-…/source.md` | Left as they are; new sessions write `SCR-…md`. No migration in v1. |
 | `office.recall`, `office.recall-answer`, `office.scribe-control`, corrections | Unchanged and unused by v1. Corrections may be reused later as `correction` lines. |
-| Desktop pane (ORB-20697), web Scribe screen (ORB-20696, parked) | Unused by v1; ORB-20696 stays parked. |
+| Desktop pane (ORB-20697) | Unused by v1. |
+| Web Scribe screen (ORB-20696) | Built over v1, commanded only: the feed and the Pending, Preferences, Landed and Why views read `office.scribe-query`; a note is appended through `office.scribe-append` at the session's own `scribed_through`, as `/scribe note` records it; the ask box calls `office.scribe-ask`. No automatic capture, heartbeat or capture switch. `office.scribe-query` results carry the file's `title`, `project` and `scribed_through` for it. |
 
 ## Build order
 
