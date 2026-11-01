@@ -419,6 +419,16 @@ spec:
       input_schema: { $ref: schemas/scribe-query.request.json }
       output_schema: { $ref: schemas/scribe-query.response.json }
 
+    # - name: scribe-ask
+    #   description: >-
+    #     Answer a question with one Standard-tier model call over SCR
+    #     evidence, then return the cited answer plus the scribe-query
+    #     payload. The web server calls this tool.
+    #   execution_kind: read_only
+    #   mcp_scope: workspace
+    #   input_schema: { $ref: schemas/scribe-ask.request.json }
+    #   output_schema: { $ref: schemas/scribe-ask.response.json }
+
     # ---- recall ----
 
     - name: recall
