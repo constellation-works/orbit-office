@@ -173,15 +173,18 @@ class ScribeV1(unittest.TestCase):
 
     # ---- fixtures -------------------------------------------------------
 
-    def transcript(self, turns, path=None, sid=None, date="2026-10-30"):
+    def transcript(self, turns, path=None, sid=None, date="2026-10-30", entrypoint=None):
         """`turns` as (role, text); returns the provider file."""
         path = path or self.path
         sid = sid or self.sid
         with path.open("w") as stream:
             for index, (role, text) in enumerate(turns):
-                stream.write(json.dumps({"type": role, "sessionId": sid, "cwd": str(self.project),
-                                         "timestamp": "{}T0{}:00:00Z".format(date, index % 10),
-                                         "message": {"role": role, "content": text}}) + "\n")
+                record = {"type": role, "sessionId": sid, "cwd": str(self.project),
+                          "timestamp": "{}T0{}:00:00Z".format(date, index % 10),
+                          "message": {"role": role, "content": text}}
+                if entrypoint is not None:
+                    record["entrypoint"] = entrypoint
+                stream.write(json.dumps(record) + "\n")
         return path
 
     def hook(self, event):
@@ -561,6 +564,47 @@ class ScribeV1(unittest.TestCase):
         excluded = self.scribe("backfill --project constellation")
         self.assertTrue(excluded["done"])
         self.assertEqual(self.scribe("")["excluded"], True)
+
+    def test_backfill_skips_headless_sdk_cli_sessions(self):
+        def session(sid, date, text, entrypoint):
+            return self.transcript([("user", text)], path=self.providers / (sid + ".jsonl"),
+                                   sid=sid, date=date, entrypoint=entrypoint)
+        session("chat-one", "2026-10-10", "interactive session decision", "claude-desktop")
+        session("worker-one", "2026-10-01", "headless agent run decision", "sdk-cli")
+
+        first = self.scribe("backfill --since 2026-09-15")
+        self.assertTrue(first["continue"])
+        self.assertEqual(first["session_id"], "chat-one")
+        self.assertIn("worker-one", first["skipped"])
+        self.assertEqual(first["headless"], ["worker-one"])
+        self.assertIn("headless", first["display"])
+        self.assertEqual(first["refused"], 0)
+        self.agent_catchup(first, [{"msg": "m-0001", "quote": "interactive session decision", "tag": "decision"}])
+
+        second = self.scribe("backfill --since 2026-09-15")
+        self.assertTrue(second["done"])
+        self.assertFalse(second["model_call"])
+        self.assertIn("worker-one", second["skipped"])
+        self.assertEqual(second["headless"], ["worker-one"])
+        self.assertIn("headless", second["display"])
+        self.assertEqual(second["refused"], 0)
+
+        appended = [c["input"]["session_id"] for c in self.calls("office.scribe-append")]
+        self.assertEqual(appended, ["chat-one"])
+        pended = [c["input"]["session_id"] for c in self.calls("office.scribe-pending")]
+        self.assertIn("chat-one", pended)
+        self.assertNotIn("worker-one", pended)
+        self.assert_no_model_process()
+
+    def test_scribe_in_sdk_cli_session_still_catches_up(self):
+        self.transcript([("user", "orchestrator decision here")], entrypoint="sdk-cli")
+        reply = self.scribe("")
+        self.assertTrue(reply["model_call"])
+        self.assertEqual(reply["session_id"], self.sid)
+        _pending, appended = self.agent_catchup(
+            reply, [{"msg": "m-0001", "quote": "orchestrator decision here", "tag": "agent-decision"}])
+        self.assertEqual(appended["added"], 1)
+        self.assert_no_model_process()
 
     # ---- criterion 5: hooks ---------------------------------------------
 
