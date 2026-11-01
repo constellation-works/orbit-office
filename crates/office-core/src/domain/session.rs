@@ -26,6 +26,10 @@ pub struct Entry {
     pub kind: String,
     /// Exact text after the kind delimiter, without trimming or interpolation.
     pub text: String,
+    /// Whether one or more corrections changed this entry.
+    pub corrected: bool,
+    /// Explicit user attribution, when present (a claim, not authority).
+    pub by: Option<String>,
 }
 
 /// Parse the append-only log. Ordinary prose and blank lines still count for
@@ -37,7 +41,17 @@ pub fn entries(body: &str) -> Result<Vec<Entry>> {
             continue;
         };
         let (time, entry) = rest.split_once("] ").ok_or_else(|| invalid("log entry"))?;
-        let (kind, text) = entry.split_once(": ").ok_or_else(|| invalid("log entry"))?;
+        let (kind, text, by) = if let Some((kind, text)) = entry.split_once(" (by: user): ")
+            && is_conversation_kind(kind)
+        {
+            let text: String =
+                serde_json::from_str(text).map_err(|_| invalid("user entry text"))?;
+            super::source::conversation::corrections::validate_user_text(kind, &text, "user")?;
+            (kind, text, Some("user".to_string()))
+        } else {
+            let (kind, text) = entry.split_once(": ").ok_or_else(|| invalid("log entry"))?;
+            (kind, text.to_string(), None)
+        };
         time_key(time)?;
         if !is_conversation_kind(kind) || text.trim().is_empty() {
             return Err(invalid("log entry kind or text"));
@@ -46,7 +60,9 @@ pub fn entries(body: &str) -> Result<Vec<Entry>> {
             line: index + 1,
             time: time.into(),
             kind: kind.into(),
-            text: text.into(),
+            text,
+            corrected: false,
+            by,
         });
     }
     Ok(result)
@@ -74,6 +90,12 @@ pub struct Item {
     /// existing briefs serialize unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
+    /// Additive correction marker, present only for corrected entries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub corrected: Option<bool>,
+    /// Explicit user attribution on a captured entry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
 }
 
 /// A section in display order; optional sections are absent from the array.
@@ -167,6 +189,8 @@ impl Conversation {
             status: None,
             template: None,
             workspace: None,
+            corrected: entry.corrected.then_some(true),
+            by: entry.by.clone(),
         }
     }
     fn reference(&self) -> Item {
@@ -179,6 +203,8 @@ impl Conversation {
             status: None,
             template: None,
             workspace: None,
+            corrected: None,
+            by: None,
         }
     }
 }
@@ -192,10 +218,12 @@ fn conversations(files: &[LibraryText]) -> Result<Vec<Conversation>> {
             continue;
         }
         let (_, body) = frontmatter::split(raw)?;
-        let log = entries(body)?;
+        let log = super::source::conversation::corrections::effective_entries(body)?;
         let mut time = text(&fields, "captured_at")?.to_string();
         let mut key = time_key(&time)?;
-        for entry in &log {
+        // Activity includes correction/removal audit records even when the
+        // effective evidence is empty or retains an older timestamp.
+        for entry in entries(body)? {
             let next = time_key(&entry.time)?;
             if next >= key {
                 time.clone_from(&entry.time);
@@ -298,6 +326,8 @@ fn task_item(row: &Value, at: &str, status: &str, workspace: Option<&str>) -> Re
         status: Some(status.into()),
         template: None,
         workspace: workspace.map(str::to_string),
+        corrected: None,
+        by: None,
     })
 }
 
@@ -544,6 +574,8 @@ pub fn assemble_with_workspaces(
                     status: Some("workspace_unavailable".into()),
                     template: None,
                     workspace: Some(selector),
+                    corrected: None,
+                    by: None,
                 })
                 .collect(),
         ));
@@ -616,6 +648,8 @@ pub fn assemble_with_workspaces(
                 status: None,
                 template: None,
                 workspace: None,
+                corrected: None,
+                by: None,
             }],
         ));
     }
@@ -640,6 +674,8 @@ pub fn assemble_with_workspaces(
                 status: None,
                 template: Some(template.template),
                 workspace: None,
+                corrected: None,
+                by: None,
             });
         }
     }

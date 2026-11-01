@@ -11,9 +11,8 @@ use office_core::domain::knowledge::{
 };
 use office_core::domain::settings::Settings;
 use office_core::domain::source::{
-    RenderSource, SourceKind, format_conversation_entry, is_video_extension,
-    media_type_for_extension, normalize_text, render_source, sha256_hex, source_id_base,
-    unique_source_id, vtt_to_body,
+    RenderSource, SourceKind, is_video_extension, media_type_for_extension, normalize_text,
+    render_source, sha256_hex, source_id_base, unique_source_id, vtt_to_body,
 };
 use office_core::domain::template::BUNDLED;
 use office_core::ports::{
@@ -1030,6 +1029,7 @@ impl Library for FakeLibrary {
     }
     fn capture_source(&self, request: &CaptureSourceRequest) -> Result<SourceOutcome> {
         office_core::domain::source::validate_capture_tags(&request.tags)?;
+        office_core::domain::source::conversation::corrections::validate_capture(request)?;
         self.ready()?;
         let settings = self.settings()?;
         if let Some(target) = &request.append_to {
@@ -1040,11 +1040,7 @@ impl Library for FakeLibrary {
             }
             let mut lines = Vec::new();
             for entry in &request.entries {
-                lines.push(format_conversation_entry(
-                    &request.captured_at,
-                    &entry.kind,
-                    &entry.text,
-                )?);
+                lines.push(entry.format(&request.captured_at)?);
             }
             let mut sources = self.sources.borrow_mut();
             let view = sources.get_mut(target).ok_or_else(|| Error::Library {
@@ -1057,6 +1053,9 @@ impl Library for FakeLibrary {
                     message: format!("source {target} is not a conversation source"),
                 });
             }
+            office_core::domain::source::conversation::corrections::validate_append(
+                &view.body, &lines,
+            )?;
             let raw = self.texts.borrow().get(&view.path).cloned();
             let tagged_raw = raw
                 .map(|raw| {
@@ -1205,11 +1204,7 @@ impl Library for FakeLibrary {
         } else if kind == SourceKind::Conversation && !request.entries.is_empty() {
             let mut lines = Vec::new();
             for entry in &request.entries {
-                lines.push(format_conversation_entry(
-                    &request.captured_at,
-                    &entry.kind,
-                    &entry.text,
-                )?);
+                lines.push(entry.format(&request.captured_at)?);
             }
             let body = lines.join("\n");
             let sha = sha256_hex(normalize_text(&body).as_bytes());

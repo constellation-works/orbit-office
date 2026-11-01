@@ -1,5 +1,7 @@
 //! Session transcript adapters, evidence selection and source provenance.
 
+/// Append-only Scribe corrections and user-attributed entries.
+pub mod corrections;
 /// Stored reference extraction and model-free recall selection.
 pub mod recall;
 use super::{format_conversation_entry, sha256_hex};

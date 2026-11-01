@@ -937,3 +937,158 @@ fn transcript_context_credentials_are_scrubbed_before_persistence() {
         assert!(!response.to_string().contains(secret));
     }
 }
+
+#[test]
+fn corrections_append_without_rewriting_validate_anchors_and_preserve_user_words() {
+    let f = Fixture::new();
+    let captured = f.call(
+        json!({"kind":"conversation","title":"Correction fixture","entries":[
+            {"kind":"decision","text":"Ship the release."},
+            {"kind":"decision","text":"Delete this duplicate."}
+        ]}),
+        "office.capture",
+    );
+    assert_eq!(captured["ok"], true, "{captured}");
+    let id = &captured["output"]["id"];
+    let path = f
+        .workspace()
+        .join("library")
+        .join(captured["output"]["path"].as_str().unwrap());
+    let before = std::fs::read_to_string(&path).unwrap();
+    let body = office_core::domain::source::source_body(&before);
+    let corrected = f.call(
+        json!({"append_to":id,"entries":[
+            {"kind":"correction","correction":{"anchor":"#L1","choice":"not_decision"}},
+            {"kind":"correction","correction":{"anchor":"#L2","choice":"remove"}},
+            {"kind":"fact","text":"  User's exact  wording.  ","by":"user"}
+        ]}),
+        "office.capture",
+    );
+    assert_eq!(corrected["ok"], true, "{corrected}");
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert!(office_core::domain::source::source_body(&after).starts_with(&body));
+    assert!(after.contains("fact (by: user): "));
+    let recall = f.call(json!({"question":"Correction fixture"}), "office.recall");
+    assert_eq!(recall["ok"], true, "{recall}");
+    let entries = recall["output"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "{recall}");
+    let open = entries.iter().find(|e| e["anchor"] == "#L1").unwrap();
+    assert_eq!(open["kind"], "open");
+    assert_eq!(open["corrected"], true);
+    let user = entries.iter().find(|e| e["kind"] == "fact").unwrap();
+    assert_eq!(user["text"], "  User's exact  wording.  ");
+    assert_eq!(user["by"], "user");
+    for correction in [
+        json!({"anchor":"#L999","choice":"remove"}),
+        json!({"anchor":"#L3","choice":"remove"}),
+        json!({"anchor":"#L1","choice":"kind","kind":"correction"}),
+        json!({"anchor":"#L1","choice":"wording","text":""}),
+        json!({"anchor":"#L1","choice":"remove","unknown":true}),
+    ] {
+        let refused = f.call(json!({"append_to":id,"entries":[{"kind":"fact","text":"must not write"},{"kind":"correction","correction":correction}]}), "office.capture");
+        assert_eq!(refused["ok"], false, "{refused}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), after);
+    }
+    let changed = f.call(json!({"append_to":id,"entries":[
+        {"kind":"correction","correction":{"anchor":"#L1","choice":"kind","kind":"direction"}},
+        {"kind":"correction","correction":{"anchor":"#L1","choice":"wording","text":"  Keep the exact wording.  "}}
+    ]}), "office.capture");
+    assert_eq!(changed["ok"], true, "{changed}");
+    let recall = f.call(
+        json!({"question":"Keep the exact wording"}),
+        "office.recall",
+    );
+    assert_eq!(recall["output"]["entries"][0]["kind"], "direction");
+    assert_eq!(
+        recall["output"]["entries"][0]["text"],
+        "  Keep the exact wording.  "
+    );
+    assert_eq!(recall["output"]["entries"][0]["anchor"], "#L1");
+}
+
+#[test]
+fn user_additions_keep_all_chosen_kinds_and_legacy_json_remains_literal() {
+    let f = Fixture::new();
+    let legacy = r#"{"by":"user","text":"This is literal JSON."}"#;
+    let captured = f.call(json!({"kind":"conversation","title":"User fixture","entries":[{"kind":"fact","text":legacy}]}), "office.capture");
+    assert_eq!(captured["ok"], true, "{captured}");
+    let id = &captured["output"]["id"];
+    let mut additions = Vec::new();
+    for kind in ["direction", "decision", "fact"] {
+        additions.push(json!({"kind":kind,"text":format!("  {kind}: café\nwith exact  spacing.  "),"by":"user"}));
+    }
+    let appended = f.call(
+        json!({"append_to":id,"entries":additions}),
+        "office.capture",
+    );
+    assert_eq!(appended["ok"], true, "{appended}");
+    let recall = f.call(json!({"question":"User fixture"}), "office.recall");
+    assert_eq!(recall["ok"], true, "{recall}");
+    let entries = recall["output"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 4);
+    let original = entries.iter().find(|e| e["anchor"] == "#L1").unwrap();
+    assert_eq!(original["text"], legacy);
+    assert!(original["by"].is_null());
+    for addition in &additions {
+        let entry = entries
+            .iter()
+            .find(|e| e["text"] == addition["text"])
+            .unwrap();
+        assert_eq!(entry["by"], "user");
+        assert_eq!(entry["kind"], addition["kind"]);
+    }
+    let path = f
+        .workspace()
+        .join("library")
+        .join(captured["output"]["path"].as_str().unwrap());
+    let before = std::fs::read_to_string(&path).unwrap();
+    for bad in [
+        json!({"kind":"fact","text":"valid text","by":"agent"}),
+        json!({"kind":"open","text":"valid text","by":"user"}),
+        json!({"kind":"fact","text":"valid text","unknown":true}),
+        json!({"kind":"fact","text":"Bearer credential-for-user-fixture","by":"user"}),
+        json!({"kind":"correction","correction":{"anchor":"#L1","choice":"wording","text":"Bearer credential-for-correction-fixture"}}),
+    ] {
+        let refused = f.call(json!({"append_to":id,"entries":[bad]}), "office.capture");
+        assert_eq!(refused["ok"], false, "{refused}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+}
+
+#[test]
+fn corrections_and_user_additions_survive_incremental_transcript_passes() {
+    let f = Fixture::new();
+    f.write("");
+    let first = f.call(f.input(), "office.capture");
+    assert_eq!(first["ok"], true, "{first}");
+    let id = &first["output"]["id"];
+    let append = f.call(json!({"append_to":id,"entries":[
+        {"kind":"correction","correction":{"anchor":"#L1","choice":"wording","text":"Always retain the correction."}},
+        {"kind":"fact","text":"User's missing observation.","by":"user"}
+    ]}), "office.capture");
+    assert_eq!(append["ok"], true, "{append}");
+    let path = f
+        .workspace()
+        .join("library")
+        .join(first["output"]["path"].as_str().unwrap());
+    let before = std::fs::read_to_string(&path).unwrap();
+    f.write("Fact: more session context.");
+    let next = f.call(f.input(), "office.capture");
+    assert_eq!(next["ok"], true, "{next}");
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        office_core::domain::source::source_body(&after)
+            .starts_with(&office_core::domain::source::source_body(&before))
+    );
+    let entries = office_core::domain::source::conversation::corrections::effective_entries(
+        &office_core::domain::source::source_body(&after),
+    )
+    .unwrap();
+    assert_eq!(entries[0].text, "Always retain the correction.");
+    assert!(entries[0].corrected);
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.text == "User's missing observation." && e.by.as_deref() == Some("user"))
+    );
+}

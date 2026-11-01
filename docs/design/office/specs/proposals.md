@@ -71,6 +71,7 @@ and cadence coverage currently uses the listed task titles.
 | **Unused automation (planned — does not fire yet)** | An auto-task has produced nothing the user opened in 30 days (no usage data is loaded, so this never fires today) | `retire` (planned) |
 | **New subject** | A participant, or a `client:`/`project:`/`topic:` tag, that no page covers (by title, `aliases` or tag), seen in ≥2 sources | `knowledge_add` from the matching template |
 | **Unrecorded direction** | A `direction` entry in a conversation source that `dom-standing-directions` does not cite | `knowledge_update` adding it |
+| **Scribe corrections** | ≥3 appended corrections of the same choice in `thresholds.window_days` (inclusive; future entries excluded) | `knowledge_update` candidate for `dom-scribe-rules`, quoting originals and citing original/correction anchors |
 | **Declared cadence** | A `rhythm` entry with a deliverable that no auto-task covers | `auto_task` for that deliverable |
 
 The orchestrator can also propose things in conversation ("you've asked me

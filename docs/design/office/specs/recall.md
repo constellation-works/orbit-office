@@ -7,7 +7,8 @@ last_validated: 2026-11-01
 # Spec: Recall
 
 Status: the Orbit backend is built (ORB-20688): session context and title
-ownership, deterministic stored refs, and read-only `office.recall`. The
+ownership, deterministic stored refs, read-only `office.recall`, and append-only
+corrections with repeated-correction signals (ORB-20695). The
 provider plugin, commands/subagent, Scribe UI and backfill remain specified.
 PR status remains unresolved until a live PR source is added (below).
 
@@ -262,6 +263,48 @@ the user's choice, written through `office.capture` with `append_to`.
 - Repeated corrections of the same kind are a signal for a
   `knowledge_update` proposal to `dom-scribe-rules`, quoting the corrected
   entries ([proposals.md](./proposals.md#signals)).
+
+The correction backend is built; the Scribe window controls remain planned.
+Append through `office.capture`, for example:
+
+```json
+{"append_to":"<source-id>","entries":[{"kind":"correction","correction":{"anchor":"#L1","choice":"not_decision"}}]}
+```
+
+Choices are `not_decision` (effective kind `open`), `kind` with a `kind`
+field, `wording` with nonempty verbatim `text`, and `remove`. A kind change
+accepts any ordinary log kind, never `correction`. Only local anchors of
+original entries already in the source are accepted; corrections cannot target
+other corrections, prose, future lines or entries in the same append batch.
+All entries in a refused batch remain unwritten. Corrections compose in append
+order; removal stays final. The original anchor and timestamp stay attached to
+the effective entry. Brief and recall entries add `corrected: true`; digest
+lines retain the effective kind and `(corrected)` marker even if its model
+selects a plain excerpt. Multiline wording contributes complete individual
+lines to digest evidence, each with the original entry anchor. Removed entries
+and correction audit records are not
+returned as ordinary reader evidence. A digest already published is immutable;
+these rules apply when creating a new digest.
+
+A missed entry is `{ "kind": "fact", "text": "<verbatim>", "by": "user" }`
+(or `decision` / `direction`). Attribution is a caller claim, not authenticated
+identity. Its single physical log line stores
+`[<time>] fact (by: user): "<JSON-escaped verbatim text>"`, preserving spaces
+and newlines as JSON escapes. This extends the kind delimiter, so legacy text
+that happens to contain JSON or attribution words keeps its original meaning.
+Credential-bearing user additions and replacement wording are refused before
+writing, so accepted text stays verbatim through later scrubbed transcript passes.
+Readers decode the exact text and expose `by: user`. Correction lines store the
+JSON correction payload after `correction:`. Legacy plain entry lines keep
+their format; a `text` containing a canonical JSON correction is also accepted.
+The stored log body stays append-only, including through later transcript passes.
+
+At least three corrections with the same **choice** within
+`thresholds.window_days` produce a `scribe_corrections` candidate. Its kind is
+`knowledge_update`, its target evidence includes `dom-scribe-rules`, and its
+summary quotes the original entries with original and correction anchors. The
+scan clock excludes future corrections; the window includes its exact lower
+boundary. This proposes a change for review and never edits the rules page.
 
 ### Pace while the window is open
 

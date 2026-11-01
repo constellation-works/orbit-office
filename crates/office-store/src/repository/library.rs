@@ -8,9 +8,9 @@ use office_common::fs::{atomic::write_atomic, hash::sha256_file};
 use office_core::domain::artifact::{Artifact, ArtifactFile};
 use office_core::domain::settings::Settings;
 use office_core::domain::source::{
-    RenderSource, SourceKind, format_conversation_entry, is_video_extension,
-    media_type_for_extension, normalize_text, parse_source_meta, render_source, sha256_hex,
-    source_body, source_id_base, unique_source_id, vtt_to_body,
+    RenderSource, SourceKind, is_video_extension, media_type_for_extension, normalize_text,
+    parse_source_meta, render_source, sha256_hex, source_body, source_id_base, unique_source_id,
+    vtt_to_body,
 };
 use office_core::ports::{CaptureSourceRequest, SourceOutcome, SourceView};
 
@@ -1859,6 +1859,7 @@ impl LibraryStore {
         request: &CaptureSourceRequest,
     ) -> office_core::Result<SourceOutcome> {
         office_core::domain::source::validate_capture_tags(&request.tags)?;
+        office_core::domain::source::conversation::corrections::validate_capture(request)?;
         // Contained reads happen before any write, so a refused path
         // writes nothing.
         let mut upload_bytes: Option<Vec<u8>> = None;
@@ -1922,11 +1923,7 @@ impl LibraryStore {
             }
             let mut lines = Vec::new();
             for entry in &request.entries {
-                lines.push(format_conversation_entry(
-                    &request.captured_at,
-                    &entry.kind,
-                    &entry.text,
-                )?);
+                lines.push(entry.format(&request.captured_at)?);
             }
             let Some((path, raw_text)) = existing
                 .iter()
@@ -1945,6 +1942,7 @@ impl LibraryStore {
                 });
             }
             let mut body = source_body(raw_text);
+            office_core::domain::source::conversation::corrections::validate_append(&body, &lines)?;
             if !body.is_empty() && !body.ends_with('\n') {
                 body.push('\n');
             }
@@ -2033,11 +2031,7 @@ impl LibraryStore {
         } else if kind == SourceKind::Conversation && !request.entries.is_empty() {
             let mut lines = Vec::new();
             for entry in &request.entries {
-                lines.push(format_conversation_entry(
-                    &request.captured_at,
-                    &entry.kind,
-                    &entry.text,
-                )?);
+                lines.push(entry.format(&request.captured_at)?);
             }
             let body = lines.join("\n");
             (

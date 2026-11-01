@@ -74,27 +74,12 @@ fn parse_entries(call: &Call<'_>) -> Result<Vec<ConversationEntry>> {
                 entries.push(ConversationEntry {
                     kind: kind.trim().to_string(),
                     text: text.trim().to_string(),
+                    by: None,
                 });
-            } else if let Some(object) = item.as_object() {
-                let kind = object
-                    .get("kind")
-                    .or_else(|| object.get("type"))
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        Error::InvalidArgument("capture entries items need a kind".to_string())
-                    })?;
-                let text = object
-                    .get("text")
-                    .or_else(|| object.get("message"))
-                    .or_else(|| object.get("content"))
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        Error::InvalidArgument("capture entries items need text".to_string())
-                    })?;
-                entries.push(ConversationEntry {
-                    kind: kind.to_string(),
-                    text: text.to_string(),
-                });
+            } else if item.is_object() {
+                entries.push(
+                    office_core::domain::source::conversation::corrections::capture_entry(item)?,
+                );
             } else {
                 return Err(Error::InvalidArgument(
                     "capture entries items must be objects or strings".to_string(),
@@ -106,7 +91,11 @@ fn parse_entries(call: &Call<'_>) -> Result<Vec<ConversationEntry>> {
         && let Some(kind) = string_field(call, "entry_kind")?
         && let Some(text) = string_field(call, "text")?
     {
-        entries.push(ConversationEntry { kind, text });
+        entries.push(ConversationEntry {
+            kind,
+            text,
+            by: None,
+        });
     }
     Ok(entries)
 }

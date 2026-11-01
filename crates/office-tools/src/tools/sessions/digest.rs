@@ -10,9 +10,7 @@ use office_core::domain::artifact::{
 };
 use office_core::domain::knowledge::{DocumentRecord, Page};
 use office_core::domain::metrics::{Window, metadata, proposal_decision, timestamp};
-use office_core::domain::source::{
-    format_rfc3339_utc, is_conversation_kind, retention_until, source_body,
-};
+use office_core::domain::source::{format_rfc3339_utc, retention_until, source_body};
 use office_core::ports::ExtractRequest;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
@@ -37,6 +35,7 @@ struct Evidence {
     cites: Vec<String>,
     private: bool,
     reference_only: bool,
+    corrected: bool,
 }
 
 fn invalid() -> Error {
@@ -121,6 +120,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
                 cites: vec![task.id.clone()],
                 private: task.tagged("sensitivity:private"),
                 reference_only: false,
+                corrected: false,
             });
         }
     }
@@ -133,6 +133,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
                 cites: vec![artifact.task.clone()],
                 private: artifact.sensitivity.as_str() == "private",
                 reference_only: false,
+                corrected: false,
             });
         }
     }
@@ -267,6 +268,9 @@ fn render(
     if item.cites.is_empty() {
         return;
     }
+    // A model may select a plain excerpt, but cannot discard the effective
+    // kind and correction marker when the digest is rendered.
+    let text = if item.corrected { &item.text } else { text };
     let line = format!("- {text} [{}]\n", item.cites.join(", "));
     if seen.insert(line.clone()) {
         body.push_str(&line);
@@ -291,26 +295,28 @@ fn conversations(call: &Call<'_>, window: &Window, evidence: &mut Vec<Evidence>)
             "private" => true,
             _ => return Err(invalid()),
         };
-        for (index, line) in source_body(text).lines().enumerate() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let (stamp, entry) = line
-                .strip_prefix('[')
-                .and_then(|s| s.split_once("] "))
-                .ok_or_else(invalid)?;
-            let (kind, content) = entry.split_once(": ").ok_or_else(invalid)?;
-            if !is_conversation_kind(kind) {
-                return Err(invalid());
-            }
-            if window.contains(stamp)? {
-                evidence.push(Evidence {
-                    text: format!("{kind}: {content}"),
-                    excerpts: vec![content.into(), format!("{kind}: {content}")],
-                    cites: vec![format!("{}#L{}", record.id, index + 1)],
-                    private,
-                    reference_only: false,
-                });
+        for entry in office_core::domain::source::conversation::corrections::effective_entries(
+            &source_body(text),
+        )? {
+            if window.contains(&entry.time)? {
+                // User additions and replacement wording can contain newlines.
+                // Digest extraction still selects complete individual lines,
+                // each retaining the original entry citation and effective kind.
+                for content in entry.text.lines().filter(|line| !line.trim().is_empty()) {
+                    let label = if entry.corrected {
+                        format!("{} (corrected): {content}", entry.kind)
+                    } else {
+                        format!("{}: {content}", entry.kind)
+                    };
+                    evidence.push(Evidence {
+                        text: label.clone(),
+                        excerpts: vec![content.into(), label],
+                        cites: vec![format!("{}#L{}", record.id, entry.line)],
+                        private,
+                        reference_only: false,
+                        corrected: entry.corrected,
+                    });
+                }
             }
         }
     }
@@ -339,6 +345,7 @@ fn knowledge(call: &Call<'_>, window: &Window, evidence: &mut Vec<Evidence>) -> 
                 cites: view.cites,
                 private: view.sensitivity.as_str() == "private",
                 reference_only: false,
+                corrected: false,
             });
         }
     }

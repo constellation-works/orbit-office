@@ -174,11 +174,13 @@ fn library_signal_fixture() -> (office_testkit::fakes::FakeLibrary, Vec<String>)
     let mut ids = Vec::new();
     for index in 0..2 {
         let mut entries = vec![ConversationEntry {
+            by: None,
             kind: "fact".into(),
             text: "Context preceding the signal. ".repeat(10),
         }];
         if index == 0 {
             entries.push(ConversationEntry {
+                by: None,
                 kind: "direction".into(),
                 text: "Cite primary evidence.".into(),
             });
@@ -641,4 +643,79 @@ fn complete_task_list_with_truncated_false_still_returns_candidates() {
         response["output"]["candidates"][0]["signal"],
         json!("repetition")
     );
+}
+
+#[test]
+fn corrections_signal_requires_three_same_choices_inside_window_and_quotes_anchors() {
+    for (recent_count, recent_stamp, expected) in [
+        (2, "1970-02-09T00:00:00Z", false),
+        (3, "1970-02-09T00:00:00Z", true),
+        (3, "1970-01-11T00:00:00Z", true),
+        (3, "1970-01-10T23:59:59.999Z", false),
+        (3, "1970-02-10T00:00:00.001Z", false),
+    ] {
+        let library = office_testkit::fakes::FakeLibrary::initialized();
+        let mut body = String::new();
+        for index in 1..=3 {
+            body.push_str(&format!(
+                "[1970-01-20T00:00:00Z] decision: Original entry {index}.\n"
+            ));
+        }
+        for index in 1..=3 {
+            let stamp = if index <= recent_count {
+                recent_stamp
+            } else {
+                "1970-01-01T00:00:00Z"
+            };
+            body.push_str(&format!(
+                "[{stamp}] correction: {{\"anchor\":\"#L{index}\",\"choice\":\"not_decision\"}}\n"
+            ));
+        }
+        // Other choices and future timestamps cannot complete the cluster.
+        body.push_str("[1970-02-09T00:00:00Z] correction: {\"anchor\":\"#L1\",\"choice\":\"wording\",\"text\":\"Different wording.\"}\n");
+        body.push_str(
+            "[1970-02-12T00:00:00Z] correction: {\"anchor\":\"#L1\",\"choice\":\"not_decision\"}\n",
+        );
+        library.write_document(std::path::Path::new("sources/conversation/source.md"), &format!("---\nid: src-correction-signal\nkind: conversation\ntitle: Corrections\nsensitivity: normal\n---\n{body}")).unwrap();
+        let orbit = office_testkit::fakes::FakeOrbit::default();
+        orbit.push_response(Ok(json!({"tasks":[],"truncated":false})));
+        orbit.push_response(Ok(json!({"hits":[]})));
+        let ports = ports_for(orbit, Box::new(library));
+        let output = scan(&ports);
+        assert_eq!(output["ok"], true, "{output}");
+        let candidates: Vec<_> = output["output"]["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["signal"] == "scribe_corrections")
+            .collect();
+        assert_eq!(
+            candidates.len(),
+            usize::from(expected),
+            "{recent_stamp}: {output}"
+        );
+        if let Some(candidate) = candidates.first() {
+            assert_eq!(candidate["kind"], "knowledge_update");
+            assert!(
+                candidate["evidence"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("dom-scribe-rules"))
+            );
+            for index in 1..=3 {
+                assert!(
+                    candidate["summary"]
+                        .as_str()
+                        .unwrap()
+                        .contains(&format!("Original entry {index}."))
+                );
+                assert!(
+                    candidate["evidence"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!(format!("src-correction-signal#L{index}")))
+                );
+            }
+        }
+    }
 }

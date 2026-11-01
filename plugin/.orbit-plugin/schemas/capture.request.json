@@ -35,12 +35,52 @@
     "entries": {
       "type": "array",
       "items": {
-        "type": [
-          "object",
-          "string"
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "by": {
+                "const": "user"
+              },
+              "correction": {
+                "$ref": "#/$defs/correction"
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "required": [
+                  "type"
+                ]
+              }
+            ],
+            "additionalProperties": false
+          }
         ]
       },
-      "description": "Conversation entries, each {kind, text} or \"<kind>: <text>\". Kinds: decision, direction, fact, action, open, resolved, handoff."
+      "description": "Entries as {kind,text} or \"<kind>: <text>\"; kinds: decision, direction, fact, action, open, resolved, handoff, correction. Aliases type/message/content are accepted. For a correction, append {kind:\"correction\",correction:{anchor:\"#L1\",choice:\"not_decision\"|\"kind\"|\"wording\"|\"remove\",kind?:<new kind>,text?:<new wording>}} to an existing source. A JSON correction string in text is also accepted. User additions use {kind:\"direction\"|\"decision\"|\"fact\",text:<verbatim>,by:\"user\"}; by records attribution, not authenticated identity. Corrections require append_to; missing targets and malformed choices refuse the complete batch."
     },
     "entry_kind": {
       "type": "string",
@@ -212,5 +252,94 @@
       "description": "Session mode only, with title: scribe (default) or user. Scribe titles have at most eight words; a user title is never replaced by a scribe."
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "correction": {
+      "type": "object",
+      "properties": {
+        "anchor": {
+          "type": "string",
+          "pattern": "^#L[1-9][0-9]*$"
+        },
+        "choice": {
+          "enum": [
+            "not_decision",
+            "kind",
+            "wording",
+            "remove"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "decision",
+            "direction",
+            "fact",
+            "action",
+            "open",
+            "resolved",
+            "handoff"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "anchor",
+        "choice"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "choice": {
+                "const": "kind"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "kind"
+            ],
+            "not": {
+              "required": [
+                "text"
+              ]
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "kind"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "choice": {
+                "const": "wording"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "text"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "text"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
 }

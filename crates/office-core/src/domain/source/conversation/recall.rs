@@ -507,13 +507,22 @@ pub fn select(files: &[LibraryText], query: &Query) -> Result<Matches> {
             continue;
         }
         let refs = stored_refs(&fields)?;
-        for entry in session::entries(&source_body(markdown))? {
+        for entry in super::corrections::effective_entries(&source_body(markdown))? {
             let at = date(&entry.time)?;
             if since.is_some_and(|s| at < s) || until.is_some_and(|u| at > u) {
                 continue;
             }
             let anchor = format!("#L{}", entry.line);
-            let refs = refs.get(&anchor[1..]).cloned().unwrap_or_default();
+            let refs = if entry.corrected {
+                let repo = fields
+                    .get("repository")
+                    .and_then(Value::as_str)
+                    .or_else(|| fields.get("project").and_then(Value::as_str))
+                    .and_then(repository);
+                extract(&entry.text, &entry.kind, repo.as_deref())
+            } else {
+                refs.get(&anchor[1..]).cloned().unwrap_or_default()
+            };
             let haystack = format!(
                 "{} {} {}",
                 meta.title,
@@ -530,10 +539,19 @@ pub fn select(files: &[LibraryText], query: &Query) -> Result<Matches> {
                     meta.id.clone(),
                     entry.line,
                     private,
-                    json!({
-                        "source_id":meta.id,"anchor":anchor,"kind":entry.kind,"text":entry.text,
-                        "time":entry.time,"refs":refs,
-                    }),
+                    {
+                        let mut value = json!({
+                            "source_id":meta.id,"anchor":anchor,"kind":entry.kind,"text":entry.text,
+                            "time":entry.time,"refs":refs,
+                        });
+                        if entry.corrected {
+                            value["corrected"] = json!(true);
+                        }
+                        if let Some(by) = entry.by {
+                            value["by"] = json!(by);
+                        }
+                        value
+                    },
                     refs,
                 ));
             }

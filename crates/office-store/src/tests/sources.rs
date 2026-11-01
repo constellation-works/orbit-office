@@ -116,6 +116,7 @@ fn capture_conversation_append_commits_once_per_append_and_preserves_lines() {
     req.kind = Some("conversation".to_string());
     req.title = Some("Session".to_string());
     req.entries = vec![ConversationEntry {
+        by: None,
         kind: "decision".to_string(),
         text: "First.".to_string(),
     }];
@@ -124,6 +125,7 @@ fn capture_conversation_append_commits_once_per_append_and_preserves_lines() {
     let mut append = request();
     append.append_to = Some(opened.id.clone());
     append.entries = vec![ConversationEntry {
+        by: None,
         kind: "fact".to_string(),
         text: "Jane runs procurement.".to_string(),
     }];
@@ -284,6 +286,7 @@ fn capture_writes_each_kind_under_its_kind_directory() {
     conversation.kind = Some("conversation".to_string());
     conversation.title = Some("Session".to_string());
     conversation.entries = vec![ConversationEntry {
+        by: None,
         kind: "decision".to_string(),
         text: "Ship it.".to_string(),
     }];

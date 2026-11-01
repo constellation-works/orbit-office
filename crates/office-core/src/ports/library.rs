@@ -337,10 +337,29 @@ pub trait Library {
 /// One conversation entry to append (specs/sessions.md).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConversationEntry {
-    /// One of the seven decision-log kinds.
+    /// A decision-log kind, including correction.
     pub kind: String,
-    /// One line of entry text.
+    /// Entry text, or a canonical correction JSON payload.
     pub text: String,
+    /// Explicit user attribution (a caller claim, not authority).
+    pub by: Option<String>,
+}
+
+impl ConversationEntry {
+    /// Format one physical append-only line, preserving attributed user text.
+    pub fn format(&self, at: &str) -> Result<String> {
+        use crate::domain::source::{conversation::corrections, format_conversation_entry};
+        match self.by.as_deref() {
+            Some(by) => {
+                corrections::validate_user_text(&self.kind, &self.text, by)?;
+                let text = serde_json::to_string(&self.text).map_err(|_| {
+                    crate::Error::InvalidArgument("cannot encode user entry".into())
+                })?;
+                Ok(format!("[{at}] {} (by: user): {text}", self.kind))
+            }
+            None => format_conversation_entry(at, &self.kind, &self.text),
+        }
+    }
 }
 
 /// Everything `office.capture` asks the Library to do in one call.

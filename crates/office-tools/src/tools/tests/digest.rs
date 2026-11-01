@@ -407,3 +407,63 @@ fn digest_drops_excerpts_that_remove_negation_or_context() {
     );
     assert_eq!(models.extract_requests.borrow().len(), 1);
 }
+
+#[test]
+fn corrections_apply_to_brief_and_digest_and_cannot_be_removed_by_model_wording() {
+    let library = FakeLibrary::initialized();
+    library.write_document(std::path::Path::new("sources/conversation/source.md"),
+        "---\nid: src-corrections\nkind: conversation\ntitle: Corrections\nsensitivity: normal\ncaptured_at: \"2026-10-26T10:00:00Z\"\n---\n[2026-10-26T10:00:00Z] decision: Ship the release.\n[2026-10-26T10:00:00Z] decision: Remove this.\n[2026-10-27T10:00:00Z] correction: {\"anchor\":\"#L1\",\"choice\":\"not_decision\"}\n[2026-10-27T10:00:00Z] correction: {\"anchor\":\"#L2\",\"choice\":\"remove\"}\n").unwrap();
+    let (ports, models, orbit) = fixture(
+        library,
+        json!({"lines":[{"evidence":0,"text":"Ship the release."}]}),
+    );
+    let raw = office_testkit::envelope::request("office.session-brief", json!({}), json!({}));
+    let req = office_core::protocol::parse(&raw).unwrap();
+    let brief: Value = serde_json::from_str(&crate::serve(&req, &ports)).unwrap();
+    assert_eq!(brief["ok"], true, "{brief}");
+    let sections = brief["output"]["sections"].as_array().unwrap();
+    let since = sections.iter().find(|s| s["kind"] == "since").unwrap();
+    assert_eq!(since["items"][0]["time"], "2026-10-27T10:00:00Z");
+    let questions = sections
+        .iter()
+        .find(|s| s["kind"] == "open_questions")
+        .unwrap();
+    assert_eq!(questions["items"][0]["entry_kind"], "open");
+    assert_eq!(questions["items"][0]["corrected"], true);
+    assert!(!brief.to_string().contains("Remove this."));
+    orbit.push_response(Ok(json!({"tasks":[],"total":0,"truncated":false})));
+    let digest = serve(&ports, json!({"day":"2026-10-26"}));
+    assert_eq!(digest["ok"], true, "{digest}");
+    let evidence: Value = serde_json::from_str(&models.extract_requests.borrow()[0].text).unwrap();
+    assert_eq!(evidence["evidence"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        evidence["evidence"][0]["text"],
+        "open (corrected): Ship the release."
+    );
+    let body = report_body(&ports, &digest);
+    assert!(
+        body.contains("open (corrected): Ship the release."),
+        "{body}"
+    );
+    assert!(!body.contains("Remove this."));
+}
+
+#[test]
+fn digest_multiline_correction_keeps_kind_and_correction_marker_on_each_complete_line() {
+    let library = FakeLibrary::initialized();
+    library.write_document(std::path::Path::new("sources/conversation/source.md"),
+        "---\nid: src-multiline\nkind: conversation\ntitle: Multiline\nsensitivity: normal\n---\n[2026-10-26T10:00:00Z] decision: Original wording.\n[2026-10-26T11:00:00Z] correction: {\"anchor\":\"#L1\",\"choice\":\"wording\",\"text\":\"First line.\\nSecond line.\"}\n").unwrap();
+    let (ports, _, _) = fixture(
+        library,
+        json!({"lines":[
+            {"evidence":0,"text":"First line."},
+            {"evidence":1,"text":"Second line."}
+        ]}),
+    );
+    let response = serve(&ports, json!({"day":"2026-10-26"}));
+    assert_eq!(response["output"]["written"], true, "{response}");
+    assert_eq!(
+        report_body(&ports, &response),
+        "- decision (corrected): First line. [src-multiline#L1]\n- decision (corrected): Second line. [src-multiline#L1]\n"
+    );
+}
