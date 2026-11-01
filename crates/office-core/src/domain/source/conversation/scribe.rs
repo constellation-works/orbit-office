@@ -240,6 +240,33 @@ pub struct Tag {
     pub authors: Authors,
 }
 
+/// Model and effort per scribe level, in `<model>@<effort>` form.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ScribeModels {
+    /// Canned queries are model-free; `None` (the default) serializes as absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    /// Model for free-form ask over a shortlist.
+    pub ask: String,
+    /// Model for the scribe pass.
+    pub scribe: String,
+}
+
+fn default_models() -> ScribeModels {
+    ScribeModels {
+        query: None,
+        ask: "haiku@low".to_owned(),
+        scribe: "haiku@medium".to_owned(),
+    }
+}
+
+fn valid_model(value: &str) -> bool {
+    let Some((model, effort)) = value.split_once('@') else {
+        return false;
+    };
+    !value[model.len() + 1..].contains('@') && token(model).is_some() && token(effort).is_some()
+}
+
 /// The rules the scribe agent follows and append enforces.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ScribeRules {
@@ -253,6 +280,8 @@ pub struct ScribeRules {
     pub matters: Vec<String>,
     /// Capture guidance for the agent.
     pub capture: Vec<String>,
+    /// Models per level; the spec defaults when the page has no `Models` section.
+    pub models: ScribeModels,
 }
 
 fn authors_of(name: &str) -> Authors {
@@ -337,9 +366,11 @@ pub fn topic_of(project: &str) -> Option<String> {
     (!slug.is_empty()).then_some(slug)
 }
 
-/// The rules from the page's `Tags`, `Topics` and `Capture` sections. A
-/// missing page, a private page or a missing section uses the defaults;
-/// default topics are the project name.
+/// The rules from the page's `Tags`, `Topics`, `Matters`, `Capture` and
+/// `Models` sections. A missing page, a private page or a missing section
+/// uses the defaults; default topics are the project name and default
+/// models are `haiku@low` (ask) and `haiku@medium` (scribe). Sections
+/// from the old live scribe (`Note`, `Skip`, `Kinds`) are ignored.
 #[must_use]
 pub fn scribe_rules(page: Option<&Rules>, project: Option<&str>) -> ScribeRules {
     let mut rules = ScribeRules {
@@ -348,6 +379,7 @@ pub fn scribe_rules(page: Option<&Rules>, project: Option<&str>) -> ScribeRules 
         topics: project.and_then(topic_of).into_iter().collect(),
         matters: DEFAULT_MATTERS.iter().map(|s| (*s).to_owned()).collect(),
         capture: default_capture(),
+        models: default_models(),
     };
     let Some(body) = page.and_then(|page| page.body.as_deref()) else {
         return rules;
@@ -355,6 +387,8 @@ pub fn scribe_rules(page: Option<&Rules>, project: Option<&str>) -> ScribeRules 
     let mut section = String::new();
     let (mut tags, mut topics, mut capture, mut matters) =
         (Vec::<Tag>::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut models = default_models();
+    let mut models_seen = false;
     for line in body.lines() {
         let trimmed = line.trim();
         if let Some(heading) = trimmed.strip_prefix('#') {
@@ -412,6 +446,31 @@ pub fn scribe_rules(page: Option<&Rules>, project: Option<&str>) -> ScribeRules 
                 }
             }
             "capture" if !nested => capture.push(item.trim().to_owned()),
+            "models" if !nested => {
+                if let Some((level, value)) = item.split_once(':') {
+                    let level = level.trim().trim_matches(['`', '*']).to_ascii_lowercase();
+                    let value = value.trim().trim_matches(['`', '*']).trim();
+                    match level.as_str() {
+                        "query" if value.eq_ignore_ascii_case("none") => {
+                            models.query = None;
+                            models_seen = true;
+                        }
+                        "query" if valid_model(value) => {
+                            models.query = Some(value.to_owned());
+                            models_seen = true;
+                        }
+                        "ask" if valid_model(value) => {
+                            models.ask = value.to_owned();
+                            models_seen = true;
+                        }
+                        "scribe" if valid_model(value) => {
+                            models.scribe = value.to_owned();
+                            models_seen = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -428,6 +487,10 @@ pub fn scribe_rules(page: Option<&Rules>, project: Option<&str>) -> ScribeRules 
         rules.source = "page";
     }
     if !matters.is_empty() {
+        rules.source = "page";
+    }
+    if models_seen {
+        rules.models = models;
         rules.source = "page";
     }
     for matter in matters {
