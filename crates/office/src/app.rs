@@ -623,6 +623,44 @@ fn ports(context: &Context, bootstrap_read_only: bool) -> Ports<'_> {
         shared: shared(context),
         calendar: Box::new(RealCalendar { context }),
         pr: Box::new(GhPullRequests::new()),
+        scribe_control: scribe_control(context),
+    }
+}
+
+/// Per-session scribe control records at `plugin_state/scribe_control.sqlite`.
+/// Construction does no I/O; the store opens on the first operation.
+struct RealScribeControls {
+    state: PathBuf,
+}
+
+impl RealScribeControls {
+    fn open(&self) -> office_core::Result<office_store::ScribeControlStore> {
+        Ok(office_store::ScribeControlStore::open(&self.state)?)
+    }
+}
+
+impl office_core::ports::ScribeControls for RealScribeControls {
+    fn get(
+        &self,
+        session_id: &str,
+    ) -> office_core::Result<office_core::domain::scribe_control::Control> {
+        Ok(self.open()?.get(session_id)?)
+    }
+
+    fn apply(
+        &self,
+        session_id: &str,
+        change: &office_core::domain::scribe_control::Change,
+        now: SystemTime,
+    ) -> office_core::Result<(office_core::domain::scribe_control::Control, bool)> {
+        Ok(self.open()?.apply(session_id, change, now)?)
+    }
+}
+
+fn scribe_control(context: &Context) -> Box<dyn office_core::ports::ScribeControls + '_> {
+    match context_state_dir(context) {
+        Some(state) => Box::new(RealScribeControls { state }),
+        None => Box::new(office_core::ports::UnavailableScribeControls),
     }
 }
 

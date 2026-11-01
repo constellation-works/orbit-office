@@ -33,6 +33,7 @@ fn ports_with(
             selections: Box::new(office_testkit::fakes::FakeSelections::default()),
             shared: Box::new(office_testkit::fakes::FakeShared::default()),
             pr: Box::new(office_core::ports::UnavailablePullRequests),
+            scribe_control: Box::new(office_core::ports::UnavailableScribeControls),
         },
         observer,
     )
@@ -107,6 +108,7 @@ fn scan_refuses_an_uninitialized_library() {
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
         pr: Box::new(office_core::ports::UnavailablePullRequests),
+        scribe_control: Box::new(office_core::ports::UnavailableScribeControls),
     };
     let input = Map::new();
     let context = Map::new();
@@ -139,6 +141,7 @@ fn ports_for(
         selections: Box::new(office_testkit::fakes::FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
         pr: Box::new(office_core::ports::UnavailablePullRequests),
+        scribe_control: Box::new(office_core::ports::UnavailableScribeControls),
     }
 }
 

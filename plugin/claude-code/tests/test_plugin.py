@@ -26,6 +26,8 @@ if mode == 'hang':
 if mode == 'failure':
     print('Bearer secret-value-do-not-log', file=sys.stderr)
     sys.exit(1)
+if mode == 'no-control' and tool == 'office.scribe-control':
+    sys.exit(1)
 with (home / 'calls.jsonl').open('a') as log:
     log.write(json.dumps({'tool': tool, 'input': payload, 'workspace': args[args.index('--workspace')+1]})+'\n')
 if tool == 'orbit.task.add':
@@ -42,6 +44,34 @@ if tool == 'orbit.task.add':
 elif tool == 'orbit.task.show':
     status = (home / 'task-status').read_text() if (home / 'task-status').exists() else 'in-progress'
     print(json.dumps({'id': payload['id'], 'status': status}))
+elif tool == 'office.scribe-control':
+    # Office's per-session record, as office.scribe-control keeps it.
+    path = home / ('control-' + payload['session_id'] + '.json')
+    record = json.loads(path.read_text()) if path.exists() else {
+        'on': None, 'now_requested_at': None, 'title': None, 'heartbeat_at': None}
+    op, now, consumed = payload['op'], time.time(), None
+    if op == 'set_switch':
+        record['on'] = payload['on']
+    elif op == 'request_now':
+        record['now_requested_at'] = record['now_requested_at'] or now
+    elif op == 'consume_now':
+        expected = payload.get('requested_at')
+        consumed = record['now_requested_at'] is not None and expected in (None, record['now_requested_at'])
+        if consumed:
+            record['now_requested_at'] = None
+    elif op == 'set_title':
+        record['title'] = payload['title'].strip()
+    elif op == 'heartbeat':
+        record['heartbeat_at'] = now
+    if op != 'get':
+        path.write_text(json.dumps(record))
+    out = {'op': op, 'session_id': payload['session_id'], 'on': record['on'],
+           'now_requested': record['now_requested_at'] is not None, 'now_requested_at': record['now_requested_at'],
+           'title': record['title'], 'heartbeat_at': record['heartbeat_at'],
+           'window_open': record['heartbeat_at'] is not None and now - record['heartbeat_at'] < 120}
+    if consumed is not None:
+        out['consumed'] = consumed
+    print(json.dumps(out))
 elif tool == 'office.recall':
     print((home / 'recall.json').read_text())
 elif tool == 'office.capture':
@@ -121,6 +151,22 @@ class PluginBehavior(unittest.TestCase):
 
     def finish_pass(self):
         (self.home / "task-status").write_text("done")
+
+    def control_record(self, **changes):
+        """Office's record for this session, as another host (the window) writes it."""
+        path = self.home / ("control-" + self.sid + ".json")
+        record = json.loads(path.read_text()) if path.exists() else {
+            "on": None, "now_requested_at": None, "title": None, "heartbeat_at": None}
+        if changes:
+            record.update(changes)
+            path.write_text(json.dumps(record))
+        return record
+
+    def control_calls(self, op=None):
+        return [c["input"] for c in self.calls("office.scribe-control") if not op or c["input"]["op"] == op]
+
+    def flag(self):
+        return self.workspace / (".orbit/tmp/scribe/" + self.sid)
 
     def test_start_brief_stop_debounce_switch_now_and_final(self):
         start = self.hook("SessionStart")
@@ -204,7 +250,10 @@ class PluginBehavior(unittest.TestCase):
         allowed.mkdir()
         self.context["cwd"] = str(allowed)
         self.assertEqual(self.hook("Stop").returncode, 0)
-        self.assertEqual(self.calls(), [])
+        # Only the session's control record (its id, no transcript data) is read.
+        self.assertEqual({c["tool"] for c in self.calls()}, {"office.scribe-control"})
+        staging = self.workspace / ".orbit/tmp/session-transcripts"
+        self.assertEqual(list(staging.iterdir()) if staging.exists() else [], [], "nothing staged")
 
     def test_backfill_since_oldest_first_and_rerun_noops(self):
         old = self.providers / "old.jsonl"
@@ -273,8 +322,122 @@ class PluginBehavior(unittest.TestCase):
             text=True, env=self.env, cwd=self.root, capture_output=True, timeout=5)
         self.assertEqual(pane.returncode, 0, pane.stderr)
         self.assertEqual(json.loads(pane.stdout), {"window_open": True})
+        self.assertEqual(self.control_calls("heartbeat"), [{"op": "heartbeat", "session_id": self.sid}])
         self.assertEqual(self.hook("Stop").returncode, 0)
         self.assertEqual(len(self.calls("orbit.task.add")), 2)
+
+    def test_shared_heartbeat_from_another_host_sets_max_turns_two_only_while_fresh(self):
+        self.hook("SessionStart")
+        self.hook("Stop")
+        self.finish_pass()
+        # The web window heartbeats through Office; no local file exists here.
+        self.control_record(heartbeat_at=time.time() - 130)
+        self.write_transcript(3)
+        self.hook("Stop")
+        self.assertEqual(len(self.calls("orbit.task.add")), 1, "a heartbeat over two minutes old is closed")
+        self.control_record(heartbeat_at=time.time() - 30)
+        self.assertEqual(self.hook("Stop").returncode, 0)
+        self.assertEqual(len(self.calls("orbit.task.add")), 2, "max_turns 2 while the heartbeat is fresh")
+        self.assertFalse((self.workspace / (".orbit/tmp/scribe/" + self.sid + ".window-open")).exists())
+        self.assertTrue(self.command("status")["window_open"])
+
+    def test_local_heartbeat_cache_still_applies_when_office_cannot_answer(self):
+        self.hook("SessionStart")
+        self.hook("Stop")
+        self.finish_pass()
+        self.write_transcript(3)
+        (self.home / "stub-mode").write_text("no-control")
+        pane = subprocess.run(
+            [sys.executable, "-I", str(PLUGIN / "scripts/pane.py"),
+             json.dumps({"session_id": self.sid, "action": "heartbeat"})],
+            text=True, env=self.env, cwd=self.root, capture_output=True, timeout=5)
+        self.assertEqual(pane.returncode, 1, "the Office write failed and is reported")
+        result = self.hook("Stop")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "", "an unreadable control record fails open silently")
+        self.assertEqual(len(self.calls("orbit.task.add")), 2)
+
+    def test_shared_switch_is_mirrored_to_the_flag_file_and_commands_write_through(self):
+        self.hook("SessionStart")
+        self.hook("Stop")
+        # The first turn publishes this host's default switch to Office.
+        self.assertEqual(self.control_calls("set_switch"), [{"op": "set_switch", "session_id": self.sid, "on": True}])
+        self.assertTrue(self.flag().exists())
+        self.finish_pass()
+        # The window turns the scribe off: the next turn mirrors it and captures nothing.
+        self.control_record(on=False)
+        self.write_transcript(20)
+        self.assertEqual(self.hook("Stop").returncode, 0)
+        self.assertFalse(self.flag().exists())
+        self.assertEqual(len(self.calls("orbit.task.add")), 1)
+        self.assertFalse(self.command("status")["on"])
+        # The window turns it back on: mirrored and captured.
+        self.control_record(on=True)
+        self.assertEqual(self.hook("Stop").returncode, 0)
+        self.assertTrue(self.flag().exists())
+        self.assertEqual(len(self.calls("orbit.task.add")), 2)
+        # /scribe off and on write Office first, then the flag file.
+        self.assertEqual(self.command("off"), {"on": False})
+        self.assertFalse(self.control_record()["on"])
+        self.assertFalse(self.flag().exists())
+        self.assertEqual(self.command("on"), {"on": True})
+        self.assertTrue(self.control_record()["on"])
+        self.assertTrue(self.flag().exists())
+
+    def test_pending_capture_now_runs_at_the_next_turn_and_is_consumed_once(self):
+        self.hook("SessionStart")
+        self.hook("Stop")
+        self.finish_pass()
+        self.write_transcript(2)  # debounced on its own (2 < 8 turns, inside 5 minutes)
+        self.control_record(now_requested_at=1234.5)  # the window pressed Capture now
+        self.assertEqual(self.hook("Stop").returncode, 0)
+        self.assertEqual(len(self.calls("orbit.task.add")), 2)
+        self.assertEqual(self.control_calls("consume_now"),
+                         [{"op": "consume_now", "session_id": self.sid, "requested_at": 1234.5}])
+        self.assertIsNone(self.control_record()["now_requested_at"])
+        self.finish_pass()
+        self.write_transcript(3)
+        self.assertEqual(self.hook("Stop").returncode, 0)
+        self.assertEqual(len(self.calls("orbit.task.add")), 2, "consumed once: the next turn debounces again")
+        self.assertEqual(len(self.control_calls("consume_now")), 1)
+
+    def test_capture_now_waits_for_a_pending_pass_and_now_writes_through(self):
+        self.hook("SessionStart")
+        self.hook("Stop")  # TEST-1 still in progress
+        self.write_transcript(2)
+        self.control_record(now_requested_at=99.0)
+        self.hook("Stop")
+        self.assertEqual(len(self.calls("orbit.task.add")), 1)
+        self.assertEqual(self.control_record()["now_requested_at"], 99.0, "kept while a pass is pending")
+        self.finish_pass()
+        self.hook("Stop")
+        self.assertEqual(len(self.calls("orbit.task.add")), 2)
+        self.assertIsNone(self.control_record()["now_requested_at"])
+        # /scribe now records the request in Office, runs it and consumes it.
+        self.finish_pass()
+        self.write_transcript(3)
+        result = self.command("now")
+        self.assertTrue(result["queued"])
+        self.assertEqual(result["capture_now"], "consumed")
+        self.assertEqual(len(self.control_calls("request_now")), 1)
+        self.assertIsNone(self.control_record()["now_requested_at"])
+
+    def test_title_set_in_the_window_is_applied_once_as_a_user_title(self):
+        self.hook("SessionStart")
+        self.hook("Stop")
+        self.control_record(title="Release planning")
+        self.hook("Stop")
+        self.hook("Stop")
+        titled = [c["input"] for c in self.calls("office.capture") if c["input"].get("title")]
+        self.assertEqual(len(titled), 1)
+        self.assertEqual(titled[0]["title"], "Release planning")
+        self.assertEqual(titled[0]["title_by"], "user")
+        # /scribe title writes Office too, and is not re-applied by the hook.
+        self.command("title", title="Final name")
+        self.assertEqual(self.control_record()["title"], "Final name")
+        self.hook("Stop")
+        titled = [c["input"] for c in self.calls("office.capture") if c["input"].get("title")]
+        self.assertEqual([t["title"] for t in titled], ["Release planning", "Final name"])
 
     def test_tool_results_are_not_new_user_turns_for_debounce(self):
         self.hook("Stop")

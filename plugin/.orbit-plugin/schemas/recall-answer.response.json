@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.recall-answer response",
+  "description": "A cited answer plus the office.recall payload it was drawn from. Claims survive only when every cite names an evidence anchor (`<source-id>#L<n>`); others are dropped and counted. Private entries reach a model only when an open-weights route is configured (the call is then private and routed there); claims citing them return by reference with content_withheld. Without that route, private sources are listed in private_references and their text is sent to no model. With no evidence there is no model call and derived_by is null.",
+  "type": "object",
+  "$defs": {
+    "conversation": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resume": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "provider",
+            "command"
+          ],
+          "additionalProperties": false
+        },
+        "content_withheld": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_id",
+        "title",
+        "project",
+        "branch",
+        "started_at",
+        "session_id",
+        "resume",
+        "content_withheld"
+      ],
+      "additionalProperties": false
+    },
+    "private_reference": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resume": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "provider",
+            "command"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "source_id",
+        "title",
+        "path",
+        "project",
+        "session_id",
+        "resume"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "answer": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "answered",
+            "not_captured",
+            "reference_only"
+          ],
+          "description": "answered: at least one cited claim. not_captured: no evidence answers the question (see coverage). reference_only: only private sources matched and no open-weights route is configured."
+        },
+        "text": {
+          "type": "string",
+          "description": "Rendered answer: cited claims, conversations with their resume command, live ref status; or the not-captured line with coverage. Private conversations listed by reference."
+        },
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 2000
+              },
+              "cites": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^.+#L[1-9][0-9]*$"
+                }
+              },
+              "content_withheld": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "text",
+              "cites",
+              "content_withheld"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "conversations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/conversation"
+          },
+          "description": "Each conversation a kept claim cites, with its resume command."
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "The live refs (office.recall refs items) of the cited entries."
+        },
+        "private_references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/private_reference"
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "description": "office.recall coverage."
+        },
+        "dropped_claims": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "status",
+        "text",
+        "claims",
+        "conversations",
+        "refs",
+        "private_references",
+        "coverage",
+        "dropped_claims"
+      ],
+      "additionalProperties": false
+    },
+    "derived_by": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "route": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "route",
+        "model"
+      ],
+      "additionalProperties": false
+    },
+    "recall": {
+      "type": "object",
+      "description": "The office.recall response for the same question and filters (schemas/recall.response.json)."
+    }
+  },
+  "required": [
+    "answer",
+    "derived_by",
+    "recall"
+  ],
+  "additionalProperties": false
+}

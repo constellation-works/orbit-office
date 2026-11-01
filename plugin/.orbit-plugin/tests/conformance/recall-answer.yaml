@@ -1,0 +1,23 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: recall_answer_not_captured_without_model_call
+    tool: recall-answer
+    input: {"question":"not-captured"}
+    expect:
+      output: {"answer":{"status":"not_captured","text":"Not captured: no captured conversation entry answers this question.\nCoverage: capture reaches back to no captured session; 0 private sessions are skipped; providers not captured: codex.","claims":[],"conversations":[],"refs":[],"private_references":[],"coverage":{"earliest_session_at":null,"private_sessions_skipped":0,"providers_not_captured":["codex"]},"dropped_claims":0},"derived_by":null,"recall":{"entries":[],"sessions":[],"refs":[],"coverage":{"earliest_session_at":null,"private_sessions_skipped":0,"providers_not_captured":["codex"]}}}
+  - name: recall_answer_requires_question
+    tool: recall-answer
+    input: {"session_id":"session-one"}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: recall_answer_limit_bounds
+    tool: recall-answer
+    input: {"question":"topic","limit":51}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: recall_answer_unknown_keys
+    tool: recall-answer
+    input: {"question":"topic","invent":true}
+    expect:
+      error: {"code":"invalid_argument"}

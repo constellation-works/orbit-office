@@ -166,7 +166,7 @@
               "string",
               "null"
             ],
-            "description": "Engine session identity of the conversation, searchable as a recall question term so the session's own client can list its entries."
+            "description": "Engine session identity of the conversation (null on sources captured without one). The office.recall session_id filter matches it exactly; it is also a question search term."
           },
           "content_withheld": {
             "type": "boolean"
@@ -182,6 +182,7 @@
           "last_active_at",
           "resume",
           "title_by",
+          "session_id",
           "content_withheld"
         ],
         "additionalProperties": false

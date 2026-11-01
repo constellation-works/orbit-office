@@ -76,6 +76,7 @@ fn extracted_digest_subject_is_searchable_under_the_source_before_and_after_rein
         selections: Box::new(office_core::ports::UnavailableSelections),
         shared: Box::new(office_core::ports::UnavailableShared),
         pr: Box::new(office_core::ports::UnavailablePullRequests),
+        scribe_control: Box::new(office_core::ports::UnavailableScribeControls),
     };
     let extracted = call(
         &ports,

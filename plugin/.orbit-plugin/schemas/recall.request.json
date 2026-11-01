@@ -4,10 +4,22 @@
   "type": "object",
   "properties": {
     "question": {
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1,
       "maxLength": 4096,
-      "description": "Literal case-insensitive whitespace-separated terms; all terms match across entry text, session title and stored refs. No model call."
+      "description": "Literal case-insensitive whitespace-separated terms; all terms match across entry text, session title, session id and stored refs. Absent or null selects feed mode: every entry, newest first. No model call."
+    },
+    "session_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Exact engine session identity; only that session's conversation source contributes. Filters both question and feed mode."
     },
     "since": {
       "type": [
@@ -36,13 +48,32 @@
         "null"
       ],
       "minimum": 1,
-      "maximum": 50,
+      "maximum": 200,
       "default": 20,
-      "description": "Maximum matching public or private entries contributing to this result."
+      "description": "Maximum matching public or private entries contributing to this result: 1–50 with a question, 1–200 in feed mode."
     }
   },
-  "required": [
-    "question"
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "then": {
+        "properties": {
+          "limit": {
+            "maximum": 50
+          }
+        }
+      }
+    }
   ],
-  "additionalProperties": false
+  "description": "With a question: a literal search, limit 1–50. Without one (feed mode): entries newest first, limit 1–200, typically scoped to one session_id for the Scribe window feed."
 }
