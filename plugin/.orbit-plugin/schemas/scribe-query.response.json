@@ -49,9 +49,10 @@
           "reason": { "type": ["string", "null"] },
           "why_source": { "type": ["string", "null"] },
           "why_filled_by": { "type": ["string", "null"], "description": "<SCR id>#L<line> of the #why note that filled this decision." },
-          "no_why": { "type": "boolean", "description": "A decision still missing its reason." }
+          "no_why": { "type": "boolean", "description": "A decision still missing its reason." },
+          "content_withheld": { "type": "boolean", "description": "True when the entry is private (by conversation sensitivity or the SCR file's sensitivity) and its text, quote and reason are withheld; references and anchors remain. A configured private route does not release the content to the caller." }
         },
-        "required": ["text", "line_text", "quote", "id", "scr_id", "path", "line", "file_line", "citation", "msg", "message_id", "time", "at", "tag", "topics", "refs", "by", "matter", "review_by", "stale", "due", "resolves", "supersedes", "session_id", "counterpart", "counterpart_name", "title", "project", "scribed_through", "resume", "resume_command", "why", "reason", "why_source", "why_filled_by", "no_why"],
+        "required": ["text", "line_text", "quote", "id", "scr_id", "path", "line", "file_line", "citation", "msg", "message_id", "time", "at", "tag", "topics", "refs", "by", "matter", "review_by", "stale", "due", "resolves", "supersedes", "session_id", "counterpart", "counterpart_name", "title", "project", "scribed_through", "resume", "resume_command", "why", "reason", "why_source", "why_filled_by", "no_why", "content_withheld"],
         "additionalProperties": false
       }
     },

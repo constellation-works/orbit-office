@@ -369,7 +369,16 @@ answer. Answering has two levels.
    - a `#why` note fills a `#no-why`.
 
    It returns the matching lines with file:line, ordered by time, then
-   path, then line. `count` always reports every matching line. In the
+   path, then line. `count` always reports every matching line. A line
+   from a private SCR (the conversation sensitivity setting or the
+   file's own `sensitivity: private` front matter) is returned by
+   reference only: its citation, path, line, message id, session and
+   time remain, but `text`, `line_text` and `quote` are empty, its
+   `why`/`reason` is withheld (including a reason quoted from a
+   private `#why` note), and the line is marked
+   `content_withheld: true`; every other line reports
+   `content_withheld: false`. A configured private route does not
+   release private content to the caller. In the
    general query (no `mode`), a result over `limit` keeps the newest
    `limit` lines in that order and truncates the oldest, so the web feed's
    recent window cannot lose its newest entries to an over-cap day. The

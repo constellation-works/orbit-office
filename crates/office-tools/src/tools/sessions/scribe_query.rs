@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 use office_core::domain::source::conversation::scribe::{self, ScrFile};
 use office_core::domain::source::format_rfc3339_utc;
+use office_core::ports::Sensitivity;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Map, Value, json};
@@ -415,6 +416,17 @@ fn run(call: &Call<'_>) -> Result<Value> {
         until = Some(today.clone());
     }
 
+    // Private SCR content is withheld from this MCP-visible response,
+    // regardless of any configured private route: the route authorizes
+    // only that endpoint, never the caller. Privacy comes from the
+    // conversation sensitivity setting or a file's own front matter.
+    let settings = call.ports.library.settings()?;
+    let conversation_private = settings
+        .sensitivity
+        .get("conversation")
+        .is_some_and(|s| *s == Sensitivity::Private);
+    let is_private = |entry: &Entry| entry.private || conversation_private;
+
     let files = scribe::scr_files(&call.ports.library.scribe_files()?)?;
     let file_count = files.len();
     let entries = entries_of(&files);
@@ -569,23 +581,36 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .iter()
         .map(|entry| {
             let why_note = filled_why(entry);
-            let reason = entry
-                .why_quote
-                .clone()
-                .or_else(|| why_note.map(|note| note.quote.clone()));
-            let stale = entry.tag == "preference"
+            let withheld = is_private(entry);
+            // A reason quoted from a private `#why` note is derived
+            // private content even when the decision itself is public.
+            let reason_from_private_note = !withheld
+                && entry.why_quote.is_none()
+                && why_note.is_some_and(is_private);
+            let reason = if withheld || reason_from_private_note {
+                None
+            } else {
+                entry
+                    .why_quote
+                    .clone()
+                    .or_else(|| why_note.map(|note| note.quote.clone()))
+            };
+            let content_withheld = withheld || reason_from_private_note;
+            let stale = !withheld
+                && entry.tag == "preference"
                 && entry.review_by.as_deref().is_some_and(|review_by| {
                     valid_date(&review_by[..10.min(review_by.len())]) && review_by[..10] < today[..]
                 });
-            let resume = if entry.session_id.is_empty() {
+            let resume = if withheld || entry.session_id.is_empty() {
                 Value::Null
             } else {
                 json!(format!("claude --resume {}", entry.session_id))
             };
+            let empty = || Value::String(String::new());
             json!({
-                "text": entry.text,
-                "line_text": entry.text,
-                "quote": entry.quote,
+                "text": if withheld { empty() } else { json!(entry.text) },
+                "line_text": if withheld { empty() } else { json!(entry.text) },
+                "quote": if withheld { empty() } else { json!(entry.quote) },
                 "id": entry.scr_id,
                 "scr_id": entry.scr_id,
                 "path": entry.path,
@@ -597,11 +622,11 @@ fn run(call: &Call<'_>) -> Result<Value> {
                 "time": entry.time,
                 "at": entry.time,
                 "tag": entry.tag,
-                "topics": entry.topics,
-                "refs": entry.refs,
-                "by": entry.by,
-                "matter": entry.matter,
-                "review_by": entry.review_by,
+                "topics": if withheld { json!([]) } else { json!(entry.topics) },
+                "refs": if withheld { json!([]) } else { json!(entry.refs) },
+                "by": if withheld { Value::Null } else { json!(entry.by) },
+                "matter": if withheld { Value::Null } else { json!(entry.matter) },
+                "review_by": if withheld { Value::Null } else { json!(entry.review_by) },
                 "stale": stale,
                 "due": entry.due,
                 "resolves": entry.resolves,
@@ -609,16 +634,17 @@ fn run(call: &Call<'_>) -> Result<Value> {
                 "session_id": entry.session_id,
                 "counterpart": entry.counterpart,
                 "counterpart_name": entry.counterpart_name,
-                "title": entry.title,
+                "title": if withheld { Value::Null } else { json!(entry.title) },
                 "project": entry.project,
                 "scribed_through": entry.scribed_through,
                 "resume": resume,
                 "resume_command": resume,
                 "why": reason,
                 "reason": reason,
-                "why_source": entry.why_source,
+                "why_source": if withheld { Value::Null } else { json!(entry.why_source) },
                 "why_filled_by": why_note.map(|note| format!("{}#L{}", note.scr_id, note.line)),
-                "no_why": entry.no_why && entry.why_quote.is_none() && why_note.is_none(),
+                "no_why": !withheld && entry.no_why && entry.why_quote.is_none() && why_note.is_none(),
+                "content_withheld": content_withheld,
             })
         })
         .collect();
