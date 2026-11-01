@@ -1,4 +1,7 @@
 //! Session transcript adapters, evidence selection and source provenance.
+
+/// Stored reference extraction and model-free recall selection.
+pub mod recall;
 use super::{format_conversation_entry, sha256_hex};
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -32,6 +35,14 @@ pub struct Session {
     pub orchestrator: String,
     /// Last non-synthetic model reported by an assistant message.
     pub model: Option<String>,
+    /// Working directory and branch of the first conversational record.
+    pub project: Option<String>,
+    /// Git branch at session start, absent outside a repository.
+    pub branch: Option<String>,
+    /// First supported conversational record timestamp.
+    pub started_at: Option<String>,
+    /// Latest supported conversational record timestamp.
+    pub last_active_at: Option<String>,
     /// Checked against every conversational record's sessionId.
     pub session_id: String,
     /// Digest of the raw input bytes, used only for idempotency.
@@ -76,6 +87,8 @@ pub struct Request {
     /// Crew-written scribe handoff, present only when the rules page
     /// enables it; written by [`append_handoff`] or dropped.
     pub handoff: Option<String>,
+    /// Hook context and crew/user title; never used as authority.
+    pub context: recall::Context,
 }
 fn invalid(message: &'static str) -> Error {
     Error::Library {
@@ -177,6 +190,10 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
     let mut session = Session {
         orchestrator: "claude".into(),
         model: None,
+        project: None,
+        branch: None,
+        started_at: None,
+        last_active_at: None,
         session_id: expected_id.into(),
         transcript_sha256: sha256_hex(raw.as_bytes()),
         scrubbed: scrub(raw) != raw,
@@ -251,6 +268,28 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
         } else {
             return Err(invalid("message content must be text or content blocks"));
         };
+        if session.started_at.is_none() {
+            let context = |key: &str| {
+                record
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+            };
+            let project = context("cwd");
+            let branch = context("gitBranch");
+            session.project = project.map(scrub);
+            session.branch = branch.map(scrub);
+            session.scrubbed |= project
+                .is_some_and(|value| session.project.as_deref() != Some(value))
+                || branch.is_some_and(|value| session.branch.as_deref() != Some(value));
+            session.started_at = Some(timestamp.into());
+        }
+        if session.last_active_at.as_deref().is_none_or(|old| {
+            chrono::DateTime::parse_from_rfc3339(old).ok()
+                < chrono::DateTime::parse_from_rfc3339(timestamp).ok()
+        }) {
+            session.last_active_at = Some(timestamp.into());
+        }
         let prefix_sha256 = sha256_hex(&raw.as_bytes()[..record_end]);
         // Scrub the entire text block, so multiline PEM credentials stay hidden.
         for text in texts {
@@ -624,6 +663,9 @@ pub fn validate_provenance(markdown: &str) -> Result<()> {
                 reason: "expected a nonempty single-line string or null",
             });
         }
+    }
+    if fields.get("kind").and_then(Value::as_str) == Some("conversation") {
+        recall::validate_context(&fields)?;
     }
     Ok(())
 }

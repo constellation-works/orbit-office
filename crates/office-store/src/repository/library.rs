@@ -1950,8 +1950,8 @@ impl LibraryStore {
             }
             body.push_str(&lines.join("\n"));
             body.push('\n');
-            // Rebuild the document with identical frontmatter bytes: take
-            // everything up to and including the closing fence verbatim.
+            // Preserve the body bytes and existing fields before indexing
+            // newly appended entry refs in frontmatter.
             let head_end = raw_text.find("\n---").map(|i| i + 4).unwrap_or(0);
             let mut new_text = String::new();
             new_text.push_str(&raw_text[..head_end]);
@@ -1962,6 +1962,7 @@ impl LibraryStore {
             let new_text =
                 office_core::domain::source::merge_source_tags(&new_text, &request.tags)?
                     .unwrap_or(new_text);
+            let new_text = office_core::domain::source::conversation::recall::with_refs(&new_text)?;
             let pending = self
                 .decide(WriteKind::Document, path, &new_text, None, None)
                 .map_err(office_core::Error::from)?;
@@ -2178,6 +2179,7 @@ impl LibraryStore {
             retention_days: settings.retention.get(kind.as_str()).copied().flatten(),
             body: &body,
         });
+        let markdown = office_core::domain::source::conversation::recall::with_refs(&markdown)?;
         self.files
             .validate_document_path(Path::new(&rel_path))
             .map_err(office_core::Error::from)?;
@@ -2939,6 +2941,8 @@ impl office_core::ports::Library for LibraryStore {
                 .get("transcript_sha256")
                 .and_then(serde_json::Value::as_str)
                 == Some(&session.transcript_sha256)
+                && conversation::recall::with_context(text, &session, &request.context)?
+                    == text.as_str()
             {
                 let view = self.read_source(&id)?;
                 return Ok(SourceOutcome {
@@ -2954,7 +2958,14 @@ impl office_core::ports::Library for LibraryStore {
                     ..SourceOutcome::default()
                 });
             }
-            (id, (*path).clone(), (*text).clone(), true)
+            (
+                id,
+                (*path).clone(),
+                (*text).clone(),
+                meta.get("transcript_sha256")
+                    .and_then(serde_json::Value::as_str)
+                    != Some(&session.transcript_sha256),
+            )
         } else {
             let at = &session.lines[0].timestamp;
             let date = at
@@ -3012,6 +3023,7 @@ impl office_core::ports::Library for LibraryStore {
         let text = conversation::merge(&base, &session, &entries, &session.sensitivity, changed)?;
         let (text, handoff) =
             conversation::with_handoff(request, &session, &base, text, captured_at)?;
+        let text = conversation::recall::with_context(&text, &session, &request.context)?;
         self.validate_identity(&DocumentRecord::from_markdown(Path::new(&path), &text))?;
         let bundle = if changed {
             vec![ArtifactFile {

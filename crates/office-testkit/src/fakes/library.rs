@@ -1089,6 +1089,8 @@ impl Library for FakeLibrary {
             if let Some(raw) = tagged_raw {
                 let end = raw.find("\n---").map(|index| index + 4).unwrap_or(0);
                 let markdown = format!("{}\n{}", &raw[..end], new_body);
+                let markdown =
+                    office_core::domain::source::conversation::recall::with_refs(&markdown)?;
                 let record = DocumentRecord::from_markdown(std::path::Path::new(&path), &markdown);
                 self.documents.borrow_mut().insert(path.clone(), record);
                 self.texts.borrow_mut().insert(path.clone(), markdown);
@@ -1357,6 +1359,7 @@ impl Library for FakeLibrary {
             retention_days: settings.retention.get(kind.as_str()).copied().flatten(),
             body: &body,
         });
+        let markdown = office_core::domain::source::conversation::recall::with_refs(&markdown)?;
         if let Some(bytes) = upload_bytes {
             self.originals.borrow_mut().insert(id.clone(), bytes);
         }
@@ -1444,6 +1447,8 @@ impl Library for FakeLibrary {
                 .get("transcript_sha256")
                 .and_then(serde_json::Value::as_str)
                 == Some(&session.transcript_sha256)
+                && conversation::recall::with_context(text, &session, &request.context)?
+                    == text.as_str()
             {
                 return Ok(SourceOutcome {
                     id: source.id,
@@ -1457,7 +1462,14 @@ impl Library for FakeLibrary {
                     ..SourceOutcome::default()
                 });
             }
-            (source.id, path.clone(), text.clone(), true)
+            (
+                source.id,
+                path.clone(),
+                text.clone(),
+                meta.get("transcript_sha256")
+                    .and_then(serde_json::Value::as_str)
+                    != Some(&session.transcript_sha256),
+            )
         } else {
             let at = &session.lines[0].timestamp;
             let base_id = source_id_base(
@@ -1504,6 +1516,7 @@ impl Library for FakeLibrary {
         let text = conversation::merge(&base, &session, &entries, &session.sensitivity, changed)?;
         let (text, handoff) =
             conversation::with_handoff(request, &session, &base, text, captured_at)?;
+        let text = conversation::recall::with_context(&text, &session, &request.context)?;
         if changed {
             let snapshot = Path::new(&path)
                 .with_file_name(format!("v{}.md", parse_source_meta(&base).version))

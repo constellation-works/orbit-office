@@ -14,7 +14,7 @@
     },
     "title": {
       "type": "string",
-      "description": "Source title; defaults to the upload file name or first text line."
+      "description": "Source title; defaults to the upload file name or first text line. In session mode, crew proposal (at most eight words) or user title with title_by: user. Private sessions use the first user line for scribe titles."
     },
     "text": {
       "type": "string",
@@ -144,6 +144,72 @@
       "type": "string",
       "minLength": 1,
       "description": "Session mode with selections only: a scribe handoff of at most 60 words, written as a handoff entry marked (scribe) when the dom-scribe-rules page sets scribe.handoff: true. It must cite at least one #L<n> body anchor of the source after this pass's entries, each naming a log entry, and the pass must add a decision, direction or action; otherwise it is dropped and the other entries still land."
+    },
+    "project": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4096,
+      "description": "Session start working directory supplied by hook when transcript cwd is absent."
+    },
+    "branch": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 256,
+      "description": "Session start branch supplied by hook when transcript gitBranch is absent."
+    },
+    "repository": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Session mode only: known GitHub owner/repo for unqualified PR numbers; inferred from a GitHub project URL or owner/repo project when possible."
+    },
+    "resume": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "provider",
+        "command"
+      ],
+      "additionalProperties": false,
+      "description": "Session mode only: display-only resume target; defaults to claude --resume <session-id>."
+    },
+    "title_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "scribe",
+        "user",
+        null
+      ],
+      "description": "Session mode only, with title: scribe (default) or user. Scribe titles have at most eight words; a user title is never replaced by a scribe."
     }
   },
   "additionalProperties": false
