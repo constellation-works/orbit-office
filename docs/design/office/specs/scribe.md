@@ -158,6 +158,39 @@ don't understand, they ask the scribe why it is there (Chesterton's fence).
   of something unexplained without asking the scribe, and with no recorded
   reason, asking Daniel.
 
+### Preferences: answer once
+
+Some of Daniel's answers settle a whole class of question, not one case.
+Asked once, for example "release early and exclude pending defects?", the
+answer should spare every later orchestrator from asking again.
+
+- `preference` is one of Daniel's tags. It carries a `matter:` key, a short
+  slug for the class of question (`release-with-open-defects`), plus the
+  verbatim answer and its `why`. Matter keys are listed in the rules
+  alongside topics; the scribe agent may propose a new one.
+- The scribe agent tags a line `preference` when Daniel answers a question
+  that is about a kind of situation, or says so ("always", "from now on",
+  "next time"). When unsure, it tags `decision` and lets Daniel promote it
+  with `/scribe note #preference matter: <key> resolves: <SCR id>#L<n>`.
+- **Before asking Daniel, an orchestrator asks the scribe** "does Daniel
+  have a preference on <matter>?"
+  - A current preference whose matter matches: the orchestrator applies it
+    without waiting. It tells Daniel in one line that it applied the
+    preference, with the citation, so he can override.
+  - A low-confidence match, or none: it asks Daniel as before.
+  - An override is a new preference on the same matter. It carries
+    `supersedes: <SCR id>#L<n>`, and the old line drops out of answers.
+- **Preferences go stale on purpose.**
+  - Each has `review_by`, by default 90 days after it was stated.
+  - Past that date the scribe reports it as stale; the orchestrator asks
+    Daniel and records his answer as a fresh preference.
+  - "Same as before" renews it.
+- A preference that keeps being applied is a candidate for the Library's
+  `dom-standing-directions` page, through a proposal Daniel accepts.
+- Preferences stated in chat are separate from the decision precedents an
+  Orbit task's decision requests build (ORB-20747). Both follow the same
+  rule: only current, cited answers count.
+
 ## The SCR file
 
 Location: the Library's `sources/conversation/<yyyy>/<mm>/`, as a single
@@ -197,7 +230,7 @@ aliases: []
 
 Line format, one entry per line so grep finds it:
 
-`- <msg-id> <time> #<tag> #<topic>… "<verbatim quote>" [why: <msg-id> "…"] [refs: …] [due: …] [resolves: …] [by: user|<crew>]`
+`- <msg-id> <time> #<tag> #<topic>… "<verbatim quote>" [why: <msg-id> "…"] [refs: …] [due: …] [matter: …] [review_by: …] [supersedes: …] [resolves: …] [by: user|<crew>]`
 
 - Quotes are verbatim, with newlines written as `\n`.
 - `by: user` marks Daniel's `/scribe note` entries; `by: <crew>` marks an
@@ -226,6 +259,8 @@ sections that the append step reads:
   - `reminder`: a time-bound note to self.
   - `fact`: a stated fact about hosts, people or configuration.
   - `landed`: a PR merged or a task done, reported in the chat.
+  - `preference`: Daniel's standing answer to a class of question
+    ([Preferences](#preferences-answer-once)).
   - `agent-decision`, `pending`, `resolved`, `incident`: orchestrator tags
     ([above](#orchestrators-scribe-their-own-work)).
 - **Topics:** the allowed topic list, for example project names and feature
@@ -251,6 +286,9 @@ writes and no Orbit calls.
   agent can see them by comparing against the parsed file when it exists.
 - "Why is X like this?" returns the decision and its `why`, or "no recorded
   reason" ([Decisions keep their why](#decisions-keep-their-why)).
+- "Does Daniel have a preference on X?" returns the current preference for
+  that matter with its citation, age and `review_by`, says if it is stale,
+  or says "no preference recorded".
 - "What's pending?" lists `#pending` lines with no `#resolved` line that
   names them, oldest first, each with its `by`, task refs and file:line.
 - "Did we land X?" answers from `#landed` entries. When the plugin's `gh`
