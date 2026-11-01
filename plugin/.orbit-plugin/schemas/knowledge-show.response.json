@@ -52,9 +52,10 @@
           "required": ["system", "via", "connection"],
           "additionalProperties": false
         },
-        "body": { "type": "string" }
+        "body": { "type": "string" },
+        "sha256": { "type": "string", "description": "SHA-256 of the page file's exact bytes, as office.proposal-create checks as base_sha256. Returned for every page, including private ones whose body is withheld." }
       },
-      "required": ["id", "layer", "shared_by", "type", "path", "template", "title", "aliases", "summary", "tags", "cites", "refs", "related", "updated_at", "last_verified", "status", "sensitivity", "as_of", "performable", "submission", "body"],
+      "required": ["id", "layer", "shared_by", "type", "path", "template", "title", "aliases", "summary", "tags", "cites", "refs", "related", "updated_at", "last_verified", "status", "sensitivity", "as_of", "performable", "submission", "body", "sha256"],
       "additionalProperties": false
     },
     "backlinks": {

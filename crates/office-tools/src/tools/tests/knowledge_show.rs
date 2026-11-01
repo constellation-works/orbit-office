@@ -124,6 +124,39 @@ fn show_withholds_the_body_of_a_private_page() {
 }
 
 #[test]
+fn show_returns_the_sha256_of_the_pages_exact_bytes() {
+    let ports = ports();
+    let text = "---\nid: dom-person-jane-park\ntemplate: person\ntitle: Jane Park\naliases: [Jane]\nrefs:\n  - { label: Work email, contact: jane@acme.example }\n  - { label: CRM, url: \"https://crm.example/jane\" }\n---\n## Role\nBuyer. Old note: jane@acme.example\n";
+    let response = show(&ports, json!({ "id": "dom-person-jane-park" }));
+    assert_eq!(response["ok"], json!(true), "{response}");
+    assert_eq!(
+        response["output"]["page"]["sha256"],
+        json!(office_core::domain::source::sha256_hex(text.as_bytes())),
+        "{response}"
+    );
+}
+
+#[test]
+fn show_returns_sha256_for_a_private_page_without_its_body() {
+    let library = FakeLibrary::initialized();
+    let text = "---\nid: dom-private-topic\ntemplate: topic\ntitle: Private topic\nsensitivity: private\n---\n## Overview\nBody holds page-private-marker.\n";
+    library
+        .write_document(Path::new("knowledge/domain/dom-private-topic.md"), text)
+        .expect("seed private page");
+    let ports = Ports {
+        library: Box::new(library),
+        ..ports()
+    };
+    let response = show(&ports, json!({ "id": "dom-private-topic" }));
+    assert_eq!(
+        response["output"]["page"]["sha256"],
+        json!(office_core::domain::source::sha256_hex(text.as_bytes())),
+        "{response}"
+    );
+    assert_eq!(response["output"]["page"]["body"], json!(""), "{response}");
+}
+
+#[test]
 fn show_refuses_an_unknown_page_and_a_non_page_id() {
     let ports = ports();
     let missing = show(&ports, json!({ "id": "dom-absent" }));
