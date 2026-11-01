@@ -357,14 +357,14 @@ impl RealLibrary {
         Ok(store.with_upload_roots(roots))
     }
 
-    /// Parsed scribe files live under the granted workspace's `.orbit/tmp`.
+    /// Parsed scribe files live under the granted Library root's ignored
+    /// `.office/state/scribe/`, inside the plugin's write grant.
     fn scribe_parse(&self) -> office_core::Result<office_store::ScribeParseStore> {
         self.ensure_grant()?;
-        let workspace = self
-            .workspace
-            .as_ref()
-            .ok_or(office_core::Error::LibraryUnavailable)?;
-        Ok(office_store::ScribeParseStore::new(workspace))
+        let (Some(workspace), Some(library)) = (&self.workspace, &self.library) else {
+            return Err(office_core::Error::LibraryUnavailable);
+        };
+        Ok(office_store::ScribeParseStore::new(workspace, library)?)
     }
 
     fn looks_initialized(&self) -> bool {
@@ -496,6 +496,9 @@ impl Library for RealLibrary {
     }
     fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::knowledge_pages(&self.store()?)?)
+    }
+    fn scribe_parse_path(&self, session_id: &str) -> office_core::Result<String> {
+        self.scribe_parse()?.relative_path(session_id)
     }
     fn write_scribe_parse(
         &self,

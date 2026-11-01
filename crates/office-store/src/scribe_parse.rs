@@ -1,21 +1,26 @@
 //! The scribe's parsed message files (specs/scribe.md, "Pipeline"):
-//! `<workspace>/.orbit/tmp/scribe/<session-id>.jsonl` and its
+//! `<library>/.office/state/scribe/<session-id>.jsonl` and its
 //! `<session-id>.meta.json` session facts, owner-only in a private
-//! directory and rewritten on every parse. Also the host facts an SCR file
+//! directory and rewritten on every parse. The Library's `.gitignore`
+//! ignores `.office/state/`, and the directory is inside the plugin's
+//! `{{workspace}}/library` write grant. Also the host facts an SCR file
 //! records: the host name and the local time zone.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use office_common::fs::atomic::write_atomic;
 use office_core::domain::scribe_control::validate_session_id;
 use office_core::domain::source::conversation::scribe::{PARSE_DIR, parse_path};
 use office_core::ports::ScribeParse;
 
+use crate::repository::normalize_path;
 use crate::{Error, Result};
 
-/// Parsed scribe files under one workspace root.
+/// Parsed scribe files under one Library root.
 pub struct ScribeParseStore {
-    workspace: PathBuf,
+    library: PathBuf,
+    /// The Library root relative to the workspace, `/`-separated.
+    library_dir: String,
 }
 
 fn refuse_symlink(path: &Path) -> Result<()> {
@@ -31,16 +36,56 @@ fn refuse_symlink(path: &Path) -> Result<()> {
 }
 
 impl ScribeParseStore {
-    /// The store for `workspace_root`; construction does no I/O.
-    #[must_use]
-    pub fn new(workspace_root: &Path) -> Self {
-        Self {
-            workspace: workspace_root.to_path_buf(),
+    /// The store for the Library at `library_root`, which must lie under
+    /// `workspace_root` (callers apply the Library grant first). Paths are
+    /// compared lexically; construction does no I/O.
+    pub fn new(workspace_root: &Path, library_root: &Path) -> Result<Self> {
+        let workspace = normalize_path(workspace_root);
+        let library = normalize_path(library_root);
+        let relative = library
+            .strip_prefix(&workspace)
+            .map_err(|_| Error::LibraryDirOutside {
+                requested: library.clone(),
+                allowed: workspace.clone(),
+            })?;
+        let mut parts = Vec::new();
+        for component in relative.components() {
+            match component {
+                Component::Normal(name) => match name.to_str() {
+                    Some(name) => parts.push(name),
+                    None => {
+                        return Err(Error::UnsafePath {
+                            kind: "Library directory",
+                            value: library.display().to_string(),
+                        });
+                    }
+                },
+                Component::CurDir
+                | Component::ParentDir
+                | Component::RootDir
+                | Component::Prefix(_) => {
+                    return Err(Error::LibraryDirOutside {
+                        requested: library.clone(),
+                        allowed: workspace.clone(),
+                    });
+                }
+            }
         }
+        let library_dir = parts.join("/");
+        Ok(Self {
+            library,
+            library_dir,
+        })
     }
 
     fn dir(&self) -> PathBuf {
-        self.workspace.join(PARSE_DIR)
+        self.library.join(PARSE_DIR)
+    }
+
+    /// The workspace-relative path of a session's message file.
+    pub fn relative_path(&self, session_id: &str) -> office_core::Result<String> {
+        validate_session_id(session_id)?;
+        Ok(parse_path(&self.library_dir, session_id))
     }
 
     fn paths(&self, session_id: &str) -> office_core::Result<(PathBuf, PathBuf)> {
@@ -50,6 +95,18 @@ impl ScribeParseStore {
             dir.join(format!("{session_id}.jsonl")),
             dir.join(format!("{session_id}.meta.json")),
         ))
+    }
+
+    /// Refuse a symlink at any directory between the Library root and
+    /// the parse directory, so a write never leaves the Library.
+    fn refuse_linked_dirs(&self) -> Result<()> {
+        let mut path = self.library.clone();
+        refuse_symlink(&path)?;
+        for part in Path::new(PARSE_DIR).components() {
+            path.push(part);
+            refuse_symlink(&path)?;
+        }
+        Ok(())
     }
 
     /// Replace a session's message and fact files; returns the message
@@ -62,7 +119,7 @@ impl ScribeParseStore {
     ) -> office_core::Result<String> {
         let (jsonl, facts) = self.paths(session_id)?;
         let dir = self.dir();
-        refuse_symlink(&dir)?;
+        self.refuse_linked_dirs()?;
         let mut builder = std::fs::DirBuilder::new();
         builder.recursive(true);
         builder
@@ -78,12 +135,13 @@ impl ScribeParseStore {
             refuse_symlink(path)?;
             write_atomic(path, text.as_bytes()).map_err(Error::from)?;
         }
-        Ok(parse_path(session_id))
+        self.relative_path(session_id)
     }
 
     /// A session's message and fact files, if both exist.
     pub fn read(&self, session_id: &str) -> office_core::Result<Option<ScribeParse>> {
         let (jsonl, facts) = self.paths(session_id)?;
+        self.refuse_linked_dirs()?;
         let mut texts = Vec::new();
         for path in [&jsonl, &facts] {
             refuse_symlink(path)?;

@@ -14,8 +14,9 @@ use super::{Rules, Session, scrub};
 use crate::ports::LibraryText;
 use crate::{Error, Result};
 
-/// Workspace-relative directory of the parsed message files.
-pub const PARSE_DIR: &str = ".orbit/tmp/scribe";
+/// Library-relative directory of the parsed message files: inside the
+/// Library's git-ignored `.office/state/` and its write grant.
+pub const PARSE_DIR: &str = ".office/state/scribe";
 /// Earlier messages returned as read-only context.
 pub const CONTEXT_MESSAGES: usize = 10;
 /// Longest title slug in an SCR file name.
@@ -171,10 +172,16 @@ pub struct Parsed {
     pub started_at: Option<String>,
 }
 
-/// Workspace-relative path of a session's message file.
+/// Workspace-relative path of a session's message file, given the
+/// workspace-relative, `/`-separated Library directory.
 #[must_use]
-pub fn parse_path(session_id: &str) -> String {
-    format!("{PARSE_DIR}/{session_id}.jsonl")
+pub fn parse_path(library_dir: &str, session_id: &str) -> String {
+    let library_dir = library_dir.trim_end_matches('/');
+    if library_dir.is_empty() {
+        format!("{PARSE_DIR}/{session_id}.jsonl")
+    } else {
+        format!("{library_dir}/{PARSE_DIR}/{session_id}.jsonl")
+    }
 }
 
 /// The last path component of a working directory, as a project name.

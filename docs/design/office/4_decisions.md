@@ -2221,8 +2221,9 @@ v1 has proven what to keep.
 **Code anchors:** `office-core/src/domain/source/conversation/scribe.rs`,
 `office-tools/src/tools/sessions/scribe_pending.rs`,
 `office-tools/src/tools/sessions/scribe_append.rs`,
-`office-core/src/ports/library.rs` (`write_scribe_parse`, `scribe_files`,
-`write_scribe_file`, `host_name`), `office-core/src/ports/clock.rs`
+`office-core/src/ports/library.rs` (`scribe_parse_path`,
+`write_scribe_parse`, `scribe_files`, `write_scribe_file`, `host_name`),
+`office-core/src/ports/clock.rs`
 (`time_zone`), `office-store/src/scribe_parse.rs` (`ScribeParseStore`);
 [specs/scribe.md](./specs/scribe.md#pipeline).
 
@@ -2235,8 +2236,23 @@ v1 has proven what to keep.
 - **Session facts ride beside the message file.** `office.scribe-append`
   takes no transcript, so pending also writes `<session-id>.meta.json`
   (provider, model, host, project, cwd, branch, transcript, start) next to
-  the `.jsonl`, both owner-only in a `0700` directory under the workspace's
-  `.orbit/tmp/scribe/`. Append refuses with `scribe_not_parsed` without them.
+  the `.jsonl`, both owner-only in a `0700` directory. Append refuses with
+  `scribe_not_parsed` without them.
+- **Parse files live in the Library's ignored state (ORB-20820).** They
+  are `<library>/.office/state/scribe/<session-id>.jsonl` and
+  `.meta.json`, resolved from the configured Library root. They were under
+  the workspace's `.orbit/tmp/scribe/`, which the installed plugin cannot
+  write: Orbit refuses any plugin write grant under workspace `.orbit`, so
+  every unparsed session failed under the sandbox. The new directory is
+  inside the existing `{{workspace}}/library` grant, so the manifest and
+  consent are unchanged, and the Library's `.gitignore` already ignores
+  `.office/state/`. `parsed` stays workspace-relative (for example
+  `library/.office/state/scribe/<id>.jsonl`). Rejected: `{{plugin_state}}`
+  (`parsed` would stop being workspace-relative, and agents never read
+  plugin state) and `{{workspace}}/.office` (a new grant, and the workspace
+  repo would have to ignore it). The Claude Code plugin's own hook files
+  stay under `.orbit/tmp/scribe/`: the provider hooks write them
+  unsandboxed.
 - **SCR files are Library files, not indexed sources.** They commit through
   a new journaled write kind (version 10) that writes the file and removes
   its previous name in one commit, under the writer lock, refusing a stale

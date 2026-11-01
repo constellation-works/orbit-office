@@ -128,7 +128,7 @@ fn pending_writes_stable_ids_and_returns_new_messages_with_context_and_default_r
     let first = pending(&ports, "short.jsonl");
     assert_eq!(
         first["parsed"],
-        format!(".orbit/tmp/scribe/{SESSION}.jsonl")
+        format!("library/.office/state/scribe/{SESSION}.jsonl")
     );
     assert_eq!(first["scribed_through"], Value::Null);
     // The tool result record keeps no text, so six records give five messages.
@@ -332,7 +332,7 @@ fn append_creates_then_appends_merges_topics_advances_and_reruns_add_nothing() {
     assert_eq!(
         text,
         format!(
-            "---\nid: \"SCR-31-2007-scribe-v1-design-lets-go-one-step-at-a-time\"\ntitle: null\nsession_id: \"{SESSION}\"\nprovider: \"claude-code\"\nmodel: \"claude-opus-5-5\"\ncounterpart: \"orchestrator\"\ncounterpart_name: \"opus orchestrator\"\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/Users/daniel/workspace/constellation\"\nbranch: \"agent-main\"\ntranscript: \"short.jsonl\"\nparsed: \".orbit/tmp/scribe/{SESSION}.jsonl\"\nstarted_at: \"2026-10-31T20:07:00-07:00\"\nlast_scribed_at: \"2026-10-31T22:00-07:00\"\nscribed_through: \"m-0002\"\ntopics: [\"constellation\"]\naliases: []\n---\n- m-0001 2026-10-31T20:07-07:00 #decision #no-why #constellation \"lets go one step at a time\" refs: ORB-20690\n"
+            "---\nid: \"SCR-31-2007-scribe-v1-design-lets-go-one-step-at-a-time\"\ntitle: null\nsession_id: \"{SESSION}\"\nprovider: \"claude-code\"\nmodel: \"claude-opus-5-5\"\ncounterpart: \"orchestrator\"\ncounterpart_name: \"opus orchestrator\"\nhost: \"macbook\"\nproject: \"constellation\"\ncwd: \"/Users/daniel/workspace/constellation\"\nbranch: \"agent-main\"\ntranscript: \"short.jsonl\"\nparsed: \"library/.office/state/scribe/{SESSION}.jsonl\"\nstarted_at: \"2026-10-31T20:07:00-07:00\"\nlast_scribed_at: \"2026-10-31T22:00-07:00\"\nscribed_through: \"m-0002\"\ntopics: [\"constellation\"]\naliases: []\n---\n- m-0001 2026-10-31T20:07-07:00 #decision #no-why #constellation \"lets go one step at a time\" refs: ORB-20690\n"
         )
     );
     assert_eq!(

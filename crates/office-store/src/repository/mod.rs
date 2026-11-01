@@ -5,3 +5,4 @@
 mod library;
 
 pub use library::LibraryStore;
+pub(crate) use library::normalize_path;

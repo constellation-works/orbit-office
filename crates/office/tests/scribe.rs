@@ -1,7 +1,8 @@
 //! `office.scribe-pending` and `office.scribe-append` through the built
 //! binary against a temporary workspace (STD-04): the private message file
-//! under `.orbit/tmp/scribe/`, and the SCR file committed to the Library,
-//! renamed in one commit.
+//! under the Library's ignored `.office/state/scribe/`, inside the plugin's
+//! write grant, and the SCR file committed to the Library, renamed in one
+//! commit.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::io::Write;
@@ -14,12 +15,19 @@ const SESSION: &str = "fixture-session";
 
 struct Fixture {
     root: tempfile::TempDir,
+    library_dir: &'static str,
 }
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_library_dir("library")
+    }
+
+    /// A workspace whose plugin config sets `library_dir`.
+    fn with_library_dir(library_dir: &'static str) -> Self {
         let fixture = Self {
             root: tempfile::tempdir().unwrap(),
+            library_dir,
         };
         std::fs::create_dir_all(fixture.workspace()).unwrap();
         assert_eq!(fixture.call("office.init", json!({}))["ok"], true);
@@ -31,7 +39,11 @@ impl Fixture {
     }
 
     fn library(&self) -> PathBuf {
-        self.workspace().join("library")
+        self.workspace().join(self.library_dir)
+    }
+
+    fn state(&self) -> PathBuf {
+        self.root.path().join("state")
     }
 
     fn call(&self, tool: &str, input: Value) -> Value {
@@ -47,7 +59,8 @@ impl Fixture {
             .spawn()
             .unwrap();
         let request = json!({"schema_version":1,"tool":tool,"input":input,"context":{
-            "workspace_root":self.workspace(),"plugin_state":self.root.path().join("state")}});
+            "workspace_root":self.workspace(),"plugin_state":self.state(),
+            "config":{"library_dir":self.library_dir}}});
         child
             .stdin
             .take()
@@ -92,6 +105,10 @@ impl Fixture {
 
     fn pending(&self, messages: usize) -> Value {
         let transcript = self.transcript(messages);
+        self.pending_call(&transcript)
+    }
+
+    fn pending_call(&self, transcript: &Path) -> Value {
         self.ok(
             "office.scribe-pending",
             json!({"session_id":SESSION,"transcript":transcript,"provider":"claude-code","cwd":"/work/constellation"}),
@@ -112,6 +129,20 @@ impl Fixture {
     }
 }
 
+/// Every path under `dir`, files and directories, without following links.
+fn tree(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries {
+        let path = entry.unwrap().path();
+        out.push(path.clone());
+        if std::fs::symlink_metadata(&path).unwrap().is_dir() {
+            tree(&path, out);
+        }
+    }
+}
+
 #[cfg(unix)]
 fn mode(path: &Path) -> u32 {
     use std::os::unix::fs::PermissionsExt;
@@ -122,10 +153,11 @@ fn mode(path: &Path) -> u32 {
 fn pending_writes_a_private_message_file_whose_ids_only_grow() {
     let f = Fixture::new();
     let first = f.pending(2);
-    assert_eq!(first["parsed"], ".orbit/tmp/scribe/fixture-session.jsonl");
-    let file = f
-        .workspace()
-        .join(".orbit/tmp/scribe/fixture-session.jsonl");
+    assert_eq!(
+        first["parsed"],
+        "library/.office/state/scribe/fixture-session.jsonl"
+    );
+    let file = f.workspace().join(first["parsed"].as_str().unwrap());
     let short = std::fs::read_to_string(&file).unwrap();
     assert_eq!(
         short,
@@ -137,8 +169,8 @@ fn pending_writes_a_private_message_file_whose_ids_only_grow() {
         assert_eq!(mode(file.parent().unwrap()), 0o700);
         assert_eq!(
             mode(
-                &f.workspace()
-                    .join(".orbit/tmp/scribe/fixture-session.meta.json")
+                &f.library()
+                    .join(".office/state/scribe/fixture-session.meta.json")
             ),
             0o600
         );
@@ -151,6 +183,51 @@ fn pending_writes_a_private_message_file_whose_ids_only_grow() {
     let long = std::fs::read_to_string(&file).unwrap();
     assert!(long.starts_with(&short));
     assert_eq!(long.lines().count(), 4);
+}
+
+/// The installed plugin may write only under `{{workspace}}/library` and
+/// `{{plugin_state}}`; Orbit refuses any grant under the workspace's
+/// `.orbit`. Parsing a new session writes nothing else, under a configured
+/// `library_dir`, and the Library's work tree stays clean.
+#[test]
+fn pending_writes_only_inside_the_library_and_plugin_state() {
+    let f = Fixture::with_library_dir("library/office");
+    let transcript = f.transcript(4);
+    let mut before = Vec::new();
+    tree(f.root.path(), &mut before);
+    let out = f.pending_call(&transcript);
+    let mut after = Vec::new();
+    tree(f.root.path(), &mut after);
+    let outside: Vec<&PathBuf> = after
+        .iter()
+        .filter(|path| !before.contains(path))
+        .filter(|path| !path.starts_with(f.library()) && !path.starts_with(f.state()))
+        .collect();
+    assert_eq!(
+        outside,
+        Vec::<&PathBuf>::new(),
+        "written outside the grants"
+    );
+    assert_eq!(
+        out["parsed"],
+        "library/office/.office/state/scribe/fixture-session.jsonl"
+    );
+    let parsed = f.workspace().join(out["parsed"].as_str().unwrap());
+    assert_eq!(std::fs::read_to_string(parsed).unwrap().lines().count(), 4);
+    assert_eq!(f.git(&["status", "--porcelain", "--ignored=no"]), "");
+
+    // Append reads the parse back from the same place.
+    let appended = f.ok(
+        "office.scribe-append",
+        json!({"session_id":SESSION,"through":"m-0004","entries":[]}),
+    );
+    assert_eq!(appended["scribed_through"], "m-0004");
+    let path = appended["path"].as_str().unwrap();
+    let text = std::fs::read_to_string(f.library().join(path)).unwrap();
+    assert!(
+        text.contains("\nparsed: \"library/office/.office/state/scribe/fixture-session.jsonl\"\n"),
+        "{text}"
+    );
 }
 
 #[test]

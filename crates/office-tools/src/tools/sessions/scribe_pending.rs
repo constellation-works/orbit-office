@@ -3,10 +3,11 @@
 //!
 //! Model-free. Parses the transcript through the conversation adapter
 //! (text between the user and the agent only, credentials scrubbed),
-//! writes the private `.orbit/tmp/scribe/<session-id>.jsonl` with stable
-//! `m-<n>` ids, and returns the SCR file's metadata (or the name a new one
-//! takes), `scribed_through`, the messages after it with up to 10 earlier
-//! messages as context, and the scribe rules. No Library write.
+//! writes the private `<library>/.office/state/scribe/<session-id>.jsonl`
+//! (git-ignored Library state) with stable `m-<n>` ids, and returns the SCR
+//! file's metadata (or the name a new one takes), `scribed_through`, the
+//! messages after it with up to 10 earlier messages as context, and the
+//! scribe rules. No Library commit.
 
 use office_core::domain::scribe_control::validate_session_id;
 use office_core::domain::source::conversation::{
@@ -70,7 +71,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         cwd: Some(cwd),
         branch: session.branch.clone(),
         transcript,
-        parsed: scribe::parse_path(&session_id),
+        parsed: library.scribe_parse_path(&session_id)?,
         started_at: session.started_at.clone(),
     };
     let files = scribe::scr_files(&library.scribe_files()?)?;
