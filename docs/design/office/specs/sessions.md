@@ -239,6 +239,9 @@ privacy; a source changed to private stays private on later extraction.
 
 ## Live scribe
 
+> Scribe v1 ([scribe.md](./scribe.md)) replaces automatic live passes with
+> the `/scribe` command; the passes below are off by default from v1.
+
 Status: partly built. The incremental passes and the user `Note:`/`Scribe:`
 commands below are built ([ORB-20685]); the rules page, answers to
 questions and scribe handoff are built ([ORB-20686]); the Claude Code

@@ -2179,6 +2179,42 @@ an adapter crate, wired in the binary's `ports()`), and existing complete
   planned and does not name `scribe_control.sqlite`; that file is
   integrator-owned and is updated in its own task.
 
+## Scribe v1: commanded capture into one tagged file per session
+
+**Recorded:** 2026-11-01 · [ORB-20690]
+**Code anchors:** none yet; [specs/scribe.md](./specs/scribe.md)
+
+### Context
+
+The live scribe, recall, the desktop pane and the web window were built in
+one push. In use, the pane's answers came back "not captured": automatic
+passes were invisible, recall's search was too narrow, and the subagent was
+refused by auto mode. Daniel's direction (2026-11-01): "I think we got ahead
+of ourselves. lets go one step at a time."
+
+### Decision
+
+v1 is a dedicated, cheap `scribe` agent that Daniel or an orchestrator
+commands. `/scribe` parses the transcript and scribes only the messages not
+yet scribed. `/scribe note` takes direct notes and `/scribe ask` answers with
+citations. Output is one `SCR-<dd-hhmm>-<title>.md` per session under
+`sources/conversation/<yyyy>/<mm>/`: front matter carries who, where,
+provider, cursor and topics, and the body has one tagged, verbatim entry per
+line. The model only proposes entries; a model-free append step checks
+quotes, tags and topics and writes. Automatic Stop/SessionEnd passes are off
+by default. The web Scribe screen (ORB-20696) is parked.
+
+### Consequences
+
+- Answers come from grep over plain files, so they are cheap and exactly
+  cited, and an orchestrator can check them without a model.
+- Capture is only as current as the last `/scribe`; there is no background
+  pass to rely on.
+- Two conversation source layouts coexist until a migration is chosen.
+
+Cost: one more source layout, and the built recall surfaces sit unused until
+v1 has proven what to keep.
+
 ## Task References
 
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
@@ -2203,5 +2239,6 @@ an adapter crate, wired in the binary's `ports()`), and existing complete
 - [ORB-20363] — wires the office app's approval actions to that scoped application authority.
 - [ORB-20685] — built the live scribe's incremental capture and `Note:` commands.
 - [ORB-20756] — built recall answers, recall feed mode and Office-owned scribe control.
+- [ORB-20690] — orchestrated the scribe and recall push; recorded scribe v1.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
