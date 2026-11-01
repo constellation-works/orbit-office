@@ -77,6 +77,9 @@
 #      ~/.agents/skills; a second run changes nothing; uninstall removes
 #      only the installer-owned entry and keeps a pre-existing identical
 #      one; invalid JSON refuses byte-identically.
+#  25. under umask 0002 the installer creates and replaces its own
+#      install-state at 0600, reaches and retains the Library on rerun,
+#      and still refuses a group-writable pre-existing state file
 #  22. an fnm_multishells node symlink on PATH resolves to the stable
 #      node in both service units, with no fnm_multishells entry in the
 #      unit PATH; a non-symlink fnm_multishells wrapper as the only node
@@ -614,5 +617,6 @@ scenario_20_retired
 scenario_22
 scenario_23
 scenario_24
+scenario_25
 
 printf 'PASS: %s checks\n' "$PASS"

@@ -63,7 +63,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
     _script="$INSTALL_SH"; _run_dir="."
     if [ "${INSTALL_FROM_CWD:-0}" = 1 ]; then _script=install.sh; _run_dir=$(dirname -- "$INSTALL_SH"); fi
     # shellcheck disable=SC2086
-    (cd "$_run_dir" && env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
+    (cd "$_run_dir" && { [ -z "${TEST_UMASK:-}" ] || umask "$TEST_UMASK"; } && env -i PATH="${TEST_PATH:-${TEST_BIN:-$BIN}:$NODE_DIR:/usr/bin:/bin}" HOME="$_home" STUB_STATE="$STUB_STATE" \
         STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
         STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.39.0}" \
@@ -183,6 +183,9 @@ const lines = entries.map((rel) => {
 process.stdout.write(crypto.createHash("sha256").update(lines.join("")).digest("hex") + "\n");
 NODE
 }
+file_mode() { # file_mode <path> : octal permission bits, e.g. 600
+    "$NODE_BIN" -e 'const fs = require("fs"); process.stdout.write((fs.statSync(process.argv[1]).mode & 0o777).toString(8));' "$1"
+}
 TOOLS_REL=".local/share/orbit-office/tools"
 assert_home_scope() { # files stay under the workspace, data/tools, service, MCP
     _home="$1"
@@ -225,12 +228,12 @@ assert_profiles_untouched() {
 # The installed launcher is the real user entry point, independent of install.sh.
 run_office() { # run_office <home> <args...>
     _office_home="$1"; shift
-    env -i HOME="$_office_home" PATH="$BIN:$NODE_DIR:/usr/bin:/bin" \
+    ({ [ -z "${TEST_UMASK:-}" ] || umask "$TEST_UMASK"; } && env -i HOME="$_office_home" PATH="$BIN:$NODE_DIR:/usr/bin:/bin" \
         STUB_STATE="$STUB_STATE" STUB_MANIFEST="$MANIFEST" \
         STUB_GATEWAY_MANIFESTS="$SCRIPT_DIR/../../gateway/plugins" \
         STUB_INIT_MODE="${STUB_INIT_MODE:-ok}" STUB_INIT_FIXTURES="$INIT_FIXTURES" \
         STUB_ORBIT_VERSION="${STUB_ORBIT_VERSION:-0.39.0}" \
-        ORBIT_OFFICE_OS="${OFFICE_TEST_OS:-linux}" ORBIT_OFFICE_HOME="${OFFICE_TEST_HOME:-}" "$_office_home/.local/bin/orbit-office" "$@" < /dev/null
+        ORBIT_OFFICE_OS="${OFFICE_TEST_OS:-linux}" ORBIT_OFFICE_HOME="${OFFICE_TEST_HOME:-}" "$_office_home/.local/bin/orbit-office" "$@" < /dev/null)
 }
 # check_protected_purge <label> <home> <expected line> <run_install args...>
 check_protected_purge() {

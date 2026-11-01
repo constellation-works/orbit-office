@@ -393,14 +393,19 @@ state_has() {
 state_mark() {
     state_has "$1" && return 0
     mkdir -p "$DATA_DIR"
-    printf '%s\n' "$1" >> "$STATE_FILE"
+    # Create a new state file at 0600 whatever the caller's umask (under
+    # 0002 a plain >> would make 0664, which the launcher then refuses as
+    # unsafe). Appending to an existing file keeps its mode, so a
+    # group-writable pre-existing file is still refused, not repaired.
+    (umask 077; printf '%s\n' "$1" >> "$STATE_FILE")
 }
 
 state_clear() {
     [ -f "$STATE_FILE" ] || return 0
     _tmp="$STATE_FILE.tmp.$$"
-    grep -vxF "$1" "$STATE_FILE" > "$_tmp" || true
+    (umask 077; grep -vxF "$1" "$STATE_FILE" > "$_tmp") || true
     if [ -s "$_tmp" ]; then
+        chmod 600 "$_tmp"
         mv "$_tmp" "$STATE_FILE"
     else
         rm -f "$_tmp" "$STATE_FILE"

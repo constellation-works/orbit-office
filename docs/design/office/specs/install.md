@@ -263,7 +263,12 @@ Run `orbit-office init` for `~/orbit`, `orbit-office init ~/another-office` for 
 workspace, or either again to repair setup. `ORBIT_OFFICE_HOME` supplies the
 path default when set; an explicit path wins. Relative paths resolve from the
 calling directory. `ORBIT_OFFICE_DATA_DIR` selects the same install-state folder
-as the installer. `orbit-office init --yes [path]` skips the consent question.
+as the installer. The `install-state` file there is owner-only (`0600`): the
+installer creates it, and replaces it when clearing a marker, at that mode
+whatever the caller's umask (a group-writable `0664` under umask `0002` would
+otherwise make the launcher refuse the installer's own state), and
+`orbit-office` refuses a pre-existing group- or other-writable state file
+rather than repairing it. `orbit-office init --yes [path]` skips the consent question.
 `orbit-office --help` and `orbit-office init --help` describe the same command.
 
 The installer adds the machine plugins first, then calls `orbit-office init` once
