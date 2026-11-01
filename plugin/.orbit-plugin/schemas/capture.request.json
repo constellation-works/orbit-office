@@ -97,6 +97,11 @@
       "type": "boolean",
       "description": "Return scrubbed numbered evidence lines without creating a source. Private content is withheld."
     },
+    "from_line": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Session mode only: first line (zero-based, inclusive) an incremental preview or pass considers. Preview also returns at most one earlier assistant line marked context: true; selecting a line before from_line is refused."
+    },
     "transcript_sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",

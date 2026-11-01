@@ -1905,7 +1905,10 @@ conversation, without bothering an orchestrator.
 ## A live scribe extracts the conversation while it runs
 
 **Recorded:** 2026-11-01 · approved by the user (PR #250)
-**Code anchors:** none yet; [specs/sessions.md](./specs/sessions.md#live-scribe-planned)
+**Code anchors:** incremental passes and `Note:`/`Scribe:` commands built
+in [ORB-20685] (`office-core/src/domain/source/conversation.rs`,
+`office-tools/src/tools/sources/capture.rs`); the rest has none yet;
+[specs/sessions.md](./specs/sessions.md#live-scribe)
 
 ### Context
 

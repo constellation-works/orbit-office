@@ -109,6 +109,10 @@
               },
               "text": {
                 "type": "string"
+              },
+              "context": {
+                "type": "boolean",
+                "description": "True only for the single read-only assistant context line an incremental (from_line) preview returns before the requested range; context lines cannot be selected."
               }
             },
             "additionalProperties": false

@@ -1495,6 +1495,8 @@ impl Library for FakeLibrary {
             session.sensitivity = "private".into();
         }
         let base = scrubbed_base;
+        let changed = changed
+            && !(request.from_line.is_some() && conversation::prefix_grew(&session, &base)?);
         let text = conversation::merge(&base, &session, &entries, &session.sensitivity, changed)?;
         if changed {
             let snapshot = Path::new(&path)
