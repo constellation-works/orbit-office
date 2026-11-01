@@ -1749,8 +1749,9 @@ successful proposal verification or be repaired by broadening authority.
 
 ## Local calendar events are workspace writes
 
-**Recorded:** 2026-10-30 · [ORB-20246]
+**Recorded:** 2026-10-30 · [ORB-20246] · amended 2026-11-01 · [ORB-20825]
 **Code anchors:** `office-core/src/domain/calendar/local.rs`; `office-store/src/calendar.rs`;
+`office/src/app.rs` (`RealCalendar::store`);
 `office-tools/src/tools/calendar/{sync,list}.rs`; `screens/calendar/editor.ts`;
 `specs/calendar.md`.
 
@@ -1765,7 +1766,8 @@ preventing the user from editing their own workspace data.
 ### Decision
 
 Keep a versioned local event store and independent source choices at
-`<workspace>/.office/calendar/local.json`. This workspace-owned data is separate
+`<library>/.office/state/local-calendar/local.json` (amended below; it was
+`<workspace>/.office/calendar/local.json`). This user-owned data is separate
 from the imported plugin-state snapshot: a sync never overwrites authored events.
 Local writes are in the same local Library action class as notes and briefs;
 they send no invitations, modify no remote calendar and require no gateway.
@@ -1789,9 +1791,40 @@ permissions and fail-closed schema-version handling.
 - Local creation, editing and deletion work offline and persist across app restarts.
   External snapshots retain the read-only contract.
 - Prep, capture and summaries use the existing pipeline for both sources.
-- Cost: a separate workspace store must be backed up alongside the Library; local
+- Cost: a separate store must be backed up alongside the Library; local
   events have no recurrence, invitations, or automatic Library git history. The
   calendar-sync tool now carries local mutations as well as imported sync.
+
+### Amendment: the store lives in the Library's ignored state (ORB-20825)
+
+The installed plugin can write only `{{workspace}}/library` and
+`{{plugin_state}}`, so under the plugin sandbox every local change to
+`<workspace>/.office/calendar/` was refused; the binary tests run Office
+unsandboxed and could not see it. The store moves to
+`<library>/.office/state/local-calendar/local.json`, resolved from the
+configured Library root after the Library grant check, following the scribe
+parse files (ORB-20820). The manifest and consent are unchanged, and the
+Library's `.gitignore` already ignores `.office/state/`. The directory is
+`local-calendar`, not `calendar`, so it never shares a directory or writer lock
+with the imported snapshot when a call carries no `plugin_state` and the
+snapshot falls back to the same `.office/state/`.
+
+- **Old events are read, not moved.** While the new file is absent, reads fall
+  back to `<workspace>/.office/calendar/local.json` with the same symlink and
+  schema-version checks; the next local change writes the merged state to the
+  new path. The old file is never rewritten or removed, because the sandbox
+  cannot write there.
+- **No pre-init writes.** Dispatch already refuses calendar tools on an
+  uninitialized Library, so a local write never creates Library directories
+  ahead of `office.init`.
+- **Consequence.** Local events are per-machine writer state: as before, they
+  are not in Library git history, and they do not travel with a Library clone.
+  Deleting `.office/state/` (for example to rebuild the index) deletes them too,
+  so back up the Library directory as a whole, not only its git history.
+- **Rejected:** a `{{workspace}}/.office/calendar` write grant (a new grant,
+  consent change and integrator-owned manifest edit, and the workspace repo would
+  have to ignore it) and `{{plugin_state}}` (a plugin cache reset would delete
+  authored events).
 
 ## Library sources are partitioned by kind
 
@@ -2303,5 +2336,6 @@ v1 has proven what to keep.
 - [ORB-20756] — built recall answers, recall feed mode and Office-owned scribe control.
 - [ORB-20690] — orchestrated the scribe and recall push; recorded scribe v1.
 - [ORB-20780] — built `office.scribe-pending` and `office.scribe-append`.
+- [ORB-20825] — moved local calendar events into the Library's ignored state, inside the plugin's write grant.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

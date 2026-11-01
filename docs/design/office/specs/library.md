@@ -60,8 +60,9 @@ library/
   so the history of every page is recoverable. Binaries (`original.*`),
   generated frames (`frames/`) and per-machine writer state
   (`.office/state/`: `index.sqlite` plus its `-shm`/`-wal`,
-  `library.writer.lock`, `library.writer.owner.json` and the scribe's
-  private parse files under `scribe/`) are ignored by
+  `library.writer.lock`, `library.writer.owner.json`, the scribe's
+  private parse files under `scribe/` and the authored local calendar
+  events under `local-calendar/`) are ignored by
   the Library's own `.gitignore`, and each binary is pinned by the
   `sha256` in its source's frontmatter. `.office/config.yaml` and
   `.office/templates/` stay tracked.

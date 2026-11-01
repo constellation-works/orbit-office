@@ -14,22 +14,44 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+/// The Library's git-ignored writer state, inside the plugin's
+/// `{{workspace}}/library` write grant; authored local events live in its
+/// [`LOCAL_NAME`] directory.
+const LIBRARY_STATE: &str = ".office/state";
+/// The private directory of authored local events under [`LIBRARY_STATE`],
+/// apart from the imported snapshot's `calendar` directory.
+const LOCAL_NAME: &str = "local-calendar";
+/// Where local events lived before they moved into the Library, relative
+/// to the workspace. Read only, until the next local change rewrites them.
+const LEGACY_LOCAL_FILE: &str = ".office/calendar/local.json";
+
 /// Snapshot adapter rooted only in host-supplied paths.
 pub struct CalendarStore {
     state: PathBuf,
     workspace: PathBuf,
+    library: PathBuf,
+    /// The private directory under `state` that holds this store's files.
+    name: &'static str,
 }
 impl CalendarStore {
-    /// Resolve no ambient paths and perform no I/O.
+    /// The imported snapshot lives under `state`, authored local events
+    /// under the Library root's `.office/state/local-calendar/`, and ICS
+    /// imports are read from the workspace. Callers apply the Library grant
+    /// first. Resolves no ambient paths and performs no I/O.
     #[must_use]
-    pub fn new(state: PathBuf, workspace: PathBuf) -> Self {
-        Self { state, workspace }
+    pub fn new(state: PathBuf, workspace: PathBuf, library: PathBuf) -> Self {
+        Self {
+            state,
+            workspace,
+            library,
+            name: "calendar",
+        }
     }
     fn dir(&self, create: bool) -> Result<PathBuf> {
         let state = resolved_root(&self.state)?;
-        let dir = state.join("calendar");
+        let dir = state.join(self.name);
         if create {
-            // Refuse symlink components before writing in plugin state.
+            // Refuse symlink components before writing in either state root.
             safe_components(&state)?;
             let mut builder = fs::DirBuilder::new();
             builder.recursive(true);
@@ -124,16 +146,32 @@ fn safe_components(path: &Path) -> Result<()> {
 }
 impl CalendarStore {
     fn local_store(&self) -> Result<Self> {
-        // Keep authored events inside the workspace, independently of plugin cache resets.
-        let workspace = resolved_root(&self.workspace)?;
-        safe_components(&workspace.join(".office"))?;
-        Ok(Self::new(workspace.join(".office"), workspace))
+        // Keep authored events in the Library, independently of plugin cache
+        // resets and inside the plugin's Library write grant.
+        let library = resolved_root(&self.library)?;
+        let state = library.join(LIBRARY_STATE);
+        safe_components(&state)?;
+        Ok(Self {
+            state,
+            workspace: self.workspace.clone(),
+            library,
+            name: LOCAL_NAME,
+        })
     }
     fn local_state(&self) -> Result<LocalCalendar> {
         let store = self.local_store()?;
         let dir = store.dir(false)?;
-        let Some(bytes) = store.bytes(&dir.join("local.json"))? else {
-            return Ok(LocalCalendar::default());
+        let bytes = match store.bytes(&dir.join("local.json"))? {
+            Some(bytes) => bytes,
+            None => {
+                // Events authored at the old workspace path stay visible
+                // until the next local change writes them into the Library.
+                let workspace = resolved_root(&self.workspace)?;
+                match self.bytes(&workspace.join(LEGACY_LOCAL_FILE))? {
+                    Some(bytes) => bytes,
+                    None => return Ok(LocalCalendar::default()),
+                }
+            }
         };
         let state: LocalCalendar =
             serde_json::from_slice(&bytes).map_err(|_| CalendarError::Storage)?;

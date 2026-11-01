@@ -316,7 +316,10 @@ fn invalid_local_writes_preserve_state_and_refuse_external_keys() {
         json!({"local":{"action":"create","event":event}}),
     );
     assert_eq!(created["ok"], true, "{created}");
-    let file = env.root.path().join(".office/calendar/local.json");
+    let file = env
+        .root
+        .path()
+        .join("library/.office/state/local-calendar/local.json");
     let before = std::fs::read(&file).unwrap();
     for change in [
         json!({"action":"delete","key":"external:2026-10-30T10:00:00Z"}),
@@ -362,7 +365,7 @@ fn local_storage_symlinks_and_future_versions_refuse_writes() {
     let outside = tempfile::tempdir().unwrap();
     let sentinel = outside.path().join("sentinel");
     std::fs::write(&sentinel, b"unchanged").unwrap();
-    let dir = env.root.path().join(".office/calendar");
+    let dir = env.root.path().join("library/.office/state/local-calendar");
     std::fs::create_dir_all(&dir).unwrap();
     symlink(&sentinel, dir.join("local.json")).unwrap();
     let change = json!({"local":{"action":"sources","local":true,"external":false}});
@@ -402,4 +405,111 @@ fn local_only_calendar_works_without_reading_or_writing_imported_state() {
     );
     assert_eq!(std::fs::read(dir.join("events.json")).unwrap(), foreign);
     assert!(!dir.join("last_error.json").exists());
+}
+
+fn tree(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries {
+        let path = entry.unwrap().path();
+        out.push(path.clone());
+        if std::fs::symlink_metadata(&path).unwrap().is_dir() {
+            tree(&path, out);
+        }
+    }
+}
+
+#[test]
+fn local_writes_stay_inside_the_library_and_plugin_state() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", json!({}))["ok"], true);
+    let library = env.root.path().join("library");
+    let state = env.root.path().join("state");
+    let mut before = Vec::new();
+    tree(env.root.path(), &mut before);
+    let event =
+        json!({"title":"Local", "start":"2026-10-30T14:00:00Z","end":"2026-10-30T15:00:00Z"});
+    let created = env.tool(
+        "office.calendar-sync",
+        json!({"local":{"action":"create","event":event}}),
+    );
+    assert_eq!(created["ok"], true, "{created}");
+    let key = created["output"]["key"].as_str().unwrap();
+    let edited =
+        json!({"title":"Moved", "start":"2026-10-30T16:00:00Z","end":"2026-10-30T17:00:00Z"});
+    for change in [
+        json!({"action":"update","key":key,"event":edited}),
+        json!({"action":"sources","local":true,"external":false}),
+        json!({"action":"delete","key":key}),
+    ] {
+        let response = env.tool("office.calendar-sync", json!({"local":change}));
+        assert_eq!(response["ok"], true, "{response}");
+    }
+    let mut after = Vec::new();
+    tree(env.root.path(), &mut after);
+    let outside: Vec<&std::path::PathBuf> = after
+        .iter()
+        .filter(|path| !before.contains(path))
+        .filter(|path| !path.starts_with(&library) && !path.starts_with(&state))
+        .collect();
+    assert_eq!(
+        outside,
+        Vec::<&std::path::PathBuf>::new(),
+        "written outside the grants"
+    );
+    assert!(
+        library
+            .join(".office/state/local-calendar/local.json")
+            .is_file()
+    );
+    // The Library's .gitignore keeps the store out of its history.
+    let status = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&library)
+        .env("HOME", env.root.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    assert_eq!(String::from_utf8_lossy(&status.stdout), "");
+}
+
+#[test]
+fn events_at_the_old_workspace_path_stay_visible_until_the_next_change_moves_them() {
+    let env = Env::new();
+    assert_eq!(env.tool("office.init", json!({}))["ok"], true);
+    let legacy = env.root.path().join(".office/calendar/local.json");
+    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    let old = json!({"schema_version":1,"sources":{"local":true,"external":false},"events":[{
+        "key":"local-old","series":"local-old","title":"Authored before the move",
+        "start":"2026-10-30T14:00:00Z","end":"2026-10-30T15:00:00Z","all_day":false,
+        "status":"confirmed","location":"","online":false,"organizer":{"name":"Ada"},"attendees":[],
+        "agenda":"","sensitivity":"normal","recurrence_unsupported":false,"local":true}]});
+    let old = serde_json::to_vec(&old).unwrap();
+    std::fs::write(&legacy, &old).unwrap();
+    let range = json!({"from":"2026-10-26T00:00:00Z","until":"2026-11-02T00:00:00Z"});
+    let listed = env.tool("office.calendar-list", range.clone());
+    assert_eq!(listed["ok"], true, "{listed}");
+    assert_eq!(listed["output"]["events"][0]["key"], "local-old");
+    let event = json!({"title":"New", "start":"2026-10-31T14:00:00Z","end":"2026-10-31T15:00:00Z"});
+    let created = env.tool(
+        "office.calendar-sync",
+        json!({"local":{"action":"create","event":event}}),
+    );
+    assert_eq!(created["ok"], true, "{created}");
+    let moved: Value = serde_json::from_slice(
+        &std::fs::read(
+            env.root
+                .path()
+                .join("library/.office/state/local-calendar/local.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(moved["events"].as_array().unwrap().len(), 2);
+    assert_eq!(moved["sources"], json!({"local":true,"external":false}));
+    // The old file is only read, never rewritten or removed.
+    assert_eq!(std::fs::read(&legacy).unwrap(), old);
+    let listed = env.tool("office.calendar-list", range);
+    assert_eq!(listed["output"]["events"].as_array().unwrap().len(), 2);
 }
