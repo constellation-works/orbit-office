@@ -218,3 +218,33 @@ fn plugin_tree_has_no_symlinks_and_a_launcher() {
     #[cfg(not(unix))]
     let _ = metadata;
 }
+
+#[test]
+fn write_grants_cover_every_workspace_directory_office_writes() {
+    // The sandbox refuses writes outside the requested grants, and these
+    // tests run Office unsandboxed, so an uncovered directory fails only once
+    // installed (the scribe parse directory did, ORB-20820).
+    let manifest = manifest();
+    let line = manifest
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("write: "))
+        .expect("the manifest requests fs write grants");
+    let grants: Vec<String> = serde_json::from_str(line).expect("write grants are a flow list");
+    let workspace = std::path::Path::new("/workspace");
+    let granted: Vec<PathBuf> = grants
+        .iter()
+        .filter_map(|grant| grant.strip_prefix("{{workspace}}"))
+        .map(|rest| workspace.join(rest.trim_start_matches('/')))
+        .collect();
+    for written in [
+        "library",
+        office_core::domain::source::conversation::scribe::PARSE_DIR,
+    ] {
+        let path = workspace.join(written);
+        assert!(
+            granted.iter().any(|root| path.starts_with(root)),
+            "{written} is covered by a manifest write grant: {grants:?}"
+        );
+    }
+}
