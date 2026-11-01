@@ -132,6 +132,76 @@ only the answer, not the search. The same tool serves two more entry
 points with the same rules: `office recall "<question>"` from a terminal,
 and a Recall box in the web app.
 
+## The Scribe window
+
+The user sees what the scribe writes as it writes it, corrects it in place
+and asks it questions, in one small window beside their conversations. The
+window is a view over the same Library and tools; it adds no store and no
+second writer.
+
+### Two hosts, one screen
+
+- **Web app:** a compact **Scribe** screen in the orbit-office app
+  (`/scribe`), laid out for a narrow window (from 320 px wide) and usable
+  as an installed PWA window. It works for every provider and for terminal
+  sessions.
+- **Claude desktop mod:** a pane beside the chat (`$.ui.open`), shipped
+  with the Claude Code plugin. It shows the same three parts for the
+  session it sits in, using the session identity the engine supplies, and
+  links to the web screen for everything else. It reaches Office the same
+  way the plugin's hooks do, through `orbit tool run office.*`; it holds no
+  Library path or credentials.
+
+### What it shows
+
+- **Feed:** captured entries, newest first, as they land: kind, the copied
+  line, time and a link to its anchor (and, in the mod, to the line's place
+  in the conversation where the surface supports it). The current
+  conversation comes first; others are grouped by title and project, the
+  same fields recall uses. It refreshes by polling, like the rest of the
+  app; there is no event bus.
+- **Status line:** switch state for the current session, the last pass
+  ("2 min ago, 3 entries"), and a pending pass if one is queued.
+- **Controls:** the session's switch, **Capture now** (`/scribe now`), and
+  the session title (`/scribe title`).
+- **Ask box:** a question answered by recall's rules: cited, conversation
+  named with its resume command, live status for refs, "not captured" with
+  coverage. Answers open feed entries and conversations by link.
+
+### Corrections
+
+Each feed entry offers **Not a decision**, **Wrong kind…**, **Wrong
+wording** and **Remove**; the window also offers **Missed something…**
+with a free-text box. The log stays append-only: a correction is a new
+`correction` entry in the same source that names the corrected anchor and
+the user's choice, written through `office.capture` with `append_to`.
+
+- Readers apply corrections: the brief, the digest, `office.recall` and the
+  feed treat a corrected entry as its corrected kind, or as absent after
+  **Remove**, and show that it was corrected.
+- **Missed something…** writes the user's text as a `direction`,
+  `decision` or `fact` entry chosen by the user, verbatim, marked
+  `by: user`.
+- Repeated corrections of the same kind are a signal for a
+  `knowledge_update` proposal to `dom-scribe-rules`, quoting the corrected
+  entries ([proposals.md](./proposals.md#signals)).
+
+### Pace while the window is open
+
+The feed is only as fresh as the last pass. While a window is open on a
+session, its debounce tightens to `max_turns: 2` (the time bound unchanged),
+and **Capture now** covers the rest. With no window open, the defaults of
+[sessions.md](./sessions.md#trigger-and-debounce) apply.
+
+### Answering in each host
+
+- In Claude Code, `/recall` and the mod's ask box use the `recall` subagent.
+- In the web app, the server makes one low-cost model call through the
+  Models port, so the privacy routing of
+  [models-and-privacy.md](./models-and-privacy.md#routing-rules) applies:
+  private sources are answered by reference only unless an open-weights
+  route is configured.
+
 ## Backfill
 
 `/scribe backfill [--since <date>]` queues SessionEnd extraction for the
@@ -142,7 +212,8 @@ reaches.
 
 ## Invariants
 
-- One writer: the Library is written only through `office.capture`.
+- One writer: the Library is written only through `office.capture`;
+  the Scribe window writes corrections through it too.
 - Answers come only from captured entries and live ref status.
 - Raw transcripts never leave the host that holds them; only captured
   entries reach the Library and its sync.

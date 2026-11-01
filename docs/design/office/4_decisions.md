@@ -1860,6 +1860,39 @@ is the same move as a standalone step.
   its legacy copy until a person resolves it.
 
 
+## The scribe is watched and corrected in a small window
+
+**Recorded:** 2026-11-01 · approved by the user in conversation
+**Code anchors:** none yet; [specs/recall.md](./specs/recall.md#the-scribe-window)
+
+### Context
+
+A scribe the user cannot watch is a black box: a misread line surfaces
+only when a later recall answer is wrong. The user asked for a small chat
+window where they see what the scribe writes and can ask it questions,
+and wanted a Claude desktop app mod in particular.
+
+### Decision
+
+- One Scribe screen in the web app, sized for a narrow PWA window, and a
+  Claude desktop mod pane beside the chat for the current session, both
+  views over the same Library and tools.
+- Corrections are new `correction` entries naming the corrected anchor;
+  readers apply them. The log stays append-only.
+- An open window tightens that session's debounce; **Capture now** covers
+  the rest.
+
+### Consequences
+
+- The user can catch and fix capture errors while the conversation is
+  fresh, and corrections feed the rules page.
+- `correction` is a new entry kind that the brief, digest, recall and feed
+  must honour; an older reader would show corrected entries uncorrected.
+- The ask box in the web app makes a model call on the app server, under
+  the existing privacy routing.
+- Cost: more passes while a window is open, and one model call per
+  question.
+
 ## One scribe per user, queried through recall
 
 **Recorded:** 2026-11-01 · approved by the user in conversation

@@ -48,8 +48,11 @@ Source: spec §13.1–§13.2 and §13.4.
 | **Settings** | Library settings; **Shared library** (remote, branch and member name, **Sync now**, the last sync in words; [shared-library.md](./shared-library.md#app)); **Private route** (choose the endpoint kind, URL, model and label; the token goes straight to `orbit plugin secret set`; the check's capabilities in plain words; "Built with Muse Spark Open"; [models-and-privacy.md](./models-and-privacy.md#the-private-route)); **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again; a secret address takes the feed's full address; a sign-in-with-a-code connection shows the user code and verification address, then its signed-in state, and "Sign in again" once it reads `auth_expired`); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
 | **Insights** | Automation ratio line, metric tiles, "what got automated" |
 | **Review** | Generated reviews with their citations, and a regenerate button |
+| **Scribe** | A compact window over the scribe: the live feed of captured entries for the current and recent conversations, inline corrections, the session switch and **Capture now**, and an ask box answered by recall ([recall.md](./recall.md#the-scribe-window)) |
 
 There is no Chat screen: conversation happens in the user's agent CLI.
+The Scribe screen's ask box answers questions about captured conversations;
+it is not a conversation with an orchestrator.
 Citations the agent prints are `http://localhost` links carrying the
 source anchor; source links open the Source screen using `/?source=<id>#t=hh:mm:ss` (or
 `#L`, `#frame=` and `#chapter=` anchors).
