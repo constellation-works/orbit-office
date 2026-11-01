@@ -843,32 +843,51 @@ fn brief_message(messages: &[Message]) -> Option<&Message> {
         .find(|m| super::is_side_session_brief(&m.text))
 }
 
+/// The desktop app's placeholder title for a session nobody has named:
+/// `New session`, case-insensitive, with or without one trailing number.
+/// It names nothing, so it counts as no title.
+fn placeholder_title(title: &str) -> bool {
+    let mut words = title.split_whitespace();
+    if !words
+        .next()
+        .is_some_and(|word| word.eq_ignore_ascii_case("new"))
+        || !words
+            .next()
+            .is_some_and(|word| word.eq_ignore_ascii_case("session"))
+    {
+        return false;
+    }
+    let rest: Vec<&str> = words.collect();
+    rest.len() <= 1
+        && rest
+            .iter()
+            .all(|word| word.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// A title that can name the file: non-blank and not a placeholder.
+fn named_title(title: Option<&str>) -> Option<&str> {
+    title.filter(|t| !t.trim().is_empty() && !placeholder_title(t))
+}
+
 /// Slug source for a new file: an explicit title wins, then a set
-/// custom title (the latest `customTitle`) for every session; a side
-/// session then takes the transcript's title/summary record, else its
-/// brief's task-title line, else the brief's first prose sentence
-/// after the preamble (never the preamble itself); every other
-/// session takes Daniel's first message.
+/// custom title (the latest `customTitle`, unless it is a placeholder)
+/// for every session; a side session then takes the transcript's
+/// title/summary record (again, unless a placeholder), else its brief's
+/// task-title line, else the brief's first prose sentence after the
+/// preamble (never the preamble itself); every other session takes
+/// Daniel's first message.
 fn planned_slug(parsed: &Parsed, messages: &[Message], title: Option<&str>) -> String {
     if let Some(title) = title {
         return slug(title);
     }
-    if let Some(title) = parsed
-        .custom_title
-        .as_deref()
-        .filter(|t| !t.trim().is_empty())
-    {
+    if let Some(title) = named_title(parsed.custom_title.as_deref()) {
         let value = slug(title);
         if !value.is_empty() {
             return value;
         }
     }
     if let Some(brief) = brief_message(messages) {
-        if let Some(title) = parsed
-            .session_title
-            .as_deref()
-            .filter(|t| !t.trim().is_empty())
-        {
+        if let Some(title) = named_title(parsed.session_title.as_deref()) {
             let value = slug(title);
             if !value.is_empty() {
                 return value;
