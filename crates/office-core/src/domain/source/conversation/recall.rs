@@ -523,10 +523,17 @@ pub fn select(files: &[LibraryText], query: &Query) -> Result<Matches> {
             } else {
                 refs.get(&anchor[1..]).cloned().unwrap_or_default()
             };
+            // The session id is a searchable term so a client sitting in a
+            // session (the desktop mod pane) can list that session's entries
+            // by querying its own engine-supplied session identity.
             let haystack = format!(
-                "{} {} {}",
+                "{} {} {} {}",
                 meta.title,
                 entry.text,
+                fields
+                    .get("session_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""),
                 refs.iter()
                     .map(|r| r.id.as_str())
                     .collect::<Vec<_>>()
@@ -564,6 +571,7 @@ pub fn select(files: &[LibraryText], query: &Query) -> Result<Matches> {
             "last_active_at",
             "resume",
             "title_by",
+            "session_id",
         ] {
             source[key] = fields.get(key).cloned().unwrap_or(Value::Null);
         }

@@ -267,6 +267,33 @@ fn recall_pr_refs_report_merged_and_name_unavailable_or_failed_causes() {
 }
 
 #[test]
+fn recall_by_session_id_lists_only_that_session_newest_first() {
+    let library = FakeLibrary::initialized();
+    library.write_document(Path::new("sources/conversation/2026/10/src-mine/source.md"), "---\nid: src-mine\nkind: conversation\ntitle: Mine\nproject: /work/a\nsensitivity: normal\ncaptured_at: \"2026-10-28T00:00:00Z\"\nsession_id: sess-mine-1\nentry_refs: {}\n---\n[2026-10-28T10:00:00Z] decision: First captured.\n[2026-10-28T11:00:00Z] fact: Second captured.\n").unwrap();
+    source(
+        &library,
+        "src-other",
+        "Other",
+        "/work/a",
+        false,
+        "[2026-10-28T12:00:00Z] decision: Someone else.\n",
+        json!({}),
+    );
+    let (ports, _, _, _pr) = fixture(library);
+    let response = call(&ports, json!({"question":"sess-mine-1"}));
+    assert_eq!(response["ok"], true, "{response}");
+    let out = &response["output"];
+    let texts: Vec<&str> = out["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(texts, ["Second captured.", "First captured."]);
+    assert_eq!(out["sessions"][0]["session_id"], "sess-mine-1");
+}
+
+#[test]
 fn conformance_golden_runs_through_public_dispatch() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../plugin/.orbit-plugin/tests/conformance/recall.yaml");

@@ -258,6 +258,24 @@ class PluginBehavior(unittest.TestCase):
         self.assertEqual(len(self.calls("orbit.task.add")), 1)
         self.assertEqual(self.command("backfill")["queued_count"], 0)
 
+    def test_window_open_heartbeat_tightens_turn_debounce(self):
+        self.hook("SessionStart")
+        self.hook("Stop")
+        self.finish_pass()
+        # Two new turns inside the time window: debounced at the default
+        # bound of eight, queued at the window-open bound of two.
+        self.write_transcript(3)
+        self.assertEqual(self.hook("Stop").returncode, 0)
+        self.assertEqual(len(self.calls("orbit.task.add")), 1)
+        pane = subprocess.run(
+            [sys.executable, "-I", str(PLUGIN / "scripts/pane.py"),
+             json.dumps({"session_id": self.sid, "action": "heartbeat"})],
+            text=True, env=self.env, cwd=self.root, capture_output=True, timeout=5)
+        self.assertEqual(pane.returncode, 0, pane.stderr)
+        self.assertEqual(json.loads(pane.stdout), {"window_open": True})
+        self.assertEqual(self.hook("Stop").returncode, 0)
+        self.assertEqual(len(self.calls("orbit.task.add")), 2)
+
     def test_tool_results_are_not_new_user_turns_for_debounce(self):
         self.hook("Stop")
         self.finish_pass()

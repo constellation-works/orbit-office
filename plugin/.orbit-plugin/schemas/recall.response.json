@@ -161,6 +161,13 @@
               null
             ]
           },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Engine session identity of the conversation, searchable as a recall question term so the session's own client can list its entries."
+          },
           "content_withheld": {
             "type": "boolean"
           }

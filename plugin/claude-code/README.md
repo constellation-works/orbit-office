@@ -123,11 +123,48 @@ it merely because the caller timed out. State is under `.orbit/tmp/scribe/`;
 retaining it is necessary for queue idempotency. Do not delete queued snapshots
 until capture succeeds; host retention owns later removal.
 
+## Desktop pane
+
+The plugin also ships a Claude desktop mod (`mod/scribe-pane.tsx`, named in
+`hooks/hooks.json` under `modules`): a pane beside the chat for the session
+it sits in. It opens on session start (or with the `scribe-pane` command),
+shows that session's captured entries newest first with kind, time,
+`src-…#L<n>` anchor and corrected/by markers, a status line (switch, title,
+last queued pass, entry count), Turn on/off, **Capture now** and title
+controls, inline corrections (**Not a decision**, **Remove**, **Wrong
+wording…**, **Wrong kind…**), a **Missed something…** box (kind chosen with
+the Missed kind selector, stored verbatim with `by: user`), an ask box and
+a link to the web Scribe screen for other conversations (the app's default
+local address, `http://localhost:4317/scribe`).
+
+The pane reaches Office only through `orbit tool run office.*` run with
+`$.process`: the feed is `office.recall` queried with the engine-supplied
+session id (recall matches it against each source's session identity and
+returns that session's entries newest first), corrections are one
+`office.capture` `append_to` append per choice, and switch/Capture
+now/title go through the plugin's structured pane control
+(`scripts/pane.py`, the same command path as the `scribe` MCP tool). The
+ask box spawns the plugin's `recall` subagent; when a surface returns no
+subagent answer it renders the same cited evidence from `office.recall`
+directly. It refreshes on a 30-second timer and after each turn. When
+Orbit is unreachable it shows a single `scribe unavailable` line with a
+Retry button — no error loop, and the session stays responsive.
+
+While the pane is open it keeps the window-open heartbeat: every refresh
+runs the pane control's `heartbeat` action, which touches
+`.orbit/tmp/scribe/<session-id>.window-open`; the end-of-turn hook reads
+that file and, while it is under two minutes old, tightens the live
+debounce to two new turns (the time bound unchanged), as in
+`docs/design/office/specs/recall.md` § "Pace while the window is open".
+The web Scribe screen is expected to refresh the same heartbeat file for
+its session when it is built.
+
 ## Verification
 
 ```sh
 make -C plugin/claude-code test
 claude plugin validate plugin/claude-code/.claude-plugin/plugin.json
+claude plugin test plugin/claude-code
 ```
 
 `make ci-fast` includes the Python syntax gate; `make test` includes this
