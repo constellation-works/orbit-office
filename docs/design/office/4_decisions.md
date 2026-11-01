@@ -2,7 +2,7 @@
 title: office — Decisions
 owner: daniel
 last_updated: 2026-11-01
-last_validated: 2026-10-26
+last_validated: 2026-11-01
 status: Draft
 feature: office
 doc_role: decisions
@@ -681,6 +681,16 @@ where the last one stopped. The alternatives considered:
   exception that every metric must respect. A day's private items are only
   listed by reference when no open-weights endpoint is configured.
 
+### Daily digest definitions ownership
+
+The daily digest adds only its job and routine entries beside the existing
+`spec.definitions` registrations, in addition to enabling its reserved tool
+block. This is the operator-authorized narrow exception to the
+ARCHITECTURE.md integrator ownership rule for this feature. The one-step job
+inlines the deterministic `plugin.tool_call` activity, avoiding another shared
+activity registration. The routine uses the accepted routine schema without
+`required_tools`; `config.tool: office.digest` is its explicit tool reference.
+
 ## About pages start from templates and an onboarding interview, never from stubs
 
 **Recorded:** 2026-10-26
@@ -1291,43 +1301,6 @@ considered:
 
 The template's note-store decisions (persistence module, one module per noun, audit guard, `--json` alias, list envelope, store lock, store format registry, owner-only store state, malformed-note handling, environment fallbacks) were removed with the note domain. They return, rewritten for the office domain, only when the feature they govern lands.
 
-## Task References
-
-- [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
-- [ORB-13117] — created the Rust CLI template this workspace was generated from.
-- [ORB-13134] — hardened the template's gates and goldens.
-- [ORB-18729] — built the source view, upload and paste capture, including citation anchor landing.
-- [ORB-18796] — built the gateway plugin and found Orbit's verb rule.
-- [ORB-18719] — built `office.search` and `office.attach`, and decided where attach stages its copies.
-- [ORB-19747] — filed every meeting to-do as `owner:you` and left promotion to agent work to the orchestrator.
-- [ORB-19748] — marked `unused_automation` as planned across the spec, glossary and orchestrator reference.
-- [ORB-19421] — built the app's shared-library card in Needs you.
-- [ORB-19751] — registered Muse Code with `--agent muse` in the installer.
-- [ORB-19752] — withheld private content from MCP-visible read tools.
-- [ORB-20096] — enabled scoped agent permissions for Office capture and proposals.
-- [ORB-20228] — stopped the installer copying office skills the Orbit plugin already links.
-- [ORB-20242] — moved conversation evidence to session-transcript extraction on a cheap crew.
-- [ORB-20243] — partitioned Library sources by kind.
-- [ORB-20246] — kept local calendar events as workspace writes.
-- [ORB-20247] — partitioned Library proposals by status.
-- [ORB-20245] — made the app report a missing approval authority plainly instead of granting itself Operator.
-- [ORB-20362] — landed Orbit's scoped, audited application authority for user-approved tool calls.
-- [ORB-20363] — wires the office app's approval actions to that scoped application authority.
-
-> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
-
-
-### Daily digest definitions ownership
-
-The daily digest adds only its job and routine entries beside the existing
-`spec.definitions` registrations, in addition to enabling its reserved tool
-block. This is the operator-authorized narrow exception to the
-ARCHITECTURE.md integrator ownership rule for this feature. The one-step job
-inlines the deterministic `plugin.tool_call` activity, avoiding another shared
-activity registration. The routine uses the accepted routine schema without
-`required_tools`; `config.tool: office.digest` is its explicit tool reference.
-
-
 ## Proposal acceptance and Orbit auto-tasks
 
 On 2026-10-27 Daniel selected auto-tasks for recurring proposals: Orbit has
@@ -1777,7 +1750,7 @@ successful proposal verification or be repaired by broadening authority.
 ## Local calendar events are workspace writes
 
 **Recorded:** 2026-10-30 · [ORB-20246]
-**Code anchors:** `office-core/domain/calendar/local.rs`; `office-store/src/calendar.rs`;
+**Code anchors:** `office-core/src/domain/calendar/local.rs`; `office-store/src/calendar.rs`;
 `office-tools/src/tools/calendar/{sync,list}.rs`; `screens/calendar/editor.ts`;
 `specs/calendar.md`.
 
@@ -2131,3 +2104,29 @@ it", while the plugin-surface inventory says Operator/Runner only.
 - When the Orbit application identity lands, the app wires its credential to
   the Orbit child process, a server-route test exercises accept through the
   real authority path, and this decision and the proposal spec are revised.
+
+## Task References
+
+- [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
+- [ORB-13117] — created the Rust CLI template this workspace was generated from.
+- [ORB-13134] — hardened the template's gates and goldens.
+- [ORB-18729] — built the source view, upload and paste capture, including citation anchor landing.
+- [ORB-18796] — built the gateway plugin and found Orbit's verb rule.
+- [ORB-18719] — built `office.search` and `office.attach`, and decided where attach stages its copies.
+- [ORB-19747] — filed every meeting to-do as `owner:you` and left promotion to agent work to the orchestrator.
+- [ORB-19748] — marked `unused_automation` as planned across the spec, glossary and orchestrator reference.
+- [ORB-19421] — built the app's shared-library card in Needs you.
+- [ORB-19751] — registered Muse Code with `--agent muse` in the installer.
+- [ORB-19752] — withheld private content from MCP-visible read tools.
+- [ORB-20096] — enabled scoped agent permissions for Office capture and proposals.
+- [ORB-20228] — stopped the installer copying office skills the Orbit plugin already links.
+- [ORB-20242] — moved conversation evidence to session-transcript extraction on a cheap crew.
+- [ORB-20243] — partitioned Library sources by kind.
+- [ORB-20246] — kept local calendar events as workspace writes.
+- [ORB-20247] — partitioned Library proposals by status.
+- [ORB-20245] — made the app report a missing approval authority plainly instead of granting itself Operator.
+- [ORB-20362] — landed Orbit's scoped, audited application authority for user-approved tool calls.
+- [ORB-20363] — wires the office app's approval actions to that scoped application authority.
+- [ORB-20685] — built the live scribe's incremental capture and `Note:` commands.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
