@@ -312,8 +312,8 @@ Office adds no scheduler of its own.
 - **Your own to-dos** (`owner:you`) can carry a time too. They only appear on
   the calendar; nothing dispatches them.
 - **New to-dos with a time** come from the orchestrator, which passes
-  `not_before` to `orbit.task.add`. The app has no create form; it schedules
-  to-dos that already exist.
+  `not_before` to `orbit.task.add`. The app's **New to-do** form creates a
+  to-do without a time; **Schedule…** then sets its time like any other.
 
 ### Scheduled-task implementation
 

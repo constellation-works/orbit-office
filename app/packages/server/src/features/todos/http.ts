@@ -5,7 +5,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { OrbitError, type OrbitToolClient } from "../../orbit/client.js";
-import { closeTodo, loadTodos, scheduleTodo, TodoCloseError } from "./service.js";
+import { closeTodo, createTodo, loadTodos, scheduleTodo, TodoCloseError } from "./service.js";
 
 const MAX_BODY_BYTES = 65_536;
 
@@ -40,6 +40,34 @@ export async function handleClose(
     console.error("todos: close failed", error instanceof OrbitError ? error.code : "unknown");
     send(response, 502, { error: "unavailable" });
   }
+}
+
+export async function handleCreate(
+  client: OrbitToolClient,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  try {
+    const title = titleFromBody(await readJsonBody(request));
+    if (title === null) throw new TodoCloseError(400, "invalid_input");
+    const created = await createTodo(client, title);
+    send(response, 200, { ok: true, id: created.id, title: created.title });
+  } catch (error) {
+    if (error instanceof TodoCloseError) {
+      send(response, error.status, { error: error.code });
+      return;
+    }
+    console.error("todos: create failed", error instanceof OrbitError ? error.code : "unknown");
+    send(response, 502, { error: "unavailable" });
+  }
+}
+
+/** `{title}` and nothing else: an unknown key is refused, never ignored. */
+function titleFromBody(body: unknown): string | null {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return null;
+  const record = body as Record<string, unknown>;
+  if (Object.keys(record).some((key) => key !== "title")) return null;
+  return typeof record.title === "string" ? record.title : null;
 }
 
 export async function handleSchedule(

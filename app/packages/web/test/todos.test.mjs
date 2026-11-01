@@ -196,6 +196,57 @@ test("you can close your to-dos and an agent to-do offers no close action", () =
   assert.equal(youButtons[0].textContent, "Closing");
 });
 
+test("the create form adds a to-do and refuses an empty title without writing", async () => {
+  const created = [];
+  const root = connectedRoot();
+  drawTodoScreen(root, MODEL, { onCreate: async (title) => { created.push(title); } });
+  const form = byClass(root, "todos-create")[0];
+  assert.ok(form, "the create form shows above the columns");
+  assert.equal(form.attrs["aria-label"], "New to-do");
+  const input = collect(form, (node) => node.tagName === "INPUT")[0];
+  const button = collect(form, (node) => node.tagName === "BUTTON")[0];
+  assert.equal(button.textContent, "Add to-do");
+  const status = byClass(form, "todos-create-status")[0];
+  input.value = "   ";
+  form.listeners.submit[0]({ preventDefault() {} });
+  assert.equal(status.textContent, "Give the to-do a title.");
+  assert.deepEqual(created, []);
+  input.value = "  Buy stamps  ";
+  form.listeners.submit[0]({ preventDefault() {} });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  // The controller trims on the server; the form hands the raw title through trim check only.
+  assert.deepEqual(created, ["Buy stamps"]);
+});
+
+test("creating through the screen posts to the create route and shows the new to-do", async () => {
+  const calls = [];
+  let listed = MODEL;
+  globalThis.fetch = async (path, options = {}) => {
+    calls.push({ path, options });
+    if (path === "/api/todos/create") {
+      const title = JSON.parse(options.body).title;
+      listed = { ...MODEL, you: [...MODEL.you, { id: "ORB-NEW-1", title, source: null, knowledge: [], closable: true, scheduled: null, schedulable: true }] };
+      return new Response(JSON.stringify({ ok: true, id: "ORB-NEW-1", title }));
+    }
+    return new Response(JSON.stringify(listed));
+  };
+  const root = connectedRoot();
+  await screen.render(root);
+  const form = byClass(root, "todos-create")[0];
+  const input = collect(form, (node) => node.tagName === "INPUT")[0];
+  input.value = "Buy stamps";
+  // Simulate typing so the poll draft is recorded, then submit.
+  for (const fn of input.listeners.input ?? []) fn();
+  form.listeners.submit[0]({ preventDefault() {} });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const post = calls.find((call) => call.path === "/api/todos/create");
+  assert.equal(post.options.method, "POST");
+  assert.deepEqual(JSON.parse(post.options.body), { title: "Buy stamps" });
+  assert.match(root.textContent, /Buy stamps/);
+  root.replaceChildren();
+});
+
 test("a load failure and a close both go through the app server", async () => {
   const calls = [];
   globalThis.fetch = async (path, options = {}) => {

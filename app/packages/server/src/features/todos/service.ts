@@ -60,6 +60,30 @@ export async function closeTodo(client: OrbitToolClient, id: string): Promise<vo
   }
 }
 
+export const MAX_TODO_TITLE_LENGTH = 500;
+
+/**
+ * Create one of the user's own to-dos through `orbit.task.add`.
+ * The title is trimmed; an empty or over-long title is refused and
+ * nothing is created. The new task is tagged `owner:you` so it appears
+ * in the You column of `GET /api/todos`.
+ */
+export async function createTodo(client: OrbitToolClient, title: string): Promise<{ id: string; title: string }> {
+  const trimmed = typeof title === "string" ? title.trim() : "";
+  if (trimmed === "" || trimmed.length > MAX_TODO_TITLE_LENGTH) throw new TodoCloseError(400, "invalid_input");
+  const result = await orbitCall(client, "orbit.task.add", {
+    title: trimmed,
+    description: trimmed,
+    tags: ["owner:you"],
+    complexity: "low",
+    type: "chore",
+  });
+  if (result === null || typeof result !== "object" || !("id" in result) || typeof result.id !== "string" || !isTaskId(result.id)) {
+    throw new TodoCloseError(502, "unavailable");
+  }
+  return { id: result.id, title: trimmed };
+}
+
 /**
  * Set an open to-do's scheduled start, or clear it with null, through
  * `orbit.task.update` acting as the user. Yours or an agent's alike; a

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { createOrbitClient } from "../dist/orbit/client.js";
 import { createTodoFeature, feature } from "../dist/features/todos/index.js";
 import { CLOSED_FROM_TODOS, closePlan, todoColumns } from "../dist/features/todos/model.js";
-import { closeTodo, loadTodos, scheduleTodo, TodoCloseError } from "../dist/features/todos/service.js";
+import { closeTodo, createTodo, loadTodos, scheduleTodo, TodoCloseError } from "../dist/features/todos/service.js";
 
 const YOU = {
   id: "ORB-YOU-1",
@@ -78,6 +78,19 @@ function client(tasks, { failOn } = {}) {
       }
       if (name === "orbit.task.show") {
         return rows.find((task) => task.id === input.id) ?? null;
+      }
+      if (name === "orbit.task.add") {
+        const created = {
+          id: `ORB-NEW-${rows.length + 1}`,
+          title: input.title,
+          status: "backlog",
+          terminal: false,
+          tags: [...(input.tags ?? [])],
+          created_at: "2026-10-26T15:00:00Z",
+          artifacts: [],
+        };
+        rows.push(created);
+        return created;
       }
       if (name === "orbit.task.update") {
         const task = rows.find((item) => item.id === input.id);
@@ -281,6 +294,45 @@ test("the routes list and close through the Orbit client", async () => {
   assert.equal(bad.json().error, "invalid_input");
 });
 
+test("creating a to-do adds an owner:you task that the list then shows", async () => {
+  const orbit = client([YOU, AGENT]);
+  const created = await createTodo(orbit, "  Buy stamps  ");
+  assert.equal(created.title, "Buy stamps");
+  assert.match(created.id, /^ORB-NEW-/);
+  const add = orbit.calls.find((call) => call.name === "orbit.task.add");
+  assert.equal(add.input.title, "Buy stamps");
+  assert.deepEqual(add.input.tags, ["owner:you"]);
+  const listed = await loadTodos(orbit);
+  assert.ok(listed.you.some((item) => item.id === created.id && item.title === "Buy stamps" && item.closable));
+
+  for (const bad of ["", "   ", "x".repeat(501)]) {
+    await assert.rejects(createTodo(orbit, bad), (error) => error instanceof TodoCloseError && error.code === "invalid_input");
+  }
+  assert.equal(orbit.calls.filter((call) => call.name === "orbit.task.add").length, 1, "a refused title creates nothing");
+});
+
+test("the create route creates a to-do, refusing empty titles and unknown keys", async () => {
+  const orbit = client([YOU, AGENT]);
+  const routes = createTodoFeature(orbit).routes;
+  const create = routes.find((route) => route.path === "/api/todos/create");
+  assert.equal(create.method, "POST");
+  const made = responseCapture();
+  await create.handle(postRequest({ title: "Buy stamps" }), made);
+  assert.equal(made.status, 200);
+  assert.equal(made.json().ok, true);
+  assert.equal(made.json().title, "Buy stamps");
+  const listed = await loadTodos(orbit);
+  assert.ok(listed.you.some((item) => item.title === "Buy stamps"));
+
+  for (const body of [{ title: "  " }, { title: "Ok", extra: 1 }, { title: 42 }, {}, "not json {"]) {
+    const refused = responseCapture();
+    await create.handle(postRequest(body), refused);
+    assert.equal(refused.status, 400, JSON.stringify(body));
+    assert.equal(refused.json().error, "invalid_input");
+  }
+  assert.equal(orbit.calls.filter((call) => call.name === "orbit.task.add").length, 1);
+});
+
 test("the schedule route sets and clears a time, refusing unknown keys and started to-dos", async () => {
   const orbit = client([YOU, AGENT]);
   const schedule = createTodoFeature(orbit).routes.find((route) => route.path === "/api/todos/schedule");
@@ -395,6 +447,13 @@ if (tool === "orbit.task.list") {
 }
 if (tool === "orbit.task.show") {
   process.stdout.write(JSON.stringify(tasks.find((task) => task.id === input.id) ?? null) + "\\n");
+  process.exit(0);
+}
+if (tool === "orbit.task.add") {
+  const created = { id: "ORB-NEW-SUB", title: input.title, status: "backlog", terminal: false, tags: input.tags ?? [], created_at: "2026-10-26T15:00:00Z", artifacts: [] };
+  tasks.push(created);
+  writeFileSync(join(state, "tasks.json"), JSON.stringify(tasks));
+  process.stdout.write(JSON.stringify(created) + "\\n");
   process.exit(0);
 }
 if (tool === "orbit.task.update") {

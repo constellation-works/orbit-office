@@ -41,7 +41,7 @@ Source: spec §13.1–§13.2 and §13.4.
 | **Today** | Library setup card when missing; otherwise Next meeting (time and prep, hidden when the day's meetings are over), Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; a shared-library sync's updates, conflicts and skipped documents as one card; the user's to-dos), Agents working on (one line each, live), Done today (openable results), and a drop zone |
 | **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
 | **Calendar** | Week view (day view on a phone) of the user's meetings, authored locally or read from Outlook or an ICS feed, with each meeting's prep and capture state in words and the routines' runs as margin marks, and tasks scheduled for a date as blocks; a meeting opens its attendees, agenda, cited prep brief and **Add notes or transcript** ([calendar.md](./calendar.md#app); local events [ORB-20246]) |
-| **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge, and its scheduled time when it has one; **Schedule…** sets or clears the time ([calendar.md](./calendar.md#scheduled-tasks)) |
+| **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge, and its scheduled time when it has one; a **New to-do** form creates one of your own; **Schedule…** sets or clears the time ([calendar.md](./calendar.md#scheduled-tasks)) |
 | **Agent work** | The Orbit tasks agents are carrying across the office workspace and followed workspaces: Working now, In review, Queued and Done today groups, with a workspace filter and an Open in Orbit link |
 | **Routines** | The next hour as one track (a mark per scheduled run, hollow where a paused routine skips its slot), then On and Paused tables: a switch, the routine and what it does, when it runs (plain words, with the cron line beneath), when it runs next (worked out from the schedule in the computer's time zone) and how its last time went (from `last_fire` in `orbit.auto_task.list`: when, and its task's state in words; task ids stay on the server). Retention settings below. Scheduled routines use the same tables, with their last run outcome when available. Only shipped component definitions are listed, with a count of hidden Orbit developer routines (see below). Full run history and produced outputs are managed in Orbit. |
 | **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meeting sources and other Library documents; task links are deferred until a page-citation read exists); history for every page and artifact; "Shared" and "Shared · from <member>" labels and a **Share with the team** switch on page, source and artifact views ([shared-library.md](./shared-library.md#app)) |
@@ -304,6 +304,16 @@ read-only: it offers no task actions.
 To-dos are built ([ORB-18728]). `GET /api/todos` lists You and Agents
 columns; each to-do shows its source and attached knowledge, and the user
 can close their own. An agent to-do has no close action.
+
+A **New to-do** form above the columns creates one of the user's own
+to-dos. `POST /api/todos/create` takes exactly `{title}` (a trimmed,
+non-empty title of at most 500 characters; any other key or an empty
+title is `invalid_input`, 400) and creates it with
+`orbit.task.add` tagged `owner:you`, so the new to-do appears in the
+You column on the next `GET /api/todos` and can be closed there.
+`POST /api/todos` is the same create. A failed creation is
+`unavailable` (502). The poll waits while a draft title is being typed,
+so a reread cannot lose it.
 
 Each to-do also carries `scheduled` (its `not_before`, or null) and
 `schedulable` (its status is `proposed`, `backlog`, `someday` or `blocked`).
