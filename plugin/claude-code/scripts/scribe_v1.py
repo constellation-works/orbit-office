@@ -286,7 +286,7 @@ class V1:
 
     @staticmethod
     def head(path: Path) -> dict | None:
-        """The first conversational record with a session id, cwd and time."""
+        """The first conversational record with a session id, cwd, time and entrypoint."""
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(fd, "rb") as stream:
             info = os.fstat(stream.fileno())
@@ -303,7 +303,8 @@ class V1:
                 if (isinstance(record, dict) and record.get("type") in ("user", "assistant")
                         and not record.get("isSidechain") and isinstance(record.get("cwd"), str)
                         and isinstance(record.get("sessionId"), str) and isinstance(record.get("timestamp"), str)):
-                    return {"session_id": record["sessionId"], "cwd": record["cwd"], "timestamp": record["timestamp"]}
+                    return {"session_id": record["sessionId"], "cwd": record["cwd"], "timestamp": record["timestamp"],
+                            "entrypoint": record.get("entrypoint")}
         return None
 
     def stage(self, sid: str, transcript: str, cwd: str) -> Path | None:
@@ -797,6 +798,7 @@ class V1:
         done = cache.get("done", {})
         candidates, scribed = [], 0
         not_sessions: list[str] = []
+        headless: list[str] = []
         refusals: dict[str, dict] = {}
 
         def note_refusal(error: BaseException, example: str) -> None:
@@ -818,7 +820,8 @@ class V1:
             return " {} refused: {}.".format(total, groups)
 
         def totals() -> dict:
-            return {"skipped": skipped + not_sessions, "non_sessions": list(not_sessions),
+            return {"skipped": skipped + not_sessions + headless, "non_sessions": list(not_sessions),
+                    "headless": list(headless),
                     "refused": sum(group["count"] for group in refusals.values()),
                     "refusals": {reason: dict(group) for reason, group in sorted(refusals.items())}}
 
@@ -847,6 +850,13 @@ class V1:
                     continue
                 if self.client.excluded_project(head["cwd"]):
                     continue
+                if head.get("entrypoint") == "sdk-cli":
+                    # Headless agent-to-agent runs (Orbit workers, `claude -p`):
+                    # no message from Daniel, so skipped, never refused and
+                    # never handed to the scribe agent. An explicit `/scribe`
+                    # inside such a session still scribes it (see catchup).
+                    headless.append(path.stem)
+                    continue
                 candidates.append((started, str(path), head, info))
             except (Failure, OSError, ValueError, TypeError, KeyError) as error:
                 note_refusal(error, path.stem)
@@ -870,6 +880,8 @@ class V1:
                 result["display"] += refusal_summary()
                 if not_sessions:
                     result["display"] += " {} non-session file(s) skipped.".format(len(not_sessions))
+                if headless:
+                    result["display"] += " {} headless session(s) skipped.".format(len(headless))
                 result.update({"continue": True, "started": started.isoformat(), **totals()})
                 return result
             skipped.append(sid)
@@ -877,8 +889,8 @@ class V1:
                 done[path] = [info.st_size, info.st_mtime_ns]
                 save(cache_path, {"done": done})
         return {"display": "Backfill done: {} session(s) already scribed to their end, "
-                           "{} non-session file(s) skipped,{}.".format(
-                               scribed + len(skipped), len(not_sessions),
+                           "{} non-session file(s) skipped, {} headless session(s) skipped,{}.".format(
+                               scribed + len(skipped), len(not_sessions), len(headless),
                                refusal_summary() or " 0 refused"),
                 "done": True, "model_call": False, **totals()}
 
