@@ -62,6 +62,14 @@
             "items": {
               "$ref": "#/$defs/ref"
             }
+          },
+          "corrected": {
+            "type": "boolean",
+            "description": "Present and true when an appended correction changed the entry. Original anchor/time retained."
+          },
+          "by": {
+            "const": "user",
+            "description": "Explicit user attribution on an addition; not authenticated identity."
           }
         },
         "required": [

@@ -110,8 +110,7 @@ impl SourceKind {
     }
 }
 
-/// The seven decision-log entry kinds (specs/sessions.md). Criterion 8 of
-/// ORB-18714 supersedes the six-kind list in its description: `fact` is in.
+/// Decision-log entry kinds, including append-only corrections.
 pub const CONVERSATION_KINDS: &[&str] = &[
     "decision",
     "direction",
@@ -120,9 +119,10 @@ pub const CONVERSATION_KINDS: &[&str] = &[
     "open",
     "resolved",
     "handoff",
+    "correction",
 ];
 
-/// Whether a token is one of the seven entry kinds.
+/// Whether a token is a supported entry kind.
 #[must_use]
 pub fn is_conversation_kind(token: &str) -> bool {
     CONVERSATION_KINDS.contains(&token)
@@ -535,6 +535,9 @@ pub fn merge_source_tags(markdown: &str, tags: &[String]) -> Result<Option<Strin
 pub fn format_conversation_entry(captured_at: &str, kind: &str, text: &str) -> Result<String> {
     if !is_conversation_kind(kind) {
         return Err(invalid_entry_kind(kind));
+    }
+    if kind == "correction" {
+        conversation::corrections::Correction::parse(text)?;
     }
     let text = text.trim();
     if text.is_empty() {

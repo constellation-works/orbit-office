@@ -112,6 +112,15 @@ fn load_library_facts(call: &Call<'_>, now_days: i64, facts: &mut SignalFacts) -
             record.id.clone(),
             record.date.as_deref().and_then(date_days),
         );
+        if office_core::domain::source::parse_source_meta(markdown).kind == "conversation" {
+            facts
+                .corrections
+                .extend(office_core::domain::signals::correction_facts(
+                    &record.id,
+                    &office_core::domain::source::source_body(markdown),
+                    call.ports.clock.now(),
+                )?);
+        }
         facts.sources.push(SourceFact {
             id: record.id,
             participants,

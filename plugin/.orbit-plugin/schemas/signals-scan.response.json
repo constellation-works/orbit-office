@@ -9,7 +9,7 @@
       "items": {
         "type": "object",
         "properties": {
-          "signal": { "type": "string", "enum": ["repetition", "friction_recurrence", "staleness", "gap", "unused_automation", "new_subject", "unrecorded_direction", "declared_cadence"] },
+          "signal": { "type": "string", "enum": ["repetition", "friction_recurrence", "staleness", "gap", "unused_automation", "new_subject", "unrecorded_direction", "declared_cadence", "scribe_corrections"] },
           "kind": { "type": "string", "enum": ["auto_task", "knowledge_add", "knowledge_update", "runbook_from_friction", "retire"] },
           "summary": { "type": "string" },
           "evidence": { "type": "array", "items": { "type": "string" } }

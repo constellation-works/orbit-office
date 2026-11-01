@@ -88,6 +88,7 @@ fn fake_capture_append_updates_search_and_read_document() {
     create.title = Some("Session log".to_string());
     create.tags = vec!["bootstrap:first".to_string()];
     create.entries = vec![ConversationEntry {
+        by: None,
         kind: "fact".to_string(),
         text: "Jane runs procurement.".to_string(),
     }];
@@ -100,6 +101,7 @@ fn fake_capture_append_updates_search_and_read_document() {
     append.append_to = Some(opened.id.clone());
     append.tags = vec!["bootstrap:second".to_string()];
     append.entries = vec![ConversationEntry {
+        by: None,
         kind: "decision".to_string(),
         text: "Record appendeduniqueterm for later.".to_string(),
     }];

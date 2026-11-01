@@ -130,6 +130,11 @@ Adding an adapter must keep tool blocks, synthetic context and provider
 instructions out of user evidence. Sessions that change model record the last
 reported conversational model; the transcript digest identifies the input.
 
+Manual Scribe-window feedback uses the same append path: a `correction`
+entry targets an earlier original anchor, and a missed entry keeps its chosen
+`direction`, `decision` or `fact` kind with explicit `by: user` attribution.
+See [Corrections](./recall.md#corrections) for the built backend contract.
+
 ### Decision guard and split of work
 
 The cheap crew chooses `direction`, `decision`, `fact`, `action` and `open`.
@@ -481,7 +486,11 @@ Onboarding are omitted when empty; the other sections are always present.
 Each item carries `id`, `link`, `text`, `time`, `entry_kind`, `status` and
 `template`; fields that do not apply are null. Task items read from an
 extra workspace additionally carry `workspace` (additive; absent for the
-office workspace). Entry text and timestamps keep their original spelling.
+office workspace). Corrected entries add `corrected: true`, use the effective
+kind/wording, and keep their original anchors/timestamps; removed entries are
+omitted. Explicit user additions expose `by: user`. See
+[the correction contract](./recall.md#corrections). Entry text and timestamps
+otherwise keep their original spelling.
 Library links are relative paths with body-relative `#L<n>` anchors; task
 links are `orbit://task/<id>` references resolved through
 `orbit.task.show` (with the item's `workspace` selector, when present).

@@ -1,6 +1,6 @@
 //! Proposal signals: repetition, friction recurrence, staleness, gaps,
 //! unused automation, new subject, unrecorded direction and declared
-//! cadence (specs/proposals.md#signals).
+//! cadence and Scribe corrections (specs/proposals.md#signals).
 //!
 //! Pure and mechanical: callers turn Orbit and Library records into the
 //! fact shapes below, and [`scan`] returns one candidate per fired signal
@@ -103,6 +103,60 @@ pub struct SignalFacts {
     pub sources: Vec<SourceFact>,
     /// Auto-tasks.
     pub automation: Vec<AutomationFact>,
+    /// Dated, anchor-validated Scribe corrections.
+    pub corrections: Vec<CorrectionFact>,
+}
+
+/// One correction with its exact original quote and anchored audit record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CorrectionFact {
+    /// Correction choice (not the original entry kind).
+    pub choice: super::source::conversation::corrections::Choice,
+    /// Original source entry citation.
+    pub target: String,
+    /// Appended correction citation.
+    pub correction: String,
+    /// Verbatim original text.
+    pub quote: String,
+    /// Age relative to the scan clock; future corrections are not loaded.
+    pub age_seconds: u64,
+}
+
+/// Load validated corrections from a conversation's verbatim body. Age is
+/// rounded up so fractional timestamps respect the inclusive day window;
+/// future corrections never contribute to a candidate.
+pub fn correction_facts(
+    source: &str,
+    body: &str,
+    now: std::time::SystemTime,
+) -> crate::Result<Vec<CorrectionFact>> {
+    use super::{session, source::conversation::corrections};
+    corrections::effective_entries(body)?;
+    let log = session::entries(body)?;
+    let now = chrono::DateTime::<chrono::Utc>::from(now);
+    let mut facts = Vec::new();
+    for entry in log.iter().filter(|e| e.kind == "correction") {
+        let correction = corrections::Correction::parse(&entry.text)?;
+        let target_line = correction.line()?;
+        let target = log
+            .iter()
+            .find(|e| e.line == target_line)
+            .ok_or_else(|| session::invalid("correction target"))?;
+        let at = chrono::DateTime::parse_from_rfc3339(&entry.time)
+            .map_err(|_| session::invalid("correction timestamp"))?;
+        if let Ok(age) = now.signed_duration_since(at).to_std() {
+            facts.push(CorrectionFact {
+                choice: correction.choice,
+                target: format!("{source}{}", correction.anchor),
+                correction: format!("{source}#L{}", entry.line),
+                quote: target.text.clone(),
+                age_seconds: age
+                    .as_secs()
+                    .saturating_add(u64::from(age.subsec_nanos() > 0)),
+            });
+        }
+    }
+    Ok(facts)
 }
 
 pub use super::proposal::ProposalKind;
@@ -135,6 +189,7 @@ pub fn scan(facts: &SignalFacts, thresholds: &SignalThresholds) -> Vec<Candidate
     out.extend(new_subject(facts, thresholds));
     out.extend(unrecorded_direction(facts));
     out.extend(declared_cadence(facts));
+    out.extend(scribe_corrections(facts, thresholds));
     out.sort_by(|a, b| (a.signal, &a.summary).cmp(&(b.signal, &b.summary)));
     out
 }
@@ -454,4 +509,44 @@ fn declared_cadence(facts: &SignalFacts) -> Vec<Candidate> {
         }
     }
     out
+}
+
+fn scribe_corrections(facts: &SignalFacts, thresholds: &SignalThresholds) -> Vec<Candidate> {
+    let mut groups: BTreeMap<_, Vec<&CorrectionFact>> = BTreeMap::new();
+    for correction in &facts.corrections {
+        if correction.age_seconds <= u64::from(thresholds.window_days) * 86_400 {
+            groups
+                .entry(correction.choice)
+                .or_default()
+                .push(correction);
+        }
+    }
+    groups
+        .into_iter()
+        .filter(|(_, entries)| entries.len() >= 3)
+        .map(|(choice, mut entries)| {
+            entries.sort_by(|a, b| a.correction.cmp(&b.correction));
+            let mut evidence = vec!["dom-scribe-rules".into()];
+            let mut quotes = Vec::new();
+            for entry in entries {
+                evidence.extend([entry.target.clone(), entry.correction.clone()]);
+                quotes.push(format!(
+                    "{}: {:?} ({})",
+                    entry.target, entry.quote, entry.correction
+                ));
+            }
+            evidence.sort();
+            evidence.dedup();
+            Candidate {
+                signal: "scribe_corrections",
+                kind: ProposalKind::KnowledgeUpdate,
+                summary: format!(
+                    "Update dom-scribe-rules for repeated {} corrections: {}",
+                    choice.as_str(),
+                    quotes.join("; ")
+                ),
+                evidence,
+            }
+        })
+        .collect()
 }
