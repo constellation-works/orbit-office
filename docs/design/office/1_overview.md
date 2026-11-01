@@ -2,7 +2,7 @@
 title: office — Overview
 owner: daniel
 last_updated: 2026-10-31
-last_validated: 2026-10-26
+last_validated: 2026-11-01
 status: Draft
 stage: building
 feature: office
@@ -36,7 +36,7 @@ the longer it is used. With prolonged use the user does barely any manual
 work and acts as a **manager** who sets high-level direction: they talk to
 one orchestrator agent, which runs the operation. The orchestrator is not
 something this project builds — it is the user's own agent CLI, Muse
-Spark by default — connected to Orbit and given the office skill. The
+Code by default — connected to Orbit and given the office skill. The
 product is what that agent can see and do, not a new agent.
 
 Source: the product and technical spec (polaris `projects/office-work/spec.md`,

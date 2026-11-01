@@ -2,7 +2,7 @@
 title: office — Vision
 owner: daniel
 last_updated: 2026-10-26
-last_validated: 2026-10-26
+last_validated: 2026-11-01
 status: Draft
 feature: office
 doc_role: vision

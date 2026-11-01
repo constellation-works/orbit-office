@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Glossary: office"
-last_validated: 2026-10-26
+last_validated: 2026-11-01
 ---
 
 # Glossary: office
