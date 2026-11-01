@@ -1,0 +1,18 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: scribe_ask_not_captured_without_model_call
+    tool: scribe-ask
+    input: {"question":"nothing scribed about this"}
+    expect:
+      output: {"question":"nothing scribed about this","not_captured":true,"status":"not_captured","claims":[],"dropped_claims":0,"derived_by":null,"shortlist":[],"evidence":[],"private_references":[],"searched":{"since":null,"until":null,"date_range":{"since":null,"until":null},"topics":[],"sessions":[],"sessions_not_scribed_past_last_message":[],"sessions_not_scribed":[],"files_searched":0,"file_count":0},"since":null,"until":null,"date_range":{"since":null,"until":null},"topics":[],"sessions":[],"sessions_not_scribed_past_last_message":[],"sessions_not_scribed":[],"files_searched":0,"file_count":0,"matched":0}
+  - name: scribe_ask_requires_question
+    tool: scribe-ask
+    input: {"session_id":"session-one"}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: scribe_ask_unknown_keys
+    tool: scribe-ask
+    input: {"question":"topic","invent":true}
+    expect:
+      error: {"code":"invalid_argument"}

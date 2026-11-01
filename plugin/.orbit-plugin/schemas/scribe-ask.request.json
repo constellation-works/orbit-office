@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-ask request",
+  "description": "A free-form question answered with one Standard-tier model call (the scribe ask level, default haiku@low) over a model-free SCR shortlist. Unknown keys are refused.",
+  "type": "object",
+  "properties": {
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "The question. The shortlist matches its terms lexically against tags, matter, topics and quotes."
+    },
+    "since": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}",
+      "description": "First local date included (YYYY-MM-DD)."
+    },
+    "until": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}",
+      "description": "Last local date included (YYYY-MM-DD)."
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Only entries from SCR files with this project."
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Only entries from this session's SCR file."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Most shortlisted entries sent to the model; 20 by default."
+    }
+  },
+  "required": ["question"],
+  "additionalProperties": false
+}

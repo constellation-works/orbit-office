@@ -46,30 +46,34 @@ const MODES: &[&str] = &["pending", "pref", "landed", "why"];
 
 /// One parsed SCR entry line, with its file's front matter.
 #[derive(Clone, Debug)]
-struct Entry {
-    scr_id: String,
-    aliases: Vec<String>,
-    path: String,
-    line: usize,
-    text: String,
-    msg: String,
-    time: String,
-    tag: String,
-    topics: Vec<String>,
-    no_why: bool,
-    quote: String,
-    why_source: Option<String>,
-    why_quote: Option<String>,
-    refs: Vec<String>,
-    due: Option<String>,
-    matter: Option<String>,
-    review_by: Option<String>,
-    supersedes: Option<String>,
-    resolves: Option<String>,
-    by: Option<String>,
-    session_id: String,
-    counterpart: Option<String>,
-    counterpart_name: Option<String>,
+pub(crate) struct Entry {
+    pub(crate) scr_id: String,
+    pub(crate) aliases: Vec<String>,
+    pub(crate) path: String,
+    pub(crate) line: usize,
+    pub(crate) text: String,
+    pub(crate) msg: String,
+    pub(crate) time: String,
+    pub(crate) tag: String,
+    pub(crate) topics: Vec<String>,
+    pub(crate) no_why: bool,
+    pub(crate) quote: String,
+    pub(crate) why_source: Option<String>,
+    pub(crate) why_quote: Option<String>,
+    pub(crate) refs: Vec<String>,
+    pub(crate) due: Option<String>,
+    pub(crate) matter: Option<String>,
+    pub(crate) review_by: Option<String>,
+    pub(crate) supersedes: Option<String>,
+    pub(crate) resolves: Option<String>,
+    pub(crate) by: Option<String>,
+    pub(crate) session_id: String,
+    pub(crate) counterpart: Option<String>,
+    pub(crate) counterpart_name: Option<String>,
+    pub(crate) project: Option<String>,
+    pub(crate) file_topics: Vec<String>,
+    pub(crate) scribed_through: Option<String>,
+    pub(crate) private: bool,
 }
 
 impl Entry {
@@ -97,7 +101,7 @@ impl Entry {
     }
 }
 
-fn valid_date(text: &str) -> bool {
+pub(crate) fn valid_date(text: &str) -> bool {
     let bytes = text.as_bytes();
     bytes.len() == 10
         && bytes[4] == b'-'
@@ -118,7 +122,7 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::InvalidArgument(message.into())
 }
 
-fn optional_text(input: &Map<String, Value>, key: &str) -> Result<Option<String>> {
+pub(crate) fn optional_text(input: &Map<String, Value>, key: &str) -> Result<Option<String>> {
     match input.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) if !value.trim().is_empty() => Ok(Some(value.trim().to_owned())),
@@ -127,7 +131,7 @@ fn optional_text(input: &Map<String, Value>, key: &str) -> Result<Option<String>
     }
 }
 
-fn optional_date(input: &Map<String, Value>, key: &str) -> Result<Option<String>> {
+pub(crate) fn optional_date(input: &Map<String, Value>, key: &str) -> Result<Option<String>> {
     let Some(value) = optional_text(input, key)? else {
         return Ok(None);
     };
@@ -192,7 +196,7 @@ fn closing_quote(text: &str, start: usize) -> Option<usize> {
     None
 }
 
-fn parse_entry(file: &ScrFile, line_number: usize, line: &str) -> Option<Entry> {
+pub(crate) fn parse_entry(file: &ScrFile, line_number: usize, line: &str) -> Option<Entry> {
     let rest = line.strip_prefix("- ")?;
     let mut parts = rest.splitn(3, ' ');
     let msg = parts.next()?.to_owned();
@@ -257,6 +261,16 @@ fn parse_entry(file: &ScrFile, line_number: usize, line: &str) -> Option<Entry> 
         session_id: file.front.session_id.clone(),
         counterpart: file.front.counterpart.clone(),
         counterpart_name: file.front.counterpart_name.clone(),
+        project: file.front.project.clone(),
+        file_topics: file.front.topics.clone(),
+        scribed_through: file.front.scribed_through.clone(),
+        private: file.markdown.lines().take(30).any(|front_line| {
+            front_line
+                .trim()
+                .strip_prefix("sensitivity:")
+                .map(|value| value.trim().trim_matches('"').trim())
+                == Some("private")
+        }),
     };
     parse_trailer(trailer, &mut entry);
     Some(entry)
@@ -330,7 +344,7 @@ fn trailer_value_end(text: &str) -> usize {
         .unwrap_or(text.len())
 }
 
-fn entries_of(files: &[ScrFile]) -> Vec<Entry> {
+pub(crate) fn entries_of(files: &[ScrFile]) -> Vec<Entry> {
     let mut entries = Vec::new();
     for file in files {
         for (index, line) in file.markdown.lines().enumerate() {
