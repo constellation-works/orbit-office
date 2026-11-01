@@ -37,17 +37,33 @@ def user_turn(record: dict) -> bool:
         and isinstance(block.get("text"), str) and block["text"].strip() for block in content)
 
 
-def private_dir(path: Path) -> Path:
-    """Create/validate without following a symlink in any state component."""
+def check_dir(path: Path, private: bool) -> None:
+    """Refuse a state directory that is a symlink, foreign or too open. Never follows a link.
+
+    `scribe/` and `session-transcripts/` are private: no group or other bits. An
+    existing parent such as Orbit's `.orbit/tmp` may keep the mode Orbit gave it
+    (0755 is common), but must not be group- or other-writable, since those bits
+    let another account rename or replace the state beneath it.
+    """
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise Failure("unsafe_state_directory")
+    if info.st_mode & (0o077 if private else 0o022):
+        raise Failure("unsafe_state_directory")
+
+
+def private_dir(path: Path, private: bool = True) -> Path:
+    """Create/validate without following a symlink in any state component.
+
+    A missing component is created 0700. Existing components are checked by `check_dir`.
+    """
     if not path.parent.exists():
-        private_dir(path.parent)
+        private_dir(path.parent, private=False)
     try:
         path.mkdir(mode=0o700)
     except FileExistsError:
         pass
-    info = path.lstat()
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
-        raise Failure("unsafe_state_directory")
+    check_dir(path, private)
     return path
 
 
@@ -123,12 +139,14 @@ class Scribe:
         self.staging = self.workspace / ".orbit/tmp/session-transcripts"
 
     def setup(self):
-        # Workspace/.orbit may already be public metadata; tmp/state are private.
+        # Workspace/.orbit may already be public metadata. Orbit may have created
+        # .orbit/tmp at its own mode, so that parent only has to be ours, unlinked and
+        # not writable by others; scribe/ and session-transcripts/ are the private state.
         orbit = self.workspace / ".orbit"
         if orbit.is_symlink():
             raise Failure("unsafe_state_directory")
         orbit.mkdir(mode=0o700, exist_ok=True)
-        private_dir(self.workspace / ".orbit/tmp")
+        private_dir(self.workspace / ".orbit/tmp", private=False)
         private_dir(self.state)
         private_dir(self.staging)
 
@@ -314,13 +332,11 @@ class Scribe:
             raise Failure("field_not_valid_for_action")
         if action == "status":
             # Observational even before SessionStart; do not initialize a switch.
-            for path in (self.workspace / ".orbit", self.workspace / ".orbit/tmp", self.state):
-                if path.is_symlink():
-                    raise Failure("unsafe_state_directory")
-                if path.exists() and path != self.workspace / ".orbit":
-                    info = path.stat()
-                    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
-                        raise Failure("unsafe_state_directory")
+            if (self.workspace / ".orbit").is_symlink():
+                raise Failure("unsafe_state_directory")
+            for path, private in ((self.workspace / ".orbit/tmp", False), (self.state, True)):
+                if os.path.lexists(path):  # a dangling symlink is refused too
+                    check_dir(path, private)
             state = load(self.state / (sid + ".json"))
             flag = self.state / sid
             if flag.is_symlink():

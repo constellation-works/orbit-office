@@ -97,6 +97,12 @@ is published last with session id, absolute transcript path, SHA-256, byte
 length, completion time, project and mode. Provider input is bounded to 8 MiB.
 Nothing reads a Library directory or sends raw transcripts off-host.
 
+Scribe state lives under `.orbit/tmp/`. `scribe/` and `session-transcripts/`
+are created and checked owner-only (`0700`). An existing `.orbit/tmp` may keep
+the mode Orbit gave it (such as `0755`) when it is owned by you, is not a
+symlink and is not group- or other-writable; otherwise every action, including
+`status`, refuses with `unsafe_state_directory`.
+
 Per-session locks serialize publications and queue decisions, without waiting
 on a busy lock. Live debounce is five minutes **or** eight new user turns;
 live dedupe is session plus snapshot length. One live task may be outstanding.

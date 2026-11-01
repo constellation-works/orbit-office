@@ -368,6 +368,66 @@ class PluginBehavior(unittest.TestCase):
         self.assertIn("unsafe_state_directory", result.stderr)
         self.assertEqual(list(outside.iterdir()), [])
 
+    def status_result(self):
+        return self.mcp({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "scribe", "arguments": {"session_id": self.sid, "action": "status"}}})[0]["result"]
+
+    def test_orbit_created_tmp_at_0755_is_usable_and_scribe_state_stays_private(self):
+        # Orbit creates .orbit/tmp at its own mode; scribe must work without it being changed.
+        orbit_tmp = self.workspace / ".orbit/tmp"
+        orbit_tmp.mkdir(parents=True)
+        orbit_tmp.chmod(0o755)
+        start = self.hook("SessionStart")
+        self.assertEqual(start.stderr, "")
+        self.assertIn("hookSpecificOutput", json.loads(start.stdout))
+        self.assertTrue(self.command("status")["on"])
+        self.assertEqual(self.command("off"), {"on": False})
+        self.assertEqual(self.command("on"), {"on": True})
+        self.assertTrue(self.command("now")["queued"])
+        self.assertEqual(len(self.calls("orbit.task.add")), 1)
+        self.assertEqual(stat.S_IMODE(orbit_tmp.stat().st_mode), 0o755)
+        for name in ("scribe", "session-transcripts"):
+            self.assertEqual(stat.S_IMODE((orbit_tmp / name).stat().st_mode), 0o700, name)
+
+    def test_group_or_other_writable_tmp_is_refused(self):
+        orbit_tmp = self.workspace / ".orbit/tmp"
+        orbit_tmp.mkdir(parents=True)
+        for mode in (0o775, 0o757):
+            with self.subTest(mode=oct(mode)):
+                orbit_tmp.chmod(mode)
+                start = self.hook("SessionStart")
+                self.assertEqual(start.returncode, 0)
+                self.assertIn("unsafe_state_directory", start.stderr)
+                result = self.status_result()
+                self.assertTrue(result["isError"])
+                self.assertEqual(result["content"][0]["text"], "unsafe_state_directory")
+                self.assertFalse((orbit_tmp / "scribe").exists())
+                self.assertEqual(self.calls(), [])
+
+    def test_scribe_state_directories_stay_owner_only(self):
+        self.hook("SessionStart")
+        staging = self.workspace / ".orbit/tmp/session-transcripts"
+        self.assertEqual(stat.S_IMODE(staging.stat().st_mode), 0o700)
+        staging.chmod(0o755)
+        result = self.hook("Stop")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("unsafe_state_directory", result.stderr)
+        self.assertEqual(list(staging.iterdir()), [])
+
+    def test_symlinked_tmp_is_refused_by_hooks_and_status(self):
+        outside = self.root / "outside"
+        outside.mkdir(mode=0o700)
+        (self.workspace / ".orbit").mkdir(mode=0o700)
+        (self.workspace / ".orbit/tmp").symlink_to(outside, target_is_directory=True)
+        start = self.hook("SessionStart")
+        self.assertEqual(start.returncode, 0)
+        self.assertIn("unsafe_state_directory", start.stderr)
+        result = self.status_result()
+        self.assertTrue(result["isError"])
+        self.assertEqual(result["content"][0]["text"], "unsafe_state_directory")
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual(self.calls(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
