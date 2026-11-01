@@ -46,6 +46,20 @@
         },
         "version": {
           "type": "integer"
+        },
+        "handoff": {
+          "type": "string",
+          "enum": [
+            "written",
+            "disabled",
+            "private",
+            "invalid",
+            "too_long",
+            "no_plan_change",
+            "no_anchor",
+            "unresolved_anchor"
+          ],
+          "description": "Present only when the request offered a handoff: written, or why it was dropped (disabled when dom-scribe-rules does not set scribe.handoff: true)."
         }
       },
       "required": [
@@ -117,6 +131,72 @@
             },
             "additionalProperties": false
           }
+        },
+        "rules": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The dom-scribe-rules page, passed to the crew as data; null when the Library has none and the built-in defaults apply. Rules never widen the guard.",
+          "required": [
+            "id",
+            "path",
+            "handoff",
+            "body"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "handoff": {
+              "type": "boolean",
+              "description": "scribe.handoff from the page frontmatter."
+            },
+            "body": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Page body; null for a private page, which never reaches the crew."
+            }
+          },
+          "additionalProperties": false
+        },
+        "source": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The session's conversation source, or null before its first capture.",
+          "required": [
+            "id",
+            "path",
+            "extracted_through",
+            "next_anchor"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "extracted_through": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Last transcript line an earlier pass considered; the next pass sends from_line one past it."
+            },
+            "next_anchor": {
+              "type": "integer",
+              "description": "One-based body line (#L<n>) the first entry this pass appends will take; later entries follow in line order."
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [
@@ -126,7 +206,9 @@
         "transcript_sha256",
         "sensitivity",
         "content_withheld",
-        "lines"
+        "lines",
+        "rules",
+        "source"
       ],
       "additionalProperties": false
     }

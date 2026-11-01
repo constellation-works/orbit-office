@@ -112,6 +112,7 @@ the rest of its report.
 | `glossary` | `dom-glossary` (one) | Terms and acronyms, one `### Term` each, citing where it was first seen | `matched` |
 | `goals` | `dom-goals` (one) | This period's priorities or objectives | `never`; read by signals and reviews |
 | `rhythm` | `dom-rhythm` (one) | Recurring meetings and deadlines ("status update every Friday") | `never`; read by signals |
+| `scribe-rules` | `dom-scribe-rules` (one) | What the live scribe notes and skips, and guidance for borderline kinds; optional `scribe: {handoff: true}` frontmatter ([sessions.md](./sessions.md#rules-page)) | `never`; passed to the scribe's crew as data |
 | `runbook` | `rb-<slug>` | Inputs, steps, done when (all required); optional `performable` and `submission` for runbooks the agent carries out as drafts ([library-bootstrap.md](./library-bootstrap.md#runbooks-the-agent-performs-as-drafts)) | named by the task, as today |
 
 The bundled files use these concrete heading names and minimum requirements.
@@ -131,6 +132,7 @@ explicitly named by a task.
 | `glossary` | Terms (one `###` heading per term) | Terms |
 | `goals` | Priorities, Objectives | Priorities |
 | `rhythm` | Recurring meetings, Deadlines | Recurring meetings |
+| `scribe-rules` | Note, Skip, Kinds | Note |
 | `runbook` | Inputs, Steps, Done when | Inputs, Steps, Done when |
 
 Skeleton prose prompts for evidence; it is not a populated Library page.
@@ -211,6 +213,7 @@ of them:
 5. Recurring meetings and deadlines → `rhythm`
 6. Tools, and where things live: issue tracker projects, folders, channels → `systems`, and `refs` on the other pages
 7. Your priorities this period (optional) → `goals`
+8. What the scribe should note or skip in your conversations (optional) → `scribe-rules`
 
 Jargon that comes up goes to the glossary.
 

@@ -1081,6 +1081,7 @@ impl Library for FakeLibrary {
                 deduplicated: false,
                 appended: lines.len(),
                 version: view.version,
+                handoff: None,
             };
             let path = view.path.clone();
             let new_body = view.body.clone();
@@ -1266,6 +1267,7 @@ impl Library for FakeLibrary {
                 deduplicated: true,
                 appended: 0,
                 version: existing.version,
+                handoff: None,
             });
         }
         let title = request
@@ -1386,6 +1388,7 @@ impl Library for FakeLibrary {
             deduplicated: false,
             appended: 0,
             version: 1,
+            handoff: None,
         })
     }
     fn session_transcript(
@@ -1450,6 +1453,7 @@ impl Library for FakeLibrary {
                     sensitivity: source.sensitivity,
                     deduplicated: true,
                     version: source.version,
+                    handoff: request.handoff.as_ref().map(|_| "no_plan_change".into()),
                     ..SourceOutcome::default()
                 });
             }
@@ -1498,6 +1502,8 @@ impl Library for FakeLibrary {
         let changed = changed
             && !(request.from_line.is_some() && conversation::prefix_grew(&session, &base)?);
         let text = conversation::merge(&base, &session, &entries, &session.sensitivity, changed)?;
+        let (text, handoff) =
+            conversation::with_handoff(request, &session, &base, text, captured_at)?;
         if changed {
             let snapshot = Path::new(&path)
                 .with_file_name(format!("v{}.md", parse_source_meta(&base).version))
@@ -1525,6 +1531,7 @@ impl Library for FakeLibrary {
             sensitivity: session.sensitivity,
             deduplicated: false,
             version: parse_source_meta(&text).version,
+            handoff,
             ..SourceOutcome::default()
         })
     }

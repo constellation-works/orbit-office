@@ -696,7 +696,7 @@ pub struct BundledTemplate {
     pub markdown: &'static str,
 }
 
-/// All eleven bundled templates, in spec table order. Invalid rules are never
+/// All twelve bundled templates, in spec table order. Invalid rules are never
 /// silently skipped: consumers parse each file with [`Template::from_markdown`].
 pub const BUNDLED: &[BundledTemplate] = &[
     BundledTemplate {
@@ -738,6 +738,10 @@ pub const BUNDLED: &[BundledTemplate] = &[
     BundledTemplate {
         filename: "rhythm.md",
         markdown: include_str!("../../templates/rhythm.md"),
+    },
+    BundledTemplate {
+        filename: "scribe-rules.md",
+        markdown: include_str!("../../templates/scribe-rules.md"),
     },
     BundledTemplate {
         filename: "runbook.md",

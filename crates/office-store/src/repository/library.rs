@@ -1982,6 +1982,7 @@ impl LibraryStore {
                 deduplicated: false,
                 appended: lines.len(),
                 version: meta.version,
+                handoff: None,
             });
         }
         let explicit_kind = match &request.kind {
@@ -2092,6 +2093,7 @@ impl LibraryStore {
                         deduplicated: true,
                         appended: 0,
                         version: meta.version,
+                        handoff: None,
                     });
                 }
             }
@@ -2206,6 +2208,7 @@ impl LibraryStore {
             deduplicated: false,
             appended: 0,
             version: 1,
+            handoff: None,
         })
     }
 
@@ -2946,6 +2949,8 @@ impl office_core::ports::Library for LibraryStore {
                     sensitivity: view.sensitivity,
                     deduplicated: true,
                     version: view.version,
+                    // An unchanged transcript adds no entries, so no handoff.
+                    handoff: request.handoff.as_ref().map(|_| "no_plan_change".into()),
                     ..SourceOutcome::default()
                 });
             }
@@ -3005,6 +3010,8 @@ impl office_core::ports::Library for LibraryStore {
         let changed = changed
             && !(request.from_line.is_some() && conversation::prefix_grew(&session, &base)?);
         let text = conversation::merge(&base, &session, &entries, &session.sensitivity, changed)?;
+        let (text, handoff) =
+            conversation::with_handoff(request, &session, &base, text, captured_at)?;
         self.validate_identity(&DocumentRecord::from_markdown(Path::new(&path), &text))?;
         let bundle = if changed {
             vec![ArtifactFile {
@@ -3030,6 +3037,7 @@ impl office_core::ports::Library for LibraryStore {
             sensitivity: session.sensitivity,
             deduplicated: false,
             version: parse_source_meta(&text).version,
+            handoff,
             ..SourceOutcome::default()
         })
     }

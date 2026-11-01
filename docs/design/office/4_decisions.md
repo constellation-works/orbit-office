@@ -1940,8 +1940,11 @@ conversation, without bothering an orchestrator.
 **Recorded:** 2026-11-01 · approved by the user (PR #250)
 **Code anchors:** incremental passes and `Note:`/`Scribe:` commands built
 in [ORB-20685] (`office-core/src/domain/source/conversation.rs`,
-`office-tools/src/tools/sources/capture.rs`); the rest has none yet;
-[specs/sessions.md](./specs/sessions.md#live-scribe)
+`office-tools/src/tools/sources/capture.rs`); the rules page, answers to
+questions and scribe handoff built in [ORB-20686] (the same files,
+`office-core/templates/scribe-rules.md` and the `scribe` page field in
+`office-core/src/domain/knowledge/page.rs`); the switch, trigger and
+feedback have none yet; [specs/sessions.md](./specs/sessions.md#live-scribe)
 
 ### Context
 

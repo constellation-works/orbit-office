@@ -75,7 +75,7 @@ synced keep their copy and that the repository's history keeps it too.
   the team", and acceptance writes the field with the page. The skill has
   the orchestrator suggest it for pages about the team's systems, clients
   and processes, never for the user's own pages (the `user`, `goals`,
-  `rhythm` and `standing-directions` templates).
+  `rhythm`, `standing-directions` and `scribe-rules` templates).
 - `office.artifact-promote` takes an optional `shareable` in the manifest
   under the same citation rule.
 

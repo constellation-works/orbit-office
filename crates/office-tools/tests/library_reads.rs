@@ -65,6 +65,7 @@ fn lists_all_pages_and_missing_singleton_templates_before_filtering() {
             "glossary",
             "goals",
             "rhythm",
+            "scribe-rules",
             "standing-directions",
             "systems"
         ]
