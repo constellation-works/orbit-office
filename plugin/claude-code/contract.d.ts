@@ -14,6 +14,7 @@ export type PaneState = {
   on: boolean | null
   lastPass: string | null
   answer: string
+  asking: boolean
   missedKind: string
   unavailable: boolean
   notice: string
