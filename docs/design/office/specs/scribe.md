@@ -138,6 +138,26 @@ no longer has to carry that alone. Four tags belong to agents:
 Open items are the `#pending` lines with no `#resolved` line pointing at
 them. "What's pending from last night?" answers from exactly that set.
 
+### Decisions keep their why
+
+The scribe exists as much for *why* as for *what*. Before anyone, Daniel or
+an orchestrator, removes or reverts a setting, rule or piece of code they
+don't understand, they ask the scribe why it is there (Chesterton's fence).
+
+- `decision` and `agent-decision` entries carry `why: <msg-id|note>
+  "<verbatim reason>"`. The scribe agent pairs the decision with the message
+  that gives its reason, which is often a different message. The append step
+  checks the reason quote against that message, as it checks any quote.
+- A decision with no stated reason is still written, tagged `#no-why`.
+  `grep '#no-why'` lists the gaps, and Daniel or the orchestrator fills one
+  with `/scribe note #why resolves: <SCR id>#L<n> "<reason>"`.
+- "Why is X like this?" is a question type. The answer is the decision with
+  its `why`, who made it and when, and its citations. With nothing recorded,
+  it says "no recorded reason" and never guesses a reason.
+- The `orchestration-session` skill requires the check: no removal or revert
+  of something unexplained without asking the scribe, and with no recorded
+  reason, asking Daniel.
+
 ## The SCR file
 
 Location: the Library's `sources/conversation/<yyyy>/<mm>/`, as a single
@@ -177,7 +197,7 @@ aliases: []
 
 Line format, one entry per line so grep finds it:
 
-`- <msg-id> <time> #<tag> #<topic>… "<verbatim quote>" [refs: …] [due: …] [resolves: …] [by: user|<crew>]`
+`- <msg-id> <time> #<tag> #<topic>… "<verbatim quote>" [why: <msg-id> "…"] [refs: …] [due: …] [resolves: …] [by: user|<crew>]`
 
 - Quotes are verbatim, with newlines written as `\n`.
 - `by: user` marks Daniel's `/scribe note` entries; `by: <crew>` marks an
@@ -229,6 +249,8 @@ writes and no Orbit calls.
   topics it searched, and names any session not scribed past its last
   message. Those are sessions with messages after `scribed_through`; the
   agent can see them by comparing against the parsed file when it exists.
+- "Why is X like this?" returns the decision and its `why`, or "no recorded
+  reason" ([Decisions keep their why](#decisions-keep-their-why)).
 - "What's pending?" lists `#pending` lines with no `#resolved` line that
   names them, oldest first, each with its `by`, task refs and file:line.
 - "Did we land X?" answers from `#landed` entries. When the plugin's `gh`
