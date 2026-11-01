@@ -549,7 +549,14 @@ fn run(call: &Call<'_>) -> Result<Value> {
     }
 
     let total = results.len();
-    results.truncate(limit);
+    if mode.is_none() && total > limit {
+        // The general query backs the recent feed: keep the newest `limit`
+        // rows, still in ascending (time, path, line) order. Canned modes
+        // keep their oldest-first truncation below.
+        results.drain(..total - limit);
+    } else {
+        results.truncate(limit);
+    }
 
     let rendered: Vec<Value> = results
         .iter()

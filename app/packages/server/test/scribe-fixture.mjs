@@ -76,7 +76,9 @@ export function scribeClient() {
       const mode = input.mode ?? null;
       if (mode !== null) return structuredClone(office[mode]);
       const rows = lines().filter((row) => input.session_id === undefined || row.session_id === input.session_id);
-      const limited = rows.slice(0, input.limit ?? 100);
+      // The general query keeps the newest `limit` rows (canned modes above
+      // return their canned outputs unchanged).
+      const limited = rows.slice(-(input.limit ?? 100));
       return { ...structuredClone(office.feed), results: structuredClone(limited), count: rows.length, since: input.since ?? null };
     }
     if (name === "office.scribe-append") {

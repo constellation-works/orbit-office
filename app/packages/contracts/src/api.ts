@@ -651,7 +651,7 @@ export interface ScribeSession {
 /** `GET /api/scribe/feed`: the current or most recent session first. */
 export interface ScribeFeed {
   sessions: ScribeSession[];
-  /** Lines shown, and how many matched; fewer are shown when the window was narrowed. */
+  /** Lines shown, and how many matched in `since`'s window; when shown < total, the oldest lines were truncated and the newest are shown. */
   shown: number;
   total: number;
   /** First local date of the window searched. */

@@ -2387,9 +2387,14 @@ and the session cursor that `office.scribe-append` needs as `through`.
   its menu, preselected by a few model-free cues; it does not call the
   scribe agent to pick one.
 - The feed is the general `office.scribe-query` over the last 30 days. The
-  tool returns the oldest lines first, so a window over the 1000-line limit
-  narrows to 7 days, then to today, until the newest lines fit. Resolved
-  pendings and superseded preferences are hidden, as the tool hides them.
+  general query keeps the newest lines up to its limit in (time, path,
+  line) order and truncates the oldest, with `count` reporting every match;
+  the canned modes keep their oldest-first truncation. A window over the
+  1000-line limit narrows to 7 days, then to today, to report a tighter
+  range, and an over-cap final day still keeps its newest lines. The feed
+  reports that window as `since` with `total`/`shown` naming the
+  truncation. Resolved pendings and superseded preferences are hidden, as
+  the tool hides them.
 - The ask box shows `office.scribe-ask` claims after checking each quote
   once more against the shortlisted line text the same response carries.
   The server never reads Library files.
