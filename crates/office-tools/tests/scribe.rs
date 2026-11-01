@@ -68,10 +68,64 @@ fn transcript(count: u32) -> String {
     lines.join("\n") + "\n"
 }
 
+/// Harness-wrapped transcript: a reminder-only record, a reminder plus
+/// Daniel's words, a slash command, local-command output and a real reply.
+fn wrapped_transcript() -> String {
+    [
+        record(
+            "user",
+            7,
+            &json!("<system-reminder>\nharness context only\n</system-reminder>"),
+        ),
+        record(
+            "user",
+            8,
+            &json!([{"type":"text","text":"<system-reminder>more harness</system-reminder>\nShip the scribe fix first."}]),
+        ),
+        record(
+            "user",
+            9,
+            &json!("<command-message>scribe</command-message>\n<command-name>/scribe</command-name>\n<command-args>backfill --since 2026-10-01</command-args>"),
+        ),
+        record(
+            "user",
+            10,
+            &json!("<local-command-stdout>local command output</local-command-stdout>\n<local-command-stderr>local error output</local-command-stderr>\nKeep this note."),
+        ),
+        record("assistant", 11, &json!("Working on it.")),
+        record(
+            "user",
+            12,
+            &json!("<local-command-stdout>only local output</local-command-stdout>"),
+        ),
+    ]
+    .join("\n")
+        + "\n"
+}
+
+fn command_only_transcript() -> String {
+    [
+        record(
+            "user",
+            7,
+            &json!("<command-message>scribe</command-message>\n<command-name>scribe</command-name>\n<command-args>backfill</command-args>"),
+        ),
+        record("assistant", 8, &json!("Done.")),
+    ]
+    .join("\n")
+        + "\n"
+}
+
 fn ports(mut library: FakeLibrary) -> Ports<'static> {
     library
         .session_transcripts
         .insert("short.jsonl".into(), transcript(6));
+    library
+        .session_transcripts
+        .insert("wrapped.jsonl".into(), wrapped_transcript());
+    library
+        .session_transcripts
+        .insert("command-only.jsonl".into(), command_only_transcript());
     library
         .session_transcripts
         .insert("long.jsonl".into(), transcript(17));
@@ -211,6 +265,77 @@ fn pending_writes_stable_ids_and_returns_new_messages_with_context_and_default_r
     let expected: Vec<(String, bool)> = (4..=16).map(|n| (format!("m-{n:04}"), n <= 13)).collect();
     assert_eq!(ids(&after["messages"]), expected);
     assert_eq!(after["new_count"], 3);
+}
+
+#[test]
+fn pending_strips_harness_wrappers_and_renders_slash_commands() {
+    let ports = crate::ports(FakeLibrary::initialized());
+    let first = pending(&ports, "wrapped.jsonl");
+    // The reminder-only and local-output-only records keep no text, so the
+    // four remaining records are the messages.
+    assert_eq!(first["message_count"], 4);
+    let messages = first["messages"].as_array().unwrap();
+    let texts: Vec<&str> = messages
+        .iter()
+        .map(|m| m["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            "Ship the scribe fix first.",
+            "/scribe backfill --since 2026-10-01",
+            "Keep this note.",
+            "Working on it."
+        ]
+    );
+    for text in &texts {
+        for banned in [
+            "system-reminder",
+            "command-message",
+            "command-name",
+            "command-args",
+            "local-command",
+            "harness",
+            "local command output",
+            "local error output",
+            "only local output",
+        ] {
+            assert!(!text.contains(banned), "{banned} leaked into {text:?}");
+        }
+    }
+    // The slug comes from Daniel's first remaining words, not the wrapper.
+    assert_eq!(
+        first["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-ship-the-scribe-fix-first.md"
+    );
+    // The parsed file the agent reads carries the same cleaned text, and a
+    // verbatim quote from it validates through append.
+    let parsed = ports.library.read_scribe_parse(SESSION).unwrap().unwrap();
+    assert!(!parsed.messages.contains("system-reminder"));
+    assert!(!parsed.messages.contains("local-command"));
+    let ship_id = messages[0]["id"].as_str().unwrap().to_string();
+    let out = append(
+        &ports,
+        json!({"through": ship_id, "entries":[
+            {"msg": ship_id, "quote": "Ship the scribe fix first.", "tag": "direction", "topics": ["constellation"]}
+        ]}),
+    );
+    assert_eq!(out["refused"], json!([]));
+    assert!(
+        scr(&ports)
+            .0
+            .ends_with("SCR-31-2007-ship-the-scribe-fix-first.md")
+    );
+
+    // A bare slash command is an acceptable slug source when nothing else
+    // exists, and a name without a leading slash gains exactly one.
+    let ports2 = crate::ports(FakeLibrary::initialized());
+    let first = pending(&ports2, "command-only.jsonl");
+    assert_eq!(first["messages"][0]["text"], "/scribe backfill");
+    assert_eq!(
+        first["scr"]["path"],
+        "sources/conversation/2026/10/SCR-31-2007-scribe-backfill.md"
+    );
 }
 
 #[test]

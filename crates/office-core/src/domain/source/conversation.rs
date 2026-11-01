@@ -180,6 +180,87 @@ pub fn scrub(text: &str) -> String {
     out
 }
 
+/// The inner text of the first `<tag>…</tag>` block in `text`, if any.
+fn tag_inner(text: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}");
+    let start = text.find(&open)?;
+    let after = &text[start + open.len()..];
+    if !after.starts_with('>') && !after.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let content_start = start + text[start..].find('>')? + 1;
+    let close = format!("</{tag}>");
+    let end = text[content_start..].find(&close)? + content_start;
+    Some(text[content_start..end].trim().to_owned())
+}
+
+/// Remove every `<tag>…</tag>` block (and any stray tag) from `text`.
+/// An unclosed block removes the rest of the text: harness blocks are
+/// always closed, so a missing close means truncated wrapper text.
+fn strip_tag_blocks(text: &str, tag: &str) -> String {
+    let mut out = text.to_owned();
+    loop {
+        let open = format!("<{tag}");
+        let Some(start) = out.find(&open) else {
+            break;
+        };
+        let after = &out[start + open.len()..];
+        if !after.starts_with('>') && !after.starts_with(char::is_whitespace) {
+            break;
+        }
+        let Some(gt) = out[start..].find('>') else {
+            out.truncate(start);
+            break;
+        };
+        let content_start = start + gt + 1;
+        let close = format!("</{tag}>");
+        match out[content_start..].find(&close) {
+            Some(at) => out.replace_range(start..content_start + at + close.len(), ""),
+            None => out.truncate(start),
+        }
+    }
+    out.replace(&format!("</{tag}>"), "")
+}
+
+/// Remove every block whose tag starts with `prefix`, such as
+/// `<local-command-stdout>` and `<local-command-stderr>`.
+fn strip_prefixed_blocks(text: &str, prefix: &str) -> String {
+    let mut out = text.to_owned();
+    loop {
+        let open = format!("<{prefix}");
+        let Some(start) = out.find(&open) else {
+            break;
+        };
+        let Some(gt) = out[start..].find('>') else {
+            out.truncate(start);
+            break;
+        };
+        let tag: String = out[start + 1..start + gt]
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_owned();
+        let content_start = start + gt + 1;
+        let close = format!("</{tag}>");
+        match out[content_start..].find(&close) {
+            Some(at) => out.replace_range(start..content_start + at + close.len(), ""),
+            None => out.truncate(start),
+        }
+    }
+    out
+}
+
+/// Strip harness wrapper blocks from one user text, leaving only the
+/// words the user typed. Slash-command tags are removed here too; the
+/// caller renders the invocation from the extracted name and args.
+fn strip_harness(text: &str) -> String {
+    let out = strip_tag_blocks(text, "system-reminder");
+    let out = strip_prefixed_blocks(&out, "local-command-");
+    let out = strip_tag_blocks(&out, "command-message");
+    let out = strip_tag_blocks(&out, "command-name");
+    strip_tag_blocks(&out, "command-args")
+}
+
 /// Parse Claude Code JSONL. Unknown provider formats, mixed sessions, malformed
 /// records and missing timestamps refuse without echoing untrusted input.
 pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
@@ -296,11 +377,63 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
         }
         let prefix_sha256 = sha256_hex(&raw.as_bytes()[..record_end]);
         // Scrub the entire text block, so multiline PEM credentials stay hidden.
-        for text in texts {
-            let clean = scrub(text);
-            session.scrubbed |= clean != text;
+        // For user records, drop harness wrappers (system reminders and
+        // local-command output) before the line loop, so their interior
+        // lines never reach a slug, the scribe agent or a verbatim quote.
+        // A slash command renders as one `/name args` line in place of its
+        // tags. Pasted content is the user's own words and is kept.
+        let scrubbed_texts: Vec<String> = texts
+            .iter()
+            .map(|text| {
+                let clean = scrub(text);
+                session.scrubbed |= clean != *text;
+                clean
+            })
+            .collect();
+        // Extract the slash command before stripping, so a name and args
+        // split across text blocks still render as one line.
+        let mut command: Option<(usize, String)> = None;
+        if kind == "user" {
+            let name_at = scrubbed_texts
+                .iter()
+                .position(|text| tag_inner(text, "command-name").is_some());
+            if let Some(at) = name_at
+                && let Some(raw_name) = tag_inner(&scrubbed_texts[at], "command-name")
+            {
+                let name = raw_name.trim().trim_start_matches('/');
+                if !name.is_empty() {
+                    let args = scrubbed_texts
+                        .iter()
+                        .find_map(|text| tag_inner(text, "command-args"))
+                        .unwrap_or_default();
+                    let args = args.trim();
+                    command = Some((
+                        at,
+                        if args.is_empty() {
+                            format!("/{name}")
+                        } else {
+                            format!("/{name} {args}")
+                        },
+                    ));
+                }
+            }
+        }
+        let mut cleaned: Vec<String> = scrubbed_texts
+            .iter()
+            .map(|text| {
+                if kind == "user" {
+                    strip_harness(text)
+                } else {
+                    text.clone()
+                }
+            })
+            .collect();
+        if let Some((at, command)) = command {
+            cleaned.insert(at.min(cleaned.len()), command);
+        }
+        for text in &cleaned {
             let mut fenced = false;
-            for text in clean.lines().map(str::trim).filter(|line| !line.is_empty()) {
+            for text in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
                 if text.starts_with("```") || text.starts_with("~~~") {
                     fenced = !fenced;
                     continue;

@@ -801,14 +801,16 @@ pub fn free_id(files: &[ScrFile], id: &str, session_id: &str) -> Result<String> 
     Ok(suffixed)
 }
 
-/// The slug source of an untitled session: the user's first message.
+/// The slug source of an untitled session: the first user message with
+/// remaining text. A message emptied by harness stripping is skipped; a
+/// bare slash command counts when nothing else exists.
 #[must_use]
 pub fn first_words(messages: &[Message]) -> String {
     messages
         .iter()
-        .find(|m| m.role == "user")
-        .or_else(|| messages.first())
-        .and_then(|m| m.text.lines().next())
+        .find(|m| m.role == "user" && !m.text.trim().is_empty())
+        .or_else(|| messages.iter().find(|m| !m.text.trim().is_empty()))
+        .and_then(|m| m.text.lines().find(|line| !line.trim().is_empty()))
         .map(slug)
         .unwrap_or_default()
 }

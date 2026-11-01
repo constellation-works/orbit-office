@@ -92,7 +92,10 @@ transcript ──parse (no model)──▶ <library>/.office/state/scribe/<sessi
    existing conversation adapter ([sessions.md](./sessions.md#adapter-and-provenance)).
    That adapter keeps only the text exchanged between Daniel and the agent:
    no tool calls, tool results, thinking or sidechains. Credentials are
-   scrubbed as today. Output is
+   scrubbed as today. Harness wrapper text in a user message is not Daniel's
+   words: `<system-reminder>` blocks and `<local-command-*>` output are
+   dropped, and a slash command is kept as one `/<name> <args>` line
+   ([sessions.md](./sessions.md#adapter-and-provenance)). Output is
    `<library>/.office/state/scribe/<session-id>.jsonl`, one message per line:
    `{"id":"m-0042","role":"user|assistant","at":"<rfc3339>","text":"…"}`.
    Ids are stable: the nth kept message is always `m-<n>`, so re-parsing a
@@ -257,7 +260,10 @@ file `SCR-<dd-hhmm>-<title-slug>.md`.
 - The slug is at most 48 characters.
 - On a clash, the first 6 characters of the session id are appended.
 
-Until a title is set, the slug comes from Daniel's first message. `/scribe
+Until a title is set, the slug comes from Daniel's first message with
+remaining text after harness stripping (above): a message emptied by
+stripping never names the file, and a bare slash command such as
+`/scribe backfill` names it when nothing else exists. `/scribe
 title` renames the file once and records the old name in `aliases`.
 
 ```markdown
