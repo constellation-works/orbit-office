@@ -43,3 +43,23 @@ test("not captured states the searched range, files and topics; empty views say 
   assert.equal(emptyView("landed", null, "America/Los_Angeles", "2026-11-01"), "Nothing landed today (2026-11-01, America/Los_Angeles).");
   assert.equal(emptyView("pref", "review-cadence", "UTC", "2026-11-01"), "No preference recorded on review-cadence.");
 });
+
+test("handoff helpers: age, summary, thread labels and project groups keep the newest-first order", async () => {
+  const { ageLabel, byProject, handoffSummary, threadLabel, taskHref, HANDOFFS_HREF } = await import("../dist/ui/handoff.js");
+  const now = new Date("2026-11-01T09:00:00Z");
+  assert.equal(ageLabel("2026-11-01T08:59:40Z", now), "just now");
+  assert.equal(ageLabel("2026-11-01T08:30:00Z", now), "30 min ago");
+  assert.equal(ageLabel("2026-10-31T10:00:00Z", now), "23 h ago");
+  assert.equal(ageLabel("2026-10-28T09:00:00Z", now), "4 d ago");
+  assert.equal(threadLabel("task:ORB-21001"), "ORB-21001");
+  assert.equal(threadLabel("project:orbit orchestrator:codex"), "orbit · codex");
+  assert.equal(threadLabel("project: orchestrator:"), "No project · no orchestrator");
+  assert.equal(taskHref("ORB-21075"), "orbit://task/ORB-21075");
+  assert.equal(HANDOFFS_HREF, "?scribe=handoffs#scribe");
+  const base = { text: "Office next.", fields: null, withheld: false };
+  assert.equal(handoffSummary(base), "Office next.");
+  assert.equal(handoffSummary({ ...base, fields: { objective: "Ship ORB-1." } }), "Ship ORB-1.");
+  assert.equal(handoffSummary({ ...base, text: "", withheld: true }), "Private session: content withheld.");
+  const groups = byProject([{ id: "a", project: "office" }, { id: "b", project: null }, { id: "c", project: "office" }]);
+  assert.deepEqual(groups.map((g) => [g.project, g.handoffs.map((h) => h.id)]), [["office", ["a", "c"]], ["No project", ["b"]]]);
+});

@@ -2,6 +2,7 @@
 //! interprets a quoted entry as an instruction or performs I/O.
 
 pub mod handoff;
+pub mod listing;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -108,6 +109,10 @@ pub struct Item {
     /// Historical unstructured handoff; its original text is retained.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub legacy: Option<bool>,
+    /// Thread, scope and state of a handoff in the list view
+    /// (`view: list`); absent from every other output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub listing: Option<listing::Listing>,
 }
 
 /// A section in display order; optional sections are absent from the array.
@@ -121,6 +126,10 @@ pub struct Section {
     pub total: usize,
     /// Whether an explicit excerpt limit omitted records.
     pub truncated: bool,
+    /// The page's first index in the list view's paged `history`; absent
+    /// from every other section.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
 }
 
 impl Section {
@@ -130,6 +139,7 @@ impl Section {
             total: items.len(),
             items,
             truncated: false,
+            offset: None,
         }
     }
 }
@@ -280,8 +290,9 @@ struct Conversation {
     log: Vec<Entry>,
     project: Option<String>,
     orchestrator: Option<String>,
-    #[allow(dead_code)]
     session_id: Option<String>,
+    /// `sensitivity: private`: the list view withholds its entry text.
+    private: bool,
     /// Lines of original `handoff` entries that declared `scope: global`.
     /// Read from the original log, so a correction cannot change a scope.
     globals: BTreeMap<usize, GlobalScope>,
@@ -379,11 +390,12 @@ impl Conversation {
     /// Whether `entry` (in `self`) cites the global handoff `global` by
     /// anchor: its full id from anywhere, or its local anchor in its own log.
     fn entry_cites(&self, entry: &Entry, global: &GlobalHandoff<'_>) -> bool {
-        cites(
-            &entry.text,
-            &format!("{}#L{}", global.conversation.id, global.entry.line),
-        ) || (self.id == global.conversation.id
-            && cites(&entry.text, &format!("#L{}", global.entry.line)))
+        self.entry_cites_line(entry, global.conversation, global.entry)
+    }
+    /// Whether `entry` (in `self`) cites `target` (in `owner`) by anchor.
+    fn entry_cites_line(&self, entry: &Entry, owner: &Conversation, target: &Entry) -> bool {
+        cites(&entry.text, &format!("{}#L{}", owner.id, target.line))
+            || (self.id == owner.id && cites(&entry.text, &format!("#L{}", target.line)))
     }
     fn item(&self, entry: &Entry) -> Item {
         // conversations() validates the effective entries before projection.
@@ -407,6 +419,7 @@ impl Conversation {
             by: entry.by.clone(),
             structured_handoff,
             legacy,
+            listing: None,
         }
     }
     fn reference(&self) -> Item {
@@ -423,6 +436,7 @@ impl Conversation {
             by: None,
             structured_handoff: None,
             legacy: None,
+            listing: None,
         }
     }
 }
@@ -463,6 +477,7 @@ fn conversations(files: &[LibraryText]) -> Result<Vec<Conversation>> {
             project: optional_text(&fields, "project")?,
             orchestrator: optional_text(&fields, "orchestrator")?,
             session_id: optional_text(&fields, "session_id")?,
+            private: optional_text(&fields, "sensitivity")?.as_deref() == Some("private"),
             globals,
         });
     }
@@ -565,6 +580,7 @@ fn task_item(row: &Value, at: &str, status: &str, workspace: Option<&str>) -> Re
         by: None,
         structured_handoff: None,
         legacy: None,
+        listing: None,
     })
 }
 
@@ -773,6 +789,20 @@ struct ThreadHandoff<'a> {
     at: (i64, String),
 }
 
+/// The thread a project handoff belongs to: `task:<id>` for the first
+/// assignment id it cites, else its conversation's normalized project plus
+/// orchestrator (separated by a NUL, which no frontmatter value contains).
+fn thread_key(conversation: &Conversation, entry: &Entry) -> String {
+    match cited_assignment(&entry.text) {
+        Some(id) => format!("task:{id}"),
+        None => format!(
+            "project:{}\u{0}orchestrator:{}",
+            project_key(conversation.project.as_deref()).unwrap_or_default(),
+            conversation.orchestrator.as_deref().unwrap_or("")
+        ),
+    }
+}
+
 /// One thread per assignment id a handoff cites, else per normalized
 /// project plus orchestrator; each thread keeps only its newest handoff.
 fn thread_handoffs<'a>(conversations: &'a [Conversation]) -> Result<Vec<ThreadHandoff<'a>>> {
@@ -781,14 +811,7 @@ fn thread_handoffs<'a>(conversations: &'a [Conversation]) -> Result<Vec<ThreadHa
         let Some(entry) = conversation.project_handoff() else {
             continue;
         };
-        let key = match cited_assignment(&entry.text) {
-            Some(id) => format!("task:{id}"),
-            None => format!(
-                "project:{}\u{0}orchestrator:{}",
-                project_key(conversation.project.as_deref()).unwrap_or_default(),
-                conversation.orchestrator.as_deref().unwrap_or("")
-            ),
-        };
+        let key = thread_key(conversation, entry);
         let candidate = ThreadHandoff {
             key: key.clone(),
             conversation,
@@ -845,20 +868,7 @@ fn open_globals<'a>(
     }
     let mut open = Vec::new();
     for global in globals {
-        let mut closed = false;
-        for conversation in conversations {
-            for entry in conversation.log.iter().filter(|e| e.kind == "resolved") {
-                let later = if conversation.id == global.conversation.id {
-                    entry.line > global.entry.line
-                } else {
-                    time_key(&entry.time)? >= global.at
-                };
-                if later && conversation.entry_cites(entry, &global) {
-                    closed = true;
-                }
-            }
-        }
-        if !closed {
+        if closing(conversations, global.conversation, global.entry)?.is_none() {
             open.push(global);
         }
     }
@@ -870,6 +880,40 @@ fn open_globals<'a>(
         ))
     });
     Ok(open)
+}
+
+/// The earliest `resolved` entry that closes `target` (in `owner`): one
+/// recorded at or after it that cites it by its full `<source-id>#L<n>`
+/// from any conversation, or by its local `#L<n>` later in its own log.
+fn closing<'a>(
+    conversations: &'a [Conversation],
+    owner: &Conversation,
+    target: &Entry,
+) -> Result<Option<(&'a Conversation, &'a Entry)>> {
+    let at = time_key(&target.time)?;
+    let mut found: Option<((i64, String), &'a Conversation, &'a Entry)> = None;
+    for conversation in conversations {
+        for entry in conversation.log.iter().filter(|e| e.kind == "resolved") {
+            let entry_at = time_key(&entry.time)?;
+            let later = if conversation.id == owner.id {
+                entry.line > target.line
+            } else {
+                entry_at >= at
+            };
+            if later
+                && conversation.entry_cites_line(entry, owner, target)
+                && found
+                    .as_ref()
+                    .is_none_or(|(best, best_conversation, best_entry)| {
+                        (&entry_at, &conversation.id, entry.line)
+                            < (best, &best_conversation.id, best_entry.line)
+                    })
+            {
+                found = Some((entry_at, conversation, entry));
+            }
+        }
+    }
+    Ok(found.map(|(_, conversation, entry)| (conversation, entry)))
 }
 
 /// The project the caller asked for, normalized; none in manual mode.
@@ -1029,6 +1073,7 @@ fn project_threads(conversations: &[Conversation]) -> Result<Vec<Item>> {
             by: None,
             structured_handoff: None,
             legacy: None,
+            listing: None,
         })
         .collect())
 }
@@ -1149,6 +1194,7 @@ pub fn assemble_for_session(
                     by: None,
                     structured_handoff: None,
                     legacy: None,
+                    listing: None,
                 })
                 .collect(),
         ));
@@ -1225,6 +1271,7 @@ pub fn assemble_for_session(
                 by: None,
                 structured_handoff: None,
                 legacy: None,
+                listing: None,
             }],
         ));
     }
@@ -1253,6 +1300,7 @@ pub fn assemble_for_session(
                 by: None,
                 structured_handoff: None,
                 legacy: None,
+                listing: None,
             });
         }
     }

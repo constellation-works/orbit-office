@@ -1,8 +1,11 @@
-/** Today: the next meeting, the user's next steps and the actions on them, live agent work and openable outcomes. */
-import type { CalendarMeeting, SharedLastSync, SharedSkipped, Today, TodayItem, TodayNeed, TodayResult } from "@orbit-office/contracts";
+/** Today: the next meeting, the user's next steps and the actions on them, live agent work, openable outcomes and the latest handoffs. */
+import type {
+  CalendarMeeting, ScribeHandoff, ScribeHandoffs, SharedLastSync, SharedSkipped, Today, TodayItem, TodayNeed, TodayResult,
+} from "@orbit-office/contracts";
 
 import { dismissSharedSkipped, getJson, getLastSharedSync } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
+import { ageLabel, HANDOFFS_HREF, handoffSummary, projectLabel, taskHref } from "../../ui/handoff.js";
 import { card, emptyState, errorState, pill, provenanceLink, tile, tileRow } from "../../ui/index.js";
 import { ApprovalControls, serverApprovals, type ApprovalApi } from "./approvals.js";
 import { nextMeetingCard, todaysMeetings, upcoming } from "./next-meeting.js";
@@ -165,7 +168,60 @@ function section<T extends TodayItem>(title: string, items: readonly T[], empty:
   return cardSection(title, items.map(draw), empty);
 }
 
-function drawToday(snapshot: Today, controls: ApprovalControls, shared: SharedNeeds): HTMLElement {
+/** Threads and open globals Today lists at most; the rest are on Scribe › Handoffs. */
+const HANDOFFS_SHOWN = 5;
+
+function handoffLine(handoff: ScribeHandoff, now: Date): HTMLElement {
+  const item = document.createElement("li");
+  item.className = "today-handoff";
+  item.dataset.id = handoff.id;
+  const meta = document.createElement("p");
+  meta.className = "today-handoff-meta";
+  const parts = [handoff.scope === "global" ? "Global" : projectLabel(handoff), handoff.orchestrator].filter((part): part is string => !!part);
+  meta.append(document.createTextNode(parts.join(" · ")));
+  if (handoff.assignment) {
+    const link = document.createElement("a");
+    link.href = taskHref(handoff.assignment);
+    link.textContent = handoff.assignment;
+    meta.append(document.createTextNode(" · "), link);
+  }
+  const time = document.createElement("time");
+  time.dateTime = handoff.time;
+  time.textContent = ageLabel(handoff.time, now);
+  meta.append(document.createTextNode(" · "), time);
+  if (handoff.until) meta.append(document.createTextNode(` · until ${handoff.until.slice(0, 16).replace("T", " ")}`));
+  if (handoff.legacy) meta.append(document.createTextNode(" "), pill("Legacy"));
+  const summary = paragraph(handoffSummary(handoff));
+  summary.className = "today-handoff-text";
+  item.append(meta, summary);
+  return item;
+}
+
+/** The compact handoff summary: each open thread's newest handoff and the open globals, linking to Scribe › Handoffs. */
+function handoffSection(handoffs: ScribeHandoffs): HTMLElement | null {
+  const open = handoffs.global.filter((handoff) => handoff.state === "open");
+  if (handoffs.threads.length === 0 && open.length === 0) return null;
+  const now = new Date();
+  const element = document.createElement("section");
+  element.className = "today-section today-handoffs";
+  element.setAttribute("aria-label", "Handoffs");
+  const header = document.createElement("div");
+  header.className = "today-section-heading";
+  const heading = document.createElement("h2");
+  heading.textContent = "Handoffs";
+  header.append(heading, pill(String(handoffs.threads.length + open.length)));
+  const list = document.createElement("ul");
+  list.className = "today-handoff-list";
+  for (const handoff of [...open.slice(0, HANDOFFS_SHOWN), ...handoffs.threads.slice(0, HANDOFFS_SHOWN)]) list.append(handoffLine(handoff, now));
+  const more = document.createElement("a");
+  more.href = HANDOFFS_HREF;
+  more.className = "today-handoff-more";
+  more.textContent = "Open Scribe › Handoffs";
+  element.append(header, list, more);
+  return element;
+}
+
+function drawToday(snapshot: Today, controls: ApprovalControls, shared: SharedNeeds, handoffs: ScribeHandoffs | null): HTMLElement {
   const body = document.createElement("div");
   const needed = needCards(snapshot.needs_you, controls, shared);
   const needs = cardSection("Needs you", needed, "Nothing needs your attention.");
@@ -189,6 +245,8 @@ function drawToday(snapshot: Today, controls: ApprovalControls, shared: SharedNe
     tile("Done today", String(snapshot.done_today.length), "done"),
   ], "Today at a glance");
   body.append(counts, needs, split);
+  const handoffBlock = handoffs === null ? null : handoffSection(handoffs);
+  if (handoffBlock !== null) body.append(handoffBlock);
   if (snapshot.truncated || snapshot.completion_dates_unavailable > 0) {
     const notice = paragraph([
       snapshot.truncated ? "Showing a limited selection of your work." : "",
@@ -210,6 +268,10 @@ export interface TodayScreenOptions {
   meetings?: (now: Date) => Promise<CalendarMeeting[]>;
   /** How often the Next meeting card rereads the calendar. */
   meetingIntervalMs?: number;
+  /** The handoff list for the Handoffs section; tests pass their own. A failed read hides the section. */
+  handoffs?: () => Promise<ScribeHandoffs>;
+  /** How often the Handoffs section rereads the list (it changes slowly). */
+  handoffIntervalMs?: number;
   /** The latest shared-library sync the app ran, for its skipped documents; tests pass their own. */
   sharedSync?: { last(): Promise<SharedLastSync>; dismissSkipped(): Promise<unknown> };
 }
@@ -230,6 +292,7 @@ async function lastSkipped(sharedSync: NonNullable<TodayScreenOptions["sharedSyn
 export function createTodayScreen({
   load = () => getJson<Today>("/api/today"), approvals = serverApprovals, pollIntervalMs = 5_000,
   meetings = todaysMeetings, meetingIntervalMs = 60_000, sharedSync = serverSharedSync,
+  handoffs = () => getJson<ScribeHandoffs>("/api/scribe/handoffs"), handoffIntervalMs = 10_000,
 }: TodayScreenOptions = {}): Screen {
   return {
     id: "today",
@@ -262,6 +325,15 @@ export function createTodayScreen({
       root.replaceChildren(view);
       let previous: string | undefined;
       let shown: Today | undefined;
+      let handoffList: ScribeHandoffs | null = null;
+      let handoffsRead = Number.NEGATIVE_INFINITY;
+      /** The handoff list, reread at most every `handoffIntervalMs`; null when it can't be read. */
+      async function latestHandoffs(): Promise<ScribeHandoffs | null> {
+        if (Date.now() - handoffsRead < handoffIntervalMs) return handoffList;
+        handoffsRead = Date.now();
+        try { handoffList = await handoffs(); } catch { handoffList = null; }
+        return handoffList;
+      }
       let skipped: SharedSkipped[] = [];
       const shared: SharedNeeds = {
         get skipped() { return skipped; },
@@ -286,7 +358,7 @@ export function createTodayScreen({
         const typed = new Map(Array.from(content.querySelectorAll<HTMLTextAreaElement>("textarea[data-focus]"), (field) => [field.dataset.focus, field.value]));
         const focused = content.contains(document.activeElement)
           ? (document.activeElement as HTMLElement).dataset.focus : undefined;
-        content.replaceChildren(drawToday(snapshot, controls, shared));
+        content.replaceChildren(drawToday(snapshot, controls, shared, handoffList));
         shown = snapshot;
         for (const detail of content.querySelectorAll<HTMLDetailsElement>("details")) {
           detail.open = open.has(detail.dataset.key);
@@ -306,10 +378,10 @@ export function createTodayScreen({
       async function refresh(): Promise<void> {
         if (!root.contains(view) || !view.isConnected) return;
         try {
-          const [snapshot, left] = await Promise.all([load(), lastSkipped(sharedSync)]);
+          const [snapshot, left, latest] = await Promise.all([load(), lastSkipped(sharedSync), latestHandoffs()]);
           if (!root.contains(view) || !view.isConnected) return;
           skipped = left;
-          const serialized = JSON.stringify([snapshot, left]);
+          const serialized = JSON.stringify([snapshot, left, latest]);
           if (serialized !== previous) {
             paint(snapshot);
             previous = serialized;

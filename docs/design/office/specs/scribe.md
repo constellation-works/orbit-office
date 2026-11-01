@@ -537,7 +537,7 @@ web access, no writes and no Orbit calls.
 | Conversation sources as `src-…/source.md` | Left as they are; new sessions write `SCR-…md`. No migration in v1. |
 | `office.recall`, `office.recall-answer`, `office.scribe-control`, corrections | Unchanged and unused by v1. Corrections may be reused later as `correction` lines. |
 | Desktop pane (ORB-20697) | Unused by v1. |
-| Web Scribe screen (ORB-20696) | Built over v1, commanded only: the feed and the Pending, Preferences, Landed and Why views read `office.scribe-query`; a note is appended through `office.scribe-append` at the session's own `scribed_through`, as `/scribe note` records it; the ask box calls `office.scribe-ask`. No automatic capture, heartbeat or capture switch. `office.scribe-query` results carry the file's `title` (or the humanized slug where null), `title_by`, `project` and `scribed_through` for it. |
+| Web Scribe screen (ORB-20696) | Built over v1, commanded only: the feed and the Pending, Preferences, Landed and Why views read `office.scribe-query`; a note is appended through `office.scribe-append` at the session's own `scribed_through`, as `/scribe note` records it; the ask box calls `office.scribe-ask`. A read-only Handoffs view (ORB-21075) beside them lists session handoffs as Current, Global and History from `office.session-brief` `view: list` ([sessions.md](./sessions.md#handoff-list)); Today links to it. Asking the scribe about handoffs is a possible follow-up, not built. No automatic capture, heartbeat or capture switch. `office.scribe-query` results carry the file's `title` (or the humanized slug where null), `title_by`, `project` and `scribed_through` for it. |
 
 ## Build order
 

@@ -316,3 +316,38 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
   await page.waitForFunction(() => !document.body.innerText.includes("Receipt catalog for October"));
   assert.deepEqual(errors, []);
 });
+
+test("Today shows a compact Handoffs section of open globals and each open thread's newest handoff, linking to Scribe › Handoffs", { timeout: 60_000 }, async (t) => {
+  assert.ok(process.env.PLAYWRIGHT_MODULE, "source the verified ORBIT_BROWSER_KIT_ENV first");
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE);
+  const { scribeServer } = await import("../../server/test/scribe-fixture.mjs");
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  const { url, calls } = await scribeServer(t);
+  const page = await browser.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const screenshotDir = process.env.TODAY_SCREENSHOTS_DIR;
+  if (screenshotDir) await mkdir(screenshotDir, { recursive: true });
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 1100 });
+    await page.goto(`${url}/#today`);
+    const section = page.getByRole("region", { name: "Handoffs", exact: true });
+    await section.locator(".today-handoff").first().waitFor();
+    assert.deepEqual(await section.locator(".today-handoff").evaluateAll((items) => items.map((item) => item.dataset.id)), [
+      "src-20261031-office#L2", "src-20261031-office#L5", "src-20261031-constellation#L3", "src-20261101-private#L1", "src-20261030-orbit#L1",
+    ], "open globals, then threads newest first; closed globals and superseded handoffs are left out");
+    await section.getByText("5", { exact: true }).waitFor();
+    assert.equal(await section.getByRole("link", { name: "ORB-21075" }).getAttribute("href"), "orbit://task/ORB-21075");
+    await section.getByText("Ship the Scribe Handoffs view for ORB-21075.").waitFor();
+    await section.getByText("Private session: content withheld.").waitFor();
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal overflow at ${width}px`);
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `today-handoffs-light-${width}.png`), fullPage: true });
+  }
+  assert.ok(calls.every((call) => call.name !== "office.session-brief" || call.input.view === "list"));
+  await page.getByRole("link", { name: "Open Scribe › Handoffs" }).click();
+  await page.getByRole("heading", { name: "Scribe", exact: true, level: 1 }).waitFor();
+  assert.equal(await page.getByRole("tab", { name: "Handoffs", exact: true }).getAttribute("aria-selected"), "true");
+  await page.getByRole("tabpanel").locator('[data-id="src-20261031-office#L5"]').waitFor();
+  assert.deepEqual(errors, []);
+});

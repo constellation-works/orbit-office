@@ -15,6 +15,16 @@
  * outputs, records every call, and adds the appended note to later reads.
  * Office's `office.scribe-ask` needs a model, so its two answers are written
  * here by hand in the tool's response schema, citing fixture lines.
+ *
+ * `handoffs-fixture.json` is the verbatim `office.session-brief` output
+ * (`view: list`) of the `office` binary built from this revision over a
+ * Library of four conversation sources: "Scribe screen" (orbit-office,
+ * claude) with a superseded legacy handoff, an open, an expired and a
+ * resolved global and a structured handoff for ORB-21075; "Plan the
+ * constellation rollout" (constellation, claude) resolving that global and
+ * two handoffs for ORB-21001; "Orbit release" (orbit, codex); and a private
+ * source. Each case records the input it answers (`all`, a `project`,
+ * `orchestrator` and `thread` filter, and the `page` at offset 4).
  */
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -23,6 +33,8 @@ import { createScribeFeature } from "../dist/features/scribe/index.js";
 import { createHandler } from "../dist/http/router.js";
 
 export const office = JSON.parse(readFileSync(new URL("./scribe-fixture.json", import.meta.url), "utf8"));
+export const handoffs = JSON.parse(readFileSync(new URL("./handoffs-fixture.json", import.meta.url), "utf8"));
+const sameInput = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
 export const NOW = new Date(2026, 10, 1, 9, 0, 0);
 export const RECENT = office.after_note.results[0].session_id;
 export const OLDER = office.feed.results[0].session_id;
@@ -86,6 +98,11 @@ export function scribeClient() {
       if (input.through !== through) throw new Error(`append moved the cursor: ${input.through}`);
       noted = true;
       return structuredClone(office.note);
+    }
+    if (name === "office.session-brief") {
+      const recorded = Object.values(handoffs).find((entry) => sameInput(entry.input, input));
+      if (recorded === undefined) throw new Error(`no recorded handoff list for ${JSON.stringify(input)}`);
+      return structuredClone(recorded.output);
     }
     if (name === "office.scribe-ask") return structuredClone(/lunch/.test(input.question) ? askNotCaptured : askAnswered);
     throw new Error(`unexpected fixture call ${name}`);

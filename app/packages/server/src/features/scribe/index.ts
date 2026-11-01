@@ -4,15 +4,17 @@
  * `office.scribe-query` (model-free); a note goes through
  * `office.scribe-append` as `/scribe note` records it; the ask box calls
  * `office.scribe-ask`, which makes the one low-cost model call through the
- * Models port. Every call is `orbit tool run`; nothing reads the Library.
+ * Models port. Handoffs read `office.session-brief` with `view: list`
+ * (read-only, model-free). Every call is `orbit tool run`; nothing reads the Library.
  * v1 is commanded only: no automatic capture, heartbeat or capture switch.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { ScribeAnswer, ScribeFeed, ScribeNoteResult, ScribeQueryResult, ScribeView } from "@orbit-office/contracts";
+import type { ScribeAnswer, ScribeFeed, ScribeHandoffs, ScribeNoteResult, ScribeQueryResult, ScribeView } from "@orbit-office/contracts";
 
 import type { Feature } from "../../http/types.js";
 import { createOrbitClient, OrbitExitError, type OrbitToolClient } from "../../orbit/client.js";
+import { handoffInput, handoffQuery, handoffsOf, type HandoffQuery } from "./handoffs.js";
 import {
   answerOf, cursorOf, feedOf, noteEntry, outputOf, ScribeError, VIEWS, viewInput, viewOf, windowStart,
 } from "./model.js";
@@ -80,6 +82,10 @@ export async function loadView(client: Client, view: ScribeView, about: string |
   // `/scribe why <matter|topic>`: a matter first, then the same word as a topic.
   if (view === "why" && about !== null && result.entries.length === 0) return read(true);
   return result;
+}
+
+export async function loadHandoffs(client: Client, query: HandoffQuery): Promise<ScribeHandoffs> {
+  return handoffsOf(outputOf(unwrap(await client.pollTool("office.session-brief", handoffInput(query)))));
 }
 
 export async function addNote(client: Client, body: unknown): Promise<ScribeNoteResult> {
@@ -191,6 +197,10 @@ export function createScribeFeature(client: Client, now: () => Date = () => new 
           const { view, about } = viewParams(request);
           return loadView(client, view, about);
         }),
+      },
+      {
+        method: "GET", path: "/api/scribe/handoffs",
+        handle: (request, response) => answer(response, "handoffs", async () => loadHandoffs(client, handoffQuery(request))),
       },
       { method: "POST", path: "/api/scribe/note", handle: (request, response) => answer(response, "note", async () => addNote(client, await readJsonBody(request))) },
       { method: "POST", path: "/api/scribe/ask", handle: (request, response) => answer(response, "ask", async () => ask(client, await readJsonBody(request))) },
