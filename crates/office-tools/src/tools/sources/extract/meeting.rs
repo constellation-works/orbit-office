@@ -80,11 +80,19 @@ pub(super) fn inbox(call: &Call<'_>) -> Result<Value> {
         if let Some(task) = call.input.get("task") {
             input["task"] = task.clone();
         }
-        super::run(&Call {
+        let output = super::run(&Call {
             input: object(&input)?,
             ports: call.ports,
             context: call.context,
         })?;
+        // A to-do not certainly filed holds the source: it is not processed,
+        // and its outcomes stay in `filing.json` for reconcile.
+        if output["filing"]["complete"] == false {
+            return Err(video::refusal(
+                "meeting_processing_incomplete",
+                "a meeting to-do was not filed; finish it with office.extract {id, profile: meeting, reconcile: true}",
+            ));
+        }
         processed.push(meta.id);
     }
     Ok(json!({"profile":"meeting","processed":processed}))

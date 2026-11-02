@@ -108,7 +108,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         {
             return Err(video::refusal(
                 "meeting_processing_incomplete",
-                "a previous extraction may have filed to-dos; reconcile it before retrying",
+                "a previous extraction may have filed to-dos; finish it with reconcile: true",
             ));
         }
     }
