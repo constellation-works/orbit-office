@@ -1,7 +1,6 @@
 /** The Calendar screen's own rules, on the shared tokens. One hour is `--hour` tall. */
 export const styles = `
 .calendar { --hour:72px; --gutter:56px; }
-.calendar-header .screen-head-actions { align-items:center; }
 .calendar-actions { flex-direction:column; align-items:flex-end; gap:10px; }
 .calendar-sync { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .calendar-sync button, .calendar-nav button, .calendar-days button { min-height:40px; padding:0 14px; border:1px solid var(--border-strong); border-radius:var(--radius-sm); background:transparent; color:var(--fg); font:inherit; font-size:14px; cursor:pointer; }

@@ -68,7 +68,8 @@ const STYLE = `
 .todos-schedule-action:hover { background: var(--bg-hover); }
 .todos-create { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 0 0 14px; padding: 12px; background: var(--bg-rail); border: 1px solid var(--border); border-radius: var(--radius); }
 .todos-create label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-mute); flex: 1 1 220px; min-width: 0; }
-.todos-create input { min-height: 36px; width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--fg); font: inherit; color-scheme: dark; box-sizing: border-box; }
+.todos-create input { min-height: 40px; width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--fg); font: inherit; color-scheme: dark; box-sizing: border-box; }
+.todos-create .primary-action { align-self: flex-end; }
 .todos-create .todos-create-status { flex: 1 0 100%; margin: 0; font-size: 12px; color: var(--attention-fg); }
 .todos-create .todos-create-status:empty { display: none; }
 .todos-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 16px; margin: 0 0 20px; }
