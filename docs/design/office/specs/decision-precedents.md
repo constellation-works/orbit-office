@@ -6,7 +6,10 @@ last_validated: 2026-11-01
 
 # Spec: Decision ledger as a precedent provider
 
-Status: designed ([ORB-21090]). Nothing here is built. The slices are
+Status: designed ([ORB-21090]). Slice P1 (entry schema additions, their
+validation and refusals, `same_as` matching in `office.scribe-append` and
+`office.capture`, and reading them through `office.source-show` and
+`office.scribe-query`) is built ([ORB-21216]). The remaining slices are
 filed as proposed tasks (see [Build order](#build-order)).
 
 Daniel asked for a decision model (2026-11-01, in the orbit-office on-call

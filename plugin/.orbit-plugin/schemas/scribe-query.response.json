@@ -367,7 +367,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "description": "A ledger entry (D13 fields), its derived reversed_by, whether it is current, its ledger id and line."
+            "description": "A ledger entry (D13 fields, including orbit, same_as and confirms and option id/consequence when present), its derived reversed_by, whether it is current, its ledger id and line."
           }
         },
         "count": {

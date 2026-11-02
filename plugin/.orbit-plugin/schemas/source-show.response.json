@@ -411,7 +411,15 @@
                     "ref": {
                       "type": "string",
                       "minLength": 1
-                    }
+                    },
+                  "id": {
+                    "type": "string",
+                    "description": "Ingestion only: the option's stable id."
+                  },
+                  "consequence": {
+                    "type": "string",
+                    "description": "Ingestion only: the option's one-line consequence."
+                  }
                   },
                   "required": [
                     "text",
@@ -500,6 +508,18 @@
               "string",
               "null"
             ]
+          },
+          "orbit": {
+            "type": "object",
+            "description": "Ingestion only: the answered Orbit request (request_id, gate, category, topic, answered_by, channel, and model with assessment_id, policy_digest, model, probability, cited_precedents when answered by the model). Absent on scribe and captured entries."
+          },
+          "same_as": {
+            "type": "string",
+            "description": "The dec-<scope>-<n> entry recording the same decision from the other source."
+          },
+          "confirms": {
+            "type": "string",
+            "description": "Ingestion only: the dec-<scope>-<n> model entry this human entry confirms."
           },
           "source": {
             "type": "string"

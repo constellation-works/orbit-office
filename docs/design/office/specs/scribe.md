@@ -332,7 +332,7 @@ or dedupe fields (option `id`/`consequence`, `orbit`, `same_as`,
 |---|---|---|
 | `id` | yes | `dec-<scope>-<n>`, the entry's permanent id. |
 | `question` | yes | What was being decided. When a message asked it, the verbatim question with `question_ref` (its message id). Otherwise a one-line restatement by the scribe, with `question_by: scribe`. |
-| `options` | yes | The options considered, each `{text, ref}` verbatim from a message, or the string `"unrecoverable"` when the turns do not state them. Never invented. |
+| `options` | yes | The options considered, each `{text, ref}` verbatim from a message, or the string `"unrecoverable"` when the turns do not state them. Never invented. Ingested options also carry `id` and `consequence` from the Orbit request; `office.capture` and `office.scribe-append` refuse option `id`/`consequence`. |
 | `chosen` | yes | The chosen option: a verbatim span of the decision message. |
 | `quote` | yes | The decision message's verbatim text (the marker line), and |
 | `ref` | yes | its transcript line ref: SCR id, the SCR tag entry id and the message id (`SCR-…#T12 m-0187`). |
@@ -342,6 +342,9 @@ or dedupe fields (option `id`/`consequence`, `orbit`, `same_as`,
 | `decided_by` | yes | `human`, `agent` or `model`. `human` only for a user's marker in a typed turn. `agent` for an agent's marker. `model` is for a decision model's answer, written only by Orbit decision ingestion's feedback path ([ORB-21089], [ORB-21090]; [feedback rules](./decision-precedents.md#feedback)); the scribe never writes it, and it is never precedent until a human confirms it. |
 | `decided_at` | yes | The decision message's time, RFC 3339 with offset. |
 | `reverses` | no | The entry id this one overturns. |
+| `orbit` | no | Ingestion only: `{request_id, gate, category, topic, answered_by, channel}` from the answered Orbit request, plus `model` (assessment id, policy digest, model identity, probability, cited precedents) when the model answered. `office.capture` and `office.scribe-append` refuse it. |
+| `same_as` | no | The entry id recording the same decision from the other source. Accepted by `office.capture` and `office.scribe-append`, checked like `reverses` (`decision_not_found`); also set automatically when an append matches exactly one ingested entry (same task, `decided_at` within 30 minutes, chosen matches the chosen answer). An ambiguous match links nothing and never blocks the append. |
+| `confirms` | no | Ingestion only: the `decided_by: model` entry this human entry confirms. `office.capture` and `office.scribe-append` refuse it. |
 | `reversed_by` | derived | Never written, since entries are append-only. Readers compute it from later entries' `reverses`, and `office.scribe-query` returns it. |
 | `source` | yes | The evidence's source id: the SCR id; for a migrated note, its original `src-…` id; for an answered Orbit decision request that [ORB-21090] ingests, `orbit-decision:<id>`. |
 | `private` | no | `true` for a reference-only entry ([Privacy](#privacy)). |

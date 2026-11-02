@@ -408,6 +408,109 @@ fn a_pass_commits_the_scr_and_its_ledger_lines_once_and_keeps_tags_append_only()
     );
 }
 
+fn seed_ingested_decision(fixture: &Fixture) {
+    let dir = fixture.library().join("sources/decisions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let entry = json!({
+        "id": "dec-orbit-office-1",
+        "question": "Which slice ships first?",
+        "question_by": "scribe",
+        "options": [{"text": "ship v2 first", "ref": "orbit-decision:req-1#a1", "id": "a1", "consequence": "Feed fixed first"}],
+        "chosen": "ship v2 first",
+        "quote": "ship v2 first",
+        "ref": "orbit-decision:req-1",
+        "scope": "project:orbit-office",
+        "context": {"task_type": null, "workspace": null, "task": "ORB-12345", "risk_tier": null},
+        "decided_by": "human",
+        "decided_at": "2026-11-01T09:10:00Z",
+        "reverses": null,
+        "orbit": {"request_id": "req-1", "gate": "agent_request", "category": "orbit-office:feature", "topic": "scribe", "answered_by": "human", "channel": "orbit"},
+        "source": "orbit-decision:req-1"
+    });
+    let text = format!(
+        "---\nid: decisions-orbit-office\nkind: decisions\ntitle: \"Decisions (project:orbit-office)\"\nscope: \"project:orbit-office\"\ncreated_at: \"2026-11-01T09:00:00Z\"\nsensitivity: normal\nmoved_sources: {{}}\n---\n- dec-orbit-office-1 2026-11-01T09:10:00Z #decision {entry}\n"
+    );
+    std::fs::write(dir.join("orbit-office.md"), text).unwrap();
+    fixture.git(&["add", "--", "sources/decisions"]);
+    fixture.git(&[
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-qm",
+        "seed ingested",
+    ]);
+}
+
+#[test]
+fn append_refuses_ingestion_only_decision_fields_and_a_same_as_naming_no_entry() {
+    let with = |extra: Value| {
+        let mut d = decision("ship v2 first", "human");
+        d.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        json!([{"msg":"m-0001","line":1,"tag":"decisions","decision":d}])
+    };
+    let mut option_id = decision("ship v2 first", "human");
+    option_id["options"] = json!([{"text": "ship v2 first", "msg": "m-0001", "id": "a1"}]);
+    let fixture = Fixture::new();
+    fixture.pending(SESSION, 9, &turns());
+    let mut codes = Vec::new();
+    for findings in [
+        with(json!({"orbit": {"request_id": "req-1"}})),
+        with(json!({"confirms": "dec-orbit-office-1"})),
+        json!([{"msg":"m-0001","line":1,"tag":"decisions","decision":option_id}]),
+        with(json!({"same_as": "dec-orbit-office-9"})),
+    ] {
+        let out = fixture.append(SESSION, "m-0003", findings);
+        codes.push(
+            out["refused"][0]["code"]
+                .as_str()
+                .unwrap_or("none")
+                .to_owned(),
+        );
+    }
+    assert_eq!(
+        codes,
+        [
+            "decision_invalid",
+            "decision_invalid",
+            "decision_invalid",
+            "decision_not_found"
+        ]
+    );
+}
+
+#[test]
+fn append_links_exactly_one_ingested_match_and_query_returns_the_new_fields() {
+    let fixture = Fixture::new();
+    seed_ingested_decision(&fixture);
+    fixture.pending(SESSION, 9, &turns());
+    let mut d = decision("ship v2 first", "human");
+    d["context"] =
+        json!({"task_type": null, "workspace": null, "task": "ORB-12345", "risk_tier": null});
+    let out = fixture.append(
+        SESSION,
+        "m-0003",
+        json!([{"msg":"m-0001","line":1,"tag":"decisions","decision":d}]),
+    );
+    assert_eq!(out["written"], true, "{out}");
+    let ledger = fixture.ok(
+        "office.scribe-query",
+        json!({"mode":"decisions","scope":"project:orbit-office"}),
+    );
+    let entries = ledger["decisions"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "{ledger}");
+    assert_eq!(entries[0]["orbit"]["request_id"], "req-1", "{ledger}");
+    assert_eq!(entries[0]["options"][0]["id"], "a1", "{ledger}");
+    assert_eq!(
+        entries[0]["options"][0]["consequence"], "Feed fixed first",
+        "{ledger}"
+    );
+    assert_eq!(entries[1]["same_as"], "dec-orbit-office-1", "{ledger}");
+}
+
 #[test]
 fn a_section_over_budget_or_a_next_item_without_a_task_id_is_refused() {
     let fixture = Fixture::new();
