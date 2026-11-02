@@ -530,6 +530,16 @@ impl Library for RealLibrary {
     fn decision_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::decision_ledger_files(&self.store()?)?)
     }
+    fn decision_precedent_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
+        Library::decision_precedent_ledgers(&self.store()?)
+    }
+    fn decision_precedent_scores(
+        &self,
+        query: &str,
+        entries: &[(String, String)],
+    ) -> office_core::Result<std::collections::BTreeMap<String, f64>> {
+        Library::decision_precedent_scores(&self.store()?, query, entries)
+    }
     fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> office_core::Result<()> {
         LibraryStore::write_scribe_pass(&self.store()?, pass)
     }
@@ -755,7 +765,13 @@ pub(crate) fn serve_exec() -> Result<String> {
     Ok(match protocol::parse(&raw) {
         Ok(request) => office_tools::serve(
             &request,
-            &ports(&request.context, request.tool == "office.bootstrap-status"),
+            &ports(
+                &request.context,
+                matches!(
+                    request.tool.as_str(),
+                    "office.bootstrap-status" | "office.decision-precedents"
+                ),
+            ),
         ),
         Err(error) => protocol::respond(Err(error)),
     })

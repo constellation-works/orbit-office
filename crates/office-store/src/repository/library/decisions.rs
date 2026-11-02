@@ -24,6 +24,65 @@ use crate::driver::file::lock::WriterLock;
 use crate::{Error, Result};
 
 impl LibraryStore {
+    /// Provider-only tolerant scan; other ledger readers remain strict.
+    pub fn decision_precedent_ledgers(&self) -> Result<Vec<office_core::ports::LibraryText>> {
+        self.require_initialized()?;
+        self.files.read_precedent_ledgers()
+    }
+    /// Rank an eligible decision snapshot with the Library index's FTS5
+    /// tokenizer and BM25. Ledger lines are not persistent index documents;
+    /// this private in-memory index writes no durable state on a read.
+    pub(super) fn decision_precedent_scores(
+        &self,
+        query: &str,
+        entries: &[(String, String)],
+    ) -> Result<std::collections::BTreeMap<String, f64>> {
+        let path = Path::new("<in-memory>");
+        let error = |source| Error::sqlite(path, "rank decision precedents", source);
+        let terms: BTreeSet<String> = query
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|term| !term.is_empty())
+            .map(|term| format!("\"{}\"*", term.replace('"', "\"\"")))
+            .collect();
+        if terms.is_empty() || entries.is_empty() {
+            return Ok(Default::default());
+        }
+        let conn = rusqlite::Connection::open_in_memory().map_err(error)?;
+        conn.execute_batch("PRAGMA temp_store=MEMORY; CREATE VIRTUAL TABLE decisions_fts USING fts5(id UNINDEXED, body);").map_err(error)?;
+        {
+            let mut insert = conn
+                .prepare("INSERT INTO decisions_fts (id,body) VALUES (?1,?2)")
+                .map_err(error)?;
+            for (id, text) in entries {
+                insert.execute(rusqlite::params![id, text]).map_err(error)?;
+            }
+        }
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, -bm25(decisions_fts) FROM decisions_fts WHERE decisions_fts MATCH ?1",
+            )
+            .map_err(error)?;
+        let query = terms.into_iter().collect::<Vec<_>>().join(" OR ");
+        let ranks = stmt
+            .query_map([query], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
+            })
+            .map_err(error)?;
+        let mut scores = std::collections::BTreeMap::new();
+        let mut best = 0.0_f64;
+        for rank in ranks {
+            let (id, score) = rank.map_err(error)?;
+            best = best.max(score);
+            scores.insert(id, score);
+        }
+        if best > 0.0 {
+            for score in scores.values_mut() {
+                *score /= best;
+            }
+        }
+        Ok(scores)
+    }
+
     /// Every ledger, parsed, beside its file text. A malformed ledger is
     /// refused rather than skipped, so a lookup never silently misses it.
     pub(super) fn ledgers(&self) -> Result<Vec<(Ledger, String)>> {

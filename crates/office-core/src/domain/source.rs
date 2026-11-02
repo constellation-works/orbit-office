@@ -6,6 +6,8 @@ pub mod access;
 pub mod conversation;
 /// Orbit decision ingestion into the ledgers (decision-precedents.md).
 pub mod decision_ingest;
+/// Model-free selection for Orbit's precedent provider contract.
+pub mod decision_precedents;
 /// Append-only decision ledgers (`sources/decisions/<scope>.md`).
 pub mod decisions;
 /// KT video planning and processing state.

@@ -440,8 +440,8 @@ Contradictions are checked twice (D5).
   files one `owner:you` to-do asking which stands. The user's answer is
   recorded as a new decision with `reverses`. One proposal or to-do per
   conflict, each citing both entries. It never edits a ledger.
-  The precedent provider reports a decision conflict whose to-do is still
-  open to Orbit's decision model; slice [ORB-21219] adds the comparison
+  Slice [ORB-21219] will make the precedent provider report a decision
+  conflict whose to-do is still open to Orbit's decision model, adding the comparison
   within an Orbit category and a machine-readable `Conflicting entries:`
   line ([decision-precedents.md](./decision-precedents.md#contradictions)).
 
@@ -808,6 +808,7 @@ is left out, as before.
 {
   "scribe": {
     "cadence": { "minutes": 20, "turns": 10 },
+    "precedents": { "half_life_days": 90 },
     "tags": [
       { "name": "preferences", "scope": "global", "sink": "preference_page", "mode": "propose", "capture": "markers",
         "instruction": "A standing answer to a class of question, in the user's words." },
@@ -819,7 +820,8 @@ is left out, as before.
 ```
 
 That is the effective block for a Library with no `scribe` key, not text in
-the file: `office.config-set` omits the block while both parts are default,
+the file: `office.config-set` omits the block while cadence, tags and
+precedent policy are default,
 so a default change in a later release applies to a Library that never
 customized them. A customized block is written with the rest of the file
 as the canonical JSON mapping (valid YAML), which is the only form
@@ -845,6 +847,13 @@ nested list of mappings ([plugin-surface.md](./plugin-surface.md#library-setting
   match it; `mode` defaults by sink (`propose` for `preference_page` and
   `orbit_task`, `append` for `decisions_ledger` and `scr_only`);
   `capture` defaults to `markers`. A list holds at most 32 tags.
+- **Precedent recency** (built, [ORB-21218]).
+  `scribe.precedents.half_life_days` is an integer from 1 to 3650,
+  default 90; null restores the default. It controls the read-only,
+  host-facing `office.decision-precedents` provider's exponential decay
+  ([decision-precedents.md](./decision-precedents.md#the-precedent-tool)).
+  Invalid values or unknown keys inside a hand-edited `precedents`
+  block are refused on load as well as on write.
 - **Refusals.** Each is typed and leaves the file and HEAD unchanged,
   and none echoes the value. `invalid_library_setting` names the dotted
   key for: a sink that is not one of the four, a sink and mode pair other
@@ -860,11 +869,11 @@ nested list of mappings ([plugin-surface.md](./plugin-surface.md#library-setting
   `:`), an `orbit_task` `workspace` shaped like a path (it contains `/`
   or `..`, or starts with `.` or `~`), or a definition key that names one
   (`path`, `file`, `target`, `dir`, `directory`, `destination`,
-  `output`). A scribe key other than
-  the three above is `unknown_library_setting`. The same rules apply
+  `output`). A scribe key outside
+  those above is `unknown_library_setting`. The same rules apply
   when the file is read, so a hand-edited block cannot bypass them.
 - **Reading the effective block.** `office.status` returns it as
-  `scribe` (`cadence`, `tags` and `tags_customized`), never null: an
+  `scribe` (`cadence`, `tags`, `tags_customized` and `precedents`), never null: an
   unset key or an uninitialized Library reads as the defaults.
   `office.scribe-pending` returns the same `tags` and `cadence`, so a
   pass sees the definitions in force without a second call.

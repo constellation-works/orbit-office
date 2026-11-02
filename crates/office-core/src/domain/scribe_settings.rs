@@ -1,5 +1,5 @@
 //! The `scribe:` block of the Library settings (specs/scribe.md,
-//! "Configuration"): the pass cadence and the tag definitions.
+//! "Configuration"): the pass cadence, tag definitions and precedent recency.
 //!
 //! Pure validation. A definition names one of four sinks, all inside the
 //! Library or Orbit; a definition that names a file target is refused with
@@ -139,11 +139,52 @@ pub struct ScribeTag {
 /// the list in force.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ScribeSettings {
+    /// Recency policy for the host-facing precedent provider.
+    pub precedents: PrecedentSettings,
     /// Pass cadence.
     pub cadence: ScribeCadence,
     /// Configured tags; `None` means the two shipped defaults.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<ScribeTag>>,
+}
+
+/// Recency weighting; loaded and written through the same validation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PrecedentSettings {
+    /// Days until a precedent's relevance halves (1–3650, default 90).
+    pub half_life_days: u32,
+}
+
+impl Default for PrecedentSettings {
+    fn default() -> Self {
+        Self { half_life_days: 90 }
+    }
+}
+
+fn parse_precedents(value: &Value) -> Result<PrecedentSettings> {
+    let map = value
+        .as_object()
+        .ok_or_else(|| invalid("scribe.precedents", "expected a mapping of half_life_days"))?;
+    let mut out = PrecedentSettings::default();
+    for (name, value) in map {
+        if name != "half_life_days" {
+            return Err(invalid(
+                &format!("scribe.precedents.{name}"),
+                "unknown precedent setting",
+            ));
+        }
+        out.half_life_days = value
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .filter(|n| (1..=3650).contains(n))
+            .ok_or_else(|| {
+                invalid(
+                    "scribe.precedents.half_life_days",
+                    "expected an integer from 1 to 3650",
+                )
+            })?;
+    }
+    Ok(out)
 }
 
 impl ScribeSettings {
@@ -164,6 +205,7 @@ impl ScribeSettings {
     #[must_use]
     pub fn effective(&self) -> Value {
         json!({
+            "precedents": self.precedents,
             "cadence": {"minutes": self.cadence.minutes, "turns": self.cadence.turns},
             "tags": self.effective_tags(),
             "tags_customized": self.tags.is_some(),
@@ -173,12 +215,16 @@ impl ScribeSettings {
     /// Validate the `scribe` mapping read from the file or built by
     /// `with_setting`.
     pub(crate) fn parse(value: &Value) -> Result<Self> {
-        let map = value
-            .as_object()
-            .ok_or_else(|| invalid("scribe", "expected a mapping of cadence and tags"))?;
+        let map = value.as_object().ok_or_else(|| {
+            invalid(
+                "scribe",
+                "expected a mapping of cadence, tags and precedents",
+            )
+        })?;
         let mut out = Self::default();
         for (name, value) in map {
             match name.as_str() {
+                "precedents" => out.precedents = parse_precedents(value)?,
                 "cadence" => out.cadence = parse_cadence(value)?,
                 "tags" => out.tags = Some(parse_tags(value)?),
                 _ => return Err(invalid(&format!("scribe.{name}"), "unknown scribe setting")),
@@ -226,8 +272,27 @@ pub(crate) fn set(encoded: &mut Value, key: &str, value: Value) -> Result<()> {
         .entry("scribe")
         .or_insert_with(|| Value::Object(Map::new()))
         .as_object_mut()
-        .ok_or_else(|| invalid("scribe", "expected a mapping of cadence and tags"))?;
+        .ok_or_else(|| {
+            invalid(
+                "scribe",
+                "expected a mapping of cadence, tags and precedents",
+            )
+        })?;
     match key {
+        "scribe.precedents.half_life_days" => {
+            let precedents = block
+                .entry("precedents")
+                .or_insert_with(|| Value::Object(Map::new()))
+                .as_object_mut()
+                .ok_or_else(|| {
+                    invalid("scribe.precedents", "expected a mapping of half_life_days")
+                })?;
+            if value.is_null() {
+                precedents.remove("half_life_days");
+            } else {
+                precedents.insert("half_life_days".into(), value);
+            }
+        }
         "scribe.cadence" | "scribe.tags" => {
             let leaf = key.trim_start_matches("scribe.");
             if value.is_null() {

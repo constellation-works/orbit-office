@@ -1,0 +1,164 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "precedents",
+    "omissions",
+    "truncated"
+  ],
+  "properties": {
+    "contract": {
+      "const": "orbit.precedent-provider/1"
+    },
+    "precedents": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "question",
+          "options",
+          "chosen_option",
+          "context",
+          "scope",
+          "decided_at",
+          "decided_by",
+          "decided_by_kind",
+          "reversed",
+          "citation"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "question": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1
+          },
+          "options": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "label"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "chosen_option": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "context": {
+            "type": "string",
+            "maxLength": 8192
+          },
+          "scope": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "workspace_id",
+              "category"
+            ],
+            "properties": {
+              "workspace_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "category": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "topic": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            }
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decided_by": {
+            "const": "user"
+          },
+          "decided_by_kind": {
+            "enum": [
+              "human",
+              "human_confirmed"
+            ]
+          },
+          "reversed": {
+            "type": "boolean"
+          },
+          "citation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "ref",
+              "digest"
+            ],
+            "properties": {
+              "source": {
+                "const": "office-decision-ledger"
+              },
+              "ref": {
+                "type": "string",
+                "maxLength": 8192,
+                "minLength": 1
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "omissions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "string",
+        "maxLength": 8192
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.decision-precedents response",
+  "description": "Precedent evidence only, at most k records and 262144 UTF-8 JSON bytes. Each string <=8192 bytes. No prediction, score or recommendation. Scope binds to the requested workspace, and uses the request category when the ledger has none. Citation digest hashes original line bytes without its line terminator."
+}

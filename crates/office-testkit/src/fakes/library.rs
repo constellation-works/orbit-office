@@ -59,6 +59,8 @@ pub struct FakeLibrary {
     scribe_texts: RefCell<BTreeMap<String, String>>,
     /// Host name reported for SCR provenance.
     pub host: Option<String>,
+    /// Explicit normalized FTS scores for precedent-provider fixtures.
+    pub decision_precedent_scores: BTreeMap<String, f64>,
 }
 
 /// What `stage_attachment` wrote, shared across clones so a test keeps an

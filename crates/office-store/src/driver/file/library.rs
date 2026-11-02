@@ -1151,6 +1151,53 @@ impl LibraryFs {
     }
 
     /// Every decision ledger's path and Markdown, in path order.
+    pub(crate) fn read_precedent_ledgers(&self) -> Result<Vec<office_core::ports::LibraryText>> {
+        self.validate_relative_path(Path::new(
+            office_core::domain::source::decisions::LEDGER_DIR,
+        ))?;
+        let dir = self
+            .root
+            .join(office_core::domain::source::decisions::LEDGER_DIR);
+        match std::fs::symlink_metadata(&dir) {
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(Error::Corrupt {
+                    path: dir,
+                    reason: "decision ledger directory is not a contained directory".into(),
+                });
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(Error::io("inspect decision ledgers", &dir, error)),
+        }
+        let mut out = Vec::new();
+        for entry in
+            std::fs::read_dir(&dir).map_err(|e| Error::io("list decision ledgers", &dir, e))?
+        {
+            let path = entry
+                .map_err(|e| Error::io("list decision ledgers", &dir, e))?
+                .path();
+            let relative = path.strip_prefix(&self.root).map_err(|_| Error::Corrupt {
+                path: path.clone(),
+                reason: "ledger escaped the Library".into(),
+            })?;
+            if office_core::domain::source::decisions::is_ledger_path(relative) {
+                // Never open a FIFO, device, directory or symlink as text.
+                // Still retain its identity so the provider reports the gap.
+                let markdown = std::fs::symlink_metadata(&path)
+                    .ok()
+                    .filter(|metadata| metadata.is_file())
+                    .and_then(|_| self.read_text(relative).ok());
+                out.push(office_core::ports::LibraryText {
+                    path: relative.to_string_lossy().replace('\\', "/"),
+                    markdown,
+                });
+            }
+        }
+        out.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(out)
+    }
+
+    /// Every decision ledger's path and Markdown, in path order.
     pub(crate) fn read_ledger_markdown(&self) -> Result<Vec<(String, String)>> {
         let mut out = Vec::new();
         for path in self.ledger_files()? {
