@@ -8,6 +8,12 @@
 //! topics, advances `scribed_through` to `through` when one is supplied and
 //! commits to the Library. A note/title-only call may omit `through` and
 //! leaves `scribed_through` unchanged.
+//!
+//! `sections`, `findings` or `format: "v2"` select the v2 pass
+//! ([`v2`]): one commit holding the v2 SCR and the decision ledger lines
+//! and apply-mode preference pages its findings produce.
+
+mod v2;
 
 use office_core::domain::scribe_control::validate_session_id;
 use office_core::domain::source::conversation::{
@@ -36,6 +42,9 @@ pub(crate) const TOOL: Tool = Tool::built(
         "title_by",
         "counterpart",
         "counterpart_name",
+        "sections",
+        "findings",
+        "format",
     ],
     run,
 );
@@ -50,7 +59,7 @@ fn optional<'a>(call: &'a Call<'_>, key: &str) -> Result<Option<&'a str>> {
     }
 }
 
-fn not_parsed() -> Error {
+pub(super) fn not_parsed() -> Error {
     Error::Library {
         code: "scribe_not_parsed",
         message: "no parsed messages for this session; run office.scribe-pending first".into(),
@@ -61,6 +70,24 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let session_id = optional(call, "session_id")?
         .ok_or_else(|| Error::InvalidArgument("scribe-append requires session_id".into()))?;
     validate_session_id(session_id)?;
+    let v2_keys = ["sections", "findings"]
+        .iter()
+        .any(|key| call.input.get(*key).is_some_and(|v| !v.is_null()));
+    match optional(call, "format")? {
+        Some("v2") => return v2::run(call, session_id),
+        None if v2_keys => return v2::run(call, session_id),
+        Some("v1") | None => {}
+        Some(_) => {
+            return Err(Error::InvalidArgument(
+                "scribe-append format is v1 or v2".into(),
+            ));
+        }
+    }
+    if v2_keys {
+        return Err(Error::InvalidArgument(
+            "scribe-append sections and findings are v2 inputs; omit format or set it to v2".into(),
+        ));
+    }
     let through = optional(call, "through")?;
     let entries = scribe::parse_entries(call.input.get("entries"))?;
     let title = optional(call, "title")?;
@@ -80,6 +107,14 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let parsed: Parsed = serde_json::from_str(&parse.meta).map_err(|_| not_parsed())?;
     if parsed.session_id != session_id {
         return Err(not_parsed());
+    }
+    // Only the v2 pending writes a private session's parse, for its
+    // reference-only pass; v1 entries would carry its text.
+    if parsed.private {
+        return Err(Error::Library {
+            code: "scribe_session_private",
+            message: "a private session is scribed only by the v2 pass".into(),
+        });
     }
     let page = conversation::find_rules(&library.knowledge_pages()?)?;
     let rules = scribe::scribe_rules(page.as_ref(), parsed.project.as_deref());

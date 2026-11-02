@@ -15,8 +15,8 @@ pub use calendar::{Calendar, UnavailableCalendar};
 pub use clock::Clock;
 pub use library::{
     CaptureSourceRequest, ConversationEntry, DecisionOutcome, InitOutcome, Library, LibraryHealth,
-    LibraryText, ScribeParse, ScribeWrite, SensitivityOutcome, SourceOutcome, SourceView,
-    not_initialized_error,
+    LibraryText, ScribeChain, ScribeParse, ScribePass, ScribeWrite, SensitivityOutcome,
+    SourceOutcome, SourceView, not_initialized_error,
 };
 pub use models::{
     DerivedBy, ExtractRequest, ImageReading, ImageRequest, ModelTier, Models, RouteCheck,

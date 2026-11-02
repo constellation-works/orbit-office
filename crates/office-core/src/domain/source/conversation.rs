@@ -31,6 +31,31 @@ pub struct Line {
     /// Read-only context line in an incremental preview; never selectable.
     #[serde(default, skip_serializing_if = "is_false")]
     pub context: bool,
+    /// Inside a paste region the adapter can see (a `<pasted_content>`
+    /// wrapper in a user record, the wrapper's own lines included). The
+    /// text is kept, but a scribe marker on it is never one
+    /// (specs/scribe.md, "Trust rule").
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub pasted: bool,
+}
+
+/// The paste wrapper a provider or harness puts around pasted text.
+const PASTE_TAG: &str = "pasted_content";
+
+/// Whether a trimmed line opens a paste wrapper (`<pasted_content` followed
+/// by `>`, whitespace or an attribute), case-insensitively.
+fn opens_paste(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower
+        .strip_prefix('<')
+        .and_then(|rest| rest.strip_prefix(PASTE_TAG))
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(['>', ' ', '\t', '/']))
+}
+
+/// Whether a line closes a paste wrapper.
+fn closes_paste(line: &str) -> bool {
+    line.to_ascii_lowercase()
+        .contains(&format!("</{PASTE_TAG}>"))
 }
 
 /// True when `text` opens with the side-session brief preamble. Both
@@ -577,9 +602,20 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
         } else {
             kind
         };
+        // A paste wrapper can span blocks of one record's text, but never
+        // records: each record starts outside one.
+        let mut pasted = false;
         for text in &cleaned {
             let mut fenced = false;
             for text in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+                let in_paste = if kind == "user" {
+                    let opening = !pasted && opens_paste(text);
+                    let inside = pasted || opening;
+                    pasted = inside && !closes_paste(text);
+                    inside
+                } else {
+                    false
+                };
                 if text.starts_with("```") || text.starts_with("~~~") {
                     fenced = !fenced;
                     continue;
@@ -593,6 +629,7 @@ pub fn parse(raw: &str, expected_id: &str) -> Result<Session> {
                     timestamp: timestamp.into(),
                     text: text.into(),
                     context: false,
+                    pasted: in_paste,
                 });
                 session.line_prefix_sha256.push(prefix_sha256.clone());
             }

@@ -284,6 +284,18 @@ pub trait Library {
     ) -> Result<crate::domain::source::conversation::Session> {
         Err(Error::LibraryUnavailable)
     }
+    /// Read and scrub a contained session transcript for local, model-free
+    /// marker detection (specs/scribe.md, "Privacy"). Unlike
+    /// [`Library::session_transcript`], a private session keeps its lines:
+    /// the caller writes them only to the private scribe parse and never
+    /// returns them.
+    fn scribe_transcript(
+        &self,
+        _path: &str,
+        _session_id: &str,
+    ) -> Result<crate::domain::source::conversation::Session> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Append one decision ledger entry under the writer lock and commit it
     /// (specs/scribe.md, Decision ledger). The adapter assigns the next
     /// `dec-<scope>-<n>` id over `decision.id`, creates the scope's ledger on
@@ -371,6 +383,21 @@ pub trait Library {
     fn write_scribe_file(&self, _write: &ScribeWrite) -> Result<()> {
         Err(Error::LibraryUnavailable)
     }
+    /// Every decision ledger file (`sources/decisions/<scope>.md`) with its
+    /// Markdown, in path order. Not parsed: the caller refuses a malformed
+    /// one (`decision_ledger_invalid`).
+    fn decision_ledgers(&self) -> Result<Vec<LibraryText>> {
+        Err(Error::LibraryUnavailable)
+    }
+    /// One scribe v2 pass (specs/scribe.md, "Pipeline" step 4): the SCR and
+    /// every ledger and preference page file it plans, written and
+    /// committed once under the writer lock. Refused with `scribe_changed`,
+    /// writing nothing, when the SCR or any file no longer holds what the
+    /// pass planned against, or, for a new SCR, when the scope's latest SCR
+    /// is no longer the planned `previous`.
+    fn write_scribe_pass(&self, _pass: &ScribePass) -> Result<()> {
+        Err(Error::LibraryUnavailable)
+    }
     /// The host's name for SCR provenance; `None` when unknown.
     fn host_name(&self) -> Option<String> {
         None
@@ -403,6 +430,30 @@ pub struct ScribeWrite {
     /// The file as read before planning (`path`, Markdown); a different
     /// path is removed in the same commit (a rename).
     pub previous: Option<(String, String)>,
+}
+
+/// One scribe v2 pass write.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScribePass {
+    /// The SCR file: `previous` is the file as read (`None`: a new SCR).
+    pub scr: ScribeWrite,
+    /// Ledger (`sources/decisions/<scope>.md`) and preference page
+    /// (`knowledge/domain/dom-preferences-<scope>.md`) files.
+    pub files: Vec<crate::domain::source::conversation::scribe::v2::PlannedFile>,
+    /// For a new SCR: its scope token, its session id and the `previous`
+    /// it names, rechecked under the lock.
+    pub chain: Option<ScribeChain>,
+}
+
+/// The `previous` link a new v2 SCR names.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScribeChain {
+    /// `global` or `project:<name>`.
+    pub scope: String,
+    /// The new SCR's session id.
+    pub session: String,
+    /// The scope's latest other SCR as planned.
+    pub previous: Option<String>,
 }
 
 /// One conversation entry to append (specs/sessions.md).

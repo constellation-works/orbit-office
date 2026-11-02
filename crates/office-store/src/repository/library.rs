@@ -29,6 +29,7 @@ use crate::{Error, Result};
 mod decisions;
 mod grant;
 mod pending;
+mod scribe_pass;
 
 pub(crate) use grant::normalize_path;
 use grant::{resolve_existing_ancestor, resolve_within_grant};
@@ -36,7 +37,7 @@ use pending::{
     PendingOriginal, PendingWrite, RawPendingWrite, WriteKind, normalize_upload_extension,
 };
 
-const LATEST_PENDING_WRITE_VERSION: u32 = 10;
+const LATEST_PENDING_WRITE_VERSION: u32 = 11;
 
 /// A Library and its index. Construction may create layout/index directories;
 /// read methods never create state or wait for the writer lock. Bounded media
@@ -1170,6 +1171,9 @@ impl LibraryStore {
         let Some(files) = &pending.bundle else {
             return Ok(());
         };
+        if matches!(pending.kind, WriteKind::ScribePass) {
+            return self.validate_scribe_pass_bundle(pending, files);
+        }
         if matches!(pending.kind, WriteKind::Bootstrap) {
             if pending.version != 6
                 || pending.relative != ".office/bootstrap.json"
@@ -1324,7 +1328,9 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: if matches!(kind, WriteKind::Scribe) {
+            version: if matches!(kind, WriteKind::ScribePass) {
+                11
+            } else if matches!(kind, WriteKind::Scribe) {
                 10
             } else if matches!(kind, WriteKind::ProposalMove) {
                 9
@@ -1481,6 +1487,12 @@ impl LibraryStore {
                 self.require_initialized()?;
                 self.validate_bundle(&pending)?;
             }
+            WriteKind::ScribePass => {
+                self.require_initialized()?;
+                self.files
+                    .validate_scribe_path(Path::new(&pending.relative))?;
+                self.validate_bundle(&pending)?;
+            }
             WriteKind::Settings => {
                 if pending.version != 2 || pending.relative != ".office/config.yaml" {
                     return Err(Error::Journal { path });
@@ -1582,6 +1594,19 @@ impl LibraryStore {
                 }
                 self.files.write_bootstrap(&pending.text)?;
             }
+            WriteKind::ScribePass => {
+                self.validate_bundle(pending)?;
+                self.files
+                    .write_scribe(Path::new(&pending.relative), &pending.text)?;
+                for file in pending.bundle.as_deref().unwrap_or_default() {
+                    let text = std::str::from_utf8(&file.bytes).map_err(|_| Error::Journal {
+                        path: self.journal_path(),
+                    })?;
+                    self.files.write_document(Path::new(&file.path), text)?;
+                    self.index
+                        .upsert(&self.files.read_document(Path::new(&file.path))?)?;
+                }
+            }
             WriteKind::Settings => self.files.write_settings(&pending.text)?,
         }
         let mut paths = vec![pending.relative.clone()];
@@ -1607,7 +1632,7 @@ impl LibraryStore {
                             || !file.path.starts_with("frames/")
                     })
                     .map(|file| {
-                        if matches!(pending.kind, WriteKind::Bootstrap) {
+                        if matches!(pending.kind, WriteKind::Bootstrap | WriteKind::ScribePass) {
                             file.path.clone()
                         } else {
                             parent.join(&file.path).to_string_lossy().to_string()
@@ -1855,6 +1880,33 @@ impl LibraryStore {
             }
         }
         Ok(out)
+    }
+    /// Read and scrub a contained transcript under the shared read guard.
+    /// A private session keeps its lines; `session_transcript` clears them.
+    fn read_transcript(
+        &self,
+        path: &str,
+        session_id: &str,
+    ) -> office_core::Result<office_core::domain::source::conversation::Session> {
+        use office_core::domain::source::video::refusal;
+        // A privacy change cannot race preview disclosure. Read-only: never create a lock.
+        let guard_path = self.state.join("library.writer.lock");
+        let guard = std::fs::File::open(&guard_path)
+            .map_err(|e| Error::io("open transcript read guard", &guard_path, e))?;
+        match guard.try_lock_shared() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock) => {
+                return Err(refusal(
+                    "library_writer_busy",
+                    "transcript preview unavailable during a Library write; retry",
+                ));
+            }
+            Err(std::fs::TryLockError::Error(e)) => {
+                return Err(Error::io("lock transcript read", &guard_path, e).into());
+            }
+        }
+        self.require_initialized()?;
+        self.load_session(path, session_id)
     }
 
     fn load_session(
@@ -2938,6 +2990,12 @@ impl office_core::ports::Library for LibraryStore {
     ) -> office_core::Result<()> {
         Self::write_scribe_file(self, write)
     }
+    fn decision_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(Self::decision_ledger_files(self)?)
+    }
+    fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> office_core::Result<()> {
+        Self::write_scribe_pass(self, pass)
+    }
     fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::source_documents(self)?)
     }
@@ -2998,29 +3056,18 @@ impl office_core::ports::Library for LibraryStore {
         path: &str,
         session_id: &str,
     ) -> office_core::Result<office_core::domain::source::conversation::Session> {
-        use office_core::domain::source::video::refusal;
-        // A privacy change cannot race preview disclosure. Read-only: never create a lock.
-        let guard_path = self.state.join("library.writer.lock");
-        let guard = std::fs::File::open(&guard_path)
-            .map_err(|e| Error::io("open transcript read guard", &guard_path, e))?;
-        match guard.try_lock_shared() {
-            Ok(()) => {}
-            Err(std::fs::TryLockError::WouldBlock) => {
-                return Err(refusal(
-                    "library_writer_busy",
-                    "transcript preview unavailable during a Library write; retry",
-                ));
-            }
-            Err(std::fs::TryLockError::Error(e)) => {
-                return Err(Error::io("lock transcript read", &guard_path, e).into());
-            }
-        }
-        self.require_initialized()?;
-        let mut session = self.load_session(path, session_id)?;
+        let mut session = self.read_transcript(path, session_id)?;
         if session.sensitivity == "private" {
             session.lines.clear();
         }
         Ok(session)
+    }
+    fn scribe_transcript(
+        &self,
+        path: &str,
+        session_id: &str,
+    ) -> office_core::Result<office_core::domain::source::conversation::Session> {
+        self.read_transcript(path, session_id)
     }
     fn capture_session(
         &self,

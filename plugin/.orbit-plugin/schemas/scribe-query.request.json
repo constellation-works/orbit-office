@@ -1,12 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-query request",
-  "description": "Filter the session SCR lines by canned mode (pending, pref, landed, why) or by tag, matter, topic, author, local date range, refs or session, resolving the links between lines. Model-free; read-only.",
+  "description": "Filter the session SCR lines by canned mode (pending, pref, landed, why) or by tag, matter, topic, author, local date range, refs or session, resolving the links between lines. Model-free; read-only. The v2 modes read the new stores: decisions (ledger entries with derived reversed_by and current), preferences (preference page sections, with proposals filed for them) and scr (one card per project plus the global card, or one SCR by id with its previous).",
   "type": "object",
   "properties": {
     "mode": {
-      "enum": ["pending", "pref", "landed", "why"],
-      "description": "Canned query: pending (open items, oldest first), pref (current preference for a matter, with stale flag), landed (in the local date range; today when no range is given), why (decisions with their reasons)."
+      "enum": [
+        "pending",
+        "pref",
+        "landed",
+        "why",
+        "decisions",
+        "preferences",
+        "scr"
+      ],
+      "description": "Canned query: pending (open items, oldest first), pref (current preference for a matter, with stale flag), landed (in the local date range; today when no range is given), why (decisions with their reasons). decisions, preferences and scr read the v2 stores; tag, topic, refs and session_id are refused there."
     },
     "tag": {
       "type": "string",
@@ -41,8 +49,17 @@
     "refs": {
       "description": "Reference (or references) an entry must carry, such as ORB-20780 or PR#268.",
       "anyOf": [
-        { "type": "string", "minLength": 1 },
-        { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       ]
     },
     "session_id": {
@@ -60,6 +77,39 @@
       "minimum": 1,
       "maximum": 1000,
       "description": "Most results returned; 100 by default."
+    },
+    "scope": {
+      "type": "string",
+      "pattern": "^(global|project|project:[a-z0-9][a-z0-9-]*)$",
+      "description": "v2 modes: global, project:<name>, or project (with project)."
+    },
+    "decided_by": {
+      "enum": [
+        "human",
+        "agent",
+        "model"
+      ],
+      "description": "decisions mode: who decided."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "decisions mode: case-insensitive text in the question, chosen, quote or because."
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "description": "decisions mode: the Orbit task in the entry's context."
+    },
+    "workspace": {
+      "type": "string",
+      "minLength": 1,
+      "description": "decisions mode: the Orbit workspace in the entry's context."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^SCR-[0-9]{8}-[0-9]{4}-[A-Za-z0-9]{6}$",
+      "description": "scr mode: one SCR by id, returned with its previous."
     }
   },
   "additionalProperties": false

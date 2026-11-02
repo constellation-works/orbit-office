@@ -109,6 +109,67 @@ fn validate_task_ids(text: &str) -> Result<()> {
     Ok(())
 }
 
+/// The scribe v2 SCR's rewritten sections (specs/scribe.md, "The SCR
+/// file"), checked by the structured handoff rules: single-line items,
+/// no credentials, complete task ids, observation times with offsets, a
+/// complete task id on every Next item, and budgets of 500 (Summary),
+/// 500 (Goals), 2000 (Outcome and Blockers) and 1000 (Next) characters.
+pub fn validate_scr_sections(
+    summary: &str,
+    goals: &[&str],
+    outcome: &[&str],
+    next: &[&str],
+) -> Result<()> {
+    budget("summary", &[summary], 500)?;
+    budget("goals", goals, 500)?;
+    budget("outcome", outcome, 2000)?;
+    budget("next", next, 1000)?;
+    for (field, items) in [
+        ("summary", &[summary][..]),
+        ("goals", goals),
+        ("outcome", outcome),
+        ("next", next),
+    ] {
+        for item in items {
+            if item.trim().is_empty() {
+                return Err(invalid(
+                    "handoff_required_field",
+                    format!("SCR {field} items must be nonempty text"),
+                ));
+            }
+            if let Some((_, after)) = item.split_once("observed_at:") {
+                let value = after.split_whitespace().next().unwrap_or_default();
+                if timestamp(value).is_none() || !has_offset(value) {
+                    return Err(invalid(
+                        "handoff_observed_at_invalid",
+                        format!("SCR {field} observed_at must be RFC 3339 with an explicit offset"),
+                    ));
+                }
+            }
+        }
+    }
+    if next
+        .iter()
+        .any(|item| super::cited_assignment(item).is_none())
+    {
+        return Err(invalid(
+            "handoff_task_id_incomplete",
+            "every SCR Next item must cite a complete Orbit task ID such as ORB-<id>; an item with no task is an Outcome and Blockers line",
+        ));
+    }
+    Ok(())
+}
+
+fn has_offset(text: &str) -> bool {
+    text.ends_with('Z')
+        || text
+            .get(text.len().saturating_sub(6)..)
+            .is_some_and(|tail| {
+                let b = tail.as_bytes();
+                b.len() == 6 && (b[0] == b'+' || b[0] == b'-') && b[3] == b':'
+            })
+}
+
 impl Structured {
     /// Decode at the capture boundary, naming missing fields before serde's
     /// structural checks. No submitted content is copied into errors.

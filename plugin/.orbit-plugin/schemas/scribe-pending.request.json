@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-pending request",
-  "description": "Parse one session transcript through the conversation adapter (text between the user and the agent only, credentials scrubbed) into <library>/.office/state/scribe/<session_id>.jsonl (the Library's git-ignored state), owner-only, and return what the scribe has not read yet. Model-free; no Library commit.",
+  "description": "Parse one session transcript through the conversation adapter (text between the user and the agent only, credentials scrubbed) into <library>/.office/state/scribe/<session_id>.jsonl (the Library's git-ignored state), owner-only, and return what the scribe has not read yet. Model-free; no Library commit. format v2 (or a session whose SCR is already v2) returns the v2 view instead: the typed-turn markers, the agent markers kept apart, the session scope and the scope's previous SCR.",
   "type": "object",
   "properties": {
     "session_id": {
@@ -44,6 +44,18 @@
       "minLength": 1,
       "maxLength": 4096,
       "description": "Alias of custom_title."
+    },
+    "format": {
+      "enum": [
+        "v1",
+        "v2"
+      ],
+      "description": "v1 (default, unless the session already has a v2 SCR) or v2."
+    },
+    "scope": {
+      "type": "string",
+      "pattern": "^(global|project|project:[a-z0-9][a-z0-9-]*)$",
+      "description": "v2 only: the session scope, global, project (the session's project) or project:<name>; absent, the session's project, else global. Fixed once the session's SCR exists."
     }
   },
   "required": [

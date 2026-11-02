@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-append request",
-  "description": "Validate the scribe's entries against the parsed messages and the rules, append the accepted ones to the session's SCR file, merge topics, move scribed_through to through and commit. A note/title-only call (no entry citing a message) may omit through; it writes the note or title and leaves scribed_through unchanged. Run office.scribe-pending first.",
+  "description": "Validate the scribe's entries against the parsed messages and the rules, append the accepted ones to the session's SCR file, merge topics, move scribed_through to through and commit. A note/title-only call (no entry citing a message) may omit through; it writes the note or title and leaves scribed_through unchanged. Run office.scribe-pending first. A v2 pass (format v2, or sections and findings) instead rewrites the SCR's Summary, Goals, Outcome and Next, appends one Tags entry per accepted finding, and commits the SCR with its decision ledger lines and any apply-mode preference page in one Library commit. Each finding must name a marker office.scribe-pending returned.",
   "type": "object",
   "properties": {
     "session_id": {
@@ -180,7 +180,311 @@
         "custom",
         "scribe"
       ],
-      "description": "Who sets title: user (default, /scribe title, renames once), custom (transcript custom-title or side-session record, never renames) or scribe (agent proposal, at most eight words, never renames, refined only while scribe-set)."
+      "description": "Who sets title: user (default, /scribe title, renames once), custom (transcript custom-title or side-session record, never renames) or scribe (agent proposal, at most eight words, never renames, refined only while scribe-set). In a v2 pass a user title wins and is never renamed; a scribe title comes from the Summary."
+    },
+    "format": {
+      "enum": [
+        "v1",
+        "v2"
+      ],
+      "description": "v1 (entries) or v2 (sections and findings); absent, sections or findings select v2."
+    },
+    "sections": {
+      "type": "object",
+      "description": "v2: the SCR sections, rewritten each pass. Budgets: summary 500, goals 500, outcome 2000, next 1000 characters. Every next item names a task id; an observed_at: value carries a zone offset.",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "goals": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "outcome": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "next": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "description": "v2: one finding per marker. Refused with marker_not_found when scribe-pending did not return the marker, quote_mismatch when quote is not the marker line verbatim, decided_by_mismatch when decided_by disagrees with the marker author.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "msg": {
+            "type": "string",
+            "pattern": "^m-[0-9]{4,}$"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based line of the message the marker starts."
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The marker's tag; null for a #scribe <text> instruction."
+          },
+          "by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "user",
+              "agent",
+              null
+            ]
+          },
+          "quote": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The marker line verbatim; absent, the marker line is used."
+          },
+          "decision": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "decisions tag: the ledger entry's fields; each verbatim field is checked against its message.",
+            "properties": {
+              "question": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "question_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^m-[0-9]{4,}$"
+              },
+              "question_by": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "options": {
+                "description": "\"unrecoverable\", or each option verbatim with its message.",
+                "anyOf": [
+                  {
+                    "const": "unrecoverable"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "msg": {
+                          "type": "string",
+                          "pattern": "^m-[0-9]{4,}$"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "msg"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "chosen": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "because": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "msg": {
+                        "type": "string",
+                        "pattern": "^m-[0-9]{4,}$"
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "msg"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Absent, the marker's because: text."
+              },
+              "context": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "task_type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "workspace": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "task": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "risk_tier": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "decided_by": {
+                "enum": [
+                  "human",
+                  "agent",
+                  "model",
+                  null
+                ]
+              },
+              "reverses": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "dec-<scope>-<n> of the entry this one reverses."
+              }
+            },
+            "additionalProperties": false
+          },
+          "matter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "preferences tag: the matter slug."
+          },
+          "statement": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "preferences tag: the preference in the user's words."
+          },
+          "conflicts": {
+            "type": "array",
+            "description": "preferences tag: current statements the finding contradicts; any conflict only proposes.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "matter": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "statement": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "cites": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "required": [
+                "matter",
+                "statement",
+                "cites"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "proposal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "preferences tag: the proposal id a propose-mode finding filed."
+          },
+          "review_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "preferences tag: review date; 90 days after the marker by default."
+          },
+          "task": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "orbit_task sink or an instruction: the filed task id."
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Instruction outcome, one word (reported, failed, ...)."
+          }
+        },
+        "required": [
+          "msg",
+          "line"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

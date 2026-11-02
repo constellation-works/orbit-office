@@ -93,4 +93,59 @@ impl FakeLibrary {
         self.record_commit();
         Ok(())
     }
+
+    pub(super) fn decision_ledgers(&self) -> Result<Vec<LibraryText>> {
+        self.ready()?;
+        Ok(self
+            .texts
+            .borrow()
+            .iter()
+            .filter(|(path, _)| {
+                office_core::domain::source::decisions::is_ledger_path(Path::new(path.as_str()))
+            })
+            .map(|(path, text)| LibraryText {
+                path: path.clone(),
+                markdown: Some(text.clone()),
+            })
+            .collect())
+    }
+
+    /// The fake checks every planned text, then writes the SCR and each file;
+    /// the pass counts as one commit.
+    pub(super) fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> Result<()> {
+        use office_core::domain::source::conversation::scribe::{v2, validate_scr_path};
+        self.ready()?;
+        validate_scr_path(Path::new(&pass.scr.path))?;
+        let changed = || Error::Library {
+            code: "scribe_changed",
+            message:
+                "the SCR, a ledger or a preference page changed since the pass was planned; retry"
+                    .into(),
+        };
+        let planned = pass.scr.previous.as_ref().map(|(_, text)| text);
+        if self.scribe_texts.borrow().get(&pass.scr.path) != planned {
+            return Err(changed());
+        }
+        if let Some(chain) = &pass.chain {
+            let scrs = v2::v2_files(&self.scribe_files()?)?;
+            let latest = v2::latest_in_scope(&scrs, &chain.scope, &chain.session)
+                .map(|scr| scr.front.id.clone());
+            if latest != chain.previous {
+                return Err(changed());
+            }
+        }
+        for file in &pass.files {
+            if self.texts.borrow().get(&file.path) != file.expected.as_ref() {
+                return Err(changed());
+            }
+        }
+        for file in &pass.files {
+            self.write_document(Path::new(&file.path), &file.text)?;
+        }
+        self.scribe_texts
+            .borrow_mut()
+            .insert(pass.scr.path.clone(), pass.scr.text.clone());
+        self.record_commit();
+        Ok(())
+    }
 }

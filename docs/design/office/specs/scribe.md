@@ -6,11 +6,16 @@ last_validated: 2026-11-01
 
 # Spec: Scribe v2
 
-Status: designed ([ORB-21083]). Slice S1 is built ([ORB-21114]): the
+Status: designed ([ORB-21083]). Slices S1–S4 are built: the
 [decision ledger](#decision-ledger) store, `office.capture`'s `decision`
-input and the [`note` retirement](#retiring-sourcesnote). The other slices
-are not built. Scribe v1 is built and still runs until the slices in
-[Build order](#build-order) land. The v1 text
+input and the [`note` retirement](#retiring-sourcesnote) ([ORB-21114]);
+the `scribe:` settings ([ORB-21115]); preference pages and the
+contradiction check ([ORB-21116]); and the v2 SCR, markers and the trust
+rule in `office.scribe-pending` and `office.scribe-append`, with
+`office.scribe-query` and `office.scribe-ask` over the new stores
+([ORB-21117]; see [Built tools](#built-tools-s4)). The plugin, brief, web
+and migration slices are not built. Scribe v1 is built and still runs
+until the slices in [Build order](#build-order) land. The v1 text
 this spec replaces is at `git show d398471:docs/design/office/specs/scribe.md`,
 and its decisions stay in [4_decisions.md](../4_decisions.md#scribe-v1-commanded-capture-into-one-tagged-file-per-session).
 The v2 decisions are
@@ -625,6 +630,72 @@ transcript ──parse (no model)──▶ <library>/.office/state/scribe/<sessi
    The model never edits the files, so a bad run cannot corrupt earlier
    entries, and every quote points at real text.
 
+### Built tools (S4)
+
+[ORB-21117] built steps 1 and 4 and the read side. v1 runs unchanged
+beside them: a session takes v2 when the caller passes `format: "v2"` or
+its SCR is already v2, so the plugin switches over in S5
+([4_decisions.md](../4_decisions.md#scribe-v2-s4-format-flag-marker-lists-and-local-private-parse)).
+
+- **`office.scribe-pending` v2** (`format`, `scope`). The adapter marks
+  the lines inside a `<pasted_content>` region of a user turn
+  (`pasted`, 1-based line numbers per message); fenced blocks and
+  blockquotes were already dropped. `markers` lists the line-start
+  markers of the user's typed turns after `scribed_through`; markers in a
+  fence, a blockquote, a paste region or mid-sentence are not markers.
+  `agent_markers` lists the assistant's, kept apart and never
+  authoritative. Each carries `msg`, `line`, `marker`, `tag` (null for a
+  `#scribe <text>` instruction), `scope` (`@global`/`@<project>` or the
+  tag default), `text`, `because`, `quote`, `by`, `in_force` and
+  `large_turn` (over 40 lines or 4,000 characters). The result also
+  returns `scr` (the `SCR-<yyyymmdd>-<hhmm>-<session6>` name, its
+  sections, `tag_entries` and `next_tag`), the session `scope` (fixed
+  once the SCR exists: `scribe_scope_fixed`), the scope's `previous` SCR
+  with its sections, and the effective `tags` and `cadence`. A private
+  session (the conversation sensitivity setting, or credentials in the
+  transcript) still writes its local parse, so markers are detected
+  locally, but returns no messages and its markers by reference only
+  (`content_withheld`).
+- **`office.scribe-append` v2** (`sections`, `findings`, `format`). It
+  recomputes the markers from the parse over (`scribed_through`,
+  `through`] and refuses `marker_not_found`, `quote_mismatch` (the
+  quote is not the marker line verbatim, or a ledger field is not in
+  its message), `decided_by_mismatch`, `tag_mismatch`, `tag_not_in_force`,
+  `author_mismatch`, `decision_invalid`, `decision_not_found` (a
+  `reverses` naming no entry), `preference_invalid`, `preference_withheld`
+  (private session), `agent_marker_not_filed` and `task_id_incomplete`.
+  Sections over budget, an empty item or a Next item without a task id
+  refuse the call. A pass writes one Library commit: the SCR (front
+  matter `id`, `title`, `title_by`, `scope`, `project`, `session`,
+  `started`, `updated`, `previous`, `scribed_through`, … `sensitivity`),
+  each decision appended to its scope's ledger with the next
+  `dec-<scope>-<n>` id (the ledger is created on first use), and in
+  apply mode the preference page `knowledge/domain/dom-preferences-<scope>.md`
+  after `office.knowledge-write` validation. Tags entries are
+  `- T<n> <msg> <time> by: <user|agent> scope: <scope> "<quote>"` plus
+  `ledger:`, `matter:`, `page:`, `proposal:`/`propose:`, `task:`,
+  `outcome:` or `withheld: private`; earlier entries are never rewritten.
+  The Summary carries `(scribe) `; the title is the user title when set,
+  else the first eight words of the scribe title or Summary. The SCR
+  name, `previous` (the scope's prior latest SCR) and every bundled file
+  are compare-and-swapped under the writer lock (`scribe_changed`), and
+  a retried pass reports `duplicates` instead of writing twice. An agent
+  marker is recorded `by: agent` and never changes a preference page in
+  any mode; a paste-sized turn, a conflict or propose mode only reports
+  `needs_proposal`. v1 `entries` and v2 keys are refused together, and
+  v1 append refuses a private parse (`scribe_session_private`).
+- **`office.scribe-query`** gains `decisions` (ledger entries with the
+  derived `reversed_by` and `current`, filtered by `scope`, `project`,
+  `decided_by`, `since`/`until`, `text`, `task` and `workspace`),
+  `preferences` (page sections with `citation` `<page>#<matter>`,
+  `stale`, and the SCR entries that `proposed` a change) and `scr` (one
+  card per project plus the global card; `id` returns one SCR and its
+  `previous`). v1 filters (`tag`, `topic`, `refs`, `session_id`) are
+  refused in the v2 modes, and the v2 keys in the v1 modes.
+- **`office.scribe-ask`** shortlists ledger entries (cited `dec-<scope>-<n>`),
+  preference sections (`<page>#<matter>`) and v2 Tags entries
+  (`<SCR>#T<n>`) beside the v1 lines.
+
 Only the user's typed turns can carry a human marker
 ([trust rule](#trust-rule-whose-markers-count)). The v1 guard still holds:
 an assistant line never becomes a human decision or a preference in effect.
@@ -861,10 +932,10 @@ Retired outright, with no compatibility window (D12).
 
 | Built | In v2 | Slice |
 |---|---|---|
-| Conversation adapter and scrubbing ([ORB-20685]) | Kept for parse. Paste detection for markers is added. | [ORB-21117] |
-| `office.scribe-pending`, `office.scribe-append` ([ORB-20780]) | Reworked: markers, tag definitions, sections, `T<n>` entries, ledgers and the `previous` chain. | [ORB-21117] |
-| `office.scribe-query` ([ORB-20798]) | Reworked: `decisions`, `preferences` and `scr` modes; v1 modes deprecated, then removed. | [ORB-21117], [ORB-21122], [ORB-21123] |
-| `office.scribe-ask` | Kept; shortlist over the new stores. | [ORB-21117] |
+| Conversation adapter and scrubbing ([ORB-20685]) | Kept for parse. Paste detection for markers is added (built). | [ORB-21117] |
+| `office.scribe-pending`, `office.scribe-append` ([ORB-20780]) | Reworked (built, behind `format: "v2"`): markers, tag definitions, sections, `T<n>` entries, ledgers and the `previous` chain. | [ORB-21117] |
+| `office.scribe-query` ([ORB-20798]) | Reworked: `decisions`, `preferences` and `scr` modes (built); v1 modes deprecated, then removed. | [ORB-21117], [ORB-21122], [ORB-21123] |
+| `office.scribe-ask` | Kept; shortlist over the new stores (built). | [ORB-21117] |
 | Plugin `/scribe`, subagent, hooks ([ORB-20799]) | Reworked: opt-in, Stop-hook cadence, markers, `update`, `tags`; `note`, `pending`, `pref`, `landed`, `why`, `backfill` retired. | [ORB-21118] |
 | `office.scribe-control` ([ORB-20756]) | Kept; gains `on_by` and scope. | [ORB-21118] |
 | `dom-scribe-rules` page ([ORB-20686]) | Kept for topics, capture and models; Tags section and `scribe.handoff` retired. | [ORB-21122] |
@@ -924,8 +995,8 @@ requires.
 |---|---|---|---|
 | S1 (built) | [ORB-21114] | — | Decision ledger store (`decisions` kind, `sources/decisions/<scope>.md`, `dec-` ids and citation resolution, the D13 schema), `office.capture` `decision` input, and the `note` retirement and migration (D4, D12, D13). |
 | S2 (built) | [ORB-21115] | — | `scribe:` settings block (tags, cadence), `office.config-set` keys and validation, defaults (D3, D9). |
-| S3 | [ORB-21116] | S2 | `preferences` template and pages, proposal-time contradiction check in `office.proposal-create`, apply mode (D3, D4, D5). |
-| S4 | [ORB-21117] | S1, S2, S3 | SCR v2 format, pending and append v2 (markers and the trust rule, sections, `T<n>` entries, `previous`, title from summary, ledger and page writes), query and ask over the new stores (D2, D6). |
+| S3 (built) | [ORB-21116] | S2 | `preferences` template and pages, proposal-time contradiction check in `office.proposal-create`, apply mode (D3, D4, D5). |
+| S4 (built) | [ORB-21117] | S1, S2, S3 | SCR v2 format, pending and append v2 (markers and the trust rule, sections, `T<n>` entries, `previous`, title from summary, ledger and page writes), query and ask over the new stores (D2, D6). |
 | S5 | [ORB-21118] | S4 | Claude Code plugin: opt-in `/scribe on\|off\|update\|status\|tags`, Stop-hook cadence, orchestrator on/ask, routing (proposals, scheduling markers as proposed tasks, `owner:you` to-dos, `orbit_task` tags) (D1, D2, D10). |
 | S6 | [ORB-21119] | S4 | Session brief and `/handoff` read the latest SCR per project and global; capture `handoff` compatibility (D7; ORB-21063, ORB-21065). |
 | S7 | [ORB-21120] | S2, S6 | Web app: one card per project plus the global card, `previous` chain, Preferences and Decisions panels, Tags editor (saves need [ORB-20363]) (D8, D9; ORB-21075). |
@@ -955,7 +1026,7 @@ requires.
 - [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
 - [ORB-21116] — built slice S3: preference pages, contradiction check and apply mode.
-- [ORB-21117] — proposed slice S4: SCR v2, markers and the trust rule, query and ask over the new stores.
+- [ORB-21117] — built slice S4: SCR v2, markers and the trust rule, query and ask over the new stores.
 - [ORB-21118] — proposed slice S5: Claude Code opt-in, Stop-hook cadence and marker routing.
 - [ORB-21119] — proposed slice S6: the brief and `/handoff` over the latest SCR.
 - [ORB-21120] — proposed slice S7: the one-card feed, `previous` chain and Tags editor.

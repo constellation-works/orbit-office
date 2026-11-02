@@ -1,54 +1,121 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-pending response",
-  "description": "The messages after scribed_through, preceded by up to 10 earlier messages marked context, with the SCR metadata and the rules. A private session is withheld: no file is written and no message is returned.",
-  "type": "object",
-  "properties": {
-    "session_id": {
-      "type": "string"
-    },
-    "provider": {
-      "type": "string"
-    },
-    "parsed": {
-      "type": [
-        "string",
-        "null"
-      ],
-      "description": "Workspace-relative path of the message file; null when withheld."
-    },
-    "content_withheld": {
-      "type": "boolean"
-    },
-    "message_count": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "new_count": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "scr": {
-      "type": [
-        "object",
-        "null"
-      ],
-      "description": "The session's SCR file, or (exists false) the name a new one takes; null while the session has no messages.",
+  "description": "The messages after scribed_through, preceded by up to 10 earlier messages marked context, with the SCR metadata and the rules. A private session is withheld: no file is written and no message is returned. The v2 view (format v2) adds the markers, the agent markers, the scope and the previous SCR; a private v2 session still writes its local parse.",
+  "anyOf": [
+    {
+      "title": "v1",
+      "type": "object",
       "properties": {
-        "exists": {
-          "type": "boolean"
-        },
-        "id": {
+        "session_id": {
           "type": "string"
         },
-        "path": {
+        "provider": {
           "type": "string"
         },
-        "title": {
+        "parsed": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "Workspace-relative path of the message file; null when withheld."
+        },
+        "content_withheld": {
+          "type": "boolean"
+        },
+        "message_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "new_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scr": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The session's SCR file, or (exists false) the name a new one takes; null while the session has no messages.",
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scribed_through": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_scribed_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "aliases": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "counterpart": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "counterpart_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title_by": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "user",
+                "custom",
+                "scribe",
+                null
+              ]
+            }
+          },
+          "required": [
+            "exists",
+            "id",
+            "path",
+            "title",
+            "title_by",
+            "scribed_through",
+            "last_scribed_at",
+            "topics",
+            "aliases",
+            "counterpart",
+            "counterpart_name"
+          ],
+          "additionalProperties": false
         },
         "scribed_through": {
           "type": [
@@ -56,299 +123,626 @@
             "null"
           ]
         },
-        "last_scribed_at": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "topics": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "aliases": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "counterpart": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "counterpart_name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "title_by": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "enum": [
-            "user",
-            "custom",
-            "scribe",
-            null
-          ]
-        }
-      },
-      "required": [
-        "exists",
-        "id",
-        "path",
-        "title",
-        "title_by",
-        "scribed_through",
-        "last_scribed_at",
-        "topics",
-        "aliases",
-        "counterpart",
-        "counterpart_name"
-      ],
-      "additionalProperties": false
-    },
-    "scribed_through": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "messages": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^m-[0-9]{4,}$",
-            "description": "Stable: the nth kept message is always m-<n>."
-          },
-          "role": {
-            "enum": [
-              "user",
-              "assistant"
-            ]
-          },
-          "at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "text": {
-            "type": "string"
-          },
-          "context": {
-            "const": true,
-            "description": "Present on earlier, already scribed messages: read-only context, never cited."
-          }
-        },
-        "required": [
-          "id",
-          "role",
-          "at",
-          "text"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "rules": {
-      "type": "object",
-      "description": "The Tags, Topics, Matters, Capture and Models sections of dom-scribe-rules, or the spec defaults (topics: the project name; models: ask haiku@low, scribe haiku@medium).",
-      "properties": {
-        "source": {
-          "enum": [
-            "page",
-            "defaults"
-          ]
-        },
-        "tags": {
+        "messages": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "name": {
-                "type": "string"
+              "id": {
+                "type": "string",
+                "pattern": "^m-[0-9]{4,}$",
+                "description": "Stable: the nth kept message is always m-<n>."
               },
-              "meaning": {
-                "type": "string"
-              },
-              "examples": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "authors": {
+              "role": {
                 "enum": [
                   "user",
-                  "agent",
-                  "any"
+                  "assistant"
                 ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "text": {
+                "type": "string"
+              },
+              "context": {
+                "const": true,
+                "description": "Present on earlier, already scribed messages: read-only context, never cited."
+              },
+              "pasted": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "1-based lines of the text inside a paste region; markers there are never returned."
               }
             },
             "required": [
-              "name",
-              "meaning",
-              "examples",
-              "authors"
+              "id",
+              "role",
+              "at",
+              "text"
             ],
             "additionalProperties": false
           }
         },
-        "topics": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "capture": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "matters": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "models": {
+        "rules": {
           "type": "object",
-          "description": "One <model>@<effort> per level from the Models section; query is model-free and present only when set.",
+          "description": "The Tags, Topics, Matters, Capture and Models sections of dom-scribe-rules, or the spec defaults (topics: the project name; models: ask haiku@low, scribe haiku@medium).",
           "properties": {
-            "query": {
-              "type": "string"
+            "source": {
+              "enum": [
+                "page",
+                "defaults"
+              ]
             },
-            "ask": {
-              "type": "string"
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "meaning": {
+                    "type": "string"
+                  },
+                  "examples": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "authors": {
+                    "enum": [
+                      "user",
+                      "agent",
+                      "any"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "meaning",
+                  "examples",
+                  "authors"
+                ],
+                "additionalProperties": false
+              }
             },
-            "scribe": {
-              "type": "string"
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "capture": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "matters": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "models": {
+              "type": "object",
+              "description": "One <model>@<effort> per level from the Models section; query is model-free and present only when set.",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "scribe": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ask",
+                "scribe"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
-            "ask",
-            "scribe"
+            "source",
+            "tags",
+            "topics",
+            "capture",
+            "matters",
+            "models"
+          ],
+          "additionalProperties": false
+        },
+        "tags": {
+          "type": "array",
+          "description": "The scribe tag definitions in force from the Library settings (scribe.tags): the configured list, else the two defaults. Distinct from rules.tags, the v1 rules-page section.",
+          "items": {
+            "$ref": "#/$defs/tag"
+          }
+        },
+        "cadence": {
+          "$ref": "#/$defs/cadence"
+        }
+      },
+      "required": [
+        "session_id",
+        "provider",
+        "parsed",
+        "content_withheld",
+        "message_count",
+        "new_count",
+        "scr",
+        "scribed_through",
+        "messages",
+        "rules",
+        "tags",
+        "cadence"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "tag": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "global",
+                "project",
+                "session"
+              ]
+            },
+            "instruction": {
+              "type": "string"
+            },
+            "sink": {
+              "enum": [
+                "decisions_ledger",
+                "preference_page",
+                "scr_only",
+                "orbit_task"
+              ]
+            },
+            "mode": {
+              "enum": [
+                "propose",
+                "apply",
+                "append"
+              ]
+            },
+            "capture": {
+              "enum": [
+                "markers",
+                "markers+inferred"
+              ]
+            },
+            "workspace": {
+              "type": "string",
+              "description": "orbit_task only: the Orbit workspace selector the proposed task is filed in."
+            }
+          },
+          "required": [
+            "name",
+            "scope",
+            "instruction",
+            "sink",
+            "mode",
+            "capture"
+          ],
+          "additionalProperties": false
+        },
+        "cadence": {
+          "type": "object",
+          "description": "Pass cadence: a pass starts when either threshold is reached.",
+          "properties": {
+            "minutes": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 240
+            },
+            "turns": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "minutes",
+            "turns"
           ],
           "additionalProperties": false
         }
-      },
-      "required": [
-        "source",
-        "tags",
-        "topics",
-        "capture",
-        "matters",
-        "models"
-      ],
-      "additionalProperties": false
-    },
-    "tags": {
-      "type": "array",
-      "description": "The scribe tag definitions in force from the Library settings (scribe.tags): the configured list, else the two defaults. Distinct from rules.tags, the v1 rules-page section.",
-      "items": {
-        "$ref": "#/$defs/tag"
       }
     },
-    "cadence": {
-      "$ref": "#/$defs/cadence"
-    }
-  },
-  "required": [
-    "session_id",
-    "provider",
-    "parsed",
-    "content_withheld",
-    "message_count",
-    "new_count",
-    "scr",
-    "scribed_through",
-    "messages",
-    "rules",
-    "tags",
-    "cadence"
-  ],
-  "additionalProperties": false,
-  "$defs": {
-    "tag": {
+    {
+      "title": "v2",
       "type": "object",
       "properties": {
-        "name": {
+        "format": {
+          "const": "v2"
+        },
+        "session_id": {
           "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "parsed": {
+          "type": "string"
+        },
+        "content_withheld": {
+          "type": "boolean",
+          "description": "A private session: messages are empty and markers come by reference."
+        },
+        "message_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "new_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scr": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The session's v2 SCR, or (exists false) the SCR-<yyyymmdd>-<hhmm>-<session6> name a new one takes.",
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title_by": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scope": {
+              "type": "string"
+            },
+            "previous": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scribed_through": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "updated": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sensitivity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sections": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "summary": {
+                  "type": "string"
+                },
+                "goals": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "outcome": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "next": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "tag_entries": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "next_tag": {
+              "type": "string",
+              "pattern": "^T[0-9]+$"
+            }
+          }
         },
         "scope": {
-          "enum": [
-            "global",
-            "project",
-            "session"
-          ]
-        },
-        "instruction": {
-          "type": "string"
-        },
-        "sink": {
-          "enum": [
-            "decisions_ledger",
-            "preference_page",
-            "scr_only",
-            "orbit_task"
-          ]
-        },
-        "mode": {
-          "enum": [
-            "propose",
-            "apply",
-            "append"
-          ]
-        },
-        "capture": {
-          "enum": [
-            "markers",
-            "markers+inferred"
-          ]
-        },
-        "workspace": {
           "type": "string",
-          "description": "orbit_task only: the Orbit workspace selector the proposed task is filed in."
-        }
-      },
-      "required": [
-        "name",
-        "scope",
-        "instruction",
-        "sink",
-        "mode",
-        "capture"
-      ],
-      "additionalProperties": false
-    },
-    "cadence": {
-      "type": "object",
-      "description": "Pass cadence: a pass starts when either threshold is reached.",
-      "properties": {
-        "minutes": {
-          "type": "integer",
-          "minimum": 5,
-          "maximum": 240
+          "description": "global or project:<name>."
         },
-        "turns": {
-          "type": "integer",
-          "minimum": 2,
-          "maximum": 100
+        "previous": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The scope's latest other SCR: id, path, title, updated, session and its sections (null when private)."
+        },
+        "scribed_through": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^m-[0-9]{4,}$",
+                "description": "Stable: the nth kept message is always m-<n>."
+              },
+              "role": {
+                "enum": [
+                  "user",
+                  "assistant"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "text": {
+                "type": "string"
+              },
+              "context": {
+                "const": true,
+                "description": "Present on earlier, already scribed messages: read-only context, never cited."
+              },
+              "pasted": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "1-based lines of the text inside a paste region; markers there are never returned."
+              }
+            },
+            "required": [
+              "id",
+              "role",
+              "at",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "markers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "description": "A marker: msg, line, marker, tag, scope, scope_marked, by, at, in_force, large_turn, plus text, because and quote unless content_withheld.",
+            "properties": {
+              "msg": {
+                "type": "string",
+                "pattern": "^m-[0-9]{4,}$"
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "marker": {
+                "type": "string",
+                "minLength": 1
+              },
+              "tag": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scope": {
+                "type": "string",
+                "minLength": 1
+              },
+              "scope_marked": {
+                "type": "boolean"
+              },
+              "text": {
+                "type": "string"
+              },
+              "because": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quote": {
+                "type": "string"
+              },
+              "by": {
+                "enum": [
+                  "user",
+                  "agent"
+                ]
+              },
+              "at": {
+                "type": "string"
+              },
+              "in_force": {
+                "type": "boolean"
+              },
+              "large_turn": {
+                "type": "boolean"
+              },
+              "content_withheld": {
+                "const": true
+              }
+            },
+            "required": [
+              "msg",
+              "line",
+              "marker",
+              "tag",
+              "scope",
+              "scope_marked",
+              "by",
+              "at",
+              "in_force",
+              "large_turn"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Line-start markers in the user's typed turns, after scribed_through. Never fenced, quoted, pasted or mid-sentence."
+        },
+        "agent_markers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "description": "A marker: msg, line, marker, tag, scope, scope_marked, by, at, in_force, large_turn, plus text, because and quote unless content_withheld.",
+            "properties": {
+              "msg": {
+                "type": "string",
+                "pattern": "^m-[0-9]{4,}$"
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "marker": {
+                "type": "string",
+                "minLength": 1
+              },
+              "tag": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scope": {
+                "type": "string",
+                "minLength": 1
+              },
+              "scope_marked": {
+                "type": "boolean"
+              },
+              "text": {
+                "type": "string"
+              },
+              "because": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quote": {
+                "type": "string"
+              },
+              "by": {
+                "enum": [
+                  "user",
+                  "agent"
+                ]
+              },
+              "at": {
+                "type": "string"
+              },
+              "in_force": {
+                "type": "boolean"
+              },
+              "large_turn": {
+                "type": "boolean"
+              },
+              "content_withheld": {
+                "const": true
+              }
+            },
+            "required": [
+              "msg",
+              "line",
+              "marker",
+              "tag",
+              "scope",
+              "scope_marked",
+              "by",
+              "at",
+              "in_force",
+              "large_turn"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Markers in assistant text: recorded by: agent and never applied."
+        },
+        "custom_title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rules": {
+          "type": "object"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "cadence": {
+          "type": "object"
         }
       },
       "required": [
-        "minutes",
-        "turns"
+        "format",
+        "session_id",
+        "provider",
+        "parsed",
+        "content_withheld",
+        "message_count",
+        "new_count",
+        "scr",
+        "scope",
+        "previous",
+        "scribed_through",
+        "messages",
+        "markers",
+        "agent_markers",
+        "custom_title",
+        "rules",
+        "tags",
+        "cadence"
       ],
       "additionalProperties": false
     }
-  }
+  ]
 }

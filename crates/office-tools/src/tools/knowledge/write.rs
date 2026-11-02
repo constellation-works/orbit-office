@@ -52,6 +52,20 @@ pub(crate) fn validate(
     library: &dyn office_core::ports::Library,
     markdown: &str,
 ) -> office_core::Result<Page> {
+    validate_with(library, markdown, &|id| library.get(id))
+}
+
+/// [`validate`], resolving citations and sharing through `get`: a scribe
+/// v2 pass validates an apply-mode page against the SCR it is about to
+/// write in the same commit.
+pub(crate) fn validate_with(
+    library: &dyn office_core::ports::Library,
+    markdown: &str,
+    get: &dyn Fn(
+        &str,
+    )
+        -> office_core::Result<Option<office_core::domain::knowledge::DocumentRecord>>,
+) -> office_core::Result<Page> {
     let page = Page::from_markdown(markdown)?;
     if page.template.is_some() {
         let templates = library.templates()?;
@@ -74,9 +88,9 @@ pub(crate) fn validate(
             .collect();
         page.check_template(&template_files, &page_files)?;
     }
-    office_core::domain::sharing::validate_sharing(markdown, |id| library.get(id))?;
+    office_core::domain::sharing::validate_sharing(markdown, get)?;
     page.check_base_rules()?;
-    page.resolve_citations(|id| library.get(id))?;
+    page.resolve_citations(get)?;
 
     Ok(page)
 }

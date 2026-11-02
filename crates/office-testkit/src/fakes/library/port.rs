@@ -178,6 +178,14 @@ impl Library for FakeLibrary {
         FakeLibrary::write_scribe_file(self, write)
     }
 
+    fn decision_ledgers(&self) -> Result<Vec<LibraryText>> {
+        FakeLibrary::decision_ledgers(self)
+    }
+
+    fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> Result<()> {
+        FakeLibrary::write_scribe_pass(self, pass)
+    }
+
     fn host_name(&self) -> Option<String> {
         self.host.clone()
     }
@@ -229,6 +237,14 @@ impl Library for FakeLibrary {
         session_id: &str,
     ) -> Result<office_core::domain::source::conversation::Session> {
         FakeLibrary::session_transcript(self, path, session_id)
+    }
+
+    fn scribe_transcript(
+        &self,
+        path: &str,
+        session_id: &str,
+    ) -> Result<office_core::domain::source::conversation::Session> {
+        self.session_fixture(path, session_id)
     }
 
     fn capture_session(

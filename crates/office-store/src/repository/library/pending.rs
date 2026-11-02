@@ -60,6 +60,8 @@ pub(super) fn normalize_upload_extension(extension: &str) -> String {
 /// Version 9 moves a proposal page between status folders: it writes the page
 /// and removes its previous paths in one commit.
 /// Version 10 writes one scribe SCR file and removes its previous name.
+/// Version 11 writes one scribe v2 pass: the SCR file plus the decision
+/// ledger and preference page files it plans, in one commit.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawPendingWrite {
@@ -98,6 +100,7 @@ impl RawPendingWrite {
             (8, Some(WriteKind::Proposal), None, None) => WriteKind::Proposal,
             (9, Some(WriteKind::ProposalMove), None, None) => WriteKind::ProposalMove,
             (10, Some(WriteKind::Scribe), None, None) => WriteKind::Scribe,
+            (11, Some(WriteKind::ScribePass), None, Some(_)) => WriteKind::ScribePass,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -131,4 +134,5 @@ pub(super) enum WriteKind {
     Proposal,
     ProposalMove,
     Scribe,
+    ScribePass,
 }
