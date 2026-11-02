@@ -71,6 +71,7 @@ export const styles = `
 .scribe-page .scribe-card-title:hover { background:transparent; text-decoration:underline }
 .scribe-detail h3 { font-size:15px }
 .scribe-card-summary { margin:0; font-size:13px; line-height:1.5; color:var(--fg-dim); white-space:pre-wrap; overflow-wrap:anywhere }
+.scribe-card-summary.md { white-space:normal; gap:6px }
 .scribe-card-section { display:flex; flex-direction:column; gap:2px }
 .scribe-card-items { margin:0; padding-left:18px; display:flex; flex-direction:column; gap:2px; font-size:13px; overflow-wrap:anywhere }
 .scribe-card-counts { margin:0; font-size:12px; color:var(--fg-mute) }

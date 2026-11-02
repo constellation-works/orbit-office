@@ -6,12 +6,13 @@ class Element {
   set textContent(value) { this._text = String(value); this.children = []; }
   get textContent() { return this._text + this.children.map((c) => c.textContent).join(""); }
   append(...children) { this.children.push(...children); }
+  appendChild(child) { this.children.push(child); return child; }
   replaceChildren(...children) { this.children = children; }
   setAttribute() {}
   addEventListener(name, fn) { this.listeners[name] = fn; }
   click() { this.listeners.click(); }
 }
-globalThis.document = { createElement: (tag) => new Element(tag) };
+globalThis.document = { createElement: (tag) => new Element(tag), createTextNode: (data) => ({ children: [], textContent: data }) };
 function collect(node, tag) { return [...(node.tagName === tag ? [node] : []), ...node.children.flatMap((child) => collect(child, tag))]; }
 test("reviews render citation anchors and a plain refusal", async () => {
   const calls = [];

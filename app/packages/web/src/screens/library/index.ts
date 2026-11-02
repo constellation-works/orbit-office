@@ -1,7 +1,7 @@
 /** Browse Library pages, outputs and setup progress. */
 import type { Screen } from "../../screen.js";
 import { getJson } from "../../api/client.js";
-import { errorState, panel, panelBody, row as listRow, rows as listRows, sharedLabel, shareSwitch } from "../../ui/index.js";
+import { errorState, panel, panelBody, renderMarkdown, row as listRow, rows as listRows, sharedLabel, shareSwitch } from "../../ui/index.js";
 import { styles } from "./style.js";
 
 type Row = Record<string, unknown>;
@@ -76,16 +76,6 @@ async function render(root: HTMLElement): Promise<void> {
     const noun = data.page !== undefined ? "this page" : data.artifact !== undefined ? "this output" : "this source";
     page.append(shareSwitch({ id, noun, shareable, private: (item.sensitivity ?? data.sensitivity) === "private", onChange: (next) => { shareable = next; draw(); } }));
   }
-  function citations(parent: HTMLElement, body: string): void {
-    const pattern = /\[((?:src|dom|rb|art)-[^\]\s,;]+(?:\s*[,;]\s*(?:src|dom|rb|art)-[^\]\s,;]+)*)\]/g;
-    let start = 0;
-    for (const match of body.matchAll(pattern)) {
-      parent.append(document.createTextNode(body.slice(start, match.index)));
-      for (const cite of (match[1] ?? "").split(/\s*[,;]\s*/)) parent.append(documentButton(cite, "View source", "library-cite"));
-      start = (match.index ?? 0) + match[0].length;
-    }
-    parent.append(document.createTextNode(body.slice(start)));
-  }
   /** One titled part of a document view, split from the one above by a hairline. */
   function part(parent: HTMLElement, title: string): HTMLElement {
     const section = el("div"); section.className = "library-part"; section.append(el("h2", title)); parent.append(section); return section;
@@ -108,7 +98,7 @@ async function render(root: HTMLElement): Promise<void> {
       const article = el("article"); article.className = "panel library-document"; const doc = panelBody(); doc.classList.add("library-document-body"); article.append(doc); page.append(article);
       sharing(doc, id, data, item);
       if (str(item.summary)) { const summary = el("p", str(item.summary)); summary.className = "library-summary"; doc.append(summary); }
-      const body = str(item.body ?? data.body); if (body) { const content = el("p"); content.className = "library-body"; citations(content, body); doc.append(content); }
+      const body = str(item.body ?? data.body); if (body) doc.append(renderMarkdown(body, { className: "library-body", cite: (cite) => documentButton(cite, "View source", "library-cite") }));
       if (data.content_withheld === true) doc.append(el("p", "This document is private, so its text is withheld here. It is only processed on your chosen private endpoint."));
       const refs = rows(item.refs); if (refs.length) { const section = part(doc, "References"); for (const ref of refs) { const p = el("p", str(ref.label)); const value = str(ref.value); if (str(ref.target) === "url" && /^https?:\/\//i.test(value)) { const a = document.createElement("a"); a.href = value; a.textContent = " Open reference"; a.rel = "noreferrer"; p.append(a); } else if (str(ref.target) === "artifact" && value) { p.append(documentButton(value, "Open output", "library-cite")); } else if (value && ["path", "account"].includes(str(ref.target))) { p.append(document.createTextNode(`: ${value}`)); } section.append(p); } }
       const cites = Array.isArray(item.cites) ? item.cites : []; if (cites.length) { const section = part(doc, "Sources"); const line = el("div"); line.className = "library-inline"; for (const cite of cites) if (typeof cite === "string") line.append(documentButton(cite, "View source", "library-cite")); section.append(line); }

@@ -439,7 +439,32 @@ a.mono-meta:hover { color: var(--accent-hover); }
 .today summary { color: var(--accent); cursor: pointer; font-size: 13px; }
 .today-done details { width: auto; }
 .today-done details[open] { width: 100%; }
-.today-result, .today-background { white-space: pre-wrap; }
+.today-result:not(.md), .today-background:not(.md) { white-space: pre-wrap; }
+.today-result.md, .today-background.md { font-size: 14px; }
+/* Rendered Markdown (src/ui/markdown.ts): prose blocks in the screen's own colour, one rhythm for every screen. */
+.md { display: flex; flex-direction: column; gap: 10px; min-width: 0; overflow-wrap: anywhere; line-height: 1.6; }
+.md > *, .md li > *, .md blockquote > * { margin: 0; }
+.md p, .md li { white-space: pre-line; }
+.md h3, .md h4, .md h5, .md h6 { margin: 6px 0 0; font-weight: 600; line-height: 1.3; color: var(--fg); }
+.md h3 { font-size: 1.2em; }
+.md h4 { font-size: 1.08em; }
+.md h5, .md h6 { font-size: 1em; }
+.md ul, .md ol { padding-left: 1.5em; display: flex; flex-direction: column; gap: 4px; }
+.md li.md-task { list-style: none; margin-left: -1.2em; }
+.md li > ul, .md li > ol { margin-top: 4px; }
+.md a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.md a:hover { color: var(--accent-hover); }
+.md code { padding: 1px 5px; border-radius: 4px; background: var(--bg-hover); font-size: 0.9em; }
+.md pre { padding: 12px 14px; overflow-x: auto; border: 1px solid var(--hair); border-radius: var(--radius-sm); background: var(--bg); white-space: pre; line-height: 1.5; }
+.md pre code { padding: 0; background: none; font-size: 13px; }
+.md blockquote { padding: 2px 0 2px 12px; border-left: 3px solid var(--border-strong); color: var(--fg-dim); display: flex; flex-direction: column; gap: 8px; }
+.md hr { border: 0; border-top: 1px solid var(--hair); width: 100%; }
+.md .md-table { overflow-x: auto; max-width: 100%; }
+.md table { border-collapse: collapse; font-size: 0.93em; }
+.md th, .md td { padding: 6px 12px; border: 1px solid var(--hair); text-align: left; vertical-align: top; }
+.md th { background: var(--bg-hover); font-weight: 600; }
+.md .md-center { text-align: center; }
+.md .md-right { text-align: right; }
 .today-background { margin-bottom: 0; }
 .today [role="alert"] { margin-bottom: 24px; }
 .today-outcome { margin: 0 0 24px; padding: 12px 16px; border-radius: var(--radius); background: var(--done-bg); color: var(--fg); }

@@ -7,7 +7,7 @@ import { dismissSharedSkipped, getJson, getLastSharedSync, uploadSource } from "
 import { sourceHref } from "../../api/source-location.js";
 import type { Screen } from "../../screen.js";
 import { ageLabel, cardSummary, cardTitle, scopeLabel, SCRIBE_FEED_HREF, tagCountsLabel } from "../../ui/handoff.js";
-import { card, emptyState, errorState, monoMeta, panel, panelBody, panelGrid, pill, provenanceLink, row, rows } from "../../ui/index.js";
+import { card, emptyState, errorState, monoMeta, panel, panelBody, panelGrid, pill, provenanceLink, renderMarkdown, row, rows } from "../../ui/index.js";
 import { dueWords, isOverdue } from "../../ui/when.js";
 import { ApprovalControls, serverApprovals, type ApprovalApi } from "./approvals.js";
 import { digestPanel, digestSummary, readDigest, serverDigest, type DigestApi, type DigestState } from "./digest.js";
@@ -24,9 +24,9 @@ function background(item: TodayItem): HTMLElement {
   const link = provenanceLink("About this work", "#today");
   link.dataset.focus = `${item.key}-background`;
   link.setAttribute("aria-expanded", "false");
-  const detail = paragraph(item.background || "No background has been added yet.");
+  const detail = item.background ? renderMarkdown(item.background, { className: "today-background", headingLevel: 4 }) : paragraph("No background has been added yet.");
   detail.hidden = true;
-  detail.className = "today-background";
+  detail.classList.add("today-background");
   link.addEventListener("click", (event) => {
     event.preventDefault();
     detail.hidden = !detail.hidden;
@@ -148,8 +148,8 @@ function resultCard(item: TodayResult): HTMLElement {
   const summary = document.createElement("summary");
   summary.dataset.focus = `${item.key}-result`;
   summary.textContent = "Open result";
-  const outcome = paragraph(item.result ?? "No written result was recorded for this work.");
-  outcome.className = "today-result";
+  const outcome = item.result ? renderMarkdown(item.result, { className: "today-result", headingLevel: 4 }) : paragraph("No written result was recorded for this work.");
+  outcome.classList.add("today-result");
   result.append(summary, outcome);
   content.append(result, background(item));
   return card(item.title, content);

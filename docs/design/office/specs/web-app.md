@@ -44,7 +44,7 @@ Source: spec §13.1–§13.2 and §13.4.
 | **Calendar** | Week view (day view on a phone) of the user's meetings, authored locally or read from Outlook or an ICS feed, with each meeting's prep and capture state in words and the routines' runs as margin marks, tasks scheduled for a date as blocks, and the user's own to-dos as due items on their due day and time (overdue open ones stay in view); a meeting opens its attendees, agenda, cited prep brief and **Add notes or transcript** ([calendar.md](./calendar.md#app); local events [ORB-20246]) |
 | **To-dos** | An **Agent to-dos go to** picker (the followed workspaces, or None); You and Agents columns, the Agents column led by the meeting agent to-dos (below); each to-do shows its source and attached knowledge, and its scheduled time when it has one: for your own, that time is the due date ("Due Fri 09:00", **Overdue** once past); a **New to-do** form creates one of your own; **Schedule…** (on yours, **Set due date…**) sets or clears the time ([calendar.md](./calendar.md#scheduled-tasks)) |
 | **Routines** | The next hour as one track (a mark per scheduled run, hollow where a paused routine skips its slot), then On and Paused tables: a switch, the routine and what it does, when it runs (plain words, with the cron line beneath), when it runs next (worked out from the schedule in the computer's time zone) and how its last time went (from `last_fire` in `orbit.auto_task.list`: when, and its task's state in words; task ids stay on the server). Retention settings below. Scheduled routines use the same tables, with their last run outcome when available. Only shipped component definitions are listed, with a count of hidden Orbit developer routines (see below). Full run history and produced outputs are managed in Orbit. |
-| **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page or output chosen on the overview opens in the right column in place of Library setup and Outputs, with the list kept beside it, its entry marked and **Close** bringing setup back (search results open the full-width view); a page view with citations, refs and back-links (a person's meeting sources and other Library documents; task links are deferred until a page-citation read exists); history for every page and artifact; "Shared" and "Shared · from <member>" labels and a **Share with the team** switch on page, source and artifact views ([shared-library.md](./shared-library.md#app)) |
+| **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page or output chosen on the overview opens in the right column in place of Library setup and Outputs, with the list kept beside it, its entry marked and **Close** bringing setup back (search results open the full-width view); a page view whose body is rendered Markdown ([Markdown rendering](#markdown-rendering)) with citations, refs and back-links (a person's meeting sources and other Library documents; task links are deferred until a page-citation read exists); history for every page and artifact; "Shared" and "Shared · from <member>" labels and a **Share with the team** switch on page, source and artifact views ([shared-library.md](./shared-library.md#app)) |
 | **Settings** | **Models** first (below); Library settings; **Shared library** (remote, branch and member name, **Sync now**, the last sync in words; [shared-library.md](./shared-library.md#app)); **Private route** (choose the endpoint kind, URL, model and label; the token goes straight to `orbit plugin secret set`; the check's capabilities in plain words; "Built with Muse Spark Open"; [models-and-privacy.md](./models-and-privacy.md#the-private-route)); **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again; a secret address takes the feed's full address; a sign-in-with-a-code connection shows the user code and verification address, then its signed-in state, and "Sign in again" once it reads `auth_expired`); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
 | **Insights** | Automation ratio line, metric tiles, "what got automated" |
 | **Review** | Generated reviews with their citations, and a regenerate button |
@@ -544,6 +544,33 @@ Source, Settings and Today.
 
 The Library browses the newest 100 matching outputs from `office.artifact-list`; when more match, it says “Showing the latest 100”. Kind and exact series filters narrow the listing, so older outputs and series may not appear in an unfiltered view.
 
+### Markdown rendering
+
+Stored prose is Markdown, and every screen shows it through one renderer,
+`renderMarkdown` in `web/src/ui/markdown.ts` (exported from `ui/index.ts`),
+rather than as raw text. It handles headings, paragraphs (line breaks kept),
+bullet, numbered and nested lists with task boxes, bold, italic, strikethrough,
+inline code, fenced code blocks, links, blockquotes, tables and rules, and builds
+DOM nodes directly from the text. It is safe by construction:
+
+- Nothing is parsed as HTML or assigned with `innerHTML`: `<script>`, `<img onerror=…>`
+  and any other raw tag show as the characters typed, and no `on*` attribute is ever set.
+- A link keeps its target only when it is `http(s)` (opened with `rel="noopener noreferrer"`),
+  relative, or an in-app `#` route (`isSafeHref`). Any other scheme (`javascript:`,
+  `data:`, `vbscript:`, `file:`), a protocol-relative `//host` target or one with control
+  characters leaves the link's text without a link. Images are never loaded; their alt text shows.
+- A citation token (`[src-…]`, `[dom-…]`, `[rb-…]`, `[art-…]`, and `[ORB-…]` on Review) is
+  not a Markdown link: the caller's `cite` hook turns it into its own control, so
+  **View source** keeps working inside rendered content.
+
+Where it is used: the Library page, output and source body (citations open the document
+in the same view); Today's **About this work** (a task's description) and **Open result**
+(its execution summary); Review text; Calendar's prep brief; and Scribe's card summary.
+The web app has no task detail view, so a task's acceptance criteria and comments are not
+shown anywhere yet; a view for them renders through the same function. Tests:
+`web/test/markdown.test.mjs` (the renderer, including an injected `<script>` and a
+`javascript:` link) and the Library and Today browser tests.
+
 ## Task References
 
 - [ORB-18711] — built `office.config-set` for Library settings.
@@ -568,6 +595,7 @@ The Library browses the newest 100 matching outputs from `office.artifact-list`;
 - [ORB-20363] — wires scoped app authority; parked as someday, leaving Tags saves unavailable.
 - [ORB-20696] — built the original Scribe screen over v1.
 - [ORB-21337] — built the deterministic digest since a meeting.
+- [ORB-21605] — built the shared Markdown renderer and used it for Library bodies, Today's background and result, Review, the prep brief and Scribe summaries.
 - [ORB-21340] — implemented meeting-ledger contradictions and resolution; code is merged, task still in progress.
 - [ORB-21376] — added read-only office.source-digest and switched the app routes to it.
 - [ORB-21452] — deduplicated source-digest needs across repeated workspace listings.
