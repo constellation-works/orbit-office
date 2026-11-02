@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: install script — one idempotent command that installs the Orbit Office distribution, its Orbit engine, component plugins, workspace, Library and app"
-last_validated: 2026-10-27
+last_validated: 2026-11-01
 ---
 
 # Spec: Install script
@@ -215,7 +215,8 @@ filter for them. Orbit must support `workspace init --preset`.
    systemd journal already captures the service output. `orbit-office status` prints the log path.
    where the browser offers to install it as a PWA. In a clone the app is built from the
    adjacent `app/` tree (`npm run build` whenever `packages/server/dist/main.js` is missing
-   or unrunnable, whatever an earlier marker claims). Without an adjacent tree,
+   or unrunnable, whatever an earlier marker claims) and the clone's HEAD is recorded as the
+   `app_commit=<commit>` install-state marker. Without an adjacent tree,
    `ORBIT_OFFICE_APP_BUNDLE` selects an unpacked app bundle containing
    `packages/server/dist/main.js` and its runtime files, including the shipped
    `office` and `gateway` manifests and definition trees at
@@ -228,6 +229,34 @@ filter for them. Orbit must support `workspace init --preset`.
    service is written. A complete app already under the data folder needs no bundle
    on re-run and changes nothing; a partial one is repaired by supplying the bundle
    again, and without one the failure names the concrete missing entrypoint.
+
+   **Upgrading the app from a clone.** A clone whose entrypoint is already runnable is
+   rebuilt when its HEAD differs from the recorded `app_commit`, or when no commit was
+   recorded (an install from before the marker existed). The rebuild runs after the
+   login service is written and uses the program behind `make app-install`
+   (`app/install/app_install.py install <commit>`, run with the pinned Python, else
+   `python3` 3.9+, from the clone root), so the two routes share one build, publication,
+   restart and check
+   ([details below](#updating-the-plugin-from-a-clone-make-plugin-install)):
+   it builds the pinned commit in a temporary export away from the running service,
+   publishes the generated directories into the app, runs the OS restart (the launchd
+   kickstart or `systemctl --user restart`) and polls the app's `/build-info.json` on the
+   service port until it reports that commit. Only then does the installer record the new
+   `app_commit` and print `app: upgraded (commit <commit>)`. A failed build leaves the
+   running service and its files untouched and the step fails with the build error; a
+   restart whose reported commit differs fails with `app commit check failed`, restores
+   the previous files and tries to restart them. In every failure the marker keeps the
+   old commit, so the next run retries. The step needs `make` and Python 3.9+ and says so
+   when either is missing. The upgrade rebuilds the pinned commit, not uncommitted
+   edits: commit first. A repeat run at the recorded commit builds and restarts
+   nothing. `ORBIT_OFFICE_APP_REBUILD=0` keeps an already built app as it is.
+   `--uninstall` removes the marker.
+
+   A clone's first install builds in place and restarts nothing extra; it records HEAD
+   without a commit check, since no service ran before. An install with
+   `ORBIT_OFFICE_APP_BUNDLE`, or a piped install with the app already under the data
+   folder, has no source to build: it keeps its current behavior (the bundle is copied,
+   nothing is rebuilt, restarted or checked) and records no commit.
 
 ## Updating the plugin from a clone (`make plugin-install`)
 
@@ -289,7 +318,8 @@ override is never added. The target fails when `office.init` exits non-zero
 or returns an `{ok: false}` envelope on stdout. Without `PLUGIN_WORKSPACE`,
 the workspace toggle is untouched and `office.init` is not run.
 
-The curl installer's upgrade path is separate from these Make targets.
+The installer's clone upgrade (step 9) reuses this build, restart and commit check;
+see [Upgrading the app from a clone](#installation-steps).
 
 ## `orbit-office init [path]`
 
@@ -552,7 +582,12 @@ runs `sh scripts/install/build-install.sh --check` and then that harness on Linu
 `UPDATE_GOLDENS=1 sh scripts/install/test-install.sh` explicitly refreshes the
 installed launcher help golden. The launcher itself supports Node 20+. The harness uses
 temporary homes, stub Orbit and service managers, local archive fixtures and a PTY
-for the hidden-input and single-consent checks; it never contacts a provider.
+for the hidden-input and single-consent checks; it never contacts a provider. Its
+scenarios run with `ORBIT_OFFICE_APP_REBUILD=0` so they never rebuild the checkout's own
+app; the app-upgrade scenario enables it against a throwaway clone with stub `npm`,
+`systemctl` and `launchctl` and a local `/build-info.json` responder, covering the
+rebuild and restart on Linux and macOS, a repeat at the built commit, a failed build,
+a wrong reported commit, a retry, and uninstall.
 
 ## Updating and reconnecting scoped agent sessions (operator handoff)
 

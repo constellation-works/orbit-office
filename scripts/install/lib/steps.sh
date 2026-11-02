@@ -888,6 +888,44 @@ app_entrypoint_ok() {
     node --check "$_entry" >/dev/null 2>&1
 }
 
+# An interpreter that can run app/install/app_install.py (Python 3.9+): the
+# installer's pinned Python first, then python3 on PATH. Each candidate must
+# execute code, not merely exist.
+app_python() {
+    for _candidate in "$TOOLS_BIN/python3" python3; do
+        _probe=$("$_candidate" -c 'import sys; print("app-python-ok" if sys.version_info >= (3, 9) else "old")' 2>/dev/null) || continue
+        if [ "$_probe" = "app-python-ok" ]; then
+            printf '%s\n' "$_candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Upgrade the app of a clone install to <commit>. app_install.py (the same
+# program as `make app-install`) builds that commit away from the running
+# service, publishes the build, restarts the login service and requires
+# /build-info.json to report the commit. A failed build leaves the running
+# service untouched; a failed restart or commit check restores the previous
+# files. Either way the step fails with the error and records nothing, so
+# the next run tries again.
+app_upgrade() {
+    _upgrade_commit="$1"
+    _upgrade_script="$APP_SRC/install/app_install.py"
+    [ -f "$_upgrade_script" ] \
+        || die "app: cannot upgrade the app: $_upgrade_script is missing from this clone; update the clone or set ORBIT_OFFICE_APP_REBUILD=0 to keep the current build, then re-run"
+    command -v make >/dev/null 2>&1 \
+        || die "app: make is required to upgrade the app and is not installed: install it with your package manager (or set ORBIT_OFFICE_APP_REBUILD=0 to keep the current build), then re-run"
+    _upgrade_python=$(app_python) \
+        || die "app: Python 3.9+ is required to upgrade the app; re-run after the python step succeeds or put python3 on PATH, then re-run"
+    say "app: upgrading to commit $_upgrade_commit (build, restart, commit check)"
+    if ! (cd "$SCRIPT_DIR" && "$_upgrade_python" -B "$_upgrade_script" install "$_upgrade_commit"); then
+        die "app: upgrade to commit $_upgrade_commit failed (error above); the app was not marked upgraded, so fix the cause and re-run to retry"
+    fi
+    state_set_value "app_commit" "$_upgrade_commit"
+    say "app: upgraded (commit $_upgrade_commit)"
+}
+
 step_app() {
     step "9 app"
     compute_agent_path
@@ -896,15 +934,26 @@ step_app() {
         _raw_node=$(command -v node 2>/dev/null || printf 'node')
         die "app: node resolves to a per-shell shim ($_raw_node) under a fnm_multishells directory, which fnm removes when its shell exits, so the login service would not start; install a stable Node.js 20+ (a fnm default install, nvm, or the nodejs.org tarball) and put its bin directory, not a fnm_multishells path, first on PATH, then re-run"
     fi
+    _app_upgrade=0
     if [ -n "$APP_SRC" ]; then
         _app_home="$APP_SRC"
+        _app_commit=$(git -C "$SCRIPT_DIR" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) || _app_commit=""
         if app_entrypoint_ok "$APP_SRC"; then
-            say "app: build already done"
+            if [ -n "$_app_commit" ] && [ "$APP_REBUILD" != "0" ] \
+                && [ "$(state_value app_commit)" != "$_app_commit" ]; then
+                # Built before, at another commit or by an installer that did
+                # not record one: rebuild from HEAD once the service exists.
+                _app_upgrade=1
+                say "app: build is not at commit $_app_commit; upgrading below"
+            else
+                say "app: build already done"
+            fi
         else
             npm --prefix "$APP_SRC" run build >/dev/null
             app_entrypoint_ok "$APP_SRC" \
                 || die "app: build did not produce a runnable entrypoint at $APP_SRC/packages/server/dist/main.js; run 'npm --prefix $APP_SRC run build' to see the failure, then re-run"
             state_mark "app_built"
+            [ -z "$_app_commit" ] || state_set_value "app_commit" "$_app_commit"
             say "app: built ($APP_SRC)"
         fi
     elif [ -n "${ORBIT_OFFICE_APP_BUNDLE:-}" ]; then
@@ -1096,6 +1145,9 @@ EOF
             fi
         fi
     fi
+    if [ "$_app_upgrade" -eq 1 ]; then
+        app_upgrade "$_app_commit"
+    fi
     say "app: http://localhost:$PORT/ (open it to install the PWA)"
     if [ -t 1 ] && [ "${ORBIT_OFFICE_NO_OPEN:-0}" != "1" ]; then
         if [ "$OS" = "macos" ] && command -v open >/dev/null 2>&1; then
@@ -1207,6 +1259,7 @@ do_uninstall() {
     state_clear "plugin_enabled"
     state_clear "service_installed"
     state_clear "app_built"
+    state_clear_value "app_commit"
     state_clear "agent_registered"
     if [ "$_purge" -eq 1 ]; then
         # The check above already ran. Repeat the protected-path guard

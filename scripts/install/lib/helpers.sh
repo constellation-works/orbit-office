@@ -72,6 +72,10 @@ Environment:
                              packages/server/dist/main.js and its runtime
                              files; required when install.sh has no
                              adjacent app tree (standalone install)
+  ORBIT_OFFICE_APP_REBUILD   Set to 0 to leave an already built app in a
+                             clone alone; by default a clone whose HEAD
+                             differs from the commit the app was built at
+                             is rebuilt and the login service restarted
   ORBIT_OFFICE_META_API_KEY  Meta API key (used instead of prompting)
   ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN  Private-route endpoint token (used
                              instead of prompting; optional)
@@ -335,6 +339,7 @@ case "$0" in
 esac
 
 # The app/plugin sources exist only in a clone, not in a curl pipe.
+APP_REBUILD="${ORBIT_OFFICE_APP_REBUILD:-1}"
 APP_SRC=""
 PLUGIN_SRC=""
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/app/package.json" ]; then
@@ -410,6 +415,31 @@ state_clear() {
     else
         rm -f "$_tmp" "$STATE_FILE"
     fi
+}
+
+# Value markers (<name>=<value>) hold one value per name, for facts that are
+# more than present or absent, such as the commit the app was built at.
+state_value() {
+    [ -f "$STATE_FILE" ] || return 0
+    sed -n "s/^$1=//p" "$STATE_FILE" | head -n 1
+}
+
+state_clear_value() {
+    [ -f "$STATE_FILE" ] || return 0
+    _tmp="$STATE_FILE.tmp.$$"
+    (umask 077; grep -v "^$1=" "$STATE_FILE" > "$_tmp") || true
+    if [ -s "$_tmp" ]; then
+        chmod 600 "$_tmp"
+        mv "$_tmp" "$STATE_FILE"
+    else
+        rm -f "$_tmp" "$STATE_FILE"
+    fi
+}
+
+state_set_value() {
+    [ "$(state_value "$1")" = "$2" ] && return 0
+    state_clear_value "$1"
+    state_mark "$1=$2"
 }
 
 # write_if_changed <path> : reads stdin; returns 0 when it wrote, 1 when
