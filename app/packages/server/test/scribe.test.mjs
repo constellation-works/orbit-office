@@ -102,6 +102,21 @@ test("the Tags editor reads the effective tags from office.status", async (t) =>
   assert.deepEqual(body.tags, statusTags);
   assert.deepEqual(body.cadence, { minutes: 20, turns: 10 });
   assert.equal(body.tags_customized, true);
+  assert.deepEqual(body.tags.map((tag) => tag.trigger), ["cadence", "cadence", "marker"], "each tag's trigger is shown");
+});
+
+test("a tag without a trigger reads as cadence; an unknown trigger is not a tag", async (t) => {
+  const legacy = statusTags.map(({ trigger: _trigger, ...tag }) => tag);
+  const client = {
+    async callTool() { throw new Error("unexpected"); },
+    async pollTool() { return { scribe: { cadence: { minutes: 20, turns: 10 }, tags: legacy, tags_customized: true } }; },
+  };
+  const url = await serve(t, client);
+  const { status, body } = await get(`${url}/api/scribe/tags`);
+  assert.equal(status, 200);
+  assert.deepEqual(body.tags.map((tag) => tag.trigger), ["cadence", "cadence", "cadence"]);
+  assert.throws(() => tagSaveOf({ action: "upsert", tag: { ...statusTags[0], trigger: "always" } }),
+    (error) => error.code === "invalid_input");
 });
 
 /** A client whose config-set succeeds and whose status reflects the save. */
@@ -135,13 +150,13 @@ function savingClient() {
 test("a tag save writes through office.config-set and returns the tags read back", async (t) => {
   const client = savingClient();
   const url = await serve(t, client);
-  const tag = { name: "incident", scope: "project", instruction: "Something broke and what settled it.", sink: "scr_only", mode: "append", capture: "markers" };
+  const tag = { name: "incident", scope: "project", instruction: "Something broke and what settled it.", sink: "scr_only", mode: "append", capture: "markers", trigger: "marker" };
   const saved = await post(`${url}/api/scribe/tags`, { action: "upsert", tag });
   assert.equal(saved.status, 200, JSON.stringify(saved.body));
   assert.equal(saved.body.saved, true);
   assert.deepEqual(client.calls[0], { name: "office.config-set", input: { key: "scribe.tags.incident", value: tag } });
   assert.deepEqual(client.calls[1], { name: "office.status", input: {} }, "read back after the write");
-  assert.ok(saved.body.tags.tags.some((row) => row.name === "incident" && row.sink === "scr_only"));
+  assert.ok(saved.body.tags.tags.some((row) => row.name === "incident" && row.sink === "scr_only" && row.trigger === "marker"));
 
   const removed = await post(`${url}/api/scribe/tags`, { action: "delete", name: "preferences" });
   assert.deepEqual(client.calls.at(-2).input, { key: "scribe.tags.preferences", value: null }, "a default can be deleted");
@@ -173,6 +188,14 @@ test("when Orbit refuses config-set, the save is not_permitted with the operator
   const again = await post(`${second}/api/scribe/tags`, { action: "restore" });
   assert.equal(again.status, 403);
   assert.deepEqual([again.body.error, again.body.command], ["not_permitted", operatorCommand({ action: "restore" })]);
+
+  // A trigger change is refused the same way, and its command carries the trigger.
+  const upsert = { action: "upsert", tag: { ...statusTags[1], trigger: "marker" } };
+  const marked = await post(`${url}/api/scribe/tags`, upsert);
+  assert.equal(marked.status, 403);
+  assert.deepEqual(calls.at(-1), { name: "office.config-set", input: { key: "scribe.tags.decisions", value: upsert.tag } });
+  assert.equal(marked.body.saved, undefined);
+  assert.match(marked.body.command, /"trigger":"marker"/);
 });
 
 test("an Office refusal of a tag definition keeps its own code; bad bodies are refused before any tool call", async (t) => {

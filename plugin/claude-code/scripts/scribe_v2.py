@@ -197,9 +197,9 @@ class V2(V1):
             (block.get("cadence") or {}).get("minutes", 20),
             (block.get("cadence") or {}).get("turns", 10))]
         for tag in definitions:
-            line = "- {}: sink {} · mode {} · scope {} · capture {}".format(
+            line = "- {}: sink {} · mode {} · scope {} · capture {} · trigger {}".format(
                 tag.get("name"), tag.get("sink"), tag.get("mode"),
-                tag.get("scope"), tag.get("capture"))
+                tag.get("scope"), tag.get("capture"), tag.get("trigger") or "cadence")
             if tag.get("workspace"):
                 line += " · workspace {}".format(tag["workspace"])
             lines.append(line)

@@ -133,9 +133,9 @@ export const decisions = {
 
 /** The two shipped defaults plus one custom tag, as `office.status` reports them. */
 export const statusTags = [
-  { name: "preferences", scope: "global", instruction: "A standing answer to a class of question, in the user's words.", sink: "preference_page", mode: "propose", capture: "markers" },
-  { name: "decisions", scope: "session", instruction: "A choice that was made, with the question and options from the turns before it.", sink: "decisions_ledger", mode: "append", capture: "markers" },
-  { name: "lesson", scope: "session", instruction: "A lesson worth proposing to polaris.", sink: "orbit_task", mode: "propose", capture: "markers", workspace: "ws_polaris" },
+  { name: "preferences", scope: "global", instruction: "A standing answer to a class of question, in the user's words.", sink: "preference_page", mode: "propose", capture: "markers", trigger: "cadence" },
+  { name: "decisions", scope: "session", instruction: "A choice that was made, with the question and options from the turns before it.", sink: "decisions_ledger", mode: "append", capture: "markers", trigger: "cadence" },
+  { name: "lesson", scope: "session", instruction: "A lesson worth proposing to polaris.", sink: "orbit_task", mode: "propose", capture: "markers", trigger: "marker", workspace: "ws_polaris" },
 ];
 
 /** `office.scribe-ask` answering from the v1 fixture: one good claim and one whose quote is not on its line. */

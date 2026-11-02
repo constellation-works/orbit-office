@@ -21,7 +21,8 @@ const SCOPES = ["global", "project", "session"] as const;
 const SINKS = ["decisions_ledger", "preference_page", "scr_only", "orbit_task"] as const;
 const MODES = ["propose", "apply", "append"] as const;
 const CAPTURES = ["markers", "markers+inferred"] as const;
-const TAG_KEYS = ["name", "scope", "instruction", "sink", "mode", "capture", "workspace"] as const;
+const TRIGGERS = ["cadence", "marker"] as const;
+const TAG_KEYS = ["name", "scope", "instruction", "sink", "mode", "capture", "trigger", "workspace"] as const;
 
 const record = (value: unknown): Row | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Row : null;
@@ -35,9 +36,12 @@ function tagOf(value: unknown): ScribeTagDef | null {
   const sink = SINKS.find((item) => item === row.sink);
   const mode = MODES.find((item) => item === row.mode);
   const capture = CAPTURES.find((item) => item === row.capture);
-  if (name === null || instruction === null || scope === undefined || sink === undefined || mode === undefined || capture === undefined) return null;
+  // An Office that predates the field reads as the default, `cadence`.
+  const trigger = row.trigger === undefined ? "cadence" : TRIGGERS.find((item) => item === row.trigger);
+  if (name === null || instruction === null || scope === undefined || sink === undefined || mode === undefined
+    || capture === undefined || trigger === undefined) return null;
   const workspace = text(row.workspace);
-  return { name, scope, instruction, sink, mode, capture, ...(workspace !== null ? { workspace } : {}) };
+  return { name, scope, instruction, sink, mode, capture, trigger, ...(workspace !== null ? { workspace } : {}) };
 }
 
 /** The effective `scribe` block of an `office.status` output. */

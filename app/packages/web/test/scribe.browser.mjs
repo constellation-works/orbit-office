@@ -135,16 +135,21 @@ test("the Tags editor reads the effective tags and, refused by Orbit, shows not-
     await region(page, "Tags").getByText("#preferences").waitFor();
     await region(page, "Tags").getByText("#decisions").waitFor();
     await region(page, "Tags").getByText("#lesson").waitFor();
+    await region(page, "Tags").locator(".scribe-tag-row[data-name=lesson]").getByText("starts a pass when marked", { exact: false }).waitFor();
+    await region(page, "Tags").locator(".scribe-tag-row[data-name=decisions]").getByText("waits for the cadence", { exact: false }).waitFor();
     await form.getByRole("button", { name: "Restore defaults" }).waitFor();
     await noOverflow(page, "tags"); await shot(page, "scribe-tags");
 
     await form.getByLabel("Name").fill("incident");
     await form.getByLabel("Instruction").fill("Something broke and what settled it.");
+    assert.equal(await form.getByLabel("Trigger").inputValue(), "cadence", "a new tag waits for the cadence");
+    await form.getByLabel("Trigger").selectOption("marker");
     await form.getByRole("button", { name: "Save tag" }).click();
     await form.getByText("The app isn't allowed to change the scribe settings yet.", { exact: false }).waitFor();
     const command = await form.locator("code").first().innerText();
     assert.match(command, /^orbit tool run office\.config-set --input '/);
     assert.match(command, /scribe\.tags\.incident/);
+    assert.match(command, /"trigger":"marker"/, "the save request carries the trigger");
     assert.equal(await form.getByText("Saved.", { exact: true }).count(), 0, "a refused save claims no success");
     assert.equal(await form.getByRole("button", { name: "Save tag" }).isDisabled(), true, "the editor is read-only after the refusal");
     assert.equal(await form.getByLabel("Name").isDisabled(), true);

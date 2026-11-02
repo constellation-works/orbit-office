@@ -1,7 +1,7 @@
 //! Settings through the public, pure parsing/deserialization boundary.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 use office_core::domain::endpoint::{Capability, EndpointKind};
-use office_core::domain::scribe_settings::{TagMode, TagSink};
+use office_core::domain::scribe_settings::{TagMode, TagSink, TagTrigger};
 use office_core::{Error, domain::settings::Settings};
 use serde_json::json;
 
@@ -798,6 +798,44 @@ fn scribe_cadence_accepts_bounds_and_null_restores_defaults() {
         assert_eq!(
             refused_key(Settings::default().with_setting("scribe.cadence", value)),
             key
+        );
+    }
+}
+
+#[test]
+fn scribe_tag_trigger_defaults_to_cadence_accepts_marker_and_refuses_others() {
+    let defaults = Settings::default().scribe.effective_tags();
+    assert!(
+        defaults
+            .iter()
+            .all(|tag| tag.trigger == TagTrigger::Cadence)
+    );
+    // A Library written before the field existed keeps today's behavior.
+    let legacy = Settings::from_yaml(
+        r#"{"scribe": {"tags": [{"name": "idea", "scope": "session", "instruction": "An idea.", "sink": "scr_only"}]}}"#,
+    )
+    .expect("a tag without trigger");
+    assert_eq!(
+        legacy.scribe.effective_tags()[0].trigger,
+        TagTrigger::Cadence
+    );
+    let mut marked = tag("idea", "scr_only");
+    marked["trigger"] = json!("marker");
+    let set = Settings::default()
+        .with_setting("scribe.tags.idea", marked)
+        .expect("marker trigger");
+    let tags = set.scribe.effective_tags();
+    assert_eq!(tags[2].trigger, TagTrigger::Marker);
+    assert_eq!(tags[0].trigger, TagTrigger::Cadence);
+    let back = Settings::from_yaml(&set.to_yaml().expect("yaml")).expect("round trip");
+    assert_eq!(back, set);
+    for value in [json!("always"), json!("Marker"), json!(true), json!(null)] {
+        let mut definition = tag("idea", "scr_only");
+        definition["trigger"] = value;
+        // InvalidSetting is the invalid_library_setting code.
+        assert_eq!(
+            refused_key(Settings::default().with_setting("scribe.tags.idea", definition)),
+            "scribe.tags.idea.trigger"
         );
     }
 }

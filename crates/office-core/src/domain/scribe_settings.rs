@@ -102,6 +102,17 @@ pub enum TagCapture {
     MarkersInferred,
 }
 
+/// What makes a tag's marker start a pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TagTrigger {
+    /// The marker waits for the next cadence pass (the default).
+    #[default]
+    Cadence,
+    /// A Stop whose last user turn carries the tag's marker starts a pass.
+    Marker,
+}
+
 /// Whose scope a tag's entries belong to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -129,6 +140,8 @@ pub struct ScribeTag {
     pub mode: TagMode,
     /// Markers only, or markers plus inferred proposals.
     pub capture: TagCapture,
+    /// Whether a marked user turn starts a pass, or waits for the cadence.
+    pub trigger: TagTrigger,
     /// For `orbit_task` only: the Orbit workspace selector.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
@@ -245,6 +258,7 @@ pub fn default_tags() -> Vec<ScribeTag> {
             sink: TagSink::PreferencePage,
             mode: TagMode::Propose,
             capture: TagCapture::Markers,
+            trigger: TagTrigger::Cadence,
             workspace: None,
         },
         ScribeTag {
@@ -256,6 +270,7 @@ pub fn default_tags() -> Vec<ScribeTag> {
             sink: TagSink::DecisionsLedger,
             mode: TagMode::Append,
             capture: TagCapture::Markers,
+            trigger: TagTrigger::Cadence,
             workspace: None,
         },
     ]
@@ -419,6 +434,7 @@ fn parse_tag(value: &Value, position: &str) -> Result<ScribeTag> {
             "sink",
             "mode",
             "capture",
+            "trigger",
             "workspace",
         ];
         if FILE_TARGET_KEYS.contains(&field.as_str()) {
@@ -510,6 +526,17 @@ fn parse_tag(value: &Value, position: &str) -> Result<ScribeTag> {
             ));
         }
     };
+    let trigger = match map.get("trigger") {
+        None => TagTrigger::Cadence,
+        Some(Value::String(text)) if text == "cadence" => TagTrigger::Cadence,
+        Some(Value::String(text)) if text == "marker" => TagTrigger::Marker,
+        Some(_) => {
+            return Err(invalid(
+                &format!("{key}.trigger"),
+                "expected cadence or marker",
+            ));
+        }
+    };
     let workspace = match map.get("workspace") {
         None | Some(Value::Null) => None,
         Some(Value::String(selector)) => {
@@ -553,6 +580,7 @@ fn parse_tag(value: &Value, position: &str) -> Result<ScribeTag> {
         sink,
         mode,
         capture,
+        trigger,
         workspace,
     })
 }

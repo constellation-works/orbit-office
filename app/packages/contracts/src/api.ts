@@ -841,6 +841,8 @@ export type ScribeTagScope = "global" | "project" | "session";
 export type ScribeTagSink = "decisions_ledger" | "preference_page" | "scr_only" | "orbit_task";
 /** How a tag's entries take effect. */
 export type ScribeTagMode = "propose" | "apply" | "append";
+/** What makes a tag's marker start a pass: the next cadence pass, or the marked turn's Stop. */
+export type ScribeTagTrigger = "cadence" | "marker";
 
 /** One tag definition in force (specs/scribe.md, "Configuration"). */
 export interface ScribeTagDef {
@@ -851,6 +853,8 @@ export interface ScribeTagDef {
   sink: ScribeTagSink;
   mode: ScribeTagMode;
   capture: "markers" | "markers+inferred";
+  /** `marker`: a user turn carrying this tag's marker starts a pass at its Stop. */
+  trigger: ScribeTagTrigger;
   /** For `orbit_task` only: the Orbit workspace selector. */
   workspace?: string;
 }
