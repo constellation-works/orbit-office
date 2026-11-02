@@ -233,7 +233,10 @@ fn every_schema_ref_resolves_from_its_root() {
                 map.values().for_each(|child| refs(child, out));
             }
             serde_json::Value::Array(items) => items.iter().for_each(|child| refs(child, out)),
-            _ => {}
+            serde_json::Value::Null
+            | serde_json::Value::Bool(_)
+            | serde_json::Value::Number(_)
+            | serde_json::Value::String(_) => {}
         }
     }
     let dir = plugin_root().join("schemas");
