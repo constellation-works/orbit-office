@@ -4,8 +4,8 @@
  * The latest meeting is the newest source that filed a to-do (its
  * `source:<id>` tag on an office task). The digest itself is
  * `office.digest` with `source` (ORB-21337, sessions.md "Digest since a
- * meeting"): read-only and cited. Until that scope is installed the tool
- * refuses the input and the screen shows why.
+ * meeting"): read-only and cited. Any other refusal answers `unavailable`
+ * and the screen shows why.
  */
 import type { SourceDigest, TodayDigest } from "@orbit-office/contracts";
 import type { IncomingMessage, ServerResponse } from "node:http";

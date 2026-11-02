@@ -80,11 +80,12 @@ export function categoryLabel(category: ScribeAgreementCategory): string {
 export type LedgerState = "contested" | "reversed" | "standing";
 
 /**
- * Whether `decision` is `side` of a contradiction. ORB-21340 has not fixed
- * how a side names its ledger entry, so a side matches by the entry id in
- * its cite, or by the same evidence source and the same decision text.
+ * Whether `decision` is `side` of a contradiction: by its ledger entry id
+ * when the side names one, else by the entry id in its cite, or by the same
+ * evidence source and the same decision text.
  */
 export function isSide(decision: ScribeDecision, side: ContradictionSide): boolean {
+  if (side.entry !== undefined) return side.entry === decision.id;
   const [source = "", anchor = ""] = side.cite.split("#", 2);
   if (source === decision.id || anchor === decision.id) return true;
   if (source !== decision.source) return false;
@@ -130,7 +131,7 @@ export function heldLabel(held: number): string | null {
 
 /** The quiet line shown when no contradiction is open. */
 export function noContradictionText(available: boolean): string {
-  return available ? "No open contradictions." : "Contradiction checks arrive with meeting decisions in the ledger.";
+  return available ? "No open contradictions." : "Couldn’t read open contradictions. We’ll try again shortly.";
 }
 
 const CODES: Record<string, string> = {

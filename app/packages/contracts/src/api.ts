@@ -1019,6 +1019,8 @@ export interface AgentWorkspaceSaved { target_workspace: string | null }
 
 /** One side of a contradiction: a ledger decision with its reason and citation. */
 export interface ContradictionSide {
+  /** The decision ledger entry id, when the source names it. */
+  entry?: string;
   text: string;
   because: string | null;
   /** Source id plus anchor, for example `src-…#t=00:02:14` or `src-…#L42`. */
@@ -1040,8 +1042,8 @@ export interface Contradiction {
 }
 
 /**
- * `GET /api/scribe/contradictions`. `available` is false until the ledger's
- * contradiction flow is installed; the list is then empty.
+ * `GET /api/scribe/contradictions`: the open decision-conflict to-dos that
+ * `office.extract` files. `available` is false when they can't be read.
  */
 export interface Contradictions {
   available: boolean;

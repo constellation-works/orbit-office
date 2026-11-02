@@ -2,9 +2,8 @@
  * The Open contradiction panel: a new decision and the prior ledger
  * decision it contradicts, side by side, with the agent to-dos it holds and
  * a choice of which stands. Read from `GET /api/scribe/contradictions` and
- * resolved through `POST /api/scribe/contradictions/resolve`; both answer
- * "not available" until ORB-21340 installs the contradiction flow, and the
- * screen then shows one quiet line instead of the panel.
+ * resolved through `POST /api/scribe/contradictions/resolve`. With none
+ * open, or when the read fails, the screen shows one quiet line instead.
  */
 import type { Contradiction, Contradictions, ContradictionSide } from "@orbit-office/contracts";
 

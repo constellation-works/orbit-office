@@ -283,7 +283,7 @@ function drawSource(source: SourceView, root: HTMLElement): () => void {
     frames.body.append(strip); main.append(frames.section);
   }
 
-  // The aside. ORB-21337 adds its "Since this meeting" digest here, before Cited by:
+  // The aside. A "Since this meeting" digest (`GET /api/sources/digest`) would go here, before Cited by:
   //   if (source.kind === "meeting") aside.append(digestPanel(source.id));
   aside.append(citedBy(source, section));
   aside.append(whereItRan(source, section));

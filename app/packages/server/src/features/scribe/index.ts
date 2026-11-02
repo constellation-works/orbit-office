@@ -10,7 +10,7 @@
  * ask box calls `office.scribe-ask`, the one low-cost model call. The
  * legacy v1 handoff list stays at `/api/scribe/handoffs` (`legacy: true`)
  * for the compatibility window. Open contradictions are read through
- * `contradictions.ts`, which answers "not available" until ORB-21340 lands.
+ * `contradictions.ts` from the decision-conflict to-dos `office.extract` files.
  * Every call is `orbit tool run`; nothing reads the Library.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -241,10 +241,10 @@ export function createScribeFeature(client: Client): Feature {
         method: "GET", path: "/api/scribe/handoffs",
         handle: (request, response) => answer(response, "handoffs", async () => loadHandoffs(client, handoffQuery(request))),
       },
-      { method: "GET", path: "/api/scribe/contradictions", handle: (_request, response) => answer(response, "contradictions", () => readContradictions()) },
+      { method: "GET", path: "/api/scribe/contradictions", handle: (_request, response) => answer(response, "contradictions", () => readContradictions(client)) },
       {
         method: "POST", path: "/api/scribe/contradictions/resolve",
-        handle: (request, response) => answer(response, "contradiction resolve", async () => resolveContradiction(await readJsonBody(request))),
+        handle: (request, response) => answer(response, "contradiction resolve", async () => resolveContradiction(client, await readJsonBody(request))),
       },
       { method: "POST", path: "/api/scribe/ask", handle: (request, response) => answer(response, "ask", async () => ask(client, await readJsonBody(request))) },
     ],

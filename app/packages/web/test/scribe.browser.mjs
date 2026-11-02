@@ -46,7 +46,7 @@ test("the feed shows exactly one card per project plus the global card, and open
     await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
     await page.getByRole("heading", { name: "Scribe", exact: true, level: 1 }).waitFor();
     assert.deepEqual(await page.locator(".panel-head h2").evaluateAll((items) => items.map((item) => item.textContent)), [DECISIONS, FEED, "Preferences", "Agreement", "Tags"]);
-    await page.getByText("Contradiction checks arrive with meeting decisions in the ledger.").waitFor();
+    await page.getByText("Couldn’t read open contradictions. We’ll try again shortly.").waitFor();
     const ids = await region(page, FEED).locator("[data-id]").evaluateAll((items) => items.map((item) => item.dataset.id));
     assert.deepEqual(ids, cards.feed.cards.map((card) => card.id), "one card per project plus global; the older orbit-office SCR is absent");
     const latest = cardOf(page, "SCR-20261031-0900-aaaa02");
