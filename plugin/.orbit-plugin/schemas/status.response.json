@@ -114,6 +114,23 @@
         }
       ]
     },
+    "meetings": {
+      "description": "Meeting to-do routing (meetings.agent_workspace), or null when the Library is uninitialized.",
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "agent_workspace": {
+              "type": ["string", "null"],
+              "description": "The Orbit workspace selector that receives agent-owned code to-dos from meeting extraction; null keeps every meeting to-do owner:you."
+            }
+          },
+          "required": ["agent_workspace"],
+          "additionalProperties": false
+        }
+      ]
+    },
     "scribe": {
       "type": "object",
       "description": "The effective scribe policy from the Library settings (scribe.cadence, scribe.tags, scribe.precedents; half_life_days defaults to 90). Never null: an unset key, or an uninitialized Library, reads as the shipped defaults (cadence 20 minutes or 10 turns; the preferences and decisions tags).",
@@ -152,7 +169,7 @@
       "additionalProperties": false
     }
   },
-  "required": ["version", "secrets", "open_weights_token_binding", "library", "open_weights", "shared", "brief", "scribe"],
+  "required": ["version", "secrets", "open_weights_token_binding", "library", "open_weights", "shared", "brief", "meetings", "scribe"],
   "additionalProperties": false,
   "$defs": {
     "presence": { "type": "string", "enum": ["set", "unset"] }
