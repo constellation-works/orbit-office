@@ -62,6 +62,9 @@ pub struct Settings {
     pub demo: DemoSettings,
     /// Session-brief policy.
     pub brief: BriefSettings,
+    /// Meeting to-do routing; omitted from the file while default.
+    #[serde(skip_serializing_if = "MeetingSettings::is_default")]
+    pub meetings: MeetingSettings,
     /// Scribe cadence and tag definitions; omitted from the file while default.
     #[serde(skip_serializing_if = "ScribeSettings::is_default")]
     pub scribe: ScribeSettings,
@@ -80,6 +83,24 @@ pub struct BriefSettings {
     /// from the config when `auto`, the default.
     #[serde(skip_serializing_if = "HandoffMode::is_auto")]
     pub handoff: HandoffMode,
+}
+
+/// Meeting to-do routing (specs/kt-videos.md, meeting profile).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct MeetingSettings {
+    /// Orbit workspace selector that receives agent-owned engineering
+    /// to-dos from `office.extract` (profile `meeting`). `None` keeps every
+    /// extracted to-do `owner:you` in the office workspace.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_workspace: Option<String>,
+}
+
+impl MeetingSettings {
+    /// Whether nothing is configured.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// `brief.handoff`: whether the SessionStart hook picks the project.
@@ -258,6 +279,7 @@ impl Default for Settings {
             demo: DemoSettings::default(),
             scripts: Default::default(),
             brief: BriefSettings::default(),
+            meetings: MeetingSettings::default(),
             scribe: ScribeSettings::default(),
         }
     }
@@ -371,6 +393,15 @@ impl Settings {
                 .get_mut("brief")
                 .and_then(Value::as_object_mut)
                 .and_then(|map| map.get_mut("task_workspaces")),
+            // Omitted while unset, so the section and leaf are inserted first.
+            Some(("meetings", "agent_workspace")) => encoded
+                .as_object_mut()
+                .and_then(|root| {
+                    root.entry("meetings")
+                        .or_insert_with(|| Value::Object(Map::new()))
+                        .as_object_mut()
+                })
+                .map(|map| map.entry("agent_workspace").or_insert(Value::Null)),
             // Omitted while `auto`, so the leaf is inserted before it is set.
             Some(("brief", "handoff")) => encoded
                 .get_mut("brief")
@@ -618,25 +649,29 @@ impl TryFrom<Value> for Settings {
                         let mut seen = BTreeSet::new();
                         settings.brief.task_workspaces.clear();
                         for item in list {
-                            let selector = item
-                                .as_str()
-                                .filter(|s| {
-                                    !s.is_empty()
-                                        && s.len() <= 256
-                                        && s.bytes().all(|c| {
-                                            c.is_ascii_alphanumeric() || b"-._/:".contains(&c)
-                                        })
-                                })
-                                .ok_or_else(|| {
-                                    invalid(
-                                        &dotted,
-                                        "expected an Orbit workspace selector without whitespace",
-                                    )
-                                })?;
+                            let selector = workspace_selector(item, &dotted)?;
                             if !seen.insert(selector) {
                                 return Err(invalid(&dotted, "duplicate workspace selector"));
                             }
                             settings.brief.task_workspaces.push(selector.into());
+                        }
+                    }
+                }
+                "meetings" => {
+                    let items = value
+                        .as_object()
+                        .ok_or_else(|| invalid(key, "expected a mapping"))?;
+                    for (name, value) in items {
+                        let dotted = format!("meetings.{name}");
+                        match name.as_str() {
+                            "agent_workspace" => {
+                                settings.meetings.agent_workspace = if value.is_null() {
+                                    None
+                                } else {
+                                    Some(workspace_selector(value, &dotted)?.into())
+                                }
+                            }
+                            _ => return Err(invalid(&dotted, "unknown meetings setting")),
                         }
                     }
                 }
@@ -674,6 +709,24 @@ impl TryFrom<Value> for Settings {
         }
         Ok(settings)
     }
+}
+
+/// One Orbit workspace selector: nonempty, at most 256 bytes, no whitespace.
+fn workspace_selector<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
+    value
+        .as_str()
+        .filter(|s| {
+            !s.is_empty()
+                && s.len() <= 256
+                && s.bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"-._/:".contains(&c))
+        })
+        .ok_or_else(|| {
+            invalid(
+                key,
+                "expected an Orbit workspace selector without whitespace",
+            )
+        })
 }
 
 fn encode(settings: &Settings) -> Result<Value> {

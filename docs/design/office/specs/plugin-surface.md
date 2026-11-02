@@ -324,6 +324,12 @@ federated selectors). It is settable as the whole leaf
 `brief.task_workspaces`. Projecting it in `office.status` was built in
 [ORB-19740].
 
+The optional `meetings` block is absent from a default file.
+`meetings.agent_workspace` is one Orbit workspace selector (same syntax as
+above) that receives agent-owned code to-dos from meeting extraction
+([kt-videos.md](./kt-videos.md)); null or absent keeps every extracted
+to-do `owner:you`. It is settable as the leaf `meetings.agent_workspace`.
+
 The optional `scribe` block holds the scribe pass cadence and the tag
 definitions ([scribe.md](./scribe.md#configuration)). It is absent from a
 default file: `scribe.cadence` defaults to 20 minutes and 10 user turns

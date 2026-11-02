@@ -312,9 +312,27 @@ unchanged transcript after the to-dos succeed. The meeting profile allows
 an omitted task (no task artifact), and omitting `id` runs the deterministic
 meeting inbox ([calendar.md](./calendar.md#capture-after-the-meeting)).
 Summary decisions cite the original transcript/notes anchors; summary line
-selection uses `office.source-show` with `document: summary`. Filed tasks
-always carry `owner:you` and `source:<id>` tags: the model's `owner` is a
-hint in the structured result only, never the filed tag. Only the
-orchestrator promotes a filed to-do to `owner:agent`, adding acceptance
-criteria, `no-diff-expected` and attached context. When `task` is supplied, either
+selection uses `office.source-show` with `document: summary`. Without the
+Library setting `meetings.agent_workspace`, filed tasks always carry
+`owner:you` and `source:<id>` tags: the model's `owner` is a hint in the
+structured result only, never the filed tag. Only the orchestrator promotes
+a filed to-do to `owner:agent`, adding acceptance criteria,
+`no-diff-expected` and attached context.
+
+With `meetings.agent_workspace` set to an Orbit workspace selector, the
+meeting schema's to-dos also require `work: code|other`,
+`type: feature|bug|chore` and `acceptance_criteria` (strings drawn from
+what the meeting said), and the prompt asks for them. A to-do with
+`owner: agent`, `work: code`, a listed type and at least one nonblank
+criterion is filed with `orbit.task.add` in that workspace: tags
+`owner:agent` and `source:<id>`, the model's type, complexity `medium`,
+origin `automation`, the criteria, and a description listing each cited
+`<id>#t=…` anchor. It is an ordinary code-change task for that workspace's
+crews, not `office-agent-todo` work, and carries no `no-diff-expected`.
+Every other to-do is filed `owner:you` exactly as without the setting.
+Before filing, the contested hook (`filing::contested`) names the to-dos
+that touch a contested matter; those are filed `owner:you` with a
+`contested` tag and a held-from-agents note, never for agents. The decision
+ledger decides what is contested ([scribe.md](./scribe.md)). Unset, the
+schema, prompt and filing are unchanged. When `task` is supplied, either
 profile attaches its full structured output.
