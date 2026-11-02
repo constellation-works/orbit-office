@@ -34,6 +34,11 @@ export const styles = `
 .library-connect p { margin:0; font-size:14px; color:var(--fg-dim); }
 .library-connect-link { display:inline-flex; align-items:center; min-height:40px; margin-top:6px; padding:0 14px; border-radius:var(--radius-sm); background:var(--accent); color:var(--on-accent); font-weight:600; text-decoration:none; }
 .library-connect-link:hover { background:var(--accent-hover); color:var(--on-accent); }
+.library-detail { display:flex; flex-direction:column; gap:16px; min-width:0; }
+.library-detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.library-detail-head .library-kicker { margin:0 0 4px; }
+.library-detail-title { margin:0; font-size:22px; font-weight:600; overflow-wrap:anywhere; }
+.library-aside .library-link[aria-current="true"] { color:var(--accent); font-weight:500; }
 .library-document-body { padding:24px 28px; gap:16px; }
 .library-summary { margin:0; font-size:14px; color:var(--fg-dim); }
 .library-body { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:15px; line-height:1.65; }

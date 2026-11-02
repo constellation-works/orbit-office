@@ -17,6 +17,8 @@ async function render(root: HTMLElement): Promise<void> {
   const marker = el("span"); const style = el("style", styles); root.replaceChildren(marker, style, el("p", "Loading Library."));
   const alive = (): boolean => marker.isConnected;
   const request = async (params = ""): Promise<Row> => obj(await getJson<unknown>(`/api/library${params}`));
+  /** The overview's right column and what it shows by default (setup and outputs), while the overview is up. */
+  let pane: { main: HTMLElement; home: Node[] } | null = null;
   /** A screen header (eyebrow, title, and the back button or search on the right) over the view. */
   function layout(title: string, intro = "", ...actions: HTMLElement[]): HTMLElement {
     const page = el("section"); page.className = "library";
@@ -34,7 +36,22 @@ async function render(root: HTMLElement): Promise<void> {
   function button(label: string, action: () => void): HTMLButtonElement {
     const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.addEventListener("click", action); return b;
   }
-  function documentButton(id: string, title: string, className = "library-link"): HTMLButtonElement { const b = button(title || "Open document", () => { void documentView(id); }); b.className = className; return b; }
+  function documentButton(id: string, title: string, className = "library-link"): HTMLButtonElement { const b = button(title || "Open document", () => { void documentView(id); }); b.className = className; b.dataset.doc = id; return b; }
+  /** Marks the About and How-to entry for the open document; "" clears it. */
+  function select(id: string): void {
+    for (const link of root.querySelectorAll<HTMLElement>(".library-aside .library-link")) { if (link.dataset.doc === id) link.setAttribute("aria-current", "true"); else link.removeAttribute("aria-current"); }
+  }
+  /** A document opened from the overview replaces setup and outputs in the right column; Close brings them back. */
+  function detail(home: { main: HTMLElement; home: Node[] }, id: string): HTMLElement {
+    const section = el("section"); section.className = "library-detail";
+    const head = el("div"); head.className = "library-detail-head";
+    const titles = el("div"); const kicker = el("p"); kicker.className = "eyebrow library-kicker"; const title = el("h2", "Loading document"); title.className = "library-detail-title"; titles.append(kicker, title);
+    const close = button("Close", () => { home.main.replaceChildren(...home.home); select(""); }); close.className = "library-back";
+    head.append(titles, close); section.append(head);
+    home.main.replaceChildren(section); select(id.split("#", 1)[0] ?? "");
+    section.scrollIntoView({ block: "nearest" });
+    return section;
+  }
   /** A listed document with its sharing label: "Shared · from Alice" or "Shared". */
   function entry(row: Row, details: Node[] = []): HTMLLIElement {
     const label = sharedLabel(typeof row.shared_by === "string" ? row.shared_by : null, row.shareable === true);
@@ -82,11 +99,11 @@ async function render(root: HTMLElement): Promise<void> {
   }
   async function documentView(citation: string): Promise<void> {
     const [id = "", anchor] = citation.split("#", 2);
-    const page = layout("Loading document");
+    const page = pane !== null && pane.main.isConnected ? detail(pane, citation) : layout("Loading document");
     try {
       const data = await request(`?view=document&id=${encodeURIComponent(id)}${anchor ? `&anchor=${encodeURIComponent(anchor)}` : ""}`); if (!alive() || !page.isConnected) return;
       const item = obj(data.page ?? data.artifact ?? data.source ?? data); const title = str(item.title) || "Document";
-      page.querySelector("h1")!.textContent = title;
+      page.querySelector("h1, .library-detail-title")!.textContent = title;
       const kicker = page.querySelector(".library-kicker"); if (kicker) kicker.textContent = data.page !== undefined ? (names[str(item.template)] ?? (str(item.id).startsWith("rb-") ? "How-to" : "Page")) : data.artifact !== undefined ? "Output" : data.source !== undefined ? "Source" : "";
       const article = el("article"); article.className = "panel library-document"; const doc = panelBody(); doc.classList.add("library-document-body"); article.append(doc); page.append(article);
       sharing(doc, id, data, item);
@@ -150,6 +167,7 @@ async function render(root: HTMLElement): Promise<void> {
       const outputs = panel("Outputs"); outputs.classList.add("library-outputs"); const outputsBody = panelBody(); outputs.append(outputsBody);
       const filters = document.createElement("form"); filters.className = "library-filters"; const kind = document.createElement("select"); kind.setAttribute("aria-label", "Output kind"); for (const value of ["", "report", "doc", "draft", "script", "data", "review", "other"]) { const option = document.createElement("option"); option.value = value; option.textContent = value || "All kinds"; kind.append(option); } const series = document.createElement("input"); series.placeholder = "Exact series name"; series.setAttribute("aria-label", "Series name"); const apply = document.createElement("button"); apply.textContent = "Show outputs"; apply.className = "secondary-action"; filters.append(kind, series, apply); outputsBody.append(filters); const results = el("div"); results.className = "library-results"; outputList(results, obj(data.artifacts)); outputsBody.append(results); filters.addEventListener("submit", (event) => { event.preventDefault(); const params = new URLSearchParams({ view: "outputs" }); if (kind.value) params.set("kind", kind.value); if (series.value.trim()) params.set("series", series.value.trim()); void request(`?${params}`).then((list) => { if (results.isConnected) { results.replaceChildren(); outputList(results, list); } }).catch(() => { if (results.isConnected) results.replaceChildren(errorState("Outputs unavailable", "Try again in a moment.")); }); });
       main.append(outputs);
+      pane = { main, home: [setup, outputs] };
     } catch { if (alive() && page.isConnected) { loading.remove(); page.append(errorState("Library unavailable", "Try again in a moment.")); } }
   }
   async function search(query: string): Promise<void> {
