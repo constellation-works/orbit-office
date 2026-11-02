@@ -2,8 +2,9 @@
 
 Orbit Office is a distribution of Orbit: an app built on Orbit as its engine.
 It packages the web app and the `office`, `gateway` and optional `cloudcli`
-component plugins for office work. Its planned workspace preset awaits Orbit's
-preset support ([installation spec](design/office/specs/install.md#office-workspace-preset-pending-orbit-support)).
+component plugins for office work. The installer applies the shipped bootstrap
+and Office workspace presets when creating a workspace
+([installation spec](design/office/specs/install.md#office-workspace-preset)).
 
 One loop drives the product:
 
@@ -16,9 +17,10 @@ observe -> propose -> approve -> automate -> measure
 ## Pieces
 
 - **Orbit (pre-existing, dependency).** Tasks, audit trail, routines,
-  auto-tasks, frictions and agent runs. Pinned to a tested commit; never
-  vendored. The office workspace never runs an auto drain: agent to-dos are
-  dispatched explicitly by id from the app server.
+  auto-tasks, frictions and agent runs. When Orbit is missing, the installer
+  selects tested release `0.39.0`; Orbit is never vendored. The office
+  workspace never runs an auto drain: agent to-dos are dispatched explicitly
+  by id from the app server.
 - **`office` plugin (`plugin/`).** Namespace `office`, `exec` backend: the
   Rust workspace at the repo root, laid out in [ARCHITECTURE.md](../ARCHITECTURE.md)
   (one module per tool in `crates/office-tools`). Owns the Library (sources,

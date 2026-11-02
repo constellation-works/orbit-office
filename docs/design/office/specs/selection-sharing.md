@@ -7,9 +7,11 @@ last_validated: 2026-10-26
 # Spec: Selection sharing
 
 The conversation happens in the agent CLI while the user reads in the app.
-Selection sharing lets the user point at something in the app, then refer
-to it in the CLI ("make this a to-do for me", "why does this page say
-March?") without copy-pasting.
+The app currently records selections from source pages, so the user can point
+at a passage and refer to it in the CLI ("make this a to-do for me", "why
+does this page say March?") without copy-pasting. The selection tool also
+accepts typed references to knowledge pages, artifacts and tasks; other app
+views can add selection controls without relying on DOM paths.
 
 Source: spec §13.3. Should-have for the event.
 
@@ -41,16 +43,17 @@ consumed_at: null
 
 ## How the agent gets it
 
-Pulling works with every agent CLI. Pushing through a hook is an
+Pulling works through the orchestrator skill. Pushing through a hook is an
 enhancement.
 
 - **Pull:** `office.selection-get` over MCP, plus the skill rule: on "this", "that", "here" or "these", the agent calls it first. This works in Muse Code, Claude Code and Codex. `selection-get` is mutating because it marks selections consumed.
 - **Push:** a prompt-submit hook adds the fresh, unused selections to the user's next prompt and marks them consumed.
-  - Claude Code supports this through its `UserPromptSubmit` hook, which is the reference implementation shipped in the plugin.
-  - Whether Muse Code has a prompt hook is checked on day 1. Without one, the pull rule covers it.
+  - The shared hook script is shipped for Claude Code's `UserPromptSubmit` hook and can be registered manually.
+  - This repository does not ship a Muse Code prompt-hook integration; the pull rule covers it.
 
 The reference script is `plugin/hooks/office-selection-hook.sh` in the exported
-plugin. Register its absolute path in Claude Code settings under `hooks` →
+plugin; Claude Code does not register it in the plugin's default hooks.
+Register its absolute path in Claude Code settings under `hooks` →
 `UserPromptSubmit` → `hooks`, as a `command` hook. The hook requires `orbit`
 and `python3` on `PATH`, consumes the tray once, and emits nothing when it is
 empty or the tool is unavailable. Selection records are JSON-quoted data;
