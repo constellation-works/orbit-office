@@ -373,7 +373,8 @@ import time
 script, home, path, state, manifest, gateway, fixture, init = sys.argv[1:]
 env = dict(HOME=home, PATH=path, STUB_STATE=state, STUB_MANIFEST=manifest,
            STUB_GATEWAY_MANIFESTS=gateway, STUB_UV_ARCHIVE=fixture,
-           STUB_INIT_FIXTURES=init, ORBIT_OFFICE_OS="linux", ORBIT_OFFICE_UV_URL=fixture)
+           STUB_INIT_FIXTURES=init, ORBIT_OFFICE_OS="linux", ORBIT_OFFICE_UV_URL=fixture,
+           ORBIT_OFFICE_APP_REBUILD="0")
 master, slave = pty.openpty()
 child = subprocess.Popen(["sh", script], env=env, stdin=slave, stdout=slave, stderr=slave)
 transcript = b""

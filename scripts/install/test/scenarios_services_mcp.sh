@@ -1,5 +1,5 @@
 #!/bin/sh
-# scenarios_services_mcp.sh - checks 8-10, 18, 19, 22, 23 for test-install.sh (sourced by the entry point; not run directly)
+# scenarios_services_mcp.sh - checks 8-10, 18, 19, 22, 23, 26 for test-install.sh (sourced by the entry point; not run directly)
 scenario_8() {
 # ---------------------------------------------------------------------------
 # 8. launchd plist PATH, and tools stay off DATA_DIR
@@ -437,3 +437,134 @@ check "invalid muse settings create no receipt" \
     test ! -e "$HOME_MUSE_BAD/.local/share/orbit-office/muse-mcp.json"
 }
 
+
+scenario_26() {
+# ---------------------------------------------------------------------------
+# 26. A clone install upgrades the app to its HEAD: build that commit,
+#     restart the login service, require the app to report the commit.
+#     Stub systemctl/launchctl/npm; a local responder stands in for the
+#     app's /build-info.json. Nothing here touches a real service.
+# ---------------------------------------------------------------------------
+
+UPG_CLONE="$ROOT/upgrade-clone"
+_git() { env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid \
+    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid git -C "$UPG_CLONE" "$@"; }
+env HOME="$ROOT" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git clone --quiet --no-hardlinks --no-checkout "$SCRIPT_DIR/../.." "$UPG_CLONE"
+_git checkout --quiet --detach "$(git -C "$SCRIPT_DIR/../.." rev-parse HEAD)"
+cp "$INSTALL_SH" "$UPG_CLONE/install.sh"
+SAVED_INSTALL_SH="$INSTALL_SH"; INSTALL_SH="$UPG_CLONE/install.sh"
+UPG_INFO="$UPG_CLONE/app/packages/web/dist/build-info.json"
+UPG_ENTRY="$UPG_CLONE/app/packages/server/dist/main.js"
+
+# The app answers on a free port; the responder serves what the installer
+# last published, or a wrong commit when the mode file says so.
+rm -f "$ROOT/responder.port" "$ROOT/responder.mode"
+python3 -I "$SCRIPT_DIR/test/app-build-info-responder.py" "$UPG_INFO" "$ROOT/responder.mode" "$ROOT/responder.port" &
+RESPONDER_PID=$!
+_waited=0
+while [ ! -s "$ROOT/responder.port" ] && [ "$_waited" -lt 100 ]; do sleep 0.1; _waited=$((_waited + 1)); done
+[ -s "$ROOT/responder.port" ] || fail "build-info responder started"
+UPG_PORT=$(cat "$ROOT/responder.port")
+
+HOME26="$ROOT/home26"; mkdir -p "$HOME26"
+UPG_STATE="$HOME26/.local/share/orbit-office/install-state"
+reset_logs() { : > "$STUB_STATE/systemctl.log"; : > "$STUB_STATE/launchctl.log"; : > "$STUB_STATE/npm.log"; }
+upg_install() { # upg_install <out> <home> <env...>
+    _uo="$1"; _uh="$2"; shift 2
+    run_install "$_uh" ORBIT_OFFICE_APP_REBUILD=1 "$@" -- --port "$UPG_PORT" > "$_uo" 2>&1
+}
+
+# First install builds in place and records the commit it was built at.
+COMMIT1=$(_git rev-parse HEAD)
+rm -f "$STUB_STATE/svc-enabled" "$STUB_STATE/svc-active"
+upg_install "$ROOT/out26-1" "$HOME26" || { cat "$ROOT/out26-1" >&2; fail "first clone install exits 0"; }
+ok "first clone install exits 0"
+check "first install records the built commit" grep -qxF "app_commit=$COMMIT1" "$UPG_STATE"
+
+# A repeat at the same commit rebuilds and restarts nothing.
+reset_logs
+snapshot "$HOME26" > "$ROOT/snap26-a"
+upg_install "$ROOT/out26-2" "$HOME26" || { cat "$ROOT/out26-2" >&2; fail "repeat clone install exits 0"; }
+snapshot "$HOME26" > "$ROOT/snap26-b"
+check "same-commit repeat changes nothing in HOME" cmp -s "$ROOT/snap26-a" "$ROOT/snap26-b"
+check "same-commit repeat reports the app as already built" grep -q "app: build already done" "$ROOT/out26-2"
+check "same-commit repeat runs no build" test ! -s "$STUB_STATE/npm.log"
+check "same-commit repeat restarts no service" sh -c '! grep -q restart "$1"' sh "$STUB_STATE/systemctl.log"
+
+# A new HEAD is built, published, restarted and checked.
+_git commit --quiet --allow-empty -m "upgrade 2"
+COMMIT2=$(_git rev-parse HEAD)
+reset_logs
+upg_install "$ROOT/out26-3" "$HOME26" || { cat "$ROOT/out26-3" >&2; fail "upgrade install exits 0"; }
+ok "upgrade install exits 0"
+check "upgrade names the commit it builds" grep -qF "app: upgrading to commit $COMMIT2" "$ROOT/out26-3"
+check "upgrade builds the app" grep -q -- "run build" "$STUB_STATE/npm.log"
+check "upgrade restarts the login service" grep -qxF -- "--user restart orbit-office.service" "$STUB_STATE/systemctl.log"
+check "restarted app reports the installed commit" grep -qF "\"commit\": \"$COMMIT2\"" "$UPG_INFO"
+check "upgrade records the new commit" grep -qxF "app_commit=$COMMIT2" "$UPG_STATE"
+check "upgrade keeps one commit marker" sh -c '[ "$(grep -c "^app_commit=" "$1")" -eq 1 ]' sh "$UPG_STATE"
+check "upgrade reports the commit" grep -qF "app: upgraded (commit $COMMIT2)" "$ROOT/out26-3"
+
+# A restarted app that reports another commit fails the step, restores the
+# previous files and records nothing.
+_git commit --quiet --allow-empty -m "upgrade 3"
+COMMIT3=$(_git rev-parse HEAD)
+reset_logs
+cp "$UPG_ENTRY" "$ROOT/entry26-before"; cp "$UPG_INFO" "$ROOT/info26-before"
+printf 'wrong\n' > "$ROOT/responder.mode"
+if upg_install "$ROOT/out26-4" "$HOME26"; then
+    cat "$ROOT/out26-4" >&2; fail "wrong reported commit fails the step"
+fi
+ok "wrong reported commit fails the step"
+rm -f "$ROOT/responder.mode"
+check "wrong commit failure names the check" grep -q "app commit check failed" "$ROOT/out26-4"
+check "wrong commit failure names the expected commit" grep -qF "$COMMIT3" "$ROOT/out26-4"
+check "wrong commit failure restores the previous build" cmp -s "$UPG_INFO" "$ROOT/info26-before"
+check "wrong commit failure keeps the previous entrypoint" cmp -s "$UPG_ENTRY" "$ROOT/entry26-before"
+check "wrong commit failure does not record the commit" grep -qxF "app_commit=$COMMIT2" "$UPG_STATE"
+
+# A failed build stops before anything is published or restarted.
+reset_logs
+if upg_install "$ROOT/out26-5" "$HOME26" STUB_APP_BUILD_FAIL=1; then
+    cat "$ROOT/out26-5" >&2; fail "failed app build fails the step"
+fi
+ok "failed app build fails the step"
+check "build failure shows the build error" grep -qF "TS2304: Cannot find name appBuildProbe" "$ROOT/out26-5"
+check "build failure says the service was left untouched" grep -q "running service left untouched" "$ROOT/out26-5"
+check "build failure restarts nothing" sh -c '! grep -q restart "$1"' sh "$STUB_STATE/systemctl.log"
+check "build failure keeps the previous build" cmp -s "$UPG_INFO" "$ROOT/info26-before"
+check "build failure keeps the previous entrypoint" cmp -s "$UPG_ENTRY" "$ROOT/entry26-before"
+check "build failure does not record the commit" grep -qxF "app_commit=$COMMIT2" "$UPG_STATE"
+
+# The next run retries the same commit and succeeds.
+reset_logs
+upg_install "$ROOT/out26-6" "$HOME26" || { cat "$ROOT/out26-6" >&2; fail "retry after failures exits 0"; }
+ok "retry after failures exits 0"
+check "retry reports the retried commit" grep -qF "\"commit\": \"$COMMIT3\"" "$UPG_INFO"
+check "retry records the commit" grep -qxF "app_commit=$COMMIT3" "$UPG_STATE"
+
+# macOS: a home with no recorded commit (an install from before commits
+# were recorded) is rebuilt too, and launchd restarts the agent.
+HOME26M="$ROOT/home26m"; mkdir -p "$HOME26M"
+reset_logs
+upg_install "$ROOT/out26-7" "$HOME26M" ORBIT_OFFICE_OS=macos \
+    || { cat "$ROOT/out26-7" >&2; fail "macos upgrade install exits 0"; }
+ok "macos upgrade install exits 0"
+check "macos upgrade restarts the launch agent" \
+    grep -qxF "kickstart -k gui/$(id -u)/com.orbit-office.app" "$STUB_STATE/launchctl.log"
+check "macos upgrade runs no systemctl restart" sh -c '! grep -q restart "$1"' sh "$STUB_STATE/systemctl.log"
+check "macos upgrade records the commit" \
+    grep -qxF "app_commit=$COMMIT3" "$HOME26M/Library/Application Support/orbit-office/install-state"
+
+# Uninstall forgets the commit.
+run_install "$HOME26" -- --uninstall > "$ROOT/out26-9" 2>&1 \
+    || { cat "$ROOT/out26-9" >&2; fail "uninstall after upgrade exits 0"; }
+check "uninstall clears the commit marker" sh -c '! grep -qs "^app_commit=" "$1"' sh "$UPG_STATE"
+
+kill "$RESPONDER_PID" 2>/dev/null || true
+wait "$RESPONDER_PID" 2>/dev/null || true
+RESPONDER_PID=""
+INSTALL_SH="$SAVED_INSTALL_SH"
+}
