@@ -11,7 +11,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
-import { NOW, cards, decisions, office, preferences, scribeServer } from "../../server/test/scribe-fixture.mjs";
+import { NOW, agreement, cards, decisions, office, preferences, scribeServer } from "../../server/test/scribe-fixture.mjs";
 
 const WIDTHS = [320, 1440];
 
@@ -101,6 +101,28 @@ test("Preferences and Decisions show the office.scribe-query panels", { timeout:
     await results(page).locator('[data-id="dec-orbit-office-8"]').getByText("no recorded reason").waitFor();
     await noOverflow(page, "decisions"); await shot(page, "scribe-decisions");
   }
+});
+
+test("the Agreement view shows per-category aggregates only, low-sample in words, and no actions, at 375px", { timeout: 60000 }, async (t) => {
+  const { page, url } = await browserFixture(t);
+  await page.setViewportSize({ width: 375, height: 1000 });
+  await page.goto(`${url}/#scribe`);
+  await cardOf(page, "SCR-20261031-0900-aaaa02").waitFor();
+  await tab(page, "Decisions").click();
+  const section = results(page).getByLabel("Agreement", { exact: true });
+  await section.getByText("Agreement", { exact: true }).waitFor();
+  const enough = section.locator(`[data-category="${agreement.categories[0].category}"]`);
+  await enough.getByText("ws_orbit-office · agent request").waitFor();
+  await enough.getByText("81% (68%–90%)").waitFor();
+  await enough.getByText("74%").waitFor();
+  const low = section.locator(`[data-category="${agreement.categories[1].category}"]`);
+  await low.getByText("Not enough decisions yet").waitFor();
+  assert.equal(await section.getByRole("button").count(), 0, "the Agreement view has no actions");
+  assert.equal(await section.locator("input, select, textarea, a").count(), 0, "read-only: no controls or links");
+  assert.ok(!(await section.innerText()).includes("prediction"), "no per-request prediction text");
+  await noOverflow(page, "agreement"); await shot(page, "scribe-agreement");
+  await page.setViewportSize({ width: 320, height: 1000 });
+  await noOverflow(page, "agreement 320");
 });
 
 test("the Tags editor reads the effective tags and, refused by Orbit, shows not-permitted with the operator command and turns read-only", { timeout: 60000 }, async (t) => {

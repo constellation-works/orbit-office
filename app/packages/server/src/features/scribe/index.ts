@@ -14,12 +14,12 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { ScrDetail, ScrFeed, ScribeAnswer, ScribeDecisions, ScribeHandoffs, ScribePreferences, ScribeTagSaved, ScribeTags } from "@orbit-office/contracts";
+import type { ScrDetail, ScrFeed, ScribeAgreementResponse, ScribeAnswer, ScribeDecisions, ScribeHandoffs, ScribePreferences, ScribeTagSaved, ScribeTags } from "@orbit-office/contracts";
 
 import type { Feature } from "../../http/types.js";
 import { createOrbitClient, OrbitExitError, type OrbitToolClient } from "../../orbit/client.js";
 import { handoffInput, handoffQuery, handoffsOf, type HandoffQuery } from "./handoffs.js";
-import { answerOf, decisionsOf, detailOf, feedOf, outputOf, preferencesOf, ScribeError } from "./model.js";
+import { agreementOf, answerOf, decisionsOf, detailOf, feedOf, outputOf, preferencesOf, ScribeError } from "./model.js";
 import { configSetInput, operatorCommand, tagSaveOf, tagsOf } from "./tags.js";
 
 type Client = Pick<OrbitToolClient, "callTool" | "pollTool">;
@@ -75,6 +75,49 @@ export async function loadPreferences(client: Client): Promise<ScribePreferences
 
 export async function loadDecisions(client: Client): Promise<ScribeDecisions> {
   return decisionsOf(outputOf(unwrap(await client.pollTool("office.scribe-query", { mode: "decisions" }))));
+}
+
+/** The one Orbit read behind the Agreement view; a later live surface renames only this. */
+export const AGREEMENT_TOOL = "orbit.decision.readout";
+export const AGREEMENT_CONTRACT = "precedent-decision-readout/1";
+/** The app server reads the readout at most this often. */
+export const AGREEMENT_POLL_MS = 60_000;
+
+const NO_READOUT_CODES = new Set([
+  "tool_not_found", "unknown_tool", "not_found", "readout_not_available",
+  "no_readout", "consumer_off", "not_implemented", "unknown_tool_name",
+]);
+
+function isNoReadoutError(error: unknown): boolean {
+  const code = refusalCode(error);
+  if (code !== null && NO_READOUT_CODES.has(code)) return true;
+  if (error instanceof OrbitExitError) {
+    return /unknown tool|tool not found|no such tool|readout.*not (available|found)/i.test(error.stderr);
+  }
+  return false;
+}
+
+/**
+ * The Agreement readout, or null when hidden (consumer off, no readout, or
+ * Orbit offers no readout surface yet). Any other failure is a plain
+ * `agreement_unavailable` read failure.
+ */
+export async function loadDecisionAgreement(client: Client): Promise<ScribeAgreementResponse> {
+  let raw: unknown;
+  try {
+    raw = await client.pollTool(AGREEMENT_TOOL, { contract: AGREEMENT_CONTRACT });
+  } catch (error) {
+    if (isNoReadoutError(error)) return { agreement: null };
+    throw new ScribeError(502, "agreement_unavailable");
+  }
+  if (raw === null || raw === undefined) return { agreement: null };
+  const unwrapped = unwrap(raw);
+  if (unwrapped === null || unwrapped === undefined) return { agreement: null };
+  // A nested readout object is accepted; the flat pinned shape is canonical.
+  const row = outputOf(unwrapped);
+  const inner = row.readout !== null && typeof row.readout === "object" && !Array.isArray(row.readout)
+    ? row.readout as Record<string, unknown> : row;
+  return { agreement: agreementOf(inner) };
 }
 
 export async function loadHandoffs(client: Client, query: HandoffQuery): Promise<ScribeHandoffs> {
@@ -168,6 +211,14 @@ async function answer(response: ServerResponse, label: string, work: () => Promi
 
 /** Routes bound to one Orbit client. Tests pass a fake client. */
 export function createScribeFeature(client: Client): Feature {
+  // At most one Orbit readout read per AGREEMENT_POLL_MS; failures are not cached.
+  let agreementCache: { expiresAt: number; value: ScribeAgreementResponse } | null = null;
+  const loadAgreementCached = async (): Promise<ScribeAgreementResponse> => {
+    if (agreementCache !== null && Date.now() < agreementCache.expiresAt) return agreementCache.value;
+    const value = await loadDecisionAgreement(client);
+    agreementCache = { expiresAt: Date.now() + AGREEMENT_POLL_MS, value };
+    return value;
+  };
   return {
     name: "scribe",
     status: "built",
@@ -181,6 +232,7 @@ export function createScribeFeature(client: Client): Feature {
       },
       { method: "GET", path: "/api/scribe/preferences", handle: (_request, response) => answer(response, "preferences", () => loadPreferences(client)) },
       { method: "GET", path: "/api/scribe/decisions", handle: (_request, response) => answer(response, "decisions", () => loadDecisions(client)) },
+      { method: "GET", path: "/api/scribe/decision-agreement", handle: (_request, response) => answer(response, "decision agreement", () => loadAgreementCached()) },
       { method: "GET", path: "/api/scribe/tags", handle: (_request, response) => answer(response, "tags", () => loadTags(client)) },
       { method: "POST", path: "/api/scribe/tags", handle: (request, response) => answer(response, "tag save", async () => saveTags(client, await readJsonBody(request))) },
       {

@@ -9,7 +9,7 @@
  * Nothing here reads the Library.
  */
 import type {
-  ScrCard, ScrDetail, ScrFeed, ScrTagEntry, ScribeAnswer, ScribeClaim, ScribeDecisions, ScribePreferences,
+  ScrCard, ScrDetail, ScrFeed, ScrTagEntry, ScribeAgreementCategory, ScribeAnswer, ScribeClaim, ScribeDecisionAgreement, ScribeDecisions, ScribePreferences,
 } from "@orbit-office/contracts";
 
 /** A request the route refuses with a status and a short code. */
@@ -130,6 +130,68 @@ export function decisionsOf(output: Row): ScribeDecisions {
   });
   decisions.sort((a, b) => b.decided_at.localeCompare(a.decided_at) || b.id.localeCompare(a.id));
   return { decisions, count: count(output.count) };
+}
+
+const fraction = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+const positiveCount = (value: unknown): number | null =>
+  typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+
+/** Hidden marker: the readout tool answered that there is nothing to show. */
+export function isNoReadout(output: Row): boolean {
+  if (output.available === false || output.readout === null) return true;
+  if (output.consumer_mode === "off" || output.mode === "off") return true;
+  return output.contract === undefined && output.categories === undefined;
+}
+
+/**
+ * Shape a `precedent-decision-readout/1` readout. Only the pinned aggregate
+ * fields are forwarded; any per-request field is dropped here and never
+ * reaches the browser. Returns null when hidden (consumer off / no readout);
+ * a malformed readout is a read failure (`agreement_unavailable`).
+ */
+export function agreementOf(output: Row): ScribeDecisionAgreement | null {
+  if (isNoReadout(output)) return null;
+  if (output.contract !== "precedent-decision-readout/1") throw new ScribeError(502, "agreement_unavailable");
+  const consumerMode = output.consumer_mode;
+  if (consumerMode !== "shadow" && consumerMode !== "enabled") throw new ScribeError(502, "agreement_unavailable");
+  if (!Array.isArray(output.categories)) throw new ScribeError(502, "agreement_unavailable");
+  const fallbackMin = positiveCount(output.min_samples) ?? 30;
+  const window = record(output.window);
+  const categories: ScribeAgreementCategory[] = [];
+  for (const item of output.categories) {
+    const row = record(item);
+    if (row === null) throw new ScribeError(502, "agreement_unavailable");
+    const category = text(row.category);
+    if (category === null || category === "") throw new ScribeError(502, "agreement_unavailable");
+    if (row.mode !== "shadow" && row.mode !== "enabled") throw new ScribeError(502, "agreement_unavailable");
+    const scored = row.scored_requests;
+    if (typeof scored !== "number" || !Number.isInteger(scored) || scored < 0) throw new ScribeError(502, "agreement_unavailable");
+    const [workspacePart, ...kindParts] = category.split(":");
+    categories.push({
+      category,
+      workspace: text(row.workspace) ?? (kindParts.length ? workspacePart ?? null : null),
+      kind: text(row.kind) ?? (kindParts.length ? kindParts.join(":") : category),
+      mode: row.mode,
+      scored_requests: scored,
+      accuracy: fraction(row.accuracy),
+      accuracy_wilson_low: fraction(row.accuracy_wilson_low),
+      accuracy_wilson_high: fraction(row.accuracy_wilson_high),
+      coverage: fraction(row.coverage),
+      calibration_error: fraction(row.calibration_error),
+      abstention_rate: fraction(row.abstention_rate),
+      conflict_rate: fraction(row.conflict_rate),
+      min_samples: positiveCount(row.min_samples) ?? fallbackMin,
+    });
+  }
+  return {
+    contract: "precedent-decision-readout/1",
+    consumer_mode: consumerMode,
+    generated_at: text(output.generated_at),
+    window_start: window === null ? null : text(window.start),
+    window_end: window === null ? null : text(window.end),
+    categories,
+  };
 }
 
 /**

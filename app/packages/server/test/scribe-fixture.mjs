@@ -30,6 +30,8 @@ import { createHandler } from "../dist/http/router.js";
 import { OrbitExitError } from "../dist/orbit/client.js";
 
 export const office = JSON.parse(readFileSync(new URL("./scribe-fixture.json", import.meta.url), "utf8"));
+/** The pinned `precedent-decision-readout/1` readout (decision-precedents.md, Agreement view). */
+export const agreement = JSON.parse(readFileSync(new URL("./decision-agreement-fixture.json", import.meta.url), "utf8"));
 export const handoffs = JSON.parse(readFileSync(new URL("./handoffs-fixture.json", import.meta.url), "utf8"));
 const sameInput = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
 export const NOW = new Date(2026, 10, 1, 9, 0, 0);
@@ -201,6 +203,7 @@ export function scribeClient() {
       throw new OrbitExitError("office.config-set", 1, null,
         JSON.stringify({ error: { code: "capability_denied", message: "the app does not hold office.config-set" } }));
     }
+    if (name === "orbit.decision.readout") return structuredClone(agreement);
     if (name === "office.scribe-ask") return structuredClone(/lunch/.test(input.question) ? askNotCaptured : askAnswered);
     throw new Error(`unexpected fixture call ${name}`);
   };

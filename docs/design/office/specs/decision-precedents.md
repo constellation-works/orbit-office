@@ -363,9 +363,45 @@ category, how often the model agreed with the human.
 - **Data.** Orbit's per-category readout `precedent-decision-readout/1`
   (Orbit §Per-category report), produced by the `decision-assistance-eval/4`
   evaluator (Orbit slice ORB-21096). Office reads it; it computes nothing
-  and stores nothing. The app server reads it through the Orbit read
-  surface that slice provides, behind `GET /api/scribe/decision-agreement`,
-  at most every 60 seconds.
+  and stores nothing. The app server reads it through one Orbit client
+  read function (`orbit.decision.readout` with
+  `{contract: "precedent-decision-readout/1"}`) behind
+  `GET /api/scribe/decision-agreement`, at most every 60 seconds (the
+  server caches a successful or hidden read for 60 seconds, and the
+  screen throttles its own agreement fetch the same way). While Orbit
+  offers no such tool, or the tool reports no readout, that read reports
+  "no readout" and the view stays hidden; wiring to a differently named
+  live Orbit surface later changes only that one read function.
+  The readout's shape is pinned here (derived from the `/4` per-category
+  score output; a JSON fixture of this shape lives at
+  `app/packages/server/test/decision-agreement-fixture.json`):
+
+  ```json
+  {
+    "contract": "precedent-decision-readout/1",
+    "consumer_mode": "shadow | enabled | off",
+    "generated_at": "<RFC 3339 time the readout was produced>",
+    "window": { "start": "<RFC 3339>", "end": "<RFC 3339>" },
+    "min_samples": 30,
+    "categories": [{
+      "category": "<workspace>:<kind>, e.g. ws_orbit-office:agent_request",
+      "workspace": "<workspace id or null>",
+      "kind": "<request kind, e.g. agent_request>",
+      "mode": "shadow | enabled",
+      "scored_requests": 42,
+      "accuracy": 0.81, "accuracy_wilson_low": 0.68, "accuracy_wilson_high": 0.90,
+      "coverage": 0.74, "calibration_error": 0.04,
+      "abstention_rate": 0.12, "conflict_rate": 0.05,
+      "min_samples": 30
+    }]
+  }
+  ```
+
+  Rates and accuracy are fractions in `0..1`; the Wilson fields are the
+  95% interval bounds for `accuracy`. A category's `min_samples` overrides
+  the readout's. The server forwards only these aggregate fields: any
+  per-request field a readout carried (a prediction, a probability for
+  one request, a request id) is dropped and never reaches the browser.
 - **Rows.** One per category the readout names: the category in words
   (workspace and kind), its mode (shadow or enabled, from Orbit), scored
   requests, accuracy at the threshold with its Wilson 95% interval,
@@ -377,8 +413,12 @@ category, how often the model agreed with the human.
   category under measurement (Orbit §Concerns, "Shadow requires hiding").
 - **No actions.** No enable, disable, confirm or veto. Those stay in
   Orbit's own surfaces under its operator rules.
-- **States.** Hidden when the consumer is off or no readout exists. "Could
-  not read Orbit's measurement" when the read fails. Laid out from 320 px
+- **States.** Hidden when the consumer is off or no readout exists (the
+  Decisions panel then shows only its ledger entries). A readout with no
+  categories shows "No decisions yet." A category below `min_samples`
+  shows "Not enough decisions yet" instead of its percentages.
+  "Could not read Orbit's measurement" when the read fails (the route
+  answers `502 {error: "agreement_unavailable"}`). Laid out from 320 px
   like the rest of the Scribe screen.
 
 ## Privacy

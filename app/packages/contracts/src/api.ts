@@ -760,6 +760,43 @@ export interface ScribeDecisions {
   count: number;
 }
 
+/** One category of Orbit's `precedent-decision-readout/1` readout: aggregates only. */
+export interface ScribeAgreementCategory {
+  /** `<workspace>:<kind>`, as the readout names it. */
+  category: string;
+  workspace: string | null;
+  kind: string;
+  mode: "shadow" | "enabled";
+  scored_requests: number;
+  accuracy: number | null;
+  accuracy_wilson_low: number | null;
+  accuracy_wilson_high: number | null;
+  coverage: number | null;
+  calibration_error: number | null;
+  abstention_rate: number | null;
+  conflict_rate: number | null;
+  /** Below this many scored requests the row shows "Not enough decisions yet". */
+  min_samples: number;
+}
+
+/** The pinned `precedent-decision-readout/1` readout, aggregate fields only. */
+export interface ScribeDecisionAgreement {
+  contract: "precedent-decision-readout/1";
+  consumer_mode: "shadow" | "enabled";
+  generated_at: string | null;
+  window_start: string | null;
+  window_end: string | null;
+  categories: ScribeAgreementCategory[];
+}
+
+/**
+ * `GET /api/scribe/decision-agreement`: the Agreement view's data.
+ * `agreement` is null when the view is hidden (consumer off or no readout).
+ */
+export interface ScribeAgreementResponse {
+  agreement: ScribeDecisionAgreement | null;
+}
+
 /** Whose scope a tag's entries belong to. */
 export type ScribeTagScope = "global" | "project" | "session";
 /** Where a tag's entries go; never a file outside the Library. */
