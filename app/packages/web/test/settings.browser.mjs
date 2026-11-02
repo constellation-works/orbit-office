@@ -56,6 +56,8 @@ async function openSettings(t, fixtures) {
       if (shots) await page.screenshot({ path: resolve(shots, `${name}-light-${width}.png`), fullPage: true });
     }
   }
+  // Models opens first; these tests are about Connections.
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
   const region = page.getByRole("region", { name: "Connections", exact: true });
   return { fake, fixturePath, page, errors, capture, region };
 }

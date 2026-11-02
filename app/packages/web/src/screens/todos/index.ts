@@ -5,14 +5,16 @@
  * scheduled for a date and time, rescheduled or cleared; the poll waits
  * while the picker is open or a draft title is being typed (docs/design/office/specs/web-app.md).
  */
-import type { TodoList } from "@orbit-office/contracts";
+import type { AgentTodos, TodoList } from "@orbit-office/contracts";
 
 import type { Screen } from "../../screen.js";
-import { ApiError, createTodo, getJson, scheduleTodo } from "../../api/client.js";
+import { ApiError, createTodo, getAgentTodos, getJson, saveAgentWorkspace, scheduleTodo } from "../../api/client.js";
 import { errorState } from "../../ui/index.js";
-import { drawTodoScreen, modelFromPayload } from "./view.js";
+import { agentTodosFromPayload, drawTodoScreen, modelFromPayload } from "./view.js";
 
 const POLL_MS = 4_000;
+/** Agent to-dos change slowly and cost delivery reads: reread them at most this often. */
+const AGENT_TODOS_MS = 20_000;
 
 async function renderTodos(root: HTMLElement): Promise<void> {
   const marker = document.createElement("span");
@@ -23,6 +25,15 @@ async function renderTodos(root: HTMLElement): Promise<void> {
   /** The to-do whose picker is open; polling leaves the page alone meanwhile. */
   let editing: string | null = null;
   let shown: TodoList | null = null;
+  /** Meeting agent to-dos; null when they could not be read, so the columns still show. */
+  let agentTodos: AgentTodos | null = null;
+  let agentTodosRead = Number.NEGATIVE_INFINITY;
+
+  async function latestAgentTodos(force: boolean): Promise<AgentTodos | null> {
+    if (!force && Date.now() - agentTodosRead < AGENT_TODOS_MS) return agentTodos;
+    agentTodosRead = Date.now();
+    return agentTodosFromPayload(await getAgentTodos().catch(() => null));
+  }
   /** Draft of the new to-do being typed; a non-empty draft holds the poll. */
   let createDraft = "";
 
@@ -40,9 +51,13 @@ async function renderTodos(root: HTMLElement): Promise<void> {
     root.replaceChildren(marker, errorState(title, message));
   };
 
-  async function refresh(): Promise<void> {
-    const payload: unknown = await getJson<unknown>("/api/todos");
+  async function refresh(force = false): Promise<void> {
+    const [payload, agents] = await Promise.all([
+      getJson<unknown>("/api/todos"),
+      latestAgentTodos(force),
+    ]);
     if (!alive()) return;
+    agentTodos = agents;
     const model = modelFromPayload(payload);
     if (model === null) throw new ApiError(200, "invalid_json");
     shown = model;
@@ -54,7 +69,18 @@ async function renderTodos(root: HTMLElement): Promise<void> {
     drawTodoScreen(root, model, {
       marker, onClose, onSchedule, onEdit, editing, now: new Date(),
       onCreate, createDraft, onCreateDraft: (title) => { createDraft = title; },
+      agentTodos, onTarget,
     });
+  }
+
+  async function onTarget(workspace: string | null): Promise<void> {
+    busy = true;
+    try {
+      await saveAgentWorkspace(workspace);
+      await refresh(true);
+    } finally {
+      busy = false;
+    }
   }
 
   async function onCreate(title: string): Promise<void> {

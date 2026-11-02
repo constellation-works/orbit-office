@@ -2,7 +2,8 @@
 import type {
   CalendarSources, LocalCalendarChange, AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
-  SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoCreated, TodoScheduled,
+  SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourceDigest, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoCreated, TodoScheduled,
+  AgentTodos, AgentWorkspaceSaved, Contradictions, ContradictionResolve, ModelsView, TodayDigest,
   ConflictChoice, ShareDocument, SharedLastSync, SharedLibraryBlock, SharedLibrarySaved, SharedLibraryStatus, SharedSync, ShareRequest, ShareResult,
 } from "@orbit-office/contracts";
 
@@ -203,6 +204,9 @@ export function sourcePlan(input: { id?: string; phase?: BootstrapPhase; private
 export function markSourcePrivate(id: string): Promise<{ ok: true }> {
   return postJson<{ ok: true }>("/api/sources/private", { id });
 }
+export function getSourceDigest(id: string): Promise<SourceDigest> {
+  return getJson<SourceDigest>(`/api/sources/digest?id=${encodeURIComponent(id)}`);
+}
 export function getSourceCitation(id: string, kind: string): Promise<SourceCitation> {
   return getJson<SourceCitation>(`/api/sources/citation?${new URLSearchParams({ id, kind })}`);
 }
@@ -243,4 +247,34 @@ export function changeLocalCalendar(local: LocalCalendarChange): Promise<{ key: 
 }
 export function getCalendarSources(): Promise<CalendarSources> {
   return getJson("/api/calendar/sources");
+}
+
+/** The morning digest since the latest meeting, or why there is none yet. */
+export function getTodayDigest(): Promise<TodayDigest> {
+  return getJson<TodayDigest>("/api/today/digest");
+}
+
+/** Agent to-dos filed from meetings, held ones included, and the target workspace. */
+export function getAgentTodos(): Promise<AgentTodos> {
+  return getJson<AgentTodos>("/api/todos/agents");
+}
+
+/** Set where meeting agent to-dos are filed, or clear it with null (every to-do stays yours). */
+export function saveAgentWorkspace(workspace: string | null): Promise<AgentWorkspaceSaved> {
+  return postJson<AgentWorkspaceSaved>("/api/settings/agent-workspace", { workspace });
+}
+
+/** Every job's Meta model, where it runs and what the app could check. */
+export function getModels(): Promise<ModelsView> {
+  return getJson<ModelsView>("/api/settings/models");
+}
+
+/** Open contradictions between a meeting decision and the prior ledger. */
+export function getContradictions(): Promise<Contradictions> {
+  return getJson<Contradictions>("/api/scribe/contradictions");
+}
+
+/** Record which decision stands; held agent to-dos are then released. */
+export function resolveContradiction(input: ContradictionResolve): Promise<{ ok: true }> {
+  return postJson<{ ok: true }>("/api/scribe/contradictions/resolve", input);
 }

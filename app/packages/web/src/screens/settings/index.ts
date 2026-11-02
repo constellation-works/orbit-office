@@ -8,6 +8,7 @@ import { mountPrivateRoute } from "./private.js";
 import { mountSharedLibrary } from "./shared.js";
 import { signInPanel } from "./signin.js";
 import { mountCalendar } from "./calendar.js";
+import { mountModels } from "./models.js";
 import { style } from "./style.js";
 
 function text<K extends keyof HTMLElementTagNameMap>(tag: K, content: string): HTMLElementTagNameMap[K] {
@@ -49,7 +50,7 @@ function saveMessage(error: unknown): string {
   return "Could not confirm the save. Refresh connections before trying again.";
 }
 
-type Section = "Calendar" | "Connections" | "API calls" | "Private route" | "Shared library";
+type Section = "Models" | "Calendar" | "Connections" | "API calls" | "Private route" | "Shared library";
 
 /** `?settings=shared-library#settings` opens that section; the query is then dropped. */
 function linkedSection(): Section | undefined {
@@ -70,24 +71,28 @@ async function render(root: HTMLElement): Promise<void> {
   let generation = 0;
   let busy = false;
   const alive = (): boolean => root.contains(view) && view.isConnected;
+  const modelsTab = button("Models", () => { void showModels(); });
   const connectionsTab = button("Connections", () => { void showConnections(); });
   const privateTab = button("Private route", () => { void showPrivate(); });
   const sharedTab = button("Shared library", () => { void showShared(); });
   const calendarTab = button("Calendar", () => { void showCalendar(); });
   const callsTab = button("API calls", () => { void showCalls(); });
   function setTabsDisabled(disabled: boolean): void {
+    modelsTab.disabled = disabled;
     calendarTab.disabled = disabled;
     connectionsTab.disabled = disabled;
     privateTab.disabled = disabled;
     sharedTab.disabled = disabled;
     callsTab.disabled = disabled;
   }
-  tabs.append(connectionsTab, calendarTab, privateTab, sharedTab, callsTab);
-  view.append(text("h1", "Settings"), text("p", "Manage your API access, the private route, the team's shared library, and what was called."), tabs, content, cli);
+  tabs.append(modelsTab, privateTab, connectionsTab, calendarTab, sharedTab, callsTab);
+  const intro = text("p", "Models, privacy, connections and the shared Library."); intro.className = "intro";
+  view.append(text("h1", "Settings"), intro, tabs, content, cli);
   root.replaceChildren(css, view);
 
   function select(section: Section): number {
     generation += 1;
+    modelsTab.setAttribute("aria-pressed", String(section === "Models"));
     calendarTab.setAttribute("aria-pressed", String(section === "Calendar"));
     connectionsTab.setAttribute("aria-pressed", String(section === "Connections"));
     privateTab.setAttribute("aria-pressed", String(section === "Private route"));
@@ -98,6 +103,12 @@ async function render(root: HTMLElement): Promise<void> {
   function current(token: number): boolean { return alive() && token === generation; }
   function failed(title: string, retry: () => void): void {
     content.replaceChildren(errorState(title, "Check that Orbit and the gateway plugin are available, then try again."), button("Try again", retry));
+  }
+
+  async function showModels(): Promise<void> {
+    const token = select("Models");
+    try { await mountModels(content, () => current(token), () => { void showPrivate(); }); }
+    catch { if (current(token)) failed("Models are unavailable", () => { void showModels(); }); }
   }
 
   async function showCalendar(): Promise<void> {
@@ -220,7 +231,7 @@ async function render(root: HTMLElement): Promise<void> {
   const status = getSettings().then((data) => { if (alive()) cli.textContent = `${data.agentCli.cli}: ${data.agentCli.connected ? "connected" : "not connected"}`; })
     .catch(() => { if (alive()) cli.textContent = "Agent CLI connection unavailable."; });
   if (linkedSection() === "Shared library") await showShared();
-  else await showConnections();
+  else await showModels();
   await status;
 }
 

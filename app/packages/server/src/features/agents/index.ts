@@ -5,11 +5,14 @@ import type { Feature } from "../../http/types.js";
 import { createOrbitClient } from "../../orbit/client.js";
 import type { OrbitToolClient } from "../../orbit/client.js";
 import { logRouteFailure, safeOrbitCode } from "../../orbit/diagnostics.js";
+import { sourceTag, taskPr, workspaceSettings } from "../../orbit/tasks.js";
 
 /** Workspace name for the office workspace, which has no selector. */
 export const OFFICE_WORKSPACE = "office";
 
-const FIELDS = ["id", "title", "status", "type", "priority", "crew", "updated_at", "history"];
+const FIELDS = ["id", "title", "status", "type", "priority", "crew", "updated_at", "history", "tags"];
+/** Delivery records read per snapshot, for in-review and done rows; later rows show no PR. */
+const PR_LOOKUPS = 24;
 const ACTIVE_STATUSES = ["in-progress", "review", "backlog"];
 
 interface TaskRow {
@@ -21,6 +24,7 @@ interface TaskRow {
   crew: string | null;
   updated_at: string;
   history: unknown;
+  tags: unknown;
 }
 
 class AgentsDataError extends Error {}
@@ -38,8 +42,18 @@ function officeOutput(value: unknown): Record<string, unknown> {
   return data;
 }
 
-/** The followed selectors from `office.status`; an uninitialized Library follows none. */
+/**
+ * The followed selectors from `office.status`, then the meeting agent
+ * workspace when it is not already followed; an uninitialized Library
+ * follows none.
+ */
 function followedWorkspaces(value: unknown): string[] {
+  const followed = briefWorkspaces(value);
+  const { agentWorkspace } = workspaceSettings(value);
+  return agentWorkspace === null || followed.includes(agentWorkspace) ? followed : [...followed, agentWorkspace];
+}
+
+function briefWorkspaces(value: unknown): string[] {
   const data = officeOutput(value);
   if (data.brief === null || data.brief === undefined) return [];
   if (!record(data.brief) || !Array.isArray(data.brief.task_workspaces) ||
@@ -66,6 +80,7 @@ function readList(value: unknown): TaskRow[] {
       crew: typeof row.crew === "string" ? row.crew : null,
       updated_at: row.updated_at,
       history: row.history,
+      tags: row.tags,
     };
   });
 }
@@ -80,9 +95,11 @@ function completedAt(task: TaskRow): Date | undefined {
 }
 
 function toTask(row: TaskRow, workspace: string): AgentWorkTask {
+  const source = sourceTag(row.tags);
   return {
     id: row.id, title: row.title, workspace,
     type: row.type, priority: row.priority, crew: row.crew, updated_at: row.updated_at,
+    ...(source === null ? {} : { source }),
   };
 }
 
@@ -142,6 +159,11 @@ export function createAgentsFeature({ client, now = () => new Date() }: AgentsOp
           snapshot.in_review.sort(byNewest);
           snapshot.queued.sort(byNewest);
           snapshot.done_today.sort(byNewest);
+          // A row's PR comes from its delivery record; one that can't be read shows none.
+          await Promise.all([...snapshot.in_review, ...snapshot.done_today].slice(0, PR_LOOKUPS).map(async (task) => {
+            const pr = await taskPr(client, task.id, task.workspace === OFFICE_WORKSPACE ? null : task.workspace);
+            if (pr !== null) task.pr = pr;
+          }));
           snapshot.unavailable.sort((a, b) => snapshot.workspaces.indexOf(a) - snapshot.workspaces.indexOf(b));
           response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
           response.end(JSON.stringify(snapshot));

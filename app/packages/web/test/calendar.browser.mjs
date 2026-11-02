@@ -208,7 +208,7 @@ test('Today shows the next meeting with its prep, and hides the card once the da
   await page.getByRole('heading', { name: 'Needs you', exact: true }).waitFor();
   await page.locator('.today-next-slot[aria-busy="false"]').waitFor({ state: 'attached' });
   assert.equal(await page.locator('.today-next').count(), 0);
-  assert.equal(await page.locator('.today-next-slot').isHidden(), true);
+  assert.match(await page.locator('.today-next-slot').innerText(), /Nothing else on your calendar today\./);
 });
 
 test('scheduled to-dos sit at their time with their state in words, at 1440px and 375px', { timeout: 60000 }, async t => {

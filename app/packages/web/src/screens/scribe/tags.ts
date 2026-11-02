@@ -44,7 +44,7 @@ export function createTagsView(): {
       const status = el("p", "", "scribe-status");
       status.setAttribute("role", "status");
       const list = el("div", "", "scribe-tag-list");
-      const form = el("form", "", "scribe-panel scribe-tag-form");
+      const form = el("form", "", "scribe-tag-form");
       form.setAttribute("aria-label", "Tag editor");
       let draft: ScribeTagDef = blankTag();
       let editing: string | null = null;
@@ -112,7 +112,7 @@ export function createTagsView(): {
           row.dataset.name = tag.name;
           const head = el("div", "", "scribe-entry-head");
           head.append(el("strong", `#${tag.name}`), el("span", `${tag.scope} · ${tag.sink} · ${tag.mode}`));
-          const actions = el("div", "", "scribe-row");
+          const actions = el("div", "", "scribe-actions");
           const edit = el("button", "Edit");
           edit.type = "button";
           edit.disabled = readOnly;
@@ -175,8 +175,10 @@ export function createTagsView(): {
       cancelButton.addEventListener("click", () => { draft = blankTag(); editing = null; fillForm(); });
       restoreButton.addEventListener("click", () => { void save({ action: "restore" }); });
 
+      const buttons = el("div", "", "scribe-actions");
+      buttons.append(saveButton, cancelButton, restoreButton);
       form.append(
-        el("h2", "Tags"),
+        el("h3", "Add or edit a tag"),
         labelled("Name", name),
         labelled("Scope", scope),
         labelled("Instruction", instruction),
@@ -184,9 +186,7 @@ export function createTagsView(): {
         labelled("Mode", mode),
         labelled("Capture", capture),
         workspaceField,
-        saveButton,
-        cancelButton,
-        restoreButton,
+        buttons,
         status,
       );
       if (readOnly) {

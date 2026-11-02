@@ -5,7 +5,7 @@
  */
 import type { Screen } from "../../screen.js";
 import { ApiError, getJson, postJson } from "../../api/client.js";
-import { requestRailRefresh } from "../../ui/index.js";
+import { requestRailRefresh, screenHead } from "../../ui/index.js";
 import { eventDriven, firesInNextHour, nextFire, scheduleWords } from "../../ui/schedule.js";
 import { styles } from "./style.js";
 
@@ -163,12 +163,12 @@ function routineRow(item: Routine, now: Date, onChanged: (listing: Listing) => v
 }
 
 function group(tone: "on" | "off", title: string, hint: string, items: readonly Routine[], now: Date, onChanged: (listing: Listing) => void): HTMLElement {
-  const section = element("section", "", "routine-group");
+  const section = element("section", "", "panel routine-group");
   section.setAttribute("aria-label", title);
-  const head = element("div", "", "routine-group-head");
+  const head = element("div", "", "panel-head routine-group-head");
   const name = element("h2", "", "routine-group-title");
-  name.append(element("span", "", `routine-group-dot routine-group-dot--${tone}`), element("span", title), element("span", String(items.length), "routine-group-count"));
-  head.append(name, element("span", hint, "routine-group-hint"));
+  name.append(element("span", "", `dot routine-group-dot routine-group-dot--${tone}`), element("span", title), element("span", String(items.length), "routine-group-count"));
+  head.append(name, element("span", hint, "mono-meta routine-group-hint"));
   const columns = element("div", "", "routine-columns");
   columns.setAttribute("aria-hidden", "true");
   columns.append(element("span", ""), element("span", "Routine"), element("span", "When"), element("span", "Next"), element("span", "Last time"));
@@ -183,7 +183,7 @@ function group(tone: "on" | "off", title: string, hint: string, items: readonly 
 
 /** The next hour as one track: a mark for each fire, hollow where a paused routine skips its slot. */
 function nextHour(routines: readonly Routine[], now: Date): HTMLElement {
-  const strip = element("section", "", "routine-hour");
+  const strip = element("section", "", "panel routine-hour");
   strip.setAttribute("aria-label", "The next hour");
   const marks: { at: Date; title: string; fires: boolean }[] = [];
   for (const item of routines) {
@@ -197,7 +197,7 @@ function nextHour(routines: readonly Routine[], now: Date): HTMLElement {
   const until = new Date(now.getTime() + 3_600_000);
   const head = element("div", "", "routine-hour-head");
   head.append(
-    element("strong", "Next hour"),
+    element("h2", "Next hour", "eyebrow"),
     element("span", `${clock(now, now)} → ${clock(until, now)}`, "routine-hour-range"),
     element("span", due.length === 0
       ? "Nothing runs in the next hour."
@@ -227,16 +227,14 @@ function draw(root: HTMLElement, listing: Listing): void {
   const page = element("section", "", "routines");
   const style = document.createElement("style");
   style.textContent = styles;
-  const header = element("header", "", "routines-header");
-  const titles = element("div", "");
   const on = routines.filter(item => item.enabled);
   const off = routines.filter(item => !item.enabled);
-  titles.append(element("h1", "Routines"), element("p", "Work that runs for you on a schedule. Results land in Today.", "intro"));
-  header.append(titles, element("span", `${on.length} on of ${routines.length}`, "routines-total"));
+  const header = screenHead("Routines", "Work that runs for you on a schedule. Results land in Today.", element("span", `${on.length} on of ${routines.length}`, "pill routines-total"));
+  header.className = "screen-head routines-header";
   page.append(style, header);
-  page.append(element("p", `${listing.hidden_count} Orbit developer routines hidden`, "routines-hidden"));
-  if (listing.routines_unavailable) page.append(element("p", "Some routines are unavailable with this connection. The hidden count covers only the routines this connection can read.", "intro"));
-  if (!routines.length) page.append(element("p", "No routines are available.", "intro"));
+  page.append(element("p", `${listing.hidden_count} Orbit developer routines hidden`, "mono-meta routines-hidden"));
+  if (listing.routines_unavailable) page.append(element("p", "Some routines are unavailable with this connection. The hidden count covers only the routines this connection can read.", "routines-notice"));
+  if (!routines.length) page.append(element("p", "No routines are available.", "routines-notice"));
   else page.append(
     nextHour(routines, now),
     group("on", "On", "runs on its schedule on this computer", on, now, redraw),
@@ -255,17 +253,22 @@ async function render(root: HTMLElement): Promise<void> {
 }
 
 function retentionForm(): HTMLElement {
-  const section = element("section", "", "routines-retention");
-  section.append(element("h2", "Retention"), element("p", "Choose how long to keep originals. Leave days empty to keep them indefinitely."));
+  const section = element("section", "", "panel routines-retention");
+  section.setAttribute("aria-label", "Retention");
+  const head = element("div", "", "panel-head");
+  head.append(element("h2", "Retention", "routine-group-title"));
+  const body = element("div", "", "panel-body");
+  body.append(element("p", "Choose how long to keep originals. Leave days empty to keep them indefinitely."));
+  section.append(head, body);
   const form = document.createElement("form");
-  const kindLabel = element("label", "Type "); const kind = document.createElement("select");
+  const kindLabel = element("label", "Type ", "field"); const kind = document.createElement("select");
   for (const [value, label] of [["video", "Video"], ["meeting", "Meeting"], ["chat", "Chat"], ["email", "Email"], ["doc", "Document"], ["receipt", "Receipt"], ["bill", "Bill"], ["conversation", "Conversation"], ["decisions", "Decisions"]] as const) {
     const option = element("option", label); option.value = value; kind.append(option);
   }
   kindLabel.append(kind);
-  const daysLabel = element("label", " Days "); const days = document.createElement("input"); days.type = "number"; days.step = "any"; daysLabel.append(days);
-  const button = element("button", "Save retention"); button.type = "submit";
-  const message = element("p", ""); message.setAttribute("role", "status"); form.append(kindLabel, daysLabel, button, message);
+  const daysLabel = element("label", " Days ", "field"); const days = document.createElement("input"); days.type = "number"; days.step = "any"; daysLabel.append(days);
+  const button = element("button", "Save retention", "primary-action"); button.type = "submit";
+  const message = element("p", "", "routines-retention-status"); message.setAttribute("role", "status"); form.append(kindLabel, daysLabel, button, message);
   form.addEventListener("submit", event => {
     event.preventDefault(); button.disabled = true; message.textContent = "";
     void postJson("/api/routines/retention", { kind: kind.value, value: days.value === "" ? null : Number(days.value) }).then(() => {
@@ -274,6 +277,6 @@ function retentionForm(): HTMLElement {
       message.textContent = error instanceof ApiError && error.reason ? error.reason : "Could not save retention. Try again.";
     }).finally(() => { button.disabled = false; });
   });
-  section.append(form); return section;
+  body.append(form); return section;
 }
 export const screen: Screen = { id: "routines", title: "Routines", status: "built", render };

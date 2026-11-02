@@ -1,8 +1,8 @@
 //! `office.status`: the plugin version, which declared secrets are set
 //! (never a secret value; STD-05), Library and index health, the
 //! configured private endpoint (`open_weights`, or null), the shared library
-//! (`shared`, or null), the followed workspaces (`brief`, or null) and the
-//! effective scribe cadence and tags (`scribe`; the defaults until the
+//! (`shared`, or null), the followed workspaces (`brief`, or null), where
+//! meeting agent to-dos are filed (`meetings`, or null) and the effective scribe cadence and tags (`scribe`; the defaults until the
 //! Library sets them).
 //! The token is only `set` or `unset` under `secrets`, and
 //! `open_weights_token_binding` says whether it was saved for the configured
@@ -10,7 +10,7 @@
 //! Reading creates no Library state.
 
 use office_core::domain::endpoint::{Capability, TokenBinding};
-use office_core::domain::settings::{BriefSettings, OpenWeights, Settings};
+use office_core::domain::settings::{BriefSettings, MeetingSettings, OpenWeights, Settings};
 use office_core::domain::sharing::SharedSettings;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Result, SECRET_NAMES, VERSION};
@@ -97,13 +97,14 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
     } else {
         TokenBinding::of(stored, endpoint)
     };
-    let (open_weights, shared, brief) = match &settings {
+    let (open_weights, shared, brief, meetings) = match &settings {
         Some(settings) => (
             project_open_weights(settings.open_weights.as_ref()),
             project_shared(settings.shared.as_ref()),
             project_brief(&settings.brief),
+            project_meetings(&settings.meetings),
         ),
-        None => (Value::Null, Value::Null, Value::Null),
+        None => (Value::Null, Value::Null, Value::Null, Value::Null),
     };
     // Scribe policy is never absent: an unset or uninitialized Library
     // reads as the shipped defaults.
@@ -130,6 +131,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "open_weights": open_weights,
         "shared": shared,
         "brief": brief,
+        "meetings": meetings,
         "scribe": scribe,
     }))
 }
@@ -174,5 +176,13 @@ fn project_open_weights(block: Option<&OpenWeights>) -> Value {
 fn project_brief(block: &BriefSettings) -> Value {
     json!({
         "task_workspaces": &block.task_workspaces,
+    })
+}
+
+/// The workspace selector agent-owned meeting code to-dos are filed into
+/// (`meetings.agent_workspace`), exactly as configured, or null when unset.
+fn project_meetings(block: &MeetingSettings) -> Value {
+    json!({
+        "agent_workspace": &block.agent_workspace,
     })
 }

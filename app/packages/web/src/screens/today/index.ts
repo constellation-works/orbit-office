@@ -1,13 +1,15 @@
 /** Today: the next meeting, the user's next steps and the actions on them, live agent work, openable outcomes and the latest handoffs. */
 import type {
-  CalendarMeeting, ScrCard, ScrFeed, SharedLastSync, SharedSkipped, Today, TodayItem, TodayNeed, TodayResult,
+  AgentWork, AgentWorkTask, CalendarMeeting, ScrCard, ScrFeed, SharedLastSync, SharedSkipped, Today, TodayItem, TodayNeed, TodayResult,
 } from "@orbit-office/contracts";
 
-import { dismissSharedSkipped, getJson, getLastSharedSync } from "../../api/client.js";
+import { dismissSharedSkipped, getJson, getLastSharedSync, uploadSource } from "../../api/client.js";
+import { sourceHref } from "../../api/source-location.js";
 import type { Screen } from "../../screen.js";
 import { ageLabel, cardSummary, cardTitle, scopeLabel, SCRIBE_FEED_HREF, tagCountsLabel } from "../../ui/handoff.js";
-import { card, emptyState, errorState, pill, provenanceLink, tile, tileRow } from "../../ui/index.js";
+import { card, emptyState, errorState, monoMeta, panel, panelBody, panelGrid, pill, provenanceLink, row, rows } from "../../ui/index.js";
 import { ApprovalControls, serverApprovals, type ApprovalApi } from "./approvals.js";
+import { digestPanel, digestSummary, readDigest, serverDigest, type DigestApi, type DigestState } from "./digest.js";
 import { nextMeetingCard, todaysMeetings, upcoming } from "./next-meeting.js";
 
 function paragraph(text: string): HTMLParagraphElement {
@@ -213,30 +215,63 @@ function handoffSection(feed: ScrFeed): HTMLElement | null {
   return element;
 }
 
+/**
+ * The "Agents working on" rows: in-progress agent tasks in the office
+ * workspace, then those in the followed and target workspaces with their crew
+ * (`GET /api/agents`, when it can be read).
+ */
+function workingRows(snapshot: Today, elsewhere: readonly AgentWorkTask[]): HTMLElement {
+  const office = snapshot.agents_working_on.map((item) => row(item.title, { dot: "working", details: [background(item)] }));
+  const titles = new Set(snapshot.agents_working_on.map((item) => item.key));
+  const others = elsewhere.filter((task) => !titles.has(task.id)).map((task) => row(task.title, {
+    dot: "working",
+    details: [monoMeta(`${task.workspace} · ${task.id}`)],
+    trail: task.crew === null ? [] : [monoMeta(task.crew)],
+  }));
+  if (office.length + others.length === 0) return paragraph("No agent work is underway.");
+  return rows([...office, ...others], "Agents working on");
+}
+
+/** Drop a recording or notes: it is captured as a source, then opened there. */
+function dropPanel(): HTMLElement {
+  const element = panel("Drop a recording or notes", { variant: "dashed", id: "today-drop-heading" });
+  element.dataset.slot = "drop-zone";
+  const hint = paragraph("Audio, .vtt or pasted text. Muse Voice transcribes it; Muse Spark finds the decisions and to-dos.");
+  const label = document.createElement("label");
+  label.className = "primary-action today-choose";
+  label.textContent = "Choose a file";
+  const input = document.createElement("input");
+  input.type = "file";
+  input.className = "today-file";
+  label.append(input);
+  const status = paragraph("");
+  status.setAttribute("aria-live", "polite");
+  status.hidden = true;
+  input.addEventListener("change", () => {
+    const file = input.files?.[0];
+    if (file === undefined) return;
+    status.textContent = `Uploading ${file.name}…`;
+    status.hidden = false;
+    void uploadSource(file).then((source) => {
+      window.location.assign(sourceHref(source.id));
+    }).catch(() => {
+      status.textContent = "Couldn’t add that file. Try it on the Source screen.";
+    });
+  });
+  const more = document.createElement("a");
+  more.href = "#source";
+  more.textContent = "Paste notes or add a folder";
+  element.append(panelBody(hint, label, more, status));
+  return element;
+}
+
 function drawToday(snapshot: Today, controls: ApprovalControls, shared: SharedNeeds, handoffs: ScrFeed | null): HTMLElement {
   const body = document.createElement("div");
   const needed = needCards(snapshot.needs_you, controls, shared);
   const needs = cardSection("Needs you", needed, "Nothing needs your attention.");
-  const working = section("Agents working on", snapshot.agents_working_on, "No agent work is underway.", (item) => {
-    const line = document.createElement("article");
-    line.className = "today-working-line";
-    const title = document.createElement("h3");
-    title.textContent = item.title;
-    line.append(title, background(item));
-    return line;
-  });
-  working.classList.add("today-working");
   const done = section("Done today", snapshot.done_today, "No completed work yet today.", resultCard);
   done.classList.add("today-done");
-  const split = document.createElement("div");
-  split.className = "today-split";
-  split.append(working, done);
-  const counts = tileRow([
-    tile("Needs you", String(needed.length), "attention"),
-    tile("Agents working", String(snapshot.agents_working_on.length), "working"),
-    tile("Done today", String(snapshot.done_today.length), "done"),
-  ], "Today at a glance");
-  body.append(counts, needs, split);
+  body.append(needs, done);
   const handoffBlock = handoffs === null ? null : handoffSection(handoffs);
   if (handoffBlock !== null) body.append(handoffBlock);
   if (snapshot.truncated || snapshot.completion_dates_unavailable > 0) {
@@ -266,6 +301,17 @@ export interface TodayScreenOptions {
   handoffIntervalMs?: number;
   /** The latest shared-library sync the app ran, for its skipped documents; tests pass their own. */
   sharedSync?: { last(): Promise<SharedLastSync>; dismissSkipped(): Promise<unknown> };
+  /** Agent work across the followed workspaces, for "Agents working on"; a failed read shows the office's only. */
+  agents?: () => Promise<AgentWork>;
+  /** The morning digest and contradiction calls; tests pass their own. */
+  digest?: DigestApi;
+  /** How often the morning digest rereads (it changes slowly). */
+  digestIntervalMs?: number;
+}
+
+function greeting(now: Date): string {
+  const hour = now.getHours();
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 }
 
 const serverSharedSync = { last: getLastSharedSync, dismissSkipped: dismissSharedSkipped };
@@ -285,6 +331,7 @@ export function createTodayScreen({
   load = () => getJson<Today>("/api/today"), approvals = serverApprovals, pollIntervalMs = 5_000,
   meetings = todaysMeetings, meetingIntervalMs = 60_000, sharedSync = serverSharedSync,
   handoffs = () => getJson<ScrFeed>("/api/scribe/feed"), handoffIntervalMs = 10_000,
+  digest = serverDigest, digestIntervalMs = 30_000, agents = () => getJson<AgentWork>("/api/agents"),
 }: TodayScreenOptions = {}): Screen {
   return {
     id: "today",
@@ -293,16 +340,36 @@ export function createTodayScreen({
     async render(root) {
       const view = document.createElement("div");
       view.className = "today";
+      const started = new Date();
+      const header = document.createElement("header");
+      header.className = "screen-head";
+      const titles = document.createElement("div");
+      const date = paragraph(started.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }));
+      date.className = "today-date";
       const heading = document.createElement("h1");
-      heading.textContent = "Today";
+      heading.textContent = greeting(started);
       const intro = paragraph("Your next steps and the work moving forward.");
       intro.className = "intro";
-      const nextSlot = document.createElement("div");
-      nextSlot.className = "today-next-slot";
-      nextSlot.hidden = true;
+      titles.append(date, heading, intro);
+      const openMeeting = document.createElement("a");
+      openMeeting.className = "link-button";
+      openMeeting.textContent = "Open the meeting";
+      openMeeting.hidden = true;
+      header.append(titles, openMeeting);
+      const digestSlot = document.createElement("div");
+      digestSlot.className = "today-digest-slot";
+      digestSlot.setAttribute("aria-busy", "true");
+      const working = panel("Agents working on", { variant: "plain", id: "today-working-heading" });
+      working.classList.add("today-working");
+      const workingBody = panelBody(paragraph("Gathering agent work…"));
+      working.append(workingBody);
+      const next = panel("Next meeting", { variant: "plain", id: "today-next-heading" });
+      const nextSlot = panelBody(paragraph("Reading your calendar…"));
+      nextSlot.className = "panel-body today-next-slot";
       nextSlot.setAttribute("aria-busy", "true");
-      const uploadSlot = document.createElement("div");
-      uploadSlot.dataset.slot = "drop-zone";
+      next.append(nextSlot);
+      const grid = panelGrid(working, next, dropPanel());
+      grid.classList.add("today-grid");
       const feedback = document.createElement("div");
       feedback.setAttribute("aria-live", "polite");
       // Outcomes of the user's own actions outlive the card they came from.
@@ -313,17 +380,21 @@ export function createTodayScreen({
       const content = document.createElement("div");
       content.append(paragraph("Gathering your work…"));
       content.setAttribute("aria-busy", "true");
-      view.append(heading, intro, nextSlot, uploadSlot, feedback, outcome, content);
+      view.append(header, digestSlot, grid, feedback, outcome, content);
       root.replaceChildren(view);
       let previous: string | undefined;
       let shown: Today | undefined;
+      let elsewhere: AgentWorkTask[] = [];
       let handoffList: ScrFeed | null = null;
       let handoffsRead = Number.NEGATIVE_INFINITY;
       /** The feed cards, reread at most every `handoffIntervalMs`; null when they can't be read. */
       async function latestHandoffs(): Promise<ScrFeed | null> {
         if (Date.now() - handoffsRead < handoffIntervalMs) return handoffList;
         handoffsRead = Date.now();
-        try { handoffList = await handoffs(); } catch { handoffList = null; }
+        try {
+          const feed = await handoffs();
+          handoffList = Array.isArray(feed?.cards) ? feed : null;
+        } catch { handoffList = null; }
         return handoffList;
       }
       let skipped: SharedSkipped[] = [];
@@ -351,6 +422,7 @@ export function createTodayScreen({
         const focused = content.contains(document.activeElement)
           ? (document.activeElement as HTMLElement).dataset.focus : undefined;
         content.replaceChildren(drawToday(snapshot, controls, shared, handoffList));
+        workingBody.replaceChildren(workingRows(snapshot, elsewhere));
         shown = snapshot;
         for (const detail of content.querySelectorAll<HTMLDetailsElement>("details")) {
           detail.open = open.has(detail.dataset.key);
@@ -384,7 +456,10 @@ export function createTodayScreen({
           feedback.replaceChildren(errorState("Couldn’t refresh your work", previous === undefined
             ? "Please try again. We’ll keep checking for your work."
             : "The work below may have changed. We’ll try again shortly."));
-          if (previous === undefined) content.replaceChildren();
+          if (previous === undefined) {
+            content.replaceChildren();
+            workingBody.replaceChildren(paragraph("Couldn’t read agent work."));
+          }
         } finally {
           content.setAttribute("aria-busy", "false");
           // Navigation replaces view. A pending read never redraws another screen.
@@ -396,19 +471,52 @@ export function createTodayScreen({
         if (!root.contains(view) || !view.isConnected) return;
         const now = new Date();
         try {
-          const next = upcoming(await meetings(now), now);
+          const meeting = upcoming(await meetings(now), now);
           if (!root.contains(view) || !view.isConnected) return;
-          nextSlot.replaceChildren(...(next === null ? [] : [nextMeetingCard(next, now)]));
-          nextSlot.hidden = next === null;
+          nextSlot.replaceChildren(meeting === null ? paragraph("Nothing else on your calendar today.") : nextMeetingCard(meeting, now));
         } catch {
-          nextSlot.replaceChildren();
-          nextSlot.hidden = true;
+          // Stale times are worse than none.
+          nextSlot.replaceChildren(paragraph("Couldn’t read your calendar."));
         } finally {
           nextSlot.setAttribute("aria-busy", "false");
           if (root.contains(view) && view.isConnected) window.setTimeout(() => { void nextMeeting(); }, meetingIntervalMs);
         }
       }
+      let digestShown: string | undefined;
+      /** The digest rereads slowly, and at once after a contradiction is resolved. */
+      async function morningDigest(again = true): Promise<void> {
+        if (!root.contains(view) || !view.isConnected) return;
+        let state: DigestState;
+        try { state = await readDigest(digest); }
+        finally { digestSlot.setAttribute("aria-busy", "false"); }
+        if (!root.contains(view) || !view.isConnected) return;
+        const serialized = JSON.stringify(state);
+        // A redraw would drop a pending choice's status line; only draw on change.
+        if (serialized !== digestShown) {
+          digestShown = serialized;
+          digestSlot.replaceChildren(digestPanel(state, digest, () => { window.setTimeout(() => { void morningDigest(false); }, 1_500); }));
+          const summary = digestSummary(state);
+          intro.textContent = summary ?? "Your next steps and the work moving forward.";
+          const source = state.digest?.source ?? null;
+          openMeeting.hidden = source === null;
+          if (source !== null) openMeeting.href = sourceHref(source.id);
+        }
+        if (again && root.contains(view) && view.isConnected) window.setTimeout(() => { void morningDigest(); }, digestIntervalMs);
+      }
+      /** Agent work in other workspaces: its own slower loop, so a slow read never holds Today. */
+      async function agentWork(): Promise<void> {
+        if (!root.contains(view) || !view.isConnected) return;
+        const work = await agents().catch(() => null);
+        if (!root.contains(view) || !view.isConnected) return;
+        // A malformed answer reads as no other work, never as a crash.
+        elsewhere = work !== null && Array.isArray(work.working_now)
+          ? work.working_now.filter((task) => typeof task?.title === "string" && task.workspace !== "office") : [];
+        if (shown !== undefined) workingBody.replaceChildren(workingRows(shown, elsewhere));
+        window.setTimeout(() => { void agentWork(); }, digestIntervalMs);
+      }
       void nextMeeting();
+      void morningDigest();
+      void agentWork();
       await refresh();
     },
   };

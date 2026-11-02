@@ -16,6 +16,8 @@ import { agentCliStatus } from "./agent-cli.js";
 import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
 import { auditRow, connection, connectionInput, count, object, SettingsError, signInInput, signInPoll, signInStarted, toolData } from "./gateway.js";
 import { logRouteFailure, safeOrbitCode } from "../../orbit/diagnostics.js";
+import { readModels } from "./models.js";
+import { agentWorkspaceInput, saveAgentWorkspace } from "./agent-workspace.js";
 import { privateRouteInput, readPrivateRoute, savePrivateRoute } from "./private-route.js";
 import { isSlot, SecretError, writeSecret, type SecretOptions } from "./secret.js";
 import { enableSharedSync, readSharedLibrary, saveSharedLibrary, sharedLibraryInput, SharedSyncMemory } from "./shared-library.js";
@@ -132,6 +134,14 @@ export function createSettingsFeature(client: OrbitToolClient, secretOptions: Se
       return signInPoll(toolData(await client.callTool("gateway.oauth-device-poll", { connection: name }), "gateway.oauth-device-poll"), name);
     }, "gateway.oauth-device-poll"),
     route("GET", "/api/settings/private-route", async () => readPrivateRoute(client)),
+    route("GET", "/api/settings/models", async () => readModels(client, agentCliStatus), "office.status"),
+    route("POST", "/api/settings/agent-workspace", async (request) => {
+      const input = agentWorkspaceInput(await readBody(request));
+      if (writing) throw new SettingsError(503, "settings_busy");
+      writing = true;
+      try { return await saveAgentWorkspace(client, input); }
+      finally { writing = false; }
+    }, "office.config-set"),
     route("POST", "/api/settings/private-route", async (request) => {
       const input = privateRouteInput(await readBody(request));
       if (writing) throw new SettingsError(503, "settings_busy");

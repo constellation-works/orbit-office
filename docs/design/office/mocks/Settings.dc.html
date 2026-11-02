@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings — Orbit Office</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#0b0d10}
+a{color:#7aa7ff}a:hover{color:#a9c6ff}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 100vh; background: #0b0d10; color: #e7eaee; font-family: Geist, ui-sans-serif, system-ui, sans-serif">
+<nav aria-label="Office" style="flex: 1 0 232px; box-sizing: border-box; padding: 20px 12px; background: #0e1115; border-right: 1px solid #22272e; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 10px; font-weight: 600; font-size: 15px">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="#7aa7ff" stroke-width="1.5"><circle cx="10" cy="10" r="7"></circle><circle cx="10" cy="10" r="2.5"></circle></svg>
+<span>Orbit Office</span>
+</div>
+<sc-for list="{{groups}}" as="g" hint-placeholder-count="4">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="padding: 0 10px 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8b95a3">{{g.label}}</div>
+<sc-for list="{{g.items}}" as="it" hint-placeholder-count="3">
+<a href="{{it.href}}" style="{{it.style}}">
+<svg aria-hidden="true" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="{{it.d0}}"></path><path d="{{it.d1}}"></path></svg>
+<span style="flex: 1">{{it.t}}</span>
+<span style="{{it.countStyle}}">{{it.count}}</span>
+</a>
+</sc-for>
+</div>
+</sc-for>
+</nav>
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px 48px">
+<div style="max-width: 1120px; display: flex; flex-direction: column; gap: 20px">
+<header style="display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-size: 28px; font-weight: 600">Settings</h1>
+<p style="margin: 0; font-size: 15px; color: #a3acb8">Models, privacy, connections and the shared Library.</p>
+</header>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+<a href="#" style="{{t.style}}">{{t.t}}</a>
+</sc-for>
+</div>
+<section aria-labelledby="models-h" style="border: 1px solid #22272e; border-radius: 10px; background: #121519; overflow-x: auto">
+<div style="padding: 16px 20px; border-bottom: 1px solid #1b1f25; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 id="models-h" style="margin: 0; font-size: 16px; font-weight: 600">Every model is Meta's</h2>
+<span style="font-size: 13px; color: #a3acb8">What each job calls, and where it runs. Checked at start-up.</span>
+</div>
+<span style="font-size: 12px; padding: 5px 9px; border-radius: 999px; background: #13261c; color: #a6e8c3">All 5 checks passed · 08:00</span>
+</div>
+<div style="min-width: 720px">
+<div style="display: grid; grid-template-columns: 1.4fr 1.4fr 1.6fr 0.8fr; gap: 12px; padding: 8px 20px; border-bottom: 1px solid #1b1f25; font-size: 12px; color: #8b95a3">
+<span>Job</span><span>Model</span><span>Where it runs</span><span>Check</span>
+</div>
+<sc-for list="{{models}}" as="m" hint-placeholder-count="5">
+<div style="display: grid; grid-template-columns: 1.4fr 1.4fr 1.6fr 0.8fr; gap: 12px; align-items: center; padding: 12px 20px; border-bottom: 1px solid #1b1f25">
+<span style="font-size: 14px">{{m.job}}</span>
+<span style="font-size: 13px; font-family: 'Geist Mono', ui-monospace, monospace">{{m.model}}</span>
+<span style="font-size: 13px; color: #a3acb8">{{m.where}}</span>
+<span style="font-size: 13px; color: #a6e8c3">{{m.check}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; align-items: start">
+<section aria-labelledby="priv-h" style="border: 1px solid #22272e; border-radius: 10px; background: #121519; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+<h2 id="priv-h" style="margin: 0; font-size: 15px; font-weight: 600">Private route</h2>
+<p style="margin: 0; font-size: 13px; color: #a3acb8; line-height: 1.5">Sources marked private never leave your endpoint. Built with Muse Spark Open.</p>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #a3acb8">Endpoint
+<input type="url" value="https://[YOUR ENDPOINT]/v1" style="min-height: 44px; padding: 0 12px; border-radius: 6px; background: #0b0d10; color: #e7eaee; border: 1px solid #2c333d; font: inherit; font-size: 14px">
+</label>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #a3acb8">Model
+<input type="text" value="meta-models/Muse-Spark-Open-816B-A42B" style="min-height: 44px; padding: 0 12px; border-radius: 6px; background: #0b0d10; color: #e7eaee; border: 1px solid #2c333d; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px">
+</label>
+<button type="button" style="align-self: flex-start; min-height: 40px; padding: 0 14px; border-radius: 6px; background: transparent; color: #e7eaee; border: 1px solid #2c333d; font: inherit; font-size: 14px; cursor: pointer">Check the route</button>
+</section>
+<section aria-labelledby="ws-h" style="border: 1px solid #22272e; border-radius: 10px; background: #121519; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+<h2 id="ws-h" style="margin: 0; font-size: 15px; font-weight: 600">Where agent to-dos go</h2>
+<p style="margin: 0; font-size: 13px; color: #a3acb8; line-height: 1.5">Engineering to-dos from meetings become Orbit tasks here. The workspace runs Muse crews only.</p>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #a3acb8">Target workspace
+<select style="min-height: 44px; padding: 0 10px; border-radius: 6px; background: #0b0d10; color: #e7eaee; border: 1px solid #2c333d; font: inherit; font-size: 14px"><option>lantern</option><option>None: keep every to-do as mine</option></select>
+</label>
+<div style="display: flex; flex-wrap: wrap; gap: 6px">
+<span style="font-size: 12px; padding: 5px 9px; border-radius: 999px; background: #18202e; color: #c9d2de; font-family: 'Geist Mono', ui-monospace, monospace">muse-spark</span>
+<span style="font-size: 12px; padding: 5px 9px; border-radius: 999px; background: #18202e; color: #c9d2de; font-family: 'Geist Mono', ui-monospace, monospace">muse-wonder</span>
+<span style="font-size: 12px; padding: 5px 9px; border-radius: 999px; background: #18202e; color: #c9d2de; font-family: 'Geist Mono', ui-monospace, monospace">muse-wonder-full</span>
+</div>
+</section>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1200}}'>
+var FILES={today:'Main.dc.html',calendar:'Calendar.dc.html',todos:'Todos.dc.html',agents:'Agents.dc.html',scribe:'Scribe.dc.html',library:'Library.dc.html',source:'Source.dc.html',insights:'Insights.dc.html',review:'Review.dc.html',routines:'Routines.dc.html',settings:'Settings.dc.html'};
+var NAMES={today:'Today',calendar:'Calendar',todos:'To-dos',agents:'Agent work',scribe:'Scribe',library:'Library',source:'Source',insights:'Insights',review:'Review',routines:'Routines',settings:'Settings'};
+var DOT='M10 9.2a.8.8 0 1 0 0 1.6.8.8 0 0 0 0-1.6z';
+var ICONS={today:['M10 6.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z','M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5M4.7 4.7l1 1M14.3 14.3l1 1M4.7 15.3l1-1M14.3 5.7l1-1'],calendar:['M4 5h12v11.5H4z','M4 8.5h12M7.5 3v3.5M12.5 3v3.5'],todos:['M3.5 5.5l1.5 1.5 2.5-2.5M10.5 6h6M3.5 12.5l1.5 1.5 2.5-2.5','M10.5 13h6'],agents:['M6.5 9.5h7V14a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2z','M10 9.5V7M10 5.2v.6M8.3 12.3v.8M11.7 12.3v.8'],scribe:['M5 3.5h10v13H5z','M7.5 7h5M7.5 10h5M7.5 13h3'],library:['M4 4h5a2 2 0 0 1 2 2v10a2 2 0 0 0-2-2H4z','M16 4h-5a2 2 0 0 0-2 2v10a2 2 0 0 1 2-2h5z'],source:[DOT,''],insights:['M5 16v-6M10 16V4M15 16V8','M2.5 16.5h15'],review:[DOT,''],routines:['M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14z','M10 6v4l3 2'],settings:['M4 6h12M4 10h12M4 14h12','M8 4.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM13 8.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2z']};
+var GROUPS=[['Work',['today','calendar','todos','agents','scribe']],['Knowledge',['library','source']],['Observe',['insights','review']],['Manage',['routines','settings']]];
+var NESTED={source:1,review:1};
+var COUNTS={today:'1',todos:'2',agents:'1',routines:'6/9'};
+function rail(active){return GROUPS.map(function(g){return {label:g[0],items:g[1].map(function(id){var on=id===active;var ic=ICONS[id];return {t:NAMES[id],href:FILES[id],d0:ic[0],d1:ic[1],count:COUNTS[id]||'',countStyle:(id==='today'?'font-size:12px;padding:2px 8px;border-radius:999px;background:#2a2112;color:#f2d29b':'font-size:12px;color:#8b95a3'),style:'display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px 0 '+(NESTED[id]?'30px':'10px')+';border-radius:6px;text-decoration:none;font-size:14px;'+(on?'background:#18202e;color:#e7eaee;font-weight:500':'color:#a3acb8')};})};});}
+function tab(t,on){return {t:t,style:'display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border-radius:999px;text-decoration:none;font-size:14px;'+(on?'background:#18202e;color:#e7eaee;border:1px solid #2c333d':'color:#a3acb8;border:1px solid transparent')};}
+class Component extends DCLogic {
+renderVals() {
+return {
+groups: rail('settings'),
+tabs: [tab('Models',true),tab('Private route'),tab('Connections'),tab('Shared library'),tab('API calls')],
+models: [
+{job:'Transcribe meetings',model:'Muse Voice Transcribe',where:'Meta Model API',check:'Passed'},
+{job:'Extract decisions and to-dos',model:'muse-spark-1.3',where:'Meta Model API (api.meta.ai)',check:'Passed'},
+{job:'Careful work: consolidation, reviews',model:'muse-wonder',where:'Meta Model API (api.meta.ai)',check:'Passed'},
+{job:'Private sources',model:'Muse Spark Open',where:'Your endpoint (open weights)',check:'Passed'},
+{job:'Agent to-dos in Orbit',model:'Muse Code crews',where:'Your machine, through Orbit',check:'Passed'}
+]
+};
+}
+}
+</script>
+</body>
+</html>

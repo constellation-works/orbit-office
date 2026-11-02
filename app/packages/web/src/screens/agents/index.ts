@@ -3,7 +3,9 @@ import type { AgentWork, AgentWorkTask } from "@orbit-office/contracts";
 
 import { getJson } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
-import { emptyState, errorState, pill, tile, tileRow } from "../../ui/index.js";
+import { sourceHref } from "../../api/source-location.js";
+import { dot, emptyState, errorState, monoMeta, pill, screenHead, tile, tileRow, type DotTone } from "../../ui/index.js";
+import { styles } from "./style.js";
 
 /** Rows shown before "Show N more" in the collapsed groups. */
 const COLLAPSED = 3;
@@ -42,34 +44,41 @@ export function sinceUpdate(updatedAt: string, now: Date): string {
   return `${days}d ago`;
 }
 
-function row(task: AgentWorkTask, now: Date): HTMLElement {
+const DOTS: Record<Group["key"], DotTone> = { working_now: "working", in_review: "attention", queued: "neutral", done_today: "done" };
+
+/** One task: a dot, the title and a mono line (workspace, id, last update, source), then crew and PR. */
+function row(task: AgentWorkTask, now: Date, key: Group["key"]): HTMLElement {
   const article = document.createElement("article");
   article.className = "agent-row";
   article.dataset.workspace = task.workspace;
+  const main = document.createElement("div");
+  main.className = "agent-main";
   const title = document.createElement("h3");
   title.textContent = task.title;
-  const meta = paragraph(`${task.id} · ${task.workspace}`);
-  meta.className = "agent-meta";
+  const ago = sinceUpdate(task.updated_at, now);
+  const meta = paragraph([task.workspace, task.id, ago === "" ? "" : `updated ${ago}`].filter(Boolean).join(" · "));
+  meta.className = "agent-meta mono-meta";
+  if (task.source !== undefined && task.source !== null) {
+    meta.append(document.createTextNode(" · from "), monoMeta(task.source, sourceHref(task.source)));
+  }
   const detail = document.createElement("div");
   detail.className = "agent-detail";
   if (task.type !== "") detail.append(pill(task.type));
-  if (task.priority !== "") {
-    detail.append(pill(task.priority, task.priority === "high" ? "danger" : "neutral"));
-  }
+  if (task.priority === "high" || task.priority === "critical") detail.append(pill(task.priority, "danger"));
+  main.append(title, meta, detail);
+  const trail = document.createElement("div");
+  trail.className = "agent-trail";
   if (task.crew !== null && task.crew !== "") {
-    const crew = document.createElement("span");
-    crew.className = "agent-crew";
-    crew.textContent = task.crew;
-    detail.append(crew);
+    const crew = monoMeta(task.crew);
+    crew.classList.add("agent-crew");
+    trail.append(crew);
   }
-  const ago = sinceUpdate(task.updated_at, now);
-  if (ago !== "") {
-    const time = document.createElement("span");
-    time.className = "agent-updated";
-    time.textContent = ago;
-    detail.append(time);
+  if (task.pr !== undefined && task.pr !== null) {
+    const pr = monoMeta(task.pr.merged ? `PR #${task.pr.number} · merged` : `PR #${task.pr.number}`, task.pr.url ?? undefined);
+    if (pr instanceof HTMLAnchorElement) { pr.target = "_blank"; pr.rel = "noopener noreferrer"; }
+    trail.append(pr);
   }
-  article.append(title, meta, detail);
+  article.append(dot(DOTS[key]), main, trail);
   return article;
 }
 
@@ -92,10 +101,8 @@ export function createAgentsScreen({
     async render(root) {
       const view = document.createElement("div");
       view.className = "agents";
-      const heading = document.createElement("h1");
-      heading.textContent = "Agent work";
-      const intro = paragraph("The Orbit tasks agents are carrying, across the workspaces you follow.");
-      intro.className = "intro";
+      const style = document.createElement("style");
+      style.textContent = styles;
       const headerMeta = document.createElement("div");
       headerMeta.className = "agents-header-meta";
       const updated = document.createElement("span");
@@ -104,12 +111,13 @@ export function createAgentsScreen({
       orbitLink.textContent = "Open in Orbit";
       orbitLink.href = "#agents";
       headerMeta.append(updated, orbitLink);
+      const header = screenHead("Agent work", "Orbit tasks agents carry for you, across the workspaces you follow. Every crew runs a Meta model through Muse Code.", headerMeta);
       const feedback = document.createElement("div");
       feedback.setAttribute("aria-live", "polite");
       const content = document.createElement("div");
       content.append(paragraph("Gathering agent work…"));
       content.setAttribute("aria-busy", "true");
-      view.append(heading, intro, headerMeta, feedback, content);
+      view.append(style, header, feedback, content);
       root.replaceChildren(view);
 
       let selected = "all";
@@ -176,17 +184,20 @@ export function createAgentsScreen({
           for (const { group, rows } of counts) {
             if (rows.length === 0) continue;
             const section = document.createElement("section");
-            section.className = "agents-group";
+            section.className = "agents-group panel";
             section.id = group.anchor;
             section.setAttribute("aria-label", group.title);
+            const groupHead = document.createElement("div");
+            groupHead.className = "agents-group-head";
             const groupHeading = document.createElement("h2");
             groupHeading.textContent = group.title;
-            section.append(groupHeading, pill(String(rows.length)));
+            groupHead.append(groupHeading, pill(String(rows.length)));
+            section.append(groupHead);
             const list = document.createElement("div");
             list.className = "agents-list";
             const isExpanded = expanded.has(group.key);
             const visible = group.collapsible && !isExpanded ? rows.slice(0, COLLAPSED) : rows;
-            list.append(...visible.map((task) => row(task, current)));
+            list.append(...visible.map((task) => row(task, current, group.key)));
             section.append(list);
             if (group.collapsible && rows.length > COLLAPSED) {
               const toggle = document.createElement("button");

@@ -34,6 +34,74 @@ export function anchorTarget(view: SourceView, hash: string): { time: number | n
   if (match?.[1] === "frame") { const index = view.frames.findIndex(frame => frame.time === time); if (index < 0) return null; result.frame = index; }
   return result;
 }
+/** A transcript turn: `[hh:mm:ss] Speaker: text`, or a stamped line with no speaker. */
+export interface Turn { stamp: string; time: number; who: string | null; text: string }
+
+export function parseTurn(line: string): Turn | null {
+  const stamp = /^\[(\d{2,}:[0-5]\d:[0-5]\d)\]\s?(.*)$/.exec(line);
+  if (stamp === null || stamp[1] === undefined) return null;
+  const time = seconds(stamp[1]);
+  if (time === null) return null;
+  const rest = stamp[2] ?? "";
+  const speaker = /^([^:\[\]]{1,60}):\s+(.*)$/.exec(rest);
+  return speaker && speaker[1] !== undefined
+    ? { stamp: stamp[1], time, who: speaker[1].trim(), text: speaker[2] ?? "" }
+    : { stamp: stamp[1], time, who: null, text: rest };
+}
+
+/** A mark on the timeline or a tag on a turn, from what the source view records. */
+export interface Mark {
+  time: number; kind: "chapter" | "aside" | "gotcha";
+  /** The whole mark in words, for the timeline. */
+  label: string;
+  /** The short tag on its transcript turn. */
+  tag: string;
+  anchor: string;
+}
+
+/** Chapters (tangents as asides) and gotchas with a time cite, in time order. */
+export function sourceMarks(view: Pick<SourceView, "chapters" | "gotchas">): Mark[] {
+  const marks: Mark[] = view.chapters.map(chapter => ({
+    time: chapter.start, kind: chapter.label === "tangent" ? "aside" : "chapter",
+    label: `${chapter.label === "tangent" ? "Aside" : "Chapter"}: ${chapter.title}`,
+    tag: `${chapter.label === "tangent" ? "Aside" : "Chapter"} · ${chapter.title}`, anchor: `#chapter=${chapter.number}`,
+  }));
+  for (const gotcha of view.gotchas) {
+    for (const cite of gotcha.cites) {
+      const stamp = /#(?:t|frame)=(.+)$/.exec(cite)?.[1] ?? "";
+      const time = seconds(stamp);
+      if (time !== null) { marks.push({ time, kind: "gotcha", label: `Gotcha: ${gotcha.text}`, tag: "Gotcha", anchor: `#t=${stamp}` }); break; }
+    }
+  }
+  return marks.sort((a, b) => a.time - b.time);
+}
+
+/** The latest time the source knows of: its last turn, chapter, frame or mark. */
+export function sourceLength(view: Pick<SourceView, "text" | "chapters" | "frames" | "gotchas">): number {
+  let last = 0;
+  for (const line of view.text.split("\n")) { const turn = parseTurn(line); if (turn && turn.time > last) last = turn.time; }
+  for (const chapter of view.chapters) last = Math.max(last, chapter.start);
+  for (const frame of view.frames) last = Math.max(last, frame.time);
+  for (const mark of sourceMarks({ chapters: [], gotchas: view.gotchas })) last = Math.max(last, mark.time);
+  return last;
+}
+
+/**
+ * The marks that fall in each turn, keyed by line index: a mark belongs to
+ * the last turn that starts at or before it. Lines without a stamp get none.
+ */
+export function turnMarks(lines: readonly string[], marks: readonly Mark[]): Map<number, Mark[]> {
+  const starts = lines.flatMap((line, index) => { const turn = parseTurn(line); return turn ? [{ index, time: turn.time }] : []; });
+  const result = new Map<number, Mark[]>();
+  for (const mark of marks) {
+    let owner: number | null = null;
+    for (const start of starts) if (start.time <= mark.time) owner = start.index;
+    if (owner === null) continue;
+    result.set(owner, [...(result.get(owner) ?? []), mark]);
+  }
+  return result;
+}
+
 export const supportedFile = (name: string): boolean => /\.(txt|md|vtt|html?|pdf|docx|pptx|png|jpe?g|wav|mp3|m4a|mp4|webm|mov)$/i.test(name);
 
 /** Drain every directory-reader page; the browser may return only 100 entries per read. */
