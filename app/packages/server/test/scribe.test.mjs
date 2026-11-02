@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { createScribeFeature } from "../dist/features/scribe/index.js";
 import { configSetInput, operatorCommand, tagSaveOf } from "../dist/features/scribe/tags.js";
 import { OrbitExitError } from "../dist/orbit/client.js";
-import { cards, decisions, handoffs, office, preferences, scribeServer, statusTags } from "./scribe-fixture.mjs";
+import { agreement, cards, decisions, handoffs, office, preferences, scribeServer, statusTags } from "./scribe-fixture.mjs";
 
 const get = async (url) => { const response = await fetch(url); return { status: response.status, body: await response.json() }; };
 const post = async (url, body) => {
@@ -219,6 +219,72 @@ test("the ask box cites SCR file:line, drops a quote not on its cited line, and 
     ["not_captured", [], "2026-10-31", "2026-11-01", ["recall", "scribe"], 2]);
   assert.deepEqual((await post(`${url}/api/scribe/ask`, { question: "x", limit: 3 })).body, { error: "invalid_input" });
   assert.deepEqual((await post(`${url}/api/scribe/ask`, { question: " " })).body, { error: "question_required" });
+});
+
+function agreementClient(readout, calls = []) {
+  return {
+    calls,
+    async callTool() { throw new Error("unexpected callTool"); },
+    async pollTool(name, input) {
+      calls.push({ name, input: structuredClone(input) });
+      if (readout instanceof Error) throw readout;
+      return structuredClone(readout);
+    },
+  };
+}
+
+test("decision-agreement renders the pinned readout per category, aggregates only", async (t) => {
+  const withPredictions = structuredClone(agreement);
+  withPredictions.categories[0].predictions = [{ request: "ORB-1", predicted: "yes", probability: 0.9 }];
+  withPredictions.requests = [{ id: "ORB-1", prediction: "yes" }];
+  const client = agreementClient(withPredictions);
+  const url = await serve(t, client);
+  const { status, body } = await get(`${url}/api/scribe/decision-agreement`);
+  assert.equal(status, 200);
+  assert.deepEqual(client.calls, [{ name: "orbit.decision.readout", input: { contract: "precedent-decision-readout/1" } }]);
+  assert.equal(body.agreement.contract, "precedent-decision-readout/1");
+  assert.equal(body.agreement.consumer_mode, "shadow");
+  assert.deepEqual([body.agreement.window_start, body.agreement.window_end, body.agreement.generated_at],
+    ["2026-10-01T00:00:00Z", "2026-11-01T00:00:00Z", "2026-11-01T09:00:00Z"]);
+  assert.deepEqual(body.agreement.categories.map((row) => [row.category, row.mode, row.scored_requests, row.accuracy, row.accuracy_wilson_low, row.accuracy_wilson_high, row.coverage, row.calibration_error, row.abstention_rate, row.conflict_rate, row.min_samples]), [
+    ["ws_orbit-office:agent_request", "shadow", 42, 0.81, 0.68, 0.9, 0.74, 0.04, 0.12, 0.05, 30],
+    ["ws_orbit-office:final_recovery", "enabled", 7, 1, 0.65, 1, 0.5, 0.05, 0, 0, 30],
+  ], "one row per category, including the low-sample one (the screen marks it)");
+  assert.ok(!JSON.stringify(body).includes("prediction"), "no per-request prediction anywhere");
+  assert.ok(!JSON.stringify(body).includes("ORB-1"), "no per-request id anywhere");
+});
+
+test("decision-agreement is hidden when the consumer is off, there is no readout, or Orbit has no readout tool", async (t) => {
+  for (const readout of [{ ...agreement, consumer_mode: "off" }, { available: false }, null, {}]) {
+    const url = await serve(t, agreementClient(readout));
+    assert.deepEqual(await get(`${url}/api/scribe/decision-agreement`), { status: 200, body: { agreement: null } }, JSON.stringify(readout));
+  }
+  const missingTool = new OrbitExitError("orbit.decision.readout", 1, null,
+    JSON.stringify({ error: { code: "unknown_tool", message: "unknown tool" } }));
+  const url = await serve(t, agreementClient(missingTool));
+  assert.deepEqual(await get(`${url}/api/scribe/decision-agreement`), { status: 200, body: { agreement: null } });
+});
+
+test("decision-agreement with no categories is an empty readout, not hidden", async (t) => {
+  const url = await serve(t, agreementClient({ ...agreement, categories: [] }));
+  const { status, body } = await get(`${url}/api/scribe/decision-agreement`);
+  assert.equal(status, 200);
+  assert.deepEqual(body.agreement.categories, []);
+});
+
+test("decision-agreement read failure is a plain agreement_unavailable error", async (t) => {
+  const failing = await serve(t, agreementClient(new Error("orbit down")));
+  assert.deepEqual(await get(`${failing}/api/scribe/decision-agreement`), { status: 502, body: { error: "agreement_unavailable" } });
+  const malformed = await serve(t, agreementClient({ contract: "precedent-decision-readout/1", consumer_mode: "shadow", categories: [{ category: "x" }] }));
+  assert.deepEqual(await get(`${malformed}/api/scribe/decision-agreement`), { status: 502, body: { error: "agreement_unavailable" } });
+});
+
+test("decision-agreement reads Orbit at most once per 60 seconds", async (t) => {
+  const calls = [];
+  const url = await serve(t, agreementClient(agreement, calls));
+  await get(`${url}/api/scribe/decision-agreement`);
+  await get(`${url}/api/scribe/decision-agreement`);
+  assert.equal(calls.length, 1, "the second read is served from the 60-second cache");
 });
 
 const listed = (output, kind) => output.sections.find((section) => section.kind === kind);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { blankTag, defaultModeForSink, messageFor, modesForSink, notCapturedText, timeLabel } from "../dist/screens/scribe/model.js";
+import { accuracyLabel, blankTag, categoryLabel, defaultModeForSink, hasEnoughSamples, messageFor, modesForSink, notCapturedText, percentLabel, timeLabel } from "../dist/screens/scribe/model.js";
 
 test("a line's time reads as written, without seconds or offset", () => {
   assert.equal(timeLabel("2026-11-01T06:05+00:00"), "2026-11-01 06:05");
@@ -32,6 +32,22 @@ test("a sink takes only its paired modes, and a new tag starts as markers-only s
   assert.equal(defaultModeForSink("preference_page"), "propose");
   assert.equal(defaultModeForSink("decisions_ledger"), "append");
   assert.deepEqual(blankTag(), { name: "", scope: "session", instruction: "", sink: "scr_only", mode: "append", capture: "markers" });
+});
+
+test("agreement rows: percents, Wilson interval, low-sample gate and plain category words", () => {
+  const category = {
+    category: "ws_orbit-office:agent_request", workspace: "ws_orbit-office", kind: "agent_request",
+    mode: "shadow", scored_requests: 42, accuracy: 0.81, accuracy_wilson_low: 0.68, accuracy_wilson_high: 0.9,
+    coverage: 0.74, calibration_error: 0.04, abstention_rate: 0.12, conflict_rate: 0.05, min_samples: 30,
+  };
+  assert.equal(percentLabel(0.74), "74%");
+  assert.equal(percentLabel(null), "—");
+  assert.equal(accuracyLabel(category), "81% (68%–90%)");
+  assert.equal(accuracyLabel({ ...category, accuracy_wilson_low: null }), "81%");
+  assert.equal(categoryLabel(category), "ws_orbit-office · agent request");
+  assert.equal(hasEnoughSamples(category), true);
+  assert.equal(hasEnoughSamples({ ...category, scored_requests: 7 }), false, "below min_samples shows Not enough decisions yet");
+  assert.equal(messageFor("agreement_unavailable"), "Could not read Orbit's measurement.");
 });
 
 test("card helpers: age, scope, summary and tag counts read in plain words", async () => {

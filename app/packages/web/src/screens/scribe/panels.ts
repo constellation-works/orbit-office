@@ -3,12 +3,90 @@
  * "Answering"): read-only views over `office.scribe-query` modes
  * `preferences` and `decisions`, replacing the retired v1 canned views.
  */
-import type { ScribeDecision, ScribeDecisions, ScribePreference, ScribePreferences } from "@orbit-office/contracts";
+import type { ScribeAgreementCategory, ScribeAgreementResponse, ScribeDecision, ScribeDecisionAgreement, ScribeDecisions, ScribePreference, ScribePreferences } from "@orbit-office/contracts";
 
-import { getJson } from "../../api/client.js";
+import { ApiError, getJson } from "../../api/client.js";
 import { pill } from "../../ui/index.js";
 import { el } from "./dom.js";
-import { timeLabel } from "./model.js";
+import { accuracyLabel, categoryLabel, hasEnoughSamples, messageFor, percentLabel, timeLabel } from "./model.js";
+
+/** The Agreement view is polled at most every 60 seconds. */
+export const AGREEMENT_POLL_MS = 60_000;
+
+type AgreementState =
+  | { kind: "hidden" }
+  | { kind: "ready"; agreement: ScribeDecisionAgreement }
+  | { kind: "failed"; code: string };
+
+let agreementCache: { at: number; state: AgreementState } | null = null;
+
+/** Test seam: forget the throttled agreement read. */
+export function resetAgreementCache(): void { agreementCache = null; }
+
+async function loadAgreement(now: number = Date.now()): Promise<AgreementState> {
+  if (agreementCache !== null && now - agreementCache.at < AGREEMENT_POLL_MS) return agreementCache.state;
+  let state: AgreementState;
+  try {
+    const result = await getJson<ScribeAgreementResponse>("/api/scribe/decision-agreement");
+    state = result.agreement === null ? { kind: "hidden" } : { kind: "ready", agreement: result.agreement };
+  } catch (error) {
+    state = { kind: "failed", code: error instanceof ApiError ? error.code : "agreement_unavailable" };
+  }
+  agreementCache = { at: now, state };
+  return state;
+}
+
+function agreementCategoryItem(category: ScribeAgreementCategory): HTMLLIElement {
+  const item = el("li", "", "scribe-entry scribe-agreement-row");
+  item.dataset.category = category.category;
+  const head = el("div", "", "scribe-entry-head");
+  head.append(el("span", categoryLabel(category)), pill(category.mode === "shadow" ? "Shadow" : "Enabled"));
+  item.append(head);
+  const list = el("dl", "", "scribe-fields");
+  list.append(el("dt", "mode"), el("dd", category.mode));
+  list.append(el("dt", "scored requests"), el("dd", String(category.scored_requests)));
+  if (!hasEnoughSamples(category)) {
+    list.append(el("dt", "accuracy"), el("dd", "Not enough decisions yet"));
+  } else {
+    list.append(
+      el("dt", "accuracy"), el("dd", accuracyLabel(category)),
+      el("dt", "coverage"), el("dd", percentLabel(category.coverage)),
+      el("dt", "calibration error"), el("dd", percentLabel(category.calibration_error)),
+      el("dt", "abstention"), el("dd", percentLabel(category.abstention_rate)),
+      el("dt", "conflicts"), el("dd", percentLabel(category.conflict_rate)),
+    );
+  }
+  item.append(list);
+  return item;
+}
+
+/** The read-only Agreement section, or null when it is hidden. */
+export function agreementSection(state: AgreementState): HTMLElement | null {
+  if (state.kind === "hidden") return null;
+  const section = el("section", "", "scribe-panel scribe-agreement");
+  section.setAttribute("aria-label", "Agreement");
+  section.append(el("h3", "Agreement"));
+  if (state.kind === "failed") {
+    section.append(el("p", messageFor(state.code === "unknown" ? "agreement_unavailable" : state.code), "scribe-status"));
+    return section;
+  }
+  const { agreement } = state;
+  const window = agreement.window_start || agreement.window_end
+    ? `${agreement.window_start ?? "the start"} to ${agreement.window_end ?? "now"}` : null;
+  const meta: string[] = [];
+  if (window) meta.push(`Window ${window}`);
+  if (agreement.generated_at) meta.push(`Read ${timeLabel(agreement.generated_at)}`);
+  meta.push(`Mode ${agreement.consumer_mode}`);
+  section.append(el("p", meta.join(" · "), "scribe-stated"));
+  if (!agreement.categories.length) {
+    section.append(el("p", "No decisions yet.", "scribe-status"));
+    return section;
+  }
+  const list = el("ul", "", "scribe-list");
+  for (const category of agreement.categories) list.append(agreementCategoryItem(category));
+  section.append(list);
+  return section;
+}
 
 function scopeName(scope: string): string {
   return scope === "global" ? "Global" : scope.replace(/^project:/, "");
@@ -82,15 +160,22 @@ function decisionItem(decision: ScribeDecision): HTMLLIElement {
   return item;
 }
 
-/** The decision ledgers, newest first. */
+/** The decision ledgers, newest first, with the Agreement section when it is visible. */
 export async function loadDecisions(): Promise<(panel: HTMLElement, stated: HTMLElement) => void> {
-  const result = await getJson<ScribeDecisions>("/api/scribe/decisions");
+  const [result, agreement] = await Promise.all([
+    getJson<ScribeDecisions>("/api/scribe/decisions"),
+    loadAgreement(),
+  ]);
   return (panel, stated) => {
     stated.textContent = result.decisions.length
       ? `${result.decisions.length} recorded ${result.decisions.length === 1 ? "decision" : "decisions"}, newest first.`
       : "No recorded decisions.";
+    const parts: HTMLElement[] = [];
+    const section = agreementSection(agreement);
+    if (section !== null) parts.push(section);
     const list = el("ul", "", "scribe-list");
     for (const decision of result.decisions) list.append(decisionItem(decision));
-    panel.replaceChildren(result.decisions.length ? list : el("p", "No recorded decisions.", "scribe-status"));
+    parts.push(result.decisions.length ? list : el("p", "No recorded decisions.", "scribe-status"));
+    panel.replaceChildren(...parts);
   };
 }

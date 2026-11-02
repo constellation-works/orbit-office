@@ -47,4 +47,7 @@ export const styles = `
 .scribe-tag-list { display:grid; gap:8px }
 .scribe-tag-form label { display:grid; gap:4px; font-size:13px; color:var(--fg-dim) }
 .scribe-tag-row strong { font-family:var(--font-mono); font-size:13px }
+.scribe-agreement { display:grid; gap:8px }
+.scribe-agreement h3 { margin:0; font-size:15px }
+.scribe-agreement-row { overflow-wrap:anywhere }
 `;

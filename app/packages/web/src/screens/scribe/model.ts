@@ -3,7 +3,7 @@
  * the Tags editor's sink/mode pairing. Pure, so it is unit-tested without
  * a browser.
  */
-import type { ScribeAnswer, ScribeTagDef, ScribeTagMode, ScribeTagScope, ScribeTagSink } from "@orbit-office/contracts";
+import type { ScribeAgreementCategory, ScribeAnswer, ScribeTagDef, ScribeTagMode, ScribeTagScope, ScribeTagSink } from "@orbit-office/contracts";
 
 /** A line's time as written (already in its local zone), without seconds or offset. */
 export function timeLabel(time: string): string {
@@ -50,7 +50,32 @@ export function blankTag(): ScribeTagDef {
 /** The two shipped default tag names. */
 export const DEFAULT_TAG_NAMES: readonly string[] = ["preferences", "decisions"];
 
+/** A fraction as a whole percent, or an em dash when the readout has none. */
+export function percentLabel(value: number | null): string {
+  return value === null ? "—" : `${Math.round(value * 100)}%`;
+}
+
+/** Accuracy with its Wilson 95% interval, e.g. `81% (68–90%)`. */
+export function accuracyLabel(category: ScribeAgreementCategory): string {
+  if (category.accuracy === null) return "—";
+  if (category.accuracy_wilson_low === null || category.accuracy_wilson_high === null) return percentLabel(category.accuracy);
+  return `${percentLabel(category.accuracy)} (${percentLabel(category.accuracy_wilson_low)}–${percentLabel(category.accuracy_wilson_high)})`;
+}
+
+/** Below `min_samples` a category shows "Not enough decisions yet" instead of percentages. */
+export function hasEnoughSamples(category: ScribeAgreementCategory): boolean {
+  return category.scored_requests >= category.min_samples;
+}
+
+/** The category in words: workspace and kind, underscores as spaces. */
+export function categoryLabel(category: ScribeAgreementCategory): string {
+  const workspace = category.workspace ?? "Global";
+  const kind = category.kind.replaceAll("_", " ");
+  return `${workspace} · ${kind}`;
+}
+
 const CODES: Record<string, string> = {
+  agreement_unavailable: "Could not read Orbit's measurement.",
   question_required: "Write a question first.",
   model_unavailable: "The model is unavailable right now. The feed and panels still work.",
   network_error: "The app server is not reachable. Check that it is running.",
