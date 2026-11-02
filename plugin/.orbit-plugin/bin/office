@@ -15,6 +15,12 @@ fail() {
 }
 
 [ -n "${ORBIT_PLUGIN_ROOT:-}" ] || fail launcher_env "ORBIT_PLUGIN_ROOT is not set"
+[ -n "${ORBIT_PLUGIN_STATE:-}" ] || fail launcher_env "ORBIT_PLUGIN_STATE is not set"
+
+# Temporary files (media staging) must land inside the plugin_state write
+# grant: Linux Landlock denies /tmp, the default when TMPDIR is unset.
+export TMPDIR="$ORBIT_PLUGIN_STATE/tmp"
+mkdir -p "$TMPDIR" || fail launcher_env "cannot create the plugin state tmp directory"
 
 bin="$ORBIT_PLUGIN_ROOT/bin/office-bin"
 [ -f "$bin" ] || fail backend_missing "bin/office-bin is missing; install from a git+ pinned source (Orbit builds it) or use an export produced by 'make export' in plugin/"
