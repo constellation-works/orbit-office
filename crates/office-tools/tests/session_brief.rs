@@ -783,6 +783,9 @@ mod refusals {
         fn settings(&self) -> office_core::Result<office_core::domain::settings::Settings> {
             self.library.settings()
         }
+        fn scribe_files(&self) -> office_core::Result<Vec<office_core::ports::LibraryText>> {
+            self.library.scribe_files()
+        }
     }
 
     #[test]
@@ -1041,3 +1044,6 @@ mod structured_handoffs {
 
 #[path = "session_brief_modules/list.rs"]
 mod list_view;
+
+#[path = "session_brief_modules/scr.rs"]
+mod scr_handoffs;

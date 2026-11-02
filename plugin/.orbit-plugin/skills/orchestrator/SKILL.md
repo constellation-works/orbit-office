@@ -23,7 +23,7 @@ secrets or approve sending anything.
    one line. → [sessions](references/sessions.md),
    [onboarding](references/onboarding.md)
 2. **Capture first.** Pasted external content becomes a source
-   (`office.capture`) before you act on it. Keep a rolling `handoff` in one `conversation` source per session.
+   (`office.capture`) before you act on it. In a scribed session its SCR is the handoff; otherwise keep a rolling `handoff` in one `conversation` source per session.
    A SessionEnd cheap-crew job extracts decisions, verbatim directions, facts,
    actions and open questions from the transcript; do not recapture every turn.
    Capture a fact immediately when a proposal needs its citation.

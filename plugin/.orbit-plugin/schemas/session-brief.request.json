@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.session-brief request",
-  "description": "Assemble the deterministic brief for the current workspace. Call before opening a new conversation source. Optionally pass the current session's project and orchestrator to lead with that thread's handoff, followed by the open global handoffs, and list other recent threads in other_sessions; with no project the legacy single-conversation output is returned, plus the open global handoffs. The SessionStart hook sets session_start, so the Library setting brief.handoff (auto | manual) applies; view handoffs is the /handoff command; view list is the web app's handoff list (current threads, global handoffs and paged history). No inference or writes.",
+  "description": "Assemble the deterministic brief for the current workspace. Call before opening a new conversation source. Optionally pass the current session's project and orchestrator to lead with that project's latest SCR (its legacy thread handoff when it has no SCR), followed by the latest global SCR and the open legacy global handoffs, and list the project's other recent SCRs (or legacy threads) in other_sessions; with no project the newest project SCR leads, else the legacy single-conversation output is returned, plus global. The SessionStart hook sets session_start, so the Library setting brief.handoff (auto | manual) applies; view handoffs is the /handoff command; view list is the web app's handoff list (current threads, global handoffs and paged history). No inference or writes.",
   "type": "object",
   "properties": {
     "project": {
@@ -14,14 +14,14 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "description": "Current orchestrator as conversation sources record it: the provider name (claude, codex), not the crew name; inside the project, its thread's handoff leads. Absent or null means no orchestrator preference. With view list it filters history only."
+      "description": "Current orchestrator as conversation sources record it: the provider name (claude, codex), not the crew name; for a project with no SCR, inside the project its legacy thread's handoff leads. Absent or null means no orchestrator preference. With view list it filters history only."
     },
     "task": {
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
       "pattern": "^[A-Za-z0-9_-]+$",
-      "description": "The caller's open assignment task id. Only with session_start and no project, in brief.handoff auto: when Orbit reports it open, the project is the one its handoff thread was recorded in; otherwise the brief is the manual output."
+      "description": "The caller's open assignment task id. Only with session_start and no project, in brief.handoff auto: when Orbit reports it open, the project is the one of the newest SCR whose Next cites it, else the one its legacy handoff thread was recorded in; otherwise the brief is the manual output."
     },
     "session_start": {
       "type": "boolean",
