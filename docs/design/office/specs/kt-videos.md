@@ -301,6 +301,13 @@ Questions and gotchas use `text` and `cites`.
 
 `dropped` counts `uncited`, `dangling` and `tangent` items. Citations must name
 supplied source turn/frame anchors; any invalid citation drops the whole item.
+A cite is read for the anchor it names, however it is written: `#t=00:01:03`,
+`t=00:01:03`, `[#L13]` or a turn link copied from the transcript,
+`[turn](#t=00:01:03)`. The prompt shows each entry without its inline links, so
+the model sees only the supplied anchors ([ORB-21416]). A meeting reply that
+offers decisions or to-dos and keeps none is refused as
+`meeting_extract_dropped_all`: nothing is written, filed or fed to the ledger,
+and the meeting stays unprocessed rather than summarized as empty.
 Tangent claims, runbook steps and terms are excluded; cited gotchas remain.
 The source receives `chapters.md`, the bootstrap-compatible `digest.json`,
 actual extraction provenance and `extract-result.json`. Completed window replies

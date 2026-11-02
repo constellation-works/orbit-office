@@ -976,6 +976,7 @@ dependencies = [
 name = "office-tools"
 version = "0.1.0"
 dependencies = [
+ "jsonschema",
  "office-core",
  "office-testkit",
  "serde_json",

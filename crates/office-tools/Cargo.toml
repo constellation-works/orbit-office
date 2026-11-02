@@ -19,6 +19,7 @@ office-core = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+jsonschema = { workspace = true }
 office-testkit = { workspace = true }
 
 [lints]

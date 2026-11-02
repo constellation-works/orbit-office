@@ -76,17 +76,112 @@
       }
     },
     "ledger": {
-      "type": "object",
-      "description": "Meeting profile only: decisions appended to the decision ledger, decisions skipped with their refusal code, and contradictions filed as owner:you to-dos (specs/scribe.md, Meeting decisions).",
-      "properties": {
-        "appended": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
+      "description": "Meeting profile only: decisions appended to the decision ledger, decisions skipped with their refusal code, and contradictions filed as owner:you to-dos (specs/scribe.md, Meeting decisions). A reconcile of a meeting filed before filing.json reports only reconciled_without_record.",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "appended": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "skipped": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "index",
+                  "code"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "conflicts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "task": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "matter": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "entries",
+                  "task",
+                  "matter"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "checked": {
+              "type": "boolean"
+            },
+            "private": {
+              "type": "boolean"
+            },
+            "conflicts_unread": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "appended",
+            "skipped",
+            "conflicts",
+            "checked"
+          ],
+          "additionalProperties": false
         },
-        "skipped": {
+        {
+          "type": "object",
+          "properties": {
+            "reconciled_without_record": {
+              "const": true
+            }
+          },
+          "required": [
+            "reconciled_without_record"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "reconciled": {
+      "const": true,
+      "description": "Meeting reconcile only: the saved extraction was filed again without a model call."
+    },
+    "filing": {
+      "type": "object",
+      "description": "Meeting profile only: one outcome per extracted to-do, in order. complete is false while any item is not filed; next is then the reconcile call that finishes it (ORB-21375).",
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "items": {
           "type": "array",
           "items": {
             "type": "object",
@@ -95,62 +190,69 @@
                 "type": "integer",
                 "minimum": 0
               },
-              "code": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "index",
-              "code"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "conflicts": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "entries": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "minItems": 2,
-                "maxItems": 2
+              "title": {
+                "type": "string"
+              },
+              "workspace": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "filed",
+                  "refused",
+                  "outcome_unknown",
+                  "failed"
+                ]
               },
               "task": {
                 "type": "string",
                 "minLength": 1
               },
-              "matter": {
-                "type": "string"
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reconciled": {
+                "const": true
               }
             },
             "required": [
-              "entries",
-              "task",
-              "matter"
+              "index",
+              "title",
+              "workspace",
+              "status"
             ],
             "additionalProperties": false
           }
         },
-        "checked": {
-          "type": "boolean"
-        },
-        "private": {
-          "type": "boolean"
-        },
-        "conflicts_unread": {
-          "type": "boolean"
+        "next": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "profile": {
+              "const": "meeting"
+            },
+            "reconcile": {
+              "const": true
+            }
+          },
+          "required": [
+            "id",
+            "profile",
+            "reconcile"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
-        "appended",
-        "skipped",
-        "conflicts",
-        "checked"
+        "complete",
+        "items"
       ],
       "additionalProperties": false
     }
@@ -172,6 +274,21 @@
       "required": [
         "profile",
         "processed"
+      ],
+      "properties": {
+        "profile": {
+          "const": "meeting"
+        }
+      }
+    },
+    {
+      "required": [
+        "id",
+        "profile",
+        "reconciled",
+        "to_dos",
+        "ledger",
+        "filing"
       ],
       "properties": {
         "profile": {

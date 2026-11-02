@@ -629,3 +629,120 @@ fn a_meeting_decision_enters_the_ledger_as_its_plain_statement_cited_at_its_turn
             .starts_with("[00:01:03] A: Decision.")
     );
 }
+
+/// A transcribed meeting (`[hh:mm:ss] Speaker: … [turn](#t=…)` turns) and
+/// its fixture ports, with every Orbit call answered.
+fn transcribed_meeting(
+    reply: Value,
+    orbit_replies: Vec<office_core::Result<Value>>,
+) -> (
+    office_core::ports::Ports<'static>,
+    office_testkit::fakes::FakeModels,
+) {
+    let (mut ports, mut models) = fixture(Settings::default(), false, false);
+    let library = FakeLibrary::initialized();
+    library.write_document(Path::new(PATH), &format!("---\nid: {ID}\nkind: meeting\ntitle: Sync\nsensitivity: normal\n---\n[00:00:00] A: Morning. [turn](#t=00:00:00)\n\n[00:00:49] A: Decision. We keep fifty orders per page. [turn](#t=00:00:49)\n\n[00:01:10] B: I'll tell the access desk. [turn](#t=00:01:10)\n")).unwrap();
+    ports.library = Box::new(library);
+    models.extracted = reply;
+    ports.models = Box::new(models.clone());
+    let orbit = FakeOrbit::default();
+    for reply in orbit_replies {
+        orbit.push_response(reply);
+    }
+    ports.orbit = Box::new(orbit);
+    (ports, models)
+}
+
+#[test]
+fn meeting_extract_and_reconcile_outputs_conform_to_the_declared_response_schema() {
+    // ORB-21415: #354 added `filing` (and reconcile's output) without the
+    // schema, so Orbit refused every meeting extract's output.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugin/.orbit-plugin/schemas/extract.response.json");
+    let schema: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    let (ports, _) = transcribed_meeting(
+        json!({"summary":"Sync",
+        "decisions":[{"text":"Keep fifty orders per page","cites":["#t=00:00:49"]}],
+        "to_dos":[{"text":"Tell the access desk","owner":"you","cites":["#t=00:01:10"]}]}),
+        // Open conflicts, then the to-do's filing fails; reconcile lists
+        // none existing and files it.
+        vec![
+            Ok(json!({"tasks":[]})),
+            Err(office_core::Error::OrbitOutcomeUnknown),
+            Ok(json!({"tasks":[]})),
+            Ok(json!({"id":"task-fixture"})),
+        ],
+    );
+    let extracted = call(
+        &ports,
+        "office.extract",
+        json!({"id":ID,"profile":"meeting"}),
+    );
+    assert_eq!(extracted["ok"], true, "{extracted}");
+    let reconciled = call(
+        &ports,
+        "office.extract",
+        json!({"id":ID,"profile":"meeting","reconcile":true}),
+    );
+    assert_eq!(reconciled["ok"], true, "{reconciled}");
+    for output in [&extracted["output"], &reconciled["output"]] {
+        let errors: Vec<String> = validator
+            .iter_errors(output)
+            .map(|e| e.to_string())
+            .collect();
+        assert!(errors.is_empty(), "{errors:?}\n{output}");
+    }
+}
+
+#[test]
+fn meeting_items_citing_copied_turn_links_are_kept_and_an_all_dropped_reply_holds_the_meeting() {
+    // ORB-21416: a hosted reply cited in the transcript's own link form
+    // (`[turn](#t=…)`, `[#L…]`); every item failed the exact anchor match and
+    // the meeting was marked processed with no decisions or to-dos.
+    let (ports, _) = transcribed_meeting(
+        json!({"summary":"Sync [turn](#t=00:00:00)",
+        "decisions":[{"text":"Keep fifty orders per page","cites":["[turn](#t=00:00:49)"]}],
+        "to_dos":[{"text":"Tell the access desk","owner":"you","cites":["[#L5]","t=00:01:10"]}]}),
+        vec![Ok(json!({"tasks":[]})), Ok(json!({"id":"task-fixture"}))],
+    );
+    let output = call(
+        &ports,
+        "office.extract",
+        json!({"id":ID,"profile":"meeting"}),
+    );
+    assert_eq!(output["ok"], true, "{output}");
+    let result = &output["output"]["result"];
+    assert_eq!(result["decisions"][0]["cites"], json!(["#t=00:00:49"]));
+    assert_eq!(result["to_dos"][0]["cites"], json!(["#L5", "#t=00:01:10"]));
+    assert_eq!(output["output"]["dropped"]["dangling"], 0);
+
+    let (ports, _) = transcribed_meeting(
+        json!({"summary":"Sync",
+        "decisions":[{"text":"Keep fifty orders per page","cites":["#t=09:00:00"]}],"to_dos":[]}),
+        Vec::new(),
+    );
+    let held = call(
+        &ports,
+        "office.extract",
+        json!({"id":ID,"profile":"meeting"}),
+    );
+    assert_eq!(
+        held["error"]["code"], "meeting_extract_dropped_all",
+        "{held}"
+    );
+    assert!(
+        ports
+            .library
+            .source_sidecar(ID, "extract-result.json")
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        ports
+            .library
+            .source_sidecar(ID, "summary.md")
+            .unwrap()
+            .is_none()
+    );
+}

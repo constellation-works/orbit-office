@@ -192,7 +192,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         };
     let render = |rows: Vec<&Entry>| {
         rows.iter()
-            .map(|e| format!("{} {}", e.anchor, e.text))
+            .map(|e| format!("{} {}", e.anchor, without_cites(&e.text)))
             .collect::<Vec<_>>()
             .join("\n\n")
     };
@@ -275,6 +275,13 @@ fn run(call: &Call<'_>) -> Result<Value> {
     };
     let (reply, revision) = reply;
     let mut result = reply.value;
+    let items = |result: &Value| {
+        ["decisions", "to_dos"]
+            .iter()
+            .map(|key| result[*key].as_array().map_or(0, Vec::len))
+            .sum::<usize>()
+    };
+    let offered = items(&result);
     filter(
         &mut result,
         &anchors,
@@ -282,6 +289,17 @@ fn run(call: &Call<'_>) -> Result<Value> {
         profile,
         &known_tangents,
     )?;
+    // A reply that offered items but kept none is a failed extraction, not
+    // an empty meeting: hold the source unprocessed, with the reason
+    // (ORB-21416). Nothing is written, filed or fed to the ledger.
+    if profile == "meeting" && offered > 0 && items(&result) == 0 {
+        return Err(video::refusal(
+            "meeting_extract_dropped_all",
+            &format!(
+                "every one of the {offered} decisions and to-dos the model returned was dropped ({dropped}); the meeting stays unprocessed"
+            ),
+        ));
+    }
     let mut files = Vec::new();
     if profile == "kt" {
         let chapters = list(&result, "chapters")?
@@ -533,6 +551,33 @@ fn attach(call: &Call<'_>, id: &str, task: &str, output: &Value) -> Result<()> {
     cleanup?;
     Ok(())
 }
+/// Text without inline citations: markdown links to an anchor
+/// (`[turn](#t=00:01:03)`) and bracketed anchors (`[#L17]`).
+pub(super) fn without_cites(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..open]);
+        let tail = &rest[open..];
+        let cite = tail.find(']').and_then(|close| {
+            let label = &tail[1..close];
+            if label.starts_with('#') {
+                return Some(close + 1);
+            }
+            let link = tail[close + 1..].strip_prefix("(#")?;
+            link.find(')').map(|end| close + 3 + end + 1)
+        });
+        match cite {
+            Some(len) => rest = &tail[len..],
+            None => {
+                out.push('[');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
 fn clean(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -604,6 +649,24 @@ fn timeline(body: &str, frames: &str, meeting: bool) -> Vec<Entry> {
     rows.sort_by_key(|e| e.seconds);
     rows
 }
+/// The anchor a cite names, however the model wrote it: `#t=00:01:03`,
+/// `t=00:01:03`, `[#L13]` or a copied turn link `[turn](#t=00:01:03)`
+/// (ORB-21416: a transcribed turn carries that link, and a reply citing in
+/// its form lost every item as dangling).
+fn anchor_of(cite: &str) -> String {
+    let cite = cite.trim();
+    let inner = cite
+        .rfind("(#")
+        .and_then(|start| cite[start + 1..].strip_suffix(')'))
+        .or_else(|| cite.strip_prefix('[').and_then(|c| c.strip_suffix(']')))
+        .unwrap_or(cite)
+        .trim();
+    if inner.starts_with('#') {
+        inner.to_owned()
+    } else {
+        format!("#{inner}")
+    }
+}
 fn increment(dropped: &mut Value, reason: &str) {
     dropped[reason] = json!(dropped[reason].as_u64().unwrap_or(0) + 1);
 }
@@ -614,6 +677,15 @@ fn retain_cited(
     gotcha: bool,
     dropped: &mut Value,
 ) {
+    for item in items.iter_mut() {
+        if let Some(cites) = item["cites"].as_array_mut() {
+            for cite in cites.iter_mut() {
+                if let Some(anchor) = cite.as_str().map(anchor_of) {
+                    *cite = json!(anchor);
+                }
+            }
+        }
+    }
     items.retain(|item| {
         let Some(cites) = item["cites"].as_array().filter(|a| !a.is_empty()) else {
             increment(dropped, "uncited");
