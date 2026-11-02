@@ -33,7 +33,7 @@ chmod +x "$tmp/bin/orbit"
 export PATH="$tmp/bin:$PATH"
 
 run_install() {
-    make -s -C "$root" plugin-install MAKE=/bin/true "$@"
+    make -s -C "$root" plugin-install MAKE=true "$@"
 }
 
 # With a workspace, office.init runs in that workspace after enable.

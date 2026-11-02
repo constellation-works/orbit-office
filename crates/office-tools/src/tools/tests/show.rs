@@ -543,7 +543,7 @@ fn source_show_refuses_malformed_provenance_and_chapters_without_echoing_values(
     ] {
         let library = fixture(b"video", false, Default::default());
         let markdown = format!(
-            "---\nid: {ID}\nkind: note\ntitle: Fixture\nsensitivity: normal\nderived_by: {provenance}\n---\nBody."
+            "---\nid: {ID}\nkind: doc\ntitle: Fixture\nsensitivity: normal\nderived_by: {provenance}\n---\nBody."
         );
         library
             .write_document(Path::new(SOURCE_PATH), &markdown)

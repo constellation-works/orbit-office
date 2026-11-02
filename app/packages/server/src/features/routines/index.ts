@@ -28,7 +28,7 @@ function lastFire(value: unknown): { kind: "fired" | "skipped"; at: string; task
   if (!object(value) || typeof value.at !== "string" || (value.kind !== "fired" && value.kind !== "skipped")) return null;
   return { kind: value.kind, at: value.at, task_status: typeof value.task_status === "string" ? value.task_status : null };
 }
-const kinds = ["video", "meeting", "chat", "email", "doc", "receipt", "bill", "conversation", "note"];
+const kinds = ["video", "meeting", "chat", "email", "doc", "receipt", "bill", "conversation", "decisions"];
 
 export function createRoutinesFeature(client: OrbitToolClient, options: { pluginRoots?: readonly string[] } = {}): Feature {
   let names: DefinitionNames | undefined;

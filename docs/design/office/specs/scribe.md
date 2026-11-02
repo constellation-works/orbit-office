@@ -6,8 +6,11 @@ last_validated: 2026-11-01
 
 # Spec: Scribe v2
 
-Status: designed ([ORB-21083]), not built. Scribe v1 is built and still
-runs until the slices in [Build order](#build-order) land. The v1 text
+Status: designed ([ORB-21083]). Slice S1 is built ([ORB-21114]): the
+[decision ledger](#decision-ledger) store, `office.capture`'s `decision`
+input and the [`note` retirement](#retiring-sourcesnote). The other slices
+are not built. Scribe v1 is built and still runs until the slices in
+[Build order](#build-order) land. The v1 text
 this spec replaces is at `git show d398471:docs/design/office/specs/scribe.md`,
 and its decisions stay in [4_decisions.md](../4_decisions.md#scribe-v1-commanded-capture-into-one-tagged-file-per-session).
 The v2 decisions are
@@ -284,9 +287,17 @@ replaces `note` ([Retiring `sources/note`](#retiring-sourcesnote)).
 - **Append-only.** One commit per append, never edited or removed, like
   conversation sources. A correction or a change of mind is a new entry
   with `reverses:`.
-- **Front matter:** `id`, `kind: decisions`, `scope`, `created_at`,
-  `sensitivity` (always `normal`; see [Privacy](#privacy)) and
-  `moved_sources` (the note ids migrated in, mapped to their entry ids).
+- **Front matter:** `id`, `kind: decisions`, `title` (`Decisions
+  (<scope>)`), `scope`, `created_at`, `sensitivity` (always `normal`; see
+  [Privacy](#privacy)) and `moved_sources` (the note ids migrated in,
+  mapped to their entry ids). A ledger whose front matter, ids or entry
+  sequence disagree is refused (`decision_ledger_invalid`), never skipped.
+- **Reads.** `office.source-show` of a ledger id returns its body and
+  every entry under `decisions`; of an entry id, the entry's quote as the
+  body and that one entry. Each entry carries its derived `reversed_by`,
+  its `ledger` id and its `line`. A bare entry id is a valid citation (the
+  entry's quote is its body, so `dec-<scope>-<n>#L<n>` anchors into the
+  quote); `decisions-<scope>#L<n>` anchors into the ledger file's body.
 - **Not the conversation decision log.** The per-session conversation
   source that [sessions.md](./sessions.md#decision-log) calls the
   "decision log" stays under `sources/conversation/` and keeps its name.
@@ -330,7 +341,18 @@ author (`decided_by_mismatch`).
 
 **Outside a scribed session**, an agent or the user appends a decision
 with `office.capture` and a `decision` input carrying the same fields
-(`ref` then names a source anchor or a task comment). This replaces
+without `id` (assigned on append) or `reversed_by` (derived). `ref` then
+names a source anchor (`<source-id>#<anchor>`) or a task comment
+(`orbit://task/<task-id>#comment-<n>`, read through Orbit); `source` is
+set from it (`orbit-task:<task-id>` for a comment), and a different
+`source` is refused. Every verbatim field is checked against its ref
+(`quote_mismatch`), an unreadable ref is refused
+(`decision_ref_unresolved`), a ref to a private source is refused unless
+the entry is `private` (`decision_source_private`), `decided_by: model`
+is refused (`decided_by_mismatch`), and `reverses` naming no existing
+entry is refused (`decision_not_found`). `kind: decisions` with text is
+refused (`decision_input_required`). The append takes the writer lock
+and commits once. This replaces
 v1's "append to the decision log" rule ([Retiring
 `sources/note`](#retiring-sourcesnote)).
 
@@ -804,13 +826,25 @@ Retired outright, with no compatibility window (D12).
   kind list is needed.
 - **Existing notes.** The five note sources in the Library (all Daniel's
   directions of 2026-11-01, including the two this spec cites) move into
-  the decision ledgers. Each becomes one entry, with `options` marked
-  unrecoverable unless the note states them, `decided_by: human`, and
-  `source` set to its original `src-…` id. The note directories are
-  removed in the same commit. The ledger's `moved_sources` maps each old
-  id to its entry, and citation resolution, `office.source-show` and
-  search resolve an old `src-…` id (with or without an `#L<n>` anchor) to
-  that entry. Every existing citation therefore still resolves.
+  the decision ledgers. Each becomes one entry: the note's title as the
+  `question` (`question_by: scribe`), `options: "unrecoverable"`, its body
+  verbatim as the `quote`, its first line as `chosen`, `ref`
+  `<src-id>#L1`–`#L<n>`, `decided_by: human`, `decided_at` from its
+  `occurred_at` (else `captured_at`, else the migration time), and
+  `source` set to its original `src-…` id. A note tagged
+  `project:<name>` goes to that project's ledger; any other goes to
+  `global`. A private note is left in place, since a ledger is always
+  `normal`. The note directories are removed in the same commit. The
+  ledger's `moved_sources` maps each old id to its entry, and citation
+  resolution and `office.source-show` resolve an old `src-…` id (with or
+  without an `#L<n>` anchor, which counts lines of the original body, now
+  the quote) to that entry, with `moved_from` naming the old id. Search
+  finds the text in its ledger. Every existing citation therefore still
+  resolves.
+- **Running it.** The migration is a step of `office.init`, like the
+  legacy-layout move: an operator runs `office.init` on the Library, and a
+  re-run with nothing left to move reports `already_initialized` and
+  commits nothing.
 - **The AGENTS.md rule.** The constellation root `AGENTS.md` says to
   "append Daniel's decisions, directions (verbatim) and facts to the
   session's decision log with `office.capture`". Its replacement says:
@@ -888,8 +922,8 @@ requires.
 
 | Slice | Task | Depends on | Delivers |
 |---|---|---|---|
-| S1 | [ORB-21114] | — | Decision ledger store (`decisions` kind, `sources/decisions/<scope>.md`, `dec-` ids and citation resolution, the D13 schema), `office.capture` `decision` input, and the `note` retirement and migration (D4, D12, D13). |
-| S2 | [ORB-21115] | — | Built: `scribe:` settings block (tags, cadence), `office.config-set` keys and validation, defaults (D3, D9). |
+| S1 (built) | [ORB-21114] | — | Decision ledger store (`decisions` kind, `sources/decisions/<scope>.md`, `dec-` ids and citation resolution, the D13 schema), `office.capture` `decision` input, and the `note` retirement and migration (D4, D12, D13). |
+| S2 (built) | [ORB-21115] | — | `scribe:` settings block (tags, cadence), `office.config-set` keys and validation, defaults (D3, D9). |
 | S3 | [ORB-21116] | S2 | `preferences` template and pages, proposal-time contradiction check in `office.proposal-create`, apply mode (D3, D4, D5). |
 | S4 | [ORB-21117] | S1, S2, S3 | SCR v2 format, pending and append v2 (markers and the trust rule, sections, `T<n>` entries, `previous`, title from summary, ledger and page writes), query and ask over the new stores (D2, D6). |
 | S5 | [ORB-21118] | S4 | Claude Code plugin: opt-in `/scribe on\|off\|update\|status\|tags`, Stop-hook cadence, orchestrator on/ask, routing (proposals, scheduling markers as proposed tasks, `owner:you` to-dos, `orbit_task` tags) (D1, D2, D10). |
@@ -918,7 +952,7 @@ requires.
 - [ORB-21079] — built first-pass scribe titles and the humanized-slug fallback.
 - [ORB-21089] — plans Orbit's decision model, a consumer of decision precedent.
 - [ORB-21090] — plans the office precedent provider over the decision ledger.
-- [ORB-21114] — proposed slice S1: decision ledger store, capture `decision` input and the `note` retirement.
+- [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
 - [ORB-21116] — proposed slice S3: preference pages, contradiction check and apply mode.
 - [ORB-21117] — proposed slice S4: SCR v2, markers and the trust rule, query and ask over the new stores.

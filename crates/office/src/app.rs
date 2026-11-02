@@ -594,6 +594,13 @@ impl Library for RealLibrary {
     ) -> office_core::Result<office_core::ports::SourceOutcome> {
         LibraryStore::capture_source(&self.store()?, request)
     }
+    fn append_decision(
+        &self,
+        decision: &office_core::domain::source::decisions::Decision,
+        captured_at: &str,
+    ) -> office_core::Result<office_core::ports::DecisionOutcome> {
+        <LibraryStore as Library>::append_decision(&self.store()?, decision, captured_at)
+    }
     fn session_transcript(
         &self,
         path: &str,

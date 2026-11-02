@@ -73,6 +73,7 @@ run_install() { # run_install <home> <extra env...> -- <args...>
         STUB_INIT_FIXTURES="$INIT_FIXTURES" \
         STUB_ORBIT_SRC="$BIN/orbit" \
         ORBIT_OFFICE_OS=linux \
+        ORBIT_OFFICE_APP_REBUILD=0 \
         $_uv_env $_py_env $_envs \
         sh "$_script" $_yes "$@" < /dev/null)
 }

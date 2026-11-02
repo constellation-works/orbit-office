@@ -21,7 +21,7 @@ fn store_openers() -> Vec<(&'static str, serde_json::Value)> {
         (
             "office.capture",
             serde_json::json!({
-                "kind": "note",
+                "kind": "doc",
                 "title": "Escaped fixture",
                 "text": "must not land outside the grant\n",
                 "sensitivity": "normal"

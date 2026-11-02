@@ -38,13 +38,13 @@ fn updates_persist_through_the_library_port_and_refusals_preserve_them() {
     assert_eq!(
         call(
             &ports,
-            json!({"key": "sensitivity.note", "value": "private"})
+            json!({"key": "sensitivity.decisions", "value": "private"})
         )["ok"],
         true
     );
     let updated = ports.library.settings().unwrap();
     assert_eq!(updated.retention["meeting"], Some(30));
-    assert_eq!(updated.sensitivity["note"].as_str(), "private");
+    assert_eq!(updated.sensitivity["decisions"].as_str(), "private");
 }
 
 #[test]

@@ -3,8 +3,20 @@
   "title": "office.source-show response",
   "type": "object",
   "properties": {
-    "layer": {"type": "string", "enum": ["own", "shared"]},
-    "shared_by": {"type": ["string", "null"], "description": "Sharing member; null for own documents."},
+    "layer": {
+      "type": "string",
+      "enum": [
+        "own",
+        "shared"
+      ]
+    },
+    "shared_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Sharing member; null for own documents."
+    },
     "id": {
       "type": "string"
     },
@@ -331,8 +343,16 @@
         "additionalProperties": false
       }
     },
-    "summary": { "type": ["string", "null"] },
-    "content_withheld": { "type": "boolean", "description": "Present and true only for a private source: body, text, span, summary and derived chapter/frame/gotcha text are withheld; metadata only is returned." },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "content_withheld": {
+      "type": "boolean",
+      "description": "Present and true only for a private source: body, text, span, summary and derived chapter/frame/gotcha text are withheld; metadata only is returned."
+    },
     "gotchas": {
       "type": "array",
       "items": {
@@ -354,6 +374,179 @@
         ],
         "additionalProperties": false
       }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "dec-<scope>-<n>, permanent."
+          },
+          "question": {
+            "type": "string"
+          },
+          "question_ref": {
+            "type": "string"
+          },
+          "question_by": {
+            "const": "scribe"
+          },
+          "options": {
+            "oneOf": [
+              {
+                "const": "unrecoverable"
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "ref": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "ref"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            ]
+          },
+          "chosen": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "because": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "text",
+              "ref"
+            ],
+            "additionalProperties": false
+          },
+          "scope": {
+            "type": "string",
+            "pattern": "^(global|project:[a-z0-9]+(-[a-z0-9]+)*)$"
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "task_type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "workspace": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "task": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "risk_tier": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "decided_by": {
+            "enum": [
+              "human",
+              "agent",
+              "model"
+            ]
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reverses": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "private": {
+            "type": "boolean"
+          },
+          "reversed_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Derived on read: the first later entry whose reverses names this one. Never written."
+          },
+          "ledger": {
+            "type": "string",
+            "description": "The ledger id, decisions-<scope>."
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The entry's line in the ledger body (#L<n>)."
+          }
+        },
+        "required": [
+          "id",
+          "ref",
+          "scope",
+          "context",
+          "decided_by",
+          "decided_at",
+          "reverses",
+          "source",
+          "reversed_by",
+          "ledger",
+          "line"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Present only for a decision ledger (kind decisions): every entry of a ledger id, or the one entry of an entry id or a migrated note's former id, each with derived reversed_by."
+    },
+    "moved_from": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Present only for a decision ledger: the migrated note id this read resolved through, else null."
     }
   },
   "required": [

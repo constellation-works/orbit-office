@@ -145,7 +145,7 @@ impl Fixture {
 #[test]
 fn event_capture_copies_metadata_refuses_unknown_and_allows_repeated_notes() {
     let f = Fixture::new();
-    let input = json!({"event_key":"fixture-event", "text":"Ship the release.", "title":"Ignored", "kind":"note", "sensitivity":"normal", "participants":["Ignored"], "occurred_at":"2000-01-01T00:00:00Z"});
+    let input = json!({"event_key":"fixture-event", "text":"Ship the release.", "title":"Ignored", "kind":"doc", "sensitivity":"normal", "participants":["Ignored"], "occurred_at":"2000-01-01T00:00:00Z"});
     let first = f.capture(input.clone());
     assert_eq!(first["kind"], "meeting");
     assert_eq!(first["sensitivity"], "private");

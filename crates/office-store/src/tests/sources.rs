@@ -270,7 +270,7 @@ fn processing_persists_immutable_versions_sidecars_provenance_and_indexed_latest
 #[test]
 fn capture_writes_each_kind_under_its_kind_directory() {
     let (_dir, store, _workspace) = setup();
-    for (kind, text) in [("chat", "hello from chat"), ("note", "a plain note")] {
+    for (kind, text) in [("chat", "hello from chat"), ("doc", "a plain doc")] {
         let mut req = request();
         req.kind = Some(kind.to_string());
         req.title = Some(format!("{kind} title"));
@@ -422,6 +422,7 @@ fn processing_refuses_symlinked_sidecars_and_versions_without_writing_outside() 
     let (dir, store, workspace) = setup();
     let source = store
         .capture_source(&CaptureSourceRequest {
+            kind: Some("doc".into()),
             text: Some("Source".into()),
             ..request()
         })

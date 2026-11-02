@@ -10,7 +10,7 @@
     },
     "kind": {
       "type": "string",
-      "description": "Source kind: video, meeting, chat, email, doc, receipt, bill, conversation or note. Inferred as video for video uploads or doc for document uploads when absent."
+      "description": "Source kind: video, meeting, chat, email, doc, receipt, bill or conversation. Inferred as video for video uploads, doc for document uploads or conversation for entries when absent; plain text with no kind is refused (source_kind_required). decisions is refused here: a decision goes in the decision input."
     },
     "title": {
       "type": "string",
@@ -317,6 +317,10 @@
     "structured_handoff": {
       "$ref": "#/$defs/structured_handoff",
       "description": "Session mode with selections only: structured scribe offer, incompatible with handoff. With scribe.handoff enabled it must pass the same structure/budget rules, add a plan-changing entry and cite valid local source anchors. Otherwise dropped with a reason; other evidence still lands."
+    },
+    "decision": {
+      "$ref": "#/$defs/decision",
+      "description": "Append one entry to the scope's decision ledger (sources/decisions/<scope>.md), outside a scribed session. Cannot be combined with any other field. Every verbatim field (quote, each option, question with question_ref, because) is checked against the text its ref names: a source anchor (<source-id>#<anchor>) or a task comment (orbit://task/<task-id>#comment-<n>, 1-based, oldest first); a mismatch is refused with quote_mismatch. The entry id (dec-<scope>-<n>) is assigned on append; reversed_by is derived on read, never written."
     }
   },
   "additionalProperties": false,
@@ -463,6 +467,155 @@
       "required": [
         "objective",
         "next"
+      ],
+      "additionalProperties": false
+    },
+    "decision": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "What was being decided: the verbatim question with question_ref, or a one-line restatement with question_by: scribe. Absent on a private entry."
+        },
+        "question_ref": {
+          "type": "string",
+          "description": "Ref of the message that asked the question verbatim."
+        },
+        "question_by": {
+          "const": "scribe",
+          "description": "Marks question as a restatement."
+        },
+        "options": {
+          "oneOf": [
+            {
+              "const": "unrecoverable"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "text",
+                  "ref"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "description": "The options considered, each verbatim with its ref, or unrecoverable when the evidence does not state them. Never invented."
+        },
+        "chosen": {
+          "type": "string",
+          "description": "The chosen option: a verbatim span of quote."
+        },
+        "quote": {
+          "type": "string",
+          "description": "The decision message's verbatim text."
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where the decision was made: <source-id>#<anchor> or orbit://task/<task-id>#comment-<n>."
+        },
+        "because": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "text",
+            "ref"
+          ],
+          "additionalProperties": false,
+          "description": "The stated rationale, verbatim with its ref, only when one was stated."
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^(global|project:[a-z0-9]+(-[a-z0-9]+)*)$",
+          "description": "global or project:<name>; names the ledger."
+        },
+        "context": {
+          "type": "object",
+          "properties": {
+            "task_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "task": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "risk_tier": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "description": "The Orbit assignment; each field null when unknown, never guessed. Defaults to all null."
+        },
+        "decided_by": {
+          "enum": [
+            "human",
+            "agent"
+          ],
+          "description": "human only for a user's own decision; agent for an agent's. model is refused (decided_by_mismatch)."
+        },
+        "decided_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The decision message's time, RFC 3339 with an offset."
+        },
+        "reverses": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The dec-<scope>-<n> entry this one overturns; it must exist."
+        },
+        "source": {
+          "type": "string",
+          "description": "Optional; must equal the source the ref names (the source id, or orbit-task:<task-id>)."
+        },
+        "private": {
+          "type": "boolean",
+          "description": "A reference-only entry: no question, options, chosen, quote or because."
+        }
+      },
+      "required": [
+        "ref",
+        "scope",
+        "decided_by",
+        "decided_at"
       ],
       "additionalProperties": false
     }

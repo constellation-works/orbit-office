@@ -1,3 +1,4 @@
+mod decisions;
 mod endpoint;
 mod knowledge;
 mod proposal;

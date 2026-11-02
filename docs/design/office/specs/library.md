@@ -109,6 +109,11 @@ a second workspace or a repair. Fresh workspaces use the office preset to suppre
    then reindexes. The move is idempotent: a re-run moves nothing and
    makes no commit, and a source whose destination already exists is
    left in place. Reads accept the legacy layout until the move runs.
+   It then moves each retired `note` source that is not private into the
+   [decision ledgers](./scribe.md#retiring-sourcesnote), records its old
+   id in the ledger's `moved_sources`, and removes its directory. This
+   move is idempotent too: an id already in `moved_sources` is skipped,
+   and a re-run with nothing left makes no commit.
 7. Commits whatever it created ("Initialize the Library"). When
    `.office/state` is tracked, it removes that path from the index with
    `git rm -r --cached` and commits the removal together with the
@@ -171,11 +176,19 @@ resolution scan both this layout and the legacy
 migration (step 6 above) has moved a legacy source into its kind
 directory.
 
+The `decisions` kind is the one single-file layout:
+`sources/decisions/<project>.md` and `sources/decisions/global.md`, one
+append-only ledger per scope, id `decisions-<scope>`, one
+`dec-<scope>-<n>` entry per line. Enumeration, the index, search,
+`office.source-show` and citation resolution read it beside the other
+layouts; entry ids and the old ids of migrated notes resolve to their
+entries ([scribe.md](./scribe.md#decision-ledger)).
+
 **`source.md` frontmatter:**
 
 ```yaml
 id: src-20261028-acme-qbr
-kind: meeting            # video | meeting | chat | email | doc | receipt | bill | conversation | note
+kind: meeting            # video | meeting | chat | email | doc | receipt | bill | conversation (decisions is a ledger, below)
 title: Acme QBR
 occurred_at: 2026-10-28T14:00:00-04:00
 captured_at: 2026-10-28T15:02:11-04:00
@@ -280,15 +293,16 @@ reports `unshared: true` when approval was revoked (otherwise false) ([shared-li
 - **Email, doc:** paragraphs. The anchor is `#L…`. Converted documents add `#slide=<n>` (PowerPoint) and `#page=<n>` (PDF); conversions are in [library-bootstrap.md](./library-bootstrap.md#document-capture).
 - **Digest:** any source may carry `digest.json` beside `source.md`: the per-source summary, subjects, cited claims, procedures and terms that the bootstrap's consolidation reads ([library-bootstrap.md](./library-bootstrap.md#stage-1-a-digest-per-source-cheap)).
 - **Receipt, bill:** extracted fields as a YAML block plus the raw OCR text.
+- **Decisions:** one ledger line per decision, `- <id> <time> #decision <JSON>` in the D13 schema; `#L<n>` anchors a ledger line, and an entry id cited bare or with `#L<n>` resolves to its verbatim quote ([scribe.md](./scribe.md#decision-ledger)).
 - **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), fact the user stated, action, open question, resolution or handoff, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The session-end cheap crew extracts transcript evidence; the orchestrator writes rolling handoffs and explicit resolutions ([sessions.md](./sessions.md#transcript-extraction)).
 
 **Rules:**
 
 - **Immutable versions.** Model transcription publishes `v1.md`, then corrections or additional completed chunks publish `v2.md`, `v3.md`, and so on, with `supersedes` set. Existing version files are never replaced. `source.md` is the materialized current view for display and indexing; its update and the new snapshot share one writer-locked journal decision. Citations name a version when it matters, otherwise the latest.
 - **Dedupe.** If the `sha256` of the original, or of the normalized pasted text, matches an existing source, capture returns that source instead of creating a new one.
-- **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. Short directives typed by the user are not captured separately: they go in the `conversation` source.
+- **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. A paste names its `kind`: plain text with no kind (and no file, entries or `append_to` to infer one from) is refused with `source_kind_required`, which names `chat`, `email`, `doc` and the `decision` input. A decision goes in `office.capture`'s `decision` input, which appends one ledger entry ([scribe.md](./scribe.md#decision-ledger)); `kind: decisions` with text is refused with `decision_input_required`. Short directives typed by the user are not captured separately: they go in the `conversation` source.
 - **Conversation sources.** The session-end extractor opens or updates one `conversation` source per transcript session, with nullable `orchestrator`, `model` and `session_id` provenance validated by the plugin. Directions and facts copy user evidence verbatim except credential scrubbing; ambiguous decisions remain open. Repeated session/hash inputs make no commit; changed transcripts bump `version`/`supersedes` and snapshot the previous source. Instead of an end-of-session summary, the agent keeps a rolling `handoff` entry current, and the next session starts from `office.session-brief`, which leads with that handoff ([sessions.md](./sessions.md)). The extractor's identity is `captured_by: transcript-extractor`, separate from the session provider/model. Definition registration and the constellation SessionEnd hook are deployment prerequisites; see the session spec.
-- **Retention** is per kind and shown on the Routines screen: for example, keep meeting transcripts forever and drop the audio after 90 days. Expiry deletes only the `original.*` file and records that in the frontmatter.
+- **Retention** is per kind (`retention.<kind>` and `sensitivity.<kind>` for each kind above plus `decisions`; a config written before the `note` kind was retired still loads, and `note` keys are ignored on read and refused on write) and shown on the Routines screen: for example, keep meeting transcripts forever and drop the audio after 90 days. Expiry deletes only the `original.*` file and records that in the frontmatter.
 
 ## Knowledge pages
 

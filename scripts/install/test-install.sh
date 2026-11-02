@@ -80,6 +80,12 @@
 #  25. under umask 0002 the installer creates and replaces its own
 #      install-state at 0600, reaches and retains the Library on rerun,
 #      and still refuses a group-writable pre-existing state file
+#  26. a clone install upgrades the app: a changed HEAD builds that commit,
+#      restarts the login service (stub systemctl and launchctl) and checks
+#      the restarted app reports the commit; a failed build leaves the
+#      running service and files untouched; a wrong reported commit
+#      restores the previous files; none of the three records the commit,
+#      and a repeat at the built commit changes nothing
 #  22. an fnm_multishells node symlink on PATH resolves to the stable
 #      node in both service units, with no fnm_multishells entry in the
 #      unit PATH; a non-symlink fnm_multishells wrapper as the only node
@@ -107,7 +113,8 @@ REAL_TAR=$(command -v tar) || { printf 'tar is required\n' >&2; exit 1; }
 mkdir -p "$SCRIPT_DIR/../../.orbit/tmp"
 ROOT=$(mktemp -d "$SCRIPT_DIR/../../.orbit/tmp/install-test.XXXXXX")
 ROOT=$(CDPATH='' cd -- "$ROOT" && pwd -P)
-trap 'rm -rf "$ROOT"' EXIT INT TERM
+RESPONDER_PID=""
+trap '[ -z "$RESPONDER_PID" ] || kill "$RESPONDER_PID" 2>/dev/null; rm -rf "$ROOT"' EXIT INT TERM
 
 PASS=0
 . "$SCRIPT_DIR/test/lib.sh"
@@ -424,8 +431,13 @@ done
 case " $* " in
     *" run build "*)
         if [ -n "$_prefix" ]; then
-            mkdir -p "$_prefix/packages/server/dist"
+            if [ "${STUB_APP_BUILD_FAIL:-0}" = 1 ]; then
+                printf 'stub tsc: error TS2304: Cannot find name appBuildProbe\n' >&2
+                exit 1
+            fi
+            mkdir -p "$_prefix/packages/server/dist" "$_prefix/packages/web/dist/pwa"
             printf '// stub build\n' > "$_prefix/packages/server/dist/main.js"
+            printf 'const SHELL_CACHE = "office-shell-UNSTAMPED";\n' > "$_prefix/packages/web/dist/pwa/sw.js"
         fi ;;
     *" install -g "*)
         # Simulate installing Orbit: drop the orbit stub next to npm.
@@ -457,6 +469,18 @@ case " $* " in
     *) ;;
 esac
 exit 0
+STUB
+
+# app_install.py asks `uname -s` which service manager to restart. Answer
+# for the platform the installer was told it is on (ORBIT_OFFICE_OS), so the
+# stub launchctl or systemctl is the one it reaches on any host.
+cat > "$BIN/uname" <<STUB
+#!/bin/sh
+case "\${ORBIT_OFFICE_OS:-}:\${1:-}" in
+    linux:-s) printf 'Linux\\n'; exit 0 ;;
+    macos:-s) printf 'Darwin\\n'; exit 0 ;;
+    *) exec $(command -v uname) "\$@" ;;
+esac
 STUB
 
 cat > "$BIN/launchctl" <<'STUB'
@@ -565,7 +589,7 @@ printf '#!/bin/sh\nexit 0\n' > "$_target/release/office"
 chmod +x "$_target/release/office"
 STUB
 chmod +x "$BIN/cargo"
-chmod +x "$BIN/orbit" "$BIN/npm" "$BIN/systemctl" "$BIN/launchctl" "$BIN/ffmpeg" \
+chmod +x "$BIN/orbit" "$BIN/npm" "$BIN/uname" "$BIN/systemctl" "$BIN/launchctl" "$BIN/ffmpeg" \
     "$BIN/curl" "$BIN/tar" "$BIN/uv" "$BIN/open" "$BIN/xdg-open"
 
 # A prepared app bundle for installs with no adjacent app tree (the piped
@@ -618,5 +642,6 @@ scenario_22
 scenario_23
 scenario_24
 scenario_25
+scenario_26
 
 printf 'PASS: %s checks\n' "$PASS"
