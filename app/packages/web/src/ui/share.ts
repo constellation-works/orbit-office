@@ -1,9 +1,10 @@
 /**
  * Sharing with the team (docs/design/office/specs/shared-library.md, "App"):
  * the "Shared · from Alice" and "Shared" labels, and the **Share with the
- * team** switch a page, source or artifact view carries. The switch calls
- * `office.share-set` through the app server; stopping is confirmed first,
- * and a citation refusal offers **Share these too**.
+ * team** switch a source view carries (a compact **Share** in the header of a
+ * Library page, source or output view). The switch calls `office.share-set`
+ * through the app server; stopping is confirmed first, and a citation refusal
+ * offers **Share these too**.
  */
 import type { ShareDocument, SharedSync, ShareRequest, ShareResult } from "@orbit-office/contracts";
 
@@ -79,6 +80,12 @@ export interface ShareSwitchOptions {
   shareable: boolean;
   /** A private source can't be shared; the switch says so instead. */
   private?: boolean;
+  /**
+   * A header control: the switch reads **Share**, its hint is the control's
+   * tooltip and accessible description, and confirmations and refusals open
+   * under it. A private document's switch explains itself when pressed.
+   */
+  compact?: boolean;
   /** Called after the Library changed, with the new value. */
   onChange?: (shareable: boolean) => void;
   share?: (input: ShareRequest) => Promise<ShareResult>;
@@ -115,12 +122,15 @@ function capitalized(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** The **Share with the team** switch, its hint, and a panel for confirmations and refusals. */
+let hints = 0;
+
+/** The **Share with the team** switch (or a compact **Share**), its hint, and a panel for confirmations and refusals. */
 export function shareSwitch(options: ShareSwitchOptions): HTMLElement {
   const share = options.share ?? shareDocument;
+  const compact = options.compact === true;
   let shareable = options.shareable;
-  const root = document.createElement("section");
-  root.className = "share";
+  const root = document.createElement(compact ? "div" : "section");
+  root.className = compact ? "share share--compact" : "share";
   root.setAttribute("aria-label", "Sharing");
   const label = document.createElement("label");
   label.className = "share-switch";
@@ -128,35 +138,60 @@ export function shareSwitch(options: ShareSwitchOptions): HTMLElement {
   input.type = "checkbox";
   input.setAttribute("role", "switch");
   const text = document.createElement("span");
-  text.textContent = "Share with the team";
+  text.textContent = compact ? "Share" : "Share with the team";
   label.append(input, text);
-  const hint = document.createElement("p");
+  const hint = document.createElement(compact ? "span" : "p");
   hint.className = "share-hint";
+  hints += 1;
+  hint.id = `share-hint-${hints}`;
+  input.setAttribute("aria-describedby", hint.id);
   const panel = document.createElement("div");
   panel.className = "share-panel";
   panel.setAttribute("role", "status");
   panel.setAttribute("aria-live", "polite");
   root.append(label, hint, panel);
 
+  /** A private document the user hasn't shared: the switch can't turn on. */
+  const locked = (): boolean => options.private === true && !shareable;
+  const privateWords = "Private documents stay on this computer and can't be shared.";
+
   function draw(): void {
     input.checked = shareable;
-    input.disabled = options.private === true && !shareable;
-    hint.textContent = options.private === true && !shareable
-      ? "Private documents stay on this computer and can't be shared."
+    // A compact switch stays focusable when locked, so pressing it can say why.
+    if (compact) {
+      input.disabled = false;
+      if (locked()) input.setAttribute("aria-disabled", "true"); else input.removeAttribute("aria-disabled");
+    } else input.disabled = locked();
+    hint.textContent = locked()
+      ? privateWords
       : shareable
       ? "Shared with the team: colleagues get it on their next sync."
       : "Only you have it. Share it, and colleagues get it on their next sync.";
+    if (compact) label.title = hint.textContent;
   }
 
   function busy(on: boolean): void {
-    input.disabled = on || (options.private === true && !shareable);
+    input.disabled = on || (!compact && locked());
     for (const element of panel.querySelectorAll("button")) element.disabled = on;
     root.toggleAttribute("aria-busy", on);
   }
 
+  /** A message in the panel; under a compact switch it carries **Done**, since it covers the view. */
+  function say(...nodes: Node[]): void {
+    if (compact) {
+      const done = button("Done");
+      done.addEventListener("click", () => { panel.replaceChildren(); input.focus(); });
+      const actions = document.createElement("div");
+      actions.className = "share-actions";
+      actions.append(done);
+      nodes.push(actions);
+    }
+    panel.replaceChildren(...nodes);
+  }
+
   function failed(words: string): void {
     panel.dataset.tone = "danger";
-    panel.replaceChildren(paragraph(words));
+    say(paragraph(words));
   }
 
   function offerCited(documents: ShareDocument[]): void {
@@ -206,7 +241,7 @@ export function shareSwitch(options: ShareSwitchOptions): HTMLElement {
       await share(also === undefined ? { id: options.id, shareable: next } : { id: options.id, shareable: next, also });
       shareable = next;
       delete panel.dataset.tone;
-      panel.replaceChildren(paragraph(next
+      say(paragraph(next
         ? also === undefined ? "Shared. It goes to the team on your next sync." : `Shared, with ${also.length === 1 ? "the document it cites" : `the ${also.length} documents it cites`}. They go to the team on your next sync.`
         : "Stopped sharing. It leaves the shared library on your next sync."));
       options.onChange?.(next);
@@ -226,7 +261,8 @@ export function shareSwitch(options: ShareSwitchOptions): HTMLElement {
     const next = input.checked;
     // The switch shows the Library's value until the change is saved.
     input.checked = shareable;
-    if (next) void apply(true);
+    if (locked()) failed(privateWords);
+    else if (next) void apply(true);
     else confirmStop();
   });
 

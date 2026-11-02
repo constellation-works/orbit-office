@@ -116,7 +116,7 @@ export function mountSharedLibrary(content: HTMLElement, mount: SharedLibraryMou
   heading.append(text("h2", "Shared library"));
   content.replaceChildren(
     heading,
-    text("p", "Connect one git repository your team shares. Only documents you switch to Share with the team are sent."),
+    text("p", "Connect one git repository your team shares. Only documents you switch to Share are sent."),
     form,
     sync,
   );

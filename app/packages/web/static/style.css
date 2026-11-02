@@ -568,6 +568,25 @@ a.mono-meta:hover { color: var(--accent-hover); }
 .share button:hover { background: var(--bg-hover); }
 .share button[data-primary] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 .share button:disabled { opacity: .65; cursor: default; }
+.share-switch input[aria-disabled="true"] { opacity: .55; cursor: default; }
+/* The compact Share of a view header: hint as tooltip, messages open under the header's actions. */
+.share.share--compact { display: flex; align-items: center; margin: 0; padding: 0; border: 0; background: none; }
+.share--compact .share-switch { gap: 8px; min-height: 40px; font-size: 14px; }
+.share--compact .share-hint { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.share--compact .share-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  width: min(360px, calc(100vw - 32px));
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .35);
+  text-align: left;
+}
 
 /* Routines (the table and the next-hour strip are in screens/routines/style.ts) */
 .routines-retention form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }

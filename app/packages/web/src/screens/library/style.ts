@@ -27,15 +27,18 @@ export const styles = `
 .library-setup .rows .rows { margin-top:4px; }
 .library-setup .row .row { min-height:0; padding:6px 0; }
 .library-setup .row .row .row-title { font-size:13px; color:var(--fg-dim); }
-.library-sharing { margin:0; }
+.library-sharing { display:inline-flex; align-items:center; }
 .library-sharing:empty { display:none; }
+.library .screen-head-actions, .library-detail-actions { position:relative; }
+.library-detail-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:10px; flex:none; margin-left:auto; }
 .library-connect { padding:14px 16px; border:1px solid var(--border-strong); border-radius:var(--radius); background:var(--bg); display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
 .library-connect h3 { margin:0; font-size:15px; text-transform:none; color:var(--fg); }
 .library-connect p { margin:0; font-size:14px; color:var(--fg-dim); }
 .library-connect-link { display:inline-flex; align-items:center; min-height:40px; margin-top:6px; padding:0 14px; border-radius:var(--radius-sm); background:var(--accent); color:var(--on-accent); font-weight:600; text-decoration:none; }
 .library-connect-link:hover { background:var(--accent-hover); color:var(--on-accent); }
 .library-detail { display:flex; flex-direction:column; gap:16px; min-width:0; }
-.library-detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.library-detail-head { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:12px; }
+.library-detail-head > div:first-child { flex:1 1 240px; min-width:0; }
 .library-detail-head .library-kicker { margin:0 0 4px; }
 .library-detail-title { margin:0; font-size:22px; font-weight:600; overflow-wrap:anywhere; }
 .library-aside .library-link[aria-current="true"] { color:var(--accent); font-weight:500; }
@@ -50,7 +53,6 @@ export const styles = `
 .library-inline .library-link { color:var(--accent); }
 .library-part .library-revision { font-family:var(--font-mono); font-size:12px; color:var(--fg-mute); }
 .library-snippet { margin:0; font-size:13px; color:var(--fg-dim); }
-.library .share { margin:0; }
 @media (max-width: 640px) {
   .library-search { flex-basis:100%; }
   .library-document-body { padding:16px; }
