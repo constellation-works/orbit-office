@@ -339,7 +339,7 @@ reported per workspace without failing the whole response. Today's
 Agent work screen that also showed it ([ORB-19741]) was removed in
 [ORB-21641]: Today's Agents working on, Needs you and Done today and the
 To-dos Agents column already show the same work, so the rail has no
-Agent work item and `#agents` is not a screen.
+Agent work item and an old `#agents` link opens Today.
 
 Since [ORB-21345] the list also follows `meetings.agent_workspace` (from
 `office.status` `meetings`), carries each task's `source:` tag as `source`,
