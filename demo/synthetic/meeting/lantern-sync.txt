@@ -1,0 +1,23 @@
+# SIMULATED Lantern engineering sync, Monday 2026-11-02.
+# Every name, system and customer is invented. meeting.py renders each
+# "Speaker: line" turn with the macOS say voice mapped to that speaker.
+# Lines starting with # are comments and are not spoken.
+Mira: This is a simulated Lantern engineering sync. Every name here is invented. I'm Mira Vale, and Jules Reed is with me. Nori is out today.
+Jules: Morning. Three things: the overnight uploader failures, the ingest keys, and the Acme pilot review.
+Mira: Uploader first. The spool uploader gave up twice last night when the packing station answered with a five oh three. One retry would have saved both orders.
+Jules: Then let's add a retry to the spool uploader. Three attempts with backoff, and it keeps the original order key on every attempt. That's small. Give it to an agent tonight.
+Mira: Agreed. While we're in that code, the dashboard order list has an off-by-one. Page two repeats the last order from page one.
+Jules: Another agent job. Fix the pagination off-by-one and add a test that walks every page.
+Mira: Decision: we keep fifty orders per page on the dashboard.
+Jules: Fine by me. Now the ingest keys. Weekly rotation keeps breaking the overnight uploader, because the new key reaches the packing stations hours late.
+Mira: Decision: we rotate ingest keys monthly, starting in December. The weekly schedule costs more than it protects.
+Jules: Monthly it is. I'll tell the access desk about the new schedule.
+Mira: Next, replay. Operators keep asking what a replay would resend before they run it.
+Jules: An agent can add a dry run flag to lantern replay. It prints the orders it would resend and sends nothing.
+Mira: And one more small one. An empty order key at the intake desk crashes the desk instead of returning an error.
+Jules: Agent job too. The intake desk should reject an empty order key with a clear error message.
+Mira: Decision: replay always keeps the original order key. No tool mints a new one.
+Jules: Last item, the Acme Paper Kites pilot. I'll book the pilot review with Acme for next Thursday.
+Mira: Decision: the Acme pilot stays read-only until that review.
+Jules: Mira, can you ask Nori to review read access for the two new packing station operators?
+Mira: Yes, I'll ask Nori this afternoon. That's everything. Thanks, Jules.

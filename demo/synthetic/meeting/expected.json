@@ -1,0 +1,27 @@
+{
+  "simulated": true,
+  "meeting": "SIMULATED Lantern engineering sync, 2026-11-02",
+  "decisions": [
+    {"text": "Keep fifty orders per page on the dashboard", "quote": "Decision: we keep fifty orders per page on the dashboard."},
+    {"text": "Rotate ingest keys monthly, starting in December", "quote": "Decision: we rotate ingest keys monthly, starting in December.",
+     "contradicts": "SIMULATED September decision: rotate ingest keys weekly (seed.py, ledger decisions-lantern)"},
+    {"text": "Replay always keeps the original order key", "quote": "Decision: replay always keeps the original order key."},
+    {"text": "The Acme pilot stays read-only until the review", "quote": "Decision: the Acme pilot stays read-only until that review."}
+  ],
+  "todos": [
+    {"owner": "you", "assignee": "Jules", "text": "Tell the access desk about the new key rotation schedule",
+     "quote": "I'll tell the access desk about the new schedule."},
+    {"owner": "you", "assignee": "Jules", "text": "Book the Acme pilot review for next Thursday",
+     "quote": "I'll book the pilot review with Acme for next Thursday."},
+    {"owner": "you", "assignee": "Mira", "text": "Ask Nori to review read access for the two new packing station operators",
+     "quote": "can you ask Nori to review read access for the two new packing station operators?"},
+    {"owner": "agent", "text": "Add a retry to the spool uploader: three attempts with backoff, reusing the original order key",
+     "quote": "add a retry to the spool uploader. Three attempts with backoff, and it keeps the original order key on every attempt."},
+    {"owner": "agent", "text": "Fix the dashboard pagination off-by-one and add a test that walks every page",
+     "quote": "Fix the pagination off-by-one and add a test that walks every page."},
+    {"owner": "agent", "text": "Add a --dry-run flag to lantern replay that prints the orders it would resend and sends nothing",
+     "quote": "add a dry run flag to lantern replay. It prints the orders it would resend and sends nothing."},
+    {"owner": "agent", "text": "Make the intake desk reject an empty order key with a clear error",
+     "quote": "The intake desk should reject an empty order key with a clear error message."}
+  ]
+}
