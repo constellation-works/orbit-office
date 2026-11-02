@@ -32,12 +32,6 @@ pub struct Line {
     #[serde(default, skip_serializing_if = "is_false")]
     pub context: bool,
 }
-/// First line of the brief a desktop side session opens with: the
-/// orchestrator that started the session wrote it, not Daniel. The
-/// desktop app writes it parenthesised, with a trailing colon
-/// (`Background (from the session that started this one):`); the
-/// unparenthesised form occurs too.
-pub const SIDE_SESSION_BRIEF_PREFIX: &str = "Background from the session that started this one";
 
 /// True when `text` opens with the side-session brief preamble. Both
 /// written forms match, case-insensitively, ignoring the parentheses
