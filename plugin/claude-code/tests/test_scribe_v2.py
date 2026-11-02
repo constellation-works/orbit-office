@@ -311,14 +311,19 @@ class ScribeV2(unittest.TestCase):
     def inputs(self, tool):
         return [c["input"] for c in self.calls(tool)]
 
-    def pass_starts(self):
+    def pass_starts(self, at_least=1):
+        # Passes start in the background, so wait for the expected number of
+        # starts, not just for the log to exist.
         path = self.home / "pass-starts"
         deadline = time.monotonic() + 2.0
+        starts = []
         while time.monotonic() < deadline:
             if path.exists():
-                return path.read_text().splitlines()
+                starts = path.read_text().splitlines()
+                if len(starts) >= at_least:
+                    return starts
             time.sleep(0.05)
-        return []
+        return starts
 
     def state_file(self, suffix=""):
         return self.workspace / ".orbit/tmp/scribe" / (self.sid + suffix)
@@ -494,7 +499,7 @@ class ScribeV2(unittest.TestCase):
         self.assertEqual(self.pass_starts(), [self.sid], "21 minutes reaches the threshold")
         time.sleep(1.0)  # let the pass stub finish and release the lock
         self.hook("SessionEnd")
-        self.assertEqual(self.pass_starts(), [self.sid, self.sid],
+        self.assertEqual(self.pass_starts(at_least=2), [self.sid, self.sid],
                          "SessionEnd runs a final pass inside the cadence")
 
     def test_a_running_pass_blocks_a_second_start(self):
