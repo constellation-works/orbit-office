@@ -238,12 +238,18 @@ fn every_schema_ref_resolves_from_its_root() {
     }
     let dir = plugin_root().join("schemas");
     for entry in fs::read_dir(&dir).expect("schemas dir is readable") {
-        let name = entry.expect("schema entry").file_name().into_string().expect("utf-8 name");
+        let name = entry
+            .expect("schema entry")
+            .file_name()
+            .into_string()
+            .expect("utf-8 name");
         let root = schema(&format!("schemas/{name}"));
         let mut found = Vec::new();
         refs(&root, &mut found);
         for target in found {
-            let Some(pointer) = target.strip_prefix('#') else { continue };
+            let Some(pointer) = target.strip_prefix('#') else {
+                continue;
+            };
             assert!(
                 root.pointer(pointer).is_some(),
                 "{name}: $ref {target} resolves to nothing from the schema root"
