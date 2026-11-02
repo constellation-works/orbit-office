@@ -218,3 +218,36 @@ fn plugin_tree_has_no_symlinks_and_a_launcher() {
     #[cfg(not(unix))]
     let _ = metadata;
 }
+
+/// Every local `$ref` names a node in its own schema: the plugin validator
+/// resolves `#/...` from the schema root, so a `$defs` nested under `anyOf`
+/// fails the install even though serde accepts the file.
+#[test]
+fn every_schema_ref_resolves_from_its_root() {
+    fn refs(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                if let Some(serde_json::Value::String(target)) = map.get("$ref") {
+                    out.push(target.clone());
+                }
+                map.values().for_each(|child| refs(child, out));
+            }
+            serde_json::Value::Array(items) => items.iter().for_each(|child| refs(child, out)),
+            _ => {}
+        }
+    }
+    let dir = plugin_root().join("schemas");
+    for entry in fs::read_dir(&dir).expect("schemas dir is readable") {
+        let name = entry.expect("schema entry").file_name().into_string().expect("utf-8 name");
+        let root = schema(&format!("schemas/{name}"));
+        let mut found = Vec::new();
+        refs(&root, &mut found);
+        for target in found {
+            let Some(pointer) = target.strip_prefix('#') else { continue };
+            assert!(
+                root.pointer(pointer).is_some(),
+                "{name}: $ref {target} resolves to nothing from the schema root"
+            );
+        }
+    }
+}
