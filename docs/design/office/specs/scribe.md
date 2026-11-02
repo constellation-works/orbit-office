@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: scribe v2 — opt-in scribing per session, inline markers honoured only in the user's own typed turns, preferences and decisions as the only default tags (preference pages changed by proposal, an append-only decision ledger fit to serve as precedent), and one SCR per session whose latest copy per project and global is the handoff"
 last_validated: 2026-11-01
+last_updated: 2026-11-01
 ---
 
 # Spec: Scribe v2
@@ -841,9 +842,9 @@ checks.
 
 ## Build order
 
-Each slice is a proposed task in ws_orbit-office. Each updates the docs
-its change makes stale in the same change, as the workspace guide
-requires.
+The slice tasks are approved. S1 is in progress and S2 is blocked; S3–S10
+are in the backlog. Each updates the docs its change makes stale in the
+same change, as the workspace guide requires.
 
 | Slice | Task | Depends on | Delivers |
 |---|---|---|---|
@@ -877,15 +878,15 @@ requires.
 - [ORB-21079] — built first-pass scribe titles and the humanized-slug fallback.
 - [ORB-21089] — plans Orbit's decision model, a consumer of decision precedent.
 - [ORB-21090] — plans the office precedent provider over the decision ledger.
-- [ORB-21114] — proposed slice S1: decision ledger store, capture `decision` input and the `note` retirement.
-- [ORB-21115] — proposed slice S2: `scribe:` tag and cadence settings.
-- [ORB-21116] — proposed slice S3: preference pages, contradiction check and apply mode.
-- [ORB-21117] — proposed slice S4: SCR v2, markers and the trust rule, query and ask over the new stores.
-- [ORB-21118] — proposed slice S5: Claude Code opt-in, Stop-hook cadence and marker routing.
-- [ORB-21119] — proposed slice S6: the brief and `/handoff` over the latest SCR.
-- [ORB-21120] — proposed slice S7: the one-card feed, `previous` chain and Tags editor.
-- [ORB-21121] — proposed slice S8: the weekly contradiction auto-task.
-- [ORB-21122] — proposed slice S9: migration and backfill.
-- [ORB-21123] — proposed slice S10: removal of v1 surfaces after the window.
+- [ORB-21114] — implements slice S1: decision ledger store, capture `decision` input and the `note` retirement.
+- [ORB-21115] — implements slice S2: `scribe:` tag and cadence settings.
+- [ORB-21116] — implements slice S3: preference pages, contradiction check and apply mode.
+- [ORB-21117] — implements slice S4: SCR v2, markers and the trust rule, query and ask over the new stores.
+- [ORB-21118] — implements slice S5: Claude Code opt-in, Stop-hook cadence and marker routing.
+- [ORB-21119] — implements slice S6: the brief and `/handoff` over the latest SCR.
+- [ORB-21120] — implements slice S7: the one-card feed, `previous` chain and Tags editor.
+- [ORB-21121] — implements slice S8: the weekly contradiction auto-task.
+- [ORB-21122] — implements slice S9: migration and backfill.
+- [ORB-21123] — implements slice S10: removal of v1 surfaces after the window.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
