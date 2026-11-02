@@ -166,9 +166,11 @@ Library searches and browses pages, outputs and setup progress through Office re
 
 Shared documents carry "Shared · from <member>" and the user's own shareable
 ones "Shared". Page, output and source views of the user's own documents have
-a **Share with the team** switch backed by `POST /api/library/share`
-(`office.share-set`); it confirms before stopping and offers **Share these
-too** for unshared cited documents. Library setup shows **Connect a shared
+a compact **Share** switch in the header beside **Close**, backed by `POST
+/api/library/share` (`office.share-set`); its explanation is the switch's
+tooltip and accessible description, it confirms before stopping and offers
+**Share these too** for unshared cited documents. The Source screen keeps the
+**Share with the team** switch. Library setup shows **Connect a shared
 library** first while none is configured. Needs you groups the shared
 library's updates, conflicts (**Use theirs**, **Keep mine**) and the last
 sync's skipped documents into one card. The cross-screen browser suite answers

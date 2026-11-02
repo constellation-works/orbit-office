@@ -47,7 +47,8 @@ async function render(root: HTMLElement): Promise<void> {
     const head = el("div"); head.className = "library-detail-head";
     const titles = el("div"); const kicker = el("p"); kicker.className = "eyebrow library-kicker"; const title = el("h2", "Loading document"); title.className = "library-detail-title"; titles.append(kicker, title);
     const close = button("Close", () => { home.main.replaceChildren(...home.home); select(""); }); close.className = "library-back";
-    head.append(titles, close); section.append(head);
+    const actions = el("div"); actions.className = "library-detail-actions"; actions.append(close);
+    head.append(titles, actions); section.append(head);
     home.main.replaceChildren(section); select(id.split("#", 1)[0] ?? "");
     section.scrollIntoView({ block: "nearest" });
     return section;
@@ -65,16 +66,22 @@ async function render(root: HTMLElement): Promise<void> {
     if (items.length) body.append(listRows(items, title)); else if (empty) body.append(el("p", empty));
     section.append(body); return section;
   }
-  /** The label and **Share with the team** switch of a document view; a colleague's document only carries the label. */
-  function sharing(page: HTMLElement, id: string, data: Row, item: Row): void {
+  /**
+   * The label and compact **Share** switch of a document view, before Close in its header
+   * (`actions`); a colleague's document only carries the label.
+   */
+  function sharing(actions: Element, id: string, data: Row, item: Row): void {
     const sharedBy = typeof (data.shared_by ?? item.shared_by) === "string" ? str(data.shared_by ?? item.shared_by) : null;
     let shareable = item.shareable === true || data.shareable === true;
-    const line = el("p"); line.className = "library-sharing";
+    const line = el("span"); line.className = "library-sharing";
     const draw = (): void => { const label = sharedLabel(sharedBy, shareable); line.replaceChildren(...(label ? [label] : [])); };
-    draw(); page.append(line);
-    if (sharedBy !== null) return;
-    const noun = data.page !== undefined ? "this page" : data.artifact !== undefined ? "this output" : "this source";
-    page.append(shareSwitch({ id, noun, shareable, private: (item.sensitivity ?? data.sensitivity) === "private", onChange: (next) => { shareable = next; draw(); } }));
+    draw();
+    const parts: HTMLElement[] = [line];
+    if (sharedBy === null) {
+      const noun = data.page !== undefined ? "this page" : data.artifact !== undefined ? "this output" : "this source";
+      parts.push(shareSwitch({ id, noun, shareable, compact: true, private: (item.sensitivity ?? data.sensitivity) === "private", onChange: (next) => { shareable = next; draw(); } }));
+    }
+    actions.prepend(...parts);
   }
   /** One titled part of a document view, split from the one above by a hairline. */
   function part(parent: HTMLElement, title: string): HTMLElement {
@@ -96,7 +103,7 @@ async function render(root: HTMLElement): Promise<void> {
       page.querySelector("h1, .library-detail-title")!.textContent = title;
       const kicker = page.querySelector(".library-kicker"); if (kicker) kicker.textContent = data.page !== undefined ? (names[str(item.template)] ?? (str(item.id).startsWith("rb-") ? "How-to" : "Page")) : data.artifact !== undefined ? "Output" : data.source !== undefined ? "Source" : "";
       const article = el("article"); article.className = "panel library-document"; const doc = panelBody(); doc.classList.add("library-document-body"); article.append(doc); page.append(article);
-      sharing(doc, id, data, item);
+      const actions = page.querySelector(".library-detail-actions, .screen-head-actions"); if (actions) sharing(actions, id, data, item);
       if (str(item.summary)) { const summary = el("p", str(item.summary)); summary.className = "library-summary"; doc.append(summary); }
       const body = str(item.body ?? data.body); if (body) doc.append(renderMarkdown(body, { className: "library-body", cite: (cite) => documentButton(cite, "View source", "library-cite") }));
       if (data.content_withheld === true) doc.append(el("p", "This document is private, so its text is withheld here. It is only processed on your chosen private endpoint."));
@@ -136,7 +143,7 @@ async function render(root: HTMLElement): Promise<void> {
 
       const setup = panel("Library setup"); setup.classList.add("library-setup"); const setupBody = panelBody(); setup.append(setupBody);
       if (obj(data.shared).configured === false) {
-        const connect = el("section"); connect.className = "library-connect"; connect.append(el("h3", "Connect a shared library"), el("p", "Get the pages and how-tos your team shares, and share yours. Nothing leaves this computer until you switch a document to Share with the team."));
+        const connect = el("section"); connect.className = "library-connect"; connect.append(el("h3", "Connect a shared library"), el("p", "Get the pages and how-tos your team shares, and share yours. Nothing leaves this computer until you switch a document to Share."));
         const link = document.createElement("a"); link.href = "?settings=shared-library#settings"; link.textContent = "Connect a shared library"; link.className = "library-connect-link"; connect.append(link); setupBody.append(connect);
       }
       const phases: HTMLElement[] = [];

@@ -1,6 +1,6 @@
 /**
  * The shared library across screens: Settings › Shared library, the Library's
- * labels and **Share with the team** switch, and the Needs-you card. Run after
+ * labels and the **Share** switch in a document view's header, and the Needs-you card. Run after
  * the app build with the verified host browser kit. Every Orbit call is
  * answered in memory: no real HOME, workspace, git or network.
  */
@@ -31,6 +31,7 @@ function orbit(todayTasks) {
     { id: "dom-client-acme", template: "client", title: "Acme", layer: "own", shared_by: null, shareable: state.shareable.has("dom-client-acme") },
     { id: "alice/dom-client-globex", template: "client", title: "Globex", layer: "shared", shared_by: "alice", shareable: false },
     { id: "rb-lantern-spool", template: "runbook", title: "When the Lantern spool stalls", layer: "own", shared_by: null, shareable: state.shareable.has("rb-lantern-spool") },
+    { id: "dom-topic-scratch", template: "topic", title: "Private scratch", layer: "own", shared_by: null, shareable: false, sensitivity: "private" },
   ];
   const tasks = { "shared-update": UPDATE, "shared-conflict": CONFLICT };
   async function callTool(name, input) {
@@ -62,8 +63,9 @@ function orbit(todayTasks) {
       case "office.bootstrap-status": return { ok: true, output: { phases: [], pending_batches: [] } };
       case "office.knowledge-show": {
         const row = pages().find((item) => item.id === input.id);
-        return { ok: true, output: { page: { ...row, summary: "What to do when the spooler stops draining.", body: "Restart the spooler [src-20261028-lantern-kt].", cites: ["src-20261028-lantern-kt"], sensitivity: "normal", shareable: row.shareable || undefined }, backlinks: [], history } };
+        return { ok: true, output: { page: { ...row, summary: "What to do when the spooler stops draining.", body: "Restart the spooler [src-20261028-lantern-kt].", cites: ["src-20261028-lantern-kt"], sensitivity: row.sensitivity ?? "normal", shareable: row.shareable || undefined }, backlinks: [], history } };
       }
+      case "office.artifact-show": return { ok: true, output: { artifact: { id: input.id, kind: "report", series: "weekly", title: "Weekly report", summary: "The week in numbers.", cites: [], sensitivity: "normal" }, body: "Report body", backlinks: [], history } };
       case "office.source-show": return { ok: true, output: { id: input.id, title: "Lantern KT walkthrough" } };
       case "office.share-set":
         if (input.id === "rb-lantern-spool" && input.shareable && !state.shareable.has("src-20261028-lantern-kt")) {
@@ -184,9 +186,22 @@ test("Shared library browser: connect in Settings, share a page with its source,
   await page.getByRole("heading", { name: "How-to" }).waitFor();
   assert.equal(await page.getByRole("link", { name: "Connect a shared library" }).count(), 0);
   await page.getByRole("button", { name: "When the Lantern spool stalls" }).click();
-  const share = page.getByRole("switch", { name: "Share with the team" });
+  const share = page.getByRole("switch", { name: "Share", exact: true });
   await share.waitFor();
   assert.equal(await share.isChecked(), false);
+  /** The view's header holds the label and Share beside Close; the body starts with the document itself. */
+  const header = page.locator(".library-detail-head");
+  async function headerShare(view, { own = true } = {}) {
+    await page.locator(".library-document-body").first().waitFor();
+    assert.equal(await header.getByRole("button", { name: "Close", exact: true }).count(), 1, `Close in the ${view} header`);
+    assert.equal(await header.getByRole("switch", { name: "Share", exact: true }).count(), own ? 1 : 0, `Share in the ${view} header`);
+    assert.equal(await page.locator(".library-document-body .share, .library-document-body .library-sharing").count(), 0, `the ${view} body has no share card`);
+    assert.equal(await page.getByText("Share with the team", { exact: true }).count(), 0);
+  }
+  await headerShare("page");
+  assert.equal(await page.evaluate(() => document.querySelector(".library-document-body")?.firstElementChild?.className), "library-summary");
+  assert.match(await share.evaluate((input) => document.getElementById(input.getAttribute("aria-describedby"))?.textContent ?? ""), /^Only you have it\./);
+  assert.match(await header.locator(".share-switch").getAttribute("title"), /^Only you have it\./);
   await share.click();
   await page.getByText("Lantern KT walkthrough", { exact: true }).waitFor();
   assert.equal(await share.isChecked(), false, "nothing is shared until the cited source is");
@@ -214,6 +229,37 @@ test("Shared library browser: connect in Settings, share a page with its source,
   await page.getByText("Stopped sharing.", { exact: false }).waitFor();
   assert.equal(await share.isChecked(), false);
   assert.deepEqual(fake.state.calls.at(-1), { name: "office.share-set", input: { id: "rb-lantern-spool", shareable: false } });
+  await page.getByRole("button", { name: "Done" }).click();
+  assert.equal(await page.getByText("Stopped sharing.", { exact: false }).count(), 0, "Done closes the message");
+
+  // The source and output views carry the same header Share; a colleague's page only its label.
+  await page.locator(".library-document-body").getByRole("button", { name: "View source" }).first().click();
+  await page.getByRole("heading", { name: "Lantern KT walkthrough" }).waitFor();
+  await headerShare("source");
+  await header.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Weekly report" }).click();
+  await page.getByText("Report body").waitFor();
+  await headerShare("output");
+  await header.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Globex" }).click();
+  await page.getByRole("heading", { name: "Globex" }).waitFor();
+  await headerShare("colleague's page", { own: false });
+  assert.equal(await header.getByText("Shared · from Alice", { exact: true }).count(), 1);
+
+  // A private page's Share says why it can't be shared, and calls nothing.
+  await header.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Private scratch" }).click();
+  await page.getByRole("heading", { name: "Private scratch" }).waitFor();
+  await headerShare("private page");
+  const calls = fake.state.calls.filter(({ name }) => name === "office.share-set").length;
+  assert.equal(await share.getAttribute("aria-disabled"), "true");
+  // Playwright treats aria-disabled as disabled; the press itself still reaches the switch.
+  await share.click({ force: true });
+  await page.locator(".share-panel").getByText("Private documents stay on this computer and can't be shared.", { exact: true }).waitFor();
+  assert.equal(await share.isChecked(), false);
+  assert.equal(fake.state.calls.filter(({ name }) => name === "office.share-set").length, calls, "a private document is never sent");
+  await noInternals();
+  await shot("library-private-page");
 
   // Needs you: one card for the sync's update, conflict and skipped document.
   await page.goto(`${origin}/#today`);

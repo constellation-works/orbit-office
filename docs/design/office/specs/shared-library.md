@@ -372,9 +372,17 @@ user saves the `shared` block, the app offers to turn it on.
   now**; last synced time with the counts in words ("Shared 4, received 12,
   1 needs you"), or the failure in plain words.
 - **Library:** shared documents carry a "Shared · from Alice" label, own
-  shareable documents a "Shared" label. A page, source or artifact view has
-  a **Share with the team** switch that calls `office.share-set`, with the
-  refusals above in plain words.
+  shareable documents a "Shared" label. A page, source or artifact view puts
+  the label and a compact **Share** switch in its header, beside **Close**,
+  so the body starts with the document itself; a colleague's document shows
+  only its label there. **Share** calls `office.share-set`, with the refusals
+  above in plain words. Its explanation ("Only you have it. Share it, and
+  colleagues get it on their next sync.") is the switch's tooltip and
+  accessible description, and confirmations and refusals open in a small
+  panel under the header's controls, closed with **Done** or their own
+  buttons. A private document's **Share** stays off and, when pressed, says
+  private documents can't be shared, without a call. The Source screen keeps
+  the full **Share with the team** switch with its hint below.
 - **Library setup:** a **Connect a shared library** step, shown first to a
   new Library, that opens Settings › Shared library.
 - **Needs you:** incoming updates, conflicts and skipped documents, grouped
@@ -395,7 +403,7 @@ Built as follows ([web-app.md](./web-app.md#shared-library-implementation)):
   words. The app keeps the latest result it ran in memory only, so a sync run
   by the routine is reflected in Needs you through its proposals, not in the
   counts, and the counts are gone after an app restart.
-- The switch refuses in plain words: private documents can't be shared, and
+- The switch (**Share** in a Library view header) refuses in plain words: private documents can't be shared, and
   `share_cites_unshared` lists the cited documents by title with **Share
   these too**, which shares them (sources, then outputs, then pages) before
   the document. Stopping shows the copies-and-history warning first.
