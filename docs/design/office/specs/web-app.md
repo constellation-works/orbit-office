@@ -452,7 +452,7 @@ For the event the app ships as a local web app, not a desktop app
 - **Webview-safe UI.** Relative URLs, and no browser-only API without a
   fallback, so a desktop shell can host the same UI later.
 - **After the event: a Tauri shell** — one installer bundling the runtime
-  (today the user needs Node 20+), a tray icon, native notifications for
+  (today the user needs Node 24+), a tray icon, native notifications for
   Needs you, and native drag-and-drop for recordings. Tauri does not
   bundle Node, so the server either ships as a sidecar or moves into the
   `office` binary.

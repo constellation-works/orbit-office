@@ -24,7 +24,7 @@ and point to the fix.
 and does only what is missing. Running it again repairs a partial install and changes
 nothing on a complete one. It prints each step and a summary that names the uninstall command.
 
-1. **Preflight.** macOS or Linux (Windows through WSL2). Node 20+ with `npm` must already be
+1. **Preflight.** macOS or Linux (Windows through WSL2). Node 24+ with `npm` must already be
    installed; the script stops and says how to get it. It checks `git` (on macOS it starts
    `xcode-select --install` and asks for a re-run) and `ffmpeg` (installs it with Homebrew or
    the system package manager when it can).
@@ -215,8 +215,8 @@ user's workspace.
 | `app: no local app tree and no app bundle` | Standalone install without the app | Run from a clone, or set `ORBIT_OFFICE_APP_BUNDLE` |
 | `plugin export unavailable` | No prebuilt export yet | Run from a clone, or set `ORBIT_OFFICE_PLUGIN_BUNDLE` |
 | `building the office plugin needs cargo` | `--from-source` without Rust | Install Rust from rustup.rs, or use a bundle |
-| `Node.js 20+ is required` | Node missing or old | Install Node 20+, re-run `install.sh` |
-| Node resolves under `fnm_multishells` | Per-shell shim would vanish | Install a stable Node 20+ and put its bin first on `PATH`, re-run |
+| `Node.js 24+ is required` | Node missing or old | Install Node 24+, re-run `install.sh` |
+| Node resolves under `fnm_multishells` | Per-shell shim would vanish | Install a stable Node 24+ and put its bin first on `PATH`, re-run |
 | `refusing to adopt non-empty folder` | Folder is not an office workspace | Move it aside, or pass `--home DIR` |
 | `plugin enable declined` | Consent refused | `orbit-office init --yes <path>` once the user agrees |
 | Meta API key `unset`; model calls fail | Secret skipped at install | `orbit plugin secret set office meta_api_key` |

@@ -436,7 +436,7 @@ URLs, and no browser-only API without a fallback.
   2026-10-26 (see "Anchor deep-links for citations" below). The dispatch
   pass is a login service (launchd or a systemd user unit) independent
   of the UI.
-- Cost: users install Node 20+ themselves, there is no tray or native
+- Cost: users install Node 24+ themselves, there is no tray or native
   notification for Needs you, and the later Tauri shell must either ship
   the Node server as a sidecar or move it into the `office` binary.
 

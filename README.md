@@ -51,7 +51,7 @@ knowledge-transfer videos into chapters and runs your routines.
 
 ## Quick start
 
-**You need:** macOS or Linux (Windows through WSL2), Node 20+, `cargo` (until a release
+**You need:** macOS or Linux (Windows through WSL2), Node 24+, `cargo` (until a release
 ships prebuilt plugin bundles), an authenticated agent CLI (Claude Code, Codex or Muse
 Code), and a pay-as-you-go Meta Model API key.
 

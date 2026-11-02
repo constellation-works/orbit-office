@@ -40,7 +40,7 @@ filter for them. Orbit must support `workspace init --preset`.
 
 **Steps:**
 
-1. **Preflight.** macOS or Linux (Windows through WSL2). Node 20+ with `npm` is the one
+1. **Preflight.** macOS or Linux (Windows through WSL2). Node 24+ with `npm` is the one
    prerequisite the script does not install: without it the script stops and says how to
    get it. It checks `git` (macOS: runs `xcode-select --install` and asks to re-run when it
    is missing) and `ffmpeg` (installs it with Homebrew or the system package manager when
@@ -580,7 +580,7 @@ it stops at the app step rather than installing a service with nothing to run.
 Run `sh scripts/install/test-install.sh` for the installer acceptance harness; CI
 runs `sh scripts/install/build-install.sh --check` and then that harness on Linux and macOS with Node 24 (the fixture imports TypeScript directly).
 `UPDATE_GOLDENS=1 sh scripts/install/test-install.sh` explicitly refreshes the
-installed launcher help golden. The launcher itself supports Node 20+. The harness uses
+installed launcher help golden. The launcher itself supports Node 24+. The harness uses
 temporary homes, stub Orbit and service managers, local archive fixtures and a PTY
 for the hidden-input and single-consent checks; it never contacts a provider. Its
 scenarios run with `ORBIT_OFFICE_APP_REBUILD=0` so they never rebuild the checkout's own

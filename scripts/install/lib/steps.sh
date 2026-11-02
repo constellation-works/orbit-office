@@ -13,18 +13,18 @@ step_preflight() {
         *) die "unsupported platform '$OS_RAW': macOS or Linux required (Windows: use WSL2)" ;;
     esac
     command -v node >/dev/null 2>&1 \
-        || die "Node.js 20+ is required and is not installed: get it from https://nodejs.org/ (or your package manager), then re-run"
+        || die "Node.js 24+ is required and is not installed: install a supported LTS release (Node.js 24+) from https://nodejs.org/ (or your package manager), then re-run"
     _node_version=$(node --version 2>/dev/null || printf '')
     _node_major=$(extract_version "$_node_version")
     _node_major=${_node_major%%.*}
     case "$_node_major" in
-        ''|*[!0-9]*) die "could not read the Node.js version from '$_node_version'; install Node.js 20+ from https://nodejs.org/" ;;
+        ''|*[!0-9]*) die "could not read the Node.js version from '$_node_version'; install Node.js 24+ from https://nodejs.org/" ;;
         *) ;;
     esac
-    [ "$_node_major" -ge 20 ] \
-        || die "Node.js 20+ is required (found $_node_version): get it from https://nodejs.org/, then re-run"
+    [ "$_node_major" -ge 24 ] \
+        || die "Node.js 24+ is required (found $_node_version): Node.js 20 is end-of-life; install a supported LTS release (Node.js 24+) from https://nodejs.org/, then re-run"
     command -v npm >/dev/null 2>&1 \
-        || die "npm is required and is not installed: it ships with Node.js 20+ from https://nodejs.org/, then re-run"
+        || die "npm is required and is not installed: it ships with Node.js 24+ from https://nodejs.org/, then re-run"
     say "preflight: node $_node_version and npm present"
     if command -v git >/dev/null 2>&1; then
         say "preflight: git present"
@@ -932,7 +932,7 @@ step_app() {
     validate_agent_path
     if ! _node_bin=$(stable_node_path); then
         _raw_node=$(command -v node 2>/dev/null || printf 'node')
-        die "app: node resolves to a per-shell shim ($_raw_node) under a fnm_multishells directory, which fnm removes when its shell exits, so the login service would not start; install a stable Node.js 20+ (a fnm default install, nvm, or the nodejs.org tarball) and put its bin directory, not a fnm_multishells path, first on PATH, then re-run"
+        die "app: node resolves to a per-shell shim ($_raw_node) under a fnm_multishells directory, which fnm removes when its shell exits, so the login service would not start; install a stable Node.js 24+ (a fnm default install, nvm, or the nodejs.org tarball) and put its bin directory, not a fnm_multishells path, first on PATH, then re-run"
     fi
     _app_upgrade=0
     if [ -n "$APP_SRC" ]; then
