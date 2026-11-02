@@ -146,9 +146,24 @@ struct LineMarker {
     because: Option<String>,
 }
 
+/// The `#<tag> <text>` of a v1 `/scribe note #<tag> <text>` command line,
+/// as the adapter renders a slash command (`/scribe …` or
+/// `/<plugin>:scribe …`). During the compatibility window the note is read
+/// as a marker (specs/scribe.md, "Migration"); `None` for any other line.
+fn note_command(line: &str) -> Option<&str> {
+    let (command, rest) = split_token(line);
+    let name = command.strip_prefix('/')?.to_ascii_lowercase();
+    if name != "scribe" && !name.ends_with(":scribe") {
+        return None;
+    }
+    let (word, rest) = split_token(rest);
+    (word.eq_ignore_ascii_case("note") && rest.starts_with('#')).then_some(rest)
+}
+
 /// Parse one trimmed line as a marker; `None` when it is not one.
 fn parse_line(line: &str, tags: &[ScribeTag], session: &str) -> Option<LineMarker> {
-    let rest = line.strip_prefix('#')?;
+    let note = note_command(line);
+    let rest = note.unwrap_or(line).strip_prefix('#')?;
     let (word, after) = split_token(rest);
     let word = word.to_ascii_lowercase();
     let (tag, after): (Option<String>, &str) = if word == "scribe" {
@@ -160,8 +175,13 @@ fn parse_line(line: &str, tags: &[ScribeTag], session: &str) -> Option<LineMarke
             Some(name) if !next.is_empty() => (Some(name), tail),
             _ => (None, after),
         }
+    } else if let Some(name) = marker_tag(&word) {
+        (Some(name.to_owned()), after)
+    } else if note.is_some() && tags.iter().any(|t| t.name == word) {
+        // `/scribe note #<custom tag>` names the tag as `#scribe <tag>` would.
+        (Some(word.clone()), after)
     } else {
-        (Some(marker_tag(&word)?.to_owned()), after)
+        return None;
     };
     let mut scope = default_scope(tag.as_deref(), tags, session);
     let mut scope_marked = false;

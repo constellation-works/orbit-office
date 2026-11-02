@@ -97,7 +97,7 @@ pub(crate) struct Entry {
 impl Entry {
     /// Every `<SCR id>#L<n>` key naming this line, under the file's current
     /// id and every alias it has carried.
-    fn keys(&self) -> Vec<String> {
+    pub(crate) fn keys(&self) -> Vec<String> {
         let mut ids = vec![self.scr_id.clone()];
         ids.extend(self.aliases.clone());
         if let Some(stem) = self
@@ -682,7 +682,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         })
         .collect();
 
-    Ok(json!({
+    let mut response = json!({
         "mode": mode,
         "results": rendered,
         "count": total,
@@ -693,5 +693,40 @@ fn run(call: &Call<'_>) -> Result<Value> {
         "date_range": {"since": since, "until": until},
         "time_zone": zone_name,
         "today": today,
-    }))
+    });
+    if let Some(mode) = mode.as_deref() {
+        deprecate(call, mode, &today, &mut response)?;
+    }
+    Ok(response)
+}
+
+/// The scribe v1 modes during the 30-day compatibility window
+/// (specs/scribe.md, "Migration"): each answers as before, marked
+/// `deprecated` with its `replacement`; `pref` and `why` answer from the v2
+/// stores first, in `v2_results`, then the v1 lines in `results`.
+fn deprecate(call: &Call<'_>, mode: &str, today: &str, response: &mut Value) -> Result<()> {
+    let (replacement, v2_results) = match mode {
+        "pending" => (
+            "Orbit owner:you to-dos: the session brief's Waiting on you",
+            None,
+        ),
+        "landed" => (
+            "done Orbit tasks: the session brief's Agents working on",
+            None,
+        ),
+        "pref" => (
+            "office.scribe-query mode preferences, or /scribe ask",
+            Some(v2::pref_answer(call, call.input, today)?),
+        ),
+        _ => (
+            "office.scribe-query mode decisions, or /scribe ask",
+            Some(v2::why_answer(call, call.input)?),
+        ),
+    };
+    response["deprecated"] = Value::Bool(true);
+    response["replacement"] = json!(replacement);
+    if let Some(found) = v2_results {
+        response["v2_results"] = Value::Array(found);
+    }
+    Ok(())
 }

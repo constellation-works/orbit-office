@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-migrate request",
+  "description": "The one-time scribe v1 tidy-up (specs/scribe.md, Migration): proposes removing the v1 Tags section from the scribe rules page and reports open v1 pending lines. v1 preferences and decisions are not backfilled. A re-run files nothing already filed in any status.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "dry_run": { "type": "boolean", "description": "Report what would be filed without filing it. Default false." }
+  }
+}

@@ -324,6 +324,22 @@
         "today": {
           "type": "string",
           "description": "Today's local date in that zone."
+        },
+        "deprecated": {
+          "type": "boolean",
+          "const": true,
+          "description": "Present on the v1 modes (pending, pref, landed, why) during the 30-day compatibility window: the mode still answers but is removed after the window."
+        },
+        "replacement": {
+          "type": "string",
+          "description": "With deprecated: what replaces the mode (pending: Orbit owner:you to-dos; landed: done Orbit tasks; pref: mode preferences; why: mode decisions)."
+        },
+        "v2_results": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "pref and why only: the v2 answer first. pref lists the preference page sections for the matter (as mode preferences returns them); why lists the ledger entries with a stated because whose text names the matter or topic (as mode decisions returns them). results then holds the v1 lines."
         }
       },
       "required": [

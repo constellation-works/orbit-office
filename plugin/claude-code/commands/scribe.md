@@ -1,6 +1,6 @@
 ---
-description: Scribe this session (v2 opt-in) — on, off, update, status, tags, title, ask; v1 note, pending, pref, landed, why, backfill during the window
-argument-hint: "[on [@<project>|@global] | off | update | status | tags | title <text> | ask <question> | note <text> | pending | pref <matter> | landed [today|<date>] | why <matter|topic> | backfill [--since <date>] [--project <name>]]"
+description: Scribe this session (v2 opt-in) — on, off, update, status, tags, title, ask; deprecated during the window — no args (update and turn on), now, note #<tag>, pending, pref, landed, why
+argument-hint: "[on [@<project>|@global] | off | update | status | tags | title <text> | ask <question> | note #<tag> <text> | pending | pref <matter> | landed [today|<date>] | why <matter|topic>]"
 disable-model-invocation: true
 allowed-tools: mcp__plugin_office-scribe_office__scribe, Agent
 ---
@@ -22,9 +22,9 @@ $ARGUMENTS
      "answer": <the agent's answer>}` and print that `display` verbatim.
      Never show an answer that has not been verified.
    - level `scribe`: print the agent's final display.
-4. If the reply had `"continue": true` (backfill), call the `scribe` tool
-   again with the same `args` and repeat from step 2 until it does not.
+4. A reply with `deprecated: true` already starts its `display` with the
+   one-line notice; print it as it is.
 
 On a tool error, print the error text and the usage line. Never read
 transcripts or SCR files yourself, run a shell or call Office directly.
-Report outcomes as the tool states them, including refusals and held notes.
+Report outcomes as the tool states them, including refusals and held titles.

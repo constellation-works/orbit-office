@@ -68,7 +68,7 @@
             "handoff_field_invalid",
             "handoff_assignment_required"
           ],
-          "description": "Present only when the request offered a handoff: written, or why it was dropped (disabled when dom-scribe-rules does not set scribe.handoff: true)."
+          "description": "Present only when the request offered a handoff: written, or why it was dropped (disabled: the scribe handoff is retired by scribe v2, so an offered handoff is always dropped)."
         },
         "ledger": {
           "type": "string",
@@ -329,7 +329,7 @@
             },
             "handoff": {
               "type": "boolean",
-              "description": "scribe.handoff from the page frontmatter."
+              "description": "Always false: the scribe handoff is retired by scribe v2 (a page that still sets scribe.handoff is not read)."
             },
             "body": {
               "type": [

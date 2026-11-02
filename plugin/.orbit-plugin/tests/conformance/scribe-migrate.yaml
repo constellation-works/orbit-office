@@ -1,0 +1,14 @@
+# Replayed through public dispatch with empty Library/Orbit fakes, offline.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: scribe_migrate_refuses_non_boolean_dry_run
+    tool: scribe-migrate
+    input: {"dry_run":"yes"}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: scribe_migrate_refuses_unknown_key
+    tool: scribe-migrate
+    input: {"scope":"global"}
+    expect:
+      error: {"code":"invalid_argument"}

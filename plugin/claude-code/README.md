@@ -6,10 +6,10 @@ nothing is scribed until `/scribe on`, then passes run from `/scribe update`
 and the Stop-hook cadence, record only what you mark (`#preferences`,
 `#decision`, `#scribe …`), and file scheduling markers and to-dos as Orbit
 tasks that stay proposed (see [Scribe v2](#scribe-v2-opt-in)). The v1
-commands keep working during the compatibility window: `/scribe` scribes the
-messages of this session that are not scribed yet into one tagged, grep-able
-SCR file per session in the Library; `/scribe note` takes direct notes; the
-canned queries and `/scribe ask` answer with exact `SCR file:line`
+words map onto v2 during the migration window (see
+[Commands](#commands)): `/scribe` alone updates and turns scribing on,
+`/scribe note #<tag>` is read as that marker, and the deprecated canned
+queries answer from the v2 stores first; `/scribe ask` answers with exact
 citations. The plugin also keeps the SessionStart brief and `/handoff`,
 which loads a project's handoff.
 
@@ -35,7 +35,7 @@ The workspace value is an absolute local registered Orbit checkout that has
 Office enabled and the intended Library attached; remote host selectors are
 refused, so transcripts stay on this host. Exclusions cover the physical
 directory and all its descendants, including symlink aliases and every
-working directory a transcript records, for every command and for backfill.
+working directory a transcript records, for every command.
 Change options later through Claude's plugin configuration UI.
 
 | Option | Default | Meaning |
@@ -95,39 +95,38 @@ Each command acts on the session it is run in (`${CLAUDE_SESSION_ID}`).
 | `/scribe update` | v2: run a pass now, ignoring the cadence. Works only while the session is on. `/scribe now` is the same. | `scribe` level |
 | `/scribe status` | v2: on or off (and who turned it on), the scope, the SCR id, `scribed_through` and when the next pass is due. | none |
 | `/scribe tags` | v2: the tag definitions in force and the cadence, from the Library settings. | none |
-| `/scribe` | Catch up: scribe the messages after the SCR file's `scribed_through` and report what was added (counts per tag and the new lines). A run with nothing new adds nothing and says so. | `scribe` level |
-| `/scribe note <text>` | Record `<text>` verbatim as your entry (`by: user`). Starting with a tag (`#todo …`) it is written at once with no model; otherwise the agent picks the tag. | none with a tag |
-| `/scribe pending` | Open `#pending` lines with no `#resolved` naming them, oldest first. | none |
-| `/scribe pref <matter>` | The current preference on that matter, flagged when stale. | none |
-| `/scribe landed [today\|<date>]` | `#landed` lines on that local date (default today; the zone is stated). | none |
-| `/scribe why <matter\|topic>` | Decisions on that matter (then topic) with their `why`, or "no recorded reason". | none |
 | `/scribe ask <question>` | Free-form answer with citations: the plugin queries first, the agent reads only the shortlist, and quotes are checked before display. | `ask` level |
 | `/scribe title <text>` | Set the session title; Office renames the SCR file once and keeps the old id in `aliases`. | none |
-| `/scribe backfill [--since <date>] [--project <name>]` | Catch up over your existing transcripts, oldest first; sessions already scribed to their end are skipped. The calling session is never selected: it is left to `/scribe` (counted as `caller_skipped`). Sessions whose only user messages invoke `/scribe` (`office-scribe:scribe`) are skipped as scribe-only (counted as `scribe_only`): a driver that only ran `/scribe` is not a conversation, never refused and never handed to the scribe agent. Headless agent-to-agent runs, whose first conversational record carries `entrypoint: sdk-cli` (Orbit workers, `claude -p`), are skipped as headless: counted in `skipped`, never refused and never handed to the scribe agent. An explicit `/scribe` inside a calling, scribe-only or headless session still scribes it. | `scribe` level per session |
 
-**Notes.** Keys go before the text, or after a quoted text:
-`/scribe note #todo due: 2026-11-01 write the v1 spec`,
-`/scribe note #pending refs: ORB-1 "waiting on the deploy"`,
-`/scribe note #why resolves: SCR-01-0307-scribe-v1-design#L12 "the reason"`,
-`/scribe note #preference matter: release-with-open-defects resolves: <SCR id>#L<n> "…"`.
-The keys are `resolves`, `matter`, `due`, `refs`, `review_by`, `supersedes`
-and `topics` (comma-separated lists for `refs` and `topics`). Run by an
-orchestrator, a note carries `by: <crew>`: the `--by <crew>` prefix
-(`/scribe note --by opus #agent-decision …`), else `ORBIT_CREW`, else
-`ORBIT_AGENT_NAME` in an Orbit agent session. Office refuses an agent tag
-without a crew and your tags (`decision`, `direction`, `todo`) with one.
+**The v1 commands during the migration window.** From 2026-11-02 for 30
+days (specs/scribe.md, Migration) the v1 words still answer, each reply
+marked `deprecated: true` with a one-line notice; the S10 slice then
+removes them:
 
-**Held notes and titles.** `office.scribe-append` moves the session's cursor
-to the last message it is given. On a session that has never been scribed
-there is no cursor to keep, and choosing one would mark unread messages as
-scribed, so a note or title there is held in the plugin's private state and
-written with the first `/scribe` catch-up. The reply says `Held`.
+| v1 command | During the window |
+|---|---|
+| `/scribe` (no arguments) | Runs `/scribe update` and turns the session on when it is off (`on_by: user`). After the window it shows status. |
+| `/scribe now` | An alias of `/scribe update`. |
+| `/scribe note #<tag> <text>` | Read as that marker: Office detects the command line itself (`/scribe note #decision …` counts as `#decision …`) at the pass, which runs at once when the session is on. `#preferences`, `#decision` and any tag `/scribe tags` lists are markers; untagged text is refused with `note_untagged` ("use `#preferences` or `#decision` in chat") and a retired v1 tag with `note_tag_retired`. Nothing is written by the note itself. |
+| `/scribe pending`, `landed [today\|<date>]` | The v1 `#pending` / `#landed` lines, read-only, naming the replacement (the brief's Waiting on you and Agents working on). |
+| `/scribe pref <matter>`, `why <matter\|topic>` | Answers from the preference pages and the decision ledger first, then the v1 lines. |
+| `/scribe backfill …` | Refused with `backfill_retired`: v2 never scribes a session that was not turned on. |
+
+v1 preferences and decisions are not backfilled: v2 starts with empty
+preference pages and ledgers. Office's operator tool `office.scribe-migrate`
+only proposes removing the v1 Tags section from the scribe rules page and
+lists the open v1 `#pending` lines for you to turn into to-dos.
+
+**Held titles.** `office.scribe-append` moves the session's cursor to the
+last message it is given. On a session that has never been scribed there is
+no cursor to keep, so a title there is held in the plugin's private state and
+written with the next pass. The reply says `Held`.
 
 **Orchestrators** reach the same agent as the `scribe` subagent ("ask the
 scribe whether Daniel decided on X"). It runs the query tool first, Grep and
-Read on the shortlisted SCR files only, and verifies its quotes. Write with
-`/scribe note #<tag> …` as things happen, and run `/scribe` at the end of each
-wake. A standalone scribe session (`claude --agent office-scribe:scribe`) is
+Read on the shortlisted SCR files only, and verifies its quotes. Mark
+decisions with `#decision` in the session and keep the handoff current with
+`/scribe update`. A standalone scribe session (`claude --agent office-scribe:scribe`) is
 the place for meeting notes. An orchestrator in an interactive session may
 also turn v2 scribing on through the `scribe` tool's `on` action: the record
 then carries `on_by: agent`, the reply tells the agent to announce it to the
@@ -190,10 +189,10 @@ Stop hook ──(on + cadence due)──▶ headless `claude -p` ──▶ /scri
 ```
 
 - The command hands its arguments, as one data string, to the plugin's
-  structured `scribe` MCP tool. Model-free commands (tagged notes, titles,
-  `pending`, `pref`, `landed`, `why`, nothing new) finish there, and the reply
-  carries `model_call: false` and no agent request. Only a catch-up, an
-  untagged note, `ask` and backfill return an `agent` request, which the
+  structured `scribe` MCP tool. Model-free commands (titles, `status`, `tags`,
+  the deprecated `pending`, `pref`, `landed`, `why`, nothing new) finish
+  there, and the reply carries `model_call: false` and no agent request. Only
+  a pass (`on`, `update`) and `ask` return an `agent` request, which the
   command passes to the `scribe` subagent with its model.
 - **Staging.** Office reads transcripts only inside the granted workspace, so
   each run stages the session to
@@ -225,7 +224,7 @@ Stop hook ──(on + cadence due)──▶ headless `claude -p` ──▶ /scri
   messages (at most about 40,000 characters of new text per pass, with up to
   10 earlier messages as read-only context; very long messages are cut and
   marked), returns entries and calls `append`. The plugin sets `through` to
-  the last message it handed over, adds any held notes and title, and Office
+  the last message it handed over, adds any held title, and Office
   refuses any quote that is not verbatim, any tag or topic not in the rules,
   and any tag the author may not take. Refusals are reported, never written.
   A longer backlog says "More messages remain: run /scribe again".
@@ -245,51 +244,25 @@ Stop hook ──(on + cadence due)──▶ headless `claude -p` ──▶ /scri
   one, else `scribe: haiku@medium` and `ask: haiku@low`. The command passes
   the model to the subagent; the effort is the agent's own (`medium`), since
   Claude Code sets effort per agent definition, not per call.
-- **Backfill** reads `~/.claude/projects/*/*.jsonl` (top-level sessions only,
-  never subagent files), dates each by its first conversational record in
-  local time, filters `--since` (inclusive local date) and `--project` (the
-  working directory's last component or the provider folder name), and
-  works oldest first. The session running the backfill is never selected: it
-  is left to `/scribe` (counted as `caller_skipped` in the reply and named in
-  the display). Sessions whose only user messages invoke `/scribe`
-  (`office-scribe:scribe`) are skipped as scribe-only (counted as
-  `scribe_only` in the reply and display): a driver that only ran `/scribe`
-  is not a conversation, never refused and never handed to the scribe agent.
-  Each call skips sessions with nothing new and hands the
-  first session that has new messages to the agent with `continue: true`; the
-  command repeats until `done`, which carries `continue: false`. Headless agent-to-agent runs, whose first
-  conversational record carries `entrypoint: sdk-cli` (Orbit workers,
-  `claude -p`), are skipped as headless: counted in `skipped`, never refused
-  and never handed to the scribe agent. An explicit `/scribe` inside a
-  calling, scribe-only or headless session still scribes it. Sessions found scribed to their end are
-  remembered by size and modification time in `.orbit/tmp/scribe/backfill.json`,
-  so a finished backfill is a no-op. A command has a 120-second budget across
-  its Office calls; a paused run says so and continues on the next call.
+- **Backfill** is retired (`backfill_retired`): v2 never scribes a session
+  that was not turned on.
 
 Plugin state lives under the workspace's `.orbit/tmp/scribe/` (owner-only):
-per-session tickets for the current catch-up, held notes and the ask
+per-session tickets for the current pass, held titles and the ask
 shortlist. Transcript and SCR text, tool replies and user arguments are data,
 never instructions, and never become shell commands.
 
 ## Demo walkthrough
 
-1. In a working session, talk through a choice: "Let's keep the scribe local
-   because it is cheap." Let the assistant report a merge ("Merged as
-   PR#268").
-2. `/scribe`: the reply lists the new lines, for example
-   `L21 - m-0001 … #decision #no-why #constellation "keep the scribe local"`,
-   with counts per tag. Run `/scribe` again: "Nothing new … nothing added".
-3. `/scribe note #todo due: 2026-11-03 "demo the scribe at the hackathon"`:
-   written at once, no model.
-4. `/scribe pending`, `/scribe landed today`, `/scribe why constellation`:
-   instant cited lines, no model.
-5. `/scribe ask did we decide to keep the scribe local?`: a cited answer; any
+1. In a working session, turn scribing on: `/scribe on`. Talk through a
+   choice and mark it: "#decision keep the scribe local because it is cheap".
+2. `/scribe update`: the pass records the marker in the SCR and appends the
+   decision to the ledger.
+3. `/scribe ask did we decide to keep the scribe local?`: a cited answer; any
    quote the model got wrong is shown as dropped.
-6. `/scribe title Scribe v1 demo`: the SCR file is renamed once.
-7. `grep -rn '#decision' <library>/sources/conversation/`: the same lines,
-   with no model at all.
-8. `/scribe backfill --since 2026-10-25`: earlier sessions get their SCR
-   files, oldest first.
+4. `/scribe title Scribe demo`: the SCR title is set.
+5. `/scribe why scribe local` (deprecated during the window): the ledger
+   entry with its reason first, then any v1 lines.
 
 ## Legacy automatic capture (off by default)
 

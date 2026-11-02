@@ -381,8 +381,9 @@ fn capture_session(call: &Call<'_>) -> Result<Value> {
             "handoff requires selections; only a crew pass writes a scribe handoff".into(),
         ));
     }
-    // The scribe handoff is off unless the rules page turns it on; a
-    // handoff offered while it is off is dropped, never written.
+    // The scribe handoff is retired with scribe v2 (the SCR is the handoff):
+    // the rules page's `scribe.handoff` reads as off, so an offered
+    // handoff is dropped as `disabled`, never written.
     let enabled = match handoff {
         Some(_) => conversation::find_rules(&call.ports.library.knowledge_pages()?)?
             .is_some_and(|rules| rules.handoff),

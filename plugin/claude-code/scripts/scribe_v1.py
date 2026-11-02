@@ -1,5 +1,6 @@
-"""Scribe v1 (docs/design/office/specs/scribe.md): commanded catch-up, notes,
-model-free queries, quote-checked answers and backfill.
+"""Scribe v1 (docs/design/office/specs/scribe.md): the v1 catch-up steps,
+model-free queries and quote-checked answers, kept through the migration
+window. `/scribe` alone and `note` map to v2, `backfill` is retired.
 
 Office does every read and write of the scribe's files: `office.scribe-pending`
 parses a staged transcript, `office.scribe-append` validates and writes
@@ -41,13 +42,8 @@ QUERY_LIMIT = 500
 SHORTLIST = 40
 KNOWN_LINES = 400
 QUERY_KEYS = {"mode", "tag", "matter", "topic", "by", "since", "until", "refs", "session_id", "limit"}
-NOTE_KEYS = ("resolves", "matter", "due", "refs", "review_by", "supersedes", "topics")
 CREW = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
-LEADING_TAG = re.compile(r"#([a-z0-9][a-z0-9._-]{0,63})(?:\s+|\Z)(.*)\Z", re.S)
-NOTE_KEY = re.compile(r"(" + "|".join(NOTE_KEYS) + r"):\s*(\S+)\s*(.*)\Z", re.S)
-QUOTED_NOTE = re.compile(r'"(.*)"((?:\s+(?:' + "|".join(NOTE_KEYS) + r'):\s*\S+)*)\s*\Z', re.S)
-TRAILING_KEY = re.compile(r"(" + "|".join(NOTE_KEYS) + r"):\s*(\S+)")
 LINE_TAG = re.compile(r"^- \S+ \S+ #([^\s#]+)")
 # A quoted span and the citation right after it: "…" [SCR-id:12 m-0042] or (…).
 QUOTE = re.compile(
@@ -58,8 +54,9 @@ its me my of on or so that the their them then there these they this to was we w
 where which who why will with you your about any daniel decide decided decision we've""".split())
 
 USAGE = ("usage: /scribe [on [@<project>|@global] | off | update | status | tags | "
-         "note <text> | pending | pref <matter> | landed [today|<date>] | "
-         "why <matter|topic> | ask <question> | title <text> | backfill [--titles] [--since <date>] [--project <name>]]")
+         "ask <question> | title <text>]; deprecated until the window ends: /scribe alone "
+         "(update and turn on), now, note #<tag> <text>, pending, pref <matter>, "
+         "landed [today|<date>], why <matter|topic>")
 
 
 # --- staged-transcript stripping --------------------------------------
@@ -239,75 +236,6 @@ def repo_project(cwd: str) -> str:
         path = Path(cwd) / path
     name = path.resolve().parent.name
     return name or fallback
-
-
-def _is_scribe_command_text(text: str) -> bool:
-    """One `/scribe` command invocation as a transcript keeps it.
-
-    A real invocation is wrapped, for example
-    ``<command-message>office-scribe:scribe backfill ...</command-message>``
-    (the ORB-20840 filenames slugify exactly that wrapper), while a driver
-    may record the bare ``/scribe ...`` form. A passing mention of the
-    plugin name in prose is not an invocation.
-    """
-    stripped = text.strip()
-    if not stripped:
-        return False
-    if "office-scribe:scribe" in stripped and "<command-" in stripped \
-            and stripped.lstrip().startswith("<"):
-        return True
-    low = stripped.lower()
-    return low == "/scribe" or low.startswith("/scribe ") or low.startswith("/office-scribe:scribe")
-
-
-def _is_scribe_only_session(path_str: str) -> bool:
-    """True when every user text message invokes `/scribe`.
-
-    Backfill-only: a session that only ran `/scribe` is not a conversation
-    to scribe, so backfill skips it. A direct `/scribe` catch-up still runs
-    (see `V1.catchup_session`), as does a mixed session. False on any read
-    or parse problem, so an unreadable file follows the normal path.
-    """
-    found = False
-    try:
-        fd = os.open(path_str, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except OSError:
-        return False
-    try:
-        with os.fdopen(fd, "rb") as stream:
-            for raw in stream:
-                if not raw.strip():
-                    continue
-                try:
-                    record = json.loads(raw)
-                except ValueError:
-                    continue
-                if not isinstance(record, dict) or record.get("type") != "user":
-                    continue
-                if record.get("isMeta") or record.get("isSidechain") or record.get("isCompactSummary"):
-                    continue
-                message = record.get("message")
-                if not isinstance(message, dict) or message.get("role") != "user":
-                    continue
-                content = message.get("content")
-                if isinstance(content, str):
-                    text = content
-                elif isinstance(content, list):
-                    parts = [b.get("text") for b in content
-                             if isinstance(b, dict) and b.get("type") == "text"
-                             and isinstance(b.get("text"), str)]
-                    text = " ".join(parts)
-                else:
-                    continue
-                text = _strip_task_notifications(text)
-                if not text.strip():
-                    continue
-                if not _is_scribe_command_text(text):
-                    return False
-                found = True
-        return found
-    except OSError:
-        return False
 
 
 def message_index(msg_id: str) -> int:
@@ -551,13 +479,10 @@ class V1:
         parts = args.strip().split(None, 1)
         head = parts[0].lower() if parts else ""
         rest = parts[1].strip() if len(parts) > 1 else ""
-        if not head:
-            return self.catchup(sid)
-        if head in ("on", "off", "update", "now", "status", "tags"):
+        if head in ("", "on", "off", "update", "now", "status", "tags", "note"):
+            # `/scribe` alone and `note` map to v2 during the window.
             import scribe_v2
             return scribe_v2.route_v2(self, sid, head, rest)
-        if head == "note":
-            return self.note(sid, rest)
         if head in ("pending", "pref", "landed", "why"):
             return self.canned(head, rest)
         if head == "ask":
@@ -565,7 +490,8 @@ class V1:
         if head == "title":
             return self.title(sid, rest)
         if head == "backfill":
-            return self.backfill(rest, caller=sid)
+            raise Failure("backfill_retired; v2 never scribes a session that was not turned on "
+                          "(/scribe on)")
         return {"display": USAGE, "model_call": False, "usage": True}
 
     # ---- catch-up -------------------------------------------------------
@@ -587,7 +513,7 @@ class V1:
         ctx = self.context(sid)
         return self.catchup_session(sid, ctx["transcript_path"], ctx["cwd"])
 
-    def catchup_session(self, sid: str, transcript: str, cwd: str, backfill: bool = False) -> dict:
+    def catchup_session(self, sid: str, transcript: str, cwd: str) -> dict:
         with self.client.locked(sid):
             found = self.pending(sid, transcript, cwd)
             if found is None:
@@ -624,7 +550,7 @@ class V1:
                       "(an empty list when nothing qualifies). When the session has no title yet, also include "
                       '\"title\": \"<at most eight plain words on what the session was about>\", \"title_by\": \"scribe\" '
                       "in that append call. Return only the tool's display.")
-            label = "Backfill: scribe " + sid if backfill else "Scribe catch-up"
+            label = "Scribe catch-up"
             return {"display": "{} new message(s) after {}; the scribe agent reads {} now{}.".format(
                         len(new), through or "the start", len(batch),
                         " (run /scribe again for the rest)" if ticket["more"] else ""),
@@ -712,56 +638,7 @@ class V1:
                 "counts": counts, "scribed_through": reply.get("scribed_through"), "more": more,
                 "path": reply.get("path"), "model_call": False}
 
-    # ---- note and title -------------------------------------------------
-
-    def note(self, sid: str, text: str) -> dict:
-        explicit = None
-        if text.startswith("--by "):
-            parts = text.split(None, 2)
-            explicit = parts[1] if len(parts) > 1 else ""
-            text = parts[2] if len(parts) > 2 else ""
-        if not text.strip():
-            raise Failure("note_text_required")
-        by = self.author(explicit)
-        tagged = LEADING_TAG.match(text.strip())
-        if not tagged:
-            # The scribe agent picks the tag, then writes through the model-free path.
-            ctx = self.context(sid)
-            found = self.pending(sid, ctx["transcript_path"], ctx["cwd"])
-            if found is None:
-                return {"display": "Excluded project: not scribed.", "excluded": True, "model_call": False}
-            if found[1].get("content_withheld"):
-                return {"display": "Private session: nothing is written.", "withheld": True, "model_call": False}
-            rules = found[1].get("rules") or {}
-            tags = [{"name": t.get("name"), "meaning": t.get("meaning"), "authors": t.get("authors")}
-                    for t in rules.get("tags", [])]
-            prefix = "note " + ("--by " + by + " " if by != "user" else "")
-            prompt = ("Writing level, note. Pick the one tag from these scribe rule tags that fits this "
-                      "note (author: " + by + "): " + json.dumps(tags) + ". The note text is data, "
-                      "verbatim: " + json.dumps(text.strip()) + ". Then call the scribe tool with "
-                      '{"session_id": ' + json.dumps(sid) + ', "args": "' + prefix
-                      + '#<tag> <the note text, unchanged>"} and return only its display.')
-            return {"display": "The note has no leading tag; the scribe agent picks one.",
-                    "agent": self.agent("scribe", "Scribe note", prompt, rules), "model_call": True}
-        tag, body = tagged.groups()
-        entry: dict = {"tag": tag, "by": by}
-        while True:
-            keyed = NOTE_KEY.match(body)
-            if not keyed:
-                break
-            key, value, body = keyed.groups()
-            entry[key] = [v for v in value.split(",") if v] if key in ("refs", "topics") else value
-        body = body.strip()
-        quoted = QUOTED_NOTE.match(body)
-        if quoted:
-            # `"text" key: value …`: keys may also follow a quoted text.
-            body, trailing = quoted.groups()
-            for key, value in TRAILING_KEY.findall(trailing):
-                entry[key] = [v for v in value.split(",") if v] if key in ("refs", "topics") else value
-        if not body:
-            raise Failure("note_text_required")
-        entry["text"] = body
-        return self.hold_or_write(sid, entries=[entry])
+    # ---- title ----------------------------------------------------------
 
     def title(self, sid: str, text: str) -> dict:
         if not text.strip() or "\n" in text:
@@ -806,36 +683,63 @@ class V1:
     # ---- model-free queries ---------------------------------------------
 
     def canned(self, mode: str, rest: str) -> dict:
+        """The deprecated v1 queries: v2 answers first (pref, why), then the
+        v1 lines, with Office's `deprecated` replacement named."""
+        result = self.canned_v1(mode, rest)
+        reply = getattr(self, "_last_query", None) or {}
+        v2 = reply.get("v2_results") or []
+        lines = []
+        if v2:
+            lines.append("From the v2 stores:")
+            for item in v2:
+                cite_id = item.get("id") or item.get("cite") or ""
+                text = item.get("statement") or item.get("quote") or item.get("chosen") or ""
+                because = (item.get("because") or {}).get("text") if isinstance(item.get("because"), dict) else None
+                lines.append("- {} {}".format(cite_id, text) + (" (because: {})".format(because) if because else ""))
+        replacement = reply.get("replacement")
+        notice = "Notice: /scribe {} is deprecated and removed after the migration window{}".format(
+            mode, "; use " + replacement + "." if replacement else ".")
+        display = "\n".join([notice] + lines + [str(result.get("display", ""))])
+        return {**result, "display": display, "deprecated": True, "replacement": replacement,
+                "v2_results": len(v2)}
+
+    def query_v1(self, payload: dict) -> dict:
+        reply = self.office("office.scribe-query", payload)
+        self._last_query = reply
+        return reply
+
+    def canned_v1(self, mode: str, rest: str) -> dict:
         if mode == "pending":
             if rest:
                 raise Failure("pending_takes_no_argument")
-            reply = self.office("office.scribe-query", {"mode": "pending"})
+            reply = self.query_v1({"mode": "pending"})
             return self.render_query("Pending (open, oldest first):", reply, "Nothing pending.")
         if mode == "pref":
             if not rest:
                 raise Failure("matter_required")
-            reply = self.office("office.scribe-query", {"mode": "pref", "matter": rest})
+            reply = self.query_v1({"mode": "pref", "matter": rest})
             return self.render_query("Preference on {}:".format(rest), reply, "No preference recorded on {}.".format(rest))
         if mode == "landed":
             day = local_today() if rest in ("", "today") else rest
             if not DATE.fullmatch(day):
                 raise Failure("date_must_be_today_or_YYYY-MM-DD")
             dt.date.fromisoformat(day)
-            reply = self.office("office.scribe-query", {"mode": "landed", "since": day, "until": day})
+            reply = self.query_v1({"mode": "landed", "since": day, "until": day})
             return self.render_query("Landed on {} ({}):".format(day, zone_name()), reply,
                                      "Nothing landed on {} ({}).".format(day, zone_name()))
         if not rest:
             raise Failure("matter_or_topic_required")
-        reply = self.office("office.scribe-query", {"mode": "why", "matter": rest})
+        reply = self.query_v1({"mode": "why", "matter": rest})
         if not results_of(reply):
-            reply = self.office("office.scribe-query", {"mode": "why", "topic": rest})
+            reply = self.query_v1({"mode": "why", "topic": rest})
         return self.render_query("Why {}:".format(rest), reply, "No recorded reason for {}.".format(rest))
 
     @staticmethod
     def render_query(title: str, reply: dict, empty: str) -> dict:
         views = [line_view(r) for r in results_of(reply)]
         if not views:
-            searched = {k: v for k, v in reply.items() if k not in ("results", "lines", "matches")}
+            searched = {k: v for k, v in reply.items()
+                        if k not in ("results", "lines", "matches", "v2_results", "deprecated", "replacement")}
             text = empty + (" Searched: " + json.dumps(searched, sort_keys=True) if searched else "")
             return {"display": text, "results": 0, "model_call": False}
         lines = [title]
@@ -870,7 +774,8 @@ class V1:
         save(self.file(sid, "ask"), {"question": question, "lines": shortlist,
                                      "files": sorted({v["path"] for v in shortlist if v["path"]})})
         if not shortlist:
-            searched = {k: v for k, v in reply.items() if k not in ("results", "lines", "matches")}
+            searched = {k: v for k, v in reply.items()
+                        if k not in ("results", "lines", "matches", "v2_results", "deprecated", "replacement")}
             return {"display": "Not captured: no scribed line matches " + json.dumps(terms)
                     + (". Searched: " + json.dumps(searched, sort_keys=True) if searched else "."),
                     "shortlist": 0, "model_call": False}
@@ -900,7 +805,8 @@ class V1:
             lines = list(known.values())[-KNOWN_LINES:]
             save(self.file(sid, "ask"), {"question": ticket.get("question"), "lines": lines,
                                          "files": sorted({v["path"] for v in lines if v["path"]})})
-            searched = {k: v for k, v in reply.items() if k not in ("results", "lines", "matches")}
+            searched = {k: v for k, v in reply.items()
+                        if k not in ("results", "lines", "matches", "v2_results", "deprecated", "replacement")}
             return {"results": views, "searched": searched}
 
     def step_verify(self, sid: str, answer) -> dict:
@@ -951,227 +857,6 @@ class V1:
         except (OSError, Failure, UnicodeDecodeError):
             return None
         return lines[number - 1] if 0 < number <= len(lines) else None
-
-    # ---- backfill -------------------------------------------------------
-
-    def title_session(self, sid: str, transcript: str, cwd: str) -> dict:
-        """Fill one existing SCR file's null title, without renaming it.
-
-        Precedence: a held user title, then a real custom title, then the
-        humanized filename slug as a scribe title (at most eight words).
-        """
-        with self.client.locked(sid):
-            found = self.pending(sid, transcript, cwd)
-            if found is None:
-                return {"excluded": True, "titled": False, "model_call": False}
-            _, reply = found
-            if reply.get("content_withheld"):
-                return {"withheld": True, "titled": False, "model_call": False}
-            scr = reply.get("scr") or {}
-            if not scr.get("exists"):
-                return {"titled": False, "no_scr": True, "model_call": False}
-            if scr.get("title"):
-                return {"titled": False, "already": True, "model_call": False}
-            held = load(self.file(sid, "held"))
-            custom = getattr(self, "_custom_title", None)
-            if held.get("title"):
-                title, by = held["title"], held.get("title_by") or "user"
-            elif custom and not _placeholder_title(custom):
-                title, by = custom, "custom"
-            else:
-                title, by = _humanized_slug(scr.get("id")), "scribe"
-            if not title:
-                return {"titled": False, "model_call": False}
-            out = self.office("office.scribe-append",
-                              {"session_id": sid, "title": title, "title_by": by})
-            if held.get("title"):
-                self.drop(sid, "held")
-            return {"titled": True, "title": out.get("title", title),
-                    "title_by": out.get("title_by", by), "path": out.get("path", scr.get("path")),
-                    "renamed_from": out.get("renamed_from"), "model_call": False}
-
-    def backfill(self, rest: str, caller: str | None = None) -> dict:
-        """Oldest-first catch-up over existing transcripts.
-
-        `caller` is the session running the backfill (from the `/scribe`
-        command context). It is never selected: the live session keeps
-        growing while backfill runs, so selecting it loops with
-        `continue: true` and no cursor progress. It is left to `/scribe`.
-        Sessions whose only user messages invoke `/scribe` are skipped as
-        scribe-only: a driver that only ran `/scribe` is not a conversation.
-        Both exclusions apply to backfill candidates only; a direct
-        `/scribe` catch-up still scribes such a session.
-        """
-        tokens = rest.split()
-        since = project = None
-        titles_only = False
-        while tokens:
-            flag = tokens.pop(0)
-            if flag == "--titles":
-                titles_only = True
-                continue
-            if flag not in ("--since", "--project") or not tokens:
-                raise Failure("usage: backfill [--titles] [--since YYYY-MM-DD] [--project <name>]")
-            value = tokens.pop(0)
-            if flag == "--since":
-                if not DATE.fullmatch(value):
-                    raise Failure("since_must_be_YYYY-MM-DD")
-                since = dt.date.fromisoformat(value)
-            else:
-                project = value
-        self.client.setup()
-        cache_path = self.state / "backfill.json"
-        cache = load(cache_path)
-        done = cache.get("done", {})
-        candidates, scribed = [], 0
-        titled: list[str] = []
-        already_titled: list[str] = []
-        not_sessions: list[str] = []
-        headless: list[str] = []
-        scribe_only: list[str] = []
-        caller_skipped: list[str] = []
-        refusals: dict[str, dict] = {}
-
-        def note_refusal(error: BaseException, example: str) -> None:
-            # A Failure's first token is its reason code (see process.run);
-            # anything else is grouped under a fixed local code, never its text.
-            reason = re.split(r"[;\s]", str(error), 1)[0] if isinstance(error, Failure) else "invalid_session_transcript"
-            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", reason):
-                reason = "invalid_session_transcript"
-            group = refusals.setdefault(reason, {"count": 0, "example": example})
-            group["count"] += 1
-
-        def refusal_summary() -> str:
-            total = sum(group["count"] for group in refusals.values())
-            if not total:
-                return ""
-            groups = "; ".join("{} (e.g. {}){}".format(
-                reason, group["example"], " x{}".format(group["count"]) if group["count"] > 1 else "")
-                for reason, group in sorted(refusals.items()))
-            return " {} refused: {}.".format(total, groups)
-
-        def totals() -> dict:
-            return {"skipped": skipped + not_sessions + headless + scribe_only + caller_skipped,
-                    "non_sessions": list(not_sessions),
-                    "headless": list(headless),
-                    "scribe_only": list(scribe_only),
-                    "caller_skipped": list(caller_skipped),
-                    "refused": sum(group["count"] for group in refusals.values()),
-                    "refusals": {reason: dict(group) for reason, group in sorted(refusals.items())}}
-
-        for path in (Path.home() / ".claude/projects").glob("*/*.jsonl"):
-            try:
-                info = path.lstat()
-                if not stat.S_ISREG(info.st_mode):
-                    raise Failure("unsafe_input_file")
-                if not titles_only and done.get(str(path)) == [info.st_size, info.st_mtime_ns]:
-                    scribed += 1
-                    continue
-                head = self.head(path)
-                if not head or head["session_id"] != path.stem:
-                    # No conversational head, or the head names another
-                    # session (sidechains, summary-only, renamed files):
-                    # not a session transcript, so skipped, not refused.
-                    not_sessions.append(path.stem)
-                    continue
-                started = dt.datetime.fromisoformat(head["timestamp"].replace("Z", "+00:00"))
-                if started.tzinfo is None:
-                    raise Failure("timestamp_needs_offset")
-                if since and started.astimezone().date() < since:
-                    continue
-                name = repo_project(head["cwd"])
-                if project and project not in (name, path.parent.name):
-                    continue
-                if self.client.excluded_project(head["cwd"]):
-                    continue
-                if head.get("entrypoint") == "sdk-cli":
-                    # Headless agent-to-agent runs (Orbit workers, `claude -p`):
-                    # no message from Daniel, so skipped, never refused and
-                    # never handed to the scribe agent. An explicit `/scribe`
-                    # inside such a session still scribes it (see catchup).
-                    headless.append(path.stem)
-                    continue
-                if caller is not None and head["session_id"] == caller:
-                    # The live session running this backfill: it grows on
-                    # every pass (its own scribe tool traffic), so selecting
-                    # it loops with `continue: true` and no cursor progress.
-                    # It is left to `/scribe`.
-                    caller_skipped.append(path.stem)
-                    continue
-                if _is_scribe_only_session(str(path)):
-                    # Only `/scribe` command invocations, no conversation.
-                    scribe_only.append(path.stem)
-                    continue
-                candidates.append((started, str(path), head, info))
-            except (Failure, OSError, ValueError, TypeError, KeyError) as error:
-                note_refusal(error, path.stem)
-        candidates.sort(key=lambda c: (c[0], c[1]))
-        skipped: list[str] = []
-        for started, path, head, info in candidates:
-            if time.monotonic() - self.client.started >= BUDGET - CALL_CAP:
-                return {"display": "Backfill paused at the command budget; run it again to continue." + refusal_summary(),
-                        "continue": True, "model_call": False, **totals()}
-            sid = head["session_id"]
-            if titles_only:
-                try:
-                    result = self.title_session(sid, path, head["cwd"])
-                except Failure as error:
-                    note_refusal(error, sid)
-                    continue
-                if result.get("titled"):
-                    titled.append(sid)
-                    done[path] = [info.st_size, info.st_mtime_ns]
-                    save(cache_path, {"done": done})
-                elif result.get("already"):
-                    already_titled.append(sid)
-                else:
-                    skipped.append(sid)
-                continue
-            try:
-                result = self.catchup_session(sid, path, head["cwd"], backfill=True)
-            except Failure as error:
-                note_refusal(error, sid)
-                continue
-            if result.get("agent"):
-                remaining = len(candidates) - len(skipped) - 1
-                result["display"] = ("Backfill: {} session(s) skipped as already scribed to their end; "
-                                     "scribing {} (started {}), {} more after it.").format(
-                                         scribed + len(skipped), sid, started.isoformat(), max(0, remaining))
-                result["display"] += refusal_summary()
-                if not_sessions:
-                    result["display"] += " {} non-session file(s) skipped.".format(len(not_sessions))
-                if headless:
-                    result["display"] += " {} headless session(s) skipped.".format(len(headless))
-                if scribe_only:
-                    result["display"] += " {} scribe-only session(s) skipped.".format(len(scribe_only))
-                if caller_skipped:
-                    result["display"] += " {} calling session(s) left to /scribe: {}.".format(
-                        len(caller_skipped), ", ".join(sorted(caller_skipped)))
-                result.update({"continue": True, "started": started.isoformat(), **totals()})
-                return result
-            skipped.append(sid)
-            if result.get("new_count") == 0 or result.get("withheld") or result.get("excluded"):
-                done[path] = [info.st_size, info.st_mtime_ns]
-                save(cache_path, {"done": done})
-        if titles_only:
-            return {"display": "Backfill titles done: {} session(s) titled, {} already titled, "
-                               "{} skipped.{}".format(len(titled), len(already_titled),
-                                                       len(skipped), refusal_summary() or " 0 refused"),
-                    "done": True, "continue": False, "model_call": False,
-                    "titled": len(titled), "titled_sessions": list(titled),
-                    "already_titled": len(already_titled), **totals()}
-        done_display = ("Backfill done: {} session(s) already scribed to their end, "
-                          "{} non-session file(s) skipped, {} headless session(s) skipped, "
-                          "{} scribe-only session(s) skipped,{}").format(
-                              scribed + len(skipped), len(not_sessions), len(headless),
-                              len(scribe_only), refusal_summary() or " 0 refused")
-        if caller_skipped:
-            done_display += " {} calling session(s) left to /scribe: {}.".format(
-                len(caller_skipped), ", ".join(sorted(caller_skipped)))
-        else:
-            done_display += " 0 calling session(s) left to /scribe."
-        return {"display": done_display, "done": True, "continue": False,
-                "model_call": False, **totals()}
 
 
 def dispatch(args: dict) -> dict:

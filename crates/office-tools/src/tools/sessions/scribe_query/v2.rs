@@ -1,7 +1,8 @@
 //! The scribe v2 modes of `office.scribe-query` (specs/scribe.md,
 //! "Answering"): `decisions` over the decision ledgers, `preferences` over
 //! the preference pages, and `scr` over the v2 SCR files. Model-free and
-//! read-only; v1 modes are unchanged.
+//! read-only. The deprecated v1 `pref` and `why` modes answer from here
+//! first during the compatibility window ([`pref_answer`], [`why_answer`]).
 
 use office_core::domain::knowledge::{Page, preferences};
 use office_core::domain::source::conversation::scribe::v2::{self, Scr};
@@ -175,6 +176,63 @@ fn preferences_mode(call: &Call<'_>, input: &Map<String, Value>, today: &str) ->
     Ok(
         json!({"mode": "preferences", "preferences": sections, "count": sections.len(), "today": today}),
     )
+}
+
+/// The v2 answer to the deprecated v1 `pref` mode: the preference page
+/// sections for its `matter` (every matter when none is named).
+pub(super) fn pref_answer(
+    call: &Call<'_>,
+    input: &Map<String, Value>,
+    today: &str,
+) -> Result<Vec<Value>> {
+    let mut filters = Map::new();
+    for key in ["matter", "project"] {
+        if let Some(value) = input.get(key) {
+            filters.insert(key.to_owned(), value.clone());
+        }
+    }
+    let found = preferences_mode(call, &filters, today)?;
+    Ok(found["preferences"].as_array().cloned().unwrap_or_default())
+}
+
+/// The v2 answer to the deprecated v1 `why` mode: ledger entries with a
+/// stated `because` whose text names the `matter` or `topic` (its hyphens
+/// read as spaces too); every such entry when neither is named.
+pub(super) fn why_answer(call: &Call<'_>, input: &Map<String, Value>) -> Result<Vec<Value>> {
+    let term = optional_text(input, "matter")?
+        .or(optional_text(input, "topic")?)
+        .map(|t| t.trim_start_matches('#').to_lowercase());
+    let mut filters = Map::new();
+    if let Some(project) = input.get("project") {
+        filters.insert("project".to_owned(), project.clone());
+    }
+    let found = decisions(call, &filters)?;
+    Ok(found["decisions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|entry| {
+            let Some(because) = entry["because"]["text"].as_str() else {
+                return false;
+            };
+            let Some(term) = &term else {
+                return true;
+            };
+            let haystack = [
+                entry["question"].as_str(),
+                entry["quote"].as_str(),
+                entry["chosen"].as_str(),
+                Some(because),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_lowercase();
+            haystack.contains(term.as_str()) || haystack.contains(&term.replace('-', " "))
+        })
+        .collect())
 }
 
 /// One SCR as a feed card: its front matter, rewritten sections, Tags

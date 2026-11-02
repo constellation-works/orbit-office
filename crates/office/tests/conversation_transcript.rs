@@ -602,12 +602,15 @@ fn scribe_note(next: &str) -> String {
 }
 
 #[test]
-fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
-    let mut script = vec![
+fn scribe_handoff_is_retired_and_dropped_even_when_the_rules_page_sets_it() {
+    // Scribe v2 S9: the SCR is the handoff, so `scribe.handoff` is retired
+    // (specs/scribe.md, "Configuration"). An offered crew handoff is
+    // dropped as `disabled` with the setting absent or set; the pass's
+    // decision still lands and no handoff line is written.
+    let script = vec![
         ("user", "Decision: ship the release on Friday."),
         ("assistant", "Noted."),
     ];
-    // Setting absent: an offered handoff is never written.
     let f = Fixture::new();
     std::fs::write(f.transcript(), turns(&script)).unwrap();
     let output = f.pass(
@@ -620,6 +623,9 @@ fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
     assert!(text.contains("decision: Decision: ship the release on Friday."));
     assert!(!text.contains("handoff:"), "{text}");
 
+    // A rules page that still sets `scribe.handoff: true` stays valid, but
+    // the flag reads as off: the preview reports it false and a valid
+    // structured offer is dropped too.
     let f = Fixture::new();
     f.rules_page(
         "scribe:\n  handoff: true\n",
@@ -627,8 +633,7 @@ fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
     );
     std::fs::write(f.transcript(), turns(&script)).unwrap();
     let preview = f.preview(None);
-    assert_eq!(preview["rules"]["handoff"], true);
-    assert_eq!(preview["source"], Value::Null);
+    assert_eq!(preview["rules"]["handoff"], false, "{preview}");
     let first = f.pass(
         None,
         json!([{"line":0,"kind":"decision"}]),
@@ -636,105 +641,10 @@ fn scribe_handoff_is_opt_in_marked_and_dropped_unless_its_anchors_resolve() {
             "Release ships Friday per #L1; prepare the notes.",
         )),
     );
-    assert_eq!(first["handoff"], "written", "{first}");
+    assert_eq!(first["handoff"], "disabled", "{first}");
     let text = f.source_text(&first);
-    let log: Vec<&str> = text.lines().filter(|l| l.starts_with('[')).collect();
-    assert_eq!(log.len(), 2, "{text}");
-    assert!(
-        log[1].contains("] handoff: (scribe) (structured) "),
-        "{text}"
-    );
-    let structured = log[1].split_once("(structured) ").unwrap().1;
-    assert_eq!(
-        serde_json::from_str::<Value>(structured).unwrap()["next"],
-        "Release ships Friday per #L1; prepare the notes."
-    );
-
-    // Each later pass adds a decision; the handoff lands only when every
-    // cited anchor names an entry, and the decision lands regardless.
-    let cases = [
-        (
-            "Decision: freeze the API.",
-            "Freeze the API now.",
-            "no_anchor",
-        ),
-        (
-            "Decision: drop the beta flag.",
-            "Drop the flag, see #L2 and #L99.",
-            "unresolved_anchor",
-        ),
-        (
-            "Decision: tag the build.",
-            "(scribe) Tag the build per #L<next>.",
-            "written",
-        ),
-    ];
-    for (decision, handoff, expected) in cases {
-        script.push(("user", decision));
-        std::fs::write(f.transcript(), turns(&script)).unwrap();
-        let from = script.len() - 1;
-        let preview = f.preview(Some(from));
-        let next = preview["source"]["next_anchor"].as_u64().unwrap();
-        assert_eq!(preview["source"]["extracted_through"], json!(from - 1));
-        let next_text = handoff.replace("<next>", &next.to_string());
-        let handoff = scribe_note(next_text.trim_start_matches("(scribe) "));
-        let output = f.pass(
-            Some(from),
-            json!([{"line":from,"kind":"decision"}]),
-            Some(&handoff),
-        );
-        assert_eq!(output["handoff"], expected, "{handoff}");
-        let text = f.source_text(&output);
-        let body: Vec<&str> = text.split("---\n").nth(2).unwrap().lines().collect();
-        let line = usize::try_from(next).unwrap();
-        assert!(
-            body[line - 1].ends_with(&format!("decision: {decision}")),
-            "{text}"
-        );
-        if expected == "written" {
-            assert!(
-                body[line].contains("handoff: (scribe) (structured) ")
-                    && body[line].contains(&format!("Tag the build per #L{next}.")),
-                "{text}"
-            );
-        } else {
-            assert_eq!(body.len(), line, "dropped handoff wrote nothing: {text}");
-        }
-    }
-
-    // Legacy crew prose is accepted as an offer but dropped explicitly;
-    // its decision still lands. Invalid structured offers behave likewise.
-    for (offered, reason) in [
-        (
-            "Old compressed plan per #L1.".to_string(),
-            "structured_required",
-        ),
-        (
-            "(structured) {\"next\":\"Missing objective per #L1.\"}".to_string(),
-            "handoff_required_field",
-        ),
-    ] {
-        script.push(("user", "Decision: review the final candidate."));
-        std::fs::write(f.transcript(), turns(&script)).unwrap();
-        let from = script.len() - 1;
-        let output = f.pass(
-            Some(from),
-            json!([{"line":from,"kind":"decision"}]),
-            Some(&offered),
-        );
-        assert_eq!(output["handoff"], reason);
-        assert!(
-            f.source_text(&output)
-                .contains("decision: Decision: review the final candidate.")
-        );
-    }
-
-    // A pass that adds no decision, direction or action writes no handoff.
-    script.push(("user", "A plain status remark."));
-    std::fs::write(f.transcript(), turns(&script)).unwrap();
-    let from = script.len() - 1;
-    let output = f.pass(Some(from), json!([]), Some("Nothing changed, see #L1."));
-    assert_eq!(output["handoff"], "no_plan_change");
+    assert!(text.contains("decision: Decision: ship the release on Friday."));
+    assert!(!text.contains("handoff:"), "{text}");
 }
 
 #[test]

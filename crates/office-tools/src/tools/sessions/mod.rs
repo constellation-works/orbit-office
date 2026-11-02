@@ -7,5 +7,6 @@ pub(crate) mod digest;
 pub(crate) mod scribe_append;
 pub(crate) mod scribe_ask;
 pub(crate) mod scribe_control;
+pub(crate) mod scribe_migrate;
 pub(crate) mod scribe_pending;
 pub(crate) mod scribe_query;

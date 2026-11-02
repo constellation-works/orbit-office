@@ -2698,7 +2698,9 @@ Each point traces to the direction (D1–D13 in
 10. **Scheduling markers** (D10) file a proposed task with `not_before`.
     The scribe never dispatches.
 11. **Migration** (D11) maps the v1 commands and queries for 30 days and
-    backfills preferences and decisions as proposals.
+    backfills preferences and decisions as proposals. *Amended 2026-11-02:
+    no backfill; v2 starts clean
+    ([S9](#scribe-v2-s9-no-v1-backfill-v2-starts-clean-the-tidy-up-is-its-own-operator-tool)).*
 12. **`sources/note` is retired outright** (D12)
     ([below](#retire-sourcesnote-outright-into-the-decision-ledgers)).
 13. **Ledger entries are precedent** (D13): question, options or
@@ -3139,6 +3141,68 @@ scribing on, which scribe v2 forbids: a headless session is never scribed
   (additive; old callers omit them). The plugin-surface row now states
   the grant as the manifest declares it.
 
+## Scribe v2 S9: no v1 backfill, v2 starts clean; the tidy-up is its own operator tool
+
+**Recorded:** 2026-11-02 · [ORB-21122]
+**Code anchors:** `crates/office-tools/src/tools/sessions/scribe_migrate.rs`,
+`crates/office-core/src/domain/source/conversation/scribe/v2/markers.rs`
+(`note_command`), `plugin/claude-code/scripts/scribe_v2.py`
+(`catchup_v2`, `note_v2`)
+
+### Context
+
+D11 asked for a one-time backfill of v1 preferences and decisions as
+proposals, and S9 first built it: one preference proposal per scope and
+matter and one all-or-none `ledger_append` proposal per scope. Review found
+the preference proposals self-blocking (each a full-page rewrite pinned to
+one revision, so accepting one made the rest stale), and the real Library
+held about 184 v1 preference matters, all landing for review at once.
+Daniel, 2026-11-02: "no need for backfill btw. its going to be noisy. I
+rather start clean".
+
+### Decision
+
+- **No backfill.** v1 `#preference`, `#decision` and `#agent-decision`
+  lines and conversation-log `direction` and `decision` lines are not
+  proposed into the preference pages or the decision ledgers. v2 starts
+  with empty pages and ledgers; Daniel restates what still holds as
+  markers. The v1 lines stay readable as evidence, and during the window
+  the `pref` and `why` modes still answer from them after the v2 stores.
+- **No `ledger_append` proposal kind.** It existed only for the backfill,
+  so it is not added, nor the Library port's batch append.
+- **A separate tool, `office.scribe-migrate`** (mutating, MCP scope none:
+  an operator runs it, as `office.init`), not a step of `office.init`,
+  for what remains: one `knowledge_update` removing the v1 Tags section
+  and the `scribe:` mapping from `dom-scribe-rules`, and a report of the
+  open v1 `#pending` lines (never filed). Filing a proposal is an Orbit
+  write, and `office.init` must keep working with no Orbit. The proposal
+  carries the `scribe-migration` tag and a hashed `rules` key tag; a
+  re-run skips it in any status (truncated list refused).
+- **`/scribe note` writes nothing.** The pass reads the command line itself
+  as the marker, so a note follows the trust rule (only a user's typed
+  turn counts) instead of a plugin-side write that would bypass it.
+- **The window** runs 2026-11-02 to 2026-12-02; S10 ([ORB-21123]) runs on
+  or after its end. `scribe.handoff` retires at once: capture drops the
+  offer as `disabled`, and the page flag stays accepted so no page breaks.
+
+### Alternatives rejected
+
+- **Fix the backfill** (re-file stale preference proposals after each
+  accept, or a section-level preference payload). It works, but still puts
+  hundreds of old statements in front of Daniel for review, which he
+  declined.
+- **A step of `office.init`.** It would make init depend on Orbit and run
+  on every init.
+
+### Consequences
+
+- Preferences and decisions recorded under v1 are not precedent for v2
+  readers (the brief, `/scribe ask`, the precedent provider) unless
+  restated.
+- `scribe-query` v1 responses gain `deprecated`, `replacement` and
+  `v2_results` (all additive). The root AGENTS.md change is [ORB-21239]
+  in ws_constellation.
+
 ## Task References
 
 - [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
@@ -3184,5 +3248,8 @@ scribing on, which scribe v2 forbids: a headless session is never scribed
 - [ORB-21217] — proposes ingestion of answered Orbit decision requests into the ledger.
 - [ORB-20856] — made `office.scribe-control` and `office.scribe-append` agent-callable so the plugin's local-cli `[agent]` calls succeed.
 - [ORB-21118] — built Scribe v2 S5: the Claude Code opt-in, Stop-hook cadence and marker routing, and the managed-session refusal above.
+- [ORB-21122] — built Scribe v2 S9: the v1 command mapping and `office.scribe-migrate` above, with no v1 backfill.
+- [ORB-21123] — removes the v1 scribe surfaces after the window.
+- [ORB-21239] — replaces the root AGENTS.md decision-log rule in ws_constellation.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
