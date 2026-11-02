@@ -117,10 +117,38 @@ impl LibraryStore {
         decision: &Decision,
         captured_at: &str,
     ) -> office_core::Result<DecisionOutcome> {
+        self.append_ledger_entries(std::slice::from_ref(decision), captured_at)?
+            .pop()
+            .ok_or(office_core::Error::LibraryUnavailable)
+    }
+
+    /// Append every entry, in order, to their one scope's ledger in one
+    /// commit. Every check runs before the write, so a failing entry
+    /// leaves the ledger untouched (an accepted `ledger_append` proposal).
+    pub(super) fn append_ledger_entries(
+        &self,
+        decisions: &[Decision],
+        captured_at: &str,
+    ) -> office_core::Result<Vec<DecisionOutcome>> {
+        let first = decisions
+            .first()
+            .ok_or_else(|| office_core::Error::Library {
+                code: "invalid_decision",
+                message: "a ledger append needs at least one entry".into(),
+            })?;
         let _lock = WriterLock::acquire(&self.state)?;
         self.recover()?;
         self.require_initialized()?;
-        let scope = decision.parsed_scope()?;
+        let scope = first.parsed_scope()?;
+        if decisions
+            .iter()
+            .any(|decision| decision.scope != scope.token())
+        {
+            return Err(office_core::Error::Library {
+                code: "invalid_decision",
+                message: "every entry of one ledger append names the same scope".into(),
+            });
+        }
         let mut ledgers = self.ledgers()?;
         let index = match ledgers.iter().position(|(ledger, _)| ledger.scope == scope) {
             Some(index) => index,
@@ -131,31 +159,47 @@ impl LibraryStore {
                 ledgers.len() - 1
             }
         };
-        let mut decision = decision.clone();
-        decision.id = ledgers[index].0.next_id();
-        decision.validate()?;
-        if let Some(target) = &decision.reverses
-            && !ledgers
-                .iter()
-                .any(|(ledger, _)| ledger.entry(target).is_some())
-        {
-            return Err(office_core::Error::Library {
-                code: "decision_not_found",
-                message: format!("reverses names {target}, which no decision ledger holds"),
-            });
-        }
         let path = ledgers[index].0.path.clone();
-        let text = append_line(&ledgers[index].1, &decision.line()?);
+        let mut text = ledgers[index].1.clone();
+        let mut ids = Vec::with_capacity(decisions.len());
+        for decision in decisions {
+            let mut decision = decision.clone();
+            decision.id = Ledger::parse(&path, &text)?.next_id();
+            decision.validate()?;
+            if let Some(target) = &decision.reverses
+                && !ledgers
+                    .iter()
+                    .any(|(ledger, _)| ledger.entry(target).is_some())
+                && !ids.contains(target)
+            {
+                return Err(office_core::Error::Library {
+                    code: "decision_not_found",
+                    message: format!("reverses names {target}, which no decision ledger holds"),
+                });
+            }
+            text = append_line(&text, &decision.line()?);
+            ids.push(decision.id);
+        }
         let parsed = Ledger::parse(&path, &text)?;
         let pending = self.decide(WriteKind::Document, &path, &text, None, None)?;
         self.finish(&pending)?;
         ledgers[index] = (parsed, text);
         let parsed: Vec<Ledger> = ledgers.into_iter().map(|(l, _)| l).collect();
         let title = parsed[index].title();
-        let entry = views(&parsed)
-            .into_iter()
-            .find(|view| view.decision.id == decision.id)
-            .ok_or(office_core::Error::LibraryUnavailable)?;
-        Ok(DecisionOutcome { entry, path, title })
+        let all = views(&parsed);
+        ids.iter()
+            .map(|id| {
+                let entry = all
+                    .iter()
+                    .find(|view| &view.decision.id == id)
+                    .cloned()
+                    .ok_or(office_core::Error::LibraryUnavailable)?;
+                Ok(DecisionOutcome {
+                    entry,
+                    path: path.clone(),
+                    title: title.clone(),
+                })
+            })
+            .collect()
     }
 }

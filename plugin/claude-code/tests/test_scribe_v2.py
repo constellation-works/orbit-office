@@ -375,6 +375,61 @@ class ScribeV2(unittest.TestCase):
         self.assertEqual(self.pass_starts(), [], "off stops Stop passes too")
         self.assertEqual((self.home / ("scr2-" + self.sid + ".json")).read_text(), written)
 
+    # ---- migration window: the v1 command words --------------------------
+
+    def finish_pass(self):
+        self.tool({"session_id": self.sid, "action": "pending2"})
+        return self.tool({"session_id": self.sid, "action": "append2",
+                          "sections": {"summary": "A pass", "goals": [], "outcome": [], "next": []},
+                          "findings": []})
+
+    def test_scribe_alone_turns_on_or_updates_with_a_notice_and_now_is_an_alias(self):
+        self.transcript([("user", "We decided to keep the scribe local")])
+        self.hook("SessionStart")
+        first = self.scribe("")
+        self.assertTrue(first["deprecated"])
+        self.assertTrue(first["display"].startswith("Notice: /scribe alone now runs /scribe update"))
+        self.assertTrue(first["on"])
+        self.assertIn("agent", first, "turning on runs the first pass")
+        switches = [c for c in self.inputs("office.scribe-control")
+                    if c["op"] == "set_switch" and c.get("on")]
+        self.assertEqual([c["on_by"] for c in switches], ["user"])
+        self.finish_pass()
+        self.transcript([("user", "We decided to keep the scribe local"), ("user", "And ship it")])
+        again = self.scribe("")
+        self.assertTrue(again["deprecated"])
+        self.assertIn("agent", again, "already on: an update")
+        self.assertEqual(len([c for c in self.inputs("office.scribe-control")
+                              if c["op"] == "set_switch" and c.get("on")]), 1, "no second turn-on")
+        self.finish_pass()
+        self.transcript([("user", "We decided to keep the scribe local"), ("user", "And ship it"),
+                         ("user", "Then rest")])
+        now = self.scribe("now")
+        self.assertTrue(now["deprecated"])
+        self.assertTrue(now["display"].startswith("Notice: /scribe now is an alias"))
+        self.assertIn("agent", now)
+
+    def test_note_is_read_as_a_marker_and_untagged_or_retired_tags_are_refused(self):
+        self.transcript([("user", "hello")])
+        self.hook("SessionStart")
+        self.assertTrue(self.tool({"session_id": self.sid, "args": "note remember the dentist"},
+                                  error=True).startswith("note_untagged; use #preferences or #decision"))
+        self.assertTrue(self.tool({"session_id": self.sid, "args": "note #pending waiting on CI"},
+                                  error=True).startswith("note_tag_retired"))
+        off = self.scribe("note #decision ship v2 first")
+        self.assertEqual((off["on"], off["marker"], off["deprecated"]), (False, "decision", True))
+        self.assertIn("/scribe on records it", off["display"])
+        lesson = self.scribe("note #lesson keep passes small")
+        self.assertEqual(lesson["marker"], "lesson", "a defined tag is a marker too")
+        self.assertEqual(self.calls("office.scribe-append"), [], "a note writes nothing itself")
+        self.assertEqual(self.calls("office.scribe-pending"), [])
+        self.turn_on()
+        self.finish_pass()
+        self.transcript([("user", "hello"), ("user", "/scribe note #decision ship v2 first")])
+        on = self.scribe("note #decision ship v2 first")
+        self.assertTrue(on["deprecated"])
+        self.assertIn("agent", on, "on: this pass reads the marker")
+
     def test_status_and_tags_are_model_free(self):
         self.turn_on([("user", "hello")])
         status = self.scribe("status")

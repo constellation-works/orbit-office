@@ -585,9 +585,64 @@ class V2(V1):
                 "path": reply.get("path"), "model_call": False}
 
 
+# The v1 command mapping during the compatibility window (specs/scribe.md,
+# "Migration"; it starts 2026-11-02 and S10 removes these after 30 days).
+CATCHUP_NOTICE = ("Notice: /scribe alone now runs /scribe update and turns scribing on; "
+                  "after the compatibility window it shows status.")
+NOW_NOTICE = ("Notice: /scribe now is an alias of /scribe update and is removed after "
+              "the compatibility window.")
+NOTE_TAG = re.compile(r"#([A-Za-z][A-Za-z0-9-]*)(?:\s|\Z)")
+MARKER_WORDS = {"preferences", "preference", "decisions", "decision"}
+
+
+def _noticed(result: dict, notice: str) -> dict:
+    result = dict(result)
+    result["deprecated"] = True
+    result["notice"] = notice
+    result["display"] = notice + "\n" + str(result.get("display", ""))
+    return result
+
+
+def catchup_v2(v2: "V2", sid: str) -> dict:
+    """v1 `/scribe` (catch-up): update when on, else turn on (which updates)."""
+    if v2.is_on(sid) is not None:
+        return _noticed(v2.update(sid), CATCHUP_NOTICE)
+    return _noticed(v2.on(sid, "", by="user"), CATCHUP_NOTICE)
+
+
+def note_v2(v2: "V2", sid: str, text: str) -> dict:
+    """v1 `/scribe note`: a `#<tag>` note is a marker in this turn; else refused.
+
+    Office reads the command line itself as the marker at the next pass
+    (`/scribe note #decision …` counts as `#decision …`), so nothing is
+    written here; untagged text and the retired v1 tags are refused.
+    """
+    body = text.strip()
+    tagged = NOTE_TAG.match(body)
+    if not tagged:
+        raise Failure("note_untagged; use #preferences or #decision in chat")
+    word = tagged.group(1).lower()
+    if word not in MARKER_WORDS:
+        defined = {str(t.get("name")) for t in
+                   ((v2.office("office.status", {}).get("scribe") or {}).get("tags") or [])}
+        if word not in defined:
+            raise Failure("note_tag_retired; v1 tags are not markers: use #preferences, "
+                          "#decision or a defined tag (/scribe tags) in chat")
+    if v2.is_on(sid) is None:
+        return {"display": "Notice: /scribe note is retired. This note is a #{} marker in "
+                           "this turn; scribing is off, so /scribe on records it.".format(word),
+                "deprecated": True, "marker": word, "on": False, "model_call": False}
+    return _noticed(v2.update(sid), "Notice: /scribe note is retired; this note is read as a "
+                                    "#{} marker by this pass. Mark it in chat next time.".format(word))
+
+
 def route_v2(v1: V1, sid: str, head: str, rest: str) -> dict:
     """The v2 command words of `/scribe`, sharing the caller's client."""
     v2 = V2(v1.client)
+    if head == "":
+        return catchup_v2(v2, sid)
+    if head == "note":
+        return note_v2(v2, sid, rest)
     if head == "on":
         return v2.on(sid, rest, by="user")
     if head == "off":
@@ -597,7 +652,7 @@ def route_v2(v1: V1, sid: str, head: str, rest: str) -> dict:
     if head in ("update", "now"):
         if rest:
             raise Failure("usage: /scribe update")
-        return v2.update(sid)
+        return v2.update(sid) if head == "update" else _noticed(v2.update(sid), NOW_NOTICE)
     if head == "status":
         if rest:
             raise Failure("usage: /scribe status")

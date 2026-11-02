@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-migrate response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dry_run", "proposals", "pending", "skipped_private", "skipped_invalid"],
+  "properties": {
+    "dry_run": { "type": "boolean" },
+    "proposals": {
+      "type": "array",
+      "description": "One row per migration key: pref:<scope>:<matter>, ledger:<scope> or rules.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "kind", "scope", "matter", "entries", "status", "id"],
+        "properties": {
+          "key": { "type": "string" },
+          "kind": { "enum": ["knowledge_add", "knowledge_update", "ledger_append"] },
+          "scope": { "type": "string" },
+          "matter": { "type": ["string", "null"], "description": "The preference matter; null for a ledger or the rules page." },
+          "entries": { "type": ["integer", "null"], "minimum": 1, "description": "Ledger entries proposed; null for a page proposal." },
+          "status": { "enum": ["filed", "already_filed", "planned", "suppressed"], "description": "planned only on a dry run; suppressed when dismissal memory holds a matching proposal." },
+          "id": { "type": ["string", "null"], "description": "The proposal task; null when planned." }
+        }
+      }
+    },
+    "pending": {
+      "type": "array",
+      "description": "Open v1 #pending lines, reported for the user to turn into to-dos; never filed.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cite", "quote", "time", "session_id", "due"],
+        "properties": {
+          "cite": { "type": "string", "description": "<SCR id>#L<n>" },
+          "quote": { "type": "string" },
+          "time": { "type": "string" },
+          "session_id": { "type": "string" },
+          "due": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "skipped_private": { "type": "integer", "minimum": 0, "description": "Lines in private SCRs or conversations, never copied into a proposal." },
+    "skipped_invalid": { "type": "integer", "minimum": 0, "description": "Decision lines the ledger would refuse (for example a time without an offset)." }
+  }
+}

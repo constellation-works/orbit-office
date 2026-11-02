@@ -1132,7 +1132,9 @@ pub struct Rules {
     pub id: String,
     /// Library-relative path.
     pub path: String,
-    /// `scribe.handoff`; false when absent.
+    /// `scribe.handoff`: retired with scribe v2, whose SCR is the handoff
+    /// (specs/scribe.md, "Configuration"), so always false. A page that
+    /// still sets it stays valid; the migration proposes removing it.
     pub handoff: bool,
     /// The page body, passed to the crew as data; `None` for a private page,
     /// which never reaches the crew.
@@ -1153,7 +1155,7 @@ pub fn rules(markdown: &str) -> Result<Rules> {
     Ok(Rules {
         id: page.id,
         path: RULES_PAGE_PATH.into(),
-        handoff: page.scribe_handoff.unwrap_or(false),
+        handoff: false,
         body: (!private).then_some(page.body),
     })
 }

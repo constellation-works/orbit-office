@@ -556,6 +556,44 @@ pub fn decision_from_input(value: &Value) -> Result<(Decision, Option<String>)> 
     Ok((decision, input.source))
 }
 
+/// Most entries one `ledger_append` proposal may carry.
+pub const LEDGER_APPEND_MAX: usize = 500;
+
+/// Parse and validate a `ledger_append` proposal's entries (specs/scribe.md,
+/// "Migration"): each is a `decision` input whose `source` is required (the
+/// v1 citation it was backfilled from) and whose scope is the proposal's.
+/// Ids are provisional, numbered from 1 in list order; the adapter assigns
+/// the real ones on append. Any invalid entry refuses the whole list.
+pub fn ledger_append_entries(scope: &str, entries: &[Value]) -> Result<Vec<Decision>> {
+    let scope = Scope::parse(scope)?;
+    if entries.is_empty() || entries.len() > LEDGER_APPEND_MAX {
+        return Err(invalid(format!(
+            "ledger_append carries 1 to {LEDGER_APPEND_MAX} entries"
+        )));
+    }
+    let mut out = Vec::with_capacity(entries.len());
+    for (index, value) in entries.iter().enumerate() {
+        let (mut decision, source) = decision_from_input(value)?;
+        if decision.scope != scope.token() {
+            return Err(invalid(format!(
+                "ledger_append entry {} is not in scope {}",
+                index + 1,
+                scope.token()
+            )));
+        }
+        decision.source = source.ok_or_else(|| {
+            invalid(format!(
+                "ledger_append entry {} needs its source citation",
+                index + 1
+            ))
+        })?;
+        decision.id = scope.entry_id(index + 1);
+        decision.validate()?;
+        out.push(decision);
+    }
+    Ok(out)
+}
+
 /// What a decision `ref` names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EvidenceRef {

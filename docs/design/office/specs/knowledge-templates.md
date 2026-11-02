@@ -112,7 +112,7 @@ the rest of its report.
 | `glossary` | `dom-glossary` (one) | Terms and acronyms, one `### Term` each, citing where it was first seen | `matched` |
 | `goals` | `dom-goals` (one) | This period's priorities or objectives | `never`; read by signals and reviews |
 | `rhythm` | `dom-rhythm` (one) | Recurring meetings and deadlines ("status update every Friday") | `never`; read by signals |
-| `scribe-rules` | `dom-scribe-rules` (one) | The scribe's tags, topics, matters, capture rules and models ([scribe.md](./scribe.md#configuration)); optional `scribe: {handoff: true}` frontmatter ([sessions.md](./sessions.md#rules-page)) | `never`; passed to the scribe's crew as data |
+| `scribe-rules` | `dom-scribe-rules` (one) | The scribe's tags, topics, matters, capture rules and models ([scribe.md](./scribe.md#configuration)); the Tags section and the optional `scribe: {handoff: true}` frontmatter are no longer read by scribe v2 and the migration proposes removing them ([scribe.md](./scribe.md#migration)) | `never`; passed to the scribe's crew as data |
 | `preferences` | `dom-preferences-<slug>` (one per scope; `global` or project) | Current preferences grouped by matter | `tagged`; global on every task, project on matching `project:<scope>` |
 | `runbook` | `rb-<slug>` | Inputs, steps, done when (all required); optional `performable` and `submission` for runbooks the agent carries out as drafts ([library-bootstrap.md](./library-bootstrap.md#runbooks-the-agent-performs-as-drafts)) | named by the task, as today |
 

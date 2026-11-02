@@ -675,7 +675,14 @@ As built, the checks are deliberately narrower than the list above:
 
 ### Scribe handoff
 
-Built ([ORB-20686]).
+Built ([ORB-20686]); retired by scribe v2 ([ORB-21122]). Every v2 pass
+writes the SCR that is the handoff, so `office.capture` now drops an
+offered scribe handoff as `disabled` whether or not the rules page sets
+`scribe.handoff`, and the conversation preview reports `rules.handoff:
+false`. A page that still sets the flag stays valid; the migration
+proposes removing it with the rules page's Tags section
+([scribe.md](./scribe.md#migration)). The behavior below is the retired
+v1 design, kept for the record.
 
 Optional, off by default: `scribe.handoff: true` in the rules page's
 frontmatter, written as the one-level mapping `scribe:` with
@@ -1014,6 +1021,7 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-20242] — built conversation transcript extraction through the `office.capture` session mode and the SessionEnd sweep.
 - [ORB-20685] — built the live scribe's incremental passes and `Note:`/`Scribe:` commands.
 - [ORB-20686] — built the live scribe's rules page, answers to questions and scribe handoff.
+- [ORB-21122] — retired the scribe handoff (`scribe.handoff`).
 - [ORB-20689] — built the per-user Claude Code hooks, commands, debounce and backfill.
 - [ORB-20755] — reserved the planned `office.recall-answer` and `office.scribe-control` scaffold (registry rows, reserved manifest blocks, this section).
 - [ORB-21060] — built per-thread handoffs within a project and the `other_sessions` section.

@@ -432,6 +432,17 @@ spec:
       input_schema: { $ref: schemas/scribe-ask.request.json }
       output_schema: { $ref: schemas/scribe-ask.response.json }
 
+    - name: scribe-migrate
+      description: >-
+        Backfill scribe v1 once: file one preference proposal per scope and
+        matter, one ledger_append proposal per scope and the rules-page
+        Tags removal, skipping keys already filed, and report open v1
+        pending lines. Model-free; run by an operator.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/scribe-migrate.request.json }
+      output_schema: { $ref: schemas/scribe-migrate.response.json }
+
     # ---- recall ----
 
     - name: recall

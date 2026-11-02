@@ -3236,6 +3236,13 @@ impl office_core::ports::Library for LibraryStore {
     ) -> office_core::Result<office_core::ports::DecisionOutcome> {
         self.append_ledger_entry(decision, captured_at)
     }
+    fn append_decisions(
+        &self,
+        decisions: &[office_core::domain::source::decisions::Decision],
+        captured_at: &str,
+    ) -> office_core::Result<Vec<office_core::ports::DecisionOutcome>> {
+        self.append_ledger_entries(decisions, captured_at)
+    }
     fn read_source(&self, id: &str) -> office_core::Result<SourceView> {
         Self::read_source(self, id)
     }

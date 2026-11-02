@@ -271,7 +271,59 @@ fn apply(call: &Call<'_>, payload: &Payload, choice: Option<&str>) -> Result<Val
             keep_mine(call, path, blob)?;
             Ok(json!({"page":page,"kept":"mine"}))
         }
+        Payload::LedgerAppend { scope, entries } => {
+            // All or none: the adapter checks every entry before its one
+            // commit, so a refused entry leaves the ledger untouched.
+            let decisions =
+                office_core::domain::source::decisions::ledger_append_entries(scope, entries)?;
+            verify_entries(call, &decisions)?;
+            let outcomes = call
+                .ports
+                .library
+                .append_decisions(&decisions, &reconcile::now(call))?;
+            let ledger = office_core::domain::source::decisions::Scope::parse(scope)?.ledger_id();
+            let path = outcomes
+                .first()
+                .map(|o| o.path.clone())
+                .ok_or(Error::LibraryUnavailable)?;
+            Ok(json!({
+                "ledger": ledger,
+                "path": path,
+                "appended": outcomes.iter().map(|o| o.entry.decision.id.clone()).collect::<Vec<_>>(),
+            }))
+        }
     }
+}
+
+/// Check every entry's verbatim fields against the text its ref names, as
+/// `office.capture`'s `decision` input does. A v1 SCR (`SCR-…#L<n>`) is
+/// read through its record, since SCR files are not indexed sources.
+pub(crate) fn verify_entries(
+    call: &Call<'_>,
+    decisions: &[office_core::domain::source::decisions::Decision],
+) -> Result<()> {
+    use office_core::domain::source::decisions::EvidenceRef;
+    for decision in decisions {
+        decision.verify(|reference| match EvidenceRef::parse(reference)? {
+            EvidenceRef::Source { id, anchor } if id.starts_with("SCR-") => {
+                let record = call
+                    .ports
+                    .library
+                    .get(&id)?
+                    .filter(|record| record.sensitivity == "normal")
+                    .ok_or_else(|| Error::Library {
+                        code: "decision_ref_unresolved",
+                        message: format!("decision ref {reference} cannot be read"),
+                    })?;
+                let parsed = office_core::domain::source::parse_anchor(&anchor)?;
+                office_core::domain::source::anchor_span(&record.body, parsed, &anchor)
+            }
+            EvidenceRef::Source { .. } | EvidenceRef::TaskComment { .. } => {
+                crate::tools::sources::capture::decision::evidence(call, reference, false)
+            }
+        })?;
+    }
+    Ok(())
 }
 
 /// Record that this member has seen their blob and chose to override it, so

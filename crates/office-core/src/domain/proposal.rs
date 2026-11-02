@@ -22,6 +22,8 @@ pub enum ProposalKind {
     Retire,
     /// Resolve a page changed both here and in the shared library.
     SharedConflict,
+    /// Append backfilled decisions to one ledger, all or none.
+    LedgerAppend,
 }
 impl ProposalKind {
     /// Stable task-tag token.
@@ -34,6 +36,7 @@ impl ProposalKind {
             Self::RunbookFromFriction => "runbook_from_friction",
             Self::Retire => "retire",
             Self::SharedConflict => "shared_conflict",
+            Self::LedgerAppend => "ledger_append",
         }
     }
 }
@@ -190,6 +193,16 @@ pub enum Payload {
         /// SHA-256 of the user's copy when the conflict was filed.
         base_sha256: String,
     },
+    /// Decision ledger entries backfilled from scribe v1 (specs/scribe.md,
+    /// "Migration"). Filed only by `office.scribe-migrate`; acceptance
+    /// appends every entry in one commit or refuses them all.
+    LedgerAppend {
+        /// `global` or `project:<name>`: the one ledger they go to.
+        scope: String,
+        /// Complete `decision` inputs, without `id` (assigned on append),
+        /// each with `source` set to its v1 citation.
+        entries: Vec<Value>,
+    },
 }
 
 fn sharing_flag<'de, D: serde::Deserializer<'de>>(
@@ -238,7 +251,8 @@ impl Payload {
             | Self::AutoTask { .. }
             | Self::RunbookFromFriction { .. }
             | Self::Retire { .. }
-            | Self::SharedConflict { .. } => {}
+            | Self::SharedConflict { .. }
+            | Self::LedgerAppend { .. } => {}
         }
         Ok(())
     }
@@ -253,6 +267,7 @@ impl Payload {
             Self::RunbookFromFriction { .. } => ProposalKind::RunbookFromFriction,
             Self::Retire { .. } => ProposalKind::Retire,
             Self::SharedConflict { .. } => ProposalKind::SharedConflict,
+            Self::LedgerAppend { .. } => ProposalKind::LedgerAppend,
         }
     }
 }

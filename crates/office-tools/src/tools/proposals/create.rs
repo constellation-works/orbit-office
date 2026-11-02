@@ -29,6 +29,12 @@ fn run(call: &Call<'_>) -> Result<Value> {
             "payload kind (shared_conflict is filed by office.library-sync)",
         ));
     }
+    // Ledger backfills come from scribe v1 lines; only the migration files them.
+    if input.payload.kind() == proposal::ProposalKind::LedgerAppend {
+        return Err(proposal::invalid(
+            "payload kind (ledger_append is filed by office.scribe-migrate)",
+        ));
+    }
     file(call, input)
 }
 
@@ -167,7 +173,8 @@ fn materialize(call: &Call<'_>, payload: &mut Payload, evidence: &[String]) -> R
         Payload::AutoTask { .. }
         | Payload::KnowledgeUpdate { .. }
         | Payload::Retire { .. }
-        | Payload::SharedConflict { .. } => {}
+        | Payload::SharedConflict { .. }
+        | Payload::LedgerAppend { .. } => {}
     }
     Ok(())
 }
@@ -343,6 +350,10 @@ pub(crate) fn validate_payload(call: &Call<'_>, payload: &Payload) -> Result<()>
             }
             check_revision(call, page, base_sha256).map(|_| ())
         }
+        Payload::LedgerAppend { scope, entries } => {
+            office_core::domain::source::decisions::ledger_append_entries(scope, entries)
+                .map(|_| ())
+        }
     }
 }
 
@@ -430,7 +441,8 @@ fn preference_conflicts(call: &Call<'_>, payload: &Payload) -> Result<String> {
         | Payload::AutoTask { .. }
         | Payload::RunbookFromFriction { .. }
         | Payload::Retire { .. }
-        | Payload::SharedConflict { .. } => return Ok(String::new()),
+        | Payload::SharedConflict { .. }
+        | Payload::LedgerAppend { .. } => return Ok(String::new()),
     };
     let page = Page::from_markdown(markdown)?;
     if page.template.as_deref() != Some("preferences") {

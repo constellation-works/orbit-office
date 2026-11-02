@@ -95,10 +95,6 @@ capture guidance) and the SCR file's front matter.
   any entry that breaks the rules and reports it. Do not retry refusals.
 - Return only the tool's `display`.
 
-For a note without a tag you get the note text and the rule tags: pick the
-one tag that fits and run the command you are given, with the text
-unchanged.
-
 ## Asking level
 
 You get a question, and usually a session id for the scribe tool (use

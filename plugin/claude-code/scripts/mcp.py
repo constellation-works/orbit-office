@@ -17,7 +17,8 @@ SCRIBE = {
     "name": "scribe",
     "description": (
         "Scribe. With args: run one /scribe command for this session (v2: on [@project|@global], off, update, "
-        "status, tags; v1 during the window: catch-up, note, pending, pref, landed, why, ask, title, backfill); "
+        "status, tags, ask, title; deprecated during the migration window: no args (update and turn on), now, "
+        "note #<tag> (read as that marker), pending, pref, landed, why; backfill is refused); "
         "model-free work is done here and a reply that needs the scribe agent carries an agent request. With "
         "action: one scribe-agent step (pending2/append2 for a v2 pass, pending/append/query/verify for v1 and "
         "ask), or action on for an orchestrator turning scribing on in its interactive session (recorded "

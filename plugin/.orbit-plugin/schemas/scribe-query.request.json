@@ -14,7 +14,7 @@
         "preferences",
         "scr"
       ],
-      "description": "Canned query: pending (open items, oldest first), pref (current preference for a matter, with stale flag), landed (in the local date range; today when no range is given), why (decisions with their reasons). decisions, preferences and scr read the v2 stores; tag, topic, refs and session_id are refused there."
+      "description": "Canned query: pending (open items, oldest first), pref (current preference for a matter, with stale flag), landed (in the local date range; today when no range is given), why (decisions with their reasons). These four v1 modes are deprecated for the 30-day compatibility window: the response carries deprecated and replacement, and pref and why answer from the v2 stores first (v2_results). decisions, preferences and scr read the v2 stores; tag, topic, refs and session_id are refused there."
     },
     "tag": {
       "type": "string",

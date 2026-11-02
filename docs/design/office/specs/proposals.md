@@ -23,6 +23,7 @@ Source: spec §7.
 | `runbook_from_friction` | Writes or edits a runbook so a recurring friction stops happening |
 | `retire` | Marks a page `retired` or disables an auto-task nobody uses |
 | `shared_conflict` | Filed only by `office.library-sync` when the user's copy of a shared page and the shared copy both changed. Acceptance takes `choice`: `theirs` writes the shared version (keeping the user's contact and path refs); `mine` changes no page and pushes the user's version on the next sync ([shared-library.md](./shared-library.md#officelibrary-sync)) |
+| `ledger_append` | Filed only by `office.scribe-migrate`, the one-time scribe v1 backfill ([scribe.md](./scribe.md#migration)): `{kind, scope, entries}`, one to 500 complete decision ledger entries for one scope (`global` or `project:<name>`), each with `source` set to the v1 citation it came from. Acceptance re-checks every entry (the D13 schema, each verbatim field against the text its `ref` names, `reverses` naming an existing entry) and appends them all in one Library commit, or refuses the whole list and appends none; it returns `{ledger, path, appended: [dec-…]}`. `office.proposal-create` refuses the kind |
 
 ## Signals
 
@@ -267,6 +268,7 @@ pairs are plugin definitions rather than proposal kinds.
 
 ## Task References
 
+- [ORB-21122] — added the `ledger_append` kind, filed only by `office.scribe-migrate`.
 - [ORB-20362] — landed Orbit's scoped, audited application authority for user-approved tool calls.
 - [ORB-20363] — wires the office app's approval actions to that scoped application authority.
 

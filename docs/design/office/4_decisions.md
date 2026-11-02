@@ -3139,6 +3139,81 @@ scribing on, which scribe v2 forbids: a headless session is never scribed
   (additive; old callers omit them). The plugin-surface row now states
   the grant as the manifest declares it.
 
+## Scribe v2 S9: the backfill is its own operator tool and files proposals; `ledger_append` is all or none
+
+**Recorded:** 2026-11-02 · [ORB-21122]
+**Code anchors:** `crates/office-tools/src/tools/sessions/scribe_migrate.rs`,
+`crates/office-tools/src/tools/proposals/accept.rs` (`verify_entries`),
+`crates/office-store/src/repository/library/decisions.rs`
+(`append_ledger_entries`),
+`crates/office-core/src/domain/source/decisions.rs`
+(`ledger_append_entries`),
+`crates/office-core/src/domain/source/conversation/scribe/v2/markers.rs`
+(`note_command`), `plugin/claude-code/scripts/scribe_v2.py`
+(`catchup_v2`, `note_v2`)
+
+### Context
+
+[specs/scribe.md](./specs/scribe.md#migration) asks for a one-time backfill
+of v1 preferences and decisions as proposals, a `ledger_append` kind whose
+acceptance appends every entry or none, and a 30-day window in which the v1
+commands map onto v2. The S1 note migration ran inside `office.init`
+([decision-ledger build](#decision-ledger-build-migration-in-officeinit-global-by-default-private-notes-kept)),
+but that migration moved files; this one files Orbit proposals.
+
+### Decision
+
+- **A separate tool, `office.scribe-migrate`** (mutating, MCP scope none:
+  an operator runs it, as `office.init`), not a step of `office.init`.
+  Filing proposals is an Orbit write, and `office.init` must keep working
+  with no Orbit. It writes no store itself; every change is a reviewed
+  proposal.
+- **Idempotent by key, not by content.** Each proposal carries the
+  `scribe-migration` tag plus a hashed per-key tag (`pref:<scope>:<matter>`,
+  `ledger:<scope>`, `rules`). A re-run lists that tag (truncation refused)
+  and skips a key filed in any status, dismissed included, so "a re-run
+  files nothing new" holds even after the user rejects a proposal.
+- **`ledger_append` is filed only by the migration.**
+  `office.proposal-create` refuses the kind, as it does `shared_conflict`.
+  The tool reuses the create path's filing (dismissal memory, staged
+  payload, evidence page).
+- **All or none.** The Library port gains `append_decisions`: the adapter
+  takes the writer lock once, numbers and validates every entry against
+  the growing ledger text (a `reverses` may name an earlier entry of the
+  same batch), and writes one commit only when all pass. Acceptance first
+  re-checks every verbatim field against the text its `ref` names, as
+  `office.capture`'s `decision` input does; a v1 SCR, which is not an
+  indexed source, is read through its record.
+- **Preferences go to `dom-preferences-global`.** v1 preferences had no
+  scope, and D3 makes global the default. Conversation-log `direction`
+  lines have no matter, so their matter is a slug of the first six words;
+  a v1 `#preference` on the same matter wins.
+- **`/scribe note` writes nothing.** The pass reads the command line itself
+  as the marker, so a note follows the trust rule (only a user's typed
+  turn counts) instead of a plugin-side write that would bypass it.
+- **The window** runs 2026-11-02 to 2026-12-02; S10 ([ORB-21123]) runs on
+  or after its end. `scribe.handoff` retires at once: capture drops the
+  offer as `disabled`, and the page flag stays accepted so no page breaks.
+
+### Alternatives rejected
+
+- **A step of `office.init`.** It would make init depend on Orbit and run
+  on every init.
+- **Dedupe by proposal content.** A changed v1 corpus between runs would
+  file near-duplicates for review.
+- **Appending entries one by one on accept.** A late refusal would leave
+  part of a reviewed list in the append-only ledger.
+
+### Consequences
+
+- Several preference proposals for the same page are pinned to one
+  revision; accepting one makes the others stale
+  (`proposal_revision_changed`). The spec states this.
+- The `proposal-accept` response gains a `ledger_append` change shape;
+  `scribe-query` v1 responses gain `deprecated`, `replacement` and
+  `v2_results` (all additive). The root AGENTS.md change is [ORB-21239]
+  in ws_constellation.
+
 ## Task References
 
 - [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
@@ -3184,5 +3259,8 @@ scribing on, which scribe v2 forbids: a headless session is never scribed
 - [ORB-21217] — proposes ingestion of answered Orbit decision requests into the ledger.
 - [ORB-20856] — made `office.scribe-control` and `office.scribe-append` agent-callable so the plugin's local-cli `[agent]` calls succeed.
 - [ORB-21118] — built Scribe v2 S5: the Claude Code opt-in, Stop-hook cadence and marker routing, and the managed-session refusal above.
+- [ORB-21122] — built Scribe v2 S9: `office.scribe-migrate`, the `ledger_append` kind and the v1 command mapping above.
+- [ORB-21123] — removes the v1 scribe surfaces after the window.
+- [ORB-21239] — replaces the root AGENTS.md decision-log rule in ws_constellation.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

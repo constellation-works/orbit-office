@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.scribe-migrate request",
+  "description": "The one-time scribe v1 backfill (specs/scribe.md, Migration). Files proposals only; a re-run files nothing for a key already filed in any status.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "dry_run": { "type": "boolean", "description": "Report what would be filed without filing it. Default false." }
+  }
+}

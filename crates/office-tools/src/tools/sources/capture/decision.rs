@@ -67,7 +67,7 @@ pub(super) fn run(call: &Call<'_>) -> Result<Value> {
 
 /// The text a ref names. A private source's text never reaches a ledger,
 /// so citing one is refused unless the entry is private (reference-only).
-fn evidence(call: &Call<'_>, reference: &str, private_entry: bool) -> Result<String> {
+pub(crate) fn evidence(call: &Call<'_>, reference: &str, private_entry: bool) -> Result<String> {
     let unresolved = |reason: &str| Error::Library {
         code: "decision_ref_unresolved",
         message: format!("decision ref {reference} cannot be read: {reason}"),
