@@ -1,4 +1,4 @@
-/** The only credential writer. No output from this child is captured or logged. */
+/** Writes credentials through Orbit's secret command without capturing child output. */
 import { spawn } from "node:child_process";
 
 export class SecretError extends Error {
