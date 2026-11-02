@@ -58,6 +58,13 @@ Source: spec §12. The one-call envelope is
 | `office.status` | read_only | workspace | Library and index health, the private endpoint as `open_weights` or null, the shared library block as `shared` or null, the followed workspaces as `brief` (`task_workspaces`, or null when uninitialized), and the effective scribe policy as `scribe` (`cadence`, `tags`, `tags_customized`; the defaults when unset or uninitialized) (also a panel) |
 | `office.scribe-ask` | read_only | workspace | Answer a free-form question over SCR files, decision ledgers and preference pages: model-free shortlist (v2 evidence cited by entry id: `dec-<scope>-<n>`, `<page>#<matter>`, `<SCR>#T<n>`) (date/project/session filters plus lexical match on tags, matter, topics and quotes, bounded by `limit`), then one Standard-tier model call (the scribe `ask` level); every claim cites SCR file:line and message id and its quote is verbatim-checked against the cited line, unmatched quotes dropped; `not_captured` with the searched range, topics and sessions when nothing is found; private entries always by reference only to the caller, regardless of route ([scribe.md](./scribe.md#answering)) |
 
+Designed, not built and not in the manifest ([decision-precedents.md](./decision-precedents.md); slices [ORB-21217], [ORB-21218]):
+
+| Tool | Kind | MCP | Purpose |
+|---|---|---|---|
+| `office.decision-precedents` | read_only | **none** | Implement Orbit's `orbit.precedent-provider/1`: take the contract request (question, options, workspace, category, `as_of`, `k`) and return at most `k` human or human-confirmed ledger entries as the contract's precedents, recency-weighted, reversed ones flagged with their reversing entry, unresolved conflicts noted, each with a citation; model-free and never an answer ([decision-precedents.md](./decision-precedents.md#the-precedent-tool)) |
+| `office.decision-ingest` | mutating | **none** | Append answered Orbit decision requests (human, model, and `model_answer_review` confirm or veto) to the decision ledgers, idempotent by request id, linking same-decision scribe entries with `same_as`; needs an Orbit answered-request read and the `orbit.decision.list` and `orbit.decision.show` callbacks ([decision-precedents.md](./decision-precedents.md#ingesting-orbit-decisions)) |
+
 Rules:
 
 - `mcp_scope: none` tools are callable only by the app, through
@@ -198,7 +205,8 @@ Activities have no schedule switch. Definitions load only when listed in
 - **Auto-tasks:**
   - `office-knowledge-maintenance`: weekly. Re-verifies stale pages against newer sources and frictions, and files `knowledge_update` proposals.
   - `office-review`: on period end.
-  - `office-scribe-contradictions`: weekly (`0 1 * * 1`), seeded disabled, no pinned crew. Checks every decision ledger and preference page; files one `knowledge_update` proposal per preference conflict, one `owner:you` to-do per unlinked decision conflict, and a consolidation proposal for a page over 1,000 words; never writes a ledger ([scribe.md](./scribe.md#contradiction-checks)).
+  - `office-scribe-contradictions`: weekly (`0 1 * * 1`), seeded disabled, no pinned crew. Checks every decision ledger and preference page; files one `knowledge_update` proposal per preference conflict, one `owner:you` to-do per unlinked decision conflict, and a consolidation proposal for a page over 1,000 words; never writes a ledger ([scribe.md](./scribe.md#contradiction-checks)). Designed: it also compares decisions within an Orbit category and ends each decision-conflict to-do with a `Conflicting entries:` line ([ORB-21219]; [decision-precedents.md](./decision-precedents.md#contradictions)).
+  - `office-decision-ingest` (designed, not built): hourly, seeded disabled; runs `office.decision-ingest` ([ORB-21217]).
 - **Activities:** `office-agent-todo`, an agent loop that executes an `owner:agent` to-do with its attached runbook and example artifacts, and writes its output as task artifacts with the manifest. Its `proc.spawn` allowlist has `python3` and no cloud CLI, so its agents can use the `gateway` plugin and Orbit refuses them `cloudcli` ([gateway.md](./gateway.md)).
 - **Skills:** `orchestrator`, `library-conventions` (how to cite, write pages and package outputs), and one skill per pack (`kt`, `meetings`, later `receipts`).
 
@@ -410,6 +418,9 @@ defaults; existing explicit pack lists keep their values.
 - [ORB-21115] — added the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
 - [ORB-21117] — added the v2 `office.scribe-pending`, `office.scribe-append` and `office.scribe-query` modes and the `office.scribe-ask` v2 shortlist.
 - [ORB-20247] — added `office.proposal-reconcile` and the status-partitioned proposal layout.
+- [ORB-21217] — proposes `office.decision-ingest` and its routine.
+- [ORB-21218] — proposes `office.decision-precedents`.
+- [ORB-21219] — proposes contradiction reporting to the precedent provider.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 
