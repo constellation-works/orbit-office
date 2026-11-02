@@ -1,6 +1,5 @@
-//! Narrow filesystem mechanics shared by the workspace's crates:
-//! path safety, atomic owner-only writes, and content hashing.
-//! Mechanisms only — this module knows nothing about Library documents.
+//! Shared filesystem primitives for safe paths, atomic writes, and content hashes.
+//! These mechanics stay independent of Library document semantics.
 
 pub mod atomic;
 pub mod hash;

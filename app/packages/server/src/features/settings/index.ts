@@ -1,13 +1,4 @@
-/**
- * Settings: agent CLI, the private route, the team shared library, gateway
- * connections (with the device-code sign-in for oauth2_device ones) and
- * redacted API call history.
- *
- * Built: reports whether the install script has registered Orbit MCP with
- * the user's agent CLI (docs/design/office/specs/web-app.md#delivery).
- * Plain words only in the UI: the endpoint names the CLI ("Muse Code")
- * and whether it is connected, never ids or raw statuses.
- */
+/** Settings routes for agent setup, gateway access, the shared library, and API activity. */
 import type { SettingsStatus } from "@orbit-office/contracts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 

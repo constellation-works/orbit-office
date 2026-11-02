@@ -1,6 +1,4 @@
-//! Sensitivity: how far a piece of content may travel. Shared by the
-//! Library contracts, the model router, and selection sharing — one
-//! definition, so the three can never disagree about which is stricter.
+//! Shared policy for where content may travel across the Library, model routing, and selection sharing.
 
 use serde::{Deserialize, Serialize};
 
