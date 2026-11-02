@@ -69,16 +69,16 @@ function task(title, notBefore, state, extra = {}) {
 }
 
 test('scheduled to-dos read their state in words, a late start by its time', () => {
-  const words = item => taskWords(item).join(' · ');
+  const words = item => taskWords(item, now).join(' · ');
   assert.equal(words(task('Numbers', at(30, 9), 'scheduled')), 'Scheduled · For an agent');
   assert.equal(words(task('Renewal', at(29, 10), 'not_approved')), 'Not approved · For an agent');
-  assert.equal(words(task('Venue', at(29, 15), 'scheduled', { owner: 'you' })), 'Scheduled · For you');
+  assert.equal(words(task('Venue', at(29, 15), 'scheduled', { owner: 'you' })), 'Due · For you');
   assert.equal(words(task('Board', at(28, 11), 'running', { started_at: at(28, 11, 1).toISOString() })), 'Running · For an agent', 'a minute after the time is on time');
   assert.equal(words(task('Pricing', at(28, 9), 'running', { started_at: at(28, 9, 42).toISOString() })), 'Started 09:42 · For an agent');
   assert.equal(words(task('Expenses', at(27, 8), 'done', { started_at: at(27, 8, 0).toISOString() })), 'Done · For an agent');
   assert.equal(words(task('Late done', at(27, 8), 'done', { started_at: at(27, 9, 15).toISOString() })), 'Done · Started 09:15 · For an agent');
   assert.equal(words(task('Review', at(27, 8), 'review')), 'Ready for review · For an agent');
-  assert.equal(taskState(task('Renewal', at(29, 10), 'not_approved')).tone, 'attention');
+  assert.equal(taskState(task('Renewal', at(29, 10), 'not_approved'), now).tone, 'attention');
 });
 
 test('a scheduled to-do sits at its time beside the meetings, widening the hours when it must', () => {

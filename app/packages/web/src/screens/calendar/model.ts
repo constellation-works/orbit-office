@@ -156,11 +156,28 @@ export function startedLate(task: CalendarTask): Date | null {
 }
 
 /**
+ * Whether the to-do is the user's own: nothing starts it, so its time is the
+ * date it is due rather than a scheduled start.
+ */
+export function isDue(task: CalendarTask): boolean {
+  return task.owner === "you";
+}
+
+/** One of the user's to-dos still open after its due date. */
+export function isOverdueTask(task: CalendarTask, now: Date): boolean {
+  return isDue(task) && task.state !== "done" && Date.parse(task.not_before) <= now.getTime();
+}
+
+/**
  * A scheduled to-do's state in words: "Not approved" while proposed,
  * "Scheduled" while it waits, "Running" (or "Started 09:42" when it started
- * late), "Ready for review" and "Done".
+ * late), "Ready for review" and "Done". The user's own to-dos read "Due",
+ * then "Overdue" once the date passes while still open, and "Done".
  */
-export function taskState(task: CalendarTask): MeetingState {
+export function taskState(task: CalendarTask, now: Date): MeetingState {
+  if (isDue(task) && task.state !== "done") {
+    return isOverdueTask(task, now) ? { words: "Overdue", tone: "attention" } : { words: "Due", tone: "neutral" };
+  }
   switch (task.state) {
     case "not_approved": return { words: "Not approved", tone: "attention" };
     case "scheduled": return { words: "Scheduled", tone: "neutral" };
@@ -174,10 +191,10 @@ export function taskState(task: CalendarTask): MeetingState {
 }
 
 /** Every word a scheduled block shows besides its title: its state, a late start, and whose it is. */
-export function taskWords(task: CalendarTask): string[] {
-  const late = startedLate(task);
+export function taskWords(task: CalendarTask, now: Date): string[] {
+  const late = isDue(task) ? null : startedLate(task);
   return [
-    taskState(task).words,
+    taskState(task, now).words,
     ...(late !== null && task.state !== "running" ? [`Started ${clock(late)}`] : []),
     task.owner === "you" ? "For you" : "For an agent",
   ];

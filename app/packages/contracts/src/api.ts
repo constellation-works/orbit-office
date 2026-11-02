@@ -277,6 +277,8 @@ export interface TodayNeed extends TodayItem {
   group: TodayNeedGroup | null;
   /** From the shared library: a colleague's update, or a page changed on both sides. */
   shared?: "incoming" | "conflict";
+  /** A `todo`'s due date: its `not_before`, RFC 3339. Absent when it has none. */
+  due?: string;
 }
 
 export interface TodayResult extends TodayItem {
@@ -309,7 +311,10 @@ export interface TodoItem {
   knowledge: string[];
   /** True only for the user's own to-dos, which offer a close action. */
   closable: boolean;
-  /** The scheduled start (`not_before`, RFC 3339), or null when it has none. */
+  /**
+   * The scheduled start (`not_before`, RFC 3339), or null when it has none.
+   * The user's own to-dos are never dispatched, so the screen reads it as their due date.
+   */
   scheduled: string | null;
   /** True while nothing has started it, so **Schedule…** can set or clear the time. */
   schedulable: boolean;
@@ -597,9 +602,9 @@ export interface CalendarTask {
   /** Used only to reschedule or clear it. The screen must not render it. */
   id: string;
   title: string;
-  /** The scheduled start, RFC 3339. */
+  /** The scheduled start, RFC 3339; for an `owner: "you"` to-do, its due date. */
   not_before: string;
-  /** `you` is never dispatched; `agent` is shipped by the dispatch pass once the time comes. */
+  /** `you` is never dispatched, so its time is a due date; `agent` is shipped by the dispatch pass once the time comes. */
   owner: "you" | "agent";
   state: CalendarTaskState;
   /** When it last started, from its history, or null while it has not. */
@@ -622,7 +627,11 @@ export interface CalendarView {
   routines: CalendarRoutine[];
   /** Scheduled routines this connection may not read; auto-tasks are still listed. */
   routines_unavailable: boolean;
-  /** To-dos whose scheduled start falls in the range, by start. */
+  /**
+   * To-dos whose scheduled start falls in the range, by start. While the
+   * range holds now, the user's open to-dos already due before it lead the
+   * list, so an overdue one stays in view.
+   */
   tasks: CalendarTask[];
   /** True when the scheduled to-dos could not all be read; the meetings still show. */
   scheduled_unavailable: boolean;

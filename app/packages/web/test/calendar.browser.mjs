@@ -223,7 +223,7 @@ test('scheduled to-dos sit at their time with their state in words, at 1440px an
       ['Wednesday, October 28', 'Refresh the pricing sheet', 'Started 09:42 · For an agent'],
       ['Wednesday, October 28', 'Prepare the board pack', 'Running · For an agent'],
       ['Thursday, October 29', 'Draft the renewal summary', 'Not approved · For an agent'],
-      ['Thursday, October 29', 'Call the venue', 'Scheduled · For you'],
+      ['Thursday, October 29', 'Call the venue', 'Due · For you'],
       ['Friday, October 30', 'Send the weekly numbers', 'Scheduled · For an agent'],
     ]) {
       if (width === 375) await day(page, weekday).click();
@@ -231,7 +231,7 @@ test('scheduled to-dos sit at their time with their state in words, at 1440px an
       await shown.waitFor({ state: 'visible' });
       const text = await shown.innerText();
       assert.ok(text.includes(words), `${title} reads ${words} at ${width}px, not ${JSON.stringify(text)}`);
-      assert.match(text, /To-do · \d{2}:\d{2}/);
+      assert.match(text, title === 'Call the venue' ? /Due \d{2}:\d{2}/ : /To-do · \d{2}:\d{2}/);
       assert.equal(await page.locator('.calendar-grid > section.calendar-col', { hasText: title }).getAttribute('aria-label'), weekday, `${title} sits on ${weekday}`);
       await noOverflow(page, `${title} at ${width}`);
     }

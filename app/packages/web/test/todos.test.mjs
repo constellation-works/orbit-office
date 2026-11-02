@@ -46,6 +46,7 @@ class Element extends Node {
     this._className = "";
     this._text = null;
     this.attrs = {};
+    this.dataset = {};
     this.listeners = {};
     this.disabled = false;
     this.type = "";
@@ -338,20 +339,20 @@ const SCHEDULING = {
 const buttonsIn = (node) => collect(node, (child) => child.tagName === "BUTTON");
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-test("a scheduled to-do reads its time in words, with Schedule… on yours and an agent's alike", () => {
+test("a scheduled to-do reads its time in words: due on yours, Schedule… on an agent's", () => {
   const root = connectedRoot();
   drawTodoScreen(root, SCHEDULING, { now: WEDNESDAY, onSchedule: async () => undefined, onEdit: () => undefined });
   const you = byClass(root, "todos-column--you")[0];
   const agents = byClass(root, "todos-column--agents")[0];
-  assert.deepEqual(byClass(you, "todos-when").map((node) => node.textContent), [`Scheduled ${FRIDAY_NINE.toLocaleDateString(undefined, { weekday: "short" })} 09:00`]);
-  assert.deepEqual(buttonsIn(you).map((button) => button.textContent), ["Reschedule…", "Clear schedule"]);
+  assert.deepEqual(byClass(you, "todos-when").map((node) => node.textContent), [`Due ${FRIDAY_NINE.toLocaleDateString(undefined, { weekday: "short" })} 09:00`]);
+  assert.deepEqual(buttonsIn(you).map((button) => button.textContent), ["Change due date…", "Clear due date"]);
   assert.deepEqual(buttonsIn(agents).map((button) => button.textContent), ["Schedule…"], "a running agent to-do keeps its time and offers no schedule action");
   assert.equal(byClass(agents, "todos-when").length, 1);
   assert.equal(root.textContent.includes("ORB-"), false);
   const later = new Date(2026, 10, 13, 9, 0);
   const far = connectedRoot();
   drawTodoScreen(far, { you: [{ ...SCHEDULING.you[0], scheduled: later.toISOString() }], agents: [], more: false }, { now: WEDNESDAY });
-  assert.match(byClass(far, "todos-when")[0].textContent, /^Scheduled \S+ 13 Nov 09:00$|^Scheduled \S+ Nov 13 09:00$/, "further off, the date is said too");
+  assert.match(byClass(far, "todos-when")[0].textContent, /^Due \S+ 13 Nov 09:00$|^Due \S+ Nov 13 09:00$/, "further off, the date is said too");
 });
 
 test("Schedule… opens a picker in this computer's time zone, holds the poll, and saves and clears through the app server", async () => {
@@ -394,7 +395,7 @@ test("Schedule… opens a picker in this computer's time zone, holds the poll, a
     assert.deepEqual(JSON.parse(set.options.body), { id: "ORB-AG-1", not_before: new Date(2099, 9, 30, 9, 0).toISOString().replace(".000Z", "Z") });
     assert.equal(byClass(root, "schedule-picker").length, 0, "the picker closes once saved");
 
-    const clear = buttonsIn(byClass(root, "todos-column--you")[0]).find((button) => button.textContent === "Clear schedule");
+    const clear = buttonsIn(byClass(root, "todos-column--you")[0]).find((button) => button.textContent === "Clear due date");
     clear.click();
     await flush();
     const cleared = calls.filter((call) => call.path === "/api/todos/schedule").at(-1);
@@ -405,6 +406,37 @@ test("Schedule… opens a picker in this computer's time zone, holds the poll, a
     globalThis.clearInterval = originalClearInterval;
   }
 });
+
+// Regression for ORB-21610: a to-do of yours is never dispatched, so its schedule is its due date.
+test("a to-do of yours reads its schedule as Due, Overdue once past while open, and the same on the Calendar", async () => {
+  const { taskState, taskWords } = await import("../dist/screens/calendar/model.js");
+  const dueFriday = { you: [{ ...SCHEDULING.you[0], scheduled: null }], agents: [], more: false };
+  const unset = connectedRoot();
+  drawTodoScreen(unset, dueFriday, { now: WEDNESDAY, onSchedule: async () => undefined, onEdit: () => undefined });
+  assert.deepEqual(buttonsIn(byClass(unset, "todos-column--you")[0]).map((button) => button.textContent), ["Set due date…"]);
+
+  const past = new Date(2026, 9, 27, 9, 0);
+  const late = connectedRoot();
+  drawTodoScreen(late, { ...dueFriday, you: [{ ...SCHEDULING.you[0], scheduled: past.toISOString() }] }, { now: WEDNESDAY, onSchedule: async () => undefined, onEdit: () => undefined });
+  const schedule = byClass(late, "todos-schedule")[0];
+  assert.equal(schedule.attrs["aria-label"], "Due date");
+  assert.match(byClass(schedule, "todos-when")[0].textContent, /^Due \S+ (27 Oct|Oct 27) 09:00$/);
+  assert.deepEqual(byClass(schedule, "pill").map((node) => node.textContent), ["Overdue"]);
+  assert.equal(byClass(root(SCHEDULING), "pill").filter((node) => node.textContent === "Overdue").length, 0, "a due date still to come is not overdue");
+
+  const calendarTask = (notBefore, owner, state) => ({ id: "T-1", title: "Venue", not_before: notBefore.toISOString(), owner, state, started_at: null });
+  assert.equal(taskWords(calendarTask(FRIDAY_NINE, "you", "scheduled"), WEDNESDAY).join(" · "), "Due · For you");
+  assert.equal(taskWords(calendarTask(past, "you", "scheduled"), WEDNESDAY).join(" · "), "Overdue · For you");
+  assert.equal(taskState(calendarTask(past, "you", "scheduled"), WEDNESDAY).tone, "attention");
+  assert.equal(taskWords(calendarTask(past, "you", "done"), WEDNESDAY).join(" · "), "Done · For you", "a closed to-do is never overdue");
+  assert.equal(taskWords(calendarTask(past, "agent", "scheduled"), WEDNESDAY).join(" · "), "Scheduled · For an agent", "an agent's keeps the schedule wording");
+});
+
+function root(model) {
+  const node = connectedRoot();
+  drawTodoScreen(node, model, { now: WEDNESDAY, onSchedule: async () => undefined, onEdit: () => undefined });
+  return node;
+}
 
 test("the picker refuses an empty or past time without writing", async () => {
   let saved = 0;

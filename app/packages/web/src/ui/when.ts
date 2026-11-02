@@ -1,6 +1,7 @@
 /**
- * Scheduled starts in this computer's time zone, shared by To-dos and
- * Calendar: the words a scheduled to-do reads ("Scheduled Fri 09:00") and
+ * Scheduled starts in this computer's time zone, shared by To-dos, Today and
+ * Calendar: the words a scheduled to-do reads ("Scheduled Fri 09:00", or
+ * "Due Fri 09:00" for the user's own) and
  * the date-time picker that sets one (docs/design/office/specs/calendar.md,
  * "Scheduled tasks"). The picker hands back an RFC 3339 instant in UTC, which
  * is what Orbit's `not_before` stores.
@@ -32,6 +33,20 @@ export function whenWords(iso: string, now: Date): string {
 /** "Scheduled Fri 09:00". */
 export function scheduledWords(iso: string, now: Date): string {
   return `Scheduled ${whenWords(iso, now)}`;
+}
+
+/**
+ * "Due Fri 09:00": the user's own to-dos are never dispatched, so their
+ * scheduled time (Orbit's `not_before`) reads as a due date
+ * (docs/design/office/specs/web-app.md, "To-dos").
+ */
+export function dueWords(iso: string, now: Date): string {
+  return `Due ${whenWords(iso, now)}`;
+}
+
+/** Whether an open to-do's due date has passed. */
+export function isOverdue(iso: string, now: Date): boolean {
+  return Date.parse(iso) <= now.getTime();
 }
 
 /** A `datetime-local` value for `at` in this computer's time zone: `2026-10-30T09:00`. */
@@ -69,6 +84,8 @@ export interface SchedulePickerOptions {
   save: (instant: string) => Promise<void>;
   cancel: () => void;
   failed?: (error: unknown) => string;
+  /** The form's accessible name; "Schedule" unless the time is a due date. */
+  label?: string;
 }
 
 /** Rules for the picker, appended to each screen's own styles. */
@@ -86,7 +103,7 @@ export const pickerStyles = `
 export function schedulePicker(options: SchedulePickerOptions): HTMLFormElement {
   const form = document.createElement("form");
   form.className = "schedule-picker";
-  form.setAttribute("aria-label", "Schedule");
+  form.setAttribute("aria-label", options.label ?? "Schedule");
   const label = document.createElement("label");
   const caption = document.createElement("span");
   caption.textContent = "Date and time";
