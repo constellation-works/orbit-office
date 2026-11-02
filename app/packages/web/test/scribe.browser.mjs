@@ -34,9 +34,10 @@ async function shot(page, name) {
   await mkdir(dir, { recursive: true });
   await page.screenshot({ path: resolve(dir, `${name}-dark-${page.viewportSize().width}.png`), fullPage: true });
 }
-const tab = (page, name) => page.getByRole("tab", { name, exact: true });
-const results = (page) => page.getByRole("tabpanel");
-const cardOf = (page, id) => results(page).locator(`[data-id="${id}"]`);
+const region = (page, name) => page.getByRole("region", { name, exact: true });
+const FEED = "Feed · one card per project";
+const DECISIONS = "Decisions · newest first";
+const cardOf = (page, id) => region(page, FEED).locator(`[data-id="${id}"]`);
 
 test("the feed shows exactly one card per project plus the global card, and opening one walks only the previous chain", { timeout: 60000 }, async (t) => {
   const { page, url, calls } = await browserFixture(t);
@@ -44,8 +45,9 @@ test("the feed shows exactly one card per project plus the global card, and open
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
     await page.getByRole("heading", { name: "Scribe", exact: true, level: 1 }).waitFor();
-    assert.deepEqual(await page.getByRole("tab").allInnerTexts(), ["Feed", "Preferences", "Decisions", "Tags"]);
-    const ids = await results(page).locator("[data-id]").evaluateAll((items) => items.map((item) => item.dataset.id));
+    assert.deepEqual(await page.locator(".panel-head h2").evaluateAll((items) => items.map((item) => item.textContent)), [DECISIONS, FEED, "Preferences", "Agreement", "Tags"]);
+    await page.getByText("Couldn’t read open contradictions. We’ll try again shortly.").waitFor();
+    const ids = await region(page, FEED).locator("[data-id]").evaluateAll((items) => items.map((item) => item.dataset.id));
     assert.deepEqual(ids, cards.feed.cards.map((card) => card.id), "one card per project plus global; the older orbit-office SCR is absent");
     const latest = cardOf(page, "SCR-20261031-0900-aaaa02");
     await latest.getByText("orbit-office", { exact: true }).waitFor();
@@ -83,22 +85,21 @@ test("Preferences and Decisions show the office.scribe-query panels", { timeout:
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
     await cardOf(page, "SCR-20261031-0900-aaaa02").waitFor();
-    await tab(page, "Preferences").click();
-    assert.equal(await tab(page, "Preferences").getAttribute("aria-selected"), "true");
     for (const row of preferences.preferences) {
-      const item = results(page).locator(`[data-citation="${row.citation}"]`);
+      const item = region(page, "Preferences").locator(`[data-citation="${row.citation}"]`);
       await item.getByText(row.statement).waitFor();
     }
-    await results(page).getByText("Stale · review by 2026-10-31").waitFor();
+    await region(page, "Preferences").getByText("Stale · review by 2026-10-31").waitFor();
     await noOverflow(page, "preferences"); await shot(page, "scribe-preferences");
 
-    await tab(page, "Decisions").click();
-    await results(page).locator('[data-id="dec-orbit-office-8"]').waitFor();
-    const ids = await results(page).locator("[data-id]").evaluateAll((items) => items.map((item) => item.dataset.id));
+    const ledger = region(page, DECISIONS);
+    await ledger.locator('[data-id="dec-orbit-office-8"]').waitFor();
+    const ids = await ledger.locator("[data-id]").evaluateAll((items) => items.map((item) => item.dataset.id));
     assert.deepEqual(ids, [...decisions.decisions].reverse().map((row) => row.id), "newest first");
-    const first = results(page).locator('[data-id="dec-orbit-office-7"]');
+    const first = ledger.locator('[data-id="dec-orbit-office-7"]');
     await first.getByText("the feed is unusable", { exact: true }).waitFor();
-    await results(page).locator('[data-id="dec-orbit-office-8"]').getByText("no recorded reason").waitFor();
+    await first.getByText("Standing", { exact: true }).waitFor();
+    await ledger.locator('[data-id="dec-orbit-office-8"]').getByText("no recorded reason").waitFor();
     await noOverflow(page, "decisions"); await shot(page, "scribe-decisions");
   }
 });
@@ -108,9 +109,8 @@ test("the Agreement view shows per-category aggregates only, low-sample in words
   await page.setViewportSize({ width: 375, height: 1000 });
   await page.goto(`${url}/#scribe`);
   await cardOf(page, "SCR-20261031-0900-aaaa02").waitFor();
-  await tab(page, "Decisions").click();
-  const section = results(page).getByLabel("Agreement", { exact: true });
-  await section.getByText("Agreement", { exact: true }).waitFor();
+  const section = region(page, "Agreement");
+  await section.getByRole("heading", { name: "Agreement", exact: true }).waitFor();
   const enough = section.locator(`[data-category="${agreement.categories[0].category}"]`);
   await enough.getByText("ws_orbit-office · agent request").waitFor();
   await enough.getByText("81% (68%–90%)").waitFor();
@@ -131,11 +131,10 @@ test("the Tags editor reads the effective tags and, refused by Orbit, shows not-
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
     await cardOf(page, "SCR-20261031-0900-aaaa02").waitFor();
-    await tab(page, "Tags").click();
     const form = page.getByRole("form", { name: "Tag editor" });
-    await results(page).getByText("#preferences").waitFor();
-    await results(page).getByText("#decisions").waitFor();
-    await results(page).getByText("#lesson").waitFor();
+    await region(page, "Tags").getByText("#preferences").waitFor();
+    await region(page, "Tags").getByText("#decisions").waitFor();
+    await region(page, "Tags").getByText("#lesson").waitFor();
     await form.getByRole("button", { name: "Restore defaults" }).waitFor();
     await noOverflow(page, "tags"); await shot(page, "scribe-tags");
 
@@ -160,7 +159,7 @@ test("the ask box answers with SCR file:line, drops a mismatched quote, and says
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
-    const form = page.getByRole("form", { name: "Ask the scribe" });
+    const form = page.getByRole("form", { name: "Ask the ledger" });
     await form.getByLabel("Question").fill("How often does the screen poll?");
     await form.getByRole("button", { name: "Ask" }).click();
     const claim = form.locator(".scribe-claim");

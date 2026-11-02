@@ -1,10 +1,13 @@
 /**
- * Draw the To-dos screen. Visible text is plain words: the task id stays
+ * Draw the To-dos screen. Your to-dos are plain words: their task id stays
  * in the close and schedule handlers and is never written into the page.
+ * Agent to-dos filed from meetings show their Orbit task id, crew, state
+ * and PR, as the approved mock does (docs/design/office/mocks/Todos.dc.html).
  */
-import type { TodoItem, TodoList } from "@orbit-office/contracts";
+import type { AgentTodo, AgentTodos, AgentTodoState, TodoItem, TodoList } from "@orbit-office/contracts";
 
-import { card, emptyState, provenanceLink } from "../../ui/index.js";
+import { sourceHref } from "../../api/source-location.js";
+import { card, emptyState, monoMeta, pill, provenanceLink, row, rows, type Tone } from "../../ui/index.js";
 import { pickerStyles, scheduledWords, schedulePicker } from "../../ui/when.js";
 
 export interface TodoDrawOptions {
@@ -25,6 +28,10 @@ export interface TodoDrawOptions {
   createDraft?: string;
   /** Record the draft title as the user types, without redrawing. */
   onCreateDraft?: (title: string) => void;
+  /** Agent to-dos from meetings and the target workspace; null when they could not be read. */
+  agentTodos?: AgentTodos | null;
+  /** Set the target workspace, or clear it with null. Without it, no selector shows. */
+  onTarget?: (workspace: string | null) => Promise<void>;
 }
 
 interface ScheduleActions {
@@ -64,6 +71,16 @@ const STYLE = `
 .todos-create input { min-height: 36px; width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--fg); font: inherit; color-scheme: dark; box-sizing: border-box; }
 .todos-create .todos-create-status { flex: 1 0 100%; margin: 0; font-size: 12px; color: var(--attention-fg); }
 .todos-create .todos-create-status:empty { display: none; }
+.todos-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 16px; margin: 0 0 20px; }
+.todos-head > div:first-child { flex: 1 1 320px; min-width: 0; }
+.todos-head .intro { margin: 0; font-size: 15px; color: var(--fg-dim); }
+.todos-target { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--fg-mute); }
+.todos-target select { min-width: 200px; max-width: 100%; }
+.todos-target-status { margin: 0; font-size: 12px; color: var(--fg-mute); }
+.todos-column .rows { margin-top: 10px; padding: 0 4px; }
+.todos-column .row { align-items: flex-start; }
+.todos-agent-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.todos-held-note { margin: 0; font-size: 12px; color: var(--attention-soft); }
 @media (max-width: 720px) {
   .todos-columns { grid-template-columns: minmax(0, 1fr); }
 }
@@ -79,6 +96,36 @@ export function modelFromPayload(payload: unknown): TodoList | null {
   return { you, agents, more: record.more === true };
 }
 
+const AGENT_STATES = new Set(["queued", "working", "review", "merged", "done", "held"]);
+
+/** Accept only the agent to-dos shape; anything else reads as unavailable (null). */
+export function agentTodosFromPayload(payload: unknown): AgentTodos | null {
+  if (payload === null || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const target = record.target_workspace;
+  if (!(target === null || typeof target === "string") || !Array.isArray(record.todos) || !Array.isArray(record.followed)) return null;
+  const todos: AgentTodo[] = [];
+  for (const value of record.todos as unknown[]) {
+    if (value === null || typeof value !== "object") return null;
+    const item = value as Record<string, unknown>;
+    if (typeof item.id !== "string" || typeof item.title !== "string" || typeof item.workspace !== "string" ||
+        typeof item.state !== "string" || !AGENT_STATES.has(item.state)) return null;
+    const pr = item.pr;
+    todos.push({
+      id: item.id, title: item.title, workspace: item.workspace, state: item.state as AgentTodoState,
+      crew: typeof item.crew === "string" ? item.crew : null,
+      pr: pr !== null && typeof pr === "object" && typeof (pr as Record<string, unknown>).number === "number"
+        ? { number: (pr as { number: number }).number, url: typeof (pr as Record<string, unknown>).url === "string" ? (pr as { url: string }).url : null, merged: (pr as Record<string, unknown>).merged === true }
+        : null,
+      source: typeof item.source === "string" ? item.source : null,
+    });
+  }
+  return {
+    target_workspace: target, todos, target_unavailable: record.target_unavailable === true,
+    followed: (record.followed as unknown[]).filter((item): item is string => typeof item === "string"),
+  };
+}
+
 /** Draw the two columns into `root`. */
 export function drawTodoScreen(root: HTMLElement, model: TodoList, options: TodoDrawOptions = {}): void {
   const style = document.createElement("style");
@@ -89,18 +136,38 @@ export function drawTodoScreen(root: HTMLElement, model: TodoList, options: Todo
 
   const page = document.createElement("section");
   page.className = "todos";
+  const head = document.createElement("header");
+  head.className = "todos-head";
+  const titles = document.createElement("div");
   const heading = document.createElement("h1");
   heading.textContent = "To-dos";
   const intro = document.createElement("p");
   intro.className = "intro";
-  intro.textContent = "What you will do, and what agents are carrying.";
+  intro.textContent = "Every to-do names where it came from. Agent to-dos from meetings become Orbit tasks in the workspace you choose.";
+  titles.append(heading, intro);
+  head.append(titles);
+  if (options.agentTodos !== undefined && options.agentTodos !== null && options.onTarget !== undefined) {
+    head.append(targetSelect(options.agentTodos, options.onTarget));
+  }
   const columns = document.createElement("div");
   columns.className = "todos-columns";
+  const meeting = options.agentTodos?.todos ?? [];
   columns.append(
     column("you", "You", "Close these when you are finished.", model.you, options.onClose, schedule),
-    column("agents", "Agents", "These stay with the agents.", model.agents, options.onClose, schedule),
+    column("agents", "Agents", "Orbit tasks agents carry. Merged work shows its PR.", model.agents, options.onClose, schedule, meeting),
   );
-  page.append(heading, intro);
+  if (options.agentTodos === null) {
+    const note = document.createElement("p");
+    note.className = "intro todos-more";
+    note.textContent = "Agent to-dos from meetings could not be read.";
+    columns.append(note);
+  } else if (options.agentTodos?.target_unavailable === true) {
+    const note = document.createElement("p");
+    note.className = "intro todos-more";
+    note.textContent = `Tasks in ${options.agentTodos.target_workspace ?? "the target workspace"} could not be read.`;
+    columns.append(note);
+  }
+  page.append(head);
   if (options.onCreate !== undefined) page.append(createForm(options.onCreate, options.createDraft ?? "", options.onCreateDraft));
   page.append(columns);
   if (model.more) {
@@ -168,6 +235,75 @@ function createForm(
   return form;
 }
 
+/** The "Agent to-dos go to" selector: the followed workspaces, the current target, or none. */
+function targetSelect(agentTodos: AgentTodos, onTarget: (workspace: string | null) => Promise<void>): HTMLElement {
+  const label = document.createElement("label");
+  label.className = "todos-target";
+  const caption = document.createElement("span");
+  caption.textContent = "Agent to-dos go to";
+  const select = document.createElement("select");
+  const choices = [...new Set([...(agentTodos.target_workspace === null ? [] : [agentTodos.target_workspace]), ...agentTodos.followed])];
+  for (const workspace of choices) {
+    const option = document.createElement("option");
+    option.value = workspace;
+    option.textContent = workspace;
+    select.append(option);
+  }
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "None: keep every to-do as mine";
+  select.append(none);
+  select.value = agentTodos.target_workspace ?? "";
+  const status = document.createElement("p");
+  status.className = "todos-target-status";
+  status.setAttribute("role", "status");
+  if (choices.length === 0) status.textContent = "Follow a workspace in your Library settings to choose it here.";
+  select.addEventListener("change", () => {
+    select.disabled = true;
+    status.textContent = "Saving…";
+    void onTarget(select.value === "" ? null : select.value).then(() => {
+      status.textContent = "Saved. New meetings file agent to-dos there.";
+    }).catch(() => {
+      select.value = agentTodos.target_workspace ?? "";
+      status.textContent = "Couldn’t save. Try again in a moment.";
+    }).finally(() => { select.disabled = false; });
+  });
+  label.append(caption, select, status);
+  return label;
+}
+
+const STATE_PILL: Record<AgentTodoState, [string, Tone]> = {
+  queued: ["Queued", "neutral"],
+  working: ["Working", "working"],
+  review: ["In review", "working"],
+  merged: ["Merged", "done"],
+  done: ["Done", "done"],
+  held: ["Held", "attention"],
+};
+
+/** One agent to-do from a meeting: title and state, then task id, crew, PR and source. */
+function agentRow(todo: AgentTodo): HTMLElement {
+  const [label, tone] = STATE_PILL[todo.state];
+  const meta = document.createElement("div");
+  meta.className = "todos-agent-meta";
+  meta.append(monoMeta(todo.state === "held" ? "not filed for agents" : `${todo.id} · ${todo.workspace}`));
+  if (todo.crew !== null) meta.append(monoMeta(todo.crew));
+  if (todo.pr !== null) {
+    const pr = monoMeta(`PR #${todo.pr.number}`, todo.pr.url ?? undefined);
+    if (pr instanceof HTMLAnchorElement) { pr.target = "_blank"; pr.rel = "noopener noreferrer"; }
+    meta.append(pr);
+  }
+  if (todo.source !== null) meta.append(monoMeta(todo.source, sourceHref(todo.source)));
+  const details: HTMLElement[] = [meta];
+  if (todo.state === "held") {
+    const note = document.createElement("p");
+    note.className = "todos-held-note";
+    note.textContent = "Held: its matter is contested. Choose which decision stands on Today to release it.";
+    details.push(note);
+  }
+  return row(todo.title, { details, trail: [pill(label, tone)] });
+}
+
 function column(
   kind: "you" | "agents",
   title: string,
@@ -175,6 +311,7 @@ function column(
   items: readonly TodoItem[],
   onClose: ((id: string) => void) | undefined,
   schedule: ScheduleActions | undefined,
+  meeting: readonly AgentTodo[] = [],
 ): HTMLElement {
   const section = document.createElement("section");
   section.className = `todos-column todos-column--${kind}`;
@@ -185,6 +322,8 @@ function column(
   note.className = "intro todos-lede";
   note.textContent = lede;
   section.append(heading, note);
+  if (meeting.length > 0) section.append(rows(meeting.map(agentRow), "Agent to-dos from meetings"));
+  if (items.length === 0 && meeting.length > 0) return section;
   if (items.length === 0) {
     const empty = kind === "you"
       ? emptyState("All clear", "Nothing is waiting on you.")

@@ -1,4 +1,21 @@
 export const style = `
+.settings > .intro { margin:0 0 20px; font-size:15px; color:var(--fg-dim); }
+.settings-models-intro { color:var(--fg-mute) !important; font-size:13px !important; }
+.settings-models { display:flex; flex-direction:column; min-width:0; }
+.settings-models-row { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.3fr) auto; gap:12px; align-items:center; padding:12px 0; font-size:14px; }
+.settings-models-row + .settings-models-row { border-top:1px solid var(--hair); }
+.settings-models-head { padding-top:0; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--fg-mute); }
+.settings-models-model { font-family:var(--font-mono); font-size:13px; }
+.settings-models-where { color:var(--fg-dim); }
+.settings .panel-grid { margin-top:20px; }
+.settings .panel-body > button { align-self:flex-start; }
+@media (max-width:640px) {
+  .settings-models-head { display:none; }
+  .settings-models-row { grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; }
+  .settings-models-row > :nth-child(1) { grid-column:1; font-weight:500; }
+  .settings-models-row > :nth-child(4) { grid-column:2; grid-row:1; }
+  .settings-models-row > :nth-child(2), .settings-models-row > :nth-child(3) { grid-column:1 / -1; }
+}
 .settings-tabs, .settings-actions { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
 .settings-tabs { border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:28px; }
 .settings button { font:inherit; font-size:14px; cursor:pointer; border:1px solid var(--border); background:transparent; color:var(--fg); border-radius:var(--radius-sm); min-height:40px; padding:0 14px; }

@@ -2,30 +2,40 @@
 import type { ReviewList } from "@orbit-office/contracts";
 import type { Screen } from "../../screen.js";
 import { getJson } from "../../api/client.js";
-import { card, errorState } from "../../ui/index.js";
+import { emptyState, errorState, panel, panelBody, screenHead } from "../../ui/index.js";
+
+const STYLE = `
+.review { display:flex; flex-direction:column; gap:20px; min-width:0; }
+.review .screen-head { margin:0; }
+.review-status:empty { display:none; }
+.review-status { margin:0; font-size:14px; color:var(--fg-dim); }
+.review-list { display:flex; flex-direction:column; gap:20px; min-width:0; }
+.review-list > .panel + .panel { margin-top:0; }
+.review-body { gap:10px; }
+.review-line { margin:0; font-size:15px; line-height:1.6; color:var(--fg); white-space:pre-wrap; overflow-wrap:anywhere; }
+.review-line a.mono-meta { margin:0 4px; }
+.review-note { margin:0; font-size:13px; color:var(--fg-mute); }
+`;
 
 function draw(root: HTMLElement, list: ReviewList): void {
   const style = document.createElement("style");
-  style.textContent = `.review-list { display: grid; gap: 12px; } .review-line { white-space: pre-wrap; overflow-wrap: anywhere; margin: .5rem 0; } .review-action { margin: 1rem 0; }`;
-  const page = document.createElement("section");
-  const title = document.createElement("h1"); title.textContent = "Review";
-  const intro = document.createElement("p"); intro.className = "intro"; intro.textContent = "Your reviews and the sources behind them.";
-  const button = document.createElement("button"); button.type = "button"; button.className = "primary-action review-action"; button.textContent = "Regenerate";
-  const message = document.createElement("p"); message.setAttribute("role", "status");
+  style.textContent = STYLE;
+  const page = document.createElement("section"); page.className = "review";
+  const button = document.createElement("button"); button.type = "button"; button.className = "secondary-action review-action"; button.textContent = "Regenerate";
+  const message = document.createElement("p"); message.className = "review-status"; message.setAttribute("role", "status");
   button.addEventListener("click", () => {
     button.disabled = true; message.textContent = "Requesting a review.";
     void fetch("/api/review/regenerate", { method: "POST" }).then((response) => {
       message.textContent = response.ok ? "A new review was requested." : response.status === 403 ? "A new review cannot be requested here. Ask your workspace owner for access." : "Could not request a review. Try again in a moment.";
     }).catch(() => { message.textContent = "Could not request a review. Try again in a moment."; }).finally(() => { button.disabled = false; });
   });
-  page.append(title, intro, button, message);
-  if (list.latest_100) { const notice = document.createElement("p"); notice.textContent = "Showing the latest 100"; page.append(notice); }
+  page.append(screenHead("Review", "Your reviews and the sources behind them.", button), message);
+  if (list.latest_100) { const notice = document.createElement("p"); notice.className = "mono-meta review-note"; notice.textContent = "Showing the latest 100"; page.append(notice); }
   const reviews = document.createElement("div"); reviews.className = "review-list";
-  if (list.reviews.length === 0) { const empty = document.createElement("p"); empty.textContent = "No reviews yet."; reviews.append(empty); }
+  if (list.reviews.length === 0) reviews.append(emptyState("No reviews yet.", "Generated reviews appear here with their sources."));
   for (const review of list.reviews) {
-    const content = document.createElement("div"); content.className = "card-content";
-    const date = document.createElement("p"); date.textContent = new Date(review.date).toLocaleDateString(); content.append(date);
-    if (review.body === null) { const note = document.createElement("p"); note.textContent = "The review text is unavailable."; content.append(note); }
+    const body = panelBody(); body.className = "panel-body review-body";
+    if (review.body === null) { const note = document.createElement("p"); note.className = "review-note"; note.textContent = "The review text is unavailable."; body.append(note); }
     else for (const line of review.body.split("\n")) {
       if (!line.trim()) continue;
       const row = document.createElement("p"); row.className = "review-line";
@@ -35,16 +45,18 @@ function draw(root: HTMLElement, list: ReviewList): void {
       for (const match of line.matchAll(pattern)) {
         const text = document.createElement("span"); text.textContent = line.slice(start, match.index); row.append(text);
         for (const citation of (match[1] ?? "").split(/\s*[,;]\s*/)) {
-          const link = document.createElement("a"); link.textContent = "View source";
+          const link = document.createElement("a"); link.className = "mono-meta"; link.textContent = "View source";
           const [id, anchor] = citation.split("#", 2);
           link.href = `/?citation=${encodeURIComponent(id ?? "")}${anchor === undefined ? "" : `#${encodeURIComponent(anchor).replace(/%3D/gi, "=")}`}`; row.append(link);
         }
         start = (match.index ?? 0) + match[0].length;
       }
-      const rest = document.createElement("span"); rest.textContent = line.slice(start); row.append(rest); content.append(row);
+      const rest = document.createElement("span"); rest.textContent = line.slice(start); row.append(rest); body.append(row);
     }
-    if (review.truncated) { const note = document.createElement("p"); note.textContent = "This review is shortened."; content.append(note); }
-    reviews.append(card(review.title, content));
+    if (review.truncated) { const note = document.createElement("p"); note.className = "review-note"; note.textContent = "This review is shortened."; body.append(note); }
+    const item = panel(review.title, { eyebrow: "Review", meta: new Date(review.date).toLocaleDateString() });
+    item.append(body);
+    reviews.append(item);
   }
   page.append(reviews); root.replaceChildren(style, page);
 }

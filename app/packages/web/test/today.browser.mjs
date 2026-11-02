@@ -27,6 +27,10 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ from: "", until: "", synced_at: now.toISOString(), sync_failed: false, prep_lead_minutes: 120, meetings: [], routines: [], routines_unavailable: false }));
     }
+    // The digest, contradictions and other workspaces' agent work have their own routes; here they are quiet.
+    else if (request.url === "/api/today/digest") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "no_meeting", source: null, digest: null })); }
+    else if (request.url === "/api/scribe/contradictions") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ available: false, contradictions: [] })); }
+    else if (request.url === "/api/agents") { response.writeHead(503, { "content-type": "application/json" }); response.end("{}"); }
     else fallback(request, response);
   });
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -42,7 +46,7 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   const working = page.getByRole("region", { name: "Agents working on", exact: true });
   const done = page.getByRole("region", { name: "Done today", exact: true });
   assert.equal(await needs.locator("article").count(), 3);
-  assert.equal(await working.locator("article").count(), 1);
+  assert.equal(await working.locator("li").count(), 1);
   assert.equal(await done.locator("article").count(), 1);
   for (const title of ["Turn meeting notes into a weekly brief", "The project brief is ready to read", "Send your feedback on the plan"]) {
     assert.equal(await needs.getByRole("heading", { name: title }).count(), 1);
@@ -74,7 +78,7 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   fake.state.tasks[3].title = "Finishing the research notes";
   await done.getByText("Open result", { exact: true }).focus();
   await page.clock.fastForward(5_000);
-  await working.getByRole("heading", { name: "Finishing the research notes" }).waitFor();
+  await working.getByText("Finishing the research notes").waitFor();
   assert.equal(await done.locator("details").evaluate((element) => element.open), true);
   assert.equal(await done.getByRole("link").getAttribute("aria-expanded"), "true");
   assert.equal(await page.evaluate(() => document.activeElement.textContent), "Open result");
@@ -82,7 +86,7 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   fake.state.failure = new Error("private diagnostic");
   await page.clock.fastForward(5_000);
   await page.getByRole("alert").waitFor();
-  assert.equal(await working.locator("article").count(), 1);
+  assert.equal(await working.locator("li").count(), 1);
   assert.ok(!(await page.locator("main").innerText()).includes("private diagnostic"));
   for (const width of [1440, 375]) {
     await page.setViewportSize({ width, height: 1100 });
@@ -202,6 +206,10 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
     const route = [...today.routes, ...approvals.routes].find((item) => item.method === request.method && item.path === path);
     if (path === "/api/setup") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "ready" })); }
     else if (route) void route.handle(request, response);
+    // The digest, contradictions and other workspaces' agent work have their own routes; here they are quiet.
+    else if (request.url === "/api/today/digest") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "no_meeting", source: null, digest: null })); }
+    else if (request.url === "/api/scribe/contradictions") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ available: false, contradictions: [] })); }
+    else if (request.url === "/api/agents") { response.writeHead(503, { "content-type": "application/json" }); response.end("{}"); }
     else fallback(request, response);
   });
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -347,7 +355,6 @@ test("Today shows a compact Handoffs section of the Scribe feed cards, linking t
   assert.ok(calls.every((call) => call.name !== "office.session-brief" || call.input.view === "list"));
   await page.getByRole("link", { name: "Open Scribe" }).click();
   await page.getByRole("heading", { name: "Scribe", exact: true, level: 1 }).waitFor();
-  assert.equal(await page.getByRole("tab", { name: "Feed", exact: true }).getAttribute("aria-selected"), "true");
-  await page.getByRole("tabpanel").locator('[data-id="SCR-20261031-0900-aaaa02"]').waitFor();
+  await page.getByRole("region", { name: "Feed · one card per project", exact: true }).locator('[data-id="SCR-20261031-0900-aaaa02"]').waitFor();
   assert.deepEqual(errors, []);
 });

@@ -5,6 +5,7 @@ import type { Feature } from "../../http/types.js";
 import { createOrbitClient, OrbitExitError } from "../../orbit/client.js";
 import type { OrbitToolClient } from "../../orbit/client.js";
 import { logRouteFailure, safeOrbitCode } from "../../orbit/diagnostics.js";
+import { handleDigest } from "./digest.js";
 
 interface Task {
   id: string;
@@ -216,6 +217,7 @@ export function createTodayFeature({ client, now = () => new Date() }: TodayOpti
           response.end(JSON.stringify(setupFailure(error)));
         }
       } },
+      { method: "GET", path: "/api/today/digest", handle: (request, response) => handleDigest(client, request, response) },
     ],
   };
 }

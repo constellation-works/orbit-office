@@ -25,22 +25,25 @@ function sectionList(title: string, items: readonly string[]): HTMLElement | nul
   return box;
 }
 
-/** One feed card. `open` shows the whole SCR. */
+/** One feed card: title and age, then scope, Summary, Next, Outcome and the tag counts. `open` shows the whole SCR. */
 export function cardItem(card: ScrCard, now: Date, open: (card: ScrCard) => void): HTMLElement {
-  const item = el("article", "", "scribe-entry scribe-card");
+  const item = el("article", "", "scribe-card");
   item.dataset.id = card.id;
-  const head = el("div", "", "scribe-entry-head");
-  const scope = pill(scopeLabel(card));
-  scope.classList.add("scribe-chip");
-  const time = el("time", `${timeLabel(card.updated)} · ${ageLabel(card.updated, now)}`);
-  time.dateTime = card.updated;
-  head.append(scope, time);
-  if (card.withheld) head.append(pill("Private", "private"));
+  const top = el("div", "", "scribe-card-top");
   const title = el("button", cardTitle(card), "scribe-card-title");
   title.type = "button";
   title.setAttribute("aria-label", `Open ${cardTitle(card)}`);
   title.addEventListener("click", () => open(card));
-  item.append(head, title);
+  const age = el("time", ageLabel(card.updated, now), "scribe-card-age");
+  age.dateTime = card.updated;
+  age.title = timeLabel(card.updated);
+  top.append(title, age);
+  const head = el("div", "", "scribe-entry-head");
+  const scope = pill(scopeLabel(card));
+  scope.classList.add("scribe-chip");
+  head.append(scope, el("span", `Updated ${timeLabel(card.updated)}`, "scribe-line"));
+  if (card.withheld) head.append(pill("Private", "private"));
+  item.append(top, head);
   if (card.withheld) {
     item.append(el("p", cardSummary(card), "scribe-status"));
     return item;
@@ -56,7 +59,7 @@ export function cardItem(card: ScrCard, now: Date, open: (card: ScrCard) => void
 /** The whole SCR: every section and its Tags entries, with Previous and Back. */
 function detailItem(detail: ScrDetail, now: Date, back: () => void, previous: (id: string) => void): HTMLElement {
   const { scr } = detail;
-  const item = el("article", "", "scribe-entry scribe-card scribe-detail");
+  const item = el("article", "", "scribe-card scribe-detail");
   item.dataset.id = scr.id;
   const head = el("div", "", "scribe-entry-head");
   const scope = pill(scopeLabel(scr));
@@ -99,7 +102,7 @@ function detailItem(detail: ScrDetail, now: Date, back: () => void, previous: (i
   const cite = el("div", "", "scribe-cite");
   cite.append(el("code", scr.path), el("span", scr.id));
   item.append(cite);
-  const actions = el("div", "", "scribe-row");
+  const actions = el("div", "", "scribe-actions");
   const backButton = el("button", "Back to the feed");
   backButton.type = "button";
   backButton.addEventListener("click", back);
@@ -151,7 +154,7 @@ export function createFeedView(): {
       const now = new Date();
       stated.textContent = feed.cards.length
         ? `${feed.cards.length} ${feed.cards.length === 1 ? "card" : "cards"}: the latest session record per project, plus the global one.`
-        : "No session record yet.";
+        : "";
       panel.replaceChildren(...(feed.cards.length
         ? feed.cards.map((card) => cardItem(card, now, open))
         : [el("p", "Nothing scribed yet. Turn the scribe on in a session with /scribe on.", "scribe-status")]));

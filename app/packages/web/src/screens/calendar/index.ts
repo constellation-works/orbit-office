@@ -189,13 +189,20 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
   async function render(root: HTMLElement): Promise<void> {
     const page = element("section", "", "calendar");
     const style = element("style", styles + pickerStyles);
-    const header = element("header", "", "calendar-header");
+    const header = element("header", "", "screen-head calendar-header");
     const titles = element("div");
     titles.append(element("h1", "Calendar"), element("p", "Your meetings with their prep and notes, the to-dos scheduled for a time, and the routines that run. Local events stay on this machine. Connected calendars are read only.", "intro"));
+    const actions = element("div", "", "screen-head-actions calendar-actions");
     const syncLine = element("div", "", "calendar-sync");
-    const syncState = element("span");
+    const syncState = element("span", "", "mono-meta");
     syncState.setAttribute("role", "status");
-    header.append(titles, syncLine);
+    // The week controls sit in the header, as in the approved mock; they stay when a read fails.
+    const nav = element("div", "", "calendar-nav");
+    nav.setAttribute("role", "group");
+    nav.setAttribute("aria-label", "Week");
+    const navLabel = element("span", "", "calendar-nav-label");
+    actions.append(syncLine, nav);
+    header.append(titles, actions);
     const body = element("div");
     page.append(style, header, body);
     root.replaceChildren(page);
@@ -266,6 +273,21 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
     });
     const newEvent = button("New local event", () => editLocal(null));
     syncLine.append(syncState, syncButton, newEvent);
+    const move = (weeks: number): void => {
+      state.week = weeks === 0 ? weekStart(now()) : addDays(state.week, weeks * 7);
+      state.day = weeks === 0 ? (now().getDay() + 6) % 7 : 0;
+      navLabel.textContent = weekLabel(state.week);
+      closePanel();
+      void refresh();
+    };
+    const arrow = (glyph: string, label: string, weeks: number): HTMLButtonElement => {
+      const control = button(glyph, () => move(weeks));
+      control.setAttribute("aria-label", label);
+      control.className = "calendar-arrow";
+      return control;
+    };
+    nav.append(navLabel, arrow("‹", "Previous week", -1), button("This week", () => move(0)), arrow("›", "Next week", 1));
+    navLabel.textContent = weekLabel(state.week);
 
     function draw(view: CalendarView): void {
       shown = view;
@@ -300,18 +322,6 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
         notice.setAttribute("role", "alert");
         parts.push(notice);
       }
-      const nav = element("div", "", "calendar-nav");
-      nav.setAttribute("role", "group");
-      nav.setAttribute("aria-label", "Week");
-      const move = (weeks: number): void => {
-        state.week = weeks === 0 ? weekStart(now()) : addDays(state.week, weeks * 7);
-        state.day = weeks === 0 ? (now().getDay() + 6) % 7 : 0;
-        closePanel();
-        void refresh();
-      };
-      nav.append(button("Previous week", () => move(-1)), button("This week", () => move(0)), button("Next week", () => move(1)),
-        element("span", weekLabel(state.week), "calendar-nav-label"));
-      parts.push(nav);
       const picker = element("div", "", "calendar-days");
       picker.setAttribute("role", "group");
       picker.setAttribute("aria-label", "Day");
@@ -340,7 +350,9 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
       const legend = element("p", "", "calendar-legend");
       const routines = element("a", "Open Routines");
       routines.href = "#routines";
-      legend.append(element("span", "Marks in each day’s margin are routine runs:"), element("span", "will run", "calendar-key"),
+      legend.append(element("span", "Meeting", "calendar-swatch"), element("span", "Needs you", "calendar-swatch calendar-swatch--attention"),
+        element("span", "Scheduled to-do", "calendar-swatch calendar-swatch--task"),
+        element("span", "Marks in each day’s margin are routine runs:"), element("span", "will run", "calendar-key"),
         element("span", "paused, skipped", "calendar-key calendar-key--paused"), routines);
       if (view.routines_unavailable) legend.append(element("span", "Some routines could not be read, so their runs are not shown."));
       if (view.scheduled_unavailable) legend.append(element("span", "Some scheduled to-dos could not be read, so not all of them are shown."));

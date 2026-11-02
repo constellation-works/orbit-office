@@ -58,7 +58,7 @@ test("Agent work shows counts, filter, collapsed groups and the Today link", { t
   }, fixture());
 
   await page.getByRole("heading", { name: "Agent work", exact: true }).waitFor();
-  assert.match(await page.locator("main, #app").first().innerText(), /The Orbit tasks agents are carrying/);
+  assert.match(await page.locator("main, #app").first().innerText(), /Orbit tasks agents carry for you/);
   assert.equal(await page.getByRole("link", { name: "Open in Orbit" }).count(), 1);
   assert.match(await page.locator(".agents-updated").innerText(), /Updated/);
 
@@ -71,8 +71,8 @@ test("Agent work shows counts, filter, collapsed groups and the Today link", { t
   assert.match(await summary.innerText(), /Done today\s*4/);
   assert.equal(await group("Working now").locator("article.agent-row").count(), 2);
   assert.equal(await group("In review").locator("article.agent-row").count(), 1);
-  // Rows carry id · workspace, type, priority, crew and time since update.
-  assert.match(await group("Working now").innerText(), /ORB-1 · office/);
+  // Rows carry workspace · id, type, priority, crew and time since update.
+  assert.match(await group("Working now").innerText(), /office · ORB-1/);
   assert.match(await group("Working now").innerText(), /muse-wonder/);
   assert.match(await group("In review").innerText(), /high/);
 

@@ -9,8 +9,9 @@
  * `not_permitted` with the operator command, never a claimed success. The
  * ask box calls `office.scribe-ask`, the one low-cost model call. The
  * legacy v1 handoff list stays at `/api/scribe/handoffs` (`legacy: true`)
- * for the compatibility window. Every call is `orbit tool run`; nothing
- * reads the Library.
+ * for the compatibility window. Open contradictions are read through
+ * `contradictions.ts` from the decision-conflict to-dos `office.extract` files.
+ * Every call is `orbit tool run`; nothing reads the Library.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 
@@ -20,6 +21,7 @@ import type { Feature } from "../../http/types.js";
 import { createOrbitClient, OrbitExitError, type OrbitToolClient } from "../../orbit/client.js";
 import { handoffInput, handoffQuery, handoffsOf, type HandoffQuery } from "./handoffs.js";
 import { agreementOf, answerOf, decisionsOf, detailOf, feedOf, outputOf, preferencesOf, ScribeError } from "./model.js";
+import { readContradictions, resolveContradiction } from "./contradictions.js";
 import { configSetInput, operatorCommand, tagSaveOf, tagsOf } from "./tags.js";
 
 type Client = Pick<OrbitToolClient, "callTool" | "pollTool">;
@@ -238,6 +240,11 @@ export function createScribeFeature(client: Client): Feature {
       {
         method: "GET", path: "/api/scribe/handoffs",
         handle: (request, response) => answer(response, "handoffs", async () => loadHandoffs(client, handoffQuery(request))),
+      },
+      { method: "GET", path: "/api/scribe/contradictions", handle: (_request, response) => answer(response, "contradictions", () => readContradictions(client)) },
+      {
+        method: "POST", path: "/api/scribe/contradictions/resolve",
+        handle: (request, response) => answer(response, "contradiction resolve", async () => resolveContradiction(client, await readJsonBody(request))),
       },
       { method: "POST", path: "/api/scribe/ask", handle: (request, response) => answer(response, "ask", async () => ask(client, await readJsonBody(request))) },
     ],

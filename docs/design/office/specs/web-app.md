@@ -38,17 +38,17 @@ Source: spec §13.1–§13.2 and §13.4.
 
 | Screen | Content |
 |---|---|
-| **Today** | Library setup card when missing; otherwise Next meeting (time and prep, hidden when the day's meetings are over), Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; a shared-library sync's updates, conflicts and skipped documents as one card; the user's to-dos), Agents working on (one line each, live), Done today (openable results), a compact Handoffs section (the same cards as the Scribe feed (ORB-21120, reworking ORB-21075): at most five, most recently updated first, each with project or Global, its title, age, its Summary (or the withheld notice for a private session) and its tag counts, linking to Scribe; read from `GET /api/scribe/feed` at most every 10 seconds and hidden when there is none or the read fails), and a drop zone |
-| **Source view** | The original (video or audio player, or image) beside the anchorable text; links to the tasks and pages that cite it. A video adds the chapter list with tangents folded and gotchas shown, and keyframe thumbnails on the timeline; video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
+| **Today** | Library setup card when missing; otherwise a header (the date, a greeting, the digest's one-line summary and **Open the meeting**), the **Morning digest** (below), then Agents working on, Next meeting (time and prep; "Nothing else on your calendar today." once the day's meetings are over) and a drop zone side by side, then Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; a shared-library sync's updates, conflicts and skipped documents as one card; the user's to-dos), Agents working on (one line each, live, across the office workspace and followed workspaces), Done today (openable results), a compact Handoffs section (the same cards as the Scribe feed (ORB-21120, reworking ORB-21075): at most five, most recently updated first, each with project or Global, its title, age, its Summary (or the withheld notice for a private session) and its tag counts, linking to Scribe; read from `GET /api/scribe/feed` at most every 10 seconds and hidden when there is none or the read fails). The drop zone uploads a recording or notes through the Source upload and opens the new source |
+| **Source view** | A back link to Library, the title and a meta line (kind, length, turn count, Private); the original (video or audio player, or image) with a timeline whose marks are the source's chapters (asides for tangents) and gotchas; the transcript as speaker turns (`[hh:mm:ss] Name: text` lines, each with its timestamp link and tagged with the chapter or gotcha marks that fall in it; untagged otherwise); the chapter list with tangents folded and gotchas shown, and keyframe thumbnails; and an aside with **Cited by** (the tasks and pages that cite it) and **Where it ran** (the recorded model routes, the sensitivity, Mark private and team sharing). Video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
 | **Calendar** | Week view (day view on a phone) of the user's meetings, authored locally or read from Outlook or an ICS feed, with each meeting's prep and capture state in words and the routines' runs as margin marks, and tasks scheduled for a date as blocks; a meeting opens its attendees, agenda, cited prep brief and **Add notes or transcript** ([calendar.md](./calendar.md#app); local events [ORB-20246]) |
-| **To-dos** | You and Agents columns; each to-do shows its source and attached knowledge, and its scheduled time when it has one; a **New to-do** form creates one of your own; **Schedule…** sets or clears the time ([calendar.md](./calendar.md#scheduled-tasks)) |
-| **Agent work** | The Orbit tasks agents are carrying across the office workspace and followed workspaces: Working now, In review, Queued and Done today groups, with a workspace filter and an Open in Orbit link |
+| **To-dos** | An **Agent to-dos go to** picker (the followed workspaces, or None); You and Agents columns, the Agents column led by the meeting agent to-dos (below); each to-do shows its source and attached knowledge, and its scheduled time when it has one; a **New to-do** form creates one of your own; **Schedule…** sets or clears the time ([calendar.md](./calendar.md#scheduled-tasks)) |
+| **Agent work** | The Orbit tasks agents are carrying across the office workspace and followed workspaces: Working now, In review, Queued and Done today groups, with a workspace filter and an Open in Orbit link; each row has a state dot, the title, `workspace · id · updated … ago · from <source>`, its crew and, once it has one, its pull request |
 | **Routines** | The next hour as one track (a mark per scheduled run, hollow where a paused routine skips its slot), then On and Paused tables: a switch, the routine and what it does, when it runs (plain words, with the cron line beneath), when it runs next (worked out from the schedule in the computer's time zone) and how its last time went (from `last_fire` in `orbit.auto_task.list`: when, and its task's state in words; task ids stay on the server). Retention settings below. Scheduled routines use the same tables, with their last run outcome when available. Only shipped component definitions are listed, with a count of hidden Orbit developer routines (see below). Full run history and produced outputs are managed in Orbit. |
 | **Library** | **Library setup** (the four bootstrap phases with progress and computed gaps, each gap with one action; [library-bootstrap.md](./library-bootstrap.md#setup-progress)); search; About pages grouped by template (You, People, Clients, Projects, Topics, Glossary and the rest) and How-to pages; one-per-Library pages not written yet shown as "Not set up yet"; Outputs by kind and series; a page view with citations, refs and back-links (a person's meeting sources and other Library documents; task links are deferred until a page-citation read exists); history for every page and artifact; "Shared" and "Shared · from <member>" labels and a **Share with the team** switch on page, source and artifact views ([shared-library.md](./shared-library.md#app)) |
-| **Settings** | Library settings; **Shared library** (remote, branch and member name, **Sync now**, the last sync in words; [shared-library.md](./shared-library.md#app)); **Private route** (choose the endpoint kind, URL, model and label; the token goes straight to `orbit plugin secret set`; the check's capabilities in plain words; "Built with Muse Spark Open"; [models-and-privacy.md](./models-and-privacy.md#the-private-route)); **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again; a secret address takes the feed's full address; a sign-in-with-a-code connection shows the user code and verification address, then its signed-in state, and "Sign in again" once it reads `auth_expired`); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
+| **Settings** | **Models** first (below); Library settings; **Shared library** (remote, branch and member name, **Sync now**, the last sync in words; [shared-library.md](./shared-library.md#app)); **Private route** (choose the endpoint kind, URL, model and label; the token goes straight to `orbit plugin secret set`; the check's capabilities in plain words; "Built with Muse Spark Open"; [models-and-privacy.md](./models-and-privacy.md#the-private-route)); **Connections** (add, edit or disable an API connection, and enter its secret, which goes straight to `orbit plugin secret set` and is never shown again; a secret address takes the feed's full address; a sign-in-with-a-code connection shows the user code and verification address, then its signed-in state, and "Sign in again" once it reads `auth_expired`); **API calls** (the gateway audit, newest first) ([gateway.md](./gateway.md)) |
 | **Insights** | Automation ratio line, metric tiles, "what got automated" |
 | **Review** | Generated reviews with their citations, and a regenerate button |
-| **Scribe** | Built (ORB-21120, reworking the v1 screen of ORB-20696 and the Handoffs view of ORB-21075). A compact window over scribe v2's SCR files, laid out from 320 px for an installed PWA window: a **Feed** of exactly one card per project (its latest SCR) plus the global card, from `office.session-brief` `view: list` through `GET /api/scribe/feed` ([scribe.md](./scribe.md#feed); [sessions.md](./sessions.md#handoff-list)), each card with its title, scope, updated time and age, Summary, Next, Outcome and Blockers and the new Tags entry counts, refreshed by polling every 10 seconds; opening a card shows the whole SCR (sections and Tags entries with their `<SCR id>#T<n>` citations), and its **Previous** button walks the `previous:` chain one SCR at a time (`GET /api/scribe/feed?id=<SCR id>`), the only way to reach an older SCR. A private session's card shows "Private session: content withheld." Read-only **Preferences** and **Decisions** panels read `office.scribe-query` (`GET /api/scribe/preferences`, `GET /api/scribe/decisions`): preference statements with stale markers, and ledger entries newest first with chosen, the stated reason or "no recorded reason", and reversals. A **Tags** editor creates, edits and deletes custom and default tags (name, scope, instruction, sink, mode, capture, and a workspace for a proposed-task tag) and restores the defaults; it reads the effective tags from `office.status` (`GET /api/scribe/tags`) and saves through `office.config-set` (`POST /api/scribe/tags`); until ORB-20363 grants the app `office.config-set` for the `scribe.*` keys, a refused save is reported as `not_permitted` with the equivalent `orbit tool run office.config-set` command for the operator and the editor turns read-only, never claiming a save happened ([scribe.md](./scribe.md#configuration)). An ask box is answered by `office.scribe-ask` with `SCR file:line` citations, a mismatched quote dropped, or "Not captured" with the searched range and topics ([scribe.md](./scribe.md#answering)). The v1 entry feed and its Pending, Preferences, Landed and Why views, the **Add a note** form and the Scribe › Handoffs view are retired; the v1 handoff list stays at `GET /api/scribe/handoffs` (`legacy: true`) for the compatibility window. No automatic capture, heartbeat or capture switch. A read-only **Agreement** view in the Decisions panel (built, [ORB-21220]) shows, per decision category, how often Orbit's decision model agreed with the user: one row per category from `GET /api/scribe/decision-agreement` (Orbit's `precedent-decision-readout/1` readout through the server's one `orbit.decision.readout` read, cached 60 seconds on the server and throttled 60 seconds in the screen) with its mode, scored requests, accuracy with its Wilson 95% interval, coverage, calibration error, abstention and conflict rates, and the readout's window and time; below the category's `min_samples` it says "Not enough decisions yet", a readout with no categories says "No decisions yet.", and a failed read says "Could not read Orbit's measurement." Aggregates only, never a per-request prediction, no actions; hidden when the consumer is off or no readout exists; laid out from 320 px ([decision-precedents.md](./decision-precedents.md#agreement-view)). A rail item under Work, after Agent work |
+| **Scribe** | Built (ORB-21120, reworking the v1 screen of ORB-20696 and the Handoffs view of ORB-21075; laid out as the decision ledger in ORB-21345). Top to bottom: the ask box (**Ask the ledger**); the **Open contradiction** panels from `GET /api/scribe/contradictions` (a meeting decision and the prior ledger decision it contradicts side by side, each with when and where, the decision, Why and its citation, "Holds N agent to-dos", and two "<decision> stands" choices posted to `POST /api/scribe/contradictions/resolve`), shown only when one is open, otherwise one quiet line: "No open contradictions." or, when the read fails (`available: false`), "Couldn’t read open contradictions. We’ll try again shortly."; **Decisions · newest first** beside **Feed · one card per project**; Preferences beside the Agreement view; then the Tags editor. The contradictions are the open `owner:you` to-dos tagged `office-scribe-contradictions` that `office.extract` files ([ORB-21340]): each side is read from the to-do's entry lines (id, decided at, decision, cite) and its reason from the ledger, the matter from its description, and "Holds N" counts the open `contested` to-dos `Held until` it. A resolve takes `{key, stands: "newer"|"prior"}`, rereads the to-do and calls `office.decision-resolve` with the entry that stands (`features/scribe/contradictions.ts`). A ledger entry is marked Contested when it is a side of an open contradiction, Reversed when `reversed_by` is set, and Standing otherwise. A compact window over scribe v2's SCR files, laid out from 320 px for an installed PWA window: a **Feed** of exactly one card per project (its latest SCR) plus the global card, from `office.session-brief` `view: list` through `GET /api/scribe/feed` ([scribe.md](./scribe.md#feed); [sessions.md](./sessions.md#handoff-list)), each card with its title, scope, updated time and age, Summary, Next, Outcome and Blockers and the new Tags entry counts, refreshed by polling every 10 seconds; opening a card shows the whole SCR (sections and Tags entries with their `<SCR id>#T<n>` citations), and its **Previous** button walks the `previous:` chain one SCR at a time (`GET /api/scribe/feed?id=<SCR id>`), the only way to reach an older SCR. A private session's card shows "Private session: content withheld." Read-only **Preferences** and **Decisions** panels read `office.scribe-query` (`GET /api/scribe/preferences`, `GET /api/scribe/decisions`): preference statements with stale markers, and ledger entries newest first with chosen, the stated reason or "no recorded reason", and reversals. A **Tags** editor creates, edits and deletes custom and default tags (name, scope, instruction, sink, mode, capture, and a workspace for a proposed-task tag) and restores the defaults; it reads the effective tags from `office.status` (`GET /api/scribe/tags`) and saves through `office.config-set` (`POST /api/scribe/tags`); until ORB-20363 grants the app `office.config-set` for the `scribe.*` keys, a refused save is reported as `not_permitted` with the equivalent `orbit tool run office.config-set` command for the operator and the editor turns read-only, never claiming a save happened ([scribe.md](./scribe.md#configuration)). An ask box is answered by `office.scribe-ask` with `SCR file:line` citations, a mismatched quote dropped, or "Not captured" with the searched range and topics ([scribe.md](./scribe.md#answering)). The v1 entry feed and its Pending, Preferences, Landed and Why views, the **Add a note** form and the Scribe › Handoffs view are retired; the v1 handoff list stays at `GET /api/scribe/handoffs` (`legacy: true`) for the compatibility window. No automatic capture, heartbeat or capture switch. A read-only **Agreement** panel beside Preferences (built, [ORB-21220]) shows, per decision category, how often Orbit's decision model agreed with the user: one row per category from `GET /api/scribe/decision-agreement` (Orbit's `precedent-decision-readout/1` readout through the server's one `orbit.decision.readout` read, cached 60 seconds on the server and throttled 60 seconds in the screen) with its mode, scored requests, accuracy with its Wilson 95% interval, coverage, calibration error, abstention and conflict rates, and the readout's window and time; below the category's `min_samples` it says "Not enough decisions yet", a readout with no categories says "No decisions yet.", and a failed read says "Could not read Orbit's measurement." Aggregates only, never a per-request prediction, no actions; hidden when the consumer is off or no readout exists; laid out from 320 px ([decision-precedents.md](./decision-precedents.md#agreement-view)). A rail item under Work, after Agent work |
 
 There is no Chat screen: conversation happens in the user's agent CLI.
 The Scribe screen's ask box answers questions about captured conversations;
@@ -136,6 +136,21 @@ snapshot, not a complete history. The view uses the shared dark theme.
 An empty `drop-zone` slot reserves the upload integration point; uploading
 remains a separate feature. Each Needs-you card except the user's own to-dos
 carries its `approval-actions` (below).
+
+### Morning digest
+
+Built ([ORB-21345]). `GET /api/today/digest` (`TodayDigest` in
+`app/packages/contracts`) picks the newest `source:<id>` tags on the user's
+`owner:you` tasks and asks `office.digest {source}` for up to three of them in
+turn: a source that is not a meeting is skipped, `meeting_not_extracted`
+answers `not_extracted`, no candidate answers `no_meeting`, and any other
+refusal (including `office.digest` not being installed yet; ORB-21337) answers
+`unavailable`. The panel shows the meeting's title, then **Decided**,
+**Shipped** and **Needs you** columns, each item with its shortened citation
+linked into the Source screen; a decision with an open contradiction (from
+`GET /api/scribe/contradictions`) shows the two sides as "Keep: …" choices
+that resolve through the Scribe route. Each state has its own quiet message;
+the panel rereads every 30 seconds and never invents items.
 
 ### Calendar implementation
 
@@ -237,7 +252,12 @@ private fetches a new preview and disables the old confirmation. Privacy can
 only be raised in this UI. Confirmation failures offer a fresh preview rather
 than retrying a potentially completed mutation.
 
-The original and text appear side by side on desktop and stack on phones.
+A selected source shows a back link to Library, its title and a meta line,
+then the player, then the transcript (with chapters and keyframes below it)
+beside an aside with Cited by and Where it ran; the two columns wrap to one on
+a phone, and capturing another source folds away below. The timeline marks
+come from `chapters` and gotcha cites; a turn's tags are the marks that fall
+within it. Nothing else tags a turn, so a turn with no mark is untagged.
 `/?source=<id>#t=hh:mm:ss`, `#L<n>-<m>`, `#frame=hh:mm:ss` and `#chapter=<n>`
 select the Source screen through the app entry point, highlight and scroll the
 span, and seek audio/video after metadata loads. Ordinary navigation hashes
@@ -303,6 +323,13 @@ workspace and each followed workspace. An unreachable workspace is
 reported per workspace without failing the whole response. The screen is
 read-only: it offers no task actions.
 
+Since [ORB-21345] the list also follows `meetings.agent_workspace` (from
+`office.status` `meetings`), carries each task's `source:` tag as `source`,
+and, for In review and Done today (at most 24 tasks), the pull request from
+`orbit.task.show {field: "delivery"}` as `pr` (`{number, url, merged}`; the
+URL only when the delivery names an `owner/name` repository). Both fields are
+omitted when absent.
+
 ### To-dos implementation
 
 To-dos are built ([ORB-18728]). `GET /api/todos` lists You and Agents
@@ -331,6 +358,32 @@ takes `{id, not_before}` (null clears) and writes it with
 `web/test/todos.browser.mjs` covers schedule, reschedule, cancel and clear
 at 1440px and 375px.
 
+Meeting agent to-dos ([ORB-21345]): `GET /api/todos/agents` (`AgentTodos`)
+returns the target workspace (`meetings.agent_workspace`), the followed
+workspaces, and the to-dos filed from meetings: `owner:agent` tasks with a
+`source:` tag in the target workspace, each with its state (queued, working,
+in review, done or merged, from the delivery record, at most 24 PR reads),
+crew, PR and source, plus the user's `owner:you` tasks tagged `contested`,
+shown as held until a contradiction is settled. A target that cannot be read
+answers `target_unavailable: true`. The screen rereads it at most every 20
+seconds and at once after the picker changes. The picker saves through
+`POST /api/settings/agent-workspace` (`{workspace}`, a followed workspace or
+null), which writes `meetings.agent_workspace` with `office.config-set`.
+
+### Models
+
+Built ([ORB-21345]). Settings › Models (`GET /api/settings/models`,
+`ModelsView`) lists, per job, the Meta model that runs it and where it runs:
+transcribing meetings (Muse Voice Transcribe), extracting decisions and to-dos
+(Muse Spark), careful reasoning (Muse Wonder), private sources (Muse Spark Open
+on the private route) and agent to-dos (Muse Code crews), as
+[models-and-privacy.md](./models-and-privacy.md) assigns them. Each row's check
+is live: the Meta API key's presence (`set`/`unset` only), the private route's
+last verification, and the agent CLI's connection; a job without a check reads
+"off". Below the table: a private route summary linking to its tab and the
+same **Where agent to-dos go** picker as To-dos. No model is called to build
+the page.
+
 ## Look
 
 One dark theme, taken from Orbit's dashboard and written fresh for the app:
@@ -353,8 +406,18 @@ never literal colours:
   on of total, today's past meetings without notes beside Calendar, and
   Today's waiting cards as an amber pill. A failed read hides
   a count rather than showing 0. The layout lives in `web/src/nav.ts`.
+- **Panel**: a bordered box with an eyebrow head (`ui/panel.ts`): plain,
+  dashed (drop zones) or split into hairline columns; rows inside carry a
+  state dot, a title, a mono meta line and a trailing pill or link.
+- **Screen head**: date or eyebrow, the h1, a one-line intro and the screen's
+  primary action.
+- **Callout**: an attention-washed block with two choices (contradictions).
 - **Table rows** (Routines): a header row of column labels over hairline
   rows; on a phone each row stacks and every cell carries its label.
+
+The approved mocks the screens follow are in
+[`../mocks/`](../mocks/) (`*.dc.html`, with `canvas.json`). Their data is
+illustrative: screens read live data and never copy it.
 
 ## Rules
 
@@ -477,6 +540,7 @@ Source, Settings and Today.
 - [ORB-21075] — built Scribe › Handoffs (Current, Global, History), `GET /api/scribe/handoffs` and Today's Handoffs section.
 - [ORB-21120] — reworked the Scribe screen into the scribe v2 one-card feed: `view: list` SCR cards with the `previous` chain, Preferences and Decisions panels over `office.scribe-query`, the Tags editor over `office.config-set` (read-only `not_permitted` state until ORB-20363), and Today's Handoffs section over the same cards.
 - [ORB-21220] — built the Scribe Decisions panel's Agreement view and `GET /api/scribe/decision-agreement`.
+- [ORB-21345] — rebuilt the screens from the approved mocks: Today's header and Morning digest (`GET /api/today/digest`), meeting agent to-dos and their target (`GET /api/todos/agents`, `POST /api/settings/agent-workspace`), Agent work's sources and PRs, Settings › Models (`GET /api/settings/models`), Scribe as the decision ledger (`/api/scribe/contradictions` over the ORB-21340 conflict to-dos and `office.decision-resolve`), Source's turns and aside; projected `meetings` in `office.status`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 

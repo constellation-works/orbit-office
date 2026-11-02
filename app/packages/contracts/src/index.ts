@@ -109,3 +109,7 @@ export type {
 export type { BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourceDigest, SourcePlan, SourceView } from "./api.js";
 export type { SelectionInput, SelectionCount } from "./api.js";
 export type { CalendarSources, LocalCalendarEvent, LocalCalendarChange } from "./api.js";
+export type {
+  AgentTodo, AgentTodos, AgentTodoState, AgentWorkspaceSaved, AgentWorkspaceWrite, Contradiction, ContradictionResolve,
+  Contradictions, ContradictionSide, ModelJob, ModelsView, TaskPr, TodayDigest,
+} from "./api.js";

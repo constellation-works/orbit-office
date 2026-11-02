@@ -326,6 +326,18 @@ export interface AgentWorkTask {
   crew: string | null;
   /** RFC 3339 time of the last update. */
   updated_at: string;
+  /** The task's pull request from its delivery record, read for in-review and done rows only. */
+  pr?: TaskPr | null;
+  /** The meeting or other source the task was filed from (`source:<id>` tag), or null. */
+  source?: string | null;
+}
+
+/** A pull request read from a task's Orbit delivery record. `url` only for a GitHub `owner/name` repository. */
+export interface TaskPr {
+  number: number;
+  url: string | null;
+  /** True once the delivery landed (merged). */
+  merged: boolean;
 }
 
 /** `GET /api/agents`: agent-carried Orbit tasks across the followed workspaces, newest first. */
@@ -959,4 +971,100 @@ export interface ScribeHandoffs {
   history_offset: number;
   /** More history follows this page. */
   history_more: boolean;
+}
+
+/**
+ * `GET /api/today/digest`: the morning digest since the latest meeting.
+ * `state` says why `digest` is null: no meeting has filed to-dos yet, the
+ * meeting is not extracted, or the scoped digest is not available.
+ */
+export interface TodayDigest {
+  state: "ready" | "no_meeting" | "not_extracted" | "unavailable";
+  /** The meeting the digest covers, or null when none was found. */
+  source: { id: string; title: string } | null;
+  digest: SourceDigest | null;
+}
+
+/** Where an agent to-do from a meeting stands. `held`: not filed for agents because its matter is contested. */
+export type AgentTodoState = "queued" | "working" | "review" | "merged" | "done" | "held";
+
+/** One agent to-do on `GET /api/todos/agents`: filed in the target workspace, or held back as yours. */
+export interface AgentTodo {
+  /** The Orbit task id. For a held to-do, the office task that holds it. */
+  id: string;
+  title: string;
+  /** The workspace selector the task is in, or `office`. */
+  workspace: string;
+  state: AgentTodoState;
+  crew: string | null;
+  pr: TaskPr | null;
+  /** The source id from the `source:<id>` tag, or null. */
+  source: string | null;
+}
+
+/** `GET /api/todos/agents`: agent to-dos filed from meetings, and the target workspace. */
+export interface AgentTodos {
+  /** `meetings.agent_workspace`, or null when every extracted to-do stays yours. */
+  target_workspace: string | null;
+  /** The followed workspace selectors (`brief.task_workspaces`), offered as targets. */
+  followed: string[];
+  todos: AgentTodo[];
+  /** True when the target workspace could not be read; held to-dos still show. */
+  target_unavailable: boolean;
+}
+
+/** `POST /api/settings/agent-workspace`: set or clear `meetings.agent_workspace`. */
+export interface AgentWorkspaceWrite { workspace: string | null }
+export interface AgentWorkspaceSaved { target_workspace: string | null }
+
+/** One side of a contradiction: a ledger decision with its reason and citation. */
+export interface ContradictionSide {
+  /** The decision ledger entry id, when the source names it. */
+  entry?: string;
+  text: string;
+  because: string | null;
+  /** Source id plus anchor, for example `src-…#t=00:02:14` or `src-…#L42`. */
+  cite: string;
+  decided_at: string | null;
+  /** Where it was decided, in plain words (a meeting or session title). */
+  context: string | null;
+}
+
+/** One open contradiction between a new decision and a prior ledger decision (ORB-21340). */
+export interface Contradiction {
+  /** Opaque key for resolving it; never rendered. */
+  key: string;
+  matter: string;
+  newer: ContradictionSide;
+  prior: ContradictionSide;
+  /** Agent to-dos held until it is resolved. */
+  held: number;
+}
+
+/**
+ * `GET /api/scribe/contradictions`: the open decision-conflict to-dos that
+ * `office.extract` files. `available` is false when they can't be read.
+ */
+export interface Contradictions {
+  available: boolean;
+  contradictions: Contradiction[];
+}
+
+/** `POST /api/scribe/contradictions/resolve`: which decision stands. */
+export interface ContradictionResolve { key: string; stands: "newer" | "prior" }
+
+/** One job the office runs, the Meta model it calls and where it runs. */
+export interface ModelJob {
+  job: string;
+  model: string;
+  where: string;
+  /** What the app could check now, in plain words. */
+  check: { state: "passed" | "attention" | "off"; label: string };
+}
+
+/** `GET /api/settings/models`: every model the office calls, all Meta's. */
+export interface ModelsView {
+  jobs: ModelJob[];
+  /** RFC 3339 time the checks were read. */
+  checked_at: string;
 }

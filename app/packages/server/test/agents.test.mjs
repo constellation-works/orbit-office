@@ -39,13 +39,16 @@ test("tasks are grouped across the office workspace and two followed workspaces,
   });
   assert.equal(body.working_now[1].workspace, "ws_alpha");
   assert.equal(body.in_review[0].priority, "high");
-  // Only office.status and orbit.task.list are called; the followed list
-  // comes from the status fixture, and extra workspaces pass a selector.
+  // Only office.status, orbit.task.list and delivery reads for PR links are
+  // called; the followed list comes from the status fixture, and extra
+  // workspaces pass a selector.
   assert.equal(fake.state.calls[0].name, "office.status");
-  assert.ok(fake.state.calls.slice(1).every(({ name }) => name === "orbit.task.list"));
-  const selectors = fake.state.calls.slice(1).map(({ input }) => input.workspace ?? null);
+  const lists = fake.state.calls.slice(1).filter(({ name }) => name === "orbit.task.list");
+  assert.ok(fake.state.calls.slice(1).every(({ name, input }) => name === "orbit.task.list" ||
+    (name === "orbit.task.show" && input.field === "delivery")));
+  const selectors = lists.map(({ input }) => input.workspace ?? null);
   assert.ok(selectors.includes(null) && selectors.includes("ws_alpha") && selectors.includes("ws_beta"));
-  assert.ok(fake.state.calls.slice(1).every(({ input }) => input.fields.includes("updated_at")));
+  assert.ok(lists.every(({ input }) => input.fields.includes("updated_at")));
 });
 
 test("done today is only completions since local midnight; proposed tasks are never returned", async (t) => {
