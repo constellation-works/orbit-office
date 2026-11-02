@@ -405,7 +405,7 @@ impl Page {
             let citation = parse_citation(&text).ok_or_else(|| Error::UnresolvedCite {
                 id: self.id.clone(),
                 cite: text.clone(),
-                reason: "expected <id> or <id>#<anchor> naming a src-, dom-, rb- or art- document",
+                reason: "expected <id> or <id>#<anchor> naming a src-, dec-, dom-, rb- or art- document",
             })?;
             citations.push(citation);
         }
@@ -415,7 +415,9 @@ impl Page {
     /// Resolve every citation through `lookup` (an id to its indexed
     /// document): the document exists and is the kind its prefix names, a
     /// source cite names an anchor present in that source, and no other
-    /// document is cited with an anchor.
+    /// document is cited with an anchor. A decision ledger entry (a `dec-`
+    /// id, or a migrated note's former `src-` id) may be cited bare; an
+    /// anchor on it names a line of its verbatim quote.
     pub fn resolve_citations(
         &self,
         mut lookup: impl FnMut(&str) -> Result<Option<DocumentRecord>>,
@@ -444,6 +446,8 @@ impl Page {
                 return Err(refuse("the id names a different kind of document"));
             }
             match (citation.kind, citation.anchor.as_deref()) {
+                (DocumentKind::Source, None)
+                    if crate::domain::source::decisions::is_entry_record(&record) => {}
                 (DocumentKind::Source, None) => {
                     return Err(refuse("a source cite needs an anchor"));
                 }
@@ -745,8 +749,9 @@ pub fn page_kind_for_id(id: &str) -> Option<DocumentKind> {
     }
 }
 
-/// Parse `<id>` or `<id>#<anchor>` where the id is `src-`, `dom-`, `rb-` or
-/// `art-` followed by a lowercase kebab-case slug.
+/// Parse `<id>` or `<id>#<anchor>` where the id is `src-`, `dom-`, `rb-`,
+/// `art-`, `dec-` (a decision ledger entry) or `decisions-` (a ledger)
+/// followed by a lowercase kebab-case slug.
 #[must_use]
 pub fn parse_citation(text: &str) -> Option<Citation> {
     let (id, anchor) = match text.split_once('#') {
@@ -766,7 +771,7 @@ pub fn parse_citation(text: &str) -> Option<Citation> {
     };
     let (prefix, slug) = local.split_once('-')?;
     let kind = match prefix {
-        "src" => DocumentKind::Source,
+        "src" | "dec" | "decisions" => DocumentKind::Source,
         "dom" => DocumentKind::Domain,
         "rb" => DocumentKind::Runbook,
         "art" => DocumentKind::Artifact,

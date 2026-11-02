@@ -33,6 +33,12 @@ test("routines HTTP routes list definitions, toggle once, and forward retention 
   assert.equal((await refused.json()).reason, "Retention must be a positive number of days.");
   assert.deepEqual(calls.at(-1), ["office.config-set", { key: "retention.meeting", value: -1 }]);
   assert.equal((await post("/api/routines/toggle", { name: "meeting-sweep", enabled: true, extra: 1 })).status, 400);
+  // The retired note kind is refused before Office is called; decisions is forwarded.
+  const sent = calls.length;
+  assert.equal((await post("/api/routines/retention", { kind: "note", value: 30 })).status, 400);
+  assert.equal(calls.length, sent);
+  await post("/api/routines/retention", { kind: "decisions", value: 30 });
+  assert.deepEqual(calls.at(-1), ["office.config-set", { key: "retention.decisions", value: 30 }]);
 });
 
 async function fixture(t) {

@@ -76,13 +76,14 @@ pub(crate) fn upload_request(root: &Path) -> office_core::ports::CaptureSourceRe
     std::fs::write(&upload, [0, 255, 1, 128, 2]).expect("binary upload");
     office_core::ports::CaptureSourceRequest {
         captured_at: "2026-10-27T10:00:00+00:00".into(),
+        kind: Some("doc".into()),
         title: Some("Upload".into()),
         upload_path: Some(upload.to_string_lossy().into()),
         ..Default::default()
     }
 }
 
-pub(crate) const UPLOAD_DIR: &str = "sources/note/2026/10/src-20261027-upload";
+pub(crate) const UPLOAD_DIR: &str = "sources/doc/2026/10/src-20261027-upload";
 
 pub(crate) fn search_sorted(store: &LibraryStore, query: &str) -> Vec<SearchHit> {
     let mut hits = store
@@ -120,7 +121,7 @@ pub(crate) fn token_hit(store: &LibraryStore, id: &str, token: &str) -> SearchHi
 pub(crate) const SOURCE_ONE: &str = "\
 ---
 id: src-1
-kind: note
+kind: doc
 title: Source one
 ---
 
@@ -176,7 +177,7 @@ pub(crate) fn library_with_links_outside(
     write(
         &library,
         "sources/2026/10/src-inside/source.md",
-        "---\nid: src-inside\nkind: note\ntitle: Inside source\n---\n\ninside library source\n",
+        "---\nid: src-inside\nkind: doc\ntitle: Inside source\n---\n\ninside library source\n",
     );
     let outside = dir.path().join("outside");
     write(
@@ -192,12 +193,12 @@ pub(crate) fn library_with_links_outside(
     write(
         &outside,
         "source.md",
-        "---\nid: src-outside-file\nkind: note\ntitle: Outside source file\n---\n\nOUTSIDE library secret\n",
+        "---\nid: src-outside-file\nkind: doc\ntitle: Outside source file\n---\n\nOUTSIDE library secret\n",
     );
     write(
         &outside,
         "source-tree/source.md",
-        "---\nid: src-outside-dir\nkind: note\ntitle: Outside source dir\n---\n\nOUTSIDE library secret\n",
+        "---\nid: src-outside-dir\nkind: doc\ntitle: Outside source dir\n---\n\nOUTSIDE library secret\n",
     );
     write(
         &outside,

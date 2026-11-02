@@ -30,6 +30,9 @@ mod knowledge;
 #[path = "library/context.rs"]
 mod context;
 
+#[path = "library/decisions.rs"]
+mod decisions;
+
 #[path = "library/bootstrap.rs"]
 mod bootstrap;
 

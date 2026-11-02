@@ -194,7 +194,7 @@ fn list_and_source_reads_report_sharing_approval_and_status_reports_the_block() 
     let source = output(
         &env,
         "office.capture",
-        json!({"kind":"note","title":"Fixture note","text":"Shareable evidence."}),
+        json!({"kind":"doc","title":"Fixture note","text":"Shareable evidence."}),
     );
     let id = source["id"].as_str().unwrap().to_string();
     assert_eq!(
@@ -559,7 +559,7 @@ fn equal_evidence_ids_are_member_scoped_and_own_member_aliases_stay_local() {
             &env,
             &format!("members/{member}/sources/2026/10/{id}/source.md"),
             &format!(
-                "---\nid: {id}\nkind: note\ntitle: Same evidence\nshared_by: {member}\n---\nFrom {member}.\n"
+                "---\nid: {id}\nkind: doc\ntitle: Same evidence\nshared_by: {member}\n---\nFrom {member}.\n"
             ),
         );
     }
@@ -568,7 +568,7 @@ fn equal_evidence_ids_are_member_scoped_and_own_member_aliases_stay_local() {
     store
         .write_document(
             Path::new(&format!("sources/2026/10/{id}/source.md")),
-            &format!("---\nid: {id}\nkind: note\ntitle: Same evidence\n---\nOwn evidence.\n"),
+            &format!("---\nid: {id}\nkind: doc\ntitle: Same evidence\n---\nOwn evidence.\n"),
         )
         .unwrap();
     for member in ["alice", "bob"] {

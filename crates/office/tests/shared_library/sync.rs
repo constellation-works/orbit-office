@@ -289,7 +289,7 @@ fn two_workspaces_push_and_pull_with_isolated_git_and_skip_invalid_files() {
         std::fs::create_dir_all(&private).unwrap();
         std::fs::write(
             private.join("source.md"),
-            "---\nid: src-20261028-private\nkind: note\ntitle: Private\nsensitivity: private\nshared_by: bob\n---\nSecret.\n",
+            "---\nid: src-20261028-private\nkind: doc\ntitle: Private\nsensitivity: private\nshared_by: bob\n---\nSecret.\n",
         )
         .unwrap();
     });

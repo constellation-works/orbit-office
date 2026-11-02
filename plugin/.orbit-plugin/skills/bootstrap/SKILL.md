@@ -30,7 +30,8 @@ and move on.
    plain words. Accept dropped files and pasted text; fetching through a
    gateway connection comes later, not during the bootstrap.
 2. **Capture it.** Capture each file or pasted item as its own source with
-   `office.capture`, tagged `bootstrap:<phase>`. Keep the returned source
+   `office.capture`, tagged `bootstrap:<phase>` (pasted text names its
+   `kind`, such as `doc`). Keep the returned source
    ids; every later claim cites a source anchor.
 3. **Send the user to the batch preview.** The app's Source screen shows
    the phase's counts, model calls and cost estimate (or the counts with

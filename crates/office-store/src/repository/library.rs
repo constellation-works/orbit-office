@@ -26,6 +26,7 @@ use crate::driver::git::Git;
 use crate::driver::sqlite::connection::IndexStore;
 use crate::{Error, Result};
 
+mod decisions;
 mod grant;
 mod pending;
 
@@ -284,6 +285,16 @@ impl LibraryStore {
         } else {
             Vec::new()
         };
+        // Retired `note` sources move into the decision ledgers (specs/
+        // scribe.md, "Retiring `sources/note`"); a migrated Library has none,
+        // so a re-run reports `already_initialized` and commits nothing.
+        let (removed_notes, note_ledgers) = if candidate.exists() {
+            files.migrate_note_sources(&office_core::domain::source::format_rfc3339_utc(
+                SystemTime::now(),
+            ))?
+        } else {
+            (Vec::new(), Vec::new())
+        };
         if is_repo
             && config_text.is_some()
             && gitignore_exists
@@ -294,6 +305,7 @@ impl LibraryStore {
             && layout_complete
             && templates_present
             && migrated_sources.is_empty()
+            && removed_notes.is_empty()
         {
             return Ok(InitOutcome {
                 already_initialized: true,
@@ -309,7 +321,11 @@ impl LibraryStore {
             .map(|dir| (*dir).to_string())
             .collect();
         files.ensure_layout()?;
-        for (_, new_dir) in &migrated_sources {
+        for new_dir in migrated_sources
+            .iter()
+            .map(|(_, new_dir)| new_dir)
+            .chain(&note_ledgers)
+        {
             if !created.contains(new_dir) {
                 created.push(new_dir.clone());
             }
@@ -394,7 +410,11 @@ impl LibraryStore {
             .cloned()
             .collect();
         let mut add_paths = add_paths;
-        for (old_dir, _) in &migrated_sources {
+        for old_dir in migrated_sources
+            .iter()
+            .map(|(old_dir, _)| old_dir)
+            .chain(&removed_notes)
+        {
             let tracked = is_repo && git.has_tracked(old_dir)?;
             if tracked && !add_paths.contains(old_dir) {
                 add_paths.push(old_dir.clone());
@@ -1637,7 +1657,10 @@ impl LibraryStore {
                 record.filter(|record| record.shared_by.as_deref() == Some(member))
             }
         } else {
-            self.index.get(id)?.or(self.index.get_shared(id)?)
+            match self.index.get(id)?.or(self.index.get_shared(id)?) {
+                Some(record) => Some(record),
+                None => self.ledger_record(id)?,
+            }
         };
         match record {
             Some(record) if record.layer == LibraryLayer::Shared => {
@@ -2077,17 +2100,19 @@ impl LibraryStore {
             ),
             None => None,
         };
-        let kind = explicit_kind.unwrap_or_else(|| {
-            if is_video_extension(&upload_ext) {
-                SourceKind::Video
-            } else if convert::is_document(&upload_ext) {
-                SourceKind::Doc
-            } else if !request.entries.is_empty() {
-                SourceKind::Conversation
-            } else {
-                SourceKind::Note
-            }
-        });
+        // Plain text has no default kind (specs/scribe.md, "Retiring
+        // `sources/note`"): a paste names its kind, and a decision goes in
+        // the `decision` input, never a ledger by default.
+        let kind = match explicit_kind {
+            Some(kind) => kind,
+            None if is_video_extension(&upload_ext) => SourceKind::Video,
+            None if convert::is_document(&upload_ext) => SourceKind::Doc,
+            None if !request.entries.is_empty() => SourceKind::Conversation,
+            None => return Err(office_core::domain::source::decisions::source_kind_required()),
+        };
+        if kind == SourceKind::Decisions {
+            return Err(office_core::domain::source::decisions::decision_input_required());
+        }
         let (body, sha, bytes_len, media_type, derived) = if let Some(body) = transcript_body {
             (
                 body,
@@ -2295,6 +2320,9 @@ impl LibraryStore {
     /// Read one source by id.
     pub fn read_source(&self, id: &str) -> office_core::Result<SourceView> {
         self.read_ready().map_err(office_core::Error::from)?;
+        if let Some(view) = self.ledger_view(id)? {
+            return Ok(view);
+        }
         if let Some(record) = self.get(id)? {
             if record.kind != DocumentKind::Source {
                 return Err(office_core::Error::Library {
@@ -2315,6 +2343,8 @@ impl LibraryStore {
                 bytes: meta.bytes,
                 media_type: meta.media_type,
                 version: meta.version,
+                decisions: Vec::new(),
+                moved_from: None,
             });
         }
         let existing = self.source_views().map_err(office_core::Error::from)?;
@@ -2343,6 +2373,8 @@ impl LibraryStore {
             bytes: meta.bytes,
             media_type: meta.media_type,
             version: meta.version,
+            decisions: Vec::new(),
+            moved_from: None,
         })
     }
 
@@ -3142,6 +3174,13 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn capture_source(&self, request: &CaptureSourceRequest) -> office_core::Result<SourceOutcome> {
         Self::capture_source(self, request)
+    }
+    fn append_decision(
+        &self,
+        decision: &office_core::domain::source::decisions::Decision,
+        captured_at: &str,
+    ) -> office_core::Result<office_core::ports::DecisionOutcome> {
+        self.append_ledger_entry(decision, captured_at)
     }
     fn read_source(&self, id: &str) -> office_core::Result<SourceView> {
         Self::read_source(self, id)

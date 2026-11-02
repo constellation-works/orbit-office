@@ -34,13 +34,13 @@ fn capture_pasted_text_dedupes_to_the_same_id() {
     let ports = ports();
     let first = call(
         "office.capture",
-        json!({"kind": "note", "title": "Hello", "text": "  Hello world.  "}),
+        json!({"kind": "doc", "title": "Hello", "text": "  Hello world.  "}),
         &ports,
     );
     assert_eq!(first["ok"], json!(true), "{first}");
     let second = call(
         "office.capture",
-        json!({"kind": "note", "title": "Hello again", "text": "Hello world."}),
+        json!({"kind": "doc", "title": "Hello again", "text": "Hello world."}),
         &ports,
     );
     assert_eq!(second["output"]["id"], first["output"]["id"]);
@@ -181,7 +181,7 @@ fn capture_conversation_append_and_refusals() {
     assert_eq!(unknown["error"]["code"], json!("source_not_found"));
     let note = call(
         "office.capture",
-        json!({"kind": "note", "title": "Plain", "text": "Not a log."}),
+        json!({"kind": "doc", "title": "Plain", "text": "Not a log."}),
         &ports,
     );
     let note_id = note["output"]["id"].as_str().expect("id").to_string();
@@ -270,5 +270,51 @@ fn capture_global_handoff_scope_is_explicit_and_until_is_validated() {
             &ports,
         );
         assert_eq!(refused["error"]["code"], json!(code), "{entry}: {refused}");
+    }
+}
+
+/// A `decision` whose `ref` names a task comment is checked against that
+/// comment's text, read through Orbit, before the Library is asked to append.
+#[test]
+fn capture_decision_checks_its_quote_against_the_cited_task_comment() {
+    let task = json!({"id": "TASK-1", "comments": [{"message": "#decision ship the March train, it is the safer date"}]});
+    let said = "#decision ship the March train, it is the safer date";
+    for (quote, chosen, reference, code) in [
+        (
+            "#decision ship the June train",
+            "ship the June train",
+            "orbit://task/TASK-1#comment-1",
+            "quote_mismatch",
+        ),
+        (
+            said,
+            "ship the March train",
+            "orbit://task/TASK-1#comment-2",
+            "decision_ref_unresolved",
+        ),
+        // Verified: the fake Library cannot append, so it stops there.
+        (
+            said,
+            "ship the March train",
+            "orbit://task/TASK-1#comment-1",
+            "library_unavailable",
+        ),
+    ] {
+        let mut ports = ports();
+        let orbit = office_testkit::fakes::FakeOrbit::default();
+        orbit.push_response(Ok(json!({ "task": task })));
+        ports.orbit = Box::new(orbit.clone());
+        let input = json!({"decision": {
+            "question": "Which train?", "question_by": "scribe", "options": "unrecoverable",
+            "chosen": chosen, "quote": quote, "ref": reference,
+            "scope": "global", "decided_by": "human", "decided_at": "2026-11-01T22:39:00-07:00"
+        }});
+        let out = call("office.capture", input, &ports);
+        assert_eq!(out["ok"], false, "{out}");
+        assert_eq!(out["error"]["code"], code, "{out}");
+        let calls = orbit.calls();
+        assert_eq!(calls.len(), 1, "one task read");
+        assert_eq!(calls[0].tool, "orbit.task.show");
+        assert_eq!(calls[0].input["id"], "TASK-1");
     }
 }

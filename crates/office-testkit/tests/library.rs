@@ -158,6 +158,7 @@ fn fake_capture_upload_then_paste_dedupes_to_the_same_id() {
 
     let pasted = port
         .capture_source(&CaptureSourceRequest {
+            kind: Some("doc".to_string()),
             text: Some("Hello world.\nSecond line.".to_string()),
             title: Some("Pasted copy".to_string()),
             captured_at: "2026-10-27T10:01:00+00:00".to_string(),

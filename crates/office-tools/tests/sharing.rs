@@ -14,7 +14,7 @@ fn call(ports: &Ports<'_>, tool: &str, input: Value) -> Value {
 fn share_set_preserves_documents_and_refuses_unshared_citations() {
     let ports = PortsBuilder::default().build();
     let source = "sources/2026/10/src-evidence/source.md";
-    let text = "---\nid: src-evidence\nkind: note\ntitle: Evidence\nsensitivity: normal\n---\nExact body.\n";
+    let text = "---\nid: src-evidence\nkind: doc\ntitle: Evidence\nsensitivity: normal\n---\nExact body.\n";
     ports
         .library
         .write_document(Path::new(source), text)
@@ -73,7 +73,7 @@ fn source_privacy_response_reports_atomic_unsharing_and_unknown_inputs_write_not
         .library
         .write_document(
             path,
-            "---\nid: src-private\nkind: note\ntitle: Private\nshareable: true\n---\nBody.\n",
+            "---\nid: src-private\nkind: doc\ntitle: Private\nshareable: true\n---\nBody.\n",
         )
         .unwrap();
     let response = call(
