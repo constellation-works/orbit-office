@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.source-digest request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source"
+  ],
+  "properties": {
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A meeting source id: the read-only digest since that meeting."
+    }
+  }
+}

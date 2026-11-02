@@ -123,6 +123,7 @@ static TOOLS: &[Tool] = &[
     // sessions (specs/sessions.md)
     sessions::brief::TOOL,
     sessions::digest::TOOL,
+    sessions::digest::SOURCE_TOOL,
     sessions::scribe_control::TOOL,
     sessions::scribe_pending::TOOL,
     sessions::scribe_append::TOOL,

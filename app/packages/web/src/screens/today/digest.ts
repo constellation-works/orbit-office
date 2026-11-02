@@ -1,6 +1,6 @@
 /**
  * Today's morning digest: Decided, Shipped and Needs you since the latest
- * meeting (`GET /api/today/digest`, office.digest with a source), and the
+ * meeting (`GET /api/today/digest`, office.source-digest), and the
  * open contradictions resolved here in one click (`/api/scribe/contradictions`).
  * Every line keeps its citation. When a piece is not available yet the panel
  * says why instead of showing sample content.

@@ -190,7 +190,7 @@ export function createSourcesFeature(options: SourcesOptions): Feature {
     }),
     route("GET", "/api/sources/digest", async (req, res) => {
       const params = new URL(req.url ?? "/", "http://localhost").searchParams;
-      const data = await call("office.digest", { source: id(params.get("id")) });
+      const data = await call("office.source-digest", { source: id(params.get("id")) });
       if (!Array.isArray(data.decided) || !Array.isArray(data.shipped) || !Array.isArray(data.needs_you) || !Array.isArray(data.unavailable) || typeof data.truncated !== "boolean") throw new Refusal(502, "invalid_output");
       const digest: SourceDigest = {
         source: id(data.source), title: string(data.title), report: string(data.report),

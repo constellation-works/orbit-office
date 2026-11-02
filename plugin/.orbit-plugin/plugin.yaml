@@ -385,6 +385,16 @@ spec:
       input_schema: { $ref: schemas/digest.request.json }
       output_schema: { $ref: schemas/digest.response.json }
 
+    - name: source-digest
+      description: >-
+        The cited digest since a meeting source, read-only: Decided,
+        Shipped with PR and merge links, and Needs you. The same output as
+        digest with `source`; no model call, no writes. The app reads it.
+      execution_kind: read_only
+      mcp_scope: none
+      input_schema: { $ref: schemas/source-digest.request.json }
+      output_schema: { $ref: schemas/source-digest.response.json }
+
     - name: scribe-control
       description: >-
         Own per-session scribe control state: get the switch, set it,

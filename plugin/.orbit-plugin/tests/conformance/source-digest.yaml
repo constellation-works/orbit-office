@@ -1,0 +1,9 @@
+# Replayed through public dispatch with empty Library/Orbit fakes, offline.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: refuses_a_day
+    tool: source-digest
+    input: {"source":"src-20261102-sync","day":"2026-11-01"}
+    expect:
+      error: {"code":"invalid_argument"}

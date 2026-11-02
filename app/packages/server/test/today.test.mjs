@@ -199,3 +199,32 @@ test("a failed Today call logs one redacted line and returns the safe orbit code
   assert.ok(!lines[0].includes(secret), "log line must not contain child stdout/stderr");
   assert.ok(!lines[0].includes("private diagnostic"), "log line must not contain the orbit error message");
 });
+
+test("The morning digest reads a verb the app's agent caller may run, with the meeting title and every decision", async (t) => {
+  // ORB-21376: the app calls Orbit as `local-cli` holding [agent], and Orbit
+  // refuses it a mutating verb the manifest does not declare agent_callable.
+  const manifest = await readFile(new URL("../../../../plugin/.orbit-plugin/plugin.yaml", import.meta.url), "utf8");
+  const declared = (verb) => manifest.split("\n    - name: ").slice(1).find((block) => block.startsWith(`${verb}\n`)) ?? "";
+  const refused = (verb) => !declared(verb).includes("execution_kind: read_only") && !declared(verb).includes("agent_callable: true");
+  const id = "src-20261102-sync";
+  const decided = ["Keep 50 orders per page", "Rotate ingest keys monthly", "Replay keeps the order key", "Pilot stays read only"]
+    .map((text, line) => ({ text, cites: [`${id}#L${line + 1}`] }));
+  const client = {
+    async pollTool() { return { tasks: [{ id: "OFF-1", tags: ["owner:you", `source:${id}`], created_at: now.toISOString() }] }; },
+    async callTool(name, input) {
+      assert.ok(declared(name.replace(/^office\./, "")), `${name} is declared`);
+      if (refused(name.replace(/^office\./, ""))) throw new OrbitExitError(name, 1, null, '{"code":"capability_denied"}');
+      assert.deepEqual(input, { source: id });
+      return { ok: true, output: { source: id, title: "Engineering sync", decided, shipped: [], needs_you: [], report: "", unavailable: [], truncated: false } };
+    },
+  };
+  const feature = createTodayFeature({ client, now: () => now });
+  const route = feature.routes.find((route) => route.path === "/api/today/digest");
+  const server = createServer((request, response) => void route.handle(request, response));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const body = await (await fetch(`http://127.0.0.1:${server.address().port}/api/today/digest`)).json();
+  assert.equal(body.state, "ready");
+  assert.deepEqual(body.source, { id, title: "Engineering sync" });
+  assert.deepEqual(body.digest.decided, decided);
+});

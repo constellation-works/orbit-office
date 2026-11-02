@@ -3,9 +3,11 @@
  *
  * The latest meeting is the newest source that filed a to-do (its
  * `source:<id>` tag on an office task). The digest itself is
- * `office.digest` with `source` (ORB-21337, sessions.md "Digest since a
- * meeting"): read-only and cited. Any other refusal answers `unavailable`
- * and the screen shows why.
+ * `office.source-digest` (ORB-21337, sessions.md "Digest since a
+ * meeting"): read-only and cited. Not `office.digest` with `source`: that
+ * verb is mutating and refuses the app's `local-cli` `[agent]` caller
+ * (ORB-21376). Any other refusal answers `unavailable` and the screen
+ * shows why.
  */
 import type { SourceDigest, TodayDigest } from "@orbit-office/contracts";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -70,7 +72,7 @@ export async function handleDigest(
   }
   for (const id of sources.slice(0, CANDIDATES)) {
     try {
-      const digest = digestOf(officeOutput(await client.callTool("office.digest", { source: id })));
+      const digest = digestOf(officeOutput(await client.callTool("office.source-digest", { source: id })));
       if (digest === null) {
         send(response, { state: "unavailable", source: { id, title: id }, digest: null });
         return;
@@ -84,7 +86,7 @@ export async function handleDigest(
         send(response, { state: "not_extracted", source: { id, title: id }, digest: null });
         return;
       }
-      logRouteFailure("/api/today/digest", "office.digest", error);
+      logRouteFailure("/api/today/digest", "office.source-digest", error);
       send(response, { state: "unavailable", source: { id, title: id }, digest: null });
       return;
     }

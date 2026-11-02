@@ -18,7 +18,7 @@ is the cheapest mechanism that can do its job
 | **Handoff** | the agent, as `handoff` entries in that log; optionally the live scribe (planned) | refreshed whenever the plan changes | none; the scribe's handoff uses the low-complexity pool |
 | **Session brief** | `office.session-brief`, computed on demand | at session start | none |
 | **Daily digest** | `office.digest`, from the `office-daily-digest` routine | once a day | one Muse Spark call |
-| **Digest since a meeting** | `office.digest` with `source`, from the app or `orbit tool run` | on demand | none |
+| **Digest since a meeting** | `office.source-digest` (the app) or `office.digest` with `source` (`orbit tool run`) | on demand | none |
 
 The handoff is never left to the end of a session, which often ends with
 the terminal simply closing. The agent rewrites it whenever the plan
@@ -1022,6 +1022,11 @@ through the server route `GET /api/sources/digest?id=…`
 ([web-app.md](./web-app.md)), or from the CLI as
 `orbit tool run office.digest --input '{"source":"<id>"}'`. The daily
 routine, which passes no `source`, behaves exactly as above.
+
+The app calls the same digest as `office.source-digest`, a read-only verb
+that takes only `source`. `office.digest` is mutating, and Orbit refuses a
+mutating verb that is not `agent_callable` to the app's `local-cli`
+`[agent]` caller ([ORB-21376]); the read-only verb needs no new grant.
 
 It is deterministic and read-only: no model call, no Library write, no
 Orbit write. Every line cites its evidence, and the response returns the
