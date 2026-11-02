@@ -1,6 +1,8 @@
 //! The digest since one meeting: Decided, Shipped and Needs you, every line
 //! cited. Deterministic and read-only: no model call, no Library write.
 
+use std::collections::BTreeSet;
+
 use office_core::domain::session::task_open;
 use office_core::domain::source::decision_precedents::conflicting_pair;
 use office_core::domain::source::video::refusal;
@@ -87,6 +89,17 @@ pub(super) fn run(call: &Call<'_>) -> Result<Value> {
             Ok(found) => filed.push(found),
             Err(_) => unavailable.push(selector.clone()),
         }
+    }
+    // A selector can name a workspace already read (the office's own, or the
+    // same one twice): each task counts once, in the first workspace that
+    // listed it, so its to-do and decision requests are listed once.
+    let mut seen = BTreeSet::new();
+    for found in &mut filed {
+        found.tasks.retain(|task| {
+            task.get("id")
+                .and_then(Value::as_str)
+                .is_none_or(|id| seen.insert(id.to_owned()))
+        });
     }
     let mut shipped = Vec::new();
     let mut needs_you = Vec::new();

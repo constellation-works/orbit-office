@@ -1052,6 +1052,10 @@ sections as JSON beside a Markdown `report`.
   `office-scribe-contradictions`; when its description ends with the
   `Conflicting entries: <a> <b>` line, it cites both ledger entries as well as
   the task.
+- **Each task once:** a task id is counted in the first workspace that lists
+  it, the office's first. A `brief.task_workspaces` selector that names the
+  office workspace, or repeats another, adds no second line for a to-do,
+  shipped task or decision request.
 - **Failures:** the office workspace is all-or-nothing, as in the brief. An
   extra workspace whose tasks or decision requests cannot be read is named in
   `unavailable` and never refuses the digest. `truncated` is true when Orbit
