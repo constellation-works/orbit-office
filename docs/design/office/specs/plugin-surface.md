@@ -371,10 +371,13 @@ Whole retention/sensitivity/threshold mappings cannot be replaced in one call.
 The scribe keys take a cadence mapping (`minutes` 5–240, `turns` 2–100), the
 whole tag list, or one tag definition keyed by its name; null restores the
 default cadence or tag list, or deletes one tag. A tag definition naming a
-file target instead of a sink inside the Library or an Orbit task returns
-`tag_sink_refused`; the other scribe refusals (an unknown sink, `apply` off
-`preference_page`, a duplicate or malformed name, a `workspace` off
-`orbit_task`) return `invalid_library_setting`
+file target instead of a sink inside the Library or an Orbit task (a
+path-shaped `sink` or `orbit_task` `workspace`, or a file-target key)
+returns `tag_sink_refused`; the other scribe refusals (an unknown sink, a
+sink and mode pair other than `preference_page` with `propose` or `apply`,
+`orbit_task` with `propose`, or `decisions_ledger` or `scr_only` with
+`append`, a duplicate or malformed name, a `workspace` off `orbit_task`)
+return `invalid_library_setting`
 ([scribe.md](./scribe.md#configuration)). `office.config-set` stays
 `mcp_scope: none`, so no agent can change a tag, a sink or a mode.
 Unknown keys, including secret names, return `unknown_library_setting`;

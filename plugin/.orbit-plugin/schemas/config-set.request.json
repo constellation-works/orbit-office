@@ -15,15 +15,56 @@
         "object",
         "null"
       ],
-      "items": {
-        "type": "string"
-      },
-      "description": "Typed JSON value, validated for the selected key. Retention is 1\u201336500 days or null; sensitivity is normal/private; packs is a distinct list of meetings/receipts; thresholds are bounded positive integers; scripts bounds are positive integers up to timeout_seconds=1800, log_bytes=1048576, output_files=8, output_file_bytes=1048576; open_weights is a mapping of endpoint (an HTTPS base URL, or HTTP(S) on loopback; never api.meta.ai), model, kind (company, provider or own_hardware) and label, or null. demo.simulated_until is a YYYY-MM-DD date, or null to clear it. Changing the endpoint or model clears the recorded capabilities. models.careful is a nonempty ASCII model slug of at most 128 bytes (letters, digits, -._/:); the default is muse-wonder. Calendar: connection is 1\u201348 ASCII letters, digits, _ or - (null clears it); window_days_past/ahead are 1\u201390; prep_lead_minutes 15\u20131440; prep_max_per_run 1\u201320. shared.remote accepts ssh://, scp-style, HTTPS without user information or an absolute repository path; shared.member is lowercase kebab-case, 1\u201332 characters. Credential-bearing and unsupported remotes are refused without echoing the value. scribe.cadence is a mapping of minutes (5\u2013240, default 20) and turns (2\u2013100, default 10), or null for the defaults; scribe.tags is the whole list of tag definitions, or null to restore the two defaults (preferences, decisions); scribe.tags.<name> is one definition or null to delete it. A definition is {name, scope (global|project|session), instruction, sink (decisions_ledger|preference_page|scr_only|orbit_task), mode (propose|apply|append), capture (markers|markers+inferred), workspace}; name is lowercase kebab-case (1\u201332 characters) and unique; apply is accepted only on preference_page; workspace only on orbit_task. A definition naming a file target is refused with tag_sink_refused."
+      "description": "Typed JSON value, validated for the selected key. Retention is 1\u201336500 days or null; sensitivity is normal/private; packs is a distinct list of meetings/receipts; thresholds are bounded positive integers; scripts bounds are positive integers up to timeout_seconds=1800, log_bytes=1048576, output_files=8, output_file_bytes=1048576; open_weights is a mapping of endpoint (an HTTPS base URL, or HTTP(S) on loopback; never api.meta.ai), model, kind (company, provider or own_hardware) and label, or null. demo.simulated_until is a YYYY-MM-DD date, or null to clear it. Changing the endpoint or model clears the recorded capabilities. models.careful is a nonempty ASCII model slug of at most 128 bytes (letters, digits, -._/:); the default is muse-wonder. Calendar: connection is 1\u201348 ASCII letters, digits, _ or - (null clears it); window_days_past/ahead are 1\u201390; prep_lead_minutes 15\u20131440; prep_max_per_run 1\u201320. shared.remote accepts ssh://, scp-style, HTTPS without user information or an absolute repository path; shared.member is lowercase kebab-case, 1\u201332 characters. Credential-bearing and unsupported remotes are refused without echoing the value. scribe.cadence is a mapping of minutes (5\u2013240, default 20) and turns (2\u2013100, default 10), or null for the defaults; scribe.tags is the whole list of tag definitions, or null to restore the two defaults (preferences, decisions); scribe.tags.<name> is one definition or null to delete it. A definition is {name, scope (global|project|session), instruction, sink (decisions_ledger|preference_page|scr_only|orbit_task), mode (propose|apply|append), capture (markers|markers+inferred), workspace}; name is lowercase kebab-case (1\u201332 characters) and unique; sink and mode pair as preference_page with propose or apply, orbit_task with propose, and decisions_ledger or scr_only with append; workspace is accepted only on orbit_task and must be a selector, not a path. A definition naming a file target is refused with tag_sink_refused."
     }
   },
   "required": [
     "key",
     "value"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "key": {
+            "const": "packs"
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "key": {
+            "const": "scribe.tags"
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  ]
 }

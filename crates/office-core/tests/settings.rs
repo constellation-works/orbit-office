@@ -873,6 +873,31 @@ fn scribe_tags_refuse_each_invalid_definition_without_changing_settings() {
         ),
         (
             "scribe.tags.x",
+            json!({"scope": "project", "instruction": "i", "sink": "preference_page", "mode": "append"}),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "mode": "apply"}),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "mode": "append"}),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            json!({"scope": "project", "instruction": "i", "sink": "decisions_ledger", "mode": "propose"}),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            json!({"scope": "project", "instruction": "i", "sink": "scr_only", "mode": "propose"}),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
             json!({"scope": "project", "instruction": "i", "sink": "preference_page", "workspace": "ws"}),
             "invalid_library_setting",
         ),
@@ -933,6 +958,26 @@ fn scribe_tags_refuse_each_invalid_definition_without_changing_settings() {
             json!({"scope": "project", "instruction": "i", "sink": "scr_only", "path": "/etc/passwd"}),
             "tag_sink_refused",
         ),
+        (
+            "scribe.tags.x",
+            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "workspace": "/etc/passwd"}),
+            "tag_sink_refused",
+        ),
+        (
+            "scribe.tags.x",
+            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "workspace": "ws/../passwd"}),
+            "tag_sink_refused",
+        ),
+        (
+            "scribe.tags.x",
+            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "workspace": ".passwd"}),
+            "tag_sink_refused",
+        ),
+        (
+            "scribe.tags.x",
+            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "workspace": "~passwd"}),
+            "tag_sink_refused",
+        ),
     ];
     for (key, value, code) in cases {
         let error = base
@@ -952,7 +997,14 @@ fn scribe_tags_refuse_each_invalid_definition_without_changing_settings() {
     assert_eq!(refused_key(duplicate), "scribe.tags.same");
     assert_eq!(
         refused_key(base.with_setting("scribe.tags", json!([tag("Bad", "scr_only")]))),
-        "scribe.tags.name"
+        "scribe.tags[0].name"
+    );
+    assert_eq!(
+        refused_key(base.with_setting(
+            "scribe.tags",
+            json!([tag("good", "scr_only"), tag("Bad", "scr_only")])
+        )),
+        "scribe.tags[1].name"
     );
     let many: Vec<_> = (0..33).map(|n| tag(&format!("t{n}"), "scr_only")).collect();
     assert_eq!(
@@ -965,8 +1017,13 @@ fn scribe_tags_refuse_each_invalid_definition_without_changing_settings() {
         .expect_err("unknown");
     assert_eq!(error.code(), "unknown_library_setting");
     // A hand-edited file is held to the same rules.
-    let file = Settings::from_yaml(
-        "scribe: {\"tags\": [{\"name\": \"x\", \"scope\": \"global\", \"instruction\": \"i\", \"sink\": \"scr_only\", \"mode\": \"apply\"}]}",
-    );
-    assert!(file.is_err());
+    let file = json!({"scribe": {"tags": [
+        {"name": "x", "scope": "global", "instruction": "i", "sink": "scr_only", "mode": "apply"}
+    ]}});
+    let error = Settings::from_yaml(&file.to_string()).expect_err("apply off preference_page");
+    assert_eq!(error.code(), "invalid_library_setting", "{error}");
+    let Error::InvalidSetting { key, .. } = error else {
+        panic!("wrong error: {error:?}")
+    };
+    assert_eq!(key, "scribe.tags.x.mode");
 }

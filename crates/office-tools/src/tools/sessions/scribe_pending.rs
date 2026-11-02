@@ -164,6 +164,9 @@ fn run(call: &Call<'_>) -> Result<Value> {
             Some(index)
         }
     };
+    // The tags in force and the cadence, from the Library settings. Read
+    // before the parse is written, so an invalid config writes nothing.
+    let scribe_settings = library.settings()?.scribe.effective();
     // A private session never reaches the scribe agent: nothing is written
     // or returned, as for a capture preview.
     let parse_path = if withheld {
@@ -191,8 +194,6 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .collect();
     let page = conversation::find_rules(&library.knowledge_pages()?)?;
     let rules = scribe::scribe_rules(page.as_ref(), project.as_deref());
-    // The tags in force and the cadence, from the Library settings.
-    let scribe_settings = library.settings()?.scribe.effective();
     Ok(json!({
         "session_id": session_id,
         "provider": provider,

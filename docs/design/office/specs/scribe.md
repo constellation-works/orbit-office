@@ -217,9 +217,10 @@ tag definition has:
   page could not;
 - `sink`: one of `decisions_ledger`, `preference_page`, `scr_only` or
   `orbit_task`;
-- `mode`: `propose` or `apply`. Only `preference_page` accepts `apply`.
-  `orbit_task` always files a proposed task. `decisions_ledger` and
-  `scr_only` always append;
+- `mode`: `propose`, `apply` or `append`, paired with the sink.
+  `preference_page` takes `propose` or `apply`; `orbit_task` takes
+  `propose` and always files a proposed task; `decisions_ledger` and
+  `scr_only` take `append`. Any other pair is refused;
 - `workspace`: for `orbit_task` only, the Orbit workspace selector the
   proposed task is filed in (default: the office workspace);
 - `capture`: `markers` (default) or `markers+inferred`. With inferred
@@ -694,14 +695,20 @@ nested list of mappings ([plugin-surface.md](./plugin-surface.md#library-setting
   `capture` defaults to `markers`. A list holds at most 32 tags.
 - **Refusals.** Each is typed and leaves the file and HEAD unchanged,
   and none echoes the value. `invalid_library_setting` names the dotted
-  key for: a sink that is not one of the four, `apply` on any sink but
-  `preference_page`, a duplicate or malformed name (lowercase kebab-case,
-  at most 32 characters, starting with a letter), a `workspace` on a sink
-  other than `orbit_task`, an out-of-range cadence, and any malformed
-  field. `tag_sink_refused` is returned for any file target outside the
+  key for: a sink that is not one of the four, a sink and mode pair other
+  than `preference_page` with `propose` or `apply`, `orbit_task` with
+  `propose`, or `decisions_ledger` or `scr_only` with `append` (key
+  `scribe.tags.<name>.mode`), a duplicate or malformed name (lowercase
+  kebab-case, at most 32 characters, starting with a letter; in a
+  whole-list value a malformed name is keyed by its index, as
+  `scribe.tags[0].name`), a `workspace` on a sink other than
+  `orbit_task`, an out-of-range cadence, and any malformed field.
+  `tag_sink_refused` is returned for any file target outside the
   Library: a `sink` shaped like a path (it contains `/`, `\`, `.`, `~` or
-  `:`) or a definition key that names one (`path`, `file`, `target`,
-  `dir`, `directory`, `destination`, `output`). A scribe key other than
+  `:`), an `orbit_task` `workspace` shaped like a path (it contains `/`
+  or `..`, or starts with `.` or `~`), or a definition key that names one
+  (`path`, `file`, `target`, `dir`, `directory`, `destination`,
+  `output`). A scribe key other than
   the three above is `unknown_library_setting`. The same rules apply
   when the file is read, so a hand-edited block cannot bypass them.
 - **Reading the effective block.** `office.status` returns it as

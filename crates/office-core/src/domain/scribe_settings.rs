@@ -316,8 +316,8 @@ fn parse_tags(value: &Value) -> Result<Vec<ScribeTag>> {
         return Err(invalid("scribe.tags", "at most 32 tag definitions"));
     }
     let mut tags: Vec<ScribeTag> = Vec::with_capacity(list.len());
-    for item in list {
-        let tag = parse_tag(item)?;
+    for (index, item) in list.iter().enumerate() {
+        let tag = parse_tag(item, &format!("scribe.tags[{index}]"))?;
         if tags.iter().any(|seen| seen.name == tag.name) {
             return Err(invalid(
                 &format!("scribe.tags.{}", tag.name),
@@ -329,17 +329,19 @@ fn parse_tags(value: &Value) -> Result<Vec<ScribeTag>> {
     Ok(tags)
 }
 
-fn parse_tag(value: &Value) -> Result<ScribeTag> {
+/// Validate one definition. `position` is its list key (`scribe.tags[<i>]`),
+/// used for errors raised before the name is known.
+fn parse_tag(value: &Value, position: &str) -> Result<ScribeTag> {
     let map = value
         .as_object()
-        .ok_or_else(|| invalid("scribe.tags", "expected each tag as a mapping"))?;
+        .ok_or_else(|| invalid(position, "expected each tag as a mapping"))?;
     let name = map
         .get("name")
         .and_then(Value::as_str)
         .filter(|name| well_formed_name(name))
         .ok_or_else(|| {
             invalid(
-                "scribe.tags.name",
+                &format!("{position}.name"),
                 "expected a lowercase kebab-case name of at most 32 characters",
             )
         })?;
@@ -422,10 +424,15 @@ fn parse_tag(value: &Value) -> Result<ScribeTag> {
             ));
         }
     };
-    if mode == TagMode::Apply && sink != TagSink::PreferencePage {
+    let paired = match sink {
+        TagSink::PreferencePage => matches!(mode, TagMode::Propose | TagMode::Apply),
+        TagSink::OrbitTask => mode == TagMode::Propose,
+        TagSink::DecisionsLedger | TagSink::ScrOnly => mode == TagMode::Append,
+    };
+    if !paired {
         return Err(invalid(
             &format!("{key}.mode"),
-            "apply is accepted only on the preference_page sink",
+            "preference_page takes propose or apply, orbit_task takes propose, and decisions_ledger and scr_only take append",
         ));
     }
     let capture = match text("capture") {
@@ -446,6 +453,13 @@ fn parse_tag(value: &Value) -> Result<ScribeTag> {
                     &format!("{key}.workspace"),
                     "workspace is accepted only on the orbit_task sink",
                 ));
+            }
+            if selector.contains('/') || selector.contains("..") || selector.starts_with(['.', '~'])
+            {
+                return Err(Error::TagSinkRefused {
+                    key: format!("{key}.workspace"),
+                    reason: "an orbit_task workspace is an Orbit workspace selector, never a path",
+                });
             }
             if selector.is_empty()
                 || selector.len() > MAX_WORKSPACE
