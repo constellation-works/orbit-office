@@ -28,6 +28,28 @@ pub struct Request {
     pub context: Context,
 }
 
+/// A secret Orbit delivered in `context.secrets`, when set and non-empty.
+///
+/// Orbit delivers each set secret as `{"value": "<secret>", "version": <n>}`;
+/// a bare string is also read. Any other shape, and an empty value, reads as
+/// unset.
+///
+/// ```
+/// let context = serde_json::json!({"secrets": {"meta_api_key": {"value": "k", "version": 1}}});
+/// let context = context.as_object().cloned().unwrap_or_default();
+/// assert_eq!(office_core::protocol::secret(&context, "meta_api_key"), Some("k"));
+/// assert_eq!(office_core::protocol::secret(&context, "open_weights_token"), None);
+/// ```
+#[must_use]
+pub fn secret<'a>(context: &'a Context, name: &str) -> Option<&'a str> {
+    let delivered = context.get("secrets")?.get(name)?;
+    delivered
+        .get("value")
+        .unwrap_or(delivered)
+        .as_str()
+        .filter(|value| !value.is_empty())
+}
+
 /// Parse a raw request envelope.
 ///
 /// ```
