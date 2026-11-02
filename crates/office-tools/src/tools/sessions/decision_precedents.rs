@@ -1,9 +1,10 @@
-//! Host-facing, read-only `orbit.precedent-provider/1`. No model or callback.
+//! Host-facing, read-only `orbit.precedent-provider/1`.
+//! One `orbit.task.list` read supplies open contradiction to-dos. No model.
 use office_core::Result;
 use office_core::domain::source::decision_precedents::{self, Request};
 use office_core::ports::Sensitivity;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 
 use crate::registry::{Call, Tool};
 
@@ -31,10 +32,41 @@ fn run(call: &Call<'_>) -> Result<Value> {
     } else {
         library.decision_precedent_scores(&request.lexical_query(), &pool.documents)?
     };
+    let conflicts = match call.ports.orbit.task_list(&conflict_list_input()) {
+        Ok(value) => decision_precedents::ConflictList::Listed(value),
+        Err(_) => decision_precedents::ConflictList::Unread,
+    };
     decision_precedents::response(
         &request,
         &pool,
         &scores,
         settings.scribe.precedents.half_life_days,
+        conflicts,
     )
+}
+
+/// Open owner to-dos filed by the weekly contradiction routine.
+fn conflict_list_input() -> Map<String, Value> {
+    let mut input = Map::new();
+    input.insert(
+        "tag".into(),
+        json!(["owner:you", "office-scribe-contradictions"]),
+    );
+    input.insert(
+        "status".into(),
+        json!([
+            "proposed",
+            "backlog",
+            "in-progress",
+            "review",
+            "blocked",
+            "someday"
+        ]),
+    );
+    input.insert("limit".into(), json!(10000));
+    input.insert(
+        "fields".into(),
+        json!(["id", "status", "tags", "description"]),
+    );
+    input
 }

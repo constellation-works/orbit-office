@@ -1,9 +1,11 @@
 //! Model-free candidate selection and recency weighting for Orbit. All
-//! file access and FTS5 ranking cross the Library port.
+//! file access and FTS5 ranking cross the Library port. Contradiction
+//! to-dos arrive as an already-read `orbit.task.list` value; this module
+//! does not call Orbit.
 mod contract;
 mod render;
 
-use super::decisions::{DecidedBy, Decision, Ledger};
+use super::decisions::{DecidedBy, Decision, Ledger, parse_entry_id};
 use super::sha256_hex;
 use crate::Result;
 use crate::domain::knowledge::frontmatter;
@@ -188,13 +190,173 @@ impl Pool {
     }
 }
 
+/// Open contradiction to-dos, or a read that did not return a task list.
+pub enum ConflictList {
+    /// The callback failed, or the value was not a task-list envelope.
+    Unread,
+    /// The `orbit.task.list` JSON value.
+    Listed(Value),
+}
+
+/// To-dos Office treats as still open. `done`, `archived` and `rejected`
+/// have left the user's queue.
+const OPEN_TODO: &[&str] = &[
+    "proposed",
+    "backlog",
+    "in-progress",
+    "review",
+    "blocked",
+    "someday",
+];
+
+struct ConflictPass {
+    /// Eligible entry id to the partner ids still unresolved.
+    partners: BTreeMap<String, BTreeSet<String>>,
+    unread: bool,
+}
+
+/// A reversal already in the `as_of` snapshot resolves the conflict: the
+/// routine files only current entries, so `reversed_by` here happened since.
+fn read_conflicts(pool: &Pool, conflicts: ConflictList) -> ConflictPass {
+    let ConflictList::Listed(value) = conflicts else {
+        return ConflictPass {
+            partners: BTreeMap::new(),
+            unread: true,
+        };
+    };
+    let Some(tasks) = value.get("tasks").and_then(Value::as_array) else {
+        return ConflictPass {
+            partners: BTreeMap::new(),
+            unread: true,
+        };
+    };
+    let complete = value.get("truncated").and_then(Value::as_bool) == Some(false)
+        && value.get("total").and_then(Value::as_u64) == u64::try_from(tasks.len()).ok();
+    let mut by_id = BTreeMap::new();
+    for entry in &pool.entries {
+        by_id.insert(entry.decision.id.as_str(), entry);
+    }
+    let mut partners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for task in tasks {
+        let Some((left_id, right_id)) = conflicting_pair(task) else {
+            continue;
+        };
+        let Some(left) = by_id.get(left_id.as_str()).copied() else {
+            continue;
+        };
+        let Some(right) = by_id.get(right_id.as_str()).copied() else {
+            continue;
+        };
+        if left.group == right.group
+            || !left.reversed_by.is_empty()
+            || !right.reversed_by.is_empty()
+        {
+            continue;
+        }
+        partners
+            .entry(left_id.clone())
+            .or_default()
+            .insert(right_id.clone());
+        partners.entry(right_id).or_default().insert(left_id);
+    }
+    ConflictPass {
+        partners,
+        unread: !complete,
+    }
+}
+
+fn conflicting_pair(task: &Value) -> Option<(String, String)> {
+    let status = task.get("status").and_then(Value::as_str)?;
+    if !OPEN_TODO.contains(&status) {
+        return None;
+    }
+    let tags = task.get("tags").and_then(Value::as_array)?;
+    let tagged = |name: &str| tags.iter().any(|tag| tag.as_str() == Some(name));
+    if !tagged("owner:you") || !tagged("office-scribe-contradictions") {
+        return None;
+    }
+    let description = task.get("description").and_then(Value::as_str)?;
+    let line = description
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())?
+        .trim();
+    let rest = line.strip_prefix("Conflicting entries: ")?;
+    let mut ids = rest.split_whitespace();
+    let left = ids.next()?;
+    let right = ids.next()?;
+    if ids.next().is_some()
+        || left == right
+        || parse_entry_id(left).is_none()
+        || parse_entry_id(right).is_none()
+    {
+        return None;
+    }
+    Some((left.to_owned(), right.to_owned()))
+}
+
+/// Partners count against `k` and need no lexical overlap. The ranked
+/// entry and its reversals keep the room they already took; a partner
+/// that does not fit is dropped and the caller sets `truncated`.
+fn pull_conflict_partners<'a>(
+    closure: &mut Vec<&'a Candidate>,
+    partners: &BTreeMap<String, BTreeSet<String>>,
+    pool: &'a Pool,
+    space: usize,
+    truncated: &mut bool,
+    selected: &[&'a Candidate],
+) {
+    if partners.is_empty() || closure.is_empty() {
+        return;
+    }
+    let mut groups: BTreeSet<&str> = selected.iter().map(|row| row.group.as_str()).collect();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for row in closure.iter() {
+        groups.insert(row.group.as_str());
+        seen.insert(row.decision.id.clone());
+    }
+    let mut pending: Vec<&str> = closure.iter().map(|row| row.decision.id.as_str()).collect();
+    let mut added = Vec::new();
+    while let Some(id) = pending.pop() {
+        let Some(ids) = partners.get(id) else {
+            continue;
+        };
+        for partner_id in ids {
+            if !seen.insert(partner_id.clone()) {
+                continue;
+            }
+            let Some(partner) = pool
+                .entries
+                .iter()
+                .find(|entry| entry.decision.id == *partner_id)
+            else {
+                continue;
+            };
+            if !groups.insert(partner.group.as_str()) {
+                continue;
+            }
+            added.push(partner);
+            pending.push(partner.decision.id.as_str());
+        }
+    }
+    added.sort_by(|left, right| left.decision.id.cmp(&right.decision.id));
+    let room = space.saturating_sub(closure.len());
+    if added.len() > room {
+        *truncated = true;
+        added.truncate(room);
+    }
+    closure.extend(added);
+}
+
 /// Rank eligible, lexically matching groups; reserve space for reversal
-/// evidence, then enforce wire bounds without returning scores or choices.
+/// evidence and unresolved conflict partners, then enforce wire bounds
+/// without returning scores or choices.
 pub fn response(
     request: &Request,
     pool: &Pool,
     scores: &BTreeMap<String, f64>,
     half_life: u32,
+    conflicts: ConflictList,
 ) -> Result<Value> {
     let score = |row: &Candidate| {
         let d = &row.decision;
@@ -237,8 +399,12 @@ pub fn response(
     });
     let mut groups = BTreeSet::new();
     ranked.retain(|row| groups.insert(row.group.clone()));
+    let conflict_pass = read_conflicts(pool, conflicts);
     let mut selected: Vec<&Candidate> = Vec::new();
     let mut omissions = pool.omissions.clone();
+    if conflict_pass.unread {
+        omissions.insert("conflicts_unread".to_owned());
+    }
     let mut truncated = false;
     for row in ranked {
         if selected.iter().any(|r| r.group == row.group) {
@@ -275,15 +441,35 @@ pub fn response(
             truncated = true;
             closure.drain(..closure.len() - space);
         }
+        pull_conflict_partners(
+            &mut closure,
+            &conflict_pass.partners,
+            pool,
+            space,
+            &mut truncated,
+            &selected,
+        );
         selected.extend(closure);
     }
     if omissions.len() > 32 {
         truncated = true;
     }
-    let omissions: Vec<String> = omissions.into_iter().take(32).collect();
+    let mut omissions: Vec<String> = omissions.into_iter().take(32).collect();
+    if conflict_pass.unread && !omissions.iter().any(|id| id == "conflicts_unread") {
+        match omissions.last_mut() {
+            Some(slot) => *slot = "conflicts_unread".to_owned(),
+            None => omissions.push("conflicts_unread".to_owned()),
+        }
+        truncated = true;
+    }
     let mut precedents = Vec::new();
     for row in selected {
-        precedents.push(render::precedent(request, row, &mut truncated));
+        let partners = conflict_pass
+            .partners
+            .get(&row.decision.id)
+            .map(|ids| ids.iter().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        precedents.push(render::precedent(request, row, &partners, &mut truncated));
     }
     loop {
         let out = json!({"contract": CONTRACT, "precedents": precedents, "omissions": omissions, "truncated":truncated});

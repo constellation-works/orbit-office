@@ -440,10 +440,12 @@ Contradictions are checked twice (D5).
   files one `owner:you` to-do asking which stands. The user's answer is
   recorded as a new decision with `reverses`. One proposal or to-do per
   conflict, each citing both entries. It never edits a ledger.
-  Slice [ORB-21219] will make the precedent provider report a decision
-  conflict whose to-do is still open to Orbit's decision model, adding the comparison
-  within an Orbit category and a machine-readable `Conflicting entries:`
-  line ([decision-precedents.md](./decision-precedents.md#contradictions)).
+  It also compares decisions within an Orbit category (an ingested entry's
+  `orbit.category`, or a scribe entry's `same_as` partner's category), even
+  when the question text differs, and ends each decision-conflict to-do
+  with a machine-readable `Conflicting entries:` line. The precedent
+  provider reports a conflict whose to-do is still open
+  ([ORB-21219]; [decision-precedents.md](./decision-precedents.md#contradictions)).
 
 ## Scheduling markers and to-dos
 
@@ -1148,7 +1150,7 @@ requires.
 - [ORB-21079] — built first-pass scribe titles and the humanized-slug fallback.
 - [ORB-21089] — plans Orbit's decision model, a consumer of decision precedent.
 - [ORB-21090] — designed the office precedent provider over the decision ledger ([decision-precedents.md](./decision-precedents.md)).
-- [ORB-21219] — proposes contradiction reporting to the precedent provider.
+- [ORB-21219] — built contradiction reporting to the precedent provider.
 - [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
 - [ORB-21116] — built slice S3: preference pages, contradiction check and apply mode.
