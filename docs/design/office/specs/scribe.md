@@ -929,7 +929,7 @@ requires.
 | S5 | [ORB-21118] | S4 | Claude Code plugin: opt-in `/scribe on\|off\|update\|status\|tags`, Stop-hook cadence, orchestrator on/ask, routing (proposals, scheduling markers as proposed tasks, `owner:you` to-dos, `orbit_task` tags) (D1, D2, D10). |
 | S6 | [ORB-21119] | S4 | Session brief and `/handoff` read the latest SCR per project and global; capture `handoff` compatibility (D7; ORB-21063, ORB-21065). |
 | S7 | [ORB-21120] | S2, S6 | Web app: one card per project plus the global card, `previous` chain, Preferences and Decisions panels, Tags editor (saves need [ORB-20363]) (D8, D9; ORB-21075). |
-| S8 | [ORB-21121] | S1, S3 | Weekly `office-scribe-contradictions` auto-task definition, seeded disabled (D5). |
+| S8 (built) | [ORB-21121] | S1, S3 | Weekly `office-scribe-contradictions` auto-task definition, seeded disabled (D5). |
 | S9 | [ORB-21122] | S4, S5, S6 | Migration: v1 command and query mapping with `deprecated`, preference and decision backfill (`ledger_append` proposals), rules-page Tags removal proposal, the ws_constellation AGENTS.md task (D11). |
 | S10 | [ORB-21123] | S9 | Removal at the end of the 30-day window: v1 commands and modes, capture `handoff`, `view: list`, the v1 title levels (D11). |
 
@@ -959,7 +959,7 @@ requires.
 - [ORB-21118] — proposed slice S5: Claude Code opt-in, Stop-hook cadence and marker routing.
 - [ORB-21119] — proposed slice S6: the brief and `/handoff` over the latest SCR.
 - [ORB-21120] — proposed slice S7: the one-card feed, `previous` chain and Tags editor.
-- [ORB-21121] — proposed slice S8: the weekly contradiction auto-task.
+- [ORB-21121] — built slice S8: the weekly contradiction auto-task.
 - [ORB-21122] — proposed slice S9: migration and backfill.
 - [ORB-21123] — proposed slice S10: removal of v1 surfaces after the window.
 
