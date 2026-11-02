@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -33,6 +36,7 @@ afterEach(() => {
  * `caches` and `fetch` through globals at event time.
  */
 const workerListeners = {};
+let shellCache;
 Object.defineProperty(globalThis, "self", {
   value: {
     location: { origin: "http://office.test" },
@@ -45,11 +49,17 @@ Object.defineProperty(globalThis, "self", {
   configurable: true,
 });
 await import("../dist/pwa/sw.js");
+Object.defineProperty(globalThis, "caches", { configurable: true, value: {
+  open: async (name) => { shellCache = name; return { addAll: async () => {} }; },
+} });
+let installation;
+workerListeners.install({ waitUntil: (promise) => { installation = promise; } });
+await installation;
 
 /** Fresh stub environment; `seed` pre-fills the shell cache like an install. */
 function useWorkerEnv({ seed = [], fetchImpl } = {}) {
   const addedAll = [];
-  const stores = new Map([["office-shell-v15", new Map(seed.map((url) => [url, `cached:${url}`]))]]);
+  const stores = new Map([[shellCache, new Map(seed.map((url) => [url, `cached:${url}`]))]]);
   Object.defineProperty(globalThis, "self", {
     value: {
       location: { origin: "http://office.test" },
@@ -199,6 +209,38 @@ test("install precaches the app shell only", async () => {
   }
 });
 
+test("two stamped builds install different shell caches", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "office-build-cache-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const web = path.join(root, "packages/web");
+  await mkdir(web, { recursive: true });
+  await cp(distDir, path.join(web, "dist"), { recursive: true });
+  const script = fileURLToPath(new URL("../../../install/app_install.py", import.meta.url));
+  const names = [];
+  for (const commit of ["a".repeat(40), "b".repeat(40)]) {
+    execFileSync("python3", ["-B", script, "stamp", root, commit], {
+      env: { PATH: process.env.PATH, HOME: root, TMPDIR: root }, timeout: 10000,
+    });
+    const listeners = {};
+    Object.defineProperty(globalThis, "self", { configurable: true, value: {
+      addEventListener: (name, listener) => { listeners[name] = listener; },
+      skipWaiting: async () => {},
+    } });
+    Object.defineProperty(globalThis, "caches", { configurable: true, value: {
+      open: async (name) => { names.push(name); return { addAll: async () => {} }; },
+    } });
+    const bytes = await readFile(path.join(web, "dist/pwa/sw.js"));
+    await import(`data:text/javascript;base64,${bytes.toString("base64")}`);
+    let installed;
+    listeners.install({ waitUntil: (promise) => { installed = promise; } });
+    await installed;
+    const info = JSON.parse(await readFile(path.join(web, "dist/build-info.json"), "utf8"));
+    assert.equal(info.commit, commit);
+    assert.equal(names.at(-1), `office-shell-${info.build}`);
+  }
+  assert.notEqual(names[0], names[1]);
+});
+
 test("precache covers every JS module statically reachable from main.js", async () => {
   const { addedAll } = useWorkerEnv();
   let waited = null;
@@ -233,7 +275,7 @@ test("activate drops old caches and keeps the current shell", async () => {
   let waited = null;
   listeners.activate({ waitUntil: (promise) => { waited = promise; } });
   await waited;
-  assert.deepEqual([...stores.keys()], ["office-shell-v15"]);
+  assert.deepEqual([...stores.keys()], [shellCache]);
 });
 
 test("live-data requests are left to the network, never answered from cache", async () => {
@@ -249,6 +291,7 @@ test("live-data requests are left to the network, never answered from cache", as
     "http://office.test/api/",
     "http://office.test/api",
     "http://office.test/healthz",
+    "http://office.test/build-info.json",
   ]) {
     const { event, answered } = fetchEvent(url);
     listeners.fetch(event);
@@ -272,11 +315,11 @@ test("other same-origin requests go to the network and are not stored", async ()
     fetchImpl: async () => new Response("live"),
   });
   const listeners = workerListeners;
-  const before = stores.get("office-shell-v15").size;
+  const before = stores.get(shellCache).size;
   const { event, answered } = fetchEvent("http://office.test/demo.html");
   listeners.fetch(event);
   assert.equal(await (await answered()).text(), "live");
-  assert.equal(stores.get("office-shell-v15").size, before);
+  assert.equal(stores.get(shellCache).size, before);
 });
 
 test("a failed navigation falls back to the cached shell", async () => {
@@ -308,6 +351,8 @@ test("registration points the worker at the app scope", () => {
   Object.defineProperty(globalThis, "navigator", {
     value: {
       serviceWorker: {
+        controller: null,
+        addEventListener: () => {},
         register: async (url, options) => {
           seen = { url, options };
           return {};

@@ -1,4 +1,4 @@
-.PHONY: claude-code-check claude-code-test help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-audit app-check plugin-export plugin-check plugin-install install clean qa-exec
+.PHONY: claude-code-check claude-code-test help build test goldens fmt fmt-check clippy deny deny-policy structure standards-check ci-fast ci-lint ci baseline gateway-check app-deps app-typecheck app-test app-audit app-check app-build app-install app-install-test plugin-export plugin-check plugin-install install clean qa-exec
 
 CARGO ?= cargo
 # Every build uses the committed Cargo.lock as is; a stale lock fails instead
@@ -46,7 +46,9 @@ help:
 	@echo "  make ci               Everything above; what CI runs"
 	@echo "  make baseline         Every stack's gate: ci + gateway + app typecheck/tests"
 	@echo "  make app-deps         Install app/node_modules from the lockfile when missing or stale"
-	@echo "  make plugin-install   Build HEAD into the local Orbit office plugin and enable it"
+	@echo "  make app-build        Build and stamp the development app"
+	@echo "  make app-install      Build HEAD, update the registered app and verify its commit"
+	@echo "  make plugin-install   Update the app and Orbit office plugin from the same HEAD"
 	@echo "                        (PLUGIN_WORKSPACE=<w> also enables it in that workspace"
 	@echo "                         and runs office.init there, so new templates and"
 	@echo "                         layout migrations arrive with the upgrade)"
@@ -157,6 +159,7 @@ deny-policy:
 # does neither, so the fallback says so. nextest does not run doctests, so
 # they are a second leg; the core crate carries at least one (STD-04 R14).
 test: claude-code-test
+	$(MAKE) app-install-test
 	./scripts/plugin/test-export.sh
 	./scripts/plugin/test-plugin-install.sh
 	@if $(CARGO) nextest --version >/dev/null 2>&1; then \
@@ -249,6 +252,17 @@ PLUGIN_GRANTS ?= --grant 'fs={{workspace}},{{plugin_state}}' --grant network --g
 # version's new templates and layout migrations arrive on the upgrade; left
 # empty, the workspace toggle is untouched and office.init is not run.
 PLUGIN_WORKSPACE ?=
+APP_INSTALL_REVISION ?= HEAD
+
+app-build: app-deps
+	npm --prefix app run build
+	python3 -B app/install/app_install.py stamp app "development-$$(git rev-parse --verify 'HEAD^{commit}')"
+
+app-install:
+	python3 -B app/install/app_install.py install "$(APP_INSTALL_REVISION)"
+
+app-install-test:
+	python3 -B -m unittest discover -s app/install -p 'test_*.py'
 
 install:
 	$(CARGO) build --release --bin $(BINARY) $(LOCKED)
@@ -261,10 +275,12 @@ install:
 plugin-install:
 	@command -v orbit >/dev/null 2>&1 || { echo "error: orbit is not installed." >&2; exit 1; }
 	@set -eu; \
+	rev=$$(git rev-parse --verify 'HEAD^{commit}'); \
+	$(MAKE) app-install APP_INSTALL_REVISION="$$rev"; \
 	parent=$$(mktemp -d "$${TMPDIR:-/tmp}/office-plugin-install.XXXXXX"); \
-	out="$$parent/$(PLUGIN_NAME)-plugin-$$(git rev-parse --short HEAD)"; \
+	out="$$parent/$(PLUGIN_NAME)-plugin-$$(git rev-parse --short "$$rev")"; \
 	trap 'rm -rf "$$parent"' EXIT HUP INT TERM; \
-	$(MAKE) -C plugin export OUT="$$out"; \
+	$(MAKE) -C plugin export OUT="$$out" PLUGIN_REVISION="$$rev"; \
 	orbit plugin validate "$$out"; \
 	if orbit plugin show $(PLUGIN_NAME) >/dev/null 2>&1; then \
 		orbit plugin upgrade $(PLUGIN_NAME) "$$out" $(PLUGIN_GRANTS); \
