@@ -18,7 +18,7 @@ use super::scr::{self, Front, Scr, Sections, TagEntry, TagGroup};
 use crate::domain::knowledge::preferences::{self, Conflict, Preference};
 use crate::domain::scribe_settings::{ScribeTag, TagMode, TagSink};
 use crate::domain::source::decisions::{
-    Cited, Context, DecidedBy, Decision, Ledger, Options, Scope, append_line,
+    Cited, Context, DecidedBy, Decision, Ledger, Options, Scope, append_line, same_as_match,
 };
 use crate::ports::LibraryText;
 use crate::{Error, Result};
@@ -154,6 +154,12 @@ struct DecisionInput {
     decided_by: Option<DecidedBy>,
     #[serde(default)]
     reverses: Option<String>,
+    #[serde(default)]
+    orbit: Option<Value>,
+    #[serde(default)]
+    confirms: Option<String>,
+    #[serde(default)]
+    same_as: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -412,6 +418,28 @@ impl Pass<'_> {
         let decided_at = local(&message.at, self.request.zone)
             .map(rfc3339)
             .map_err(|_| refused("decision_invalid", "the marker's message has no valid time"))?;
+        if let Some(input) = input
+            && (input.orbit.is_some() || input.confirms.is_some())
+        {
+            return Err(refused(
+                "decision_invalid",
+                "decision orbit and confirms are written only by Orbit decision ingestion",
+            ));
+        }
+        // An option carrying id/consequence is ingestion-only: the {text,
+        // msg} span below refuses it, but name the rule before verbatim work.
+        if let Some(input) = input
+            && let Some(Value::Array(items)) = &input.options
+            && items.iter().any(|item| {
+                item.get("id").is_some_and(|v| !v.is_null())
+                    || item.get("consequence").is_some_and(|v| !v.is_null())
+            })
+        {
+            return Err(refused(
+                "decision_invalid",
+                "decision option id and consequence are written only by Orbit decision ingestion",
+            ));
+        }
         let mut decision = Decision {
             id: scope.entry_id(1),
             question: None,
@@ -427,6 +455,9 @@ impl Pass<'_> {
             decided_by: expected,
             decided_at,
             reverses: input.and_then(|d| d.reverses.clone()),
+            orbit: None,
+            same_as: input.and_then(|d| d.same_as.clone()),
+            confirms: None,
             source: self.scr_id.clone(),
             private: self.private,
         };
@@ -464,6 +495,8 @@ impl Pass<'_> {
                         listed.push(Cited {
                             text: span.text,
                             reference: at(&span.msg),
+                            id: None,
+                            consequence: None,
                         });
                     }
                     Options::Listed(listed)
@@ -485,11 +518,15 @@ impl Pass<'_> {
                     Some(Cited {
                         text: span.text.clone(),
                         reference: at(&span.msg),
+                        id: None,
+                        consequence: None,
                     })
                 }
                 (None, Some(text)) => Some(Cited {
                     text: text.clone(),
                     reference: at(&marker.msg),
+                    id: None,
+                    consequence: None,
                 }),
                 (None, None) => None,
             };
@@ -505,8 +542,27 @@ impl Pass<'_> {
                 format!("reverses names {target}, which no decision ledger holds"),
             ));
         }
+        if let Some(target) = &decision.same_as
+            && !self
+                .ledgers
+                .values()
+                .any(|(ledger, _)| ledger.entry(target).is_some())
+        {
+            return Err(refused(
+                "decision_not_found",
+                format!("same_as names {target}, which no decision ledger holds"),
+            ));
+        }
+        let existing: Vec<Decision> = self
+            .ledgers
+            .values()
+            .flat_map(|(ledger, _)| ledger.entries.iter().map(|e| e.decision.clone()))
+            .collect();
         let (ledger, working) = self.ledger(&scope);
         decision.id = ledger.next_id();
+        if decision.same_as.is_none() {
+            decision.same_as = same_as_match(&decision, existing.iter());
+        }
         decision.validate().map_err(|error| {
             if let Error::Library { code, message } = error {
                 refused(code, message)

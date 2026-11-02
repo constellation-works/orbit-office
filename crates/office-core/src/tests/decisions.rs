@@ -4,7 +4,7 @@
 use crate::domain::knowledge::{DocumentKind, parse_citation};
 use crate::domain::source::decisions::{
     EvidenceRef, Ledger, Resolved, Scope, decision_from_input, is_ledger_path, note_entry,
-    note_source, parse_entry_id, resolve, views,
+    note_source, parse_entry_id, resolve, same_as_match, views,
 };
 use serde_json::json;
 use std::path::Path;
@@ -104,6 +104,111 @@ fn a_ledger_out_of_sequence_or_with_unknown_fields_is_refused() {
         decision_from_input(&extra).unwrap_err().code(),
         "invalid_decision"
     );
+}
+
+fn ingested_entry(id: &str, decided_at: &str) -> crate::domain::source::decisions::Decision {
+    let mut ledger = Ledger::new(
+        Scope::parse("project:acme").unwrap(),
+        "2026-11-01T10:00:00Z",
+    );
+    let line = format!(
+        "- {id} {decided_at} #decision {{\"id\":\"{id}\",\"question\":\"Which train?\",\"question_by\":\"scribe\",\"options\":[{{\"text\":\"the March train\",\"ref\":\"orbit-decision:req-1#a1\",\"id\":\"a1\",\"consequence\":\"Arrives March\"}}],\"chosen\":\"the March train\",\"quote\":\"the March train\",\"ref\":\"orbit-decision:req-1\",\"scope\":\"project:acme\",\"context\":{{\"task_type\":null,\"workspace\":null,\"task\":\"ORB-1\",\"risk_tier\":null}},\"decided_by\":\"human\",\"decided_at\":\"{decided_at}\",\"reverses\":null,\"orbit\":{{\"request_id\":\"req-1\",\"gate\":\"agent_request\",\"category\":\"acme:feature\",\"topic\":\"train\",\"answered_by\":\"model\",\"channel\":\"orbit\",\"model\":{{\"assessment_id\":\"as-1\",\"policy_digest\":\"sha256:abc\",\"model\":\"test-model\",\"probability\":0.75,\"cited_precedents\":[\"dec-acme-9\"]}}}},\"source\":\"orbit-decision:req-1\"}}"
+    );
+    let text = crate::domain::source::decisions::append_line(&ledger.render().unwrap(), &line);
+    ledger = Ledger::parse("sources/decisions/acme.md", &text).unwrap();
+    ledger.entries[0].decision.clone()
+}
+
+#[test]
+fn ingested_fields_round_trip_and_old_lines_read_unchanged() {
+    let entry = ingested_entry("dec-acme-1", "2026-11-01T10:00:00Z");
+    entry.validate().unwrap();
+    assert_eq!(
+        entry.orbit.as_ref().unwrap().request_id.as_deref(),
+        Some("req-1")
+    );
+    assert_eq!(
+        entry
+            .orbit
+            .as_ref()
+            .unwrap()
+            .model
+            .as_ref()
+            .unwrap()
+            .probability
+            .as_deref(),
+        Some("0.75")
+    );
+    let options = match &entry.options {
+        Some(crate::domain::source::decisions::Options::Listed(items)) => items,
+        _ => panic!("listed options"),
+    };
+    assert_eq!(options[0].id.as_deref(), Some("a1"));
+    assert_eq!(options[0].consequence.as_deref(), Some("Arrives March"));
+    let line = entry.line().unwrap();
+    assert!(line.contains("\"probability\":0.75"), "{line}");
+    assert!(!line.contains("\"same_as\""), "{line}");
+    // An entry written before the new fields still parses and re-renders
+    // without them.
+    let old = ledger_with_two_entries();
+    assert!(old.entries[0].decision.orbit.is_none());
+    assert!(!old.render().unwrap().contains("orbit"));
+}
+
+#[test]
+fn capture_input_refuses_ingestion_only_fields_and_accepts_same_as() {
+    for extra in [
+        json!({"orbit": {"request_id": "req-1"}}),
+        json!({"confirms": "dec-acme-1"}),
+    ] {
+        let mut value = input(None);
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        assert_eq!(
+            decision_from_input(&value).unwrap_err().code(),
+            "invalid_decision"
+        );
+    }
+    let mut with_option_id = input(None);
+    with_option_id["options"] = json!([{"text": "the March train", "ref": "src-x#L1", "id": "a1"}]);
+    assert_eq!(
+        decision_from_input(&with_option_id).unwrap_err().code(),
+        "invalid_decision"
+    );
+    let mut with_same_as = input(None);
+    with_same_as["same_as"] = json!("dec-acme-1");
+    let (decision, _) = decision_from_input(&with_same_as).unwrap();
+    assert_eq!(decision.same_as.as_deref(), Some("dec-acme-1"));
+    let mut bad_same_as = input(None);
+    bad_same_as["same_as"] = json!("nope");
+    let (decision, _) = decision_from_input(&bad_same_as).unwrap();
+    assert_eq!(decision.validate().unwrap_err().code(), "invalid_decision");
+}
+
+#[test]
+fn same_as_match_links_exactly_one_ingested_entry() {
+    let ingested = ingested_entry("dec-acme-1", "2026-11-01T10:10:00Z");
+    let (mut candidate, _) = decision_from_input(&input(None)).unwrap();
+    candidate.id = "dec-acme-2".into();
+    candidate.source = "src-x".into();
+    candidate.context.task = Some("ORB-1".into());
+    // The helper input decides at 10:00, ten minutes from the ingested entry.
+    assert_eq!(
+        same_as_match(&candidate, [&ingested.clone()]).as_deref(),
+        Some("dec-acme-1")
+    );
+    // Ambiguous: a second matching ingested entry links nothing.
+    let mut second = ingested.clone();
+    second.id = "dec-acme-2".into();
+    second.decided_at = "2026-11-01T10:05:00Z".into();
+    candidate.id = "dec-acme-3".into();
+    assert_eq!(same_as_match(&candidate, [&ingested, &second]), None);
+    // Too far apart in time links nothing.
+    let late = ingested_entry("dec-acme-1", "2026-11-01T11:00:00Z");
+    candidate.id = "dec-acme-2".into();
+    assert_eq!(same_as_match(&candidate, [&late]), None);
 }
 
 #[test]

@@ -503,7 +503,15 @@
                   "ref": {
                     "type": "string",
                     "minLength": 1
-                  }
+                  },
+                "id": {
+                  "type": "string",
+                  "description": "Ingestion only: the option's stable id."
+                },
+                "consequence": {
+                  "type": "string",
+                  "description": "Ingestion only: the option's one-line consequence."
+                }
                 },
                 "required": [
                   "text",
@@ -601,6 +609,13 @@
             "null"
           ],
           "description": "The dec-<scope>-<n> entry this one overturns; it must exist."
+        },
+        "same_as": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The dec-<scope>-<n> entry recording the same decision from the other source; it must exist (decision_not_found). orbit, confirms and option id/consequence are refused: only Orbit ingestion writes them."
         },
         "source": {
           "type": "string",

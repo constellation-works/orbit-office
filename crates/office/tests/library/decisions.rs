@@ -327,6 +327,115 @@ fn init_moves_note_sources_into_the_ledgers_once_and_old_ids_keep_resolving() {
     );
 }
 
+fn seed_ingested(env: &Env, count: usize) {
+    let library = env.library();
+    let dir = library.join("sources/decisions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut text = String::from(
+        "---\nid: decisions-acme\nkind: decisions\ntitle: \"Decisions (project:acme)\"\nscope: \"project:acme\"\ncreated_at: \"2026-10-28T09:00:00+01:00\"\nsensitivity: normal\nmoved_sources: {}\n---\n",
+    );
+    for n in 1..=count {
+        let entry = json!({
+            "id": format!("dec-acme-{n}"),
+            "question": "Should we price per seat or per workspace?",
+            "question_by": "scribe",
+            "options": [{"text": "per workspace", "ref": format!("orbit-decision:req-{n}#a1"), "id": "a1", "consequence": "Bill per workspace"}],
+            "chosen": "per workspace pricing",
+            "quote": "per workspace pricing",
+            "ref": format!("orbit-decision:req-{n}"),
+            "scope": "project:acme",
+            "context": {"task_type": "feature", "workspace": "acme", "task": "<task>", "risk_tier": "low"},
+            "decided_by": "human",
+            "decided_at": "2026-10-28T10:10:00+01:00",
+            "reverses": null,
+            "orbit": {"request_id": format!("req-{n}"), "gate": "agent_request", "category": "acme:pricing", "topic": "pricing", "answered_by": "human", "channel": "orbit"},
+            "source": format!("orbit-decision:req-{n}")
+        });
+        text.push_str(&format!(
+            "- dec-acme-{n} 2026-10-28T10:10:00+01:00 #decision {entry}\n"
+        ));
+    }
+    std::fs::write(dir.join("acme.md"), text).unwrap();
+    git(&library, &["add", "--", "sources/decisions"]);
+    git(
+        &library,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "seed ingested",
+        ],
+    );
+}
+
+#[test]
+fn capture_refuses_ingestion_only_fields_and_a_same_as_naming_no_entry() {
+    let env = Env::new();
+    library_with_evidence(&env);
+    let quote = "We go with per workspace pricing from March.";
+    let mut orbit = decision(quote);
+    orbit["orbit"] = json!({"request_id": "req-1"});
+    let mut confirms = decision(quote);
+    confirms["confirms"] = json!("dec-acme-1");
+    let mut option_id = decision(quote);
+    option_id["options"][0]["id"] = json!("a1");
+    let mut option_consequence = decision(quote);
+    option_consequence["options"][0]["consequence"] = json!("Bill per workspace");
+    let mut same_as_missing = decision(quote);
+    same_as_missing["same_as"] = json!("dec-acme-9");
+    for (code, input) in [
+        ("invalid_decision", orbit),
+        ("invalid_decision", confirms),
+        ("invalid_decision", option_id),
+        ("invalid_decision", option_consequence),
+        ("decision_not_found", same_as_missing),
+    ] {
+        let refused = capture(&env, input);
+        assert_eq!(refused["ok"], false, "{code}: {refused}");
+        assert_eq!(refused["error"]["code"], code, "{refused}");
+    }
+    assert!(!env.library().join("sources/decisions").exists());
+}
+
+#[test]
+fn capture_links_exactly_one_ingested_match_and_never_an_ambiguous_one() {
+    let quote = "We go with per workspace pricing from March.";
+    // Exactly one ingested entry: the capture links it and readers return
+    // the ingested fields.
+    let env = Env::new();
+    library_with_evidence(&env);
+    seed_ingested(&env, 1);
+    let captured = capture(&env, decision(quote));
+    assert_eq!(captured["ok"], true, "{captured}");
+    assert_eq!(
+        captured["output"]["entry"]["same_as"], "dec-acme-1",
+        "{captured}"
+    );
+    let shown = env.tool("office.source-show", json!({"id": "dec-acme-1"}));
+    let entry = &shown["output"]["decisions"][0];
+    assert_eq!(entry["orbit"]["request_id"], "req-1", "{entry}");
+    assert_eq!(entry["options"][0]["id"], "a1", "{entry}");
+    assert_eq!(
+        entry["options"][0]["consequence"], "Bill per workspace",
+        "{entry}"
+    );
+
+    // Two matching ingested entries: nothing links, the append still lands.
+    let env = Env::new();
+    library_with_evidence(&env);
+    seed_ingested(&env, 2);
+    let captured = capture(&env, decision(quote));
+    assert_eq!(captured["ok"], true, "{captured}");
+    assert_eq!(
+        captured["output"]["entry"]["same_as"],
+        Value::Null,
+        "{captured}"
+    );
+}
+
 #[test]
 fn preference_pages_resolve_scr_tags_and_ledger_entries_through_knowledge_write() {
     let env = Env::new();
