@@ -6,8 +6,9 @@
 //! writes the private `<library>/.office/state/scribe/<session-id>.jsonl`
 //! (git-ignored Library state) with stable `m-<n>` ids, and returns the SCR
 //! file's metadata (or the name a new one takes), `scribed_through`, the
-//! messages after it with up to 10 earlier messages as context, and the
-//! scribe rules. No Library commit.
+//! messages after it with up to 10 earlier messages as context, the
+//! scribe rules, and the tags in force and the cadence (`scribe` settings,
+//! specs/scribe.md#configuration). No Library commit.
 
 use office_core::domain::scribe_control::validate_session_id;
 use office_core::domain::source::conversation::{
@@ -163,6 +164,9 @@ fn run(call: &Call<'_>) -> Result<Value> {
             Some(index)
         }
     };
+    // The tags in force and the cadence, from the Library settings. Read
+    // before the parse is written, so an invalid config writes nothing.
+    let scribe_settings = library.settings()?.scribe.effective();
     // A private session never reaches the scribe agent: nothing is written
     // or returned, as for a capture preview.
     let parse_path = if withheld {
@@ -201,5 +205,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         "scribed_through": through,
         "messages": returned,
         "rules": rules,
+        "tags": scribe_settings["tags"],
+        "cadence": scribe_settings["cadence"],
     }))
 }

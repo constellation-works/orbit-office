@@ -194,11 +194,20 @@ pub enum Error {
     },
     /// A single-setting update named no supported policy leaf (including secrets).
     #[error(
-        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, calendar.<connection|window_days_past|window_days_ahead|prep_lead_minutes|prep_max_per_run>, packs, demo.simulated_until, shared or shared.<remote|branch|member>, open_weights or open_weights.<endpoint|model|kind|label>"
+        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, calendar.<connection|window_days_past|window_days_ahead|prep_lead_minutes|prep_max_per_run>, scribe.cadence, scribe.tags or scribe.tags.<name>, packs, demo.simulated_until, shared or shared.<remote|branch|member>, open_weights or open_weights.<endpoint|model|kind|label>"
     )]
     UnknownSetting {
         /// Refused key, never the supplied value.
         key: String,
+    },
+    /// A scribe tag definition named a file target instead of a sink inside
+    /// the Library or an Orbit task.
+    #[error("scribe tag refused at {key}: {reason}")]
+    TagSinkRefused {
+        /// Dotted configuration key, never the supplied value.
+        key: String,
+        /// Why the sink was refused.
+        reason: &'static str,
     },
     /// The private endpoint or model changed (or was removed) while
     /// `office.private-route-check` ran, so its result was not recorded.
@@ -266,6 +275,7 @@ impl Error {
             Self::Model { code, .. } => code,
             Self::InvalidSetting { .. } => "invalid_library_setting",
             Self::UnknownSetting { .. } => "unknown_library_setting",
+            Self::TagSinkRefused { .. } => "tag_sink_refused",
             Self::PrivateRouteChanged => "private_route_changed",
             Self::InvalidRequest(_) => "invalid_request",
             Self::UnsupportedVersion(_) => "unsupported_schema_version",
@@ -307,6 +317,7 @@ impl Error {
             Self::Library { .. } => false,
             Self::InvalidSetting { .. } => false,
             Self::UnknownSetting { .. } => false,
+            Self::TagSinkRefused { .. } => false,
             Self::PrivateRouteChanged => false,
             Self::InvalidRequest(_) => false,
             Self::UnsupportedVersion(_) => false,

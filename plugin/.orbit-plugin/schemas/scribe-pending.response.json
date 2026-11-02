@@ -249,6 +249,16 @@
         "models"
       ],
       "additionalProperties": false
+    },
+    "tags": {
+      "type": "array",
+      "description": "The scribe tag definitions in force from the Library settings (scribe.tags): the configured list, else the two defaults. Distinct from rules.tags, the v1 rules-page section.",
+      "items": {
+        "$ref": "#/$defs/tag"
+      }
+    },
+    "cadence": {
+      "$ref": "#/$defs/cadence"
     }
   },
   "required": [
@@ -261,7 +271,84 @@
     "scr",
     "scribed_through",
     "messages",
-    "rules"
+    "rules",
+    "tags",
+    "cadence"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "tag": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "global",
+            "project",
+            "session"
+          ]
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "sink": {
+          "enum": [
+            "decisions_ledger",
+            "preference_page",
+            "scr_only",
+            "orbit_task"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "propose",
+            "apply",
+            "append"
+          ]
+        },
+        "capture": {
+          "enum": [
+            "markers",
+            "markers+inferred"
+          ]
+        },
+        "workspace": {
+          "type": "string",
+          "description": "orbit_task only: the Orbit workspace selector the proposed task is filed in."
+        }
+      },
+      "required": [
+        "name",
+        "scope",
+        "instruction",
+        "sink",
+        "mode",
+        "capture"
+      ],
+      "additionalProperties": false
+    },
+    "cadence": {
+      "type": "object",
+      "description": "Pass cadence: a pass starts when either threshold is reached.",
+      "properties": {
+        "minutes": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 240
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "minutes",
+        "turns"
+      ],
+      "additionalProperties": false
+    }
+  }
 }

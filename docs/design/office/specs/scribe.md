@@ -220,9 +220,10 @@ tag definition has:
   page could not;
 - `sink`: one of `decisions_ledger`, `preference_page`, `scr_only` or
   `orbit_task`;
-- `mode`: `propose` or `apply`. Only `preference_page` accepts `apply`.
-  `orbit_task` always files a proposed task. `decisions_ledger` and
-  `scr_only` always append;
+- `mode`: `propose`, `apply` or `append`, paired with the sink.
+  `preference_page` takes `propose` or `apply`; `orbit_task` takes
+  `propose` and always files a proposed task; `decisions_ledger` and
+  `scr_only` take `append`. Any other pair is refused;
 - `workspace`: for `orbit_task` only, the Orbit workspace selector the
   proposed task is filed in (default: the office workspace);
 - `capture`: `markers` (default) or `markers+inferred`. With inferred
@@ -673,15 +674,27 @@ is left out, as before.
 **Tag definitions and cadence live in the Library settings file**,
 `.office/config.yaml`, under a `scribe:` block (D9):
 
-```yaml
-scribe:
-  cadence: { minutes: 20, turns: 10 }
-  tags:
-    - { name: preferences, scope: global, sink: preference_page, mode: propose, capture: markers,
-        instruction: "A standing answer to a class of question, in the user's words." }
-    - { name: decisions, scope: session, sink: decisions_ledger, mode: append, capture: markers,
-        instruction: "A choice that was made, with the question and options from the turns before it." }
+```json
+{
+  "scribe": {
+    "cadence": { "minutes": 20, "turns": 10 },
+    "tags": [
+      { "name": "preferences", "scope": "global", "sink": "preference_page", "mode": "propose", "capture": "markers",
+        "instruction": "A standing answer to a class of question, in the user's words." },
+      { "name": "decisions", "scope": "session", "sink": "decisions_ledger", "mode": "append", "capture": "markers",
+        "instruction": "A choice that was made, with the question and options from the turns before it." }
+    ]
+  }
+}
 ```
+
+That is the effective block for a Library with no `scribe` key, not text in
+the file: `office.config-set` omits the block while both parts are default,
+so a default change in a later release applies to a Library that never
+customized them. A customized block is written with the rest of the file
+as the canonical JSON mapping (valid YAML), which is the only form
+`office-core` reads for lists of mappings; the settings YAML subset has no
+nested list of mappings ([plugin-surface.md](./plugin-surface.md#library-settings-shape)).
 
 - **Why the settings file.** Library settings already live in the
   Library, validated by `office-core` on every read and written only by
@@ -690,13 +703,41 @@ scribe:
   `office.config-set` is `mcp_scope: none` and not agent-callable, so no
   agent can change a tag, a sink or a mode. That matters, because a tag's
   mode decides whether a preference takes effect without a proposal.
-- **Keys.** `office.config-set` gains `scribe.cadence` (whole block,
-  minutes 5–240, turns 2–100), `scribe.tags` (the whole list) and
-  `scribe.tags.<name>` (one definition, or null to delete). Validation
-  refuses an unknown sink, `apply` on any sink but `preference_page`, a
-  duplicate or malformed name, a `workspace` on a sink other than
-  `orbit_task`, and any file target outside the Library
-  (`tag_sink_refused`). With no `scribe.tags` key the two defaults apply.
+- **Keys** (built, [ORB-21115]). `office.config-set` accepts
+  `scribe.cadence` (the block, `{minutes, turns}`, minutes 5–240, turns
+  2–100; an omitted part keeps its default; null restores both),
+  `scribe.tags` (the whole list; null restores the two defaults; `[]`
+  means no tags) and `scribe.tags.<name>` (one definition, added or
+  replaced; null deletes it, and refuses a name that is not defined).
+  Deleting a default from the untouched defaults first materializes the
+  other default. A definition needs `scope`, `instruction` (nonempty, at
+  most 2000 characters) and `sink`; `name` defaults to the key and must
+  match it; `mode` defaults by sink (`propose` for `preference_page` and
+  `orbit_task`, `append` for `decisions_ledger` and `scr_only`);
+  `capture` defaults to `markers`. A list holds at most 32 tags.
+- **Refusals.** Each is typed and leaves the file and HEAD unchanged,
+  and none echoes the value. `invalid_library_setting` names the dotted
+  key for: a sink that is not one of the four, a sink and mode pair other
+  than `preference_page` with `propose` or `apply`, `orbit_task` with
+  `propose`, or `decisions_ledger` or `scr_only` with `append` (key
+  `scribe.tags.<name>.mode`), a duplicate or malformed name (lowercase
+  kebab-case, at most 32 characters, starting with a letter; in a
+  whole-list value a malformed name is keyed by its index, as
+  `scribe.tags[0].name`), a `workspace` on a sink other than
+  `orbit_task`, an out-of-range cadence, and any malformed field.
+  `tag_sink_refused` is returned for any file target outside the
+  Library: a `sink` shaped like a path (it contains `/`, `\`, `.`, `~` or
+  `:`), an `orbit_task` `workspace` shaped like a path (it contains `/`
+  or `..`, or starts with `.` or `~`), or a definition key that names one
+  (`path`, `file`, `target`, `dir`, `directory`, `destination`,
+  `output`). A scribe key other than
+  the three above is `unknown_library_setting`. The same rules apply
+  when the file is read, so a hand-edited block cannot bypass them.
+- **Reading the effective block.** `office.status` returns it as
+  `scribe` (`cadence`, `tags` and `tags_customized`), never null: an
+  unset key or an uninitialized Library reads as the defaults.
+  `office.scribe-pending` returns the same `tags` and `cadence`, so a
+  pass sees the definitions in force without a second call.
 - **How the app writes them, and the dependency.** The Scribe tab's
   **Tags** editor creates, edits and deletes tags (name, scope,
   instruction, sink, mode) and saves through `office.config-set`, as the
@@ -882,7 +923,7 @@ requires.
 | Slice | Task | Depends on | Delivers |
 |---|---|---|---|
 | S1 (built) | [ORB-21114] | — | Decision ledger store (`decisions` kind, `sources/decisions/<scope>.md`, `dec-` ids and citation resolution, the D13 schema), `office.capture` `decision` input, and the `note` retirement and migration (D4, D12, D13). |
-| S2 | [ORB-21115] | — | `scribe:` settings block (tags, cadence), `office.config-set` keys and validation, defaults (D3, D9). |
+| S2 (built) | [ORB-21115] | — | `scribe:` settings block (tags, cadence), `office.config-set` keys and validation, defaults (D3, D9). |
 | S3 | [ORB-21116] | S2 | `preferences` template and pages, proposal-time contradiction check in `office.proposal-create`, apply mode (D3, D4, D5). |
 | S4 | [ORB-21117] | S1, S2, S3 | SCR v2 format, pending and append v2 (markers and the trust rule, sections, `T<n>` entries, `previous`, title from summary, ledger and page writes), query and ask over the new stores (D2, D6). |
 | S5 | [ORB-21118] | S4 | Claude Code plugin: opt-in `/scribe on\|off\|update\|status\|tags`, Stop-hook cadence, orchestrator on/ask, routing (proposals, scheduling markers as proposed tasks, `owner:you` to-dos, `orbit_task` tags) (D1, D2, D10). |
@@ -912,7 +953,7 @@ requires.
 - [ORB-21089] — plans Orbit's decision model, a consumer of decision precedent.
 - [ORB-21090] — plans the office precedent provider over the decision ledger.
 - [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
-- [ORB-21115] — proposed slice S2: `scribe:` tag and cadence settings.
+- [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
 - [ORB-21116] — proposed slice S3: preference pages, contradiction check and apply mode.
 - [ORB-21117] — proposed slice S4: SCR v2, markers and the trust rule, query and ask over the new stores.
 - [ORB-21118] — proposed slice S5: Claude Code opt-in, Stop-hook cadence and marker routing.

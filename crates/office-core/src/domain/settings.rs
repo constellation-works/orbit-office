@@ -11,6 +11,7 @@ use serde_json::{Map, Value};
 
 use super::endpoint::{Capability, EndpointKind};
 use super::metrics::date_seconds;
+pub use super::scribe_settings::ScribeSettings;
 use crate::{Error, Result};
 
 const KINDS: &[&str] = &[
@@ -61,6 +62,9 @@ pub struct Settings {
     pub demo: DemoSettings,
     /// Session-brief policy.
     pub brief: BriefSettings,
+    /// Scribe cadence and tag definitions; omitted from the file while default.
+    #[serde(skip_serializing_if = "ScribeSettings::is_default")]
+    pub scribe: ScribeSettings,
 }
 
 /// Session-brief policy (specs/sessions.md#session-brief).
@@ -254,6 +258,7 @@ impl Default for Settings {
             demo: DemoSettings::default(),
             scripts: Default::default(),
             brief: BriefSettings::default(),
+            scribe: ScribeSettings::default(),
         }
     }
 }
@@ -328,6 +333,10 @@ impl Settings {
                 .and_then(Value::as_object_mut)
                 .ok_or_else(|| invalid(key, "set the whole shared block first"))?;
             map.insert(name.into(), value);
+            return Self::try_from(encoded);
+        }
+        if key == "scribe.cadence" || key == "scribe.tags" || key.starts_with("scribe.tags.") {
+            super::scribe_settings::set(&mut encoded, key, value)?;
             return Self::try_from(encoded);
         }
         if key == "open_weights" || key.starts_with("open_weights.") {
@@ -627,6 +636,7 @@ impl TryFrom<Value> for Settings {
                         }
                     }
                 }
+                "scribe" => settings.scribe = ScribeSettings::parse(value)?,
                 "shared" => settings.shared = super::sharing::SharedSettings::parse(value)?,
                 "calendar" => {
                     settings.calendar = super::calendar::CalendarSettings::parse(value)?;
