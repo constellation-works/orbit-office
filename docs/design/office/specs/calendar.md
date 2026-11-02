@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: calendar — workspace-local events and a read-only snapshot of Outlook or ICS beside the routines' schedule and the tasks scheduled for a date, a cited prep brief before each meeting, and notes or a transcript captured from the event after it"
 last_validated: 2026-10-27
+last_updated: 2026-11-02
 ---
 
 # Spec: Calendar
@@ -517,17 +518,10 @@ null clears the connection. The other four keys are integers with the bounds
 above; unknown leaves and other types refuse the update.
 
 
-## Task References
-
-- [ORB-19191] — adds the gateway's `secret_path` and `oauth2_device` schemes.
-- [ORB-19192] — built `office.calendar-sync`, `office.calendar-list` and the snapshot.
-- [ORB-19193] — built `office.meeting-prep` and its routine.
-- [ORB-19194] — built capture from an event and the `office-meeting-inbox` routine.
-- [ORB-19195] — built the Calendar screen, its server feature and Today's card.
-- [ORB-19216] — built the Schedule… picker, scheduled tasks on the calendar and the dispatch pass's wait; needs an Orbit release with ws_orbit [ORB-19214] and [ORB-19215].
-- [ORB-19214] — built Orbit's `not_before` field and its admission hold (ws_orbit).
-- [ORB-19215] — built Orbit's date-range list filter and surfaces (ws_orbit).
-- [ORB-20246] — built local calendar events, source selection and the workspace event store.
+The gateway auth schemes [ORB-19191], calendar snapshot [ORB-19192],
+meeting prep [ORB-19193], capture and inbox [ORB-19194], and Calendar
+screen [ORB-19195] are built. Scheduled task support is built in Orbit
+([ORB-19214], [ORB-19215]) and in the app ([ORB-19216]).
 
 ### Meeting-prep implementation contract
 
@@ -573,3 +567,17 @@ their existing serialization. `calendar-list.prep` resolves this field.
 The registered `office-meeting-prep` routine is seeded disabled on
 `*/15 * * * *` and targets `job:office-meeting-prep`; the job's only step
 inlines `plugin.tool_call` with `tool: office.meeting-prep` and `input: {}`.
+
+## Task References
+
+- [ORB-19191] — built the gateway secret_path and oauth2_device schemes.
+- [ORB-19192] — built `office.calendar-sync`, `office.calendar-list` and the snapshot.
+- [ORB-19193] — built `office.meeting-prep` and its routine.
+- [ORB-19194] — built capture from an event and the `office-meeting-inbox` routine.
+- [ORB-19195] — built the Calendar screen, its server feature and Today's card.
+- [ORB-19216] — built the Schedule… picker, scheduled Calendar tasks and the dispatch hold on Orbit's date fields.
+- [ORB-19214] — built Orbit's `not_before` field and its admission hold (ws_orbit).
+- [ORB-19215] — built Orbit's date-range list filter and surfaces (ws_orbit).
+- [ORB-20246] — built local calendar events, source selection and the workspace event store.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: scribe v2 — opt-in scribing per session, inline markers honoured only in the user's own typed turns, preferences and decisions as the only default tags (preference pages changed by proposal, an append-only decision ledger fit to serve as precedent), and one SCR per session whose latest copy per project and global is the handoff"
 last_validated: 2026-11-02
+last_updated: 2026-11-02
 ---
 
 # Spec: Scribe v2
@@ -25,8 +26,9 @@ contradiction auto-task ([ORB-21121]); and S9, the migration
 ([ORB-21122]; see [Migration](#migration)): the compatibility window
 opened on 2026-11-02 and closes on 2026-12-02. Only the removal slice
 (S10) is not built.
-Scribe v1 is built and still runs
-until the slices in [Build order](#build-order) land. The v1 text
+Scribe v2 is the current path. The v1 commands and query modes remain
+only as the compatibility mappings built by [ORB-21122], until the
+approved removal task [ORB-21123] runs on or after 2026-12-02. The v1 text
 this spec replaces is at `git show d398471:docs/design/office/specs/scribe.md`,
 and its decisions stay in [4_decisions.md](../4_decisions.md#scribe-v1-commanded-capture-into-one-tagged-file-per-session).
 The v2 decisions are
@@ -450,8 +452,9 @@ Contradictions are checked twice (D5).
 
 ### Meeting decisions
 
-Built in [ORB-21340]. `office.extract` with `profile: meeting` feeds the
-ledger too, not only conversation scribing. After it saves
+The implementation from [ORB-21340] is in this checkout (merged as
+`59e36d4`); the task remains in progress. `office.extract` with
+`profile: meeting` feeds the ledger too, not only conversation scribing. After it saves
 `extract-result.json`, and before it files to-dos:
 
 1. **Append.** Each cited decision becomes one `decisions-global` entry
@@ -952,7 +955,8 @@ nested list of mappings ([plugin-surface.md](./plugin-surface.md#library-setting
   The app has no operator authority: it calls Orbit as `local-cli`
   holding Agent, so Orbit refuses `office.config-set` today. That is the
   same refusal the approval actions get. Writing tags from the app
-  therefore **depends on [ORB-20363]** (blocked), which wires the app to
+  therefore **depends on [ORB-20363]** (parked as someday pending
+  deployment of Orbit's callback support and a re-pilot), which wires the app to
   Orbit's scoped application authority ([ORB-20362]). That task's
   operation list must add `office.config-set`, limited to the `scribe.*`
   keys. Until it lands, the editor shows the tags read-only, reports a
@@ -1176,7 +1180,8 @@ with empty preference pages and ledgers; nothing reads v1 lines into them
 
 ## Build order
 
-Each slice is a proposed task in ws_orbit-office. Each updates the docs
+Slices S1–S9 are done; S10 is approved in backlog for the end of the
+compatibility window. Each slice updates the docs
 its change makes stale in the same change, as the workspace guide
 requires.
 
@@ -1187,18 +1192,18 @@ requires.
 | S3 (built) | [ORB-21116] | S2 | `preferences` template and pages, proposal-time contradiction check in `office.proposal-create`, apply mode (D3, D4, D5). |
 | S4 (built) | [ORB-21117] | S1, S2, S3 | SCR v2 format, pending and append v2 (markers and the trust rule, sections, `T<n>` entries, `previous`, title from summary, ledger and page writes), query and ask over the new stores (D2, D6). |
 | S5 (built) | [ORB-21118] | S4 | Claude Code plugin: opt-in `/scribe on\|off\|update\|status\|tags`, Stop-hook cadence, orchestrator on/ask, routing (proposals, scheduling markers as proposed tasks, `owner:you` to-dos, `orbit_task` tags) (D1, D2, D10). |
-| S6 (built) | [ORB-21119] | S4 | Session brief and `/handoff` read the latest SCR per project and global; capture `handoff` compatibility (D7; ORB-21063, ORB-21065). |
-| S7 (built) | [ORB-21120] | S2, S6 | Web app: one card per project plus the global card, `previous` chain, Preferences and Decisions panels, Tags editor (saves need [ORB-20363]) (D8, D9; ORB-21075). |
+| S6 (built) | [ORB-21119] | S4 | Session brief and `/handoff` read the latest SCR per project and global; capture `handoff` compatibility (D7; [ORB-21063], [ORB-21065]). |
+| S7 (built) | [ORB-21120] | S2, S6 | Web app: one card per project plus the global card, `previous` chain, Preferences and Decisions panels, Tags editor (saves need [ORB-20363]) (D8, D9; [ORB-21075]). |
 | S8 (built) | [ORB-21121] | S1, S3 | Weekly `office-scribe-contradictions` auto-task definition, seeded disabled (D5). |
 | S9 (built) | [ORB-21122] | S4, S5, S6 | Migration: v1 command and query mapping with `deprecated`, no v1 backfill (v2 starts clean), rules-page Tags removal proposal and open-pending report, the ws_constellation AGENTS.md task (D11). |
-| S10 | [ORB-21123] | S9 | Removal at the end of the 30-day window (on or after 2026-12-02): v1 commands and modes, capture `handoff`, `view: list`, the v1 title levels (D11). |
+| S10 (backlog) | [ORB-21123] | S9 | Removal at the end of the 30-day window (on or after 2026-12-02): v1 commands and modes, capture `handoff`, `view: list`, the v1 title levels (D11). |
 
 ## Task References
 
 - [ORB-21083] — designed scribe v2 (this spec).
-- [ORB-20840] — the orbit-office on-call session where Daniel gave the direction.
+- [ORB-20840] — recorded Daniel's scribe v2 direction in the orbit-office on-call session.
 - [ORB-20362] — landed Orbit's scoped application authority.
-- [ORB-20363] — wires the app to that authority (blocked); the Tags editor's saves depend on it.
+- [ORB-20363] — wires the app to scoped authority; parked as someday pending callback deployment and a re-pilot.
 - [ORB-20685] — built the conversation adapter's scrubbing and the live scribe's commands.
 - [ORB-20686] — built the `dom-scribe-rules` page.
 - [ORB-20696] — built the web Scribe screen over v1.
@@ -1210,11 +1215,11 @@ requires.
 - [ORB-21065] — built structured handoffs.
 - [ORB-21075] — built the Scribe › Handoffs view.
 - [ORB-21079] — built first-pass scribe titles and the humanized-slug fallback.
-- [ORB-21089] — plans Orbit's decision model, a consumer of decision precedent.
+- [ORB-21089] — designed Orbit's decision model, a consumer of decision precedent.
 - [ORB-21090] — designed the office precedent provider over the decision ledger ([decision-precedents.md](./decision-precedents.md)).
 - [ORB-21219] — built contradiction reporting to the precedent provider.
-- [ORB-21340] — built meeting decisions in the ledger, their contradiction check and `office.decision-resolve`.
-- [ORB-21431] — a decision's `chosen` matches its quote up to case, punctuation and a word repeated in a row, so a stuttered transcribed turn still feeds the ledger.
+- [ORB-21340] — implemented meeting decisions and contradiction resolution; code is merged, task still in progress.
+- [ORB-21431] — accepted a decision's `chosen` up to case, punctuation and a word repeated in a row, while preserving the verbatim quote check.
 - [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
 - [ORB-21116] — built slice S3: preference pages, contradiction check and apply mode.
@@ -1225,6 +1230,7 @@ requires.
 - [ORB-21121] — built slice S8: the weekly contradiction auto-task.
 - [ORB-21122] — built slice S9: the v1 command and query mapping and `office.scribe-migrate` (no backfill); opened the window on 2026-11-02.
 - [ORB-21239] — replaces the root AGENTS.md decision-log rule in ws_constellation (filed by S9).
-- [ORB-21123] — proposed slice S10: removal of v1 surfaces after the window.
+- [ORB-21123] — removes v1 surfaces after 2026-12-02; approved in backlog.
+- [ORB-21218] — built the precedent provider and its recency setting.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

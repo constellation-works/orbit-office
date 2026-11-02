@@ -168,8 +168,8 @@ Pending or not verified as landed in this checkout:
 - [ORB-18809] — built `office.video-plan` and `office.frames`.
 - [ORB-21334] — orchestrates the hackathon demo and locked this script.
 - [ORB-21336] — meeting extraction for the demo.
-- [ORB-21337] — the morning digest for the demo.
+- [ORB-21337] — built the morning digest for the demo.
 - [ORB-21338] — Meta-only runtime models.
-- [ORB-21339] — the synthetic meeting, the September ledger seed, this script and the README model table.
+- [ORB-21339] — built the synthetic meeting, September ledger seed, this script and the README model table.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

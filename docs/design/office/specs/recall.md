@@ -2,27 +2,30 @@
 type: design
 summary: "Spec: recall — one scribe across every conversation, and answers about past conversations without involving an orchestrator"
 last_validated: 2026-11-01
+last_updated: 2026-11-02
 ---
 
 # Spec: Recall
 
-> Scribe v1 ([scribe.md](./scribe.md)) answers questions by grep over
-> per-session SCR files; the surfaces below are unused by v1.
+> Scribe v2 ([scribe.md](./scribe.md)) now answers over SCR files, the
+> decision ledger and preference pages ([ORB-21117]). The recall backend
+> below remains built; its original provider flow is superseded by scribe.
 
-Status: the Orbit backend is built (ORB-20688): session context and title
+Status: the Orbit backend is built ([ORB-20688]): session context and title
 ownership, deterministic stored refs, read-only `office.recall`, and append-only
-corrections with repeated-correction signals (ORB-20695). The Claude Code
-provider plugin, commands/subagent and backfill are built (ORB-20689); see the
+corrections with repeated-correction signals ([ORB-20695]). The Claude Code
+provider plugin, commands/subagent and backfill are built ([ORB-20689]); see the
 [installation guide](../../../../plugin/claude-code/README.md). Scribe v1
-(ORB-20799) replaced `/recall` and the `recall` subagent with `/scribe ask`
+([ORB-20799]) replaced `/recall` and the `recall` subagent with `/scribe ask`
 and the `scribe` agent, and turned the automatic Stop/SessionEnd passes off
 by default (plugin option `auto_capture`); the pane's ask box now answers in
 the pane. The desktop
-Scribe pane is built (ORB-20697). The web Scribe screen is built over scribe
-v1 instead of recall (ORB-20696, [scribe.md](./scribe.md#relation-to-what-is-built)).
-PR refs resolve live through a `gh` source (ORB-20710, below). Recall feed
+Scribe pane is built ([ORB-20697]). The web Scribe screen was built over scribe v1 instead of recall
+([ORB-20696]) and reworked into the v2 feed and ledger panels
+([ORB-21120]; [scribe.md](./scribe.md#relation-to-what-is-built)).
+PR refs resolve live through a `gh` source ([ORB-20710], below). Recall feed
 mode, `office.recall-answer` and the Office-owned scribe control state
-(`office.scribe-control`) are built (ORB-20756, below).
+(`office.scribe-control`) are built ([ORB-20756], below).
 
 One scribe follows the user across every agent conversation they hold, in
 every project, and answers "where did we discuss X?", "what did we decide
@@ -155,7 +158,7 @@ lowercase (7–64 hex characters). Other entry kinds never infer commit refs.
 ### Live PR state (built)
 
 Task refs resolve through `orbit.task.show`, which the plugin already holds.
-PR refs resolve live through `gh` (ORB-20710): a `PullRequests` port in
+PR refs resolve live through `gh` ([ORB-20710]): a `PullRequests` port in
 `office-core` (`ports/pr.rs`), implemented by the supervised `gh` adapter in
 `office-store` (`pr.rs`, `GhPullRequests`), wired in the binary's `ports()`.
 For each distinct PR ref the adapter runs, once and never retried,
@@ -413,7 +416,7 @@ plugin's local cache, which the hook uses when Office cannot be read.
 ### Answering in each host
 
 `office.recall` stays model-free. A separate tool, `office.recall-answer`
-(built, ORB-20756; read-only, `mcp_scope: workspace`, not `agent_callable`
+(built, [ORB-20756]; read-only, `mcp_scope: workspace`, not `agent_callable`
 — read-only tools keep ordinary Agent access), takes a question and
 `office.recall`'s filters (`session_id`, `since`, `until`, `project`,
 `limit` 1–50; no feed mode), runs recall, then makes at most one
@@ -465,3 +468,18 @@ reaches.
 - Raw transcripts never leave the host that holds them; only captured
   entries reach the Library and its sync.
 - Excluded projects are never staged, captured or backfilled.
+
+## Task References
+
+- [ORB-20688] — built session context, stored refs and the recall backend.
+- [ORB-20689] — built the original Claude Code provider plugin and recall commands.
+- [ORB-20695] — built append-only corrections and effective-entry projection.
+- [ORB-20696] — built the original web Scribe screen over v1.
+- [ORB-20697] — built the desktop Scribe pane.
+- [ORB-20710] — resolved PR refs through a live gh source.
+- [ORB-20756] — built recall-answer, feed mode and scribe-control.
+- [ORB-20799] — replaced recall commands with the v1 scribe agent and ask command.
+- [ORB-21117] — built v2 query and ask over SCR files, preferences and decisions.
+- [ORB-21120] — reworked the web Scribe screen into the v2 feed and ledger panels.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

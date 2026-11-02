@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: the KT pack — an hour-long knowledge-transfer video becomes a chaptered index with tangents folded away, cited knowledge proposals, a runbook and questions for the presenter, behind a cost preview"
 last_validated: 2026-11-01
+last_updated: 2026-11-02
 ---
 
 # Spec: KT videos (the hero pack)
@@ -345,3 +346,9 @@ held-from-agents note, never for agents, until `office.decision-resolve`
 settles the conflict. Unset, the
 schema, prompt and filing are unchanged. When `task` is supplied, either
 profile attaches its full structured output.
+
+## Task References
+
+- [ORB-21416] — kept meeting items citing copied turn links and refused all-dropped extraction replies.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

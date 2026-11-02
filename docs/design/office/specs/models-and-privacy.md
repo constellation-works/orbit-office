@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: models and privacy routing — which model does what, and the private route: Meta's open-weights Muse Spark Open on an endpoint the user chooses"
 last_validated: 2026-11-02
+last_updated: 2026-11-02
 ---
 
 # Spec: Models and privacy routing
@@ -282,7 +283,7 @@ Wonder availability and context capacity remain the Day-1 check above.
 ## Live verification (2026-11-02)
 
 Run against `api.meta.ai` with the office plugin's `meta_api_key`, on a scratch
-Library holding synthetic content only (ORB-21338):
+Library holding synthetic content only ([ORB-21338]):
 
 | Check | Request | Result |
 |---|---|---|
@@ -307,3 +308,8 @@ with `orbit plugin secret set office meta_api_key`. Until one is set, a live
 transcription result (model id, latency) and schema-valid meeting JSON remain
 unverified; the request shapes above are what was confirmed.
 
+## Task References
+
+- [ORB-21338] — built Muse Voice Transcribe and recorded live Meta route verification.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

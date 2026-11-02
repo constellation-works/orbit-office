@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: shared library — a `shareable` field on Library documents, one team git repository, and `office.library-sync`, which pushes the shareable documents and pulls colleagues' work into a read-only shared layer, so a new joiner inherits the team's knowledge"
 last_validated: 2026-10-28
+last_updated: 2026-11-02
 ---
 
 # Spec: Shared library
@@ -19,7 +20,9 @@ the sync mechanical, so it is a deterministic tool, not an agent loop.
 
 The approval field, `office.share-set`, pure shared view, validated settings,
 the read-only shared layer, `office.library-sync`, its routine, the demo and
-the app section below are implemented.
+the app section below are implemented: approval and settings [ORB-19417],
+sync and the demo [ORB-19418], the shared read layer [ORB-19419], and
+the app controls [ORB-19421].
 
 ## The loop
 
@@ -439,3 +442,5 @@ covered by the end-to-end test.
 - [ORB-19419] — built the shared layer: index, qualified citations, reads, attach and bootstrap.
 - [ORB-19421] — built the app: Settings › Shared library, labels, the share switch and Needs you cards.
 - [ORB-20243] — partitioned Library sources by kind, mirrored in the shared member layout.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
