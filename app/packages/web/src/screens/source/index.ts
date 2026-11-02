@@ -1,7 +1,7 @@
 /** Capture originals, review processing costs, and open citations at their span. */
-import type { BootstrapPhase, CapturedSource, SourcePlan, SourceView } from "@orbit-office/contracts";
+import type { BootstrapPhase, CapturedSource, SourceDigest, SourcePlan, SourceView } from "@orbit-office/contracts";
 import type { Screen } from "../../screen.js";
-import { ApiError, capturePaste, getSource, getSourceCitation, markSourcePrivate, sourcePlan, uploadSource, getSelectionCount, putSelection, clearSelections } from "../../api/client.js";
+import { ApiError, capturePaste, getSource, getSourceCitation, getSourceDigest, markSourcePrivate, sourcePlan, uploadSource, getSelectionCount, putSelection, clearSelections } from "../../api/client.js";
 import { sourceHref } from "../../api/source-location.js";
 import { anchorTarget, clock, droppedFiles, seconds, supportedFile } from "./model.js";
 import { styles } from "./style.js";
@@ -209,6 +209,7 @@ function drawSource(source: SourceView, root: HTMLElement): void {
       link.append(image, el("span", clock(frame.time))); item.append(link, el("figcaption", frame.text)); timeline.append(item); frameNodes.push(item);
     } section.append(timeline);
   }
+  if (source.kind === "meeting") section.append(digestPanel(source.id));
   section.append(el("h2", "Cited by"));
   if (!source.cited_by.length) section.append(el("p", "No linked pages or tasks yet."));
   if (!source.task_citers_available) section.append(el("p", "Task links are unavailable at the moment."));
@@ -244,5 +245,52 @@ function drawSource(source: SourceView, root: HTMLElement): void {
       if (media.readyState >= 1) seek();
     }
   } else if (/^#(?:t=|L|frame=|chapter=)/.test(window.location.hash)) section.append(el("p", "This citation does not match a span in the current source."));
+}
+/** On demand: what the meeting decided, what shipped from it and what needs you. */
+function digestPanel(sourceId: string): HTMLElement {
+  const panel = el("section"); panel.className = "source-digest"; panel.setAttribute("aria-label", "Since this meeting");
+  const body = el("div");
+  const show = button("Show digest", () => {
+    show.disabled = true; body.replaceChildren(el("p", "Reading decisions, shipped work and open items."));
+    void getSourceDigest(sourceId).then(digest => { if (panel.isConnected) drawDigest(digest, body); })
+      .catch(error => { if (panel.isConnected) body.replaceChildren(el("p", error instanceof ApiError && error.code === "source_refused" ? "Extract this meeting's decisions and to-dos first." : message(error))); })
+      .finally(() => { if (panel.isConnected) { show.disabled = false; show.textContent = "Refresh digest"; } });
+  });
+  panel.append(el("h2", "Since this meeting"), show, body); return panel;
+}
+function citeLinks(cites: string[]): HTMLElement {
+  const span = el("span"); span.className = "source-cites"; span.append(document.createTextNode(" ["));
+  cites.forEach((cite, index) => {
+    if (index) span.append(document.createTextNode(", "));
+    const match = /^(src-[a-z0-9-]+)(#.+)?$/.exec(cite);
+    if (match?.[1]) { const link = el("a", cite); link.href = sourceHref(match[1], match[2]); span.append(link); }
+    else span.append(document.createTextNode(cite));
+  });
+  span.append(document.createTextNode("]")); return span;
+}
+function external(label: string, url: string | null): Node {
+  if (url === null || !url.startsWith("https://github.com/")) return document.createTextNode(label);
+  const link = el("a", label); link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"; return link;
+}
+function drawDigest(digest: SourceDigest, root: HTMLElement): void {
+  const list = (title: string, rows: HTMLElement[]): HTMLElement[] => {
+    const items = el("ul"); for (const row of rows) items.append(row);
+    if (!rows.length) items.append(el("li", "None."));
+    return [el("h3", title), items];
+  };
+  const decided = digest.decided.map(item => { const li = el("li", item.text); li.append(citeLinks(item.cites)); return li; });
+  const shipped = digest.shipped.map(item => {
+    const li = el("li", `${item.title}: `);
+    const evidence: Node[] = [];
+    if (item.pr) evidence.push(external(`PR #${item.pr.number}`, item.pr.url));
+    if (item.merge) { if (evidence.length) evidence.push(document.createTextNode(", ")); evidence.push(document.createTextNode("merged "), external(item.merge.commit.slice(0, 7), item.merge.url)); }
+    if (!evidence.length) evidence.push(document.createTextNode("no delivery record"));
+    li.append(...evidence, citeLinks(item.cites)); return li;
+  });
+  const labels = { to_do: "To-do", contradiction: "Contradiction", decision: "Decision" };
+  const needs = digest.needs_you.map(item => { const li = el("li", `${labels[item.kind]}: ${item.text}`); li.append(citeLinks(item.cites)); return li; });
+  root.replaceChildren(...list("Decided", decided), ...list("Shipped", shipped), ...list("Needs you", needs));
+  if (digest.unavailable.length) root.append(el("p", `Tasks in ${digest.unavailable.join(", ")} could not be read.`));
+  if (digest.truncated) root.append(el("p", "More tasks came from this meeting than could be read."));
 }
 export const screen: Screen = { id: "source", title: "Source", status: "built", render };

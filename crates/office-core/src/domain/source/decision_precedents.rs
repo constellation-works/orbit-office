@@ -265,7 +265,11 @@ fn read_conflicts(pool: &Pool, conflicts: ConflictList) -> ConflictPass {
     }
 }
 
-fn conflicting_pair(task: &Value) -> Option<(String, String)> {
+/// The two conflicting ledger entry ids of an open contradiction to-do
+/// (`owner:you`, `office-scribe-contradictions`, a final `Conflicting
+/// entries: <a> <b>` line), or `None` for any other task row.
+#[must_use]
+pub fn conflicting_pair(task: &Value) -> Option<(String, String)> {
     let status = task.get("status").and_then(Value::as_str)?;
     if !OPEN_TODO.contains(&status) {
         return None;

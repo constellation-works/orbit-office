@@ -2,7 +2,7 @@
 import { chmod, mkdtemp, open, realpath, rmdir, unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
-import type { CapturedSource, SourceCitation, SourcePlan, SourceView } from "@orbit-office/contracts";
+import type { CapturedSource, SourceCitation, SourceDigest, SourcePlan, SourceView } from "@orbit-office/contracts";
 import type { Feature, Route } from "../../http/types.js";
 import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
 
@@ -187,6 +187,17 @@ export function createSourcesFeature(options: SourcesOptions): Feature {
         estimate: plan.estimate === null ? null : { amount: Number(object(plan.estimate).amount), currency: string(object(plan.estimate).currency) },
       };
       reply(res, 200, preview);
+    }),
+    route("GET", "/api/sources/digest", async (req, res) => {
+      const params = new URL(req.url ?? "/", "http://localhost").searchParams;
+      const data = await call("office.digest", { source: id(params.get("id")) });
+      if (!Array.isArray(data.decided) || !Array.isArray(data.shipped) || !Array.isArray(data.needs_you) || !Array.isArray(data.unavailable) || typeof data.truncated !== "boolean") throw new Refusal(502, "invalid_output");
+      const digest: SourceDigest = {
+        source: id(data.source), title: string(data.title), report: string(data.report),
+        decided: data.decided as SourceDigest["decided"], shipped: data.shipped as SourceDigest["shipped"],
+        needs_you: data.needs_you as SourceDigest["needs_you"], unavailable: data.unavailable as string[], truncated: data.truncated,
+      };
+      reply(res, 200, digest);
     }),
     route("GET", "/api/sources/citation", async (req, res) => {
       const params = new URL(req.url ?? "/", "http://localhost").searchParams;

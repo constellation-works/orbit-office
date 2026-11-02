@@ -491,6 +491,23 @@ export interface SourcePlan {
   estimate: { amount: number; currency: string } | null;
 }
 export interface SourceCitation { title: string; text: string }
+/** `office.digest` with a source: what a meeting decided, shipped and still needs from you. */
+export interface SourceDigest {
+  source: string;
+  title: string;
+  decided: Array<{ text: string; cites: string[] }>;
+  shipped: Array<{
+    task: string; title: string; workspace: string | null; delivery_status: string | null;
+    pr: { number: number; url: string | null } | null;
+    merge: { commit: string; url: string | null } | null;
+    cites: string[];
+  }>;
+  needs_you: Array<{ kind: "to_do" | "contradiction" | "decision"; text: string; task: string; workspace: string | null; cites: string[] }>;
+  report: string;
+  /** Extra workspaces whose tasks could not be read. */
+  unavailable: string[];
+  truncated: boolean;
+}
 
 /** A source span shared with the agent. */
 export interface SelectionInput {

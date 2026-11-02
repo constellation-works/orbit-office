@@ -2,7 +2,7 @@
 import type {
   CalendarSources, LocalCalendarChange, AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
-  SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoCreated, TodoScheduled,
+  SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourceDigest, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoCreated, TodoScheduled,
   ConflictChoice, ShareDocument, SharedLastSync, SharedLibraryBlock, SharedLibrarySaved, SharedLibraryStatus, SharedSync, ShareRequest, ShareResult,
 } from "@orbit-office/contracts";
 
@@ -202,6 +202,9 @@ export function sourcePlan(input: { id?: string; phase?: BootstrapPhase; private
 }
 export function markSourcePrivate(id: string): Promise<{ ok: true }> {
   return postJson<{ ok: true }>("/api/sources/private", { id });
+}
+export function getSourceDigest(id: string): Promise<SourceDigest> {
+  return getJson<SourceDigest>(`/api/sources/digest?id=${encodeURIComponent(id)}`);
 }
 export function getSourceCitation(id: string, kind: string): Promise<SourceCitation> {
   return getJson<SourceCitation>(`/api/sources/citation?${new URLSearchParams({ id, kind })}`);
