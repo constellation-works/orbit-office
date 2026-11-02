@@ -90,7 +90,7 @@ template:
     - Preference conflicts become knowledge_update proposals pinned to the page's sha256, decision conflicts become one owner:you to-do, and no ledger or page is written directly.
     - A preference page over 1,000 words has one consolidation proposal that keeps every statement, citation and review date.
     - The report is attached to this task, and private entries and withheld pages appear in it without their text.
-    - Decisions that share an Orbit category are compared even when their questions differ, and each decision-conflict to-do description ends with `Conflicting entries: <entry id> <entry id>`.
+    - "Decisions that share an Orbit category are compared even when their questions differ, and each decision-conflict to-do description ends with `Conflicting entries: <entry id> <entry id>`."
   task_type: chore
   tags: [office, owner:agent, office-scribe-contradictions, no-diff-expected]
   required_tools: [office.search, office.source-show, office.knowledge-list, office.knowledge-show, office.proposal-create, orbit.search, orbit.task.add, orbit.task.show, orbit.task.artifact.put]

@@ -53,14 +53,8 @@ impl ContextModels<'_> {
         &self,
         settings: office_core::domain::settings::Settings,
     ) -> office_core::Result<office_models::RoutedClient> {
-        let secret = |name: &str| {
-            self.context
-                .get("secrets")
-                .and_then(|secrets| secrets.get(name))
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        };
+        let secret =
+            |name: &str| office_core::protocol::secret(self.context, name).map(str::to_string);
         let mut config =
             office_models::ModelConfig::new(secret("meta_api_key"), secret("open_weights_token"));
         // Settings that fail to load are reported as their own error (for

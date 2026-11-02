@@ -29,16 +29,10 @@ pub(crate) const TOOL: Tool = Tool::built(
 );
 
 pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
-    let delivered = call.context.get("secrets").and_then(Value::as_object);
     // Presence mirrors model routing (`crates/office/src/app.rs`
-    // `client_with_settings`): only a non-empty string counts as set, so an
+    // `client_with_settings`): both read through `protocol::secret`, so an
     // empty stored secret reads as unset everywhere status is shown.
-    let is_set = |name: &str| {
-        delivered
-            .and_then(|secrets| secrets.get(name))
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.is_empty())
-    };
+    let is_set = |name: &str| office_core::protocol::secret(call.context, name).is_some();
     // STD-01@2 §R35: `baseten_token` was renamed to `open_weights_token`;
     // the old name stays as a deprecated alias for one release, mirroring
     // the new field, and a context still carrying only the old name
@@ -87,11 +81,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         .map(|block| block.endpoint.as_str());
     // Routing reads only `open_weights_token`, so a context still carrying
     // only the retired alias has no token any call would send.
-    let stored = call
-        .context
-        .get("secrets")
-        .and_then(|secrets| secrets.get("open_weights_token"))
-        .and_then(Value::as_str);
+    let stored = office_core::protocol::secret(call.context, "open_weights_token");
     let binding = if open_weights_present && stored.is_none() {
         TokenBinding::Unbound
     } else {
