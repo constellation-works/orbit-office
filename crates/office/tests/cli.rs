@@ -152,7 +152,10 @@ fn qa_exec_fixture_runs_init_in_its_temp_root() {
         );
     }
     // Every file the run wrote is either the caller's input file or
-    // under the fixture root.
+    // under the fixture root. Compare resolved paths: on macOS the temp
+    // dir is under /var, a symlink to the /private/var the root names.
+    let real = |path: &Path| std::fs::canonicalize(path).expect("canonical path");
+    let (real_root, real_input) = (real(&root), real(&input));
     let mut stack = vec![control.path().to_path_buf()];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).expect("read control dir") {
@@ -161,8 +164,9 @@ fn qa_exec_fixture_runs_init_in_its_temp_root() {
                 stack.push(path.clone());
             }
             if path.is_file() {
+                let real_path = real(&path);
                 assert!(
-                    path == input || path.starts_with(&root),
+                    real_path == real_input || real_path.starts_with(&real_root),
                     "fixture wrote outside its root: {}",
                     path.display()
                 );
