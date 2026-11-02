@@ -156,15 +156,16 @@ test('never synced, a failed sync and an empty week are said in words', { timeou
   for (const width of WIDTHS) {
     await never.page.setViewportSize({ width, height: 900 });
     await never.page.goto(`${never.url}/#calendar`);
-    await never.page.getByRole('heading', { name: 'Connect your calendar' }).waitFor();
-    assert.equal(await never.page.getByRole('link', { name: 'Connect a calendar' }).getAttribute('href'), '#settings');
+    await never.page.getByRole('link', { name: 'Connect a calendar here' }).waitFor();
+    assert.equal(await never.page.getByRole('heading', { name: 'Connect your calendar' }).count(), 0, 'connecting lives in Settings, not a Calendar card');
     assert.equal(await never.page.locator('.calendar-grid').count(), 1);
     assert.ok(await never.page.locator('.calendar-mark').count() > 0);
     await block(never.page, 'Refresh the pricing sheet').waitFor();
     await noOverflow(never.page, 'never synced'); await shot(never.page, 'calendar-connect');
   }
-  await never.page.getByRole('link', { name: 'Connect a calendar' }).click();
-  await never.page.waitForFunction(() => location.hash === '#settings');
+  await never.page.getByRole('link', { name: 'Connect a calendar here' }).click();
+  await never.page.getByRole('form', { name: 'Calendar sources' }).waitFor();
+  assert.equal(await never.page.evaluate(() => location.search + location.hash), '#settings');
 
   const failed = await browserFixture(t, { last_error: 'gateway_unreachable' });
   for (const width of WIDTHS) {
@@ -321,7 +322,12 @@ test('an Orbit that cannot read scheduled to-dos still shows the week and says s
 test('local calendar creates, edits, captures and deletes events and Settings selects sources', { timeout: 60000 }, async t => {
   const {page, url, state, captures} = await browserFixture(t, {synced_at:null, events:[]});
   await page.goto(`${url}/#calendar`);
-  await page.getByRole('button',{name:'Use a local calendar',exact:true}).click();
+  await page.getByRole('link',{name:'Connect a calendar here',exact:true}).click();
+  const sources = page.getByRole('form',{name:'Calendar sources'});
+  await sources.getByLabel('Local calendar',{exact:true}).setChecked(true);
+  await sources.getByRole('button',{name:'Save calendar choices'}).click();
+  await sources.getByText('Calendar choices saved.').waitFor();
+  await page.goto(`${url}/#calendar`);
   await page.getByRole('button',{name:'New local event',exact:true}).click();
   let editor = page.getByRole('dialog',{name:'New local event'});
   await editor.getByLabel('Title',{exact:true}).fill('Local review');

@@ -52,14 +52,16 @@ function saveMessage(error: unknown): string {
 
 type Section = "Models" | "Calendar" | "Connections" | "API calls" | "Private route" | "Shared library";
 
-/** `?settings=shared-library#settings` opens that section; the query is then dropped. */
+/** `?settings=shared-library#settings` or `?settings=calendar#settings` opens that section; the query is then dropped. */
+const LINKED: Readonly<Record<string, Section>> = { "shared-library": "Shared library", calendar: "Calendar" };
 function linkedSection(): Section | undefined {
   const params = new URLSearchParams(window.location.search);
-  if (params.get("settings") !== "shared-library") return undefined;
+  const section = LINKED[params.get("settings") ?? ""];
+  if (section === undefined) return undefined;
   params.delete("settings");
   const query = params.toString();
   window.history.replaceState(window.history.state, "", `${window.location.pathname}${query === "" ? "" : `?${query}`}${window.location.hash}`);
-  return "Shared library";
+  return section;
 }
 
 async function render(root: HTMLElement): Promise<void> {
@@ -230,7 +232,9 @@ async function render(root: HTMLElement): Promise<void> {
   }
   const status = getSettings().then((data) => { if (alive()) cli.textContent = `${data.agentCli.cli}: ${data.agentCli.connected ? "connected" : "not connected"}`; })
     .catch(() => { if (alive()) cli.textContent = "Agent CLI connection unavailable."; });
-  if (linkedSection() === "Shared library") await showShared();
+  const linked = linkedSection();
+  if (linked === "Shared library") await showShared();
+  else if (linked === "Calendar") await showCalendar();
   else await showModels();
   await status;
 }

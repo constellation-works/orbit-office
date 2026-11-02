@@ -419,9 +419,10 @@ and capture need no external connection.
 - **Rail count:** the number of today's past meetings with no notes, shown
   as a plain count, not an alert.
 - **Empty and failure states:**
-  - never synced: a setup card offers **Use a local calendar** beside
-    **Connect a calendar** (Settings › Connections). The week, routine runs and
-    scheduled to-dos remain visible below the card, even with no events;
+  - never synced: no setup card. The intro ends with **Connect a calendar
+    here**, which opens Settings › Calendar (`?settings=calendar#settings`),
+    where the local and connected calendars are chosen. The week, routine runs
+    and scheduled to-dos stay visible, even with no events;
   - a sync that failed: the last good snapshot, with "Last synced 10:15,
     the latest sync failed";
   - a week with no meetings, said in words.

@@ -10,7 +10,7 @@ import type { CalendarMeeting, CalendarRoutine, CalendarTask, CalendarView } fro
 
 import { ApiError, getCalendar, scheduleTodo, syncCalendar, changeLocalCalendar } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
-import { card, errorState, requestRailRefresh } from "../../ui/index.js";
+import { errorState, requestRailRefresh } from "../../ui/index.js";
 import { pickerStyles } from "../../ui/when.js";
 import {
   addDays, clock, dayRuns, hourRange, meetingState, onDay, placeDay, routineTitle, sameDay, stateWords,
@@ -191,7 +191,11 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
     const style = element("style", styles + pickerStyles);
     const header = element("header", "", "screen-head calendar-header");
     const titles = element("div");
-    titles.append(element("h1", "Calendar"), element("p", "Your meetings with their prep and notes, the to-dos scheduled for a time, and the routines that run. Local events stay on this machine. Connected calendars are read only.", "intro"));
+    const intro = element("p", "Your meetings with their prep and notes, the to-dos scheduled for a time, and the routines that run. Local events stay on this machine. Connected calendars are read only. ", "intro");
+    const connectLink = element("a", "Connect a calendar here");
+    connectLink.href = "?settings=calendar#settings";
+    intro.append(connectLink);
+    titles.append(element("h1", "Calendar"), intro);
     const actions = element("div", "", "screen-head-actions calendar-actions");
     const syncLine = element("div", "", "calendar-sync");
     const syncState = element("span", "", "mono-meta");
@@ -298,24 +302,6 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
         : `Last synced ${syncedWords(view.synced_at, time)}`;
       newEvent.hidden = view.sources?.local !== true;
       syncButton.hidden = view.sources?.external === false;
-      if (view.synced_at === null && view.sources?.local !== true) {
-        const content = element("div", "", "card-content");
-        content.append(element("p", view.sync_failed
-          ? "The latest sync failed before any meetings were read. Check the calendar connection, then sync again."
-          : "Add your Outlook or ICS calendar as a connection, then sync. Office reads it every 15 minutes and never writes back."));
-        const useLocal = button("Use a local calendar", () => {
-          useLocal.disabled = true;
-          void changeLocalCalendar({action:"sources",local:true,external:false}).then(refresh)
-            .catch(() => { syncState.textContent = "The local calendar could not be enabled. Try again."; })
-            .finally(() => { useLocal.disabled = false; });
-        });
-        const link = element("a", "Connect a calendar");
-        link.href = "#settings";
-        content.append(useLocal, document.createTextNode(" · "), link);
-        const connect = card("Connect your calendar", content, undefined, { label: "Not connected yet", tone: "attention" });
-        connect.classList.add("calendar-connect");
-        parts.push(connect);
-      }
       if (view.sync_failed && view.synced_at !== null) {
         const notice = element("p", `Last synced ${syncedWords(view.synced_at, time)}, the latest sync failed. These are the meetings from the last good sync.`, "calendar-notice");
         notice.dataset.tone = "attention";

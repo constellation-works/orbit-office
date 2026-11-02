@@ -9,7 +9,6 @@ export const styles = `
 .calendar-nav button.calendar-arrow { width:40px; padding:0; font-size:18px; line-height:1; }
 .calendar-notice { margin:0 0 14px; padding:12px 16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-elev); font-size:14px; color:var(--fg-dim); }
 .calendar-notice[data-tone="attention"] { border-color:var(--attention-line); background:var(--attention-bg); color:var(--attention-fg); }
-.calendar-connect { margin-bottom:16px; }
 .calendar-nav { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .calendar-nav-label { font-family:var(--font-mono); font-size:12px; color:var(--fg-mute); margin-right:4px; }
 .calendar-days { display:none; gap:4px; margin-bottom:12px; }
