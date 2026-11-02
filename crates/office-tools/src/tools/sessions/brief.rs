@@ -248,10 +248,16 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let library = &call.ports.library;
     let head = library.head_commit()?;
     let sources = library.source_documents()?;
+    // The brief and handoffs views read v2 SCRs as handoffs; the list view
+    // keeps its legacy shape for the window and reads no SCR files.
+    let scr_files = match view {
+        View::List => Vec::new(),
+        View::Brief | View::Handoffs => library.scribe_files()?,
+    };
     if view != View::Brief {
         let brief = match &query {
             Some(query) => list(&sources, query)?,
-            None => handoffs(&sources, &context)?,
+            None => handoffs(&sources, &scr_files, &context)?,
         };
         if library.head_commit()? != head {
             return Err(library_changed());
@@ -272,7 +278,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
                     && let Some(task) = task.as_deref()
                     && assignment_open(call, task)
                 {
-                    context.project = assignment_project(&sources, task)?;
+                    context.project = assignment_project(&sources, &scr_files, task)?;
                 }
                 context.manual = context.project.is_none();
             }
@@ -317,6 +323,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
     }
     let brief = assemble_for_session(
         &sources,
+        &scr_files,
         &inventories,
         &unavailable,
         &artifacts,

@@ -60,13 +60,18 @@ constellation root) sends no project; it sends the caller's assignment from
 `ORBIT_ACTIVE_TASK_ID` or `ORBIT_TASK_ID` as `task` when Orbit set one. In
 `auto` Office leads with that project's handoff, else the manual output; in
 `manual` the brief carries only the global handoffs and the projects that
-have a thread.
+have a handoff. A project's handoff is its latest SCR (rendered from its
+Summary, Goals, Outcome and Blockers and Next sections), or its legacy
+thread handoff while it has no SCR; the global section leads with the
+latest global SCR.
 
 `/handoff <project>` (in either mode, also mid-session) calls the read-only
 `handoff` MCP tool, which asks `office.session-brief` for
 `{"view":"handoffs","project":"<project>","orchestrator":"claude"}` and
-prints the project's newest handoff and then the open global handoffs.
-`/handoff` alone lists the global handoffs and the projects with a thread.
+prints the project's newest handoff (its latest SCR, else its legacy
+thread handoff) and then the global section (the latest global SCR, then
+the open legacy global handoffs, marked legacy).
+`/handoff` alone lists the global section and the projects with a handoff.
 No model is involved.
 
 After verifying this plugin's SessionStart brief, the operator can retire

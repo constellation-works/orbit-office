@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: session continuity — the deterministic session brief, the append-only decision log, and the daily digest routine"
-last_validated: 2026-11-01
+last_validated: 2026-11-02
 ---
 
 # Spec: Session continuity
@@ -31,10 +31,10 @@ is the handoff ([below](#scribe-v2-the-latest-scr-is-the-handoff)).
 
 ## Scribe v2: the latest SCR is the handoff
 
-Status: designed ([ORB-21083]), not built. The sections below this one
-describe what is built today, and they stay in force until slice [ORB-21119]
-lands. Direction points D7 and D8 are in
-[scribe.md](./scribe.md#spec-scribe-v2).
+Status: built ([ORB-21119]). The brief and `/handoff` read the latest SCR
+per project and global as below. The legacy handoff sections below stay in
+force through the 30-day window, for scopes with no SCR only. Direction
+points D7 and D8 are in [scribe.md](./scribe.md#spec-scribe-v2).
 
 In v2 the handoff is no longer an entry the agent writes into a
 conversation log. It is the latest **SCR** of a scribed session
@@ -45,15 +45,31 @@ Blockers and Next sections are rewritten on every scribe pass.
   for a project is that project's handoff (D7).
 - **Global handoff.** The latest SCR with `scope: global` is the global
   handoff (D7).
-- **The brief merges both** (D7). `office.session-brief` puts the
-  project's handoff first, rendered from its SCR (title, `updated`,
-  Summary, Goals, Outcome and Blockers, Next, with the `(scribe)` marker
-  and the SCR id as its link), then the global handoff. In manual output
-  and with no project, the `projects` section lists the latest SCR per
-  project, newest first, at most 20. `other_sessions` becomes the other
-  SCRs in the same scope updated within seven days of the newest
-  (concurrent sessions in one project fork the `previous` chain, and this
-  section keeps the sibling visible), at most five.
+- **The brief merges both** (D7, built). `office.session-brief` puts the
+  project's handoff first, rendered from its SCR: the item's id is the
+  SCR id, its link is the SCR's Library path, its time is `updated`, and
+  its text is `<title> (<updated>)`, then `Summary:` (keeping the
+  `(scribe)` marker), `Goals:`, `Outcome and Blockers:` and `Next:`, each
+  a `- ` list (`- None recorded.` when empty). The `global` section is
+  the latest global SCR first, then the open legacy global handoffs
+  (during the window) marked `legacy`, newest first, at most five items
+  in all; a legacy global the handoff cites by anchor is always listed,
+  exactly once. In manual output the `projects` section lists the latest
+  SCR per project (its link and time are the SCR's path and `updated`),
+  and a project with no SCR keeps its legacy thread item; newest first,
+  at most 20. `other_sessions` is the other SCRs in the same project
+  updated within seven days of that project's newest SCR (concurrent
+  sessions in one project fork the `previous` chain, and this section
+  keeps the sibling visible), at most five. A scope with no SCR — a
+  project, or global when no global SCR exists — keeps its legacy
+  behaviour below, and a structured legacy entry renders unchanged;
+  `office.capture` still accepts `handoff` entries (text and structured)
+  through the window. With no project and no manual mode, the newest
+  project SCR overall leads, else the legacy single-conversation lead.
+  The assignment fallback (`brief.handoff: auto`) is the project of the
+  newest SCR whose Next cites the task, else the legacy thread's. The
+  `view: list` shape is unchanged by this slice; its SCR feed is
+  [ORB-21120].
 - **No thread key.** One handoff per project replaces ORB-21060's thread
   per project, orchestrator and cited assignment. Two concurrent sessions
   in one project show as the handoff plus an `other_sessions` item. A
@@ -110,8 +126,9 @@ One `conversation` source per orchestrator session ([library.md](./library.md#so
 ### Handoff
 
 > Scribe v2 replaces handoff entries with the latest SCR per project and
-> global ([Scribe v2](#scribe-v2-the-latest-scr-is-the-handoff)); this
-> section stays in force until then and through the 30-day window.
+> global ([Scribe v2](#scribe-v2-the-latest-scr-is-the-handoff), built);
+> this section stays in force through the 30-day window, for scopes with
+> no SCR only. Capture still accepts these entries during the window.
 
 The handoff is the agent's note to its next session: what it was about to
 do, what the user is waiting on it for, and the context the structured state
@@ -249,10 +266,11 @@ project it names.
   the constellation root), it sends no project and, when Orbit set one for
   the session (`ORBIT_ACTIVE_TASK_ID`, else `ORBIT_TASK_ID`), the caller's
   assignment as `task`. Office asks `orbit.task.show` whether that task is
-  open; when it is, the project is the one recorded by the newest
-  conversation whose project handoff cites it (Orbit's task record carries
-  no workspace path, so the assignment's thread is where its workspace is
-  known). Any failure or no such thread falls back to the manual output.
+  open; when it is, the project is the one recorded by the newest SCR
+  whose Next cites it, else the newest conversation whose legacy project
+  handoff cites it (Orbit's task record carries no workspace path, so the
+  Library is where its workspace is known). Any failure or no such SCR or
+  thread falls back to the manual output.
   With neither a project nor a task the brief is the manual output too.
 - **`manual`.** The hook's brief has no `handoff` and no `other_sessions`;
   it carries the `global` section and a `projects` section listing every
@@ -714,32 +732,43 @@ orchestrator skill calls it first in every session. Its output is
 assembled from Orbit and the Library, with no model call, so it is free,
 always current and cannot invent anything:
 
-- **Handoff:** the newest `handoff` entry of the current session's thread
-  (see [Per thread](#handoff)), with its time. Structured fields render in the
-  order above; historical one-line notes keep their text and `legacy:true`.
-  A [scribe handoff](#scribe-handoff) keeps its leading `(scribe)` marker.
-  The current thread is the caller's project, preferring threads whose
-  conversation's `orchestrator` matches the caller's: inside one project,
-  each orchestrator (and each assignment a handoff cites) keeps its own
-  handoff. An older conversation in the project is used when the newest
-  one in the project wrote no handoff. Absent when no conversation in
-  the project wrote one, and in manual output (below). Global-scoped
-  handoffs are never chosen here.
-- **Global:** the open [global handoffs](#scopes), rendered with their
-  `(global …)` marker, newest first, at most five; one the handoff cites is
-  always listed once. Present in every brief while one is open.
+- **Handoff:** the current project's latest SCR rendered as above
+  ([Scribe v2](#scribe-v2-the-latest-scr-is-the-handoff)): the SCR id and
+  path as the item's id and link, `updated` as its time, and the title,
+  Summary (with the `(scribe)` marker), Goals, Outcome and Blockers and
+  Next sections as its text. A project with no SCR keeps the legacy
+  choice: the newest `handoff` entry of the current session's thread
+  (see [Per thread](#handoff)), with its time; structured fields render
+  in the order above, historical one-line notes keep their text and
+  `legacy:true`, and a [scribe handoff](#scribe-handoff) keeps its
+  leading `(scribe)` marker. The legacy thread is the caller's project,
+  preferring threads whose conversation's `orchestrator` matches the
+  caller's. An older conversation in the project is used when the newest
+  one in the project wrote no handoff. Absent when the project has
+  neither an SCR nor a legacy handoff, and in manual output (below).
+  Global-scoped items are never chosen here.
+- **Global:** the latest global SCR first (rendered as above), then the
+  open legacy [global handoffs](#scopes) during the window, rendered
+  with their `(global …)` marker and marked `legacy`, newest first, at
+  most five items in all; one the handoff cites by anchor is always
+  listed once, and `total` counts the global SCR and every open legacy
+  global. Present in every brief while either exists.
 - **Projects:** only in manual output ([Choosing the
   project](#choosing-the-project)): one item per project with a handoff
-  thread (`id` and `text` name it; `link` and `time` are its newest
-  handoff's), newest first, at most 20.
-- **Other sessions:** one item per other thread with a handoff — the same
-  cited handoff item, so its `time` gives its age and its text carries
-  any assignment id it cites — newest first. Bounded: only handoffs no
-  more than seven days older than the newest conversation source in the
-  Library count, and at most five items are returned; `total` counts the
-  threads inside the window and `truncated` reports the cap. Absent when
-  no other recent thread has a handoff, and absent entirely when the
-  brief is requested without a project.
+  (`id` and `text` name it; `link` and `time` are its latest SCR's path
+  and `updated`, or its newest legacy handoff's when it has no SCR),
+  newest first, at most 20.
+- **Other sessions:** when the project has SCRs, one item per other SCR
+  in that project updated within seven days of its newest SCR, newest
+  first, rendered as the handoff is; when it has none, one item per
+  other legacy thread with a handoff — the same cited handoff item, so
+  its `time` gives its age and its text carries any assignment id it
+  cites — newest first, only handoffs no more than seven days older than
+  the newest conversation source in the Library. At most five items are
+  returned either way; `total` counts those inside the window and
+  `truncated` reports the cap. Absent when no other recent session has
+  one, and absent entirely when the brief is requested without a
+  project.
 - **Since:** the time the newest conversation source in the current
   project was appended to (the newest conversation overall when no
   project is given); the waiting/working cut-off is measured from it.
@@ -770,8 +799,9 @@ applies `brief.handoff`), `task` (the caller's assignment id, only with
 `session_start`) and `view` (`brief`, the default, or `handoffs`, which
 returns only Handoff, Global and Projects, reads no Orbit task, and cannot
 be combined with `session_start`). With no `project` and no
-`session_start` the output is the pre-per-thread output plus Global: the
-globally newest conversation's newest project-scoped handoff leads, and
+`session_start` the newest project SCR overall leads; with no project
+SCR the output is the pre-per-thread output plus Global: the globally
+newest conversation's newest project-scoped handoff leads. Either way
 there is no `other_sessions` section. It returns `sections` in the order
 above, with stable `kind` tokens (`handoff`, `global`, `projects`,
 `other_sessions`, `since`, `waiting_on_you`, `agents_working_on`,
@@ -966,7 +996,7 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-21083] — designed scribe v2, where the latest SCR per project and global is the handoff.
 - [ORB-21079] — gave scribe sessions a title on the first pass (v2 derives it from the SCR summary).
 - [ORB-21117] — proposed scribe v2 slice S4.
-- [ORB-21119] — proposed scribe v2 slice S6.
+- [ORB-21119] — built scribe v2 slice S6.
 - [ORB-21120] — proposed scribe v2 slice S7.
 - [ORB-21123] — proposed scribe v2 slice S10.
 - [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.

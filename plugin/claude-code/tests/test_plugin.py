@@ -236,7 +236,7 @@ class PluginBehavior(unittest.TestCase):
         self.assertEqual(self.calls("office.session-brief")[-1]["input"], {"view": "handoffs"})
         self.assertEqual(reply["display"].splitlines(), [
             "Global handoffs:", "- none open",
-            "Projects with a handoff thread (newest first):", "- orbit (last handoff 2026-10-30T10:03:00Z)",
+            "Projects with a handoff (newest first):", "- orbit (last handoff 2026-10-30T10:03:00Z)",
             "Run /handoff <project> to load one."])
 
         ordered = "Objective: Finish the assignment.\nNext: Check the report.\nAuthorization: Daniel authorized checks.\nObservations:\n- Worker idle (observed at 2026-11-01T10:00:00Z); recheck: before dispatch.\nEvidence:\n- orbit://task/ORB-12345"

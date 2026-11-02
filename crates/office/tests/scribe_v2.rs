@@ -745,3 +745,138 @@ fn v1_scr_files_stay_readable_beside_v2_ones() {
     );
     assert_eq!(again["scr"]["exists"], true, "{again}");
 }
+
+#[cfg(unix)]
+impl Fixture {
+    /// `office.session-brief` through the binary, with Orbit stubbed to an
+    /// empty task inventory (the callback channel office app.rs composes).
+    fn brief(&self, input: Value) -> Value {
+        use std::os::unix::fs::PermissionsExt;
+
+        let stub = self.root.path().join("orbit-stub");
+        if !stub.exists() {
+            std::fs::write(
+                &stub,
+                "#!/usr/bin/env python3\nimport json, sys\nargs = sys.argv[1:]\nassert args[:2] == ['tool', 'run']\nrequest = json.loads(args[-1])\nif args[2] == 'orbit.task.list':\n    result = {'tasks': [], 'total': 0, 'truncated': False}\nelif args[2] == 'orbit.task.show':\n    result = {'id': request['id'], 'status': 'in-progress'}\nelse:\n    raise AssertionError(args)\nprint(json.dumps(result))\n",
+            )
+            .unwrap();
+            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let mut child = Command::new(env!("CARGO_BIN_EXE_office"))
+            .arg("orbit-tool")
+            .env_clear()
+            .env("HOME", self.root.path().join("home"))
+            .env("PATH", std::env::var("PATH").unwrap())
+            .env("TZ", "UTC")
+            .env("ORBIT_BIN", &stub)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let request = json!({"schema_version":1,"tool":"office.session-brief","input":input,
+            "context":{"workspace_root":self.workspace(),
+                "plugin_state":self.root.path().join("state"),
+                "config":{"library_dir":"library"}}});
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(request.to_string().as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        response["output"].clone()
+    }
+}
+
+/// Scribe v2 S6: through the built binary, the brief's handoff is the
+/// project's latest SCR, the global SCR leads `global`, and a concurrent
+/// SCR in the project appears in `other_sessions`.
+#[cfg(unix)]
+#[test]
+fn session_brief_reads_the_latest_scr_per_project_and_global() {
+    let fixture = Fixture::new();
+    fixture.pending(SESSION, 9, &[("user", "#decision ship the brief")]);
+    fixture.append(
+        SESSION,
+        "m-0001",
+        json!([{"msg":"m-0001","line":1,"tag":"decisions","decision":decision("ship the brief","human")}]),
+    );
+    fixture.pending(OTHER, 11, &[("user", "#decision keep going")]);
+    fixture.append(
+        OTHER,
+        "m-0001",
+        json!([{"msg":"m-0001","line":1,"tag":"decisions","decision":decision("keep going","human")}]),
+    );
+    let global = "99aa00bb-0000-4000-8000-000000000000";
+    let transcript = fixture.transcript(
+        global,
+        12,
+        &[("user", "#decision @global keep one card per scope")],
+    );
+    fixture.ok(
+        "office.scribe-pending",
+        json!({"session_id":global,"transcript":transcript,"provider":"claude-code",
+            "cwd":CWD,"format":"v2","scope":"global"}),
+    );
+    fixture.append(
+        global,
+        "m-0001",
+        json!([{"msg":"m-0001","line":1,"tag":"decisions","decision":decision("keep one card per scope","human")}]),
+    );
+
+    let section = |brief: &Value, kind: &str| {
+        brief["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == kind)
+            .cloned()
+            .unwrap_or_else(|| panic!("no {kind} section in {brief}"))
+    };
+    for (full_brief, input) in [
+        (
+            true,
+            json!({"project":"orbit-office","orchestrator":"claude"}),
+        ),
+        (
+            false,
+            json!({"view":"handoffs","project":"orbit-office","orchestrator":"claude"}),
+        ),
+    ] {
+        let brief = fixture.brief(input);
+        let handoff = &section(&brief, "handoff")["items"][0];
+        assert_eq!(handoff["id"], "SCR-20261101-1100-77ab12", "{brief}");
+        assert_eq!(
+            handoff["link"],
+            "sources/conversation/2026/11/SCR-20261101-1100-77ab12.md"
+        );
+        assert_eq!(handoff["entry_kind"], "handoff");
+        let text = handoff["text"].as_str().unwrap();
+        assert!(text.contains("(scribe) Redesigned the scribe"), "{text}");
+        assert!(text.contains("Next:"), "{text}");
+        assert!(text.contains("ORB-12345"), "{text}");
+        let global_section = section(&brief, "global");
+        assert_eq!(
+            global_section["items"][0]["id"], "SCR-20261101-1200-99aa00",
+            "{brief}"
+        );
+        if full_brief {
+            let others = section(&brief, "other_sessions");
+            let ids: Vec<&str> = others["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item["id"].as_str().unwrap())
+                .collect();
+            assert_eq!(ids, ["SCR-20261101-0900-0a3104"], "{brief}");
+        }
+    }
+}

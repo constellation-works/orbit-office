@@ -133,7 +133,7 @@ def render_handoff(project: str | None, brief: dict) -> str:
     text.append("Global handoffs:")
     text.extend(globals_ or ["- none open"])
     if project is None:
-        text.append("Projects with a handoff thread (newest first):")
+        text.append("Projects with a handoff (newest first):")
         text.extend(lines("projects") or ["- none yet"])
         text.append("Run /handoff <project> to load one.")
     return "\n".join(text)

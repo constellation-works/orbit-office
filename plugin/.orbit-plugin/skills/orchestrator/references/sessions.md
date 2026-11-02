@@ -34,10 +34,10 @@ The response is `sections`, in this order. Each section has `kind`, `items`,
 
 | `kind` | Present | What it holds | What to do |
 |---|---|---|---|
-| `handoff` | only if your thread wrote one | Your thread's newest project-scoped `handoff` entry, rendered in structured field order (legacy text is marked), with time (your project, preferring your orchestrator; a thread is the first task id its handoff cites, else its conversation's project plus orchestrator) | Resume from it (below) |
-| `global` | only while a global handoff is open | Open `scope: global` handoffs from any project (text starts `(global)` or `(global until <time>)`), newest first, at most five; one your handoff cites is always listed, once | Apply them alongside your own handoff |
-| `projects` | only in manual output (no project chosen) | One item per project with a handoff thread, newest first: `id`/`text` name the project, `time` is its newest handoff's | Ask which project, or run `/handoff <project>` |
-| `other_sessions` | only with a project, when another recent thread wrote one | One cited handoff item per other thread, newest first, within seven days and at most five | Note in one line; do not resume from another thread's handoff |
+| `handoff` | only if your project has one | Your project's latest SCR, rendered as its title and `updated`, then Summary (`(scribe)` marker), Goals, Outcome and Blockers and Next; the item id is the SCR id and its link the SCR path. A project with no SCR keeps its thread's newest project-scoped `handoff` entry, rendered in structured field order (legacy text is marked), with time (your project, preferring your orchestrator; a thread is the first task id its handoff cites, else its conversation's project plus orchestrator) | Resume from it (below) |
+| `global` | only while a global handoff exists | The latest global SCR first, then open legacy `scope: global` handoffs from any project (text starts `(global)` or `(global until <time>)`, marked legacy after the SCR), newest first, at most five in all; one your handoff cites is always listed, once | Apply them alongside your own handoff |
+| `projects` | only in manual output (no project chosen) | One item per project with a handoff, newest first: `id`/`text` name the project, `link`/`time` are its latest SCR's (or its newest legacy handoff's, when it has no SCR) | Ask which project, or run `/handoff <project>` |
+| `other_sessions` | only with a project, when another recent session has one | For a project with SCRs, its other SCRs updated within seven days of its newest; else one cited handoff item per other legacy thread; newest first, at most five | Note in one line; do not resume from another session's handoff |
 | `since` | always (empty with no previous session) | The newest conversation source in your project: id, path, title, last entry time | Note the time; "since" means since then |
 | `waiting_on_you` | always | Proposals awaiting a decision, agent to-dos in `review`, open `owner:you` to-dos; oldest first | Open with these |
 | `agents_working_on` | always | `owner:agent` to-dos in progress, plus those that finished or failed since then | Report finished and failed work briefly |
@@ -52,8 +52,9 @@ The response is `sections`, in this order. Each section has `kind`, `items`,
 `.office/config.yaml`, you never set it. It governs only the SessionStart
 brief. In `auto` the hook's working directory names the project; started in
 a parent of several repositories (the constellation root), the project is
-the one your open assignment's thread was recorded in, and with no such
-assignment the brief is the manual output. In `manual` the hook's brief has
+the one of the newest SCR whose Next cites your open assignment (else the
+one its legacy thread was recorded in), and with no such assignment the
+brief is the manual output. In `manual` the hook's brief has
 no `handoff` and no `other_sessions`, only `global` and `projects`. In either
 mode, `/handoff <project>` (Claude Code) or `office.session-brief` with
 `{"view":"handoffs","project":"<project>"}` loads a project's handoff merged
@@ -103,7 +104,11 @@ scrubs credentials, treats unclear statements as open, and records the
 session's `orchestrator`, exact `model` and `session_id` separately from
 `captured_by: transcript-extractor`. Private evidence stays off the crew.
 
-Keep the rolling handoff yourself. With the host integration installed, when
+In a scribed (v2) session the SCR is the handoff: its rewritten sections
+are refreshed every scribe pass, and the latest SCR per project and global
+is what the brief and `/handoff` show. In an unscribed session, during the
+window, keep the rolling handoff yourself as below; the brief reads it
+only while that scope has no SCR. With the host integration installed, when
 the first handoff is needed, open the session source from its staged transcript
 and keep the returned id:
 

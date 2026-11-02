@@ -3,6 +3,7 @@
 
 pub mod handoff;
 pub mod listing;
+pub mod scr;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -927,102 +928,172 @@ fn scoped_project(context: &SessionContext) -> Option<String> {
         .and_then(|project| project_key(Some(project)))
 }
 
-/// The handoff sections, in contract order: `handoff` (the project thread's
-/// newest handoff), `global` (open global handoffs, newest first, capped at
-/// [`GLOBAL_HANDOFFS_LIMIT`]; a global the project handoff cites is always
-/// listed, exactly once), `projects` (manual mode only) and, when
-/// `include_others` and a project is given, `other_sessions`.
+/// The lead handoff: a scope's latest SCR, else (the 30-day window) its
+/// legacy thread handoff.
+enum Lead<'a> {
+    Scr(&'a scr::ScrHandoff),
+    Legacy(&'a Conversation, &'a Entry),
+}
+
+impl Lead<'_> {
+    fn item(&self) -> Item {
+        match self {
+            Self::Scr(scr) => scr.item(),
+            Self::Legacy(conversation, entry) => conversation.item(entry),
+        }
+    }
+    /// Whether the lead cites the legacy global `global` by anchor.
+    fn cites_global(&self, global: &GlobalHandoff<'_>) -> bool {
+        match self {
+            Self::Scr(scr) => scr.cites_anchor(&format!(
+                "{}#L{}",
+                global.conversation.id, global.entry.line
+            )),
+            Self::Legacy(conversation, entry) => conversation.entry_cites(entry, global),
+        }
+    }
+}
+
+/// The handoff sections, in contract order: `handoff` (the project's latest
+/// SCR; a project with no SCR keeps its legacy thread handoff), `global`
+/// (the latest global SCR first, then open legacy global handoffs marked
+/// legacy, newest first, capped at [`GLOBAL_HANDOFFS_LIMIT`] in all; a
+/// legacy global the lead cites is always listed, exactly once),
+/// `projects` (manual mode only) and, when `include_others` and a project
+/// is given, `other_sessions` (the project's other SCRs within seven days
+/// of its newest, or its legacy other threads when it has no SCR).
 fn handoff_sections(
     conversations: &[Conversation],
+    scrs: &[scr::ScrHandoff],
     context: &SessionContext,
     include_others: bool,
 ) -> Result<Vec<Section>> {
     let globals = open_globals(conversations, context.now.as_deref())?;
-    let mut lead: Option<(&Conversation, &Entry)> = None;
+    let global_scr = scr::latest_global(scrs);
+    let mut lead: Option<Lead<'_>> = None;
     let mut others_section = None;
     if let Some(wanted) = scoped_project(context) {
-        let threads = thread_handoffs(conversations)?;
-        let in_project: Vec<&ThreadHandoff<'_>> = threads
-            .iter()
-            .filter(|thread| {
-                project_key(thread.conversation.project.as_deref()).as_ref() == Some(&wanted)
-            })
-            .collect();
-        let own: Vec<&ThreadHandoff<'_>> = match context.orchestrator.as_deref() {
-            Some(orchestrator) => in_project
-                .iter()
-                .copied()
-                .filter(|thread| thread.conversation.orchestrator.as_deref() == Some(orchestrator))
-                .collect(),
-            None => Vec::new(),
-        };
-        let pool: &[&ThreadHandoff<'_>] = if own.is_empty() { &in_project } else { &own };
-        let lead_thread = pool.iter().copied().max_by(|a, b| {
-            (a.at.clone(), &a.conversation.id).cmp(&(b.at.clone(), &b.conversation.id))
-        });
-        lead = lead_thread.map(|thread| (thread.conversation, thread.entry));
-        // The window is measured from the newest conversation overall, so a
-        // newer thread in another project is never excluded as "future".
-        if include_others && let Some(reference) = conversations.first() {
-            let (reference_seconds, _) = time_key(&reference.time)?;
-            let mut others: Vec<&ThreadHandoff<'_>> = threads
+        let project_scrs = scr::in_project(scrs, &wanted);
+        if let Some((newest, rest)) = project_scrs.split_first() {
+            lead = Some(Lead::Scr(newest));
+            if include_others {
+                let others: Vec<&scr::ScrHandoff> = rest
+                    .iter()
+                    .copied()
+                    .filter(|other| {
+                        other.at.0 >= newest.at.0 - OTHER_SESSIONS_WINDOW_SECONDS
+                            && other.at.0 <= newest.at.0
+                    })
+                    .collect();
+                if !others.is_empty() {
+                    let total = others.len();
+                    let mut section = Section::new(
+                        "other_sessions",
+                        others
+                            .iter()
+                            .take(OTHER_SESSIONS_LIMIT)
+                            .map(|other| other.item())
+                            .collect(),
+                    );
+                    section.total = total;
+                    section.truncated = total > section.items.len();
+                    others_section = Some(section);
+                }
+            }
+        } else {
+            let threads = thread_handoffs(conversations)?;
+            let in_project: Vec<&ThreadHandoff<'_>> = threads
                 .iter()
                 .filter(|thread| {
-                    Some(thread.key.as_str()) != lead_thread.map(|lead| lead.key.as_str())
-                })
-                .filter(|thread| {
-                    thread.at.0 >= reference_seconds - OTHER_SESSIONS_WINDOW_SECONDS
-                        && thread.at.0 <= reference_seconds
+                    project_key(thread.conversation.project.as_deref()).as_ref() == Some(&wanted)
                 })
                 .collect();
-            others.sort_by(|a, b| {
-                (b.at.clone(), &b.conversation.id).cmp(&(a.at.clone(), &a.conversation.id))
+            let own: Vec<&ThreadHandoff<'_>> = match context.orchestrator.as_deref() {
+                Some(orchestrator) => in_project
+                    .iter()
+                    .copied()
+                    .filter(|thread| {
+                        thread.conversation.orchestrator.as_deref() == Some(orchestrator)
+                    })
+                    .collect(),
+                None => Vec::new(),
+            };
+            let pool: &[&ThreadHandoff<'_>] = if own.is_empty() { &in_project } else { &own };
+            let lead_thread = pool.iter().copied().max_by(|a, b| {
+                (a.at.clone(), &a.conversation.id).cmp(&(b.at.clone(), &b.conversation.id))
             });
-            if !others.is_empty() {
-                let total = others.len();
-                let mut section = Section::new(
-                    "other_sessions",
-                    others
-                        .iter()
-                        .take(OTHER_SESSIONS_LIMIT)
-                        .map(|thread| thread.conversation.item(thread.entry))
-                        .collect(),
-                );
-                section.total = total;
-                section.truncated = total > section.items.len();
-                others_section = Some(section);
+            lead = lead_thread.map(|thread| Lead::Legacy(thread.conversation, thread.entry));
+            // The window is measured from the newest conversation overall, so a
+            // newer thread in another project is never excluded as "future".
+            if include_others && let Some(reference) = conversations.first() {
+                let (reference_seconds, _) = time_key(&reference.time)?;
+                let mut others: Vec<&ThreadHandoff<'_>> = threads
+                    .iter()
+                    .filter(|thread| {
+                        Some(thread.key.as_str()) != lead_thread.map(|lead| lead.key.as_str())
+                    })
+                    .filter(|thread| {
+                        thread.at.0 >= reference_seconds - OTHER_SESSIONS_WINDOW_SECONDS
+                            && thread.at.0 <= reference_seconds
+                    })
+                    .collect();
+                others.sort_by(|a, b| {
+                    (b.at.clone(), &b.conversation.id).cmp(&(a.at.clone(), &a.conversation.id))
+                });
+                if !others.is_empty() {
+                    let total = others.len();
+                    let mut section = Section::new(
+                        "other_sessions",
+                        others
+                            .iter()
+                            .take(OTHER_SESSIONS_LIMIT)
+                            .map(|thread| thread.conversation.item(thread.entry))
+                            .collect(),
+                    );
+                    section.total = total;
+                    section.truncated = total > section.items.len();
+                    others_section = Some(section);
+                }
             }
         }
-    } else if !context.manual
-        && let Some(c) = conversations.first()
-        && let Some(entry) = c.project_handoff()
-    {
-        lead = Some((c, entry));
+    } else if !context.manual {
+        // No project named: the newest project SCR overall, else the
+        // legacy newest conversation's handoff.
+        if let Some(newest) = scrs.iter().find(|scr| scr.project().is_some()) {
+            lead = Some(Lead::Scr(newest));
+        } else if let Some(c) = conversations.first()
+            && let Some(entry) = c.project_handoff()
+        {
+            lead = Some(Lead::Legacy(c, entry));
+        }
     }
     let mut sections = Vec::new();
-    if let Some((conversation, entry)) = lead {
-        sections.push(Section::new("handoff", vec![conversation.item(entry)]));
+    if let Some(lead_item) = &lead {
+        sections.push(Section::new("handoff", vec![lead_item.item()]));
     }
-    if !globals.is_empty() {
-        let total = globals.len();
-        let items: Vec<Item> = globals
-            .iter()
-            .enumerate()
-            .filter(|(index, global)| {
-                *index < GLOBAL_HANDOFFS_LIMIT
-                    || lead.is_some_and(|(conversation, entry)| {
-                        conversation.entry_cites(entry, global)
-                    })
-            })
-            .map(|(_, global)| global.conversation.item(global.entry))
-            .collect();
+    let global_total = usize::from(global_scr.is_some()) + globals.len();
+    if global_total > 0 {
+        let mut items: Vec<Item> = global_scr.map(|scr| scr.item()).into_iter().collect();
+        for (index, global) in globals.iter().enumerate() {
+            let within_cap = index + usize::from(global_scr.is_some()) < GLOBAL_HANDOFFS_LIMIT;
+            if !within_cap && !lead.as_ref().is_some_and(|lead| lead.cites_global(global)) {
+                continue;
+            }
+            let mut item = global.conversation.item(global.entry);
+            // After the global SCR, window legacy globals are marked; their
+            // rendered text (structured included) is unchanged.
+            if global_scr.is_some() {
+                item.legacy = Some(true);
+            }
+            items.push(item);
+        }
         let mut section = Section::new("global", items);
-        section.total = total;
-        section.truncated = total > section.items.len();
+        section.total = global_total;
+        section.truncated = global_total > section.items.len();
         sections.push(section);
     }
     if context.manual {
-        let projects = project_threads(conversations)?;
+        let projects = project_threads(conversations, scrs)?;
         if !projects.is_empty() {
             let total = projects.len();
             let mut section = Section::new(
@@ -1038,33 +1109,18 @@ fn handoff_sections(
     Ok(sections)
 }
 
-/// One item per project with a project-scoped handoff thread, newest first:
-/// `id` and `text` name the project; `link` and `time` are its newest
-/// handoff's. Conversations that record no project are not listed.
-fn project_threads(conversations: &[Conversation]) -> Result<Vec<Item>> {
-    let mut newest: BTreeMap<String, &ThreadHandoff<'_>> = BTreeMap::new();
-    let threads = thread_handoffs(conversations)?;
-    for thread in &threads {
-        let Some(project) = project_key(thread.conversation.project.as_deref()) else {
-            continue;
-        };
-        let replace = newest.get(&project).is_none_or(|existing| {
-            (existing.at.clone(), &existing.conversation.id)
-                < (thread.at.clone(), &thread.conversation.id)
-        });
-        if replace {
-            newest.insert(project, thread);
-        }
-    }
-    let mut rows: Vec<(String, &ThreadHandoff<'_>)> = newest.into_iter().collect();
-    rows.sort_by(|(x, a), (y, b)| (b.at.clone(), y).cmp(&(a.at.clone(), x)));
-    Ok(rows
-        .into_iter()
-        .map(|(project, thread)| Item {
-            id: project.clone(),
-            link: format!("{}#L{}", thread.conversation.path, thread.entry.line),
-            text: project,
-            time: Some(thread.entry.time.clone()),
+/// One item per project with a handoff, newest first: the project's latest
+/// SCR, or (the window) its newest legacy thread handoff when it has no
+/// SCR. `id` and `text` name the project; `link` and `time` are its
+/// handoff's (the SCR path and its `updated`). Conversations that record
+/// no project are not listed.
+fn project_threads(conversations: &[Conversation], scrs: &[scr::ScrHandoff]) -> Result<Vec<Item>> {
+    fn project_item(project: &str, link: String, time: String) -> Item {
+        Item {
+            id: project.to_string(),
+            link,
+            text: project.to_string(),
+            time: Some(time),
             entry_kind: None,
             status: None,
             template: None,
@@ -1074,15 +1130,66 @@ fn project_threads(conversations: &[Conversation]) -> Result<Vec<Item>> {
             structured_handoff: None,
             legacy: None,
             listing: None,
-        })
-        .collect())
+        }
+    }
+    let mut rows: Vec<((i64, String), String, Item)> = Vec::new();
+    let scr_projects = scr::latest_per_project(scrs);
+    for (project, scr) in &scr_projects {
+        rows.push((
+            scr.at.clone(),
+            project.clone(),
+            project_item(project, scr.scr.path.clone(), scr.scr.front.updated.clone()),
+        ));
+    }
+    let mut newest: BTreeMap<String, &ThreadHandoff<'_>> = BTreeMap::new();
+    let threads = thread_handoffs(conversations)?;
+    for thread in &threads {
+        let Some(project) = project_key(thread.conversation.project.as_deref()) else {
+            continue;
+        };
+        if scr_projects.contains_key(&project) {
+            continue;
+        }
+        let replace = newest.get(&project).is_none_or(|existing| {
+            (existing.at.clone(), &existing.conversation.id)
+                < (thread.at.clone(), &thread.conversation.id)
+        });
+        if replace {
+            newest.insert(project, thread);
+        }
+    }
+    for (project, thread) in newest {
+        rows.push((
+            thread.at.clone(),
+            project.clone(),
+            project_item(
+                &project,
+                format!("{}#L{}", thread.conversation.path, thread.entry.line),
+                thread.entry.time.clone(),
+            ),
+        ));
+    }
+    rows.sort_by(|(a_at, x, _), (b_at, y, _)| (b_at.clone(), y).cmp(&(a_at.clone(), x)));
+    Ok(rows.into_iter().map(|(_, _, item)| item).collect())
 }
 
-/// The project of an assignment's thread: the normalized project of the
-/// newest conversation that recorded a project handoff citing `task` (the
-/// thread key of [`thread_handoffs`]). Orbit's task record carries no
-/// workspace path, so the Library's thread is where the workspace is known.
-pub fn assignment_project(sources: &[LibraryText], task: &str) -> Result<Option<String>> {
+/// The project of an assignment: the project of the newest SCR whose Next
+/// cites `task`, else (the window) the normalized project of the newest
+/// conversation that recorded a project handoff citing it (the thread key
+/// of [`thread_handoffs`]). Orbit's task record carries no workspace path,
+/// so the Library is where the workspace is known.
+pub fn assignment_project(
+    sources: &[LibraryText],
+    scr_files: &[LibraryText],
+    task: &str,
+) -> Result<Option<String>> {
+    for scr in &scr::parse(scr_files)? {
+        if scr.next_cites(task)
+            && let Some(project) = scr.project()
+        {
+            return Ok(Some(project));
+        }
+    }
     let conversations = conversations(sources)?;
     for conversation in &conversations {
         if conversation.project.is_none() {
@@ -1100,15 +1207,21 @@ pub fn assignment_project(sources: &[LibraryText], task: &str) -> Result<Option<
     Ok(None)
 }
 
-/// The handoff view behind `/handoff`: with a project, its thread's
-/// handoff then the open globals; without one, the open globals and the
-/// projects that have a thread. No task or digest reads.
-pub fn handoffs(sources: &[LibraryText], context: &SessionContext) -> Result<Brief> {
+/// The handoff view behind `/handoff`: with a project, its latest SCR
+/// (else its legacy thread handoff) then the global section; without one,
+/// the global section and the projects that have a handoff. No task or
+/// digest reads.
+pub fn handoffs(
+    sources: &[LibraryText],
+    scr_files: &[LibraryText],
+    context: &SessionContext,
+) -> Result<Brief> {
     let conversations = conversations(sources)?;
+    let scrs = scr::parse(scr_files)?;
     let mut context = context.clone();
     context.manual = context.manual || scoped_project(&context).is_none();
     Ok(Brief {
-        sections: handoff_sections(&conversations, &context, false)?,
+        sections: handoff_sections(&conversations, &scrs, &context, false)?,
     })
 }
 
@@ -1127,6 +1240,7 @@ pub fn assemble_with_workspaces(
 ) -> Result<Brief> {
     assemble_for_session(
         sources,
+        &[],
         inventories,
         unavailable,
         artifacts,
@@ -1137,18 +1251,20 @@ pub fn assemble_with_workspaces(
     )
 }
 
-/// Assemble a brief for the current session's thread. With a project, the
-/// `handoff` section is the newest project-scoped handoff of the current
-/// session's thread (its project, preferring its orchestrator), `global`
-/// lists the open global handoffs, `other_sessions` lists the newest
-/// handoff of every other recent thread, and `since` is measured from the
-/// newest conversation in that project. Without a project the legacy
-/// single-conversation behaviour is kept, plus `global`; in manual mode
-/// there is no `handoff` or `other_sessions` and `projects` lists the
-/// projects with a thread.
+/// Assemble a brief for the current session. With a project, the `handoff`
+/// section is that project's latest SCR (a project with no SCR keeps its
+/// legacy thread handoff: its project, preferring its orchestrator),
+/// `global` lists the latest global SCR then the open legacy globals,
+/// `other_sessions` lists the project's other recent SCRs (or its legacy
+/// other threads), and `since` is measured from the newest conversation
+/// in that project. Without a project the newest project SCR leads, else
+/// the legacy single-conversation behaviour is kept, plus `global`; in
+/// manual mode there is no `handoff` or `other_sessions` and `projects`
+/// lists the projects with a handoff.
 #[allow(clippy::too_many_arguments)]
 pub fn assemble_for_session(
     sources: &[LibraryText],
+    scr_files: &[LibraryText],
     inventories: &[TaskInventory<'_>],
     unavailable: &[String],
     artifacts: &[LibraryText],
@@ -1158,6 +1274,7 @@ pub fn assemble_for_session(
     context: &SessionContext,
 ) -> Result<Brief> {
     let conversations = conversations(sources)?;
+    let scrs = scr::parse(scr_files)?;
     let scoped_project = scoped_project(context);
     let last = match &scoped_project {
         Some(wanted) => conversations
@@ -1165,7 +1282,7 @@ pub fn assemble_for_session(
             .find(|c| project_key(c.project.as_deref()).as_ref() == Some(wanted)),
         None => conversations.first(),
     };
-    let mut sections = handoff_sections(&conversations, context, true)?;
+    let mut sections = handoff_sections(&conversations, &scrs, context, true)?;
     sections.push(Section::new(
         "since",
         last.map(Conversation::reference).into_iter().collect(),
