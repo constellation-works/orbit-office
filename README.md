@@ -14,11 +14,9 @@
   <a href="https://github.com/constellation-works/orbit"><img src="https://img.shields.io/badge/built%20on-Orbit-6E9FFF" alt="Built on Orbit" /></a>
 </p>
 
-<!-- Demo GIF slot: uncomment once docs/assets/office-demo.gif exists, and describe what it shows in the alt text.
 <p align="center">
-  <img src="docs/assets/office-demo.gif" alt="" width="880" />
+  <img src="docs/assets/office-demo.gif" alt="Animated tour of the real Orbit Office app on a synthetic workspace, captured November 2, 2026: a meeting goes in on the Source page and comes back as a timestamped transcript; Muse Spark pulls out four decisions, each linked to the second it was said, and splits the to-dos into yours and the agents'; a contradiction between rotating ingest keys monthly and the earlier weekly decision waits under Needs you with both sources cited; Muse Code crews pick up the agent to-dos as Orbit tasks and four pull requests merge on the lantern repository with tests green; the Today morning digest reads 4 decided, 4 shipped, 4 need you, every line cited; and Settings, Models shows every job running on a Meta model." width="880" />
 </p>
--->
 
 Orbit Office turns your meetings into work that gets done. A local web app and an
 [Orbit](https://github.com/constellation-works/orbit) plugin transcribe a recording,
