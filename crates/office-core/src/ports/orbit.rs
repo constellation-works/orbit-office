@@ -4,8 +4,8 @@ use serde_json::{Map, Value};
 
 use crate::{Error, Result};
 
-/// Exactly the task, artifact, friction, search, auto-task and gateway read callbacks used by
-/// Office.
+/// Exactly the task, artifact, friction, search, auto-task, decision-request and gateway read
+/// callbacks used by Office.
 ///
 /// Inputs are forwarded intact to Orbit's versioned tool schemas, including
 /// unknown keys so Orbit can refuse them. Identity and credentials are supplied
@@ -62,6 +62,15 @@ pub trait Orbit {
     }
     /// List auto-task definitions.
     fn auto_task_list(&self, _input: &Map<String, Value>) -> Result<Value> {
+        Err(Error::OrbitUnavailable)
+    }
+    /// List human decision requests (open, or every state with `include_closed`),
+    /// each with its `resolution` when answered. Read-only.
+    fn decision_list(&self, _input: &Map<String, Value>) -> Result<Value> {
+        Err(Error::OrbitUnavailable)
+    }
+    /// Show one human decision request with its resolution. Read-only.
+    fn decision_show(&self, _input: &Map<String, Value>) -> Result<Value> {
         Err(Error::OrbitUnavailable)
     }
 }

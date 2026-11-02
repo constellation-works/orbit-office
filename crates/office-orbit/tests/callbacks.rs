@@ -91,7 +91,7 @@ sys.exit(response.get('exit', 0))
 
 type Method = fn(&dyn Orbit, &Map<String, Value>) -> office_core::Result<Value>;
 
-fn callbacks() -> [(&'static str, Method, Value, Value); 13] {
+fn callbacks() -> [(&'static str, Method, Value, Value); 15] {
     [
         (
             "orbit.task.add",
@@ -160,6 +160,18 @@ fn callbacks() -> [(&'static str, Method, Value, Value); 13] {
             |p, i| p.auto_task_list(i),
             json!({"view":"bounded","limit":1,"unknown_future_key":null}),
             json!({"auto_tasks":[{"name":"weekly-report"}],"total":2,"truncated":true}),
+        ),
+        (
+            "orbit.decision.list",
+            |p, i| p.decision_list(i),
+            json!({"include_closed":true,"workspace":"ws_example"}),
+            json!({"requests":[{"id":"dr-1","state":"answered","resolution":{"answer_id":"1"}}],"count":1}),
+        ),
+        (
+            "orbit.decision.show",
+            |p, i| p.decision_show(i),
+            json!({"id":"dr-1"}),
+            json!({"id":"dr-1","state":"answered"}),
         ),
         (
             "gateway.connection-list",

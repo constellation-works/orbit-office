@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.decision-ingest request",
+  "description": "Append answered Orbit decision requests in the followed workspaces to the decision ledgers (specs/decision-precedents.md, Ingesting Orbit decisions). Idempotent by request id and answer time.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "since": { "type": "string", "description": "RFC 3339 time: ignore answers applied before it, and closed unanswered requests raised before it. Default: every request Orbit lists." },
+    "dry_run": { "type": "boolean", "description": "Report what would be appended without writing. Default false." }
+  }
+}

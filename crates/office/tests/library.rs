@@ -33,6 +33,9 @@ mod context;
 #[path = "library/decisions.rs"]
 mod decisions;
 
+#[path = "library/decision_ingest.rs"]
+mod decision_ingest;
+
 #[path = "library/bootstrap.rs"]
 mod bootstrap;
 

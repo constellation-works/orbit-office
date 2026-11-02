@@ -1,3 +1,4 @@
+mod decision_ingest;
 mod decisions;
 mod endpoint;
 mod knowledge;

@@ -3203,6 +3203,82 @@ rather start clean".
   `v2_results` (all additive). The root AGENTS.md change is [ORB-21239]
   in ws_constellation.
 
+## Decision precedents P2: ingestion reads `include_closed`, keys on request and answer time, and writes one batch
+
+**Recorded:** 2026-11-02 · [ORB-21217]
+**Code anchors:** `crates/office-core/src/domain/source/decision_ingest.rs`
+(`plan`), `crates/office-tools/src/tools/sessions/decision_ingest.rs`,
+`crates/office-store/src/repository/library/decisions.rs`
+(`write_decision_ledgers`, journal version 12)
+
+### Context
+
+The spec ([decision-precedents.md](./specs/decision-precedents.md#ingesting-orbit-decisions))
+assumed ingestion needed a new Orbit read (`state: answered`,
+`answered_since`). At build time Orbit's `orbit.decision.list` already
+returns answered, superseded and expired requests with `include_closed`,
+each answered one carrying its `resolution` (`answer_id`, `answered_by`,
+`provenance`, `note`, `answered_at`). Orbit's model actor, its citation and
+the `model_answer_review` gate are still proposed there (human-decision-channel
+§11.2–11.3), so their shapes are not yet fixed.
+
+### Decision
+
+- **Read.** `orbit.decision.list` with `include_closed: true`, once for the
+  Office workspace and once per `brief.task_workspaces` selector
+  (`workspace`); `since` is applied by Office. `orbit.decision.show` fills
+  a resolution only when a listed answered request omits it. The Office
+  workspace failing refuses the run; a followed one failing is reported
+  in `unavailable`.
+- **Idempotence key: request id and answer time.** A request is
+  `already_ingested` when an entry records the same request id and the
+  same `decided_at`. Orbit's veto re-opens the original request, so a later
+  human answer to the same id is a new answer: it is appended with
+  `reverses` naming the newest earlier entry for that request, which is the
+  spec's re-answer row. A request id alone would have skipped it.
+- **Review gate binding.** A `model_answer_review` request names the model
+  answer it reviews in `binding.request_id` (else a top-level `review_of`),
+  as §11.3 says it is "bound to the original request id". With no such
+  entry yet ingested it is skipped `review_target_missing` and picked up on
+  a later run. Answers are processed oldest first, so a model answer and
+  its review in one run link.
+- **Scope.** A request's workspace is its category's leading
+  `<workspace_id>/` (Orbit §11.1), else the followed selector's last
+  `ws_` component. `ws_<name>` goes to `project:<name>` when `<name>` is a
+  ledger slug; everything else, including the Office workspace's requests
+  with no category, goes to `global`.
+- **Quote.** The ledger requires `chosen` to be a verbatim span of
+  `quote`. The resolution note is the quote when it contains the chosen
+  label; otherwise the quote is the label, a newline, then the note. With
+  no note it is the label.
+- **Question.** The request's `question` when present, else its `summary`,
+  else a fixed wording per gate.
+- **One commit.** The planner computes every new line against the ledgers
+  as read; the Library port `write_decision_ledgers` writes all changed
+  ledgers compare-and-set (`decision_ledger_changed`, nothing written) and
+  commits once through a version-12 `decision_ledgers` journal. An entry
+  that fails ledger validation is reported `invalid` and skipped; the rest
+  of the run still appends.
+- **Routine.** `office-decision-ingest` is hourly at minute 20, seeded
+  disabled, targeting a one-step job with `max_active_runs: 1`. Orbit
+  routines carry no `dedupe` key (only auto-tasks do), so the spec's
+  `dedupe: skip_if_open` is met by the job's single active run.
+
+### Alternatives rejected
+
+- **Wait for a dedicated answered-request read.** The existing read
+  already returns what ingestion needs; a filter would only shorten the
+  listing.
+- **One `append_decision` call per entry.** That is one commit per entry,
+  and a later entry (a confirm) must name an id assigned under the lock.
+
+### Consequences
+
+- When Orbit fixes the model citation and review binding shapes, only
+  `decision_ingest.rs` changes if they differ from the names read here.
+- Each run lists every closed request; `skipped` grows with Orbit's
+  history until `since` is set.
+
 ## Task References
 
 - [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
@@ -3245,7 +3321,7 @@ rather start clean".
 - [ORB-21089] — plans Orbit's decision model, which reads decision precedent.
 - [ORB-21090] — designed the office precedent provider over the v2 decision ledger.
 - [ORB-21115] — built the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
-- [ORB-21217] — proposes ingestion of answered Orbit decision requests into the ledger.
+- [ORB-21217] — built ingestion of answered Orbit decision requests into the ledger, and the decisions above.
 - [ORB-20856] — made `office.scribe-control` and `office.scribe-append` agent-callable so the plugin's local-cli `[agent]` calls succeed.
 - [ORB-21118] — built Scribe v2 S5: the Claude Code opt-in, Stop-hook cadence and marker routing, and the managed-session refusal above.
 - [ORB-21122] — built Scribe v2 S9: the v1 command mapping and `office.scribe-migrate` above, with no v1 backfill.

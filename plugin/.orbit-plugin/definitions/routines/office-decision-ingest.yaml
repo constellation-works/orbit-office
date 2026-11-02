@@ -1,0 +1,7 @@
+schemaVersion: 1
+name: office-decision-ingest
+description: Append answered Orbit decision requests to the decision ledgers every hour.
+enabled: false
+trigger:
+  cron: "20 * * * *"
+target: job:office-decision-ingest

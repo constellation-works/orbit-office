@@ -398,6 +398,17 @@ pub trait Library {
     fn write_scribe_pass(&self, _pass: &ScribePass) -> Result<()> {
         Err(Error::LibraryUnavailable)
     }
+    /// Write planned decision ledger files and commit them once under the
+    /// writer lock (Orbit decision ingestion, decision-precedents.md).
+    /// Each file is compare-and-set against `expected` (`None`: a new
+    /// ledger) and refused with `decision_ledger_changed`, writing nothing,
+    /// when any differs. Only ledger paths are accepted; no files: no write.
+    fn write_decision_ledgers(
+        &self,
+        _files: &[crate::domain::source::conversation::scribe::v2::PlannedFile],
+    ) -> Result<()> {
+        Err(Error::LibraryUnavailable)
+    }
     /// The host's name for SCR provenance; `None` when unknown.
     fn host_name(&self) -> Option<String> {
         None

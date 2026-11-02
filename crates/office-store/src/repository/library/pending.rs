@@ -101,6 +101,7 @@ impl RawPendingWrite {
             (9, Some(WriteKind::ProposalMove), None, None) => WriteKind::ProposalMove,
             (10, Some(WriteKind::Scribe), None, None) => WriteKind::Scribe,
             (11, Some(WriteKind::ScribePass), None, Some(_)) => WriteKind::ScribePass,
+            (12, Some(WriteKind::DecisionLedgers), None, Some(_)) => WriteKind::DecisionLedgers,
             _ => {
                 return Err(Error::Journal {
                     path: path.to_path_buf(),
@@ -135,4 +136,5 @@ pub(super) enum WriteKind {
     ProposalMove,
     Scribe,
     ScribePass,
+    DecisionLedgers,
 }

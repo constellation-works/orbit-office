@@ -1,0 +1,17 @@
+schemaVersion: 2
+kind: Job
+metadata:
+  name: office-decision-ingest
+spec:
+  state: enabled
+  kind: workflow
+  max_active_runs: 1
+  steps:
+    - id: ingest
+      timeout_seconds: 120
+      spec:
+        type: deterministic
+        action: plugin.tool_call
+        config:
+          tool: office.decision-ingest
+          input: {}

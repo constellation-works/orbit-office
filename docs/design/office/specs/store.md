@@ -299,6 +299,17 @@ journal without `removed`, or another version with it, is refused.
 `Library::proposal_pages` lists every proposal page with its Markdown, without
 following symlinks.
 
+`Library::write_decision_ledgers` writes the decision ledger files one
+`office.decision-ingest` run planned: journal version 12
+(`decision_ledgers`) records the first ledger as `relative`/`text` and the
+rest in `bundle`, each by its Library-relative path. Under the writer lock
+every file must be a `sources/decisions/<scope>.md` path, named once, that
+still holds the text it was planned against (absent for a new ledger) and
+parses as a ledger; otherwise nothing is written (`decision_ledger_changed`
+for a stale file). Finishing writes and indexes each ledger and commits all
+of them once. Recovery revalidates the same rules and replays; a journal
+naming any other path is refused.
+
 `Library::write_reviewed_page` compares the current Markdown SHA-256 (or
 requires an absent destination for an addition) while holding the writer lock
 through the existing document write journal. A mismatch leaves the page,

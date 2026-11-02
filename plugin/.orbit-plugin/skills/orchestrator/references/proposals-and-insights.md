@@ -64,6 +64,7 @@ the user to Routines.
 | `office-calendar-sync` | routine | every 15 min | refreshes the read-only calendar snapshot | no |
 | `office-meeting-prep` | routine | every 15 min | writes cited briefs for upcoming meetings | no |
 | `office-shared-sync` | routine | hourly | pulls and pushes the team's shared library | no |
+| `office-decision-ingest` | routine | hourly | appends answered Orbit decision requests to the decision ledgers | no |
 | `office-knowledge-maintenance` | auto-task | Mondays 00:30 | mints an agent to-do to review signals and file evidenced knowledge proposals | no |
 | `office-review` | auto-task | 1 Jan/Apr/Jul/Oct 00:05 | mints an agent to-do to write the quarterly (and in January, yearly) review | no |
 

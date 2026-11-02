@@ -260,3 +260,47 @@ fn every_schema_ref_resolves_from_its_root() {
         }
     }
 }
+
+/// Every routine the manifest registers ships disabled, and its target job
+/// is registered too; the operator turns one on (decision-precedents.md,
+/// Configuration; definitions/README.md).
+#[test]
+fn every_registered_routine_ships_disabled_with_a_registered_job() {
+    let manifest = manifest();
+    let list = |key: &str| -> Vec<String> {
+        let line = manifest
+            .lines()
+            .find(|line| line.trim_start().starts_with(&format!("{key}: [")))
+            .unwrap_or_else(|| panic!("{key} list"));
+        let inner = line.split_once('[').unwrap().1.trim_end_matches(']');
+        inner
+            .split(',')
+            .map(|item| item.trim().to_string())
+            .collect()
+    };
+    let routines = list("routines");
+    let jobs = list("jobs");
+    assert!(
+        routines.contains(&"definitions/routines/office-decision-ingest.yaml".to_string()),
+        "{routines:?}"
+    );
+    for routine in &routines {
+        let text = fs::read_to_string(plugin_root().join(routine)).expect("routine is readable");
+        assert!(
+            text.lines().any(|line| line == "enabled: false"),
+            "{routine} ships disabled"
+        );
+        let target = text
+            .lines()
+            .find_map(|line| line.strip_prefix("target: job:"))
+            .unwrap_or_else(|| panic!("{routine} targets a job"));
+        assert!(
+            jobs.contains(&format!("definitions/jobs/{target}.yaml")),
+            "{routine} targets registered job {target}"
+        );
+    }
+    let job =
+        fs::read_to_string(plugin_root().join("definitions/jobs/office-decision-ingest.yaml"))
+            .expect("job is readable");
+    assert!(job.contains("tool: office.decision-ingest"), "{job}");
+}

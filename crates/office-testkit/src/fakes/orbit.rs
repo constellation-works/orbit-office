@@ -95,4 +95,10 @@ impl Orbit for FakeOrbit {
     fn auto_task_list(&self, input: &Map<String, Value>) -> Result<Value> {
         self.record("orbit.auto_task.list", input)
     }
+    fn decision_list(&self, input: &Map<String, Value>) -> Result<Value> {
+        self.record("orbit.decision.list", input)
+    }
+    fn decision_show(&self, input: &Map<String, Value>) -> Result<Value> {
+        self.record("orbit.decision.show", input)
+    }
 }

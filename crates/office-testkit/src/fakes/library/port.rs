@@ -186,6 +186,13 @@ impl Library for FakeLibrary {
         FakeLibrary::write_scribe_pass(self, pass)
     }
 
+    fn write_decision_ledgers(
+        &self,
+        files: &[office_core::domain::source::conversation::scribe::v2::PlannedFile],
+    ) -> Result<()> {
+        FakeLibrary::write_decision_ledgers(self, files)
+    }
+
     fn host_name(&self) -> Option<String> {
         self.host.clone()
     }

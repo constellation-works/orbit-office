@@ -129,6 +129,7 @@ static TOOLS: &[Tool] = &[
     sessions::scribe_query::TOOL,
     sessions::scribe_ask::TOOL,
     sessions::scribe_migrate::TOOL,
+    sessions::decision_ingest::TOOL,
     // recall (specs/recall.md)
     recall::TOOL,
     recall::answer::TOOL,

@@ -4,6 +4,8 @@
 pub mod access;
 /// Transcript conversation extraction and provenance.
 pub mod conversation;
+/// Orbit decision ingestion into the ledgers (decision-precedents.md).
+pub mod decision_ingest;
 /// Append-only decision ledgers (`sources/decisions/<scope>.md`).
 pub mod decisions;
 /// KT video planning and processing state.

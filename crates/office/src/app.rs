@@ -533,6 +533,12 @@ impl Library for RealLibrary {
     fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> office_core::Result<()> {
         LibraryStore::write_scribe_pass(&self.store()?, pass)
     }
+    fn write_decision_ledgers(
+        &self,
+        files: &[office_core::domain::source::conversation::scribe::v2::PlannedFile],
+    ) -> office_core::Result<()> {
+        LibraryStore::write_decision_ledgers(&self.store()?, files)
+    }
     fn host_name(&self) -> Option<String> {
         office_store::scribe_parse::host_name()
     }
