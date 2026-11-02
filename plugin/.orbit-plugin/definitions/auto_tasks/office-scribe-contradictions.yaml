@@ -19,18 +19,29 @@ template:
     Read the stores. Call office.search with query Decisions, no kind filter
     and limit 100, and keep the hits whose id starts with decisions-. Read
     each with office.source-show. It returns every entry (dec-<scope>-<n>)
-    with its question, chosen, quote, ref, scope, decided_at, reverses and
-    derived reversed_by. Call office.knowledge-list with template preferences,
+    with its question, chosen, quote, ref, scope, decided_at, reverses,
+    derived reversed_by, orbit (including category) and same_as. Call
+    office.knowledge-list with template preferences,
     then office.knowledge-show for each page (dom-preferences-<scope>) to read
     its sections (## <matter>, with statement, cites, stated_at and review_by)
     and its sha256. Report an unreadable ledger or page and go on.
 
     Consider only current entries (no reversed_by) and current sections. Two
     statements conflict only when they cannot both hold; statements about
-    different questions do not conflict. When unsure, file nothing and list
+    different questions do not conflict, except two decisions in one Orbit
+    category (below). When unsure, file nothing and list
     the pair as unresolved. An entry marked private, or a page whose content is
     withheld, is never quoted or filed against: list such a conflict as
     unresolved without its text.
+
+    Categories. Also compare current decisions that share one Orbit
+    category, even when their question text differs: conflicting answers to
+    the same kind of request cannot both hold. An ingested entry's category
+    is its orbit.category. A scribe entry's category is its same_as
+    partner's orbit.category; the partner may sit in another ledger. An
+    entry with neither is not part of this comparison. Use the same outcome
+    and dedupe rules as any other decision conflict. A pair already cited
+    by an open to-do is not filed again.
 
     Outcomes, one per conflict, each citing both entries:
     - Preference vs a later decision (decided_at after the preference's
@@ -53,7 +64,10 @@ template:
       and office-scribe-contradictions, complexity low, type chore, with the
       relation {type: spawned_from, target: <this task's id>}. Its description
       quotes both chosen texts with their entry ids and asks which stands; the
-      answer is recorded as a new decision with reverses.
+      answer is recorded as a new decision with reverses. The description's
+      last line is exactly `Conflicting entries: <id> <id>`: the two entry
+      ids, separated by one space, in lexicographic order, and no other text
+      on that line.
 
     Before filing an outcome, call orbit.search with both entry ids. If an open
     proposal or to-do already cites both, file nothing. If proposal-create
@@ -76,6 +90,7 @@ template:
     - Preference conflicts become knowledge_update proposals pinned to the page's sha256, decision conflicts become one owner:you to-do, and no ledger or page is written directly.
     - A preference page over 1,000 words has one consolidation proposal that keeps every statement, citation and review date.
     - The report is attached to this task, and private entries and withheld pages appear in it without their text.
+    - Decisions that share an Orbit category are compared even when their questions differ, and each decision-conflict to-do description ends with `Conflicting entries: <entry id> <entry id>`.
   task_type: chore
   tags: [office, owner:agent, office-scribe-contradictions, no-diff-expected]
   required_tools: [office.search, office.source-show, office.knowledge-list, office.knowledge-show, office.proposal-create, orbit.search, orbit.task.add, orbit.task.show, orbit.task.artifact.put]
@@ -85,4 +100,4 @@ template:
 created_by: office
 created_at: 2026-11-01T00:00:00Z
 updated_by: office
-updated_at: 2026-11-01T00:00:00Z
+updated_at: 2026-11-02T00:00:00Z

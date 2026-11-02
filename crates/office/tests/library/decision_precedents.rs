@@ -40,8 +40,44 @@ fn seed(env: &Env, slug: &str, entries: &[Value]) -> String {
     text
 }
 
+/// A fake `orbit` prepended to PATH. A missing fixture is an empty task list.
+/// `$HOME/orbit/tasks.json` replaces that list. `$HOME/orbit/fail` exits 1.
+/// Other tools stay on the inherited PATH.
+fn orbit_path(env: &Env) -> String {
+    let bin = env.workspace.join("fake-bin-precedents");
+    std::fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("orbit");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+dir="$HOME/orbit"
+mkdir -p "$dir"
+printf '%s %s\n' "$3" "$7" >> "$dir/calls.log"
+if [ -f "$dir/fail" ]; then
+  exit 1
+fi
+if [ -f "$dir/tasks.json" ]; then
+  cat "$dir/tasks.json"
+  exit 0
+fi
+printf '%s\n' '{"tasks":[],"total":0,"truncated":false}'
+"#,
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    format!("{}:{}", bin.display(), std::env::var("PATH").unwrap())
+}
+
+fn precedents(env: &Env, input: Value) -> Value {
+    env.tool_with_path("office.decision-precedents", input, &orbit_path(env))
+}
+
 fn output(env: &Env, k: usize) -> Value {
-    let response = env.tool("office.decision-precedents", request(k));
+    let response = precedents(env, request(k));
     assert_eq!(response["ok"], true, "{response}");
     response["output"].clone()
 }
@@ -52,7 +88,7 @@ fn provider_contract_is_closed_and_rejects_bad_bounds() {
     let mut unsupported = request(8);
     unsupported["contract"] = json!("orbit.precedent-provider/2");
     assert_eq!(
-        env.tool("office.decision-precedents", unsupported)["error"]["code"],
+        precedents(&env, unsupported)["error"]["code"],
         "precedent_contract_unsupported"
     );
     let mut inputs = vec![request(0), request(9)];
@@ -80,7 +116,7 @@ fn provider_contract_is_closed_and_rejects_bad_bounds() {
         inputs.push(input);
     }
     for input in inputs {
-        let refused = env.tool("office.decision-precedents", input.clone());
+        let refused = precedents(&env, input.clone());
         assert_eq!(
             refused["error"]["code"], "invalid_argument",
             "{input}: {refused}"
@@ -390,7 +426,7 @@ fn fts_overlap_category_group_dedupe_and_tie_breaking_rank_evidence() {
     query["request"]["question"] = json!("zebra");
     query["request"]["options"][0]["label"] = json!("gazelle");
     assert_eq!(
-        env.tool("office.decision-precedents", query)["output"]["precedents"],
+        precedents(&env, query)["output"]["precedents"],
         json!([]),
         "no lexical overlap drops every candidate"
     );
@@ -472,7 +508,7 @@ fn provider_reports_symlink_omissions_and_reads_without_state_or_writer_locks() 
         "office.decision-precedents",
         request(8),
         json!({"workspace_root":env.workspace,"plugin_state":absent}),
-        &std::env::var("PATH").unwrap(),
+        &orbit_path(&env),
     );
     assert_eq!(response["ok"], true, "{response}");
     assert_eq!(
@@ -497,4 +533,81 @@ fn provider_reports_symlink_omissions_and_reads_without_state_or_writer_locks() 
     );
     assert_eq!(out["ok"], true, "{out}");
     assert_eq!(output(&env, 8)["precedents"], json!([]));
+}
+
+fn contradiction_todo() -> Value {
+    json!({
+        "tasks": [{
+            "id": "ORB-9",
+            "status": "in-progress",
+            "tags": ["owner:you", "office-scribe-contradictions"],
+            "description": "Which stands?\nConflicting entries: dec-global-1 dec-global-2\n"
+        }],
+        "total": 1,
+        "truncated": false
+    })
+}
+
+#[test]
+fn an_open_contradiction_pulls_the_partner_through_the_orbit_callback() {
+    let env = Env::with_initialized_library();
+    let mut partner = entry(2);
+    partner["question"] = json!("orchard harvest");
+    partner["chosen"] = json!("apples");
+    partner["quote"] = json!("apples");
+    seed(&env, "global", &[entry(1), partner]);
+    let dir = env.workspace.join("home/orbit");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("tasks.json"), contradiction_todo().to_string()).unwrap();
+    let out = output(&env, 8);
+    let rows = out["precedents"].as_array().unwrap();
+    assert_eq!(
+        rows.iter()
+            .map(|row| row["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["dec-global-1", "dec-global-2"]
+    );
+    assert_eq!(
+        rows[0]["context"],
+        "Options not recorded; only the chosen option is known.\nUnresolved conflict with dec-global-2; the user has not said which stands.\ntask_type: feature\nrisk_tier: reversible"
+    );
+    assert_eq!(
+        rows[1]["context"],
+        "Options not recorded; only the chosen option is known.\nUnresolved conflict with dec-global-1; the user has not said which stands.\ntask_type: feature\nrisk_tier: reversible"
+    );
+    assert_eq!(out["omissions"], json!([]));
+    assert_eq!(out["truncated"], false);
+    let log = std::fs::read_to_string(dir.join("calls.log")).unwrap();
+    assert!(log.contains("orbit.task.list"), "{log}");
+}
+
+#[test]
+fn a_failed_orbit_contradiction_read_is_conflicts_unread() {
+    let env = Env::with_initialized_library();
+    let mut partner = entry(2);
+    partner["question"] = json!("orchard harvest");
+    partner["chosen"] = json!("apples");
+    partner["quote"] = json!("apples");
+    seed(&env, "global", &[entry(1), partner]);
+    let dir = env.workspace.join("home/orbit");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("tasks.json"), contradiction_todo().to_string()).unwrap();
+    std::fs::write(dir.join("fail"), "1").unwrap();
+    let out = output(&env, 8);
+    assert_eq!(
+        out["precedents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["dec-global-1"]
+    );
+    assert!(
+        !out["precedents"][0]["context"]
+            .as_str()
+            .unwrap()
+            .contains("Unresolved conflict")
+    );
+    assert_eq!(out["omissions"], json!(["conflicts_unread"]));
 }

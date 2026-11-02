@@ -12,7 +12,8 @@ validation and refusals, `same_as` matching in `office.scribe-append` and
 `office.scribe-query`) is built ([ORB-21216]). Slice P2 (`office.decision-ingest`,
 its callbacks and the disabled `office-decision-ingest` routine) is built
 ([ORB-21217]). Slice P3 (the provider and half-life setting) is built
-([ORB-21218]); conflict reporting remains P4. The remaining slices are filed as proposed tasks (see
+([ORB-21218]). Slice P4 (contradiction reporting) is built
+([ORB-21219]). The remaining slices are filed as proposed tasks (see
 [Build order](#build-order)).
 
 Daniel asked for a decision model (2026-11-01, in the orbit-office on-call
@@ -256,7 +257,8 @@ may be absent or null. Timestamps are RFC 3339 with explicit offsets.
 
 **It never returns an answer.** It returns no option, score, probability,
 recommendation or summary of the precedents. It is model-free: no model
-call, no network.
+call. It reads open contradiction to-dos through `orbit.task.list` and
+writes nothing.
 
 ### Candidates
 
@@ -320,7 +322,7 @@ below.
 | `id` | The entry id, `dec-<scope>-<n>`. Stable forever. |
 | `question` | `question`, cut to the contract's byte bound. |
 | `options`, `chosen_option` | The option ids and labels per [Entries without options](#entries-without-options). |
-| `context` | Fixed-order lines: the options note when any; `because` when stated; the conflict line when P4 is built ([Contradictions](#contradictions)); then `task_type`, `risk_tier`; within the contract's context bound. A cut sets `truncated`. |
+| `context` | Fixed-order lines: the options note when any; `because` when stated; one conflict line per unresolved partner ([Contradictions](#contradictions)); then `task_type`, `risk_tier`; within the contract's context bound. A cut sets `truncated`. |
 | `scope` | The querying `workspace_id` (including global evidence), `category` from `orbit` when present, else the request category; optional `topic` from `orbit`, omitted when absent. Orbit's v1 validator requires workspace and category strings, and rejects a different workspace. These fields bind retrieval scope rather than inventing ledger metadata. |
 | `decided_at` | `decided_at`. |
 | `decided_by`, `decided_by_kind` | `user` (Library settings currently carry no owner-name field); `human`, or `human_confirmed` for a confirmed model entry. |
@@ -341,7 +343,8 @@ entry at or after `as_of` cannot influence historical retrieval.
 
 **Omissions and truncation.** An unreadable or invalid ledger
 (`decision_ledger_invalid`) is skipped and named in `omissions` with its
-ledger id. The response has at most 32 omission ids and 262,144 encoded UTF-8 JSON
+ledger id. A failed or incomplete contradiction to-do read is named
+`conflicts_unread` ([Contradictions](#contradictions)). The response has at most 32 omission ids and 262,144 encoded UTF-8 JSON
 bytes. Question, option labels and context are cut on UTF-8 boundaries to
 8,192 bytes; recovered options beyond the contract's eight-option bound
 use the single-option representation with their text in context. Every
@@ -385,37 +388,51 @@ The rules, as invariants every reader keeps:
 
 ## Contradictions
 
-Designed in P4 ([ORB-21219]); the built P3 provider does not yet read conflict to-dos or add conflict context.
+Built in P4 ([ORB-21219]).
 
-The weekly `office-scribe-contradictions` routine already files one
-`owner:you` to-do for two decisions that conflict with no `reverses` link
-([scribe.md](./scribe.md#contradiction-checks)). Two changes:
+The weekly `office-scribe-contradictions` routine files one `owner:you`
+to-do for two decisions that conflict with no `reverses` link
+([scribe.md](./scribe.md#contradiction-checks)). It also compares current
+decisions within one Orbit category, even when the question text differs:
+an ingested entry's category is its `orbit.category`, and a scribe entry's
+category is its `same_as` partner's `orbit.category`. Conflicting answers
+to the same kind of request are the case the consumer most needs to know
+about. Each decision-conflict to-do's description ends with the last line
+`Conflicting entries: <entry id> <entry id>` (the two ids, one space
+between them, lexicographic order, nothing else on that line).
 
-- **Categories.** It also compares decisions within one Orbit category:
-  ingested entries with the same `orbit.category`, and scribe entries
-  whose `same_as` partner has that category. Conflicting answers to the
-  same kind of request are the case the consumer most needs to know about.
-- **A machine-readable line.** Each conflict to-do's description gains a
-  last line `Conflicting entries: <entry id> <entry id>`, so a reader can
-  find a conflict without a model.
+The provider reports a conflict that is still unresolved. It reads open
+to-dos with `orbit.task.list` (tags `owner:you` and
+`office-scribe-contradictions`, both required; status `proposed`,
+`backlog`, `in-progress`, `review`, `blocked` or `someday`) and keeps a
+to-do whose last non-empty description line is that `Conflicting entries`
+line. The conflict is unresolved when both entries are eligible evidence
+before `as_of` and neither has been reversed in that snapshot (a
+`reversed_by`, including through a `same_as` partner, means a later
+decision already stands). A partner that fails a candidate exclusion is
+not named and is not returned.
 
-P4 will make the provider report unresolved conflicts. A conflict is unresolved while
-its to-do is open (`orbit.task.list` with tags `owner:you` and
-`office-scribe-contradictions`, through the existing callback) and neither
-entry has been reversed since. For a returned entry with an unresolved
-conflict:
+For a returned entry with an unresolved conflict:
 
-- its partner is pulled into the result, like a reversing entry;
-- each one's `context` carries the line
-  `Unresolved conflict with <partner id>; the user has not said which stands.`
+- its partner is pulled into the result, like a reversing entry: no
+  lexical overlap is required, and the partner counts against `k`. When
+  the pair cannot fit, the ranked entry and its reversal evidence stay,
+  the partner is dropped, and `truncated` is true;
+- each returned entry's `context` carries one line per unresolved partner,
+  `Unresolved conflict with <partner id>; the user has not said which stands.`,
+  after `because` (when stated) and before `task_type` and `risk_tier`.
+  The line stays when the partner was dropped for lack of room.
 
 `orbit.precedent-provider/1` has no conflict field, so this is how the
 consumer learns of it: two records disagreeing within the request's reach,
 which the model's `precedents_conflict` predicate is asked to see, and the
 context line. A deterministic downgrade from a provider-reported conflict
 needs an additive field in Orbit's contract (see
-[Open questions](#open-questions)). A failure to read the to-dos is named
-in `omissions` (`conflicts_unread`), never ignored.
+[Open questions](#open-questions)). A failed read, or a list whose
+`truncated` is not false or whose `total` disagrees with the returned
+rows, is named in `omissions` (`conflicts_unread`) and is never ignored.
+Rows that did arrive are still applied. The token is kept when omission
+ids are capped at 32.
 
 ## Agreement view
 
@@ -514,7 +531,7 @@ routine ships disabled.
   `decision_ingest.rs` changes.
 - **Provider-reported conflicts.** A deterministic downgrade from an
   Office-detected conflict needs an additive `conflicts` field in
-  `orbit.precedent-provider/1` (or a `/2`). P4 will report conflicts in
+  `orbit.precedent-provider/1` (or a `/2`). P4 reports conflicts in
   context as described above until such a field is available.
 - **Readout surface.** The agreement view depends on the read surface the
   evaluator slice (ORB-21096) gives the readout.
@@ -529,7 +546,7 @@ change makes stale in the same change.
 | P1 | [ORB-21216] | Scribe v2 S1, S4 | Entry schema additions (option `id`/`consequence`, `orbit`, `same_as`, `confirms`), their validation and refusals, `same_as` matching in `office.scribe-append` and `office.capture`, and reading them through `office.source-show` and `office.scribe-query`. |
 | P2 (built) | [ORB-21217] | P1; Orbit's `include_closed` read | `office.decision-ingest` and the disabled `office-decision-ingest` routine: request mapping, idempotence, dedupe, and the feedback entries (model, confirm, veto, re-answer). |
 | P3 (built) | [ORB-21218] | P1; Orbit [ORB-21093] for conformance | `office.decision-precedents`: the contract input and output, candidates, relevance and recency, single-option records, reversed and pulled-in entries, omissions, citations, and the `half_life_days` setting. |
-| P4 | [ORB-21219] | P3 | Contradictions: the routine's category comparison and machine-readable line, and the provider's conflict reporting. |
+| P4 (built) | [ORB-21219] | P3 | Contradictions: the routine's category comparison and machine-readable line, and the provider's conflict reporting. |
 | P5 | [ORB-21220] | Scribe v2 S7 ([ORB-21120]); Orbit [ORB-21096]'s readout surface | The Agreement view and `GET /api/scribe/decision-agreement`. |
 
 ## Task References
@@ -544,7 +561,7 @@ change makes stale in the same change.
 - [ORB-21216] — proposes slice P1: ledger schema additions and dedupe links.
 - [ORB-21217] — built slice P2: Orbit decision ingestion and feedback entries.
 - [ORB-21218] — built slice P3: the `office.decision-precedents` provider.
-- [ORB-21219] — proposes slice P4: contradiction reporting.
+- [ORB-21219] — built slice P4: contradiction reporting.
 - [ORB-21220] — proposes slice P5: the Agreement view.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

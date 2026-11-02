@@ -3371,3 +3371,28 @@ added. The normal ranked top-k shortlist is the requested retrieval result,
 so it does not set `truncated`; byte cuts, omission overflow and reversal
 pairs that cannot fit do. This preserves the consumer's distinction between
 a shortlist and an incomplete evidence packet.
+
+## Decision precedents P4: report an open conflict in context
+
+The weekly routine compares decisions that share an Orbit category even
+when the question wording differs, because those are answers to the same
+kind of request. An ingested entry contributes `orbit.category`. A scribe
+entry contributes its `same_as` partner's category. The to-do's last line
+is `Conflicting entries: <id> <id>` with the ids in lexicographic order,
+so a reader does not need a model.
+
+The provider keeps a conflict only while both entries are eligible before
+`as_of` and neither has `reversed_by` in that snapshot. A reversal is
+"since": the routine files only current entries. A partner that fails a
+candidate exclusion is not named and is not returned, the same privacy
+boundary as an excluded reversal. Open means `proposed`, `backlog`,
+`in-progress`, `review`, `blocked` or `someday`.
+
+The partner is pulled in without lexical overlap and counts against `k`.
+Unlike a reversal, a conflict does not supersede the ranked entry: when
+the pair cannot fit, the ranked entry and its reversal evidence stay, the
+partner is dropped, and `truncated` is true. The context line still names
+the dropped partner. A failed read, or a list with `truncated` other than
+false or a `total` that disagrees with the rows, sets omission
+`conflicts_unread`. Rows that arrived are still applied, and the token is
+kept if omission ids are capped at 32. No wire field is added.

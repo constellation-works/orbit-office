@@ -110,7 +110,12 @@ fn options(d: &Decision, truncated: &mut bool) -> (Vec<Value>, String, Option<St
     (options, wire_ids[matches[0]].clone(), None)
 }
 
-pub(super) fn precedent(request: &Request, row: &Candidate, truncated: &mut bool) -> Value {
+pub(super) fn precedent(
+    request: &Request,
+    row: &Candidate,
+    partners: &[String],
+    truncated: &mut bool,
+) -> Value {
     let d = &row.decision;
     let (options, chosen, note) = options(d, truncated);
     let mut context = Vec::new();
@@ -119,6 +124,11 @@ pub(super) fn precedent(request: &Request, row: &Candidate, truncated: &mut bool
     }
     if let Some(because) = &d.because {
         context.push(because.text.clone());
+    }
+    for partner in partners {
+        context.push(format!(
+            "Unresolved conflict with {partner}; the user has not said which stands."
+        ));
     }
     if let Some(task_type) = &d.context.task_type {
         context.push(format!("task_type: {task_type}"));

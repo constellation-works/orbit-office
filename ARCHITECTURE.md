@@ -52,8 +52,10 @@ retain unreadable ledger identities and rank eligible decision text with the
 Library index's FTS5 tokenizer/BM25 in a transient in-memory index. Ledger lines
 are not persistent index documents. The binary uses the existing file-only
 read opening path, without layout creation, migrations, recovery or disk index
-writes; no model or Orbit callback is involved. The testkit exposes explicit
-lexical scores for fixtures. No crate or dependency edge is added.
+writes. The tool reads open contradiction to-dos through one `orbit.task.list`
+callback and writes no state; selection stays model-free and does no I/O.
+The testkit exposes explicit lexical scores for fixtures. No crate or
+dependency edge is added.
 
 The plugin backend is one process per call, so it is synchronous: no async runtime. HTTP
 goes through a blocking client inside `office-models`.
