@@ -63,8 +63,6 @@ const SHELL_ASSETS: readonly string[] = [
   "/screens/calendar/panel.js",
   "/screens/calendar/style.js",
   "/screens/calendar/task.js",
-  "/screens/agents/index.js",
-  "/screens/agents/style.js",
   "/screens/insights/index.js",
   "/screens/library/index.js",
   "/screens/library/style.js",

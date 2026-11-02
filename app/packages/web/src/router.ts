@@ -5,7 +5,6 @@
  * screen, so a task that builds one edits only its own folder.
  */
 import type { Screen } from "./screen.js";
-import { screen as agents } from "./screens/agents/index.js";
 import { screen as calendar } from "./screens/calendar/index.js";
 import { screen as insights } from "./screens/insights/index.js";
 import { screen as library } from "./screens/library/index.js";
@@ -22,7 +21,6 @@ export const SCREENS: readonly Screen[] = [
   today,
   calendar,
   todos,
-  agents,
   scribe,
   routines,
   library,
@@ -37,8 +35,12 @@ export function navigableScreens(): readonly Screen[] {
   return SCREENS.filter((screen) => screen.status === "built");
 }
 
+/** Removed screens and where their old links now open: Agent work's rows are on Today ([ORB-21641]). */
+const RETIRED: Readonly<Record<string, string>> = { agents: "today" };
+
 /** The screen a location hash (`#today`) names, if it is built. */
 export function screenForHash(hash: string): Screen | undefined {
-  const id = hash.replace(/^#/, "");
+  const named = hash.replace(/^#/, "");
+  const id = RETIRED[named] ?? named;
   return navigableScreens().find((screen) => screen.id === id);
 }
