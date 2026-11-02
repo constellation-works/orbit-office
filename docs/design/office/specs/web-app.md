@@ -141,7 +141,7 @@ carries its `approval-actions` (below).
 
 Built ([ORB-21345]). `GET /api/today/digest` (`TodayDigest` in
 `app/packages/contracts`) picks the newest `source:<id>` tags on the user's
-`owner:you` tasks and asks `office.digest {source}` for up to three of them in
+`owner:you` tasks and asks `office.source-digest {source}` for up to three of them in
 turn: a source that is not a meeting is skipped, `meeting_not_extracted`
 answers `not_extracted`, no candidate answers `no_meeting`, and any other
 refusal (including `office.digest` not being installed yet; ORB-21337) answers
@@ -271,8 +271,8 @@ private route uses the configured endpoint label. Mark private calls
 Source JSON is served by `GET /api/sources?id=…`, originals and frames by
 `GET /api/sources/media?id=…[&frame=0000.png]`, and citing documents by
 `GET /api/sources/citation?id=…&kind=…`. The digest since a meeting is
-served by `GET /api/sources/digest?id=…`, which calls `office.digest` with
-`source` ([sessions.md](./sessions.md#digest-since-a-meeting)) and returns
+served by `GET /api/sources/digest?id=…`, which calls `office.source-digest`
+([sessions.md](./sessions.md#digest-since-a-meeting)) and returns
 its Decided, Shipped and Needs you sections as `SourceDigest` JSON.
 Mutations use POST at
 `/api/sources/upload`, `/paste`, `/private` and `/plan` (each below

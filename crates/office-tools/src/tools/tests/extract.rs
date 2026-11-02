@@ -598,3 +598,34 @@ fn merge_cannot_promote_window_tangents_to_ordinary_knowledge() {
     );
     assert_eq!(result["output"]["dropped"]["tangent"], 3);
 }
+
+#[test]
+fn a_meeting_decision_enters_the_ledger_as_its_plain_statement_cited_at_its_turn() {
+    // ORB-21377: the model's text ends in an inline cite and the cited line is
+    // a transcribed turn ending in its own link; neither may reach `chosen`.
+    let body = "# Sync\n\n[00:00:40] B: Pages stay at fifty. [turn](#t=00:00:40)\n[00:01:03] A: Decision. We rotate ingest keys monthly starting in December. The weekly schedule costs more than it protects. [turn](#t=00:01:03)\n";
+    let item =
+        json!({"text":"We rotate ingest keys monthly starting in December [#L4]","cites":["#L4"]});
+    let input = crate::tools::sources::extract::ledger::entry_input(
+        "src-20261102-sync",
+        body,
+        &item,
+        "2026-11-02T09:00:00Z",
+    )
+    .expect("the cited turn resolves");
+    assert_eq!(
+        input["chosen"],
+        "We rotate ingest keys monthly starting in December"
+    );
+    assert_eq!(
+        input["question"],
+        "We rotate ingest keys monthly starting in December"
+    );
+    assert_eq!(input["ref"], "src-20261102-sync#t=00:01:03");
+    assert!(
+        input["quote"]
+            .as_str()
+            .unwrap()
+            .starts_with("[00:01:03] A: Decision.")
+    );
+}

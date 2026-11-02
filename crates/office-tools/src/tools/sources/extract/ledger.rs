@@ -206,41 +206,85 @@ fn open_conflicts(call: &Call<'_>) -> Result<Vec<(String, String, String)>> {
 }
 
 /// The `office.capture` decision input for one extracted decision, cited at
-/// its first `#t=` turn (else its first anchor). `None` when the anchor
-/// does not resolve in the body.
-fn entry_input(id: &str, body: &str, item: &Value, now: &str) -> Option<Value> {
-    let text = super::clean(item["text"].as_str()?);
+/// its first `#t=` turn (else its first anchor, or the `#t=` turn that line
+/// links to). `None` when the anchor does not resolve in the body.
+pub(crate) fn entry_input(id: &str, body: &str, item: &Value, now: &str) -> Option<Value> {
+    let text = super::clean(&without_cites(item["text"].as_str()?));
     let cites = item["cites"].as_array()?;
-    let anchor = cites
+    let mut anchor = cites
         .iter()
         .filter_map(Value::as_str)
         .find(|a| a.starts_with("#t="))
-        .or_else(|| cites.first()?.as_str())?;
-    let raw = anchor.strip_prefix('#')?;
-    let quote = anchor_span(body, parse_anchor(raw).ok()?, raw).ok()?;
-    let quote = quote.trim();
+        .or_else(|| cites.first()?.as_str())?
+        .to_owned();
+    let mut quote = span(body, &anchor)?;
+    // A transcribed turn links its own time (`[turn](#t=hh:mm:ss)`): cite
+    // the turn, as a meeting citation should be.
+    if !anchor.starts_with("#t=")
+        && let Some(turn) = turn_link(&quote)
+        && let Some(turn_quote) = span(body, &turn)
+    {
+        (anchor, quote) = (turn, turn_quote);
+    }
     if text.is_empty() || quote.is_empty() {
         return None;
     }
-    // `chosen` is the quote's own span of the decision, matched without
-    // case; else the speaker's words.
-    let spoken = super::clean(quote);
+    // `chosen` is the plain statement: the turn's own span of it, matched
+    // without case, else the extracted text. Never the raw turn or a
+    // citation; the citation is `ref`.
+    let statement = text.trim_end_matches('.');
+    let spoken = super::clean(&without_cites(&quote));
     let chosen = spoken
         .to_ascii_lowercase()
-        .find(&text.trim_end_matches('.').to_ascii_lowercase())
-        .and_then(|start| spoken.get(start..start + text.trim_end_matches('.').len()))
-        .map_or_else(|| utterance(quote).to_owned(), str::to_owned);
+        .find(&statement.to_ascii_lowercase())
+        .and_then(|start| spoken.get(start..start + statement.len()))
+        .unwrap_or(statement);
     Some(
         json!({"question":text,"question_by":"scribe","options":"unrecoverable","chosen":chosen,
         "quote":quote,"ref":format!("{id}{anchor}"),"scope":"global","decided_by":"human","decided_at":now}),
     )
 }
 
-/// A turn's words without its `[hh:mm:ss] Speaker:` lead.
-fn utterance(turn: &str) -> &str {
-    let line = turn.lines().next().unwrap_or(turn);
-    let rest = line.split_once("] ").map_or(line, |(_, rest)| rest);
-    rest.split_once(": ").map_or(rest, |(_, said)| said).trim()
+/// The trimmed span an anchor names in the body.
+fn span(body: &str, anchor: &str) -> Option<String> {
+    let raw = anchor.strip_prefix('#')?;
+    let quote = anchor_span(body, parse_anchor(raw).ok()?, raw).ok()?;
+    Some(quote.trim().to_owned())
+}
+
+/// The `#t=` anchor a transcribed turn links to, if any.
+fn turn_link(turn: &str) -> Option<String> {
+    let start = turn.find("](#t=")? + 2;
+    let end = start + turn[start..].find(')')?;
+    Some(turn[start..end].to_owned())
+}
+
+/// Text without inline citations: markdown links to an anchor
+/// (`[turn](#t=00:01:03)`) and bracketed anchors (`[#L17]`).
+fn without_cites(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..open]);
+        let tail = &rest[open..];
+        let cite = tail.find(']').and_then(|close| {
+            let label = &tail[1..close];
+            if label.starts_with('#') {
+                return Some(close + 1);
+            }
+            let link = tail[close + 1..].strip_prefix("(#")?;
+            link.find(')').map(|end| close + 3 + end + 1)
+        });
+        match cite {
+            Some(len) => rest = &tail[len..],
+            None => {
+                out.push('[');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// One model call: which new entries contradict a prior one, and which

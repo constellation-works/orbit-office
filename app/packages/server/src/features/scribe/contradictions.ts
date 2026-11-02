@@ -27,6 +27,9 @@ const SIDE_LINE = /^- (\S+) \(([^)]*)\): (.*) \[([^\]]*)\]$/;
 const record = (value: unknown): Row | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Row : null;
 const text = (value: unknown): string | null => typeof value === "string" && value.length > 0 ? value : null;
+/** A decision's words without inline citations (`[turn](#t=…)`, `[#L17]`); the citation is the side's `cite` (ORB-21377). */
+const plain = (value: string | null): string | null =>
+  value === null ? null : text(value.replace(/\[[^\]]*\]\(#[^)]*\)|\[#[^\]]*\]/g, "").replace(/\s+/g, " ").trim());
 
 /** An exec envelope's output, or the value itself. */
 function outputOf(value: unknown): Row {
@@ -82,7 +85,7 @@ function side(id: string, described: ContradictionSide | undefined, entry: Row |
   const because = record(entry?.because);
   return {
     entry: id,
-    text: described?.text || text(entry?.chosen) || text(entry?.quote) || id,
+    text: plain(text(described?.text)) ?? plain(text(entry?.chosen)) ?? plain(text(entry?.quote)) ?? id,
     because: because === null ? null : text(because.text),
     cite: described?.cite || text(entry?.source) || id,
     decided_at: described?.decided_at ?? text(entry?.decided_at),

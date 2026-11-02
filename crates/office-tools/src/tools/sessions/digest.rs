@@ -31,6 +31,20 @@ pub(crate) const TOOL: Tool = Tool::built(
     run,
 );
 
+/// The digest since a meeting, read-only: `digest` with `source`, which
+/// makes no model call and writes nothing, at the capability any caller
+/// holds. The app calls Orbit as `local-cli` holding `[agent]`, which
+/// `digest` (a mutating verb) refuses.
+pub(crate) const SOURCE_TOOL: Tool = Tool::built(
+    ToolSpec {
+        name: "source-digest",
+        execution_kind: ExecutionKind::ReadOnly,
+        mcp_scope: McpScope::None,
+    },
+    &["source"],
+    scoped::run,
+);
+
 struct Evidence {
     text: String,
     excerpts: Vec<String>,
