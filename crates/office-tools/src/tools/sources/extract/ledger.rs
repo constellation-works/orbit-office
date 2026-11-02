@@ -234,7 +234,7 @@ fn open_conflicts(call: &Call<'_>) -> Result<Vec<(String, String, String)>> {
 /// its first `#t=` turn (else its first anchor, or the `#t=` turn that line
 /// links to). `None` when the anchor does not resolve in the body.
 pub(crate) fn entry_input(id: &str, body: &str, item: &Value, now: &str) -> Option<Value> {
-    let text = super::clean(&without_cites(item["text"].as_str()?));
+    let text = super::clean(&super::without_cites(item["text"].as_str()?));
     let cites = item["cites"].as_array()?;
     let mut anchor = cites
         .iter()
@@ -258,7 +258,7 @@ pub(crate) fn entry_input(id: &str, body: &str, item: &Value, now: &str) -> Opti
     // without case, else the extracted text. Never the raw turn or a
     // citation; the citation is `ref`.
     let statement = text.trim_end_matches('.');
-    let spoken = super::clean(&without_cites(&quote));
+    let spoken = super::clean(&super::without_cites(&quote));
     let chosen = spoken
         .to_ascii_lowercase()
         .find(&statement.to_ascii_lowercase())
@@ -282,34 +282,6 @@ fn turn_link(turn: &str) -> Option<String> {
     let start = turn.find("](#t=")? + 2;
     let end = start + turn[start..].find(')')?;
     Some(turn[start..end].to_owned())
-}
-
-/// Text without inline citations: markdown links to an anchor
-/// (`[turn](#t=00:01:03)`) and bracketed anchors (`[#L17]`).
-fn without_cites(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(open) = rest.find('[') {
-        out.push_str(&rest[..open]);
-        let tail = &rest[open..];
-        let cite = tail.find(']').and_then(|close| {
-            let label = &tail[1..close];
-            if label.starts_with('#') {
-                return Some(close + 1);
-            }
-            let link = tail[close + 1..].strip_prefix("(#")?;
-            link.find(')').map(|end| close + 3 + end + 1)
-        });
-        match cite {
-            Some(len) => rest = &tail[len..],
-            None => {
-                out.push('[');
-                rest = &tail[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 /// One model call: which new entries contradict a prior one, and which
