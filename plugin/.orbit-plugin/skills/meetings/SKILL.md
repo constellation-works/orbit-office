@@ -60,6 +60,15 @@ How the to-dos split depends on the Library setting
   code, stays `owner:you` as before. A to-do on a contested matter is held
   back: it is filed `owner:you` with a `contested` tag instead.
 
+Each to-do gets its own outcome under `filing.items`: `filed` with its task,
+or `refused`, `outcome_unknown` or `failed` with a code. One failure does not
+stop the rest. While any item is unfiled, `summary.md` waits and the response
+names the next call, `office.extract {id, profile: meeting, reconcile: true}`.
+That call reuses the saved extraction and filing record: it does not
+transcribe, extract or feed the ledger again. It adopts any item whose task
+already exists (same title and `source:<id>` tag), files the rest, and saves
+the summary once everything is filed.
+
 ## Decisions and contradictions
 
 Extraction also appends each cited decision to the decision ledger

@@ -879,6 +879,7 @@ pub fn processing_file_name(name: &str) -> bool {
             })
     };
     name == "extract-result.json"
+        || name == "filing.json"
         || name == "chapters.md"
         || name == "digest.json"
         || name == "summary.md"

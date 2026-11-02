@@ -19,7 +19,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::Mutating,
         mcp_scope: McpScope::Workspace,
     },
-    &["id", "profile", "task"],
+    &["id", "profile", "task", "reconcile"],
     run,
 );
 struct Entry {
@@ -63,6 +63,9 @@ fn run(call: &Call<'_>) -> Result<Value> {
             "invalid_source_kind",
             "profile must match the video's or meeting's source kind",
         ));
+    }
+    if profile == "meeting" && call.input.get("reconcile") == Some(&Value::Bool(true)) {
+        return reconcile(call, id, task, &view);
     }
     if profile == "meeting" {
         if view.body.trim().is_empty() {
@@ -340,23 +343,47 @@ fn run(call: &Call<'_>) -> Result<Value> {
     } else {
         None
     };
+    // Every item gets an outcome; one failure no longer stops the rest.
+    let holds: Vec<Option<&ledger::Hold>> = (0..items.len())
+        .map(|index| fed.as_ref().and_then(|fed| fed.holds.get(index)?.as_ref()))
+        .collect();
+    let mut outcomes = Vec::new();
     for (index, item) in items.iter().enumerate() {
-        let hold = fed.as_ref().and_then(|fed| fed.holds.get(index)?.as_ref());
-        todos.push(filing::file(
-            call,
-            id,
-            profile,
-            item,
-            agent_workspace.as_deref(),
-            hold,
-        )?);
+        let input = filing::prepare(id, profile, item, agent_workspace.as_deref(), holds[index])?;
+        let (reply, outcome) = filing::file(call, index, &input);
+        todos.extend(reply);
+        outcomes.push(outcome);
     }
-    let mut output = json!({"id":id,"profile":profile,"result":result,"dropped":dropped,"calls":count,"derived_by":reply.derived_by,"to_dos":todos});
-    if let Some(fed) = fed {
-        output["ledger"] = fed.report;
+    let complete = outcomes.iter().all(|o| o["status"] == filing::FILED);
+    let mut output = json!({"id":id,"profile":profile,"result":result,"dropped":dropped,"calls":count,"derived_by":reply.derived_by,"to_dos":todos,"filing":{"complete":complete,"items":outcomes}});
+    if let Some(fed) = &fed {
+        output["ledger"] = fed.report.clone();
+    }
+    if let Some(revision) = &summary_revision {
+        // Record outcomes and holds before anything else can fail, so the
+        // unfiled items stay reconcilable without another model call.
+        let record = filing::record(
+            &outcomes,
+            &holds,
+            &output["ledger"],
+            &json!(reply.derived_by),
+        );
+        call.ports.library.write_source_processing(
+            id,
+            revision,
+            None,
+            &reply.derived_by,
+            &[("filing.json".into(), encode(&record)?.into_bytes())],
+        )?;
+        if !complete {
+            output["filing"]["next"] = json!({"id":id,"profile":"meeting","reconcile":true});
+        }
     }
     if let Some(task) = task {
         attach(call, id, task, &output)?;
+    }
+    if !complete {
+        return Ok(output);
     }
     if let Some(revision) = summary_revision {
         // Publish the completion marker only after the to-dos and optional artifact succeed.
@@ -372,6 +399,125 @@ fn run(call: &Call<'_>) -> Result<Value> {
         )?;
     }
     Ok(output)
+}
+/// Finish a meeting whose extraction is saved but whose to-dos are not all
+/// filed: no transcription, no extraction and no second ledger feed. Each
+/// unfiled item is adopted when its task already exists, else filed.
+fn reconcile(
+    call: &Call<'_>,
+    id: &str,
+    task: Option<&str>,
+    view: &office_core::ports::SourceView,
+) -> Result<Value> {
+    let library = &call.ports.library;
+    if library.source_sidecar(id, "summary.md")?.is_some() {
+        return Err(video::refusal(
+            "meeting_already_summarized",
+            "meeting already has a summary",
+        ));
+    }
+    let saved = library
+        .source_sidecar(id, "extract-result.json")?
+        .ok_or_else(|| {
+            video::refusal(
+                "nothing_to_reconcile",
+                "the meeting has no saved extraction",
+            )
+        })?;
+    let result: Value = serde_json::from_str(&saved)
+        .map_err(|_| video::refusal("invalid_source", "invalid saved extraction"))?;
+    let markdown = library.read_text(Path::new(&view.path))?;
+    let derived = office_core::domain::source::access::derived_by(&markdown)?;
+    let derived_by = extraction_provenance(&derived["extraction"])?;
+    let prior = library
+        .source_sidecar(id, "filing.json")?
+        .map(|text| serde_json::from_str::<Value>(&text))
+        .transpose()
+        .map_err(|_| video::refusal("invalid_source", "invalid filing record"))?;
+    let items = list(&result, "to_dos")?;
+    // A meeting filed before `filing.json` recorded no holds; its decisions
+    // are already in the ledger, so re-check against the open conflicts only.
+    let holds = match &prior {
+        Some(record) => filing::holds_from(record),
+        None => ledger::rederive(call, &result)?,
+    };
+    let agent_workspace = library.settings()?.meetings.agent_workspace;
+    let mut todos = Vec::new();
+    let mut outcomes = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let hold = holds.get(index).and_then(Option::as_ref);
+        let done = prior
+            .as_ref()
+            .and_then(|record| record["items"].get(index))
+            .filter(|outcome| outcome["status"] == filing::FILED);
+        if let Some(outcome) = done {
+            outcomes.push(outcome.clone());
+            continue;
+        }
+        let input = filing::prepare(id, "meeting", item, agent_workspace.as_deref(), hold)?;
+        let (reply, outcome) = filing::settle(call, id, index, &input);
+        todos.extend(reply);
+        outcomes.push(outcome);
+    }
+    let complete = outcomes.iter().all(|o| o["status"] == filing::FILED);
+    let ledger = prior.as_ref().map_or_else(
+        || json!({"reconciled_without_record":true}),
+        |r| r["ledger"].clone(),
+    );
+    let hold_refs: Vec<Option<&ledger::Hold>> = holds.iter().map(Option::as_ref).collect();
+    let record = filing::record(&outcomes, &hold_refs, &ledger, &json!(derived_by));
+    let revision = sha256_hex(markdown.as_bytes());
+    library.write_source_processing(
+        id,
+        &revision,
+        None,
+        &derived_by,
+        &[("filing.json".into(), encode(&record)?.into_bytes())],
+    )?;
+    let mut output = json!({"id":id,"profile":"meeting","reconciled":true,"to_dos":todos,"ledger":ledger,
+        "filing":{"complete":complete,"items":outcomes}});
+    if !complete {
+        output["filing"]["next"] = json!({"id":id,"profile":"meeting","reconcile":true});
+    }
+    if let Some(task) = task {
+        attach(call, id, task, &output)?;
+    }
+    if complete {
+        let current = sha256_hex(library.read_text(Path::new(&view.path))?.as_bytes());
+        library.write_source_processing(
+            id,
+            &current,
+            None,
+            &derived_by,
+            &[(
+                "summary.md".into(),
+                meeting::summary(id, &result)?.into_bytes(),
+            )],
+        )?;
+    }
+    Ok(output)
+}
+/// The recorded extraction provenance, as the Models port reported it.
+fn extraction_provenance(recorded: &Value) -> Result<office_core::ports::DerivedBy> {
+    let invalid = || {
+        video::refusal(
+            "invalid_source",
+            "the meeting records no extraction provenance",
+        )
+    };
+    let model = recorded["model"].as_str().ok_or_else(invalid)?;
+    let route = match recorded["route"].as_str().ok_or_else(invalid)? {
+        "hosted" => office_core::domain::endpoint::ModelRoute::Hosted,
+        other => other
+            .strip_prefix("private:")
+            .and_then(office_core::domain::endpoint::EndpointKind::parse)
+            .map(office_core::domain::endpoint::ModelRoute::Private)
+            .ok_or_else(invalid)?,
+    };
+    Ok(office_core::ports::DerivedBy {
+        route,
+        model: model.to_owned(),
+    })
 }
 fn attach(call: &Call<'_>, id: &str, task: &str, output: &Value) -> Result<()> {
     let path = format!("extract/{id}.json");
