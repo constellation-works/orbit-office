@@ -3007,6 +3007,70 @@ disclose them.
 - The `preferences` query mode reports open proposals from the SCR
   entries that name one (`proposal:`), not from the proposal store.
 
+## Decision ledger as a precedent provider: Office serves only what Orbit cannot
+
+**Recorded:** 2026-11-01 · [ORB-21090]
+**Code anchors:** none yet; [specs/decision-precedents.md](./specs/decision-precedents.md),
+[specs/scribe.md](./specs/scribe.md#decision-ledger)
+
+### Context
+
+Daniel asked for a decision model that predicts a pending human decision
+from recorded precedent ([ORB-20840]). Orbit designed the consumer and a
+generic `orbit.precedent-provider/1` contract ([ORB-21089]; Orbit
+`agent-main` at `266d234e`, `docs/design/decision-assistance/specs/precedent-decisions.md`).
+Orbit has a built-in provider over its own answered decision requests and
+merges providers by `citation.digest`. It refuses any precedent whose
+`decided_by_kind` is not `human` or `human_confirmed`, and any precedent
+decided at or after the request. The scribe v2 decision ledger (D13) was
+shaped for this use but had no ingestion, provider or feedback rules.
+
+### Decision
+
+1. **Schema is extended, never renamed.** Four optional fields: option
+   `id`/`consequence`, `orbit`, `same_as` and `confirms`. Only ingestion
+   writes `orbit`, `confirms`, option ids and `decided_by: model`.
+2. **Unrecoverable options stay precedent as single-option records**
+   (`chosen` as the only option, with a fixed context note), so they meet
+   Orbit's option check without inventing alternatives.
+3. **Answered Orbit requests are ingested into the ledger**, idempotent by
+   request id, with a deterministic `same_as` link to a scribe entry of the
+   same decision (same task, within 30 minutes, matching chosen answer).
+4. **The provider never returns an ingested decision or its `same_as`
+   group.** Orbit's built-in provider serves those, and Office cannot
+   produce Orbit's digest, so serving them would count one decision twice.
+5. **Model answers are precedent only once a human confirms them;
+   overrides are `reverses` entries and are precedent.** Review-gate
+   `confirm`/`veto` entries are feedback marks, never returned.
+6. **Conflicts reach the consumer as data, not a verdict:** both entries
+   and a fixed context line, from the weekly routine's open to-dos.
+7. **The agreement view is aggregate and read-only**, from Orbit's
+   per-category readout, so it cannot contaminate a category in shadow.
+
+### Alternatives rejected
+
+- **Serve ingested Orbit decisions from Office too.** Double counting under
+  Orbit's digest merge, and two citations for one label.
+- **Merge or edit entries on dedupe.** The ledger is append-only; a link on
+  the later entry keeps both pieces of evidence.
+- **Return a suggested option or score from the provider.** The contract
+  and the task forbid it; the answer is Orbit's alone.
+- **Drop entries without options.** They are Daniel's real choices; the
+  single-option record keeps them without pretending they were labelled.
+- **Report conflicts with a new response field now.** That changes Orbit's
+  contract from this repository. It is recorded as an open question for
+  Orbit instead.
+
+### Consequences
+
+- Ingestion waits on an Orbit read of answered requests that does not
+  exist yet ([ORB-21217] is blocked on it).
+- Without a contract field for conflicts, Orbit's deterministic
+  contradiction downgrade cannot fire on an Office-only conflict; the model
+  sees it through the context line.
+- In practice the Office provider serves scribe and captured decisions
+  made in conversation, which Orbit cannot see.
+
 ## Task References
 
 - [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
@@ -3047,7 +3111,8 @@ disclose them.
 - [ORB-21079] — gave scribe sessions a first-pass title; v2 derives it from the SCR summary.
 - [ORB-21083] — designed scribe v2: opt-in sessions, marker-only tags, ledgers, SCR as handoff, `note` retired.
 - [ORB-21089] — plans Orbit's decision model, which reads decision precedent.
-- [ORB-21090] — plans the office precedent provider over the v2 decision ledger schema.
+- [ORB-21090] — designed the office precedent provider over the v2 decision ledger.
 - [ORB-21115] — built the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
+- [ORB-21217] — proposes ingestion of answered Orbit decision requests into the ledger.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

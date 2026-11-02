@@ -312,7 +312,10 @@ replaces `note` ([Retiring `sources/note`](#retiring-sourcesnote)).
 `#L<n>` holds, written as the entry id, the time, `#decision` and one
 compact JSON object. This is the same one-line form as the structured
 handoff ([sessions.md](./sessions.md#structured-handoff-contract)).
-[ORB-21090] reads exactly these fields.
+[ORB-21090] reads exactly these fields: [decision-precedents.md](./decision-precedents.md#entry-schema)
+says how each serves as precedent and adds four optional, ingestion-only
+or dedupe fields (option `id`/`consequence`, `orbit`, `same_as`,
+`confirms`) without renaming any field below.
 
 | Field | Required | Meaning |
 |---|---|---|
@@ -325,7 +328,7 @@ handoff ([sessions.md](./sessions.md#structured-handoff-contract)).
 | `because` | no | The stated rationale, verbatim with its `ref`, only when one was stated (D3). |
 | `scope` | yes | `global` or `project:<name>`. |
 | `context` | yes | `{task_type, workspace, task, risk_tier}`, each null when unknown. They come from the session's Orbit assignment (`ORBIT_ACTIVE_TASK_ID`, else the task the turns cite), never guessed. |
-| `decided_by` | yes | `human`, `agent` or `model`. `human` only for a user's marker in a typed turn. `agent` for an agent's marker. `model` is for a decision model's answer, written only by the precedent provider's feedback path ([ORB-21089], [ORB-21090]); the scribe never writes it. |
+| `decided_by` | yes | `human`, `agent` or `model`. `human` only for a user's marker in a typed turn. `agent` for an agent's marker. `model` is for a decision model's answer, written only by Orbit decision ingestion's feedback path ([ORB-21089], [ORB-21090]; [feedback rules](./decision-precedents.md#feedback)); the scribe never writes it, and it is never precedent until a human confirms it. |
 | `decided_at` | yes | The decision message's time, RFC 3339 with offset. |
 | `reverses` | no | The entry id this one overturns. |
 | `reversed_by` | derived | Never written, since entries are append-only. Readers compute it from later entries' `reverses`, and `office.scribe-query` returns it. |
@@ -423,6 +426,10 @@ Contradictions are checked twice (D5).
   files one `owner:you` to-do asking which stands. The user's answer is
   recorded as a new decision with `reverses`. One proposal or to-do per
   conflict, each citing both entries. It never edits a ledger.
+  The precedent provider reports a decision conflict whose to-do is still
+  open to Orbit's decision model; slice [ORB-21219] adds the comparison
+  within an Orbit category and a machine-readable `Conflicting entries:`
+  line ([decision-precedents.md](./decision-precedents.md#contradictions)).
 
 ## Scheduling markers and to-dos
 
@@ -1022,7 +1029,8 @@ requires.
 - [ORB-21075] — built the Scribe › Handoffs view.
 - [ORB-21079] — built first-pass scribe titles and the humanized-slug fallback.
 - [ORB-21089] — plans Orbit's decision model, a consumer of decision precedent.
-- [ORB-21090] — plans the office precedent provider over the decision ledger.
+- [ORB-21090] — designed the office precedent provider over the decision ledger ([decision-precedents.md](./decision-precedents.md)).
+- [ORB-21219] — proposes contradiction reporting to the precedent provider.
 - [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
 - [ORB-21116] — built slice S3: preference pages, contradiction check and apply mode.

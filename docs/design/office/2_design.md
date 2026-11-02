@@ -210,6 +210,7 @@ from `.vtt` transcripts and pasted notes.
 | Proposal kinds, signals, lifecycle | [specs/proposals.md](./specs/proposals.md) |
 | Metrics definitions and review production | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) |
 | Screens, app rules, citation links | [specs/web-app.md](./specs/web-app.md) |
+| Decision ledger as a precedent source for Orbit's decision model | [specs/decision-precedents.md](./specs/decision-precedents.md) |
 | Calendar sync, meeting prep and capture from an event | [specs/calendar.md](./specs/calendar.md) |
 | Shareable documents, the team repository, sync and the shared layer | [specs/shared-library.md](./specs/shared-library.md) |
 | Selection record, tray, pull/push, safety | [specs/selection-sharing.md](./specs/selection-sharing.md) |
