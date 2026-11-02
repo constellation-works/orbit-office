@@ -588,6 +588,54 @@ check "adoption records workspace_path" \
 check "adoption keeps the partial .orbit" test -d "$REPAIR/.orbit"
 }
 
+scenario_27() {
+# ---------------------------------------------------------------------------
+# 27. Node 20 (end-of-life) is refused at preflight before any install
+#     side effect; the supported Node 24 LTS baseline is accepted.
+#     Each run uses an isolated HOME and a stub `node` first on PATH
+#     (stub npm/git/ffmpeg come from the harness stub bin); the stub
+#     reports the stubbed version for --version and delegates every
+#     other invocation to the real node.
+# ---------------------------------------------------------------------------
+
+_make_node_stub() { # _make_node_stub <dir> <version>
+    mkdir -p "$1"
+    printf '#!/bin/sh\ncase "${1:-}" in --version) printf "v%s\\n" "%s" ;; *) exec "%s" "$@" ;; esac\n' \
+        "$2" "$2" "$NODE_BIN" > "$1/node"
+    chmod +x "$1/node"
+}
+
+NODE20_BIN="$ROOT/node20-bin"; _make_node_stub "$NODE20_BIN" "20.20.0"
+HOME_NODE20="$ROOT/home-node20"; mkdir -p "$HOME_NODE20"
+OUT_NODE20="$ROOT/out-node20.txt"
+if (TEST_PATH="$NODE20_BIN:$BIN:$NODE_DIR:/usr/bin:/bin" run_install "$HOME_NODE20" -- > "$OUT_NODE20" 2>&1); then
+    cat "$OUT_NODE20" >&2; fail "Node 20 install is refused"
+else
+    ok "Node 20 install is refused"
+fi
+check "Node 20 refusal names the supported baseline" \
+    grep -F "Node.js 24+ is required (found v20.20.0)" "$OUT_NODE20"
+check "Node 20 refusal gives supported-runtime guidance" \
+    grep -F "install a supported LTS release (Node.js 24+) from https://nodejs.org/" "$OUT_NODE20"
+check "Node 20 refusal creates no workspace" test ! -e "$HOME_NODE20/orbit"
+check "Node 20 refusal creates no installer data" test ! -e "$HOME_NODE20/.local/share/orbit-office"
+check "Node 20 refusal writes no service unit" \
+    test ! -e "$HOME_NODE20/.config/systemd/user/orbit-office.service"
+check "Node 20 refusal leaves HOME empty" \
+    sh -c 'test -z "$(find "$1" -mindepth 1 -print -quit)"' sh "$HOME_NODE20"
+
+NODE24_BIN="$ROOT/node24-bin"; _make_node_stub "$NODE24_BIN" "24.18.0"
+HOME_NODE24="$ROOT/home-node24"; mkdir -p "$HOME_NODE24"
+OUT_NODE24="$ROOT/out-node24.txt"
+(TEST_PATH="$NODE24_BIN:$BIN:$NODE_DIR:/usr/bin:/bin" run_install "$HOME_NODE24" -- > "$OUT_NODE24" 2>&1) \
+    || { cat "$OUT_NODE24" >&2; fail "Node 24 install exits 0"; }
+ok "Node 24 install exits 0"
+check "Node 24 is accepted at preflight" \
+    grep -F "preflight: node v24.18.0 and npm present" "$OUT_NODE24"
+check "Node 24 install scaffolds the Library" \
+    test -f "$HOME_NODE24/orbit/library/.office/config.yaml"
+}
+
 scenario_5() {
 # ---------------------------------------------------------------------------
 # 5. Missing Orbit is installed from npm at the tested version

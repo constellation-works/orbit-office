@@ -90,6 +90,8 @@
 #      node in both service units, with no fnm_multishells entry in the
 #      unit PATH; a non-symlink fnm_multishells wrapper as the only node
 #      fails naming the per-shell cause and writes neither unit.
+#  27. Node 20 is refused at preflight before any install side effect
+#      (isolated HOME, stub node/npm/git/ffmpeg); Node 24 is accepted.
 # Usage: sh scripts/install/test-install.sh
 set -eu
 
@@ -643,5 +645,6 @@ scenario_23
 scenario_24
 scenario_25
 scenario_26
+scenario_27
 
 printf 'PASS: %s checks\n' "$PASS"

@@ -19,10 +19,10 @@
     "start": "node packages/server/dist/main.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "devDependencies": {
-    "@types/node": "^22",
+    "@types/node": "^24",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
