@@ -6,7 +6,7 @@ last_validated: 2026-11-02
 
 # Spec: Scribe v2
 
-Status: designed ([ORB-21083]). Slices S1–S6 are built: the
+Status: designed ([ORB-21083]). Slices S1–S8 are built: the
 [decision ledger](#decision-ledger) store, `office.capture`'s `decision`
 input and the [`note` retirement](#retiring-sourcesnote) ([ORB-21114]);
 the `scribe:` settings ([ORB-21115]); preference pages and the
@@ -15,10 +15,14 @@ rule in `office.scribe-pending` and `office.scribe-append`, with
 `office.scribe-query` and `office.scribe-ask` over the new stores
 ([ORB-21117]; see [Built tools](#built-tools-s4)); the Claude Code
 plugin's opt-in, Stop-hook cadence and marker routing ([ORB-21118];
-see [Built plugin](#built-plugin-s5)); and the brief and `/handoff`
+see [Built plugin](#built-plugin-s5)); the brief and `/handoff`
 over the latest SCR ([ORB-21119]; see
-[sessions.md](./sessions.md#scribe-v2-the-latest-scr-is-the-handoff)).
-The web and migration slices are not built. Scribe v1 is built and still runs
+[sessions.md](./sessions.md#scribe-v2-the-latest-scr-is-the-handoff));
+the web Scribe tab: the one-card feed over `view: list`, the Preferences
+and Decisions panels and the Tags editor ([ORB-21120]; see
+[Feed](#feed) and [Configuration](#configuration)); and the weekly
+contradiction auto-task ([ORB-21121]). The migration slices are not built.
+Scribe v1 is built and still runs
 until the slices in [Build order](#build-order) land. The v1 text
 this spec replaces is at `git show d398471:docs/design/office/specs/scribe.md`,
 and its decisions stay in [4_decisions.md](../4_decisions.md#scribe-v1-commanded-capture-into-one-tagged-file-per-session).
@@ -858,10 +862,14 @@ nested list of mappings ([plugin-surface.md](./plugin-surface.md#library-setting
   unset key or an uninitialized Library reads as the defaults.
   `office.scribe-pending` returns the same `tags` and `cadence`, so a
   pass sees the definitions in force without a second call.
-- **How the app writes them, and the dependency.** The Scribe tab's
-  **Tags** editor creates, edits and deletes tags (name, scope,
-  instruction, sink, mode) and saves through `office.config-set`, as the
-  Routines screen saves retention ([web-app.md](./web-app.md#authority)).
+- **How the app writes them, and the dependency** (built, [ORB-21120]).
+  The Scribe tab's **Tags** editor creates, edits and deletes tags (name,
+  scope, instruction, sink, mode) and saves through `office.config-set`,
+  as the Routines screen saves retention ([web-app.md](./web-app.md#authority)):
+  `GET /api/scribe/tags` reads the effective block and
+  `POST /api/scribe/tags` writes one save (`upsert` as
+  `scribe.tags.<name>`, `delete` as that key with null, Restore defaults
+  as `scribe.tags` with null), then reads the block back.
   The app has no operator authority: it calls Orbit as `local-cli`
   holding Agent, so Orbit refuses `office.config-set` today. That is the
   same refusal the approval actions get. Writing tags from the app
@@ -988,25 +996,35 @@ Retired outright, with no compatibility window (D12).
 | Plugin `/scribe`, subagent, hooks ([ORB-20799]) | Reworked: opt-in, Stop-hook cadence, markers, `update`, `tags`; `note`, `pending`, `pref`, `landed`, `why`, `backfill` retired. | [ORB-21118] |
 | `office.scribe-control` ([ORB-20756]) | Kept; gains `on_by` and scope. | [ORB-21118] |
 | `dom-scribe-rules` page ([ORB-20686]) | Kept for topics, capture and models; Tags section and `scribe.handoff` retired. | [ORB-21122] |
-| Web Scribe screen ([ORB-20696]) | Reworked into the one-card feed with a Tags editor. | [ORB-21120] |
+| Web Scribe screen ([ORB-20696]) | Reworked into the one-card feed with a Tags editor (built). | [ORB-21120] |
 | Global handoffs and `/handoff <project>` ([ORB-21063]) | See [sessions.md](./sessions.md#scribe-v2-the-latest-scr-is-the-handoff). | [ORB-21119] |
 | Structured handoffs ([ORB-21065]) | See [sessions.md](./sessions.md#scribe-v2-the-latest-scr-is-the-handoff). | [ORB-21119] |
-| Scribe › Handoffs view ([ORB-21075]) | See [sessions.md](./sessions.md#scribe-v2-the-latest-scr-is-the-handoff). | [ORB-21120] |
+| Scribe › Handoffs view ([ORB-21075]) | Replaced by the feed (built); see [sessions.md](./sessions.md#scribe-v2-the-latest-scr-is-the-handoff). | [ORB-21120] |
 | Scribe titles and the slug fallback ([ORB-21079]) | **Kept:** the first-pass scribe title (at most eight plain words), the user title winning, the placeholder rule as a hint filter. **Reworked:** the title is derived from the Summary on every pass while scribe-set. **Retired for v2 SCRs:** the custom-title and side-session precedence levels, the humanized-slug fallback, the slug filename and its rename, and `/scribe backfill --titles`. v1 SCRs keep their titles and slug fallback for display until removal. | [ORB-21117], [ORB-21123] |
 | Conversation sources as `src-…/source.md`, live scribe, recall | Unchanged and unused by v2, as in v1. | — |
 
 ### Feed
 
-The Scribe tab's feed shows exactly one card per project, its latest SCR,
-plus one global card, the latest global SCR (D8). Each card shows the
-title, scope, `updated`, Summary, Next, Outcome and Blockers, and the
-counts of new Tags entries. Opening a card shows the whole SCR. Its
-**Previous** link walks the `previous:` chain one SCR at a time, which is
-the only way to reach history (D8). The feed has no list of past sessions
-and no per-entry stream. Today's Handoffs section shows the same cards.
-The Pending, Preferences, Landed and Why views retire. A Preferences
-panel reads the preference pages and a Decisions panel the ledgers, both
-through `office.scribe-query`.
+Built ([ORB-21120]). The Scribe tab's feed shows exactly one card per
+project, its latest SCR, plus one global card, the latest global SCR
+(D8). Each card shows the title, scope, `updated`, Summary, Next, Outcome
+and Blockers, and the counts of new Tags entries (`tag_counts`, entries
+per Tags subsection, beside the `tag_entries` total). Opening a card
+shows the whole SCR. Its **Previous** link walks the `previous:` chain
+one SCR at a time, which is the only way to reach history (D8). The feed
+has no list of past sessions and no per-entry stream. Today's Handoffs
+section shows the same cards. The Pending, Preferences, Landed and Why
+views retire. A Preferences panel reads the preference pages and a
+Decisions panel the ledgers, both through `office.scribe-query`.
+
+The cards are the `office.session-brief` `view: list` answer
+([sessions.md](./sessions.md#handoff-list)): the same card shape as
+`office.scribe-query` mode `scr` (one shared builder). A private SCR's
+card withholds its summary, sections, Tags entries and counts
+(`content_withheld`); only its id, path, scope and times remain. The app
+reads them at `GET /api/scribe/feed` and `GET /api/scribe/feed?id=…`,
+and the panels at `GET /api/scribe/preferences` and
+`GET /api/scribe/decisions` ([web-app.md](./web-app.md#screens)).
 
 ## Migration
 
@@ -1048,7 +1066,7 @@ requires.
 | S4 (built) | [ORB-21117] | S1, S2, S3 | SCR v2 format, pending and append v2 (markers and the trust rule, sections, `T<n>` entries, `previous`, title from summary, ledger and page writes), query and ask over the new stores (D2, D6). |
 | S5 (built) | [ORB-21118] | S4 | Claude Code plugin: opt-in `/scribe on\|off\|update\|status\|tags`, Stop-hook cadence, orchestrator on/ask, routing (proposals, scheduling markers as proposed tasks, `owner:you` to-dos, `orbit_task` tags) (D1, D2, D10). |
 | S6 (built) | [ORB-21119] | S4 | Session brief and `/handoff` read the latest SCR per project and global; capture `handoff` compatibility (D7; ORB-21063, ORB-21065). |
-| S7 | [ORB-21120] | S2, S6 | Web app: one card per project plus the global card, `previous` chain, Preferences and Decisions panels, Tags editor (saves need [ORB-20363]) (D8, D9; ORB-21075). |
+| S7 (built) | [ORB-21120] | S2, S6 | Web app: one card per project plus the global card, `previous` chain, Preferences and Decisions panels, Tags editor (saves need [ORB-20363]) (D8, D9; ORB-21075). |
 | S8 (built) | [ORB-21121] | S1, S3 | Weekly `office-scribe-contradictions` auto-task definition, seeded disabled (D5). |
 | S9 | [ORB-21122] | S4, S5, S6 | Migration: v1 command and query mapping with `deprecated`, preference and decision backfill (`ledger_append` proposals), rules-page Tags removal proposal, the ws_constellation AGENTS.md task (D11). |
 | S10 | [ORB-21123] | S9 | Removal at the end of the 30-day window: v1 commands and modes, capture `handoff`, `view: list`, the v1 title levels (D11). |
@@ -1079,7 +1097,7 @@ requires.
 - [ORB-21117] — built slice S4: SCR v2, markers and the trust rule, query and ask over the new stores.
 - [ORB-21118] — built slice S5: Claude Code opt-in, Stop-hook cadence and marker routing.
 - [ORB-21119] — built slice S6: the brief and `/handoff` over the latest SCR.
-- [ORB-21120] — proposed slice S7: the one-card feed, `previous` chain and Tags editor.
+- [ORB-21120] — built slice S7: the one-card feed, `previous` chain and Tags editor.
 - [ORB-21121] — built slice S8: the weekly contradiction auto-task.
 - [ORB-21122] — proposed slice S9: migration and backfill.
 - [ORB-21123] — proposed slice S10: removal of v1 surfaces after the window.

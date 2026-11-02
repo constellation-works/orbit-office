@@ -68,8 +68,8 @@ Blockers and Next sections are rewritten on every scribe pass.
   project SCR overall leads, else the legacy single-conversation lead.
   The assignment fallback (`brief.handoff: auto`) is the project of the
   newest SCR whose Next cites the task, else the legacy thread's. The
-  `view: list` shape is unchanged by this slice; its SCR feed is
-  [ORB-21120].
+  `view: list` SCR feed is built ([ORB-21120]; see
+  [Handoff list](#handoff-list)).
 - **No thread key.** One handoff per project replaces ORB-21060's thread
   per project, orchestrator and cited assignment. Two concurrent sessions
   in one project show as the handoff plus an `other_sessions` item. A
@@ -850,16 +850,38 @@ state cannot appear empty.
 
 ### Handoff list
 
-> Scribe v2 reworks this list into SCR cards and the `previous:` chain
-> ([Shipped handoff work in v2](#shipped-handoff-work-in-v2)).
+Built ([ORB-21120], reworking [ORB-21075]). `office.session-brief` with
+`view: list` is the read-only feed behind the web app's Scribe tab and
+Today's Handoffs section ([web-app.md](./web-app.md#screens);
+[scribe.md](./scribe.md#feed)). It reads only the Library (no Orbit task
+reads, no model call).
 
-Built ([ORB-21075]). `office.session-brief` with `view: list` is the
-read-only list behind the web app's Scribe › Handoffs view and Today's
-Handoffs section ([web-app.md](./web-app.md#screens)). It reads only the
-Library (no Orbit task reads, no model call) and returns exactly three
-sections, each always present; every item carries `listing` (scope, thread,
-project, orchestrator, cited assignment, session id, source title,
-`superseded`, `state`, `until`, `resolved_by`, `withheld`).
+- **Cards (the default).** Exactly the latest v2 SCR per project plus the
+  latest global SCR, as `cards` (global first, then projects by scope),
+  with `count` and `files_searched`. Each card is the SCR's front matter,
+  its rewritten Summary, Goals, Outcome and Blockers and Next sections,
+  its Tags entries with `<SCR id>#T<n>` citations, `tag_entries` and
+  `tag_counts` (entries per Tags subsection) — the same shape
+  `office.scribe-query` mode `scr` returns. A private SCR (or a private
+  conversation sensitivity setting) withholds its summary, sections,
+  entries and counts (`content_withheld`); its id, path, scope and times
+  remain as references.
+- **One SCR (`id`).** With `id`, the answer is that SCR as `scr` and the
+  SCR its `previous:` names as `previous` (null at the chain's end or
+  when that file is gone). Walking `previous` ids is the only way to
+  reach an older SCR; there is no history list. An unknown id is
+  `scribe_scr_not_found`.
+- **Legacy (`legacy: true`).** For the 30-day window the v1 list below
+  stays available as `view: list` with `legacy: true`; after it, it is
+  removed ([ORB-21123]). The legacy filters and paging (`project`,
+  `orchestrator`, `thread`, `include_closed`, `offset`, `limit`) require
+  `legacy: true` and are refused without it, as are `id` with `legacy`
+  and either new key without `view: list`.
+
+The legacy list returns exactly three sections, each always present;
+every item carries `listing` (scope, thread, project, orchestrator,
+cited assignment, session id, source title, `superseded`, `state`,
+`until`, `resolved_by`, `withheld`).
 
 - **`threads` (Current):** each thread's current handoff, the one the brief
   would show for it (see [Per thread](#handoff)), newest first, capped at
@@ -885,7 +907,8 @@ project, orchestrator, cited assignment, session id, source title,
   structured fields, and `withheld: true`; a private resolving entry's text
   is null. The brief itself is unchanged.
 - The list keys (`thread`, `include_closed`, `offset`, `limit`) are refused
-  without `view: list`, and `view: list` is refused with `session_start`.
+  without `view: list` — and, with `project` and `orchestrator`, without
+  `legacy: true` — and `view: list` is refused with `session_start`.
 
 ### Extra workspaces (`brief.task_workspaces`)
 
@@ -1000,7 +1023,7 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-21079] — gave scribe sessions a title on the first pass (v2 derives it from the SCR summary).
 - [ORB-21117] — proposed scribe v2 slice S4.
 - [ORB-21119] — built scribe v2 slice S6.
-- [ORB-21120] — proposed scribe v2 slice S7.
+- [ORB-21120] — built scribe v2 slice S7: `view: list` returns the SCR cards (or one SCR with its `previous` given `id`), with the v1 list kept behind `legacy: true`.
 - [ORB-21123] — proposed scribe v2 slice S10.
 - [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.
 

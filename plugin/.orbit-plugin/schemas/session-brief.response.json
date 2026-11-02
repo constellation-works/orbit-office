@@ -1,10 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.session-brief response",
-  "description": "Ordered sections. Handoff, global, projects, other_sessions, latest_digest, workspace_unavailable and onboarding are absent when empty. The other five sections are always present. Handoff is the current project's latest v2 SCR rendered as one item (id is the SCR id, link its Library path, time its updated, entry_kind handoff, text its title and updated then Summary with the (scribe) marker, Goals, Outcome and Blockers and Next as lists), or, when the project has no SCR, the newest project-scoped legacy handoff of the current session's thread (its project, preferring its orchestrator; a thread is the first Orbit task id its handoff cites, else its conversation's project plus orchestrator). Global lists the latest global SCR first (rendered as a handoff item), then the open legacy scope: global handoffs (stored with a leading (global) or (global until <time>) marker; not expired and not cited by a later resolved entry), marked legacy when a global SCR is present, newest first, capped at five items in all; a legacy global the project handoff cites by anchor is always listed, exactly once; total counts the global SCR and every open legacy global. Projects is present only in manual output (session_start with brief.handoff manual, auto with no project found, or view handoffs without a project): one item per project with a handoff, newest first, capped at twenty; id and text name the project, link and time are its latest SCR's path and updated, or its newest legacy handoff's when it has no SCR. other_sessions lists, for a project with SCRs, the other SCRs in that project updated within seven days of its newest SCR, or, for a project with no SCR, one cited handoff item per other legacy thread, newest first, for handoffs no more than seven days older than the newest conversation source, capped at five items with total and truncated reporting the window count and cap. Other_sessions is present only when a project is used; without a project the newest project SCR leads as handoff, else the output is the legacy single-conversation brief plus global. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence from the office workspace refuses the whole brief; an unreadable extra workspace (brief.task_workspaces) appears as one workspace_unavailable item instead. Task items from an extra workspace carry workspace (its selector); office-workspace items omit it. view handoffs returns only handoff, global and projects. Handoff items include structured_handoff when structured, with text rendered as Objective, Next, Authorization, Observations (observed at and recheck), Evidence, in that order. Scope and scribe markers remain. Unstructured historical handoffs retain exact text and carry legacy:true. view list returns exactly threads, global and history, each always present: threads lists every thread's current handoff whose own anchor no resolved entry cites, newest first, capped at 200; global lists open global handoffs (with include_closed, also expired and resolved ones), newest first, capped at 200; history lists every project handoff, newest first, after the project, orchestrator and thread filters, paged by offset and limit, with total counting every match and truncated meaning more follow this page. List items carry listing. Items from a private conversation source have empty text and listing.source_title, no structured_handoff or legacy, and listing.withheld true.",
-  "type": "object",
-  "properties": {
-    "sections": {
+  "description": "Ordered sections. Handoff, global, projects, other_sessions, latest_digest, workspace_unavailable and onboarding are absent when empty. The other five sections are always present. Handoff is the current project's latest v2 SCR rendered as one item (id is the SCR id, link its Library path, time its updated, entry_kind handoff, text its title and updated then Summary with the (scribe) marker, Goals, Outcome and Blockers and Next as lists), or, when the project has no SCR, the newest project-scoped legacy handoff of the current session's thread (its project, preferring its orchestrator; a thread is the first Orbit task id its handoff cites, else its conversation's project plus orchestrator). Global lists the latest global SCR first (rendered as a handoff item), then the open legacy scope: global handoffs (stored with a leading (global) or (global until <time>) marker; not expired and not cited by a later resolved entry), marked legacy when a global SCR is present, newest first, capped at five items in all; a legacy global the project handoff cites by anchor is always listed, exactly once; total counts the global SCR and every open legacy global. Projects is present only in manual output (session_start with brief.handoff manual, auto with no project found, or view handoffs without a project): one item per project with a handoff, newest first, capped at twenty; id and text name the project, link and time are its latest SCR's path and updated, or its newest legacy handoff's when it has no SCR. other_sessions lists, for a project with SCRs, the other SCRs in that project updated within seven days of its newest SCR, or, for a project with no SCR, one cited handoff item per other legacy thread, newest first, for handoffs no more than seven days older than the newest conversation source, capped at five items with total and truncated reporting the window count and cap. Other_sessions is present only when a project is used; without a project the newest project SCR leads as handoff, else the output is the legacy single-conversation brief plus global. Questions cover the ten most recently appended conversation sources; last_session returns the source followed by up to five decisions/directions with total and truncated. Unknown, unreadable or incomplete evidence from the office workspace refuses the whole brief; an unreadable extra workspace (brief.task_workspaces) appears as one workspace_unavailable item instead. Task items from an extra workspace carry workspace (its selector); office-workspace items omit it. view handoffs returns only handoff, global and projects. Handoff items include structured_handoff when structured, with text rendered as Objective, Next, Authorization, Observations (observed at and recheck), Evidence, in that order. Scope and scribe markers remain. Unstructured historical handoffs retain exact text and carry legacy:true. view list returns the SCR cards feed (the latest v2 SCR per project plus the latest global SCR; with id, that one SCR and the SCR its previous field names, the only way to reach an older SCR); a private SCR's card withholds its summary, sections, Tags entries and tag counts (content_withheld true). With legacy:true, view list returns exactly threads, global and history, each always present: threads lists every thread's current handoff whose own anchor no resolved entry cites, newest first, capped at 200; global lists open global handoffs (with include_closed, also expired and resolved ones), newest first, capped at 200; history lists every project handoff, newest first, after the project, orchestrator and thread filters, paged by offset and limit, with total counting every match and truncated meaning more follow this page. List items carry listing. Items from a private conversation source have empty text and listing.source_title, no structured_handoff or legacy, and listing.withheld true.",
+  "anyOf": [
+    {
+      "title": "brief, handoffs and the legacy list",
+      "type": "object",
+      "properties": {
+        "sections": {
       "type": "array",
       "items": {
         "type": "object",
@@ -151,14 +154,241 @@
           "truncated"
         ],
         "additionalProperties": false
+        }
       }
+      },
+      "required": [
+        "sections"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "title": "view list: the SCR cards feed",
+      "type": "object",
+      "properties": {
+        "cards": {
+          "type": "array",
+          "description": "Exactly the latest v2 SCR per project plus the latest global SCR, global first then projects by scope. Older SCRs are reached only by asking again with a card's previous id.",
+          "items": {
+            "$ref": "#/$defs/scr_card"
+          }
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_searched": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "v2 SCR files read, including the ones an older chain hides."
+        }
+      },
+      "required": [
+        "cards",
+        "count",
+        "files_searched"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "title": "view list with id: one SCR and its previous",
+      "type": "object",
+      "properties": {
+        "scr": {
+          "$ref": "#/$defs/scr_card"
+        },
+        "previous": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/scr_card"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The SCR the requested one's previous field names, or null at the chain's end (or when that file is gone)."
+        }
+      },
+      "required": [
+        "scr",
+        "previous"
+      ],
+      "additionalProperties": false
     }
-  },
-  "required": [
-    "sections"
   ],
-  "additionalProperties": false,
   "$defs": {
+    "scr_card": {
+      "type": "object",
+      "description": "One v2 SCR as a feed card: front matter, the rewritten Summary, Goals, Outcome and Blockers and Next sections, its Tags entries with <SCR>#T<n> citations, and tag_counts (entries per Tags subsection). A private SCR has content_withheld true, a null summary and empty sections, tags and tag_counts.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "description": "global or project:<name>."
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "type": "string"
+        },
+        "started": {
+          "type": "string"
+        },
+        "updated": {
+          "type": "string"
+        },
+        "previous": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The scope's earlier latest SCR id when this SCR was created; ask with it as id to walk the chain."
+        },
+        "scribed_through": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "goals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outcome": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Outcome and Blockers items."
+        },
+        "next": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tag_entries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tag_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Tags entries per subsection heading (Preferences, Decisions, custom tag names, Requests)."
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "citation": {
+                "type": "string"
+              },
+              "group": {
+                "type": "string"
+              },
+              "msg": {
+                "type": "string"
+              },
+              "time": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "quote": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "citation",
+              "group",
+              "msg",
+              "time",
+              "by",
+              "scope",
+              "quote",
+              "fields"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "sensitivity": {
+          "type": "string"
+        },
+        "content_withheld": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "title",
+        "title_by",
+        "scope",
+        "project",
+        "session",
+        "started",
+        "updated",
+        "previous",
+        "scribed_through",
+        "summary",
+        "goals",
+        "outcome",
+        "next",
+        "tag_entries",
+        "tag_counts",
+        "tags",
+        "sensitivity",
+        "content_withheld"
+      ],
+      "additionalProperties": false
+    },
     "structured_handoff": {
       "type": "object",
       "description": "Ordered handoff: objective, next, authorization, observations, evidence. Character budgets (Unicode scalar values): 500, 1000, 1000, 2000 total observation text+observed_at+recheck, 2000 total evidence. Objective and next are required, single-line and nonempty. Objective cites the complete assignment task ID. Task references must be complete: bare numeric tokens of 4+ digits and bare numbers after task/tasks/assignment are refused; use links, timestamps, versions or units for other numbers. Authorization records ownership and Daniel's prior authorization and constraints, never grants it. Unknown keys and credentials are refused.",

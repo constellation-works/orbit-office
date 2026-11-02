@@ -628,96 +628,180 @@ export type LocalCalendarChange =
   | { action: "delete"; key: string }
   | ({ action: "sources" } & CalendarSources);
 
-/**
- * One SCR line as the Scribe screen shows it, copied from an
- * `office.scribe-query` result (specs/scribe.md, "The SCR file").
- */
-export interface ScribeEntry {
-  /** `<SCR id>#L<line>`. */
+/** One Tags entry of a v2 SCR, cited `<SCR id>#T<n>` (specs/scribe.md, "The SCR file"). */
+export interface ScrTagEntry {
+  /** `T<n>`. */
+  id: string;
+  /** `<SCR id>#T<n>`. */
   citation: string;
-  /** `<library path>:<line>`. */
-  file_line: string;
-  /** Message id, or `note` for a note. */
+  /** The Tags subsection: `Preferences`, `Decisions`, a custom tag name, or `Requests`. */
+  group: string;
+  /** The cited message id. */
   msg: string;
   /** The entry's local time as written on the line. */
   time: string;
-  tag: string;
-  topics: string[];
-  /** The verbatim quote (a note's own text). */
+  /** `user` or `agent`. */
+  by: string;
+  /** `global` or `project:<name>`. */
+  scope: string;
+  /** The marker line, verbatim. */
   quote: string;
-  /** The decision's reason, inline or from the `#why` note that filled it. */
-  why: string | null;
-  /** A decision still missing its reason: "no recorded reason". */
-  no_why: boolean;
-  matter: string | null;
-  review_by: string | null;
-  /** A preference past its `review_by`. */
-  stale: boolean;
-  refs: string[];
-  by: string | null;
-  due: string | null;
-  session_id: string;
-  /** `claude --resume <session-id>`. */
-  resume: string | null;
+  /** Trailing fields (`ledger`, `proposal`, `matter`, `task`, …). */
+  fields: Record<string, string>;
 }
 
-/** One session's lines in the feed, newest first. */
-export interface ScribeSession {
-  session_id: string;
-  /** SCR file id, whose slug names an untitled session for display. */
-  id: string | null;
+/**
+ * One v2 SCR as a feed card, from `office.session-brief` with `view: list`
+ * (specs/scribe.md, "Feed"). A private SCR is listed by reference only:
+ * `withheld` is true, the summary is null and the sections, Tags entries
+ * and tag counts are empty.
+ */
+export interface ScrCard {
+  /** The SCR id (`SCR-<yyyymmdd>-<hhmm>-<session6>`). */
+  id: string;
+  /** Library-relative SCR file path. */
+  path: string;
   title: string | null;
   title_by: string | null;
+  /** `global` or `project:<name>`. */
+  scope: string;
   project: string | null;
-  counterpart_name: string | null;
-  /** The session's scribe cursor; a note needs one. */
+  /** The session this SCR records. */
+  session: string;
+  started: string;
+  updated: string;
+  /** The scope's earlier latest SCR, reached only through this link; null at the chain's end. */
+  previous: string | null;
   scribed_through: string | null;
-  /** Time of the newest line. */
-  latest: string;
-  entries: ScribeEntry[];
+  /** The Summary section, keeping its `(scribe)` marker; null when withheld. */
+  summary: string | null;
+  goals: string[];
+  /** Outcome and Blockers items. */
+  outcome: string[];
+  next: string[];
+  /** Tags entries in this SCR, in all. */
+  tag_entries: number;
+  /** Tags entries per subsection heading (the counts a card shows). */
+  tag_counts: Record<string, number>;
+  tags: ScrTagEntry[];
+  /** A private session: content withheld. */
+  withheld: boolean;
 }
 
-/** `GET /api/scribe/feed`: the current or most recent session first. */
-export interface ScribeFeed {
-  sessions: ScribeSession[];
-  /** Lines shown, and how many matched in `since`'s window; when shown < total, the oldest lines were truncated and the newest are shown. */
-  shown: number;
-  total: number;
-  /** First local date of the window searched. */
-  since: string;
-  time_zone: string;
-  today: string;
-}
-
-/** The canned queries: open pending, current preferences, landed today, and why. */
-export type ScribeView = "pending" | "pref" | "landed" | "why";
-
-/** `GET /api/scribe/query?view=<view>[&about=<matter or topic>]`. */
-export interface ScribeQueryResult {
-  view: ScribeView;
-  /** The lines `office.scribe-query` returned, in its order. */
-  entries: ScribeEntry[];
+/** `GET /api/scribe/feed`: exactly one card per project (its latest SCR) plus one global card. */
+export interface ScrFeed {
+  cards: ScrCard[];
   count: number;
-  since: string | null;
-  until: string | null;
-  time_zone: string;
-  today: string;
+  /** v2 SCR files read, including the older ones only the `previous` chain reaches. */
   files_searched: number;
 }
 
-/** `POST /api/scribe/note`: Daniel's own entry, recorded verbatim. */
-export interface ScribeNoteRequest {
-  session_id: string;
-  text: string;
-  /** Used when the text does not start with `#<tag>`. */
-  tag?: string;
+/** `GET /api/scribe/feed?id=<SCR id>`: that SCR and the one its `previous` names. */
+export interface ScrDetail {
+  scr: ScrCard;
+  previous: ScrCard | null;
 }
 
-/** What the note append did. */
-export interface ScribeNoteResult {
-  added: Array<{ file_line: string; text: string }>;
-  /** Refusal reasons from `office.scribe-append`, such as `tag_not_permitted`. */
-  refused: string[];
+/** One section of a preference page, from `office.scribe-query` mode `preferences`. */
+export interface ScribePreference {
+  page: string;
+  /** `global` or `project:<name>`. */
+  scope: string;
+  matter: string;
+  /** `<page>#<matter>`. */
+  citation: string;
+  statement: string;
+  cites: string[];
+  stated_at: string;
+  review_by: string;
+  /** Past its `review_by`. */
+  stale: boolean;
+  /** SCR entries that recorded a proposed change for this matter. */
+  proposed: Array<{ entry: string; proposal: string }>;
+}
+
+/** `GET /api/scribe/preferences`: the current preference pages, by scope. */
+export interface ScribePreferences {
+  preferences: ScribePreference[];
+  count: number;
+  today: string;
+}
+
+/** One decision ledger entry, from `office.scribe-query` mode `decisions`. */
+export interface ScribeDecision {
+  /** `dec-<scope>-<n>`. */
+  id: string;
+  /** The ledger's id (`decisions-<scope>`). */
+  ledger: string;
+  /** 1-based line in the ledger body. */
+  line: number;
+  question: string | null;
+  chosen: string | null;
+  /** The decision message, verbatim; null for a private reference-only entry. */
+  quote: string | null;
+  /** The stated rationale, verbatim; null when none was stated. */
+  because: string | null;
+  scope: string;
+  decided_by: string;
+  decided_at: string;
+  reverses: string | null;
+  reversed_by: string | null;
+  /** Not reversed by a later entry. */
+  current: boolean;
+  /** The evidence's source id. */
+  source: string;
+  /** A reference-only entry from a private session. */
+  private: boolean;
+}
+
+/** `GET /api/scribe/decisions`: ledger entries, oldest ledger and line first. */
+export interface ScribeDecisions {
+  decisions: ScribeDecision[];
+  count: number;
+}
+
+/** Whose scope a tag's entries belong to. */
+export type ScribeTagScope = "global" | "project" | "session";
+/** Where a tag's entries go; never a file outside the Library. */
+export type ScribeTagSink = "decisions_ledger" | "preference_page" | "scr_only" | "orbit_task";
+/** How a tag's entries take effect. */
+export type ScribeTagMode = "propose" | "apply" | "append";
+
+/** One tag definition in force (specs/scribe.md, "Configuration"). */
+export interface ScribeTagDef {
+  /** Lowercase kebab-case, unique. */
+  name: string;
+  scope: ScribeTagScope;
+  instruction: string;
+  sink: ScribeTagSink;
+  mode: ScribeTagMode;
+  capture: "markers" | "markers+inferred";
+  /** For `orbit_task` only: the Orbit workspace selector. */
+  workspace?: string;
+}
+
+/** `GET /api/scribe/tags`: the effective `scribe` settings from `office.status`. */
+export interface ScribeTags {
+  tags: ScribeTagDef[];
+  cadence: { minutes: number; turns: number };
+  /** The Library's tag list differs from the shipped defaults. */
+  tags_customized: boolean;
+}
+
+/**
+ * `POST /api/scribe/tags`: one Tags editor save through `office.config-set`.
+ * `upsert` writes `scribe.tags.<name>`, `delete` writes it as null, and
+ * `restore` writes `scribe.tags` as null (the two shipped defaults).
+ */
+export type ScribeTagSave =
+  | { action: "upsert"; tag: ScribeTagDef }
+  | { action: "delete"; name: string }
+  | { action: "restore" };
+
+/** A save Orbit accepted; `tags` is the effective block read back after it. */
+export interface ScribeTagSaved {
+  saved: true;
+  tags: ScribeTags;
 }
 
 /** One cited claim of an answer. */
@@ -768,8 +852,8 @@ export interface HandoffClosing {
 }
 
 /**
- * One handoff as Scribe › Handoffs and Today show it, from
- * `office.session-brief` with `view: list` (specs/sessions.md, "Handoff list").
+ * One legacy v1 handoff, from `office.session-brief` with `view: list` and
+ * `legacy: true` (specs/sessions.md, "Handoff list").
  */
 export interface ScribeHandoff {
   /** `<source-id>#L<n>`: the conversation source and the handoff's line. */
@@ -802,7 +886,12 @@ export interface ScribeHandoff {
   resolved_by: HandoffClosing | null;
 }
 
-/** `GET /api/scribe/handoffs[?project&orchestrator&thread&offset]`. Filters and paging apply to `history` only. */
+/**
+ * `GET /api/scribe/handoffs[?project&orchestrator&thread&offset]`: the legacy
+ * v1 handoff list (`view: list` with `legacy: true`), kept for the scribe v2
+ * compatibility window. Filters and paging apply to `history` only. The
+ * Scribe feed and Today read {@link ScrFeed} instead.
+ */
 export interface ScribeHandoffs {
   /** Each open thread's current handoff, newest first. */
   threads: ScribeHandoff[];

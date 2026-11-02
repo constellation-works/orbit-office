@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { emptyView, leadingTag, messageFor, notCapturedText, sessionMeta, sessionTitle, suggestedTag, timeLabel } from "../dist/screens/scribe/model.js";
+import { blankTag, defaultModeForSink, messageFor, modesForSink, notCapturedText, timeLabel } from "../dist/screens/scribe/model.js";
 
 test("a line's time reads as written, without seconds or offset", () => {
   assert.equal(timeLabel("2026-11-01T06:05+00:00"), "2026-11-01 06:05");
@@ -9,57 +9,51 @@ test("a line's time reads as written, without seconds or offset", () => {
   assert.equal(timeLabel("garbled"), "garbled");
 });
 
-test("a session reads by title and project, untitled ones by their filename slug", () => {
-  const session = { session_id: "s", id: "SCR-30-1135-pilot-admission-hold", title: null, title_by: null, project: "constellation", counterpart_name: null, scribed_through: "m-0004", latest: "", entries: [{}, {}] };
-  assert.equal(sessionTitle(session), "Pilot admission hold");
-  assert.equal(sessionMeta(session), "constellation · 2 lines");
-  assert.equal(sessionTitle({ ...session, title: "Scribe screen" }), "Scribe screen");
-  assert.equal(sessionMeta({ ...session, project: null, entries: [{}] }), "1 line");
-});
-
-test("a note's tag: a leading #tag wins, then plain cues, else fact", () => {
-  assert.equal(leadingTag("#todo call the venue"), "todo");
-  assert.equal(leadingTag("call #todo"), null);
-  assert.equal(suggestedTag("#reminder at 3pm"), "reminder");
-  assert.equal(suggestedTag("Decision: ship parse first"), "decision");
-  assert.equal(suggestedTag("I need to call the venue"), "todo");
-  assert.equal(suggestedTag("remind me to stretch"), "reminder");
-  assert.equal(suggestedTag("Which host runs the gateway?"), "question");
-  assert.equal(suggestedTag("The NAS is on 10.0.0.5"), "fact");
-});
-
 test("refusals read in plain words and never show the code", () => {
-  for (const code of ["no_cursor", "scribe_not_parsed", "tag_not_permitted", "something_new", "network_error"]) {
+  for (const code of ["scribe_scr_not_found", "invalid_library_setting", "something_new", "network_error"]) {
     assert.ok(!messageFor(code).includes(code), code);
-    assert.ok(messageFor(code).endsWith("."));
+    assert.ok(messageFor(code).endsWith("."), code);
   }
+  assert.match(messageFor("not_permitted"), /nothing was saved/);
 });
 
-test("not captured states the searched range, files and topics; empty views say what was searched", () => {
+test("not captured states the searched range, files and topics", () => {
   const base = { status: "not_captured", claims: [], references: [], dropped: 0, model: null };
   assert.equal(notCapturedText({ ...base, since: "2026-10-31", until: "2026-11-01", topics: ["recall", "scribe"], files_searched: 2 }),
     "Not captured. Searched 2026-10-31 to 2026-11-01 across 2 files; topics recall, scribe.");
   assert.equal(notCapturedText({ ...base, since: null, until: null, topics: [], files_searched: 1 }), "Not captured. Searched every date across 1 file.");
-  assert.equal(emptyView("landed", null, "America/Los_Angeles", "2026-11-01"), "Nothing landed today (2026-11-01, America/Los_Angeles).");
-  assert.equal(emptyView("pref", "review-cadence", "UTC", "2026-11-01"), "No preference recorded on review-cadence.");
 });
 
-test("handoff helpers: age, summary, thread labels and project groups keep the newest-first order", async () => {
-  const { ageLabel, byProject, handoffSummary, threadLabel, taskHref, HANDOFFS_HREF } = await import("../dist/ui/handoff.js");
+test("a sink takes only its paired modes, and a new tag starts as markers-only session record", () => {
+  assert.deepEqual(modesForSink("preference_page"), ["propose", "apply"]);
+  assert.deepEqual(modesForSink("orbit_task"), ["propose"]);
+  assert.deepEqual(modesForSink("decisions_ledger"), ["append"]);
+  assert.deepEqual(modesForSink("scr_only"), ["append"]);
+  assert.equal(defaultModeForSink("preference_page"), "propose");
+  assert.equal(defaultModeForSink("decisions_ledger"), "append");
+  assert.deepEqual(blankTag(), { name: "", scope: "session", instruction: "", sink: "scr_only", mode: "append", capture: "markers" });
+});
+
+test("card helpers: age, scope, summary and tag counts read in plain words", async () => {
+  const { ageLabel, cardSummary, cardTitle, scopeLabel, tagCountsLabel, taskHref, SCRIBE_FEED_HREF } = await import("../dist/ui/handoff.js");
   const now = new Date("2026-11-01T09:00:00Z");
   assert.equal(ageLabel("2026-11-01T08:59:40Z", now), "just now");
   assert.equal(ageLabel("2026-11-01T08:30:00Z", now), "30 min ago");
   assert.equal(ageLabel("2026-10-31T10:00:00Z", now), "23 h ago");
   assert.equal(ageLabel("2026-10-28T09:00:00Z", now), "4 d ago");
-  assert.equal(threadLabel("task:ORB-21001"), "ORB-21001");
-  assert.equal(threadLabel("project:orbit orchestrator:codex"), "orbit · codex");
-  assert.equal(threadLabel("project: orchestrator:"), "No project · no orchestrator");
-  assert.equal(taskHref("ORB-21075"), "orbit://task/ORB-21075");
-  assert.equal(HANDOFFS_HREF, "?scribe=handoffs#scribe");
-  const base = { text: "Office next.", fields: null, withheld: false };
-  assert.equal(handoffSummary(base), "Office next.");
-  assert.equal(handoffSummary({ ...base, fields: { objective: "Ship ORB-1." } }), "Ship ORB-1.");
-  assert.equal(handoffSummary({ ...base, text: "", withheld: true }), "Private session: content withheld.");
-  const groups = byProject([{ id: "a", project: "office" }, { id: "b", project: null }, { id: "c", project: "office" }]);
-  assert.deepEqual(groups.map((g) => [g.project, g.handoffs.map((h) => h.id)]), [["office", ["a", "c"]], ["No project", ["b"]]]);
+  assert.equal(taskHref("ORB-21120"), "orbit://task/ORB-21120");
+  assert.equal(SCRIBE_FEED_HREF, "#scribe");
+  const base = {
+    id: "SCR-20261031-0900-aaaa02", title: "Ship the feed", scope: "project:orbit-office", project: "orbit-office",
+    summary: "(scribe) Rework the tab.", withheld: false, tag_counts: { Decisions: 2, Preferences: 1 },
+  };
+  assert.equal(scopeLabel(base), "orbit-office");
+  assert.equal(scopeLabel({ ...base, scope: "global", project: null }), "Global");
+  assert.equal(cardTitle(base), "Ship the feed");
+  assert.equal(cardTitle({ ...base, title: null }), "SCR-20261031-0900-aaaa02");
+  assert.equal(cardSummary(base), "(scribe) Rework the tab.");
+  assert.equal(cardSummary({ ...base, withheld: true, summary: null }), "Private session: content withheld.");
+  assert.equal(tagCountsLabel(base), "2 decisions · 1 preference");
+  assert.equal(tagCountsLabel({ ...base, tag_counts: { lesson: 1 } }), "1 lesson");
+  assert.equal(tagCountsLabel({ ...base, tag_counts: {} }), "No tagged entries");
 });

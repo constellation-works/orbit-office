@@ -17,6 +17,8 @@ export class ApiError extends Error {
     readonly field?: string,
     /** Cited documents to share first (`share_cites_unshared`). */
     readonly documents: ShareDocument[] = [],
+    /** The operator command for the same action, when the server offers one (`not_permitted`). */
+    readonly command?: string,
   ) {
     super(`app server answered ${status} (${code})`);
     this.name = "ApiError";
@@ -52,7 +54,9 @@ async function requestJson<T>(path: string, body?: unknown, upload?: Blob): Prom
       ? (body.documents as unknown[]).filter((item): item is ShareDocument => typeof item === "object" && item !== null &&
         "id" in item && typeof item.id === "string" && "title" in item && typeof item.title === "string")
       : [];
-    throw new ApiError(response.status, code, routeSaved, reason, field, documents);
+    const command = typeof body === "object" && body !== null && "command" in body && typeof body.command === "string"
+      ? body.command : undefined;
+    throw new ApiError(response.status, code, routeSaved, reason, field, documents, command);
   }
   try {
     return (await response.json()) as T;

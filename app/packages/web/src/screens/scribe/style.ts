@@ -4,30 +4,26 @@ export const styles = `
 .scribe-page *, .scribe-page *::before { min-width:0 }
 .scribe-page [hidden] { display:none !important }
 .scribe-page h2 { margin:0 0 8px; font-size:16px }
+.scribe-page h3 { margin:0; font-size:15px; overflow-wrap:anywhere }
+.scribe-page h4 { margin:0 0 4px; font-size:13px; color:var(--fg-dim) }
 .scribe-lede { color:var(--fg-mute); margin:0 }
 .scribe-page button, .scribe-page input, .scribe-page textarea, .scribe-page select { font:inherit; font-size:14px; max-width:100% }
 .scribe-page button { border:1px solid var(--border); border-radius:var(--radius-sm); min-height:36px; padding:0 12px; background:transparent; color:var(--fg); cursor:pointer }
 .scribe-page button:hover { background:var(--bg-hover) }
 .scribe-page button:disabled { opacity:.6; cursor:default }
 .scribe-page input, .scribe-page textarea, .scribe-page select { border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 10px; background:var(--bg-elev); color:inherit; width:100% }
+.scribe-page textarea { min-height:64px; resize:vertical }
 .scribe-panel { padding:14px; background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius); display:grid; gap:10px }
 .scribe-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center }
 .scribe-row > input, .scribe-row > select { flex:1 1 180px; width:auto }
-.scribe-note textarea { min-height:64px; resize:vertical }
-.scribe-note label { display:grid; gap:4px; font-size:13px; color:var(--fg-dim) }
 .scribe-status { margin:0; color:var(--fg-mute); white-space:pre-wrap; overflow-wrap:anywhere }
 .scribe-tabs { display:flex; flex-wrap:wrap; gap:6px }
 .scribe-tabs button[aria-selected=true] { background:var(--accent); color:var(--on-accent); border-color:var(--accent) }
-.scribe-about { display:flex; flex-wrap:wrap; gap:8px }
-.scribe-about input { flex:1 1 180px; width:auto }
 .scribe-stated { margin:0; font-size:13px; color:var(--fg-mute) }
-.scribe-session { display:grid; gap:8px }
-.scribe-session + .scribe-session { margin-top:12px }
-.scribe-session > header { display:grid; gap:2px }
-.scribe-session h3 { margin:0; font-size:15px; overflow-wrap:anywhere }
-.scribe-session .scribe-meta { margin:0; font-size:13px; color:var(--fg-mute); overflow-wrap:anywhere }
+.scribe-results { display:grid; gap:8px }
 .scribe-list { list-style:none; margin:0; padding:0; display:grid; gap:8px }
 .scribe-entry { padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg); display:grid; gap:6px }
+.scribe-entry + .scribe-entry { margin-top:8px }
 .scribe-entry-head { display:flex; flex-wrap:wrap; gap:6px; align-items:center }
 .scribe-entry time { font-family:var(--font-mono); font-size:12px; color:var(--fg-mute) }
 .scribe-chip { font-family:var(--font-mono); font-size:12px }
@@ -41,14 +37,14 @@ export const styles = `
 .scribe-answer { display:grid; gap:8px }
 .scribe-claim { padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); display:grid; gap:6px }
 .scribe-claim p { margin:0; overflow-wrap:anywhere }
-.handoff-bar { display:grid; gap:8px }
-.handoff-subs button[aria-pressed=true] { background:var(--bg-hover); border-color:var(--border-strong); font-weight:600 }
-.handoff-toggle { display:flex; gap:6px; align-items:center; font-size:13px; color:var(--fg-dim) }
-.handoff-toggle input { width:auto; min-height:0 }
-.handoff-filters label { display:grid; gap:4px; flex:1 1 140px; font-size:13px; color:var(--fg-dim) }
-.handoff-task { font-family:var(--font-mono); font-size:12px; overflow-wrap:anywhere }
-.handoff-fields dd { white-space:pre-wrap }
-.handoff-items { margin:0; padding-left:18px; display:grid; gap:2px }
-.handoff-closed { margin:0; font-size:13px; color:var(--fg-dim); overflow-wrap:anywhere }
-.handoff-pager { justify-content:flex-end }
+.scribe-page .scribe-card-title { text-align:left; font-size:15px; font-weight:600; border:none; padding:0; min-height:0; background:transparent; overflow-wrap:anywhere }
+.scribe-page .scribe-card-title:hover { background:transparent; text-decoration:underline }
+.scribe-card-summary { margin:0; white-space:pre-wrap; overflow-wrap:anywhere }
+.scribe-card-section { display:grid; gap:2px }
+.scribe-card-items { margin:0; padding-left:18px; display:grid; gap:2px; overflow-wrap:anywhere }
+.scribe-card-counts { margin:0; font-size:13px; color:var(--fg-dim) }
+.scribe-tag-entry { display:grid; gap:4px }
+.scribe-tag-list { display:grid; gap:8px }
+.scribe-tag-form label { display:grid; gap:4px; font-size:13px; color:var(--fg-dim) }
+.scribe-tag-row strong { font-family:var(--font-mono); font-size:13px }
 `;

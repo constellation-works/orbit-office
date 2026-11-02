@@ -1,27 +1,28 @@
 /**
- * The Scribe feature through its HTTP routes, on the two-session fixture
- * Library (scribe-fixture.mjs): the feed, the canned views, a note and the
- * ask box, each checked against what Office returned for the same call.
+ * The Scribe feature through its HTTP routes, on the fixture outputs
+ * (scribe-fixture.mjs): the one-card-per-project feed and its `previous`
+ * chain, the Preferences and Decisions panels, the Tags editor's reads
+ * and saves (including Orbit refusing the save as `not_permitted`), the
+ * legacy handoff list, and the ask box.
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
 
 import { createScribeFeature } from "../dist/features/scribe/index.js";
-import { noteEntry } from "../dist/features/scribe/model.js";
+import { configSetInput, operatorCommand, tagSaveOf } from "../dist/features/scribe/tags.js";
 import { OrbitExitError } from "../dist/orbit/client.js";
-import { NOW, OLDER, RECENT, handoffs, office, scribeServer } from "./scribe-fixture.mjs";
+import { cards, decisions, handoffs, office, preferences, scribeServer, statusTags } from "./scribe-fixture.mjs";
 
 const get = async (url) => { const response = await fetch(url); return { status: response.status, body: await response.json() }; };
 const post = async (url, body) => {
   const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return { status: response.status, body: await response.json() };
 };
-const instant = (time) => Date.parse(time);
 
 /** A feature on a loopback server over any fake client. */
 async function serve(t, client) {
-  const feature = createScribeFeature(client, () => NOW);
+  const feature = createScribeFeature(client);
   const server = createServer((req, res) => {
     const route = feature.routes.find((r) => r.method === req.method && r.path === req.url.split("?")[0]);
     if (route) void route.handle(req, res); else { res.writeHead(404); res.end("{}"); }
@@ -31,193 +32,173 @@ async function serve(t, client) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-test("the feed lists every line newest first, the most recent session first, grouped by title and project", async (t) => {
+test("the feed shows exactly one card per project plus one global card, with its sections and tag counts", async (t) => {
   const { url, calls } = await scribeServer(t);
   const { status, body } = await get(`${url}/api/scribe/feed`);
   assert.equal(status, 200);
-  assert.deepEqual(calls.map((call) => call.input), [{ since: "2026-10-03", limit: 1000 }], "one 30-day window, read once");
-  assert.deepEqual(body.sessions.map((session) => [session.session_id, session.title, session.project]),
-    [[RECENT, "Scribe screen", "orbit-office"], [OLDER, null, "constellation"]]);
-  for (const session of body.sessions) {
-    const times = session.entries.map((entry) => instant(entry.time));
-    assert.deepEqual(times, [...times].sort((a, b) => b - a), `${session.session_id} is newest first`);
-  }
-  // Every line Office returned is shown once, with its tags, quote, time and anchors.
-  const shown = body.sessions.flatMap((session) => session.entries);
-  assert.equal(shown.length, office.feed.results.length);
-  assert.equal(body.shown, office.feed.results.length);
-  for (const row of office.feed.results) {
-    const entry = shown.find((item) => item.citation === row.citation);
-    assert.ok(entry, `${row.citation} is in the feed`);
-    assert.deepEqual([entry.file_line, entry.tag, entry.topics, entry.quote, entry.time, entry.msg, entry.resume, entry.why, entry.matter, entry.refs, entry.by],
-      [row.file_line, row.tag, row.topics, row.quote, row.time, row.msg, row.resume, row.why, row.matter, row.refs, row.by]);
-  }
-  assert.equal(body.sessions[0].scribed_through, "m-0005");
-  assert.equal(body.time_zone, office.feed.time_zone);
+  assert.deepEqual(calls.map((call) => [call.name, call.input]), [["office.session-brief", { view: "list" }]]);
+  assert.deepEqual(body.cards.map((card) => [card.id, card.scope]), [
+    ["SCR-20261029-0900-cccc01", "global"],
+    ["SCR-20261031-0900-aaaa02", "project:orbit-office"],
+    ["SCR-20261028-0900-dddd01", "project:secret-project"],
+  ], "the older orbit-office SCR is not a card");
+  assert.equal(body.count, 3);
+  assert.equal(body.files_searched, 4);
+  const latest = body.cards[1];
+  assert.equal(latest.title, "Ship the scribe feed");
+  assert.equal(latest.updated, "2026-10-31T09:00:00Z");
+  assert.equal(latest.previous, "SCR-20261030-0900-aaaa01");
+  assert.equal(latest.summary, "(scribe) Rework the Scribe tab into the one-card feed.");
+  assert.deepEqual(latest.next, ["ORB-21120 — finish the Tags editor. owner: agent."]);
+  assert.deepEqual(latest.outcome, ["The cards feed reads view list."]);
+  assert.equal(latest.tag_entries, 3);
+  assert.deepEqual(latest.tag_counts, { Decisions: 2, Preferences: 1 });
+  assert.deepEqual(latest.tags.map((entry) => entry.citation), [
+    "SCR-20261031-0900-aaaa02#T1", "SCR-20261031-0900-aaaa02#T2", "SCR-20261031-0900-aaaa02#T3",
+  ]);
+  const hidden = body.cards[2];
+  assert.deepEqual([hidden.withheld, hidden.summary, hidden.tags, hidden.tag_counts, hidden.next], [true, null, [], {}, []]);
 });
 
-test("a window holding more lines than the limit narrows until the newest fit", async (t) => {
-  const inputs = [];
-  const client = {
-    async pollTool(_name, input) {
-      inputs.push(input);
-      return { ...office.feed, results: office.feed.results, count: input.since === "2026-11-01" ? office.feed.results.length : 5000 };
+test("one SCR by id returns it with its previous; older records are reached only by walking the chain", async (t) => {
+  const { url, calls } = await scribeServer(t);
+  const first = await get(`${url}/api/scribe/feed?id=SCR-20261031-0900-aaaa02`);
+  assert.equal(first.status, 200);
+  assert.deepEqual(calls.at(-1), { name: "office.session-brief", input: { view: "list", id: "SCR-20261031-0900-aaaa02" } });
+  assert.equal(first.body.scr.id, "SCR-20261031-0900-aaaa02");
+  assert.equal(first.body.previous.id, "SCR-20261030-0900-aaaa01");
+  const end = await get(`${url}/api/scribe/feed?id=${first.body.previous.id}`);
+  assert.equal(end.body.scr.id, "SCR-20261030-0900-aaaa01");
+  assert.equal(end.body.previous, null, "the chain ends; there is no other way to an older SCR");
+  assert.deepEqual(await get(`${url}/api/scribe/feed?id=a%20b`), { status: 400, body: { error: "invalid_input" } });
+  assert.deepEqual(await get(`${url}/api/scribe/feed?view=list`), { status: 400, body: { error: "invalid_input" } }, "an unknown parameter is refused");
+});
+
+test("Preferences and Decisions read office.scribe-query and shape its rows for reading", async (t) => {
+  const { url, calls } = await scribeServer(t);
+  const prefs = await get(`${url}/api/scribe/preferences`);
+  assert.equal(prefs.status, 200);
+  assert.deepEqual(calls.at(-1), { name: "office.scribe-query", input: { mode: "preferences" } });
+  assert.deepEqual(prefs.body.preferences.map((row) => [row.citation, row.statement, row.stale]),
+    preferences.preferences.map((row) => [row.citation, row.statement, row.stale]));
+  assert.deepEqual(prefs.body.preferences[0].proposed, [{ entry: "SCR-20261031-0900-aaaa02#T1", proposal: "prop-1" }]);
+  assert.equal(prefs.body.today, "2026-11-01");
+
+  const ledger = await get(`${url}/api/scribe/decisions`);
+  assert.equal(ledger.status, 200);
+  assert.deepEqual(calls.at(-1), { name: "office.scribe-query", input: { mode: "decisions" } });
+  assert.deepEqual(ledger.body.decisions.map((row) => row.id), ["dec-orbit-office-8", "dec-orbit-office-7"], "newest first");
+  assert.equal(ledger.body.decisions[1].because, "the feed is unusable", "the stated reason's text");
+  assert.equal(ledger.body.decisions[0].because, null, "no reason was stated");
+  assert.deepEqual(ledger.body.decisions.map((row) => [row.current, row.reversed_by]), [[true, null], [true, null]]);
+  assert.equal(ledger.body.count, decisions.count);
+});
+
+test("the Tags editor reads the effective tags from office.status", async (t) => {
+  const { url, calls } = await scribeServer(t);
+  const { status, body } = await get(`${url}/api/scribe/tags`);
+  assert.equal(status, 200);
+  assert.deepEqual(calls.map((call) => [call.name, call.input]), [["office.status", {}]]);
+  assert.deepEqual(body.tags, statusTags);
+  assert.deepEqual(body.cadence, { minutes: 20, turns: 10 });
+  assert.equal(body.tags_customized, true);
+});
+
+/** A client whose config-set succeeds and whose status reflects the save. */
+function savingClient() {
+  const calls = [];
+  let tags = structuredClone(statusTags);
+  let customized = true;
+  const status = () => ({ scribe: { cadence: { minutes: 20, turns: 10 }, tags: structuredClone(tags), tags_customized: customized } });
+  return {
+    calls,
+    async callTool(name, input) {
+      calls.push({ name, input: structuredClone(input) });
+      if (name === "office.config-set") {
+        if (input.key === "scribe.tags" && input.value === null) {
+          tags = structuredClone(statusTags.slice(0, 2));
+          customized = false;
+        } else if (input.value === null) {
+          tags = tags.filter((tag) => tag.name !== input.key.slice("scribe.tags.".length));
+        } else {
+          tags = [...tags.filter((tag) => tag.name !== input.value.name), input.value];
+        }
+        return { key: input.key };
+      }
+      if (name === "office.status") return status();
+      throw new Error(`unexpected ${name}`);
     },
-    async callTool() { throw new Error("unexpected"); },
+    async pollTool(name, input) { return this.callTool(name, input); },
   };
+}
+
+test("a tag save writes through office.config-set and returns the tags read back", async (t) => {
+  const client = savingClient();
   const url = await serve(t, client);
-  const { body } = await get(`${url}/api/scribe/feed`);
-  assert.deepEqual(inputs.map((input) => input.since), ["2026-10-03", "2026-10-26", "2026-11-01"]);
-  assert.equal(body.since, "2026-11-01");
+  const tag = { name: "incident", scope: "project", instruction: "Something broke and what settled it.", sink: "scr_only", mode: "append", capture: "markers" };
+  const saved = await post(`${url}/api/scribe/tags`, { action: "upsert", tag });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.saved, true);
+  assert.deepEqual(client.calls[0], { name: "office.config-set", input: { key: "scribe.tags.incident", value: tag } });
+  assert.deepEqual(client.calls[1], { name: "office.status", input: {} }, "read back after the write");
+  assert.ok(saved.body.tags.tags.some((row) => row.name === "incident" && row.sink === "scr_only"));
+
+  const removed = await post(`${url}/api/scribe/tags`, { action: "delete", name: "preferences" });
+  assert.deepEqual(client.calls.at(-2).input, { key: "scribe.tags.preferences", value: null }, "a default can be deleted");
+  assert.ok(!removed.body.tags.tags.some((row) => row.name === "preferences"));
+
+  const restored = await post(`${url}/api/scribe/tags`, { action: "restore" });
+  assert.deepEqual(client.calls.at(-2).input, { key: "scribe.tags", value: null });
+  assert.deepEqual(restored.body.tags.tags.map((row) => row.name), ["preferences", "decisions"]);
+  assert.equal(restored.body.tags.tags_customized, false);
 });
 
-test("an exact-cap day is shown whole and an over-cap day keeps its newest lines", async (t) => {
-  // Rows as the real general scribe-query returns them: ascending
-  // (time, path, line), bounded to the newest `limit`, count = full total.
-  // All rows share one timestamp, so line order is the tie-break.
-  const template = office.feed.results[0];
-  const denseClient = (count) => {
-    const rows = Array.from({ length: count }, (_, i) => {
-      const line = 21 + i;
-      const label = `event ${String(i).padStart(4, "0")}`;
-      return {
-        ...template, citation: `${template.id}#L${line}`, file_line: `${template.path}:${line}`, line,
-        msg: `m-${String(i).padStart(4, "0")}`, time: "2026-11-01T09:00:00-07:00", quote: label,
-        text: `- note 2026-11-01T09:00:00-07:00 #fact "${label}"`,
-      };
-    });
-    return {
-      async pollTool(_name, input) {
-        const matched = rows.filter((row) => row.time.slice(0, 10) >= input.since)
-          .sort((a, b) => a.time.localeCompare(b.time) || a.path.localeCompare(b.path) || a.line - b.line);
-        return {
-          ...structuredClone(office.feed), results: structuredClone(matched.slice(-input.limit)),
-          count: matched.length, since: input.since,
-        };
-      },
-      async callTool() { throw new Error("unexpected"); },
-    };
+test("when Orbit refuses config-set, the save is not_permitted with the operator command and claims no success", async (t) => {
+  const { url, calls } = await scribeServer(t);
+  const save = { action: "delete", name: "lesson" };
+  const { status, body } = await post(`${url}/api/scribe/tags`, save);
+  assert.equal(status, 403);
+  assert.equal(body.error, "not_permitted");
+  assert.equal(body.command, `orbit tool run office.config-set --input '${JSON.stringify(configSetInput(save))}'`);
+  assert.match(body.command, /scribe\.tags\.lesson/);
+  assert.equal(body.saved, undefined, "nothing claims the save happened");
+  assert.deepEqual(calls.map((call) => call.name), ["office.config-set"], "no read-back after a refused save");
+
+  // The envelope form of the same refusal (ok: false) names it too.
+  const envelope = {
+    async callTool() { return { ok: false, error: { code: "policy_denied", message: "denied" } }; },
+    async pollTool() { throw new Error("unexpected"); },
   };
-
-  const exactUrl = await serve(t, denseClient(1000));
-  const exact = (await get(`${exactUrl}/api/scribe/feed`)).body;
-  assert.deepEqual([exact.total, exact.shown, exact.since], [1000, 1000, "2026-10-03"]);
-  assert.equal(exact.sessions[0].entries[0].quote, "event 0999");
-  assert.equal(exact.sessions[0].entries.at(-1).quote, "event 0000");
-
-  const overUrl = await serve(t, denseClient(1002));
-  const over = (await get(`${overUrl}/api/scribe/feed`)).body;
-  assert.deepEqual([over.total, over.shown, over.since], [1002, 1000, "2026-11-01"]);
-  const quotes = over.sessions[0].entries.map((entry) => entry.quote);
-  assert.equal(quotes.length, 1000);
-  assert.deepEqual([quotes[0], quotes[1]], ["event 1001", "event 1000"], "the newest lines are kept, newest first");
-  assert.ok(!quotes.includes("event 0000") && !quotes.includes("event 0001"), "the oldest lines are the truncated ones");
-  assert.equal(quotes.at(-1), "event 0002");
+  const second = await serve(t, envelope);
+  const again = await post(`${second}/api/scribe/tags`, { action: "restore" });
+  assert.equal(again.status, 403);
+  assert.deepEqual([again.body.error, again.body.command], ["not_permitted", operatorCommand({ action: "restore" })]);
 });
 
-test("Pending, Preferences, Landed and Why return exactly the lines office.scribe-query returns for the same query", async (t) => {
-  const { url, calls } = await scribeServer(t);
-  for (const view of ["pending", "pref", "landed", "why"]) {
-    const { status, body } = await get(`${url}/api/scribe/query?view=${view}`);
-    assert.equal(status, 200);
-    assert.deepEqual(calls.at(-1), { name: "office.scribe-query", input: { mode: view } });
-    assert.deepEqual(body.entries.map((entry) => [entry.citation, entry.quote]), office[view].results.map((row) => [row.citation, row.quote]), view);
-    assert.equal(body.count, office[view].count);
-  }
-  const pending = (await get(`${url}/api/scribe/query?view=pending`)).body;
-  assert.ok(!pending.entries.some((entry) => entry.refs.includes("ORB-20780")), "the resolved pending is not listed");
-  assert.deepEqual(pending.entries.map((entry) => instant(entry.time)), pending.entries.map((entry) => instant(entry.time)).sort((a, b) => a - b), "oldest first");
-  const pref = (await get(`${url}/api/scribe/query?view=pref`)).body;
-  assert.deepEqual(pref.entries.map((entry) => [entry.quote, entry.stale, entry.review_by]), [["hold releases with open defects for review", true, "2026-10-31"]]);
-  assert.ok(!pref.entries.some((entry) => entry.quote === "ship early"), "the superseded preference is hidden");
-  const landed = (await get(`${url}/api/scribe/query?view=landed`)).body;
-  assert.equal(landed.since, landed.today); assert.equal(landed.until, landed.today); assert.equal(landed.time_zone, office.landed.time_zone);
-  const why = (await get(`${url}/api/scribe/query?view=why`)).body;
-  assert.deepEqual(why.entries.map((entry) => [entry.quote, entry.why, entry.no_why]),
-    [["lets go one step at a time", null, true], ["poll every ten seconds", "a socket is overkill for one window", false]]);
-});
-
-test("Why on a word tries it as a matter, then as a topic; Preferences pass the matter", async (t) => {
-  const inputs = [];
-  const client = {
-    async pollTool(_name, input) { inputs.push(input); return input.topic ? office.why : { ...office.why, results: [], count: 0 }; },
-    async callTool() { throw new Error("unexpected"); },
-  };
-  const url = await serve(t, client);
-  const { body } = await get(`${url}/api/scribe/query?view=why&about=%23scribe`);
-  assert.deepEqual(inputs, [{ mode: "why", matter: "scribe" }, { mode: "why", topic: "scribe" }]);
-  assert.equal(body.entries.length, office.why.results.length);
-  await get(`${url}/api/scribe/query?view=pref&about=release-with-open-defects`);
-  assert.deepEqual(inputs.at(-1), { mode: "pref", matter: "release-with-open-defects" });
-  assert.equal((await get(`${url}/api/scribe/query?view=everything`)).status, 400);
-  assert.equal((await get(`${url}/api/scribe/query?view=why&about=a%20b`)).status, 400);
-  assert.equal((await get(`${url}/api/scribe/query?view=why&limit=5`)).status, 400, "an unknown parameter is refused");
-});
-
-test("a note appends one by: user line at the session's own cursor, and the next poll shows it", async (t) => {
-  const { url, calls } = await scribeServer(t);
-  const { status, body } = await post(`${url}/api/scribe/note`, { session_id: RECENT, text: "#todo call the venue at 3pm" });
-  assert.equal(status, 200, JSON.stringify(body));
-  assert.deepEqual(calls.map((call) => call.name), ["office.scribe-query", "office.scribe-append"]);
-  assert.deepEqual(calls[0].input, { session_id: RECENT, limit: 1 });
-  assert.deepEqual(calls[1].input, { session_id: RECENT, through: "m-0005", entries: [{ tag: "todo", by: "user", text: "call the venue at 3pm" }] });
-  assert.deepEqual(body.added, [{ file_line: `${office.note.path}:25`, text: office.note.added[0].text }]);
-  assert.match(body.added[0].text, / #todo "call the venue at 3pm" by: user$/);
-  const feed = (await get(`${url}/api/scribe/feed`)).body;
-  const first = feed.sessions[0].entries[0];
-  assert.deepEqual([first.tag, first.by, first.msg, first.quote], ["todo", "user", "note", "call the venue at 3pm"]);
-  assert.equal(feed.sessions[0].entries.length, office.after_note.results.length);
-});
-
-test("a note without a leading tag takes the chosen tag; bad bodies are refused before any tool call", async (t) => {
-  const { url, calls } = await scribeServer(t);
-  assert.equal((await post(`${url}/api/scribe/note`, { session_id: RECENT, text: "call the venue", tag: "todo" })).status, 200);
-  assert.deepEqual(calls[1].input.entries, [{ tag: "todo", by: "user", text: "call the venue" }]);
-  calls.length = 0;
-  for (const [body, code] of [
-    [{ session_id: RECENT, text: "untagged" }, "tag_required"],
-    [{ session_id: RECENT, text: "#todo x", extra: 1 }, "invalid_input"],
-    [{ session_id: "a b", text: "#todo x" }, "invalid_input"],
-    [{ session_id: RECENT, text: "   " }, "note_text_required"],
-  ]) {
-    const response = await post(`${url}/api/scribe/note`, body);
-    assert.deepEqual([response.status, response.body], [400, { error: code }]);
-  }
-  assert.deepEqual(calls, []);
-});
-
-test("a note is parsed exactly as /scribe note parses it", () => {
-  assert.deepEqual(noteEntry('#preference matter: release-with-open-defects review_by: 2027-01-01 "hold for review"', undefined),
-    { tag: "preference", by: "user", matter: "release-with-open-defects", review_by: "2027-01-01", text: "hold for review" });
-  assert.deepEqual(noteEntry('#why "because grep" resolves: SCR-01-0600-scribe-screen#L22', undefined),
-    { tag: "why", by: "user", resolves: "SCR-01-0600-scribe-screen#L22", text: "because grep" });
-  assert.deepEqual(noteEntry("#todo refs: ORB-1,ORB-2 ship it", undefined), { tag: "todo", by: "user", refs: ["ORB-1", "ORB-2"], text: "ship it" });
-  // Without a leading tag the text stays verbatim, keys and all.
-  assert.deepEqual(noteEntry("matter: x stays as written", "fact"), { tag: "fact", by: "user", text: "matter: x stays as written" });
-});
-
-test("a refused note and a tool refusal come back as short codes", async (t) => {
+test("an Office refusal of a tag definition keeps its own code; bad bodies are refused before any tool call", async (t) => {
   const refusing = {
-    async callTool(name) {
-      if (name === "office.scribe-query") return office.after_note;
-      return { ...office.note, added: [], refused: [{ index: 0, msg: "note", reason: "tag_not_permitted", message: "x" }] };
+    async callTool() {
+      throw new OrbitExitError("office.config-set", 1, null,
+        JSON.stringify({ error: { code: "invalid_library_setting", message: "scribe.tags.x.mode: sink and mode do not pair" } }));
     },
     async pollTool() { throw new Error("unexpected"); },
   };
-  let url = await serve(t, refusing);
-  assert.deepEqual((await post(`${url}/api/scribe/note`, { session_id: RECENT, text: "#pending x" })).body, { error: "tag_not_permitted" });
-  const unparsed = {
-    async callTool(name) {
-      if (name === "office.scribe-query") return office.after_note;
-      throw new OrbitExitError("office.scribe-append", 1, null, JSON.stringify({ error: { code: "scribe_not_parsed", message: "run office.scribe-pending first" } }));
-    },
-    async pollTool() { throw new Error("unexpected"); },
-  };
-  url = await serve(t, unparsed);
-  assert.deepEqual(await post(`${url}/api/scribe/note`, { session_id: RECENT, text: "#todo x" }), { status: 422, body: { error: "scribe_not_parsed" } });
-  const empty = { async callTool() { return { ...office.after_note, results: [] }; }, async pollTool() { throw new Error("unexpected"); } };
-  url = await serve(t, empty);
-  assert.deepEqual(await post(`${url}/api/scribe/note`, { session_id: "unknown", text: "#todo x" }), { status: 409, body: { error: "no_cursor" } });
+  const url = await serve(t, refusing);
+  const tag = { name: "x", scope: "global", instruction: "One tag.", sink: "decisions_ledger", mode: "apply", capture: "markers" };
+  assert.deepEqual(await post(`${url}/api/scribe/tags`, { action: "upsert", tag }),
+    { status: 422, body: { error: "invalid_library_setting" } });
+
+  for (const body of [
+    { action: "upsert", tag: { ...tag, sink: "polaris.md" } },
+    { action: "upsert", tag: { ...tag, name: "Bad Name" } },
+    { action: "upsert", tag: { ...tag, instruction: "  " } },
+    { action: "upsert", tag: { ...tag, path: "/tmp/x" } },
+    { action: "delete", name: "x", extra: 1 },
+    { action: "restore", name: "x" },
+    { action: "everything" },
+  ]) {
+    assert.throws(() => tagSaveOf(body), (error) => error.code === "invalid_input", JSON.stringify(body));
+  }
 });
 
 test("the ask box cites SCR file:line, drops a quote not on its cited line, and says not captured with the range searched", async (t) => {
@@ -242,11 +223,11 @@ test("the ask box cites SCR file:line, drops a quote not on its cited line, and 
 
 const listed = (output, kind) => output.sections.find((section) => section.kind === kind);
 
-test("handoffs read office.session-brief view list once and keep its order, states and anchors", async (t) => {
+test("the legacy handoffs read office.session-brief view list with legacy true and keep its order, states and anchors", async (t) => {
   const { url, calls } = await scribeServer(t);
   const { status, body } = await get(`${url}/api/scribe/handoffs`);
   assert.equal(status, 200);
-  assert.deepEqual(calls.map((call) => [call.name, call.input]), [["office.session-brief", { view: "list", include_closed: true, limit: 50 }]]);
+  assert.deepEqual(calls.map((call) => [call.name, call.input]), [["office.session-brief", { view: "list", legacy: true, include_closed: true, limit: 50 }]]);
   const output = handoffs.all.output;
   for (const kind of ["threads", "global", "history"]) {
     assert.deepEqual(body[kind].map((item) => item.id), listed(output, kind).items.map((item) => item.id), kind);
@@ -261,7 +242,6 @@ test("handoffs read office.session-brief view list once and keep its order, stat
   assert.equal(structured.resume, "claude --resume 7f3c2a10-5b1e-4c0d-9a8e-2f6b1c4d9e01");
   assert.deepEqual(Object.keys(structured.fields), ["objective", "next", "authorization", "observations", "evidence"]);
   assert.equal(structured.legacy, false);
-  // Codex sessions do not resume with claude; private sources stay withheld.
   const orbit = body.threads.find((item) => item.project === "orbit");
   assert.equal(orbit.resume, null);
   assert.equal(orbit.legacy, true);
@@ -273,7 +253,7 @@ test("handoffs read office.session-brief view list once and keep its order, stat
   assert.deepEqual(body.history.map((item) => item.superseded), [false, false, false, true, true, false]);
 });
 
-test("handoff filters and the page offset pass through to the tool; unknown or malformed parameters are refused", async (t) => {
+test("legacy handoff filters and the page offset pass through to the tool; unknown or malformed parameters are refused", async (t) => {
   const { url, calls } = await scribeServer(t);
   for (const [query, recorded] of [["project=constellation", "project"], ["orchestrator=codex", "orchestrator"], [`thread=${encodeURIComponent("task:ORB-21001")}`, "thread"], ["offset=4", "page"]]) {
     const { status, body } = await get(`${url}/api/scribe/handoffs?${query}`);

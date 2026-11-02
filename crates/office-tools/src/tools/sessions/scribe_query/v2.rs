@@ -177,9 +177,21 @@ fn preferences_mode(call: &Call<'_>, input: &Map<String, Value>, today: &str) ->
     )
 }
 
-fn card(scr: &Scr, private: bool) -> Value {
+/// One SCR as a feed card: its front matter, rewritten sections, Tags
+/// entries and the per-tag entry counts (`tag_counts`, by Tags subsection).
+/// A private SCR (or a private conversation setting) withholds its sections,
+/// entries and counts; only references remain. Shared by `scribe-query`
+/// mode `scr` and `session-brief` `view: list`.
+pub(crate) fn card(scr: &Scr, private: bool) -> Value {
     let withheld = private || scr.front.private();
     let entries = scr.entries();
+    let mut tag_counts: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    if !withheld {
+        for entry in &entries {
+            *tag_counts.entry(entry.group.clone()).or_default() += 1;
+        }
+    }
     json!({
         "id": scr.front.id, "path": scr.path, "title": scr.front.title,
         "title_by": scr.front.title_by, "scope": scr.front.scope_token(),
@@ -191,6 +203,7 @@ fn card(scr: &Scr, private: bool) -> Value {
         "outcome": if withheld { json!([]) } else { json!(scr.sections.outcome) },
         "next": if withheld { json!([]) } else { json!(scr.sections.next) },
         "tag_entries": entries.len(),
+        "tag_counts": tag_counts,
         "tags": if withheld { json!([]) } else {
             json!(entries.iter().map(|e| json!({"id": e.id(), "citation": format!("{}#{}", scr.front.id, e.id()),
                 "group": e.group, "msg": e.msg, "time": e.time, "by": e.by, "scope": e.scope,
@@ -202,10 +215,18 @@ fn card(scr: &Scr, private: bool) -> Value {
     })
 }
 
-fn scr(call: &Call<'_>, input: &Map<String, Value>, private: bool) -> Result<Value> {
-    let scope = scope_filter(input)?;
-    let files = v2::v2_files(&call.ports.library.scribe_files()?)?;
-    if let Some(id) = optional_text(input, "id")? {
+/// The cards answer over already-read v2 SCR files: with `id`, that one SCR
+/// and the SCR its `previous:` names (the only way to reach an older SCR);
+/// without one, exactly the latest SCR per project plus the latest global
+/// SCR. Shared by `scribe-query` mode `scr` (which adds `mode` and the scope
+/// filter) and `session-brief` `view: list`.
+pub(crate) fn scr_cards(
+    files: &[Scr],
+    private: bool,
+    id: Option<&str>,
+    scope: Option<&str>,
+) -> Result<Value> {
+    if let Some(id) = id {
         let one = files
             .iter()
             .find(|f| f.front.id == id)
@@ -218,13 +239,22 @@ fn scr(call: &Call<'_>, input: &Map<String, Value>, private: bool) -> Result<Val
             .previous
             .as_deref()
             .and_then(|p| files.iter().find(|f| f.front.id == p));
-        return Ok(json!({"mode": "scr", "scr": card(one, private),
+        return Ok(json!({"scr": card(one, private),
             "previous": previous.map(|p| card(p, private))}));
     }
-    let cards: Vec<Value> = v2::latest_per_scope(&files)
+    let cards: Vec<Value> = v2::latest_per_scope(files)
         .into_iter()
-        .filter(|f| scope.as_deref().is_none_or(|s| f.front.scope_token() == s))
+        .filter(|f| scope.is_none_or(|s| f.front.scope_token() == s))
         .map(|f| card(f, private))
         .collect();
-    Ok(json!({"mode": "scr", "cards": cards, "count": cards.len(), "files_searched": files.len()}))
+    Ok(json!({"cards": cards, "count": cards.len(), "files_searched": files.len()}))
+}
+
+fn scr(call: &Call<'_>, input: &Map<String, Value>, private: bool) -> Result<Value> {
+    let scope = scope_filter(input)?;
+    let files = v2::v2_files(&call.ports.library.scribe_files()?)?;
+    let id = optional_text(input, "id")?;
+    let mut value = scr_cards(&files, private, id.as_deref(), scope.as_deref())?;
+    value["mode"] = json!("scr");
+    Ok(value)
 }
