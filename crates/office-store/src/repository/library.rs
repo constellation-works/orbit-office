@@ -1637,7 +1637,8 @@ impl LibraryStore {
         self.files.read_document(relative)
     }
 
-    /// One indexed document by id, if present. Does not wait for the writer lock.
+    /// One document by id, if present. SCR files and decision entries also
+    /// resolve directly from their stores. Does not wait for the writer lock.
     pub fn get(&self, id: &str) -> Result<Option<DocumentRecord>> {
         self.read_ready()?;
         let record = if let Some((member, local)) = id.split_once('/') {
@@ -1659,6 +1660,12 @@ impl LibraryStore {
         } else {
             match self.index.get(id)?.or(self.index.get_shared(id)?) {
                 Some(record) => Some(record),
+                None if id.starts_with("SCR-") => self
+                    .files
+                    .scribe_markdown()?
+                    .into_iter()
+                    .map(|(path, text)| DocumentRecord::from_markdown(Path::new(&path), &text))
+                    .find(|record| record.id == id),
                 None => self.ledger_record(id)?,
             }
         };

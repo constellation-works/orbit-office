@@ -349,6 +349,7 @@ fn incoming(
                     page.title
                 ),
                 Payload::KnowledgeUpdate {
+                    conflicts: Vec::new(),
                     shareable: None,
                     markdown,
                     base_sha256: own_digest,

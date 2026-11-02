@@ -339,6 +339,14 @@ impl Page {
                 return Err(invalid("submission", "only runbooks have a submission"));
             }
         }
+        if self.id.starts_with("dom-preferences-")
+            && self.template.as_deref() != Some("preferences")
+        {
+            return Err(invalid(
+                "template",
+                "preference page ids require template: preferences",
+            ));
+        }
         if self.scribe_handoff.is_some() && self.id != SCRIBE_RULES_PAGE {
             return Err(invalid(
                 "scribe",
@@ -390,14 +398,24 @@ impl Page {
     }
 
     /// Every citation the page makes: frontmatter `cites`, then inline
-    /// `[id#anchor]` citations in the body, without duplicates.
+    /// `[id#anchor]` citations and preference matter `cites` in the body,
+    /// without duplicates.
     pub fn citations(&self) -> Result<Vec<Citation>> {
         let mut citations: Vec<Citation> = Vec::new();
+        let matter_cites = if self.template.as_deref() == Some("preferences") {
+            super::preferences::parse(&self.id, &self.body)?
+                .into_iter()
+                .flat_map(|p| p.cites)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let written = self
             .cites
             .iter()
             .cloned()
-            .chain(inline_citations(&self.body));
+            .chain(inline_citations(&self.body))
+            .chain(matter_cites);
         for text in written {
             if citations.iter().any(|c| c.text == text) {
                 continue;
@@ -405,7 +423,7 @@ impl Page {
             let citation = parse_citation(&text).ok_or_else(|| Error::UnresolvedCite {
                 id: self.id.clone(),
                 cite: text.clone(),
-                reason: "expected <id> or <id>#<anchor> naming a src-, dec-, dom-, rb- or art- document",
+                reason: "expected <id> or <id>#<anchor> naming a src-, SCR-, dec-, dom-, rb- or art- document",
             })?;
             citations.push(citation);
         }
@@ -452,6 +470,15 @@ impl Page {
                     return Err(refuse("a source cite needs an anchor"));
                 }
                 (DocumentKind::Source, Some(anchor)) => {
+                    if anchor.starts_with('T')
+                        && !citation
+                            .id
+                            .rsplit('/')
+                            .next()
+                            .is_some_and(|id| id.starts_with("SCR-"))
+                    {
+                        return Err(refuse("tag anchors are defined only for SCR sources"));
+                    }
                     resolve_anchor(&record.body, anchor).map_err(refuse)?;
                 }
                 (_, Some(_)) => return Err(refuse("anchors are defined only for sources")),
@@ -750,7 +777,8 @@ pub fn page_kind_for_id(id: &str) -> Option<DocumentKind> {
 }
 
 /// Parse `<id>` or `<id>#<anchor>` where the id is `src-`, `dom-`, `rb-`,
-/// `art-`, `dec-` (a decision ledger entry) or `decisions-` (a ledger)
+/// `art-`, `SCR-` (a conversation record), `dec-` (a decision ledger entry)
+/// or `decisions-` (a ledger)
 /// followed by a lowercase kebab-case slug.
 #[must_use]
 pub fn parse_citation(text: &str) -> Option<Citation> {
@@ -771,7 +799,7 @@ pub fn parse_citation(text: &str) -> Option<Citation> {
     };
     let (prefix, slug) = local.split_once('-')?;
     let kind = match prefix {
-        "src" | "dec" | "decisions" => DocumentKind::Source,
+        "src" | "SCR" | "dec" | "decisions" => DocumentKind::Source,
         "dom" => DocumentKind::Domain,
         "rb" => DocumentKind::Runbook,
         "art" => DocumentKind::Artifact,
@@ -792,6 +820,44 @@ pub fn parse_citation(text: &str) -> Option<Citation> {
 /// Frame and chapter anchors live beside the source and are refused until
 /// those files are readable here. Returns the refusal reason.
 pub fn resolve_anchor(body: &str, anchor: &str) -> std::result::Result<(), &'static str> {
+    if let Some(number) = anchor.strip_prefix('T') {
+        if number.is_empty()
+            || number.starts_with('0')
+            || !number.bytes().all(|b| b.is_ascii_digit())
+        {
+            return Err("expected T<n> with a positive entry number");
+        }
+        let mut tags = false;
+        let mut fence = None;
+        for line in body.lines() {
+            let trimmed = line.trim_start();
+            if let Some(marker) = trimmed.chars().next()
+                && matches!(marker, '`' | '~')
+                && trimmed.chars().take_while(|c| *c == marker).count() >= 3
+            {
+                if fence == Some(marker) {
+                    fence = None;
+                } else if fence.is_none() {
+                    fence = Some(marker);
+                }
+                continue;
+            }
+            if fence.is_some() {
+                continue;
+            }
+            if line.starts_with("## ") {
+                tags = line.trim() == "## Tags";
+            }
+            if tags
+                && line
+                    .strip_prefix("- ")
+                    .is_some_and(|entry| entry.split_whitespace().next() == Some(anchor))
+            {
+                return Ok(());
+            }
+        }
+        return Err("no such tag entry in the SCR");
+    }
     if let Some(time) = anchor.strip_prefix("t=") {
         let at = parse_clock_seconds(time).ok_or("expected t=hh:mm:ss within u64 seconds")?;
         let turns: Vec<u64> = body
@@ -851,7 +917,10 @@ pub(crate) fn inline_citations(body: &str) -> Vec<String> {
         };
         if after.as_bytes()[close] == b']' {
             let inner = &after[..close];
-            let items: Vec<&str> = inner.split([';', ',']).map(str::trim).collect();
+            let items: Vec<&str> = inner
+                .split([';', ','])
+                .map(|item| item.trim().trim_matches(['"', '\'']))
+                .collect();
             if !items.is_empty() && items.iter().all(|item| parse_citation(item).is_some()) {
                 found.extend(items.into_iter().map(str::to_owned));
             }
@@ -1003,7 +1072,7 @@ pub fn withhold_contacts(body: &str) -> String {
     out
 }
 
-fn is_slug(value: &str) -> bool {
+pub(super) fn is_slug(value: &str) -> bool {
     !value.is_empty()
         && value.split('-').all(|part| {
             !part.is_empty()

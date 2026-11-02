@@ -8,7 +8,8 @@ last_validated: 2026-10-30
 
 Proposals are how the system gets better over time without the user
 designing it. Nothing becomes standing automation, and no knowledge page
-changes, without the user accepting a proposal.
+changes, without the user accepting a proposal, except the explicitly configured
+scribe preference apply mode described below.
 
 Source: spec §7.
 
@@ -137,6 +138,8 @@ Payloads are closed tagged objects:
   `markdown` in the artifact. Source citations require resolvable anchors.
   Acceptance uses those reviewed bytes, then checks the current page rules.
   Runbooks require a runbook id. Existing pages are refused for additions.
+  Preference drafts use dynamic matter slugs as section keys, each containing
+  the four fields in [Preference matter sections](./knowledge-templates.md#preference-matter-sections).
 - `knowledge_update`: complete replacement `markdown` and `base_sha256` of
   the reviewed current page. Replacement is refused if that revision changed.
 - `retire`: `target` is `{type: "auto_task", name}` or
@@ -268,3 +271,40 @@ pairs are plugin definitions rather than proposal kinds.
 - [ORB-20363] — wires the office app's approval actions to that scoped application authority.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
+
+## Preference conflicts and apply mode
+
+Preference changes use `knowledge_add` for a scope's first page and
+`knowledge_update` with `base_sha256` thereafter. For a page using
+`template: preferences`, `office.proposal-create` compares each proposed
+matter with the current scope page. A matching matter with a different
+statement (after trimming outer whitespace) is a deterministic conflict;
+changes only to dates or citations are not. Other matters are compared
+only when the scribe reports a semantic conflict.
+
+Both knowledge payloads accept optional `conflicts`, a list of closed
+`{matter, statement, cites}` objects quoting current preferences. Each
+reported conflict must match the current matter's statement and citations;
+a fabricated or stale quote is refused before any callback. Creation
+renders the union of deterministic and reported conflicts as `## Conflicts`
+on the evidence page, quoting the current statement and its citations.
+A preference proposal with none renders `None.`. The reviewed payload
+retains reported conflicts. Conflicts require a preference page. Accepting
+the reviewed, revision-pinned update deliberately overrides the old
+statement; page history preserves it. Creation itself changes no preference.
+
+The public Rust API `office_tools::preferences::apply_preference` is the
+write boundary for scribe v2 append (whose marker extraction is a separate
+slice). Its caller supplies model-free provenance, the complete originating
+turn, the replacement Markdown and semantic conflicts. It returns `Applied`
+after one validated write for `UserMarker`, or `Propose(reason)` without
+writing for an agent marker, inferred or untrusted candidate, a turn over
+40 lines or 4,000 Unicode characters, or either type of conflict. Exact
+size limits are allowed. The caller files the fallback proposal. The page
+goes through the same validator as `office.knowledge-write`; invalid pages
+and failed reads are errors. Publication compares the page snapshot under
+the writer lock; a concurrent change returns `Propose("revision_changed")`
+without overwriting it. This API adds no agent-callable direct-write tool.
+
+`office_core::domain::knowledge::preferences::Preference::new` supplies
+the default 90-day review date, and `markdown()` renders one matter section.

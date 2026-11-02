@@ -297,6 +297,14 @@ fn run(call: &Call<'_>) -> Result<Value> {
             .any(|name| participants.contains(&name))
     });
     selection.by_policy(AttachPolicy::Tagged, Reason::Tagged, |page| {
+        if page.template.as_deref() == Some("preferences") {
+            return page
+                .id
+                .strip_prefix("dom-preferences-")
+                .is_some_and(|scope| {
+                    scope == "global" || request.tags.contains(&format!("project:{scope}"))
+                });
+        }
         page.tags.iter().any(|tag| request.tags.contains(tag))
     });
     selection.by_policy(AttachPolicy::Matched, Reason::Matched, |page| {

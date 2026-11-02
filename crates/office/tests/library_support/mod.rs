@@ -179,6 +179,7 @@ pub(super) const BUNDLED_TEMPLATES: &[&str] = &[
     "glossary.md",
     "goals.md",
     "person.md",
+    "preferences.md",
     "project.md",
     "rhythm.md",
     "runbook.md",

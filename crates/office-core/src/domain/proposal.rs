@@ -128,6 +128,9 @@ pub enum Payload {
     },
     /// Create a page.
     KnowledgeAdd {
+        /// Scribe-reported semantic conflicts, quoting current preferences.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        conflicts: Vec<super::knowledge::preferences::Conflict>,
         /// Optional sharing approval applied to the reviewed page.
         #[serde(
             default,
@@ -144,6 +147,9 @@ pub enum Payload {
     },
     /// Replace exactly the reviewed page revision.
     KnowledgeUpdate {
+        /// Scribe-reported semantic conflicts, quoting current preferences.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        conflicts: Vec<super::knowledge::preferences::Conflict>,
         /// Optional sharing approval applied to the reviewed page.
         #[serde(
             default,

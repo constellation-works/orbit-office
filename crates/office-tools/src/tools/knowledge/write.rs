@@ -34,7 +34,24 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .ok_or_else(|| {
             Error::InvalidArgument("knowledge-write markdown must be a string".into())
         })?;
-    let library = &call.ports.library;
+    let library = call.ports.library.as_ref();
+    let page = validate(library, markdown)?;
+
+    let created = library.get(&page.id)?.is_none();
+    let record = library.write_document(Path::new(&page.path()), markdown)?;
+    Ok(json!({
+        "id": record.id,
+        "type": page.kind.as_str(),
+        "path": record.path,
+        "created": created,
+    }))
+}
+
+/// The same validation used by direct writes and the scribe apply boundary.
+pub(crate) fn validate(
+    library: &dyn office_core::ports::Library,
+    markdown: &str,
+) -> office_core::Result<Page> {
     let page = Page::from_markdown(markdown)?;
     if page.template.is_some() {
         let templates = library.templates()?;
@@ -61,12 +78,5 @@ fn run(call: &Call<'_>) -> Result<Value> {
     page.check_base_rules()?;
     page.resolve_citations(|id| library.get(id))?;
 
-    let created = library.get(&page.id)?.is_none();
-    let record = library.write_document(Path::new(&page.path()), markdown)?;
-    Ok(json!({
-        "id": record.id,
-        "type": page.kind.as_str(),
-        "path": record.path,
-        "created": created,
-    }))
+    Ok(page)
 }

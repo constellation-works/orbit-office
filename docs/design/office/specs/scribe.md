@@ -380,7 +380,7 @@ already supports. It gives them a bundled one-per-scope template,
 **Changed only by accepted proposals or apply mode** (D3, D4):
 
 - **Propose (default).** Each preference finding becomes one
-  `office.proposal-create` proposal: `knowledge_create` for a scope's
+  `office.proposal-create` proposal: `knowledge_add` for a scope's
   first page, else `knowledge_update` pinned to the page's `sha256`. The
   user accepts or dismisses it. Dismissal memory applies as for any
   proposal.
@@ -954,7 +954,7 @@ requires.
 - [ORB-21090] — plans the office precedent provider over the decision ledger.
 - [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
-- [ORB-21116] — proposed slice S3: preference pages, contradiction check and apply mode.
+- [ORB-21116] — built slice S3: preference pages, contradiction check and apply mode.
 - [ORB-21117] — proposed slice S4: SCR v2, markers and the trust rule, query and ask over the new stores.
 - [ORB-21118] — proposed slice S5: Claude Code opt-in, Stop-hook cadence and marker routing.
 - [ORB-21119] — proposed slice S6: the brief and `/handoff` over the latest SCR.

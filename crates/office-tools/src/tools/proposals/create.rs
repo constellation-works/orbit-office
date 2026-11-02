@@ -51,6 +51,7 @@ pub(crate) fn file(call: &Call<'_>, mut input: Create) -> Result<Value> {
     materialize(call, &mut input.payload, &input.evidence)?;
     input.payload.apply_sharing()?;
     validate_payload(call, &input.payload)?;
+    let conflicts = preference_conflicts(call, &input.payload)?;
     let listed = call.ports.orbit.task_list(&object(json!({
         "tag":cluster,"status":"rejected","limit":1000,
         "fields":["id","status","tags","updated_at"]
@@ -130,7 +131,7 @@ pub(crate) fn file(call: &Call<'_>, mut input: Create) -> Result<Value> {
     )?)?;
     call.ports.library.remove_staged(&staged)?;
     let markdown = format!(
-        "---\nid: {id}\ntype: proposal\ntitle: {}\nkind: {}\ncreated_at: {}\n---\n{}\n\n## Evidence\n{evidence}\n\n## Reviewed payload\n```json\n{payload}\n```\n",
+        "---\nid: {id}\ntype: proposal\ntitle: {}\nkind: {}\ncreated_at: {}\n---\n{}\n\n## Evidence\n{evidence}\n\n{conflicts}## Reviewed payload\n```json\n{payload}\n```\n",
         json!(input.title),
         input.payload.kind().as_str(),
         format_rfc3339_utc(call.ports.clock.now()),
@@ -180,7 +181,7 @@ fn render(call: &Call<'_>, draft: &PageDraft, evidence: &[String]) -> Result<Str
         evidence
             .iter()
             .filter(|e| {
-                ["src-", "dom-", "rb-", "art-"]
+                ["src-", "SCR-", "dec-", "dom-", "rb-", "art-"]
                     .iter()
                     .any(|prefix| e.starts_with(prefix))
             })
@@ -208,6 +209,24 @@ fn render(call: &Call<'_>, draft: &PageDraft, evidence: &[String]) -> Result<Str
             id: draft.id.clone(),
             template: name.clone(),
         })?;
+        if name == "preferences" {
+            let body = draft
+                .sections
+                .iter()
+                .map(|(matter, content)| format!("## {matter}\n{content}\n"))
+                .collect::<String>();
+            template.validate_page(
+                &draft.id,
+                office_core::domain::knowledge::DocumentKind::Domain,
+                &body,
+            )?;
+            return Ok(render_preferences_draft(
+                draft,
+                &cites,
+                &body,
+                template.sensitivity.as_str(),
+            ));
+        }
         if draft
             .sections
             .keys()
@@ -377,4 +396,101 @@ pub(crate) fn check_template(call: &Call<'_>, page: &Page) -> Result<()> {
         page.check_template(&files, &page_files)?;
     }
     Ok(())
+}
+
+fn render_preferences_draft(
+    draft: &PageDraft,
+    cites: &[String],
+    body: &str,
+    sensitivity: &str,
+) -> String {
+    format!(
+        "---\nid: {}\ntitle: {}\ntemplate: preferences\ncites: {}\nshareable: {}\nsensitivity: {sensitivity}\n---\n{body}",
+        json!(draft.id),
+        json!(draft.title),
+        json!(cites),
+        draft.shareable
+    )
+}
+
+fn preference_conflicts(call: &Call<'_>, payload: &Payload) -> Result<String> {
+    use office_core::domain::knowledge::preferences;
+    let (markdown, semantic) = match payload {
+        Payload::KnowledgeAdd {
+            markdown: Some(markdown),
+            conflicts,
+            ..
+        }
+        | Payload::KnowledgeUpdate {
+            markdown,
+            conflicts,
+            ..
+        } => (markdown, conflicts),
+        Payload::KnowledgeAdd { markdown: None, .. }
+        | Payload::AutoTask { .. }
+        | Payload::RunbookFromFriction { .. }
+        | Payload::Retire { .. }
+        | Payload::SharedConflict { .. } => return Ok(String::new()),
+    };
+    let page = Page::from_markdown(markdown)?;
+    if page.template.as_deref() != Some("preferences") {
+        if !semantic.is_empty() {
+            return Err(proposal::invalid("conflicts require a preferences page"));
+        }
+        return Ok(String::new());
+    }
+    let current = call
+        .ports
+        .library
+        .get(&page.id)?
+        .map(|record| {
+            call.ports
+                .library
+                .read_text(Path::new(&record.path))
+                .and_then(|text| Page::from_markdown(&text))
+        })
+        .transpose()?;
+    let mut conflicts = if let Some(current) = &current {
+        preferences::conflicts(current, &page)?
+    } else {
+        Vec::new()
+    };
+    let matters = current
+        .as_ref()
+        .map(|current| preferences::parse(&current.id, &current.body))
+        .transpose()?
+        .unwrap_or_default();
+    for conflict in semantic {
+        if !matters.iter().any(|old| {
+            old.matter == conflict.matter
+                && old.statement == conflict.statement
+                && old.cites == conflict.cites
+        }) {
+            return Err(proposal::invalid(
+                "semantic conflict must quote a current matter and its citations",
+            ));
+        }
+        if !conflicts.contains(conflict) {
+            conflicts.push(conflict.clone());
+        }
+    }
+    let mut rendered = String::from("## Conflicts\n");
+    if conflicts.is_empty() {
+        rendered.push_str("None.\n");
+    }
+    for conflict in conflicts {
+        rendered.push_str(&format!(
+            "### {}\n> {}\n\nCitations: {}\n",
+            conflict.matter,
+            conflict.statement,
+            conflict
+                .cites
+                .iter()
+                .map(|cite| format!("[{cite}]"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    rendered.push('\n');
+    Ok(rendered)
 }
