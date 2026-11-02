@@ -1,6 +1,7 @@
 /**
  * The Tags editor (specs/scribe.md, "Configuration"): create, edit and
- * delete custom and default tags (name, scope, instruction, sink, mode),
+ * delete custom and default tags (name, scope, instruction, sink, mode,
+ * capture and trigger),
  * and Restore defaults. It reads the effective tags and saves through
  * `office.config-set`. While Orbit refuses the app that tool
  * (ORB-20363), a save comes back `not_permitted`: the editor then shows
@@ -59,6 +60,7 @@ export function createTagsView(): {
       const sink = selectOf(TAG_SINKS, draft.sink);
       const mode = el("select");
       const capture = selectOf([["markers", "Markers only"], ["markers+inferred", "Markers, plus suggested ones"]] as const, draft.capture);
+      const trigger = selectOf([["cadence", "At the next scheduled pass"], ["marker", "When a turn is marked"]] as const, draft.trigger);
       const workspace = el("input");
       workspace.placeholder = "Orbit workspace for the proposed task";
       const workspaceField = labelled("Workspace", workspace);
@@ -94,11 +96,12 @@ export function createTagsView(): {
         instruction.value = draft.instruction;
         sink.value = draft.sink;
         capture.value = draft.capture;
+        trigger.value = draft.trigger;
         workspace.value = draft.workspace ?? "";
         syncSink();
         saveButton.textContent = editing === null ? "Save tag" : `Save ${editing}`;
         cancelButton.hidden = editing === null;
-        for (const control of [scope, instruction, sink, mode, capture, workspace, saveButton, cancelButton, restoreButton]) {
+        for (const control of [scope, instruction, sink, mode, capture, trigger, workspace, saveButton, cancelButton, restoreButton]) {
           control.disabled = readOnly;
         }
         if (!readOnly) name.disabled = editing !== null;
@@ -111,7 +114,7 @@ export function createTagsView(): {
           const row = el("article", "", "scribe-entry scribe-tag-row");
           row.dataset.name = tag.name;
           const head = el("div", "", "scribe-entry-head");
-          head.append(el("strong", `#${tag.name}`), el("span", `${tag.scope} · ${tag.sink} · ${tag.mode}`));
+          head.append(el("strong", `#${tag.name}`), el("span", `${tag.scope} · ${tag.sink} · ${tag.mode} · ${tag.trigger === "marker" ? "starts a pass when marked" : "waits for the cadence"}`));
           const actions = el("div", "", "scribe-actions");
           const edit = el("button", "Edit");
           edit.type = "button";
@@ -167,6 +170,7 @@ export function createTagsView(): {
           sink: sink.value as ScribeTagDef["sink"],
           mode: mode.value as ScribeTagMode,
           capture: capture.value as ScribeTagDef["capture"],
+          trigger: trigger.value as ScribeTagDef["trigger"],
           ...(sink.value === "orbit_task" && workspace.value.trim() ? { workspace: workspace.value.trim() } : {}),
         };
         if (!tag.name || !tag.instruction) { status.textContent = messageFor("invalid_input"); return; }
@@ -185,6 +189,7 @@ export function createTagsView(): {
         labelled("Entries go to", sink),
         labelled("Mode", mode),
         labelled("Capture", capture),
+        labelled("Trigger", trigger),
         workspaceField,
         buttons,
         status,

@@ -451,6 +451,8 @@ fn without_a_scribe_key_the_defaults_are_in_force() {
     assert_eq!(tags[0]["mode"], "propose");
     assert_eq!(tags[1]["sink"], "decisions_ledger");
     assert_eq!(tags[1]["mode"], "append");
+    assert_eq!(tags[0]["trigger"], "cadence");
+    assert_eq!(tags[1]["trigger"], "cadence");
     let pending = f.pending(2);
     assert_eq!(pending["tags"], status["scribe"]["tags"]);
     assert_eq!(pending["cadence"], json!({"minutes": 20, "turns": 10}));
@@ -469,7 +471,7 @@ fn config_set_writes_cadence_and_tags_and_null_restores_defaults() {
         "office.config-set",
         json!({"key":"scribe.tags.lesson","value":{
             "scope":"global","instruction":"A lesson learned.","sink":"orbit_task",
-            "workspace":"polaris","capture":"markers+inferred"}}),
+            "workspace":"polaris","capture":"markers+inferred","trigger":"marker"}}),
     );
     f.ok(
         "office.config-set",
@@ -488,6 +490,8 @@ fn config_set_writes_cadence_and_tags_and_null_restores_defaults() {
     assert_eq!(tags[2]["workspace"], "polaris");
     assert_eq!(tags[2]["capture"], "markers+inferred");
     assert_eq!(tags[2]["mode"], "propose");
+    assert_eq!(tags[2]["trigger"], "marker");
+    assert_eq!(tags[0]["trigger"], "cadence");
     let pending = f.pending(2);
     assert_eq!(pending["tags"], *tags);
     assert_eq!(pending["cadence"], json!({"minutes": 45, "turns": 6}));
@@ -583,6 +587,16 @@ fn config_set_refuses_invalid_scribe_values_with_typed_codes() {
         (
             "scribe.tags.x",
             tag("scr_only", json!({"workspace":"ws"})),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            tag("scr_only", json!({"trigger":"always"})),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            tag("scr_only", json!({"trigger":null})),
             "invalid_library_setting",
         ),
         (

@@ -156,6 +156,65 @@ def user_turn(record: dict) -> bool:
         and isinstance(block.get("text"), str) and block["text"].strip() for block in content)
 
 
+# Harness wrapper text in a user record is not the user's words
+# (specs/scribe.md, "Pipeline"): dropped before a marker is looked for.
+HARNESS_BLOCK = re.compile(
+    r"<(system-reminder|task-notification|local-command-[a-z-]+|command-message|command-name"
+    r"|command-args|pasted_content)(?:\s[^>]*)?>.*?(?:</\1>|\Z)", re.S)
+# A desktop side session's opening brief is the orchestrator's text.
+SIDE_BRIEF = re.compile(r"\s*background\s*\(?from the session that started this one\)?:?",
+                        re.I)
+# Marker words that name a default tag (aliases included).
+MARKER_ALIASES = {"preferences": "preferences", "preference": "preferences",
+                  "decisions": "decisions", "decision": "decisions"}
+
+
+def user_text(record: dict) -> str:
+    """The typed text of a user record, harness wrapper blocks removed."""
+    content = record.get("message", {}).get("content")
+    if isinstance(content, str):
+        text = content
+    else:
+        text = "\n".join(block["text"] for block in content or []
+                         if isinstance(block, dict) and block.get("type") == "text"
+                         and isinstance(block.get("text"), str))
+    return HARNESS_BLOCK.sub("", text)
+
+
+def marked_tags(text: str, defined: set[str]) -> set[str]:
+    """The defined tags a user turn marks, read as Office reads markers.
+
+    A marker starts a line: `#preferences`/`#preference`,
+    `#decision`/`#decisions`, or `#scribe <tag>`. Lines in a fenced block or
+    a blockquote are not markers, and a side session's opening brief is
+    not the user's turn. Office re-detects every marker at the pass, so
+    this only decides whether a Stop is due (specs/scribe.md, "Cadence").
+    """
+    if SIDE_BRIEF.match(text):
+        return set()
+    found: set[str] = set()
+    fenced = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith(("```", "~~~")):
+            fenced = not fenced
+            continue
+        if fenced or line.startswith(">") or not line.startswith("#"):
+            continue
+        words = line[1:].split()
+        if not words:
+            continue
+        word = words[0].lower()
+        if word == "scribe":
+            name = words[1] if len(words) > 1 else ""
+            name = MARKER_ALIASES.get(name, name)
+        else:
+            name = MARKER_ALIASES.get(word, "")
+        if name in defined:
+            found.add(name)
+    return found
+
+
 def check_dir(path: Path, private: bool) -> None:
     """Refuse a state directory that is a symlink, foreign or too open. Never follows a link.
 
@@ -472,7 +531,9 @@ class Scribe:
 
         `office.status` returns the effective block even for an
         uncustomized Library; a hook that cannot read it keeps the last
-        cadence it saw, else the shipped defaults.
+        cadence it saw, else the shipped defaults. The same read caches
+        the tags whose `trigger` is `marker` (`v2_marker_tags`); without a
+        read there are none, so every tag waits for the cadence.
         """
         try:
             block = self.call("office.status", {}).get("scribe") or {}
@@ -481,6 +542,11 @@ class Scribe:
             if (isinstance(minutes, int) and 5 <= minutes <= 240
                     and isinstance(turns, int) and 2 <= turns <= 100):
                 state["v2_cadence"] = {"minutes": minutes, "turns": turns}
+            tags = block.get("tags")
+            if isinstance(tags, list):
+                state["v2_marker_tags"] = sorted(
+                    tag["name"] for tag in tags if isinstance(tag, dict)
+                    and isinstance(tag.get("name"), str) and tag.get("trigger") == "marker")
         except Failure:
             pass
         cached = state.get("v2_cadence")
@@ -488,13 +554,17 @@ class Scribe:
 
     def count_turns(self, context: dict) -> int:
         """User turns in the live transcript, read as `snapshot` pins it."""
+        return self.read_turns(context)[0]
+
+    def read_turns(self, context: dict) -> tuple[int, str]:
+        """User turns in the live transcript and the last one's typed text."""
         root = (Path.home() / ".claude/projects").resolve(strict=True)
         source = Path(context.get("transcript_path", "")).resolve(strict=True)
         if root not in source.parents or source.suffix != ".jsonl":
             raise Failure("transcript_outside_provider_root")
         data = read_file(source, MAX_TRANSCRIPT)
         data = data[:data.rfind(b"\n") + 1]
-        count = 0
+        count, last = 0, ""
         for line in data.splitlines():
             if not line.strip():
                 continue
@@ -504,7 +574,8 @@ class Scribe:
                 continue
             if isinstance(record, dict) and user_turn(record):
                 count += 1
-        return count
+                last = user_text(record)
+        return count, last
 
     def pass_command(self, sid: str) -> list[str]:
         """The headless scribe run a due Stop hook starts.
@@ -564,9 +635,10 @@ class Scribe:
 
         Every session defaults off: without Office's record saying on,
         nothing is staged, started or written. A due Stop (the cadence's
-        minutes or user turns since the last pass started, or a pending
-        Capture-now) and every SessionEnd start at most one headless
-        pass and return at once. There is no timer.
+        minutes or user turns since the last pass started, a pending
+        Capture-now, or a new last user turn that marks a tag whose
+        `trigger` is `marker`) and every SessionEnd start at most one
+        headless pass and return at once. There is no timer.
         """
         sid = self.session_id(context.get("session_id"))
         try:
@@ -589,18 +661,25 @@ class Scribe:
                     save(self.state / (sid + ".json"), state)
                     return {"on": False}
                 self.mirror(sid, True)
-                turns = self.count_turns(context)
+                turns, last_turn = self.read_turns(context)
                 cadence = self.cadence(state)
                 now_requested = shared.get("now_requested") is True
                 last_at = state.get("v2_last_pass_at")
+                last_turns = state.get("v2_last_pass_turns", 0)
+                # Only a turn after the last pass started can mark one due,
+                # so a marked turn starts one pass, not one per Stop.
+                marked = sorted(marked_tags(last_turn, set(state.get("v2_marker_tags") or ()))
+                                ) if turns > last_turns else []
                 due = (event == "SessionEnd" or now_requested or last_at is None
                        or time.time() - last_at >= cadence["minutes"] * 60
-                       or turns - state.get("v2_last_pass_turns", 0) >= cadence["turns"])
+                       or turns - last_turns >= cadence["turns"] or bool(marked))
                 if not due:
                     save(self.state / (sid + ".json"), state)
                     return {"on": True, "started": False, "reason": "cadence_not_reached",
                             "cadence": cadence}
                 result = self.start_v2_pass(sid, state, turns)
+                if marked:
+                    result["marked"] = marked
                 if result.get("started") and now_requested:
                     with contextlib.suppress(Failure):
                         self.control(sid, "consume_now",

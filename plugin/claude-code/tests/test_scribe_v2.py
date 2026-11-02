@@ -530,6 +530,44 @@ class ScribeV2(unittest.TestCase):
             except FileNotFoundError:
                 break
 
+    def test_a_marked_user_turn_starts_a_pass_only_for_a_marker_trigger_tag(self):
+        tags = [{"name": name, "scope": "global", "sink": "scr_only", "mode": "append",
+                 "capture": "markers", "instruction": "Record it.", "trigger": trigger}
+                for name, trigger in (("preferences", "cadence"), ("decisions", "cadence"),
+                                      ("lesson", "marker"))]
+        (self.home / "status.json").write_text(json.dumps(
+            {"cadence": {"minutes": 240, "turns": 100}, "tags": tags, "tags_customized": True}))
+        history = [("user", "one"), ("assistant", "ok")]
+        self.turn_on(history)
+        self.seed_pass_state(v2_last_pass_at=time.time(), v2_last_pass_turns=1)
+        # A cadence-trigger tag, an undefined tag and an agent-authored
+        # marker for the marker-trigger tag each wait for the cadence.
+        for turns in ([("user", "#decision ship v2 first")],
+                      [("user", "#scribe unknown a thing")],
+                      [("user", "go on"), ("assistant", "#scribe lesson agents may not")]):
+            history = history + turns
+            self.transcript(history)
+            self.hook("Stop")
+            self.seed_pass_state(v2_last_pass_at=time.time(),
+                                 v2_last_pass_turns=sum(1 for r, _ in history if r == "user"))
+        time.sleep(0.3)
+        self.assertEqual(self.pass_starts(), [], "only a marker-trigger tag's user marker is due")
+        # The user's own marker for the marker-trigger tag starts one pass
+        # with the cadence far from due.
+        history = history + [("user", "#scribe lesson pin the base before a gate")]
+        self.transcript(history)
+        self.env["PASS_STUB_SLEEP"] = "3"
+        self.hook("Stop")
+        self.assertEqual(self.pass_starts(), [self.sid])
+        # A later Stop on the same turn starts nothing more.
+        self.hook("Stop")
+        # A new marked turn while the first pass holds the lock starts none.
+        history = history + [("assistant", "ok"), ("user", "#scribe lesson and another")]
+        self.transcript(history)
+        self.hook("Stop")
+        time.sleep(0.3)
+        self.assertEqual(self.pass_starts(), [self.sid], "at most one pass runs per session")
+
     # ---- routing --------------------------------------------------------
 
     SECTIONS = {"summary": "Planning the release", "goals": [], "outcome": [], "next": []}

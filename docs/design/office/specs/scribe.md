@@ -115,6 +115,23 @@ session, guarded by a per-session lock so at most one runs, and returns.
 That run's own transcript is headless (`entrypoint: sdk-cli`) and is never
 scribed. SessionEnd runs one final pass for a session that is on.
 
+**Marker trigger** ([ORB-21602]). A tag whose `trigger` is `marker`
+([Custom tags](#custom-tags)) does not wait for the cadence: a Stop whose
+last user turn carries a marker for that tag is due, and starts one pass
+under the same per-session lock (a pass already running holds it, so the
+marked Stop starts none). The hook reads the marker without a model, by
+the [marker](#markers) line rules: `#preferences`, `#decision` or
+`#scribe <tag>` starting a line of the user's own typed turn, outside a
+fenced block, a blockquote, a `<pasted_content>` wrapper and harness
+wrapper text. A marker in assistant text, a marker for a tag that is not
+defined, and a marker for a `cadence`-trigger tag do not make the Stop
+due. Only a turn after the last pass started counts, so one marked turn
+starts one pass. The hook learns each tag's trigger from the same
+`office.status` read as the cadence; when it cannot read it, every tag
+waits for the cadence. Office re-detects every marker at the pass, so the
+trigger decides only when a pass starts, never what it records; a private
+session keeps its by-reference handling.
+
 **Orchestrators.** An orchestrator agent may turn scribing on for the
 interactive session it runs in, through the plugin's `scribe` tool with
 `on`. The record then carries `on_by: agent`, and the tool's reply tells
@@ -246,7 +263,11 @@ tag definition has:
   proposed task is filed in (default: the office workspace);
 - `capture`: `markers` (default) or `markers+inferred`. With inferred
   capture the scribe may also record unmarked candidates. Those are always
-  `by: scribe`, always propose mode, and listed apart in the pass report.
+  `by: scribe`, always propose mode, and listed apart in the pass report;
+- `trigger`: `cadence` (default) or `marker`. With `cadence` the tag's
+  markers wait for the next cadence pass; with `marker` a user turn that
+  carries the tag's marker starts a pass at its Stop
+  ([Marker trigger](#turning-it-on)).
 
 A deleted default stops being recognized: its markers are reported as an
 unknown tag and kept in the SCR's pass report only. **Restore defaults**
@@ -816,7 +837,8 @@ an assistant line never becomes a human decision or a preference in effect.
   otherwise the hook reads the shared record and, only while the session
   is on, the cadence (`office.status`, cached in session state). A due
   Stop (minutes or user turns since the last pass started, or a pending
-  Capture-now) and every SessionEnd start one headless run
+  Capture-now, or a new user turn marking a `marker`-trigger tag,
+  [ORB-21602]) and every SessionEnd start one headless run
   (`claude -p` driving `/scribe update`, or `SCRIBE_PASS_COMMAND`) under
   a per-session pass lock the child inherits, and return without waiting.
 - **Routing.** The `append2` step files scheduling, `orbit_task` and
@@ -877,9 +899,9 @@ is left out, as before.
     "cadence": { "minutes": 20, "turns": 10 },
     "precedents": { "half_life_days": 90 },
     "tags": [
-      { "name": "preferences", "scope": "global", "sink": "preference_page", "mode": "propose", "capture": "markers",
+      { "name": "preferences", "scope": "global", "sink": "preference_page", "mode": "propose", "capture": "markers", "trigger": "cadence",
         "instruction": "A standing answer to a class of question, in the user's words." },
-      { "name": "decisions", "scope": "session", "sink": "decisions_ledger", "mode": "append", "capture": "markers",
+      { "name": "decisions", "scope": "session", "sink": "decisions_ledger", "mode": "append", "capture": "markers", "trigger": "cadence",
         "instruction": "A choice that was made, with the question and options from the turns before it." }
     ]
   }
@@ -913,7 +935,9 @@ nested list of mappings ([plugin-surface.md](./plugin-surface.md#library-setting
   most 2000 characters) and `sink`; `name` defaults to the key and must
   match it; `mode` defaults by sink (`propose` for `preference_page` and
   `orbit_task`, `append` for `decisions_ledger` and `scr_only`);
-  `capture` defaults to `markers`. A list holds at most 32 tags.
+  `capture` defaults to `markers`; `trigger` is `cadence` or `marker`
+  and defaults to `cadence`, so a Library written before the field
+  behaves as before ([ORB-21602]). A list holds at most 32 tags.
 - **Precedent recency** (built, [ORB-21218]).
   `scribe.precedents.half_life_days` is an integer from 1 to 3650,
   default 90; null restores the default. It controls the read-only,
@@ -930,7 +954,9 @@ nested list of mappings ([plugin-surface.md](./plugin-surface.md#library-setting
   kebab-case, at most 32 characters, starting with a letter; in a
   whole-list value a malformed name is keyed by its index, as
   `scribe.tags[0].name`), a `workspace` on a sink other than
-  `orbit_task`, an out-of-range cadence, and any malformed field.
+  `orbit_task`, a `trigger` other than `cadence` or `marker` (key
+  `scribe.tags.<name>.trigger`), an out-of-range cadence, and any
+  malformed field.
   `tag_sink_refused` is returned for any file target outside the
   Library: a `sink` shaped like a path (it contains `/`, `\`, `.`, `~` or
   `:`), an `orbit_task` `workspace` shaped like a path (it contains `/`
@@ -940,13 +966,15 @@ nested list of mappings ([plugin-surface.md](./plugin-surface.md#library-setting
   those above is `unknown_library_setting`. The same rules apply
   when the file is read, so a hand-edited block cannot bypass them.
 - **Reading the effective block.** `office.status` returns it as
-  `scribe` (`cadence`, `tags`, `tags_customized` and `precedents`), never null: an
+  `scribe` (`cadence`, `tags`, `tags_customized` and `precedents`; each
+  tag carries its `trigger`), never null: an
   unset key or an uninitialized Library reads as the defaults.
   `office.scribe-pending` returns the same `tags` and `cadence`, so a
   pass sees the definitions in force without a second call.
 - **How the app writes them, and the dependency** (built, [ORB-21120]).
   The Scribe tab's **Tags** editor creates, edits and deletes tags (name,
-  scope, instruction, sink, mode) and saves through `office.config-set`,
+  scope, instruction, sink, mode, capture, and a **Trigger** field beside
+  Capture; each listed tag shows its trigger) and saves through `office.config-set`,
   as the Routines screen saves retention ([web-app.md](./web-app.md#authority)):
   `GET /api/scribe/tags` reads the effective block and
   `POST /api/scribe/tags` writes one save (`upsert` as
@@ -1232,5 +1260,6 @@ requires.
 - [ORB-21239] — replaces the root AGENTS.md decision-log rule in ws_constellation (filed by S9).
 - [ORB-21123] — removes v1 surfaces after 2026-12-02; approved in backlog.
 - [ORB-21218] — built the precedent provider and its recency setting.
+- [ORB-21602] — built the per-tag `trigger` (`cadence` or `marker`): a marked user turn starts a pass.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -24,14 +24,14 @@ test("not captured states the searched range, files and topics", () => {
   assert.equal(notCapturedText({ ...base, since: null, until: null, topics: [], files_searched: 1 }), "Not captured. Searched every date across 1 file.");
 });
 
-test("a sink takes only its paired modes, and a new tag starts as markers-only session record", () => {
+test("a sink takes only its paired modes, and a new tag starts as a markers-only, cadence-trigger session record", () => {
   assert.deepEqual(modesForSink("preference_page"), ["propose", "apply"]);
   assert.deepEqual(modesForSink("orbit_task"), ["propose"]);
   assert.deepEqual(modesForSink("decisions_ledger"), ["append"]);
   assert.deepEqual(modesForSink("scr_only"), ["append"]);
   assert.equal(defaultModeForSink("preference_page"), "propose");
   assert.equal(defaultModeForSink("decisions_ledger"), "append");
-  assert.deepEqual(blankTag(), { name: "", scope: "session", instruction: "", sink: "scr_only", mode: "append", capture: "markers" });
+  assert.deepEqual(blankTag(), { name: "", scope: "session", instruction: "", sink: "scr_only", mode: "append", capture: "markers", trigger: "cadence" });
 });
 
 test("agreement rows: percents, Wilson interval, low-sample gate and plain category words", () => {

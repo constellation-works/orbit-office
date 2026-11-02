@@ -46,7 +46,7 @@ export function defaultModeForSink(sink: ScribeTagSink): ScribeTagMode {
 
 /** A new tag's starting definition. */
 export function blankTag(): ScribeTagDef {
-  return { name: "", scope: "session", instruction: "", sink: "scr_only", mode: "append", capture: "markers" };
+  return { name: "", scope: "session", instruction: "", sink: "scr_only", mode: "append", capture: "markers", trigger: "cadence" };
 }
 
 /** The two shipped default tag names. */
