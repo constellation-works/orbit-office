@@ -90,8 +90,8 @@ const SHELL_ASSETS: readonly string[] = [
   "/screens/todos/view.js",
 ];
 
-/** Cache name for the shell. Bump when the shell's bytes change. */
-const SHELL_CACHE = "office-shell-v15";
+/** Replaced with a content digest by make app-build and app-install. */
+const SHELL_CACHE = "office-shell-UNSTAMPED";
 
 /**
  * True for live-data paths, which the worker must never cache. A `.js`
@@ -99,6 +99,7 @@ const SHELL_CACHE = "office-shell-v15";
  * served as a static file), not a live endpoint, so it stays cacheable.
  */
 function isApiRequest(pathname: string): boolean {
+  if (pathname === "/build-info.json") return true;
   if (pathname === "/healthz") return true;
   if (pathname === "/api" || pathname.startsWith("/api/")) return !pathname.endsWith(".js");
   return false;

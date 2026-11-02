@@ -231,9 +231,53 @@ filter for them. Orbit must support `workspace init --preset`.
 
 ## Updating the plugin from a clone (`make plugin-install`)
 
-`make plugin-install` builds HEAD into a fresh plugin export, validates it,
+`make plugin-install` resolves HEAD once, builds and updates the app from that
+commit, then builds a fresh plugin export from the same commit, validates it,
 then upgrades the installed plugin (or adds it on first install) and enables
-it. When `PLUGIN_WORKSPACE=<workspace>` is given, it also enables the plugin
+it. Commit source changes before installing: these targets use a Git archive,
+not uncommitted files. A failing app build leaves the current app files and
+service untouched and stops the plugin upgrade, printing the build error.
+
+`make app-install` performs the app update alone. It reads the installer-written
+service definition (`~/Library/LaunchAgents/com.orbit-office.app.plist` on macOS,
+`~/.config/systemd/user/orbit-office.service` on Linux) to find the app root and
+configured port. These targets require a previously provisioned login service;
+run the installer first if its definition is missing. Both checkout installs
+and copied app bundles are supported.
+Customized definitions that cannot be parsed, including systemd drop-ins, fail
+before publication. It builds the pinned archive in a temporary directory via
+`app-deps` followed by `npm --prefix app run build`, stamps the compiled worker
+and `web/dist/build-info.json`, and stages generated runtime directories beside
+the registered app. TypeScript sources and service configuration are preserved;
+the static shell is updated from the pinned archive with the compiled modules.
+
+After the build succeeds it publishes the generated files, then runs exactly
+the OS-selected restart: `launchctl kickstart -k gui/<uid>/com.orbit-office.app`
+or `systemctl --user restart orbit-office.service`. It polls the local
+`/build-info.json` for at most 15 seconds and requires both the full commit
+and the build digest to match. A mismatch fails the target; it never upgrades
+the plugin after an unverified app update. A failed restart/check restores the
+previous files and attempts to restart that generation, reporting any remaining
+service error. Successful updates print the served root, URL, commit and the
+retained `.office-app-backup-*` runtime directory. Keep that directory until
+the update is accepted; it contains the previous generated files for rollback.
+
+An interrupted publication leaves `.office-app-install.pending.json` beside the
+app root, naming the backup, candidate and runtime paths. Another install refuses
+until the operator reconciles those directories and removes the pending marker;
+it never guesses from timestamps. A bounded OS advisory lock serializes updates
+to the same installed app. Publication is atomic per generated directory rather
+than across the whole app; see the [deployment decision](../../app-install/4_decisions.md).
+
+`make app-build` builds the working tree for development and stamps it with a
+`development-<commit>` identity and content digest. Plain `npm run build` and
+`npm run check` remain TypeScript-only development commands; use `app-build`
+to exercise update detection. Production install identities always come from
+the pinned archive. `make app-install-test` exercises the Make entry points,
+both OS restart commands, build failures and commit mismatch with isolated
+service definitions and stub commands on a single host.
+
+When `PLUGIN_WORKSPACE=<workspace>` is given, `plugin-install` also enables the plugin
 in that workspace and then runs `office.init` there
 (`orbit tool run office.init --json --full --input '{}' --workspace <workspace>`),
 so a later plugin version's new templates and layout migrations arrive with
@@ -244,6 +288,8 @@ tool Orbit runs only for an operator, so the recipe passes the audited
 override is never added. The target fails when `office.init` exits non-zero
 or returns an `{ok: false}` envelope on stdout. Without `PLUGIN_WORKSPACE`,
 the workspace toggle is untouched and `office.init` is not run.
+
+The curl installer's upgrade path is separate from these Make targets.
 
 ## `orbit-office init [path]`
 

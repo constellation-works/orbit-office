@@ -368,7 +368,20 @@ For the event the app ships as a local web app, not a desktop app
   opens it in its own window with a Dock or taskbar icon and no address
   bar, so the demo shows neither a terminal nor a browser. The service
   worker caches the app shell only; data always comes live from the local
-  server, and there is no offline mode.
+  server, and there is no offline data mode. `make app-build`, `make app-install`
+  and `make plugin-install` stamp the shell cache with a digest of the build
+  commit and shell bytes, changing `sw.js` on each changed build without a
+  manually bumped cache version. `/build-info.json` reports the commit and
+  digest through the existing static-file server and always bypasses the worker
+  cache. A replacement worker removes the previous cache and claims open
+  windows; the page offers a new-version notice with **Reload**. It does not
+  reload automatically or discard unsaved work. First installation shows no
+  update notice. Offline navigation still falls back to the cached shell.
+
+  After `make app-build`, verify the update notice, reload and offline fallback
+  with `source "$ORBIT_BROWSER_KIT_ENV"` then
+  `node --test app/packages/web/test/pwa.browser.mjs`. Set
+  `PWA_SCREENSHOTS_DIR=<temp-directory>` to capture phone and desktop notices.
 - **Webview-safe UI.** Relative URLs, and no browser-only API without a
   fallback, so a desktop shell can host the same UI later.
 - **After the event: a Tauri shell** — one installer bundling the runtime

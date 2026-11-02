@@ -55,6 +55,21 @@ orbit plugin test "$out" --grant fs,network
 
 ## Install (operator)
 
+From a committed clone, run `make plugin-install` at the repository root to
+build and update both the app and plugin from the same resolved commit. The app
+build completes before the running service is changed; a build failure stops
+the install and prints the build error. The target restarts the registered
+launchd or systemd user service and verifies its `/build-info.json` commit and
+build digest before upgrading the plugin. `make app-install` updates only the
+app. Both use the service definition's app directory and port, including for a
+copied bundle. `make app-build` is the separate development build command.
+See the [install specification](../docs/design/office/specs/install.md#updating-the-plugin-from-a-clone-make-plugin-install)
+for service definitions, backups and interrupted-install recovery. An open app
+window offers **Reload** when the new worker takes control; drafts remain until
+the user chooses to reload, and the shell still opens offline.
+
+The direct plugin commands below install the plugin alone:
+
 ```bash
 orbit plugin add /tmp/office-plugin-<sha>
 orbit plugin enable office --grant 'fs={{workspace}},{{plugin_state}}' --grant network --grant orbit_tools --grant agent_tools
