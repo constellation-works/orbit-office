@@ -198,6 +198,7 @@ Activities have no schedule switch. Definitions load only when listed in
 - **Auto-tasks:**
   - `office-knowledge-maintenance`: weekly. Re-verifies stale pages against newer sources and frictions, and files `knowledge_update` proposals.
   - `office-review`: on period end.
+  - `office-scribe-contradictions`: weekly (`0 1 * * 1`), seeded disabled, no pinned crew. Checks every decision ledger and preference page; files one `knowledge_update` proposal per preference conflict, one `owner:you` to-do per unlinked decision conflict, and a consolidation proposal for a page over 1,000 words; never writes a ledger ([scribe.md](./scribe.md#contradiction-checks)).
 - **Activities:** `office-agent-todo`, an agent loop that executes an `owner:agent` to-do with its attached runbook and example artifacts, and writes its output as task artifacts with the manifest. Its `proc.spawn` allowlist has `python3` and no cloud CLI, so its agents can use the `gateway` plugin and Orbit refuses them `cloudcli` ([gateway.md](./gateway.md)).
 - **Skills:** `orchestrator`, `library-conventions` (how to cite, write pages and package outputs), and one skill per pack (`kt`, `meetings`, later `receipts`).
 

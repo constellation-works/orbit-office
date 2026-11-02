@@ -8,7 +8,8 @@ Orbit's schemaVersion 2 Activity envelope and have no schedule switch or dedupe 
   `office-daily-digest` (daily), `office-bootstrap` (every 15 minutes),
   `office-shared-sync` (hourly).
 - Auto-tasks: `office-review` (period end), `office-knowledge-maintenance` (weekly),
-  `office-knowledge-verify` (daily), `office-conversation-extract` (every 30 minutes).
+  `office-scribe-contradictions` (weekly), `office-knowledge-verify` (daily),
+  `office-conversation-extract` (every 30 minutes).
 - Activities: `office-agent-todo`.
 
 `activities/office-agent-todo.yaml` defines the agent loop for an
@@ -122,3 +123,17 @@ This definition is **registered** under `spec.definitions.auto_tasks` as
 `definitions/auto_tasks/office-knowledge-verify.yaml`;
 enabling it remains an operator decision.
 See `docs/design/office/specs/proposals.md` ("Rolling verification").
+
+`auto_tasks/office-scribe-contradictions.yaml` ships a disabled weekly check
+(`0 1 * * 1`, template complexity `low`, no pinned crew) of every decision
+ledger and preference page. A preference that conflicts with another
+preference, or with a later decision, gets one `knowledge_update` proposal
+pinned to the page's `sha256`; two unlinked conflicting decisions get one
+`owner:you` to-do. Each outcome cites both entries. A preference page over
+1,000 words gets a consolidation proposal. The run never writes a ledger or
+a page directly, and it attaches a report of its outcomes.
+
+This definition is **registered** under `spec.definitions.auto_tasks` as
+`definitions/auto_tasks/office-scribe-contradictions.yaml`; enabling it
+remains an operator decision. See `docs/design/office/specs/scribe.md`
+("Contradiction checks").
