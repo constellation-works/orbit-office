@@ -121,7 +121,7 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 | Orchestrator skill, tools and guardrails | [specs/orchestrator.md](./specs/orchestrator.md) | [ORB-18720] done |
 | Proposals and their signals | [specs/proposals.md](./specs/proposals.md) | [ORB-18721] done, [ORB-18722] done |
 | Analytics and generated reviews | [specs/analytics-and-reviews.md](./specs/analytics-and-reviews.md) | [ORB-18724] done |
-| Web app screens and rules | [specs/web-app.md](./specs/web-app.md) | [ORB-18727] done, [ORB-18728] done, Agent work [ORB-19735] done and registered [ORB-19741] done; screen rebuild [ORB-21345] done; Today deduplication [ORB-21452] done |
+| Web app screens and rules | [specs/web-app.md](./specs/web-app.md) | [ORB-18727] done, [ORB-18728] done, Agent work [ORB-19735] done and registered [ORB-19741] done, screen removed [ORB-21641]; screen rebuild [ORB-21345] done; Today deduplication [ORB-21452] done |
 | Calendar: local events and read-only sync, meeting prep, capture after the meeting | [specs/calendar.md](./specs/calendar.md) | [ORB-19191] done, [ORB-19192] done, [ORB-19193] done, [ORB-19194] done, [ORB-19195] done, [ORB-20246] done |
 | Shared library: `shareable` documents synced with one team repository | [specs/shared-library.md](./specs/shared-library.md) | [ORB-19417] done, [ORB-19418] done, [ORB-19419] done, [ORB-19421] done |
 | Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-18723] done |
@@ -184,6 +184,7 @@ core.
 - [ORB-21334] — coordinates the synthetic meeting-to-PR demo and submission run-through.
 - [ORB-21345] — rebuilt the web app screens from the approved mocks.
 - [ORB-21452] — deduplicated Today digest needs by task id across repeated workspace listings.
+- [ORB-21641] — removed the Agent work screen; Today and To-dos show agent work.
 - [ORB-21404] — tracks the completed demo run and the remaining recording and close-out work.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
