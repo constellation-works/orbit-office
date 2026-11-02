@@ -373,8 +373,11 @@ spec:
 
     - name: digest
       description: >-
-        Write the day's digest artifact with one Muse Spark call; run only
-        by the office-daily-digest routine.
+        Write the day's digest artifact with one Muse Spark call (the
+        office-daily-digest routine), or, with `source`, return the cited
+        digest since that meeting: Decided, Shipped with PR and merge links,
+        and Needs you. The source digest makes no model call and writes
+        nothing.
       execution_kind: mutating
       mcp_scope: none
       input_schema: { $ref: schemas/digest.request.json }
