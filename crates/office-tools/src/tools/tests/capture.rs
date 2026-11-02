@@ -292,12 +292,12 @@ fn capture_decision_checks_its_quote_against_the_cited_task_comment() {
             "orbit://task/TASK-1#comment-2",
             "decision_ref_unresolved",
         ),
-        // Verified: the fake Library cannot append, so it stops there.
+        // Verified: the fake Library appends the first global entry.
         (
             said,
             "ship the March train",
             "orbit://task/TASK-1#comment-1",
-            "library_unavailable",
+            "",
         ),
     ] {
         let mut ports = ports();
@@ -310,8 +310,13 @@ fn capture_decision_checks_its_quote_against_the_cited_task_comment() {
             "scope": "global", "decided_by": "human", "decided_at": "2026-11-01T22:39:00-07:00"
         }});
         let out = call("office.capture", input, &ports);
-        assert_eq!(out["ok"], false, "{out}");
-        assert_eq!(out["error"]["code"], code, "{out}");
+        if code.is_empty() {
+            assert_eq!(out["ok"], true, "{out}");
+            assert_eq!(out["output"]["id"], "dec-global-1", "{out}");
+        } else {
+            assert_eq!(out["ok"], false, "{out}");
+            assert_eq!(out["error"]["code"], code, "{out}");
+        }
         let calls = orbit.calls();
         assert_eq!(calls.len(), 1, "one task read");
         assert_eq!(calls[0].tool, "orbit.task.show");

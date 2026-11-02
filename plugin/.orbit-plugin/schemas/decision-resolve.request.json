@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.decision-resolve request",
+  "description": "Settle one open decision-conflict to-do: record which entry stands as a new ledger entry reversing the other, close the to-do, and release the agent to-dos it held (specs/scribe.md, Meeting decisions). Retry-safe.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The open owner:you decision-conflict to-do (tags owner:you and office-scribe-contradictions, last line Conflicting entries: <id> <id>)."
+    },
+    "stands": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The entry id that stands: one of the two the to-do names."
+    }
+  },
+  "required": [
+    "task",
+    "stands"
+  ]
+}

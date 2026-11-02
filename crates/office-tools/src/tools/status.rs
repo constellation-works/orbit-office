@@ -97,13 +97,14 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
     } else {
         TokenBinding::of(stored, endpoint)
     };
-    let (open_weights, shared, brief) = match &settings {
+    let (open_weights, shared, brief, meetings) = match &settings {
         Some(settings) => (
             project_open_weights(settings.open_weights.as_ref()),
             project_shared(settings.shared.as_ref()),
             project_brief(&settings.brief),
+            json!({"agent_workspace": &settings.meetings.agent_workspace}),
         ),
-        None => (Value::Null, Value::Null, Value::Null),
+        None => (Value::Null, Value::Null, Value::Null, Value::Null),
     };
     // Scribe policy is never absent: an unset or uninitialized Library
     // reads as the shipped defaults.
@@ -130,6 +131,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "open_weights": open_weights,
         "shared": shared,
         "brief": brief,
+        "meetings": meetings,
         "scribe": scribe,
     }))
 }

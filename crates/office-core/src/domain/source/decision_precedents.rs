@@ -200,7 +200,7 @@ pub enum ConflictList {
 
 /// To-dos Office treats as still open. `done`, `archived` and `rejected`
 /// have left the user's queue.
-const OPEN_TODO: &[&str] = &[
+pub const OPEN_TODO: &[&str] = &[
     "proposed",
     "backlog",
     "in-progress",

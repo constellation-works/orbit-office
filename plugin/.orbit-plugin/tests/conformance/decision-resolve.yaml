@@ -1,0 +1,13 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: decision_resolve_requires_stands
+    tool: decision-resolve
+    input: {"task": "task-fixture"}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: decision_resolve_refuses_unknown_input
+    tool: decision-resolve
+    input: {"task": "task-fixture", "stands": "dec-global-1", "extra": true}
+    expect:
+      error: {"code":"invalid_argument"}

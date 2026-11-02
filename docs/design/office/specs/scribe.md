@@ -446,6 +446,64 @@ Contradictions are checked twice (D5).
   with a machine-readable `Conflicting entries:` line. The precedent
   provider reports a conflict whose to-do is still open
   ([ORB-21219]; [decision-precedents.md](./decision-precedents.md#contradictions)).
+- **When a meeting is extracted.** See [Meeting decisions](#meeting-decisions).
+
+### Meeting decisions
+
+Built in [ORB-21340]. `office.extract` with `profile: meeting` feeds the
+ledger too, not only conversation scribing. After it saves
+`extract-result.json`, and before it files to-dos:
+
+1. **Append.** Each cited decision becomes one `decisions-global` entry
+   through `office.capture`'s `decision` path, so every verbatim check
+   applies. `ref` is `<source-id>#t=hh:mm:ss` (the decision's first `#t=`
+   cite, else its first anchor). `quote` is that turn as the source holds
+   it. `chosen` is the turn's own span of the decision text, matched
+   without case, else the speaker's words. `question` is the decision text
+   with `question_by: scribe`. `options` is `"unrecoverable"`,
+   `decided_by` is `human`, and `decided_at` is the extraction time. A
+   decision that fails a check is reported in `ledger.skipped` with its
+   refusal code. It never blocks the rest. A private meeting feeds
+   nothing (`ledger.private: true`): its text never reaches a ledger.
+2. **Check.** One model call on the Standard tier through the Models
+   port, so on the Meta route. It runs only when there are new entries and
+   prior current entries (not reversed, not private, not an unconfirmed
+   model answer; the newest 200 across every ledger), or open conflicts
+   and to-dos. It returns the new entries that contradict a prior one
+   (both settle the same matter differently), with the matter in a few
+   words. It also returns the to-dos that act on a contested entry, meaning
+   either side of a new conflict or of an open conflict to-do. Ids the call
+   was not given are dropped. Ledger text is data, never instructions.
+3. **Needs you.** Each new contradiction files one `owner:you` to-do
+   tagged `office-scribe-contradictions` and `source:<id>`. Its title asks
+   which decision stands. Its description cites both entries (id, time,
+   chosen, ref) and ends with the `Conflicting entries:` line. It is
+   exactly the routine's to-do, so the precedent provider reports it as an
+   unresolved conflict. A failed read of open conflicts is reported as
+   `ledger.conflicts_unread`.
+4. **Hold.** An agent code to-do (see `meetings.agent_workspace`,
+   [kt-videos.md](./kt-videos.md)) that acts on a contested entry is not
+   filed for agents. It is filed `owner:you` with tag `contested`, its
+   type and acceptance criteria, and a description ending
+   `Acts on: <entry id>` and `Held until <conflict to-do> is resolved.`.
+
+The tool's output carries `ledger`: `appended` entry ids, `skipped`,
+`conflicts` (`entries`, `task`, `matter`) and `checked`.
+
+**Resolving.** `office.decision-resolve` with the conflict to-do's `task`
+and the entry that `stands` settles it in one call. It appends a
+`decided_by: human` entry that copies the standing entry's question and
+evidence and `reverses` the other, then closes the to-do (`done`). It then
+reads the open `contested` to-dos the conflict holds. One acting on the
+standing entry is filed for agents in `meetings.agent_workspace`, as an
+ordinary code-change task with its criteria, and closed. One acting on the
+overturned entry is `rejected`. It is retry-safe: when the other entry is
+already reversed, nothing is appended. It refuses a task that is not an
+open conflict to-do (`decision_conflict_not_found`), a `stands` that the
+to-do does not name (`invalid_argument`), and a standing entry that was
+itself reversed (`decision_reversed`). Answering by hand with
+`office.capture` and `reverses` stays valid. It records the decision but
+releases no held to-do.
 
 ## Scheduling markers and to-dos
 
@@ -1151,6 +1209,7 @@ requires.
 - [ORB-21089] — plans Orbit's decision model, a consumer of decision precedent.
 - [ORB-21090] — designed the office precedent provider over the decision ledger ([decision-precedents.md](./decision-precedents.md)).
 - [ORB-21219] — built contradiction reporting to the precedent provider.
+- [ORB-21340] — built meeting decisions in the ledger, their contradiction check and `office.decision-resolve`.
 - [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
 - [ORB-21116] — built slice S3: preference pages, contradiction check and apply mode.

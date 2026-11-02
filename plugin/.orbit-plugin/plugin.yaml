@@ -148,7 +148,9 @@ spec:
       description: >-
         From a source, produce structured JSON plus a task artifact:
         for a KT video the chapters, knowledge candidates and questions;
-        for a meeting the summary, decisions and to-dos.
+        for a meeting the summary, decisions and to-dos, with the decisions
+        appended to the decision ledger and each contradiction filed as a
+        Needs-you to-do.
       execution_kind: mutating
       mcp_scope: workspace
       input_schema: { $ref: schemas/extract.request.json }
@@ -471,6 +473,17 @@ spec:
       mcp_scope: none
       input_schema: { $ref: schemas/decision-precedents.request.json }
       output_schema: { $ref: schemas/decision-precedents.response.json }
+
+    - name: decision-resolve
+      description: >-
+        Settle one open decision-conflict to-do in one call: record which
+        entry stands as a new decision ledger entry that reverses the other,
+        close the to-do, and file the agent to-dos it held when the decision
+        they act on stands (rejecting the rest). Model-free and retry-safe.
+      execution_kind: mutating
+      mcp_scope: workspace
+      input_schema: { $ref: schemas/decision-resolve.request.json }
+      output_schema: { $ref: schemas/decision-resolve.response.json }
 
     # ---- recall ----
 
