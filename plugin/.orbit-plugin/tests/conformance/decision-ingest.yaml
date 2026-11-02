@@ -1,0 +1,19 @@
+# Replayed through public dispatch with empty Library/Orbit fakes, offline.
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: decision_ingest_refuses_non_boolean_dry_run
+    tool: decision-ingest
+    input: {"dry_run":"yes"}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: decision_ingest_refuses_non_string_since
+    tool: decision-ingest
+    input: {"since":42}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: decision_ingest_refuses_unknown_key
+    tool: decision-ingest
+    input: {"workspace":"ws_example"}
+    expect:
+      error: {"code":"invalid_argument"}

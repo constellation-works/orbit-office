@@ -51,6 +51,8 @@ spec:
       - orbit.auto_task.add
       - orbit.auto_task.update
       - orbit.auto_task.list
+      - orbit.decision.list
+      - orbit.decision.show
       - gateway.connection-list
       - gateway.http-get
 
@@ -443,6 +445,20 @@ spec:
       input_schema: { $ref: schemas/scribe-migrate.request.json }
       output_schema: { $ref: schemas/scribe-migrate.response.json }
 
+    - name: decision-ingest
+      description: >-
+        Append answered Orbit decision requests in the followed workspaces
+        to the decision ledgers, one entry per answer: human and model
+        answers, review-gate confirms and vetoes, and re-answers that
+        reverse a model answer. Skips precedent-actor, superseded, expired
+        and already-ingested requests, links a matching scribe entry with
+        same_as and reports ambiguous matches. Model-free; run by the
+        office-decision-ingest routine or an operator.
+      execution_kind: mutating
+      mcp_scope: none
+      input_schema: { $ref: schemas/decision-ingest.request.json }
+      output_schema: { $ref: schemas/decision-ingest.response.json }
+
     # ---- recall ----
 
     - name: recall
@@ -531,8 +547,8 @@ spec:
   definitions:
     auto_tasks: [definitions/auto_tasks/office-review.yaml, definitions/auto_tasks/office-knowledge-maintenance.yaml, definitions/auto_tasks/office-knowledge-verify.yaml, definitions/auto_tasks/office-conversation-extract.yaml, definitions/auto_tasks/office-scribe-contradictions.yaml]
     activities: [definitions/activities/office-agent-todo.yaml]
-    jobs: [definitions/jobs/office-meeting-inbox.yaml, definitions/jobs/office-meeting-prep.yaml, definitions/jobs/office-calendar-sync.yaml, definitions/jobs/office-daily-digest.yaml, definitions/jobs/office-signals.yaml, definitions/jobs/office-kt-inbox.yaml, definitions/jobs/office-bootstrap.yaml, definitions/jobs/office-shared-sync.yaml]
-    routines: [definitions/routines/office-meeting-inbox.yaml, definitions/routines/office-meeting-prep.yaml, definitions/routines/office-calendar-sync.yaml, definitions/routines/office-daily-digest.yaml, definitions/routines/office-signals.yaml, definitions/routines/office-kt-inbox.yaml, definitions/routines/office-bootstrap.yaml, definitions/routines/office-shared-sync.yaml]
+    jobs: [definitions/jobs/office-meeting-inbox.yaml, definitions/jobs/office-meeting-prep.yaml, definitions/jobs/office-calendar-sync.yaml, definitions/jobs/office-daily-digest.yaml, definitions/jobs/office-signals.yaml, definitions/jobs/office-kt-inbox.yaml, definitions/jobs/office-bootstrap.yaml, definitions/jobs/office-shared-sync.yaml, definitions/jobs/office-decision-ingest.yaml]
+    routines: [definitions/routines/office-meeting-inbox.yaml, definitions/routines/office-meeting-prep.yaml, definitions/routines/office-calendar-sync.yaml, definitions/routines/office-daily-digest.yaml, definitions/routines/office-signals.yaml, definitions/routines/office-kt-inbox.yaml, definitions/routines/office-bootstrap.yaml, definitions/routines/office-shared-sync.yaml, definitions/routines/office-decision-ingest.yaml]
 
   skills: [skills/orchestrator, skills/library-conventions, skills/meetings, skills/kt, skills/bootstrap]
 

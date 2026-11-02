@@ -13,7 +13,7 @@ type Method = fn(&dyn Orbit, &Map<String, Value>) -> office_core::Result<Value>;
 
 #[test]
 fn every_default_method_refuses_as_unavailable() {
-    let methods: [Method; 11] = [
+    let methods: [Method; 13] = [
         |p, i| p.task_add(i),
         |p, i| p.task_update(i),
         |p, i| p.task_list(i),
@@ -25,6 +25,8 @@ fn every_default_method_refuses_as_unavailable() {
         |p, i| p.auto_task_add(i),
         |p, i| p.auto_task_update(i),
         |p, i| p.auto_task_list(i),
+        |p, i| p.decision_list(i),
+        |p, i| p.decision_show(i),
     ];
     for method in methods {
         assert!(matches!(

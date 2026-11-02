@@ -35,7 +35,7 @@ Document uploads cross the existing `Library::capture_source` port. The store's
 read upload. Conversion and structural validation finish before the writer lock
 or source persistence. These external dependencies add no internal crate edge.
 
-`office-orbit` uses its `office-core` edge for the thirteen exact-name callback port methods (eleven Orbit and two gateway reads) and its
+`office-orbit` uses its `office-core` edge for the fifteen exact-name callback port methods (thirteen Orbit, among them the `orbit.decision.list` and `orbit.decision.show` reads, and two gateway reads) and its
 `office-common` edge for bounded CLI callback supervision. The composing `office` binary
 constructs this adapter from the host call context and inherited callback environment.
 The testkit's recording Orbit fake shares observations across clones.
@@ -89,7 +89,7 @@ crates/office-tools/src/
     library/             init  reindex  config_set  search  attach  private_route_check   (specs/library.md, plugin-surface.md, models-and-privacy.md)
     proposals/           signals_scan  create  accept  reconcile      (specs/proposals.md)
     selection/           get  put                                     (specs/selection-sharing.md)
-    sessions/            brief  digest  scribe_control (scribe-control)  scribe_pending (scribe-pending)  scribe_append (scribe-append)  scribe_query (scribe-query)  scribe_ask (scribe-ask)  scribe_migrate (scribe-migrate)   (specs/sessions.md, specs/scribe.md)
+    sessions/            brief  digest  scribe_control (scribe-control)  scribe_pending (scribe-pending)  scribe_append (scribe-append)  scribe_query (scribe-query)  scribe_ask (scribe-ask)  scribe_migrate (scribe-migrate)  decision_ingest (decision-ingest)   (specs/sessions.md, specs/scribe.md, specs/decision-precedents.md)
     scripts/             run                                          (specs/scripts.md)
     bootstrap/           batch_plan  consolidate  status              (specs/library-bootstrap.md)
     calendar/            sync  list                                  (specs/calendar.md)

@@ -6,7 +6,7 @@ Orbit's schemaVersion 2 Activity envelope and have no schedule switch or dedupe 
 
 - Routines: `office-kt-inbox` (every 15 minutes), `office-signals` (daily),
   `office-daily-digest` (daily), `office-bootstrap` (every 15 minutes),
-  `office-shared-sync` (hourly).
+  `office-shared-sync` (hourly), `office-decision-ingest` (hourly).
 - Auto-tasks: `office-review` (period end), `office-knowledge-maintenance` (weekly),
   `office-scribe-contradictions` (weekly), `office-knowledge-verify` (daily),
   `office-conversation-extract` (every 30 minutes).
@@ -94,6 +94,13 @@ input, which pulls the team's shared library and pushes only documents the
 user marked shareable. Incoming updates and conflicts become proposals for
 the user; the job approves nothing. It has `max_active_runs: 1` and creates
 no agent loop, crew or task of its own.
+
+`office-decision-ingest` is registered under routines and jobs. The disabled
+hourly routine (`20 * * * *`) targets `job:office-decision-ingest`; its one
+deterministic `plugin.tool_call` invokes `office.decision-ingest` with empty
+input, which appends answered Orbit decision requests to the decision
+ledgers (idempotent, one commit per run). It has `max_active_runs: 1`, so a
+slow run is never overlapped, and creates no agent loop, crew or task.
 
 
 `auto_tasks/office-conversation-extract.yaml` ships a disabled half-hour missed-session

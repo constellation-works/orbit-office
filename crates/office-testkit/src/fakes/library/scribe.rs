@@ -148,4 +148,34 @@ impl FakeLibrary {
         self.record_commit();
         Ok(())
     }
+
+    /// The fake checks every planned ledger text, then writes each; the
+    /// batch counts as one commit. No files: no commit.
+    pub(super) fn write_decision_ledgers(
+        &self,
+        files: &[office_core::domain::source::conversation::scribe::v2::PlannedFile],
+    ) -> Result<()> {
+        self.ready()?;
+        if files.is_empty() {
+            return Ok(());
+        }
+        for file in files {
+            if !office_core::domain::source::decisions::is_ledger_path(Path::new(&file.path)) {
+                return Err(Error::InvalidArgument(
+                    "a decision ledger batch writes only decision ledgers, each once".into(),
+                ));
+            }
+            if self.texts.borrow().get(&file.path) != file.expected.as_ref() {
+                return Err(Error::Library {
+                    code: "decision_ledger_changed",
+                    message: "a decision ledger changed since the batch was planned; retry".into(),
+                });
+            }
+        }
+        for file in files {
+            self.write_document(Path::new(&file.path), &file.text)?;
+        }
+        self.record_commit();
+        Ok(())
+    }
 }

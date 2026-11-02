@@ -37,7 +37,7 @@ use pending::{
     PendingOriginal, PendingWrite, RawPendingWrite, WriteKind, normalize_upload_extension,
 };
 
-const LATEST_PENDING_WRITE_VERSION: u32 = 11;
+const LATEST_PENDING_WRITE_VERSION: u32 = 12;
 
 /// A Library and its index. Construction may create layout/index directories;
 /// read methods never create state or wait for the writer lock. Bounded media
@@ -1174,6 +1174,9 @@ impl LibraryStore {
         if matches!(pending.kind, WriteKind::ScribePass) {
             return self.validate_scribe_pass_bundle(pending, files);
         }
+        if matches!(pending.kind, WriteKind::DecisionLedgers) {
+            return self.validate_decision_ledgers_bundle(pending, files);
+        }
         if matches!(pending.kind, WriteKind::Bootstrap) {
             if pending.version != 6
                 || pending.relative != ".office/bootstrap.json"
@@ -1328,7 +1331,9 @@ impl LibraryStore {
             )
         })?;
         let pending = PendingWrite {
-            version: if matches!(kind, WriteKind::ScribePass) {
+            version: if matches!(kind, WriteKind::DecisionLedgers) {
+                12
+            } else if matches!(kind, WriteKind::ScribePass) {
                 11
             } else if matches!(kind, WriteKind::Scribe) {
                 10
@@ -1493,6 +1498,10 @@ impl LibraryStore {
                     .validate_scribe_path(Path::new(&pending.relative))?;
                 self.validate_bundle(&pending)?;
             }
+            WriteKind::DecisionLedgers => {
+                self.require_initialized()?;
+                self.validate_bundle(&pending)?;
+            }
             WriteKind::Settings => {
                 if pending.version != 2 || pending.relative != ".office/config.yaml" {
                     return Err(Error::Journal { path });
@@ -1607,6 +1616,20 @@ impl LibraryStore {
                         .upsert(&self.files.read_document(Path::new(&file.path))?)?;
                 }
             }
+            WriteKind::DecisionLedgers => {
+                self.validate_bundle(pending)?;
+                let first = Path::new(&pending.relative);
+                self.files.write_document(first, &pending.text)?;
+                self.index.upsert(&self.files.read_document(first)?)?;
+                for file in pending.bundle.as_deref().unwrap_or_default() {
+                    let text = std::str::from_utf8(&file.bytes).map_err(|_| Error::Journal {
+                        path: self.journal_path(),
+                    })?;
+                    self.files.write_document(Path::new(&file.path), text)?;
+                    self.index
+                        .upsert(&self.files.read_document(Path::new(&file.path))?)?;
+                }
+            }
             WriteKind::Settings => self.files.write_settings(&pending.text)?,
         }
         let mut paths = vec![pending.relative.clone()];
@@ -1632,7 +1655,12 @@ impl LibraryStore {
                             || !file.path.starts_with("frames/")
                     })
                     .map(|file| {
-                        if matches!(pending.kind, WriteKind::Bootstrap | WriteKind::ScribePass) {
+                        if matches!(
+                            pending.kind,
+                            WriteKind::Bootstrap
+                                | WriteKind::ScribePass
+                                | WriteKind::DecisionLedgers
+                        ) {
                             file.path.clone()
                         } else {
                             parent.join(&file.path).to_string_lossy().to_string()
@@ -2995,6 +3023,12 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> office_core::Result<()> {
         Self::write_scribe_pass(self, pass)
+    }
+    fn write_decision_ledgers(
+        &self,
+        files: &[office_core::domain::source::conversation::scribe::v2::PlannedFile],
+    ) -> office_core::Result<()> {
+        Self::write_decision_ledgers(self, files)
     }
     fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::source_documents(self)?)

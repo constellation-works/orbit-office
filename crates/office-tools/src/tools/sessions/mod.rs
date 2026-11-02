@@ -3,6 +3,7 @@
 //! Integrator-owned: one line per tool, written by the scaffold.
 
 pub(crate) mod brief;
+pub(crate) mod decision_ingest;
 pub(crate) mod digest;
 pub(crate) mod scribe_append;
 pub(crate) mod scribe_ask;

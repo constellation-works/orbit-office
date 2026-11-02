@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.decision-ingest response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dry_run", "since", "appended", "skipped", "dedupe", "unavailable"],
+  "properties": {
+    "dry_run": { "type": "boolean", "description": "True when nothing was written; appended then lists the planned entries." },
+    "since": { "type": ["string", "null"] },
+    "appended": {
+      "type": "array",
+      "description": "One ledger entry per ingested answer, oldest answer first.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["request_id", "entry", "ledger", "gate", "decided_by", "same_as", "confirms", "reverses"],
+        "properties": {
+          "request_id": { "type": "string" },
+          "entry": { "type": "string", "description": "dec-<scope>-<n>" },
+          "ledger": { "type": "string", "description": "decisions-<scope>" },
+          "gate": { "type": "string" },
+          "decided_by": { "enum": ["human", "model"] },
+          "same_as": { "type": ["string", "null"], "description": "The one scribe or captured entry recording the same decision." },
+          "confirms": { "type": ["string", "null"], "description": "The model entry a review-gate confirm confirms." },
+          "reverses": { "type": ["string", "null"], "description": "The model entry a veto, or a human re-answer, overrides." }
+        }
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["request_id", "reason"],
+        "properties": {
+          "request_id": { "type": "string" },
+          "reason": { "enum": ["precedent_actor", "superseded", "expired", "already_ingested", "resolution_missing", "answer_unknown", "review_target_missing", "unreadable", "invalid"] },
+          "code": { "type": "string", "description": "With reason invalid: the ledger refusal code." },
+          "message": { "type": "string", "description": "With reason invalid: why the entry was refused." }
+        }
+      }
+    },
+    "dedupe": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["request_id", "entry", "outcome"],
+        "properties": {
+          "request_id": { "type": "string" },
+          "entry": { "type": "string" },
+          "outcome": { "enum": ["same_as", "dedupe_ambiguous"] },
+          "same_as": { "type": "string" },
+          "candidates": { "type": "array", "items": { "type": "string" }, "description": "With dedupe_ambiguous: every matching entry; none is linked." }
+        }
+      }
+    },
+    "unavailable": { "type": "array", "items": { "type": "string" }, "description": "Followed workspace selectors whose requests could not be read." }
+  }
+}

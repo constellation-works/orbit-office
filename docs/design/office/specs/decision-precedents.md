@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: the scribe v2 decision ledger as a precedent source for Orbit's decision model: the learning-fit entry schema, ingestion of answered Orbit decision requests with dedupe, the read-only office.decision-precedents provider over orbit.precedent-provider/1, feedback and contradiction rules, and a read-only agreement view"
-last_validated: 2026-11-01
+last_validated: 2026-11-02
 ---
 
 # Spec: Decision ledger as a precedent provider
@@ -9,8 +9,10 @@ last_validated: 2026-11-01
 Status: designed ([ORB-21090]). Slice P1 (entry schema additions, their
 validation and refusals, `same_as` matching in `office.scribe-append` and
 `office.capture`, and reading them through `office.source-show` and
-`office.scribe-query`) is built ([ORB-21216]). The remaining slices are
-filed as proposed tasks (see [Build order](#build-order)).
+`office.scribe-query`) is built ([ORB-21216]). Slice P2 (`office.decision-ingest`,
+its callbacks and the disabled `office-decision-ingest` routine) is built
+([ORB-21217]). The remaining slices are filed as proposed tasks (see
+[Build order](#build-order)).
 
 Daniel asked for a decision model (2026-11-01, in the orbit-office on-call
 session [ORB-20840]). It is a cheap model that predicts the answer to a new
@@ -122,20 +124,22 @@ Library's readers (`office.scribe-ask`, the Decisions panel, the weekly
 contradiction routine) see both sources.
 
 **Tool:** `office.decision-ingest` (mutating, `mcp_scope: none`), run by a
-new routine `office-decision-ingest` (hourly, seeded disabled like every
-Office routine, `dedupe: skip_if_open`). Input `{since?, dry_run?}`; output
+new routine `office-decision-ingest` (hourly at minute 20, seeded disabled like every
+Office routine; its job's `max_active_runs: 1` keeps one run at a time, since
+routines carry no `dedupe` key). Input `{since?, dry_run?}`; output
 the entries appended, the requests skipped with a reason, and the
 dedupe outcomes.
 
-**Read.** Orbit's `orbit.decision.list` lists open requests only (Orbit
-human-decision-channel §2.4). Ingestion needs answered requests with their
-`resolution`. It reads them through an additive Orbit read, an answered
-filter on `orbit.decision.list` (`state: answered`, `answered_since`),
-called as a plugin callback under a new `orbit_tools` grant
-(`orbit.decision.list`, `orbit.decision.show`). That read does not exist
-yet; the ingestion slice is blocked on it (see
-[Open questions](#open-questions)). Ingestion never reads Orbit's stores
-directly.
+**Read.** `orbit.decision.list` with `include_closed: true` lists every
+request with its effective state and, when answered, its `resolution`
+(`answer_id`, `answered_by`, `provenance`, `note`, `answered_at`; Orbit
+human-decision-channel §2.1). Ingestion calls it as a plugin callback under
+the `orbit_tools` grants `orbit.decision.list` and `orbit.decision.show`:
+once for the Office workspace and once per followed selector (`workspace`),
+applying `since` itself. `orbit.decision.show` fills a resolution only when
+a listed answered request omits it. The Office workspace failing refuses
+the run; a followed workspace failing is reported in `unavailable`.
+Ingestion never reads Orbit's stores directly.
 
 **Which requests.** Every answered request in a followed workspace
 (`brief.task_workspaces`, [sessions.md](./sessions.md#session-brief)) whose
@@ -163,10 +167,37 @@ else `global`.
 | `reverses` | See [Feedback](#feedback). |
 | `orbit` | Request id, gate, category, topic, `answered_by`, channel, and the model citation when present. |
 
-Ingestion is idempotent: the request id is the key, and a request already
-in any ledger is skipped (`already_ingested`). Each entry is checked like
-any ledger append and refused as a whole on failure. One commit per run,
-under the writer lock.
+Ingestion is idempotent: the request id and its answer time are the key,
+and a request answer already in any ledger is skipped (`already_ingested`).
+A later answer to the same request (Orbit re-opens it on a veto) is a new
+entry that `reverses` the newest earlier entry for that request. Each entry
+is checked like any ledger append; one that fails is reported `invalid`
+and not written, and the rest of the run still appends. One commit per
+run, under the writer lock (`decision_ledger_changed`, nothing written,
+when a ledger changed since it was read).
+
+Build details ([decisions](../4_decisions.md#decision-precedents-p2-ingestion-reads-include_closed-keys-on-request-and-answer-time-and-writes-one-batch)):
+
+- **Workspace and scope.** The request's workspace is its category's
+  leading `<workspace_id>/`, else the followed selector's last `ws_`
+  component; `ws_<name>` maps to `project:<name>` when `<name>` is a
+  ledger slug, else the entry is `global`.
+- **Question.** The request's `question`, else its `summary`, else a fixed
+  wording per gate.
+- **Quote.** The note when it contains the chosen label; otherwise the
+  label, a newline and the note (the ledger needs `chosen` verbatim in
+  `quote`); the label alone when there is no note.
+- **Review binding.** A `model_answer_review` request names the reviewed
+  request in `binding.request_id` (else `review_of`). Answers are ingested
+  oldest first; a review whose model entry is not yet in a ledger is
+  skipped `review_target_missing` and retried on a later run.
+- **Output.** `appended[]` (`request_id`, `entry`, `ledger`, `gate`,
+  `decided_by`, `same_as`, `confirms`, `reverses`), `skipped[]`
+  (`request_id`, `reason`: `precedent_actor`, `superseded`, `expired`,
+  `already_ingested`, `resolution_missing`, `answer_unknown`,
+  `review_target_missing`, `unreadable` or `invalid` with `code` and
+  `message`), `dedupe[]` (`same_as` or `dedupe_ambiguous` with
+  `candidates`) and `unavailable[]`.
 
 ### Dedupe against scribe entries
 
@@ -447,11 +478,11 @@ routine ships disabled.
 
 ## Open questions
 
-- **Answered-request read.** Ingestion needs Orbit to list answered
-  requests with their resolution (an additive filter on
-  `orbit.decision.list`, or an equivalent read). The ingestion slice is
-  blocked until Orbit provides it. Filing that Orbit task is outside this
-  repository.
+- **Model answer shapes.** Orbit's `model` actor, its citation and the
+  `model_answer_review` binding are proposed (human-decision-channel
+  §11.2–11.3). Ingestion reads `resolution.model` and
+  `binding.request_id`; if Orbit names them differently, only
+  `decision_ingest.rs` changes.
 - **Provider-reported conflicts.** A deterministic downgrade from an
   Office-detected conflict needs an additive `conflicts` field in
   `orbit.precedent-provider/1` (or a `/2`). Until then the provider reports
@@ -467,7 +498,7 @@ change makes stale in the same change.
 | Slice | Task | Depends on | Delivers |
 |---|---|---|---|
 | P1 | [ORB-21216] | Scribe v2 S1, S4 | Entry schema additions (option `id`/`consequence`, `orbit`, `same_as`, `confirms`), their validation and refusals, `same_as` matching in `office.scribe-append` and `office.capture`, and reading them through `office.source-show` and `office.scribe-query`. |
-| P2 | [ORB-21217] | P1; Orbit's answered-request read | `office.decision-ingest` and the disabled `office-decision-ingest` routine: request mapping, idempotence, dedupe, and the feedback entries (model, confirm, veto, re-answer). |
+| P2 (built) | [ORB-21217] | P1; Orbit's `include_closed` read | `office.decision-ingest` and the disabled `office-decision-ingest` routine: request mapping, idempotence, dedupe, and the feedback entries (model, confirm, veto, re-answer). |
 | P3 | [ORB-21218] | P1; Orbit [ORB-21093] for conformance | `office.decision-precedents`: the contract input and output, candidates, relevance and recency, single-option records, reversed and pulled-in entries, omissions, citations, and the `half_life_days` setting. |
 | P4 | [ORB-21219] | P3 | Contradictions: the routine's category comparison and machine-readable line, and the provider's conflict reporting. |
 | P5 | [ORB-21220] | Scribe v2 S7 ([ORB-21120]); Orbit [ORB-21096]'s readout surface | The Agreement view and `GET /api/scribe/decision-agreement`. |
@@ -482,7 +513,7 @@ change makes stale in the same change.
 - [ORB-21093] — proposes Orbit's precedent-provider contract and built-in provider (Orbit repository).
 - [ORB-21096] — proposes Orbit's `decision-assistance-eval/4` evaluator and its readout (Orbit repository).
 - [ORB-21216] — proposes slice P1: ledger schema additions and dedupe links.
-- [ORB-21217] — proposes slice P2: Orbit decision ingestion and feedback entries.
+- [ORB-21217] — built slice P2: Orbit decision ingestion and feedback entries.
 - [ORB-21218] — proposes slice P3: the `office.decision-precedents` provider.
 - [ORB-21219] — proposes slice P4: contradiction reporting.
 - [ORB-21220] — proposes slice P5: the Agreement view.

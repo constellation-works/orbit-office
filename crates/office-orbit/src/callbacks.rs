@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use crate::{Error, Result};
 
 /// Office's complete callback allowlist; no namespace or wildcard expansion.
-pub const ORBIT_TOOLS: [&str; 13] = [
+pub const ORBIT_TOOLS: [&str; 15] = [
     "orbit.task.add",
     "orbit.task.update",
     "orbit.task.list",
@@ -22,6 +22,8 @@ pub const ORBIT_TOOLS: [&str; 13] = [
     "orbit.auto_task.add",
     "orbit.auto_task.update",
     "orbit.auto_task.list",
+    "orbit.decision.list",
+    "orbit.decision.show",
     "gateway.connection-list",
     "gateway.http-get",
 ];
@@ -224,5 +226,11 @@ impl Orbit for OrbitCallbacks {
     }
     fn auto_task_list(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
         Ok(self.call("orbit.auto_task.list", input)?)
+    }
+    fn decision_list(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
+        Ok(self.call("orbit.decision.list", input)?)
+    }
+    fn decision_show(&self, input: &Map<String, Value>) -> office_core::Result<Value> {
+        Ok(self.call("orbit.decision.show", input)?)
     }
 }

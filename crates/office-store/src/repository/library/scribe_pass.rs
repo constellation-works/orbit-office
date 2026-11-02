@@ -54,7 +54,7 @@ impl LibraryStore {
             .collect())
     }
 
-    fn current_text(&self, relative: &Path) -> Result<Option<String>> {
+    pub(super) fn current_text(&self, relative: &Path) -> Result<Option<String>> {
         match self.files.read_text(relative) {
             Ok(text) => Ok(Some(text)),
             Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
