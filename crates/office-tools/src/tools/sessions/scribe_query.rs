@@ -12,7 +12,7 @@
 //! The scribe v2 modes `decisions`, `preferences` and `scr` read the
 //! decision ledgers, the preference pages and the v2 SCR files ([`v2`]).
 
-mod v2;
+pub(crate) mod v2;
 
 use std::collections::BTreeMap;
 

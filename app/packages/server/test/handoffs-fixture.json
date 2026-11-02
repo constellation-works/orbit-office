@@ -2,6 +2,7 @@
  "all": {
   "input": {
    "view": "list",
+   "legacy": true,
    "include_closed": true,
    "limit": 50
   },
@@ -380,6 +381,7 @@
  "project": {
   "input": {
    "view": "list",
+   "legacy": true,
    "include_closed": true,
    "limit": 50,
    "project": "constellation"
@@ -649,6 +651,7 @@
  "orchestrator": {
   "input": {
    "view": "list",
+   "legacy": true,
    "include_closed": true,
    "limit": 50,
    "orchestrator": "codex"
@@ -894,6 +897,7 @@
  "thread": {
   "input": {
    "view": "list",
+   "legacy": true,
    "include_closed": true,
    "limit": 50,
    "thread": "task:ORB-21001"
@@ -1163,6 +1167,7 @@
  "page": {
   "input": {
    "view": "list",
+   "legacy": true,
    "include_closed": true,
    "limit": 50,
    "offset": 4

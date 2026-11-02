@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.session-brief request",
-  "description": "Assemble the deterministic brief for the current workspace. Call before opening a new conversation source. Optionally pass the current session's project and orchestrator to lead with that project's latest SCR (its legacy thread handoff when it has no SCR), followed by the latest global SCR and the open legacy global handoffs, and list the project's other recent SCRs (or legacy threads) in other_sessions; with no project the newest project SCR leads, else the legacy single-conversation output is returned, plus global. The SessionStart hook sets session_start, so the Library setting brief.handoff (auto | manual) applies; view handoffs is the /handoff command; view list is the web app's handoff list (current threads, global handoffs and paged history). No inference or writes.",
+  "description": "Assemble the deterministic brief for the current workspace. Call before opening a new conversation source. Optionally pass the current session's project and orchestrator to lead with that project's latest SCR (its legacy thread handoff when it has no SCR), followed by the latest global SCR and the open legacy global handoffs, and list the project's other recent SCRs (or legacy threads) in other_sessions; with no project the newest project SCR leads, else the legacy single-conversation output is returned, plus global. The SessionStart hook sets session_start, so the Library setting brief.handoff (auto | manual) applies; view handoffs is the /handoff command; view list is the web app's Scribe feed: the latest v2 SCR per project plus the latest global SCR as cards, or with id that one SCR and its previous; with legacy:true it is the v1 handoff list (current threads, global handoffs and paged history) for the compatibility window. No inference or writes.",
   "type": "object",
   "properties": {
     "project": {
@@ -33,7 +33,17 @@
         "handoffs",
         "list"
       ],
-      "description": "brief (default) is the full brief. handoffs is the /handoff command: with a project, its handoff then global; without one, global then projects. list returns threads (each open thread's current handoff), global (open global handoffs, plus expired and resolved ones with include_closed) and history (every project handoff, newest first, filtered by project, orchestrator and thread, paged by offset and limit). handoffs and list read no Orbit tasks and cannot be combined with session_start."
+      "description": "brief (default) is the full brief. handoffs is the /handoff command: with a project, its handoff then global; without one, global then projects. list returns the SCR cards feed (exactly the latest v2 SCR per project plus the latest global SCR), or with id that one SCR and its previous; with legacy:true it returns threads (each open thread's current handoff), global (open global handoffs, plus expired and resolved ones with include_closed) and history (every project handoff, newest first, filtered by project, orchestrator and thread, paged by offset and limit). handoffs and list read no Orbit tasks and cannot be combined with session_start."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "view list only (never with legacy:true): one v2 SCR id, as a card returned; the answer is that SCR and the SCR its previous field names. Walking previous ids is the only way to reach an older SCR. An unknown id is scribe_scr_not_found."
+    },
+    "legacy": {
+      "type": "boolean",
+      "description": "view list only: return the v1 handoff list (threads, global, history) instead of the SCR cards, for the compatibility window. The legacy filters and paging (project, orchestrator, thread, include_closed, offset, limit) require it and are refused without it. Default false."
     },
     "thread": {
       "type": "string",

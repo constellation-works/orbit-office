@@ -1,12 +1,13 @@
 /**
- * Plain-words shaping shared by Scribe › Handoffs and Today's handoff
- * summary (specs/web-app.md, "Screens"). Pure, so it is unit-tested without
- * a browser.
+ * Plain-words shaping shared by the Scribe feed and Today's Handoffs
+ * section (specs/scribe.md, "Feed"; specs/web-app.md, "Screens"). Both
+ * show the same SCR cards: one per project plus the global card. Pure, so
+ * it is unit-tested without a browser.
  */
-import type { ScribeHandoff } from "@orbit-office/contracts";
+import type { ScrCard } from "@orbit-office/contracts";
 
-/** Where Today's summary links: the Scribe screen opened on Handoffs. */
-export const HANDOFFS_HREF = "?scribe=handoffs#scribe";
+/** Where Today's summary links: the Scribe screen's feed. */
+export const SCRIBE_FEED_HREF = "#scribe";
 
 /** How long ago `time` was, at `now`: "just now", "5 min ago", "3 h ago", "2 d ago". */
 export function ageLabel(time: string, now: Date): string {
@@ -20,38 +21,44 @@ export function ageLabel(time: string, now: Date): string {
   return `${Math.floor(hours / 24)} d ago`;
 }
 
-/** A thread's display name: its project, else "No project". */
-export function projectLabel(handoff: ScribeHandoff): string {
-  return handoff.project ?? "No project";
+/** A card's scope in plain words: `Global`, else its project. */
+export function scopeLabel(card: ScrCard): string {
+  return card.scope === "global" ? "Global" : card.project ?? "No project";
 }
 
-/** One line for a compact list: the objective, the legacy text, or a withheld notice. */
-export function handoffSummary(handoff: ScribeHandoff): string {
-  if (handoff.withheld) return "Private session: content withheld.";
-  if (handoff.fields) return handoff.fields.objective;
-  return handoff.text;
+/** A card's title, else its id (a v2 SCR always has a title; the id is the fallback). */
+export function cardTitle(card: ScrCard): string {
+  return card.title ?? card.id;
+}
+
+/** One line for a compact list: the Summary, or the withheld notice for a private session. */
+export function cardSummary(card: ScrCard): string {
+  if (card.withheld) return "Private session: content withheld.";
+  return card.summary ?? "";
+}
+
+/**
+ * The new Tags entry counts a card shows, in words: "2 decisions ·
+ * 1 preference", or "No tagged entries". Group names are the SCR's Tags
+ * subsections; the two defaults read as their tag names.
+ */
+export function tagCountsLabel(card: ScrCard): string {
+  const names: Record<string, [string, string]> = {
+    Decisions: ["decision", "decisions"],
+    Preferences: ["preference", "preferences"],
+    Requests: ["request", "requests"],
+  };
+  const parts = Object.entries(card.tag_counts)
+    .filter(([, count]) => count > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([group, count]) => {
+      const [one, many] = names[group] ?? [group, group];
+      return `${count} ${count === 1 ? one : many}`;
+    });
+  return parts.length ? parts.join(" · ") : "No tagged entries";
 }
 
 /** The `orbit://task/<id>` link an assignment id opens (resolved by Orbit, as the brief's links are). */
 export function taskHref(id: string): string {
   return `orbit://task/${encodeURIComponent(id)}`;
-}
-
-/** A thread filter value in plain words: `task:ORB-1` reads `ORB-1`. */
-export function threadLabel(thread: string): string {
-  if (thread.startsWith("task:")) return thread.slice("task:".length);
-  const match = /^project:(.*) orchestrator:(.*)$/.exec(thread);
-  if (!match) return thread;
-  return [match[1] || "No project", match[2] || "no orchestrator"].join(" · ");
-}
-
-/** Group handoffs by project, keeping the input order (newest first) inside and between groups. */
-export function byProject(handoffs: readonly ScribeHandoff[]): Array<{ project: string; handoffs: ScribeHandoff[] }> {
-  const groups = new Map<string, ScribeHandoff[]>();
-  for (const handoff of handoffs) {
-    const key = projectLabel(handoff);
-    const group = groups.get(key);
-    if (group) group.push(handoff); else groups.set(key, [handoff]);
-  }
-  return [...groups].map(([project, list]) => ({ project, handoffs: list }));
 }

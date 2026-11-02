@@ -40,7 +40,7 @@ fn assert_closed(response: &Value) {
         .unwrap(),
     )
     .unwrap();
-    let section_schema = &schema["properties"]["sections"]["items"];
+    let section_schema = &schema["anyOf"][0]["properties"]["sections"]["items"];
     let item_schema = &section_schema["properties"]["items"]["items"];
     let listing_schema = &schema["$defs"]["listing"];
     for section in response["output"]["sections"].as_array().unwrap() {
@@ -77,7 +77,7 @@ fn assert_closed(response: &Value) {
 #[test]
 fn list_view_returns_current_threads_globals_and_paged_filtered_history() {
     let (ports, orbit) = at(list_library(), "2026-10-30T12:00:00Z", vec![]);
-    let response = brief(&ports, json!({"view": "list"}));
+    let response = brief(&ports, json!({"view": "list", "legacy": true}));
     expect_kinds(&response, "threads,global,history");
     // Current: each thread's newest handoff, newest first; orbit thread closed by resolved entry.
     expect_ids(&response, "threads|src-d#L1,src-c#L1,src-a#L5");
@@ -140,7 +140,7 @@ fn list_view_reveals_closed_globals_with_their_closing_entry() {
         list_library(),
         "2026-10-30T12:00:00Z",
         vec![],
-        json!({"view": "list", "include_closed": true}),
+        json!({"view": "list", "legacy": true, "include_closed": true}),
     );
     // brief_at requires replies; empty reply queue is fine as list reads no tasks.
     let globals = items(&response, "global");
@@ -181,26 +181,40 @@ fn list_view_filters_and_pages_history_only() {
     ] {
         let mut request = input.clone();
         request["view"] = json!("list");
+        request["legacy"] = json!(true);
         let response = brief(&ports, request);
         assert_eq!(ids(&response, "history"), expected, "{input}");
         // Current and global are never filtered.
         assert_eq!(ids(&response, "threads").len(), 3, "{input}");
     }
-    let response = brief(&ports, json!({"view": "list", "offset": 2, "limit": 2}));
+    let response = brief(
+        &ports,
+        json!({"view": "list", "legacy": true, "offset": 2, "limit": 2}),
+    );
     expect_ids(&response, "history|src-b#L3,src-b#L2");
     expect_page(&response, "history|6|true|2");
-    let response = brief(&ports, json!({"view": "list", "offset": 4, "limit": 2}));
+    let response = brief(
+        &ports,
+        json!({"view": "list", "legacy": true, "offset": 4, "limit": 2}),
+    );
     assert_eq!(section(&response, "history").unwrap()["truncated"], false);
     for input in [
-        json!({"view": "list", "limit": 0}),
-        json!({"view": "list", "limit": 101}),
-        json!({"view": "list", "offset": -1}),
-        json!({"view": "list", "offset": 100_001}),
-        json!({"view": "list", "include_closed": "yes"}),
-        json!({"view": "list", "thread": ""}),
+        json!({"view": "list", "legacy": true, "limit": 0}),
+        json!({"view": "list", "legacy": true, "limit": 101}),
+        json!({"view": "list", "legacy": true, "offset": -1}),
+        json!({"view": "list", "legacy": true, "offset": 100_001}),
+        json!({"view": "list", "legacy": true, "include_closed": "yes"}),
+        json!({"view": "list", "legacy": true, "thread": ""}),
         json!({"view": "list", "session_start": true}),
         json!({"view": "handoffs", "limit": 5}),
         json!({"thread": "task:ORB-41001"}),
+        // The cards feed refuses the legacy filters instead of ignoring them.
+        json!({"view": "list", "limit": 5}),
+        json!({"view": "list", "project": "orbit-office"}),
+        json!({"view": "list", "legacy": true, "id": "SCR-20261029-0900-aaaa01"}),
+        json!({"view": "list", "legacy": "yes"}),
+        json!({"id": "SCR-20261029-0900-aaaa01"}),
+        json!({"legacy": true}),
     ] {
         let response = call(&ports, input.clone());
         assert_eq!(
@@ -208,4 +222,176 @@ fn list_view_filters_and_pages_history_only() {
             "{input}: {response}"
         );
     }
+}
+
+/// Write one v2 SCR with a `previous` link and Tags entries.
+fn insert_card_scr(
+    library: &FakeLibrary,
+    id: &str,
+    scope: &str,
+    project: Option<&str>,
+    updated: &str,
+    previous: Option<&str>,
+    sensitivity: &str,
+) {
+    let project = project.map_or_else(|| "null".to_string(), |name| format!("\"{name}\""));
+    let previous = previous.map_or_else(|| "null".to_string(), |name| format!("\"{name}\""));
+    let path = format!("sources/conversation/2026/11/{id}.md");
+    let text = format!(
+        "---\nid: \"{id}\"\ntitle: \"Title of {id}\"\ntitle_by: \"scribe\"\n\
+         scope: \"{scope}\"\nproject: {project}\nsession: \"session-{id}\"\n\
+         started: \"{updated}\"\nupdated: \"{updated}\"\nprevious: {previous}\n\
+         scribed_through: \"m-0003\"\nprovider: \"claude-code\"\nmodel: null\n\
+         host: \"macbook\"\ncwd: \"/work/x\"\nbranch: null\ntranscript: null\n\
+         parsed: null\nsensitivity: \"{sensitivity}\"\n---\n## Summary\n\
+         (scribe) Summary of {id}.\n\n## Goals\n- Goal of {id}.\n\n\
+         ## Outcome and Blockers\n- Outcome of {id}.\n\n## Next\n\
+         - ORB-11111 — continue {id}. owner: agent.\n\n## Tags\n\
+         ### Preferences\n\
+         - T1 m-0001 2026-11-01T09:00-07:00 by: user scope: global \"#preferences draft only\" matter: email\n\
+         ### Decisions\n\
+         - T2 m-0002 2026-11-01T09:05-07:00 by: user scope: project:orbit-office \"#decision ship v2\" ledger: dec-orbit-office-1\n\
+         - T3 m-0003 2026-11-01T09:06-07:00 by: agent scope: project:orbit-office \"#decision cut scope\" ledger: dec-orbit-office-2\n"
+    );
+    library.insert_scribe_file(&path, &text);
+}
+
+fn cards_library() -> FakeLibrary {
+    let l = FakeLibrary::initialized();
+    // Two orbit-office SCRs chained by previous, one other project, one
+    // global, and one private project SCR.
+    insert_card_scr(
+        &l,
+        "SCR-20261030-0900-aaaa01",
+        "project",
+        Some("orbit-office"),
+        "2026-10-30T09:00:00Z",
+        None,
+        "normal",
+    );
+    insert_card_scr(
+        &l,
+        "SCR-20261031-0900-aaaa02",
+        "project",
+        Some("orbit-office"),
+        "2026-10-31T09:00:00Z",
+        Some("SCR-20261030-0900-aaaa01"),
+        "normal",
+    );
+    insert_card_scr(
+        &l,
+        "SCR-20261029-0900-bbbb01",
+        "project",
+        Some("orbit"),
+        "2026-10-29T09:00:00Z",
+        None,
+        "normal",
+    );
+    insert_card_scr(
+        &l,
+        "SCR-20261028-0900-cccc01",
+        "global",
+        None,
+        "2026-10-28T09:00:00Z",
+        None,
+        "normal",
+    );
+    insert_card_scr(
+        &l,
+        "SCR-20261027-0900-dddd01",
+        "project",
+        Some("secret-project"),
+        "2026-10-27T09:00:00Z",
+        None,
+        "private",
+    );
+    l
+}
+
+#[test]
+fn list_view_returns_exactly_one_card_per_project_plus_the_global_card() {
+    let (ports, orbit) = at(cards_library(), "2026-11-01T12:00:00Z", vec![]);
+    let response = brief(&ports, json!({"view": "list"}));
+    assert!(orbit.calls().is_empty(), "the cards feed reads no tasks");
+    let output = &response["output"];
+    assert!(output.get("sections").is_none(), "{output}");
+    let cards = output["cards"].as_array().unwrap();
+    let ids: Vec<&str> = cards.iter().map(|c| c["id"].as_str().unwrap()).collect();
+    // Global first (scope order), then one latest SCR per project; the older
+    // orbit-office SCR is not a card.
+    assert_eq!(
+        ids,
+        [
+            "SCR-20261028-0900-cccc01",
+            "SCR-20261029-0900-bbbb01",
+            "SCR-20261031-0900-aaaa02",
+            "SCR-20261027-0900-dddd01",
+        ]
+    );
+    assert_eq!(output["count"], 4);
+    assert_eq!(output["files_searched"], 5);
+    let office = &cards[2];
+    assert_eq!(office["title"], "Title of SCR-20261031-0900-aaaa02");
+    assert_eq!(office["scope"], "project:orbit-office");
+    assert_eq!(office["updated"], "2026-10-31T09:00:00Z");
+    assert_eq!(office["previous"], "SCR-20261030-0900-aaaa01");
+    assert_eq!(
+        office["summary"],
+        "(scribe) Summary of SCR-20261031-0900-aaaa02."
+    );
+    assert_eq!(office["outcome"][0], "Outcome of SCR-20261031-0900-aaaa02.");
+    assert!(
+        office["next"][0]
+            .as_str()
+            .unwrap()
+            .contains("ORB-11111 — continue SCR-20261031-0900-aaaa02.")
+    );
+    assert_eq!(office["tag_entries"], 3);
+    assert_eq!(
+        office["tag_counts"],
+        json!({"Decisions": 2, "Preferences": 1})
+    );
+    assert_eq!(office["content_withheld"], false);
+    let global = &cards[0];
+    assert_eq!(global["scope"], "global");
+    assert_eq!(global["project"], Value::Null);
+    // The private project's card keeps only references.
+    let private = &cards[3];
+    assert_eq!(private["content_withheld"], true);
+    assert_eq!(private["summary"], Value::Null);
+    assert_eq!(private["tags"], json!([]));
+    assert_eq!(private["tag_counts"], json!({}));
+    assert!(
+        !response
+            .to_string()
+            .contains("Summary of SCR-20261027-0900-dddd01")
+    );
+}
+
+#[test]
+fn list_view_with_id_returns_one_scr_and_walks_only_the_previous_chain() {
+    let (ports, _) = at(cards_library(), "2026-11-01T12:00:00Z", vec![]);
+    let response = brief(
+        &ports,
+        json!({"view": "list", "id": "SCR-20261031-0900-aaaa02"}),
+    );
+    let output = &response["output"];
+    assert!(output.get("cards").is_none(), "{output}");
+    assert_eq!(output["scr"]["id"], "SCR-20261031-0900-aaaa02");
+    assert_eq!(output["previous"]["id"], "SCR-20261030-0900-aaaa01");
+    assert_eq!(output["previous"]["previous"], Value::Null);
+    // The chain's end has no previous; nothing else reaches an older SCR.
+    let response = brief(
+        &ports,
+        json!({"view": "list", "id": "SCR-20261030-0900-aaaa01"}),
+    );
+    assert_eq!(response["output"]["previous"], Value::Null);
+    let response = call(
+        &ports,
+        json!({"view": "list", "id": "SCR-20000101-0000-zzzz99"}),
+    );
+    assert_eq!(
+        response["error"]["code"], "scribe_scr_not_found",
+        "{response}"
+    );
 }

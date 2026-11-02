@@ -1,17 +1,17 @@
 /**
- * The Scribe screen in a real browser, on the production scribe feature and
- * the two-session fixture Library (server/test/scribe-fixture.mjs). Run with
- * the verified host browser kit after `npm --prefix app run check`; set
- * SCRIBE_SCREENSHOTS_DIR to a directory under `.orbit/tmp/` to capture each
- * view at 320px and 1440px.
+ * The Scribe screen in a real browser, on the production scribe feature
+ * and the fixture outputs (server/test/scribe-fixture.mjs). Run with the
+ * verified host browser kit after `npm --prefix app run check`; set
+ * SCRIBE_SCREENSHOTS_DIR to a directory under `.orbit/tmp/` to capture
+ * each view at 320px and 1440px, the open SCR and the Tags refusal
+ * included, for the task's screenshot evidence.
  */
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
-import { NOW, handoffs, office, scribeServer } from "../../server/test/scribe-fixture.mjs";
-import { ageLabel } from "../dist/ui/handoff.js";
+import { NOW, cards, decisions, office, preferences, scribeServer } from "../../server/test/scribe-fixture.mjs";
 
 const WIDTHS = [320, 1440];
 
@@ -34,80 +34,102 @@ async function shot(page, name) {
   await mkdir(dir, { recursive: true });
   await page.screenshot({ path: resolve(dir, `${name}-dark-${page.viewportSize().width}.png`), fullPage: true });
 }
-const session = (page, title) => page.getByRole("region", { name: title });
 const tab = (page, name) => page.getByRole("tab", { name, exact: true });
 const results = (page) => page.getByRole("tabpanel");
+const cardOf = (page, id) => results(page).locator(`[data-id="${id}"]`);
 
-test("the feed shows each line with its tags, quote, time and file:line, the most recent session first", { timeout: 60000 }, async (t) => {
-  const { page, url } = await browserFixture(t);
+test("the feed shows exactly one card per project plus the global card, and opening one walks only the previous chain", { timeout: 60000 }, async (t) => {
+  const { page, url, calls } = await browserFixture(t);
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
     await page.getByRole("heading", { name: "Scribe", exact: true, level: 1 }).waitFor();
-    const recent = session(page, "Scribe screen");
-    await recent.getByText("Most recent").waitFor();
-    await recent.getByText("orbit-office · 4 lines").waitFor();
-    const blocks = page.locator(".scribe-session h3");
-    assert.deepEqual(await blocks.allInnerTexts(), ["Scribe screen", "Plan the scribe v1 rollout keep it model free"]);
-    await session(page, "Plan the scribe v1 rollout keep it model free").getByText("constellation · 4 lines").waitFor();
-    // Newest first inside a session, each with its anchors.
-    const quotes = await recent.locator(".scribe-quote").allInnerTexts();
-    assert.deepEqual(quotes, ["Landed the scribe-ask tool as #287.", "ORB-20780 is green and merged.", "poll every ten seconds", "CI for the screen is still running."]);
-    for (const row of office.feed.results) {
-      const item = page.locator(`[data-citation="${row.citation}"]`);
-      await item.getByText(row.file_line, { exact: true }).waitFor();
-      await item.getByText(`#${row.tag}`, { exact: true }).waitFor();
-      assert.equal(await item.locator("time").getAttribute("datetime"), row.time);
-      await item.getByText(`claude --resume ${row.session_id}`, { exact: true }).waitFor();
-    }
+    assert.deepEqual(await page.getByRole("tab").allInnerTexts(), ["Feed", "Preferences", "Decisions", "Tags"]);
+    const ids = await results(page).locator("[data-id]").evaluateAll((items) => items.map((item) => item.dataset.id));
+    assert.deepEqual(ids, cards.feed.cards.map((card) => card.id), "one card per project plus global; the older orbit-office SCR is absent");
+    const latest = cardOf(page, "SCR-20261031-0900-aaaa02");
+    await latest.getByText("orbit-office", { exact: true }).waitFor();
+    await latest.getByText("(scribe) Rework the Scribe tab into the one-card feed.").waitFor();
+    await latest.getByText("ORB-21120 — finish the Tags editor. owner: agent.").waitFor();
+    await latest.getByText("Next", { exact: true }).waitFor();
+    await latest.getByText("Outcome and Blockers", { exact: true }).waitFor();
+    await latest.getByText("2 decisions · 1 preference").waitFor();
+    await cardOf(page, "SCR-20261029-0900-cccc01").getByText("Global", { exact: true }).waitFor();
+    await cardOf(page, "SCR-20261028-0900-dddd01").getByText("Private session: content withheld.").waitFor();
     await noOverflow(page, "feed"); await shot(page, "scribe-feed");
+
+    // Opening shows the whole SCR; Previous reaches the older one, and stops there.
+    await latest.getByRole("button", { name: "Open Ship the scribe feed" }).click();
+    const detail = cardOf(page, "SCR-20261031-0900-aaaa02");
+    await detail.getByRole("heading", { name: "Ship the scribe feed" }).waitFor();
+    await detail.getByText("SCR-20261031-0900-aaaa02#T2").waitFor();
+    await detail.getByText("#decision ship v2 first because: the feed is unusable").waitFor();
+    await shot(page, "scribe-scr-open");
+    await detail.getByRole("button", { name: /Previous/ }).click();
+    const older = cardOf(page, "SCR-20261030-0900-aaaa01");
+    await older.getByRole("heading", { name: "Design the scribe feed" }).waitFor();
+    assert.equal(await older.getByRole("button", { name: /Previous/ }).count(), 0, "the chain's end has no Previous");
+    assert.ok(calls.some((call) => call.name === "office.session-brief" && call.input.id === "SCR-20261030-0900-aaaa01"));
+    await shot(page, "scribe-scr-previous");
+    await older.getByRole("button", { name: "Back to the feed" }).click();
+    await cardOf(page, "SCR-20261029-0900-cccc01").waitFor();
+    await noOverflow(page, "feed again");
   }
 });
 
-test("Pending, Preferences, Landed and Why show the lines office.scribe-query returns", { timeout: 60000 }, async (t) => {
+test("Preferences and Decisions show the office.scribe-query panels", { timeout: 60000 }, async (t) => {
   const { page, url } = await browserFixture(t);
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
-    await session(page, "Scribe screen").waitFor();
-    for (const [name, view] of [["Pending", "pending"], ["Preferences", "pref"], ["Landed", "landed"], ["Why", "why"]]) {
-      await tab(page, name).click();
-      assert.equal(await tab(page, name).getAttribute("aria-selected"), "true");
-      await results(page).locator(".scribe-quote").first().waitFor();
-      assert.deepEqual(await results(page).locator(".scribe-quote").allInnerTexts(), office[view].results.map((row) => row.quote), name);
-      if (view === "pref") await results(page).getByText("Stale · review by 2026-10-31").waitFor();
-      if (view === "landed") await page.getByText(`Today, ${office.landed.today} in ${office.landed.time_zone}.`).waitFor();
-      if (view === "why") {
-        await results(page).locator(`[data-citation="${office.why.results[0].citation}"]`).getByText("no recorded reason").waitFor();
-        await results(page).getByText("a socket is overkill for one window").waitFor();
-      }
-      await noOverflow(page, name); await shot(page, `scribe-${view}`);
+    await cardOf(page, "SCR-20261031-0900-aaaa02").waitFor();
+    await tab(page, "Preferences").click();
+    assert.equal(await tab(page, "Preferences").getAttribute("aria-selected"), "true");
+    for (const row of preferences.preferences) {
+      const item = results(page).locator(`[data-citation="${row.citation}"]`);
+      await item.getByText(row.statement).waitFor();
     }
+    await results(page).getByText("Stale · review by 2026-10-31").waitFor();
+    await noOverflow(page, "preferences"); await shot(page, "scribe-preferences");
+
+    await tab(page, "Decisions").click();
+    await results(page).locator('[data-id="dec-orbit-office-8"]').waitFor();
+    const ids = await results(page).locator("[data-id]").evaluateAll((items) => items.map((item) => item.dataset.id));
+    assert.deepEqual(ids, [...decisions.decisions].reverse().map((row) => row.id), "newest first");
+    const first = results(page).locator('[data-id="dec-orbit-office-7"]');
+    await first.getByText("the feed is unusable", { exact: true }).waitFor();
+    await results(page).locator('[data-id="dec-orbit-office-8"]').getByText("no recorded reason").waitFor();
+    await noOverflow(page, "decisions"); await shot(page, "scribe-decisions");
   }
 });
 
-test("a note is recorded as one by: user line and shows in the feed after the next poll", { timeout: 60000 }, async (t) => {
+test("the Tags editor reads the effective tags and, refused by Orbit, shows not-permitted with the operator command and turns read-only", { timeout: 60000 }, async (t) => {
   const { page, url, calls } = await browserFixture(t);
-  await page.setViewportSize({ width: 320, height: 1000 });
-  await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
-  await session(page, "Scribe screen").waitFor();
-  const form = page.getByRole("form", { name: "Add a note" });
-  assert.equal(await form.getByLabel("Session").inputValue(), office.after_note.results[0].session_id, "the most recent session is chosen");
-  await form.getByLabel("Note, recorded verbatim").fill("#todo call the venue at 3pm");
-  await form.getByText("Tag: #todo, from the text").waitFor();
-  await noOverflow(page, "note form"); await shot(page, "scribe-note");
-  await form.getByRole("button", { name: "Add note" }).click();
-  await form.getByText(`Recorded at ${office.note.path}:25.`, { exact: false }).waitFor();
-  const appends = calls.filter((call) => call.name === "office.scribe-append");
-  assert.deepEqual(appends.map((call) => call.input.entries), [[{ tag: "todo", by: "user", text: "call the venue at 3pm" }]]);
-  const recent = session(page, "Scribe screen");
-  assert.equal(await recent.getByText("call the venue at 3pm").count(), 0, "not shown before the poll");
-  await page.clock.runFor(10_000);
-  const note = recent.locator(".scribe-entry").first();
-  await note.getByText("call the venue at 3pm").waitFor();
-  await note.getByText("#todo", { exact: true }).waitFor();
-  await note.locator("dd", { hasText: "user" }).waitFor();
-  await noOverflow(page, "feed with the note"); await shot(page, "scribe-feed-noted");
+  for (const width of WIDTHS) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
+    await cardOf(page, "SCR-20261031-0900-aaaa02").waitFor();
+    await tab(page, "Tags").click();
+    const form = page.getByRole("form", { name: "Tag editor" });
+    await results(page).getByText("#preferences").waitFor();
+    await results(page).getByText("#decisions").waitFor();
+    await results(page).getByText("#lesson").waitFor();
+    await form.getByRole("button", { name: "Restore defaults" }).waitFor();
+    await noOverflow(page, "tags"); await shot(page, "scribe-tags");
+
+    await form.getByLabel("Name").fill("incident");
+    await form.getByLabel("Instruction").fill("Something broke and what settled it.");
+    await form.getByRole("button", { name: "Save tag" }).click();
+    await form.getByText("The app isn't allowed to change the scribe settings yet.", { exact: false }).waitFor();
+    const command = await form.locator("code").first().innerText();
+    assert.match(command, /^orbit tool run office\.config-set --input '/);
+    assert.match(command, /scribe\.tags\.incident/);
+    assert.equal(await form.getByText("Saved.", { exact: true }).count(), 0, "a refused save claims no success");
+    assert.equal(await form.getByRole("button", { name: "Save tag" }).isDisabled(), true, "the editor is read-only after the refusal");
+    assert.equal(await form.getByLabel("Name").isDisabled(), true);
+    assert.ok(calls.some((call) => call.name === "office.config-set"));
+    await noOverflow(page, "tags refused"); await shot(page, "scribe-tags-not-permitted");
+  }
 });
 
 test("the ask box answers with SCR file:line, drops a mismatched quote, and says not captured with the range", { timeout: 60000 }, async (t) => {
@@ -130,118 +152,5 @@ test("the ask box answers with SCR file:line, drops a mismatched quote, and says
     await form.getByRole("button", { name: "Ask" }).click();
     await form.getByText("Not captured. Searched 2026-10-31 to 2026-11-01 across 2 files; topics recall, scribe.").waitFor();
     await noOverflow(page, "not captured"); await shot(page, "scribe-ask-not-captured");
-  }
-});
-
-const handoff = (page, id) => results(page).locator(`[data-id="${id}"]`);
-const handoffIds = (page) => results(page).locator("[data-id]").evaluateAll((items) => items.map((item) => item.dataset.id));
-const subView = (page, name) => page.getByRole("group", { name: "Handoff views" }).getByRole("button", { name, exact: true });
-async function openHandoffs(page, url) {
-  await page.goto(`${url}/?width=${page.viewportSize().width}#scribe`);
-  await session(page, "Scribe screen").waitFor();
-  await tab(page, "Handoffs").click();
-  assert.equal(await tab(page, "Handoffs").getAttribute("aria-selected"), "true");
-}
-
-test("Handoffs sits beside the canned views; Current groups each open thread's newest handoff by project with orchestrator, task, age and resume", { timeout: 60000 }, async (t) => {
-  const { page, url, calls } = await browserFixture(t);
-  for (const width of WIDTHS) {
-    await page.setViewportSize({ width, height: 1000 });
-    await openHandoffs(page, url);
-    assert.deepEqual(await page.getByRole("tab").allInnerTexts(), ["Feed", "Pending", "Preferences", "Landed", "Why", "Handoffs"]);
-    assert.equal(await subView(page, "Current").getAttribute("aria-pressed"), "true");
-    await handoff(page, "src-20261031-office#L5").waitFor();
-    assert.equal(await page.locator(".scribe-about").isVisible(), false, "the matter box is for Preferences and Why only");
-    assert.deepEqual(await results(page).locator(".scribe-session h3").allInnerTexts(), ["orbit-office", "constellation", "orbit"]);
-    const office = results(page).getByRole("region", { name: "orbit-office" });
-    await office.getByText("Most recent").waitFor();
-    assert.deepEqual(await office.locator("[data-id]").evaluateAll((items) => items.map((item) => item.dataset.id)),
-      ["src-20261031-office#L5", "src-20261101-private#L1"]);
-    const lead = handoff(page, "src-20261031-office#L5");
-    assert.equal(await lead.getByRole("link", { name: "ORB-21075", exact: true }).getAttribute("href"), "orbit://task/ORB-21075");
-    await lead.getByText("claude", { exact: true }).waitFor();
-    assert.equal(await lead.locator("time").first().innerText(), `2026-11-01 08:30 · ${ageLabel("2026-11-01T08:30:00Z", NOW)}`);
-    await lead.getByText("claude --resume 7f3c2a10-5b1e-4c0d-9a8e-2f6b1c4d9e01", { exact: true }).waitFor();
-    assert.equal(await lead.getByRole("link", { name: "src-20261031-office#L5" }).getAttribute("href"), "?source=src-20261031-office#L5");
-    // Structured fields in order; the constellation thread's legacy line reads as text, marked legacy.
-    assert.deepEqual(await lead.locator("dt").allInnerTexts(), ["Objective", "Next", "Authorization", "Observations", "Evidence"]);
-    await lead.getByText("Ship the Scribe Handoffs view for ORB-21075.").waitFor();
-    await lead.getByText("observed at 2026-11-01 08:20").waitFor();
-    assert.equal(await lead.getByRole("link", { name: "https://github.com/example/orbit-office/pull/316" }).getAttribute("href"), "https://github.com/example/orbit-office/pull/316");
-    assert.equal(await lead.getByText("Legacy", { exact: true }).count(), 0);
-    const legacy = handoff(page, "src-20261031-constellation#L3");
-    await legacy.getByText("Legacy", { exact: true }).waitFor();
-    assert.equal(await legacy.locator(".scribe-quote").innerText(), "Constellation next: send the rollout note for ORB-21001 to Daniel.");
-    // A Codex thread has no claude resume; a private source is listed by reference only.
-    const codex = handoff(page, "src-20261030-orbit#L1");
-    await codex.getByText("codex", { exact: true }).waitFor();
-    assert.equal(await codex.getByText("claude --resume", { exact: false }).count(), 0);
-    await handoff(page, "src-20261101-private#L1").getByText("Private session: content withheld.").waitFor();
-    assert.equal(await results(page).getByText("Private plan").count(), 0);
-    await noOverflow(page, "handoffs current"); await shot(page, "scribe-handoffs-current");
-  }
-  assert.ok(calls.filter((call) => call.name === "office.session-brief").every((call) => call.input.view === "list"), "read-only list view only");
-  // The view polls with the screen.
-  const before = calls.filter((call) => call.name === "office.session-brief").length;
-  await page.clock.runFor(10_000);
-  await page.waitForFunction(() => true);
-  await handoff(page, "src-20261031-office#L5").waitFor();
-  assert.ok(calls.filter((call) => call.name === "office.session-brief").length > before, "polled again after 10 seconds");
-});
-
-test("History lists every handoff newest first, marks superseded ones, links each source line, and filters by project, orchestrator and thread", { timeout: 60000 }, async (t) => {
-  const { page, url, calls } = await browserFixture(t);
-  const all = handoffs.all.output.sections.find((section) => section.kind === "history").items;
-  for (const width of WIDTHS) {
-    await page.setViewportSize({ width, height: 1000 });
-    await openHandoffs(page, url);
-    await subView(page, "History").click();
-    await page.getByText(`Handoffs 1–6 of 6, newest first`, { exact: false }).waitFor();
-    assert.deepEqual(await handoffIds(page), all.map((item) => item.id));
-    for (const item of all) {
-      const row = handoff(page, item.id);
-      const [source, line] = item.id.split("#L");
-      assert.equal(await row.getByRole("link", { name: item.id, exact: true }).getAttribute("href"), `?source=${source}#L${line}`);
-      assert.equal(await row.getByText("Superseded", { exact: true }).count(), item.listing.superseded ? 1 : 0, item.id);
-    }
-    await noOverflow(page, "history"); await shot(page, "scribe-handoffs-history");
-    const filters = page.locator(".handoff-filters");
-    for (const [label, value, recorded] of [["Project", "constellation", "project"], ["Orchestrator", "codex", "orchestrator"], ["Thread", "task:ORB-21001", "thread"]]) {
-      await filters.getByLabel(label).selectOption(value);
-      const expected = handoffs[recorded].output.sections.find((section) => section.kind === "history").items.map((item) => item.id);
-      await page.waitForFunction((count) => document.querySelectorAll(".scribe-results [data-id]").length === count, expected.length);
-      assert.deepEqual(await handoffIds(page), expected, label);
-      assert.deepEqual(calls.at(-1).input, handoffs[recorded].input, label);
-      if (label === "Thread") { assert.equal(await filters.getByLabel("Thread").locator("option:checked").innerText(), "ORB-21001"); await shot(page, "scribe-handoffs-history-thread"); }
-      await filters.getByLabel(label).selectOption("");
-      await page.waitForFunction((count) => document.querySelectorAll(".scribe-results [data-id]").length === count, all.length);
-    }
-    await noOverflow(page, "history filtered");
-  }
-});
-
-test("Global shows open handoffs by default; the toggle reveals expired and resolved ones with the entry that closed them", { timeout: 60000 }, async (t) => {
-  const { page, url } = await browserFixture(t);
-  for (const width of WIDTHS) {
-    await page.setViewportSize({ width, height: 1000 });
-    await openHandoffs(page, url);
-    await subView(page, "Global").click();
-    await page.getByText("1 open global handoff, newest first.", { exact: false }).waitFor();
-    assert.deepEqual(await handoffIds(page), ["src-20261031-office#L2"]);
-    await handoff(page, "src-20261031-office#L2").getByText("(global) Orbit 0.9 drains need --resume after a host restart.").waitFor();
-    await noOverflow(page, "global open"); await shot(page, "scribe-handoffs-global");
-    await page.getByLabel("Show expired and resolved").check();
-    await page.getByText("1 open global handoff, 2 expired or resolved", { exact: false }).waitFor();
-    assert.deepEqual(await handoffIds(page), ["src-20261031-office#L4", "src-20261031-office#L3", "src-20261031-office#L2"]);
-    const resolved = handoff(page, "src-20261031-office#L4");
-    await resolved.getByText("Resolved", { exact: true }).waitFor();
-    assert.equal(await resolved.getByRole("link", { name: "src-20261031-constellation#L1" }).getAttribute("href"), "?source=src-20261031-constellation#L1");
-    await resolved.getByText("at 2026-10-31 10:00: src-20261031-office#L4 the runner was cleaned.", { exact: false }).waitFor();
-    const expired = handoff(page, "src-20261031-office#L3");
-    await expired.getByText("Expired", { exact: true }).waitFor();
-    await expired.getByText("Until 2026-10-31 12:00", { exact: true }).waitFor();
-    await noOverflow(page, "global all"); await shot(page, "scribe-handoffs-global-closed");
-    await page.getByLabel("Show expired and resolved").uncheck();
-    await page.waitForFunction(() => document.querySelectorAll(".scribe-results [data-id]").length === 1);
   }
 });

@@ -10,11 +10,14 @@ use office_core::domain::session::{
     assignment_project, handoffs, invalid, task_open, tasks,
 };
 use office_core::domain::settings::HandoffMode;
+use office_core::domain::source::conversation::scribe::v2 as scr_v2;
 use office_core::domain::source::format_rfc3339_utc;
+use office_core::ports::Sensitivity;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Value, json};
 
+use super::scribe_query;
 use crate::registry::{Call, Tool};
 
 pub(crate) const TOOL: Tool = Tool::built(
@@ -33,6 +36,8 @@ pub(crate) const TOOL: Tool = Tool::built(
         "include_closed",
         "offset",
         "limit",
+        "id",
+        "legacy",
     ],
     run,
 );
@@ -91,8 +96,19 @@ enum View {
     List,
 }
 
+/// An optional boolean flag: absent or null is `false`.
+fn optional_flag(call: &Call<'_>, key: &str) -> Result<bool> {
+    match call.input.get(key) {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => Err(Error::InvalidArgument(format!(
+            "session-brief {key} must be a boolean"
+        ))),
+    }
+}
+
 /// `view`: `brief` (the default), `handoffs` (the `/handoff` command) or
-/// `list` (the web app's handoff list).
+/// `list` (the web app's SCR feed; with `legacy: true`, the v1 handoff list).
 fn view(call: &Call<'_>) -> Result<View> {
     match call.input.get("view") {
         None | Some(Value::Null) => Ok(View::Brief),
@@ -235,25 +251,70 @@ fn run(call: &Call<'_>) -> Result<Value> {
             "session-brief view handoffs or list cannot be combined with session_start".into(),
         ));
     }
+    let legacy = optional_flag(call, "legacy")?;
+    let scr_id = optional_context(call, "id")?;
     let list_keys = ["thread", "include_closed", "offset", "limit"];
     if view != View::List && list_keys.iter().any(|key| call.input.contains_key(*key)) {
         return Err(Error::InvalidArgument(
             "session-brief thread, include_closed, offset and limit require view list".into(),
         ));
     }
+    if view != View::List && (legacy || scr_id.is_some()) {
+        return Err(Error::InvalidArgument(
+            "session-brief id and legacy require view list".into(),
+        ));
+    }
+    if view == View::List && legacy && scr_id.is_some() {
+        return Err(Error::InvalidArgument(
+            "session-brief id names one SCR and cannot be combined with legacy".into(),
+        ));
+    }
+    // The cards feed has no filters or paging: those keys narrow only the
+    // legacy list, so without `legacy: true` they are refused, never ignored.
+    let legacy_only = [
+        "project",
+        "orchestrator",
+        "thread",
+        "include_closed",
+        "offset",
+        "limit",
+    ];
+    if view == View::List
+        && !legacy
+        && legacy_only
+            .iter()
+            .any(|key| call.input.get(*key).is_some_and(|value| !value.is_null()))
+    {
+        return Err(Error::InvalidArgument(
+            "session-brief view list filters and paging require legacy true".into(),
+        ));
+    }
     let query = match view {
-        View::List => Some(list_query(call, &context)?),
-        View::Brief | View::Handoffs => None,
+        View::List if legacy => Some(list_query(call, &context)?),
+        View::List | View::Brief | View::Handoffs => None,
     };
     let library = &call.ports.library;
     let head = library.head_commit()?;
     let sources = library.source_documents()?;
-    // The brief and handoffs views read v2 SCRs as handoffs; the list view
-    // keeps its legacy shape for the window and reads no SCR files.
+    // The brief and handoffs views read v2 SCRs as handoffs, and so does the
+    // list view's cards feed; only the legacy list reads no SCR files.
     let scr_files = match view {
-        View::List => Vec::new(),
-        View::Brief | View::Handoffs => library.scribe_files()?,
+        View::List if legacy => Vec::new(),
+        View::List | View::Brief | View::Handoffs => library.scribe_files()?,
     };
+    if view == View::List && !legacy {
+        let settings = library.settings()?;
+        let private = settings
+            .sensitivity
+            .get("conversation")
+            .is_some_and(|s| *s == Sensitivity::Private);
+        let files = scr_v2::v2_files(&scr_files)?;
+        let cards = scribe_query::v2::scr_cards(&files, private, scr_id.as_deref(), None)?;
+        if library.head_commit()? != head {
+            return Err(library_changed());
+        }
+        return Ok(cards);
+    }
     if view != View::Brief {
         let brief = match &query {
             Some(query) => list(&sources, query)?,

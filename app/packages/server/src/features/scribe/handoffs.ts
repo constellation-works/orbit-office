@@ -1,8 +1,9 @@
 /**
- * Scribe › Handoffs and Today's handoff summary (specs/web-app.md,
- * "Screens"; specs/sessions.md, "Handoff list"): one read-only
- * `office.session-brief` call with `view: list`. Filters and paging narrow
- * the history only; private sources arrive withheld and stay that way.
+ * The legacy v1 handoff list (specs/sessions.md, "Handoff list"), kept for
+ * the scribe v2 compatibility window: one read-only `office.session-brief`
+ * call with `view: list` and `legacy: true`. Filters and paging narrow the
+ * history only; private sources arrive withheld and stay that way. The
+ * Scribe feed and Today read the SCR cards instead (model.ts).
  */
 import type { IncomingMessage } from "node:http";
 
@@ -51,10 +52,10 @@ export function handoffQuery(request: IncomingMessage): HandoffQuery {
   return query;
 }
 
-/** The `office.session-brief` input for a list request. */
+/** The `office.session-brief` input for a legacy list request. */
 export function handoffInput(query: HandoffQuery): Row {
   const { offset, ...filters } = query;
-  return { view: "list", include_closed: true, limit: HISTORY_PAGE, ...filters, ...(offset > 0 ? { offset } : {}) };
+  return { view: "list", legacy: true, include_closed: true, limit: HISTORY_PAGE, ...filters, ...(offset > 0 ? { offset } : {}) };
 }
 
 function fieldsOf(value: unknown): HandoffFields | null {

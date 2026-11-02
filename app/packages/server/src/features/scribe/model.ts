@@ -1,30 +1,20 @@
 /**
  * Pure shaping for the Scribe screen (specs/scribe.md; specs/web-app.md).
  *
- * Every line comes from `office.scribe-query` or `office.scribe-ask`
- * output; nothing here reads the Library. The feed groups lines by
- * session, newest first. A note is parsed exactly as `/scribe note`
- * parses it (plugin/claude-code/scripts/scribe_v1.py `note`). An answer's
+ * The feed reads `office.session-brief` with `view: list` (SCR cards: one
+ * per project plus the global card, or one SCR with its `previous`); the
+ * Preferences and Decisions panels read `office.scribe-query`; an answer's
  * claims are checked once more against the shortlisted lines the same
  * response carries: a claim whose quote is not on a cited line is dropped.
+ * Nothing here reads the Library.
  */
 import type {
-  ScribeAnswer, ScribeClaim, ScribeEntry, ScribeFeed, ScribeQueryResult, ScribeSession, ScribeView,
+  ScrCard, ScrDetail, ScrFeed, ScrTagEntry, ScribeAnswer, ScribeClaim, ScribeDecisions, ScribePreferences,
 } from "@orbit-office/contracts";
-
-export const VIEWS: readonly ScribeView[] = ["pending", "pref", "landed", "why"];
-
-const TAG = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-const NOTE_KEYS = ["resolves", "matter", "due", "refs", "review_by", "supersedes", "topics"] as const;
-type NoteKey = typeof NOTE_KEYS[number];
-const LEADING_TAG = /^#([a-z0-9][a-z0-9._-]{0,63})(?:\s+|$)([\s\S]*)$/;
-const NOTE_KEY = new RegExp(`^(${NOTE_KEYS.join("|")}):\\s*(\\S+)\\s*([\\s\\S]*)$`);
-const QUOTED_NOTE = new RegExp(`^"([\\s\\S]*)"((?:\\s+(?:${NOTE_KEYS.join("|")}):\\s*\\S+)*)\\s*$`);
-const TRAILING_KEY = new RegExp(`(${NOTE_KEYS.join("|")}):\\s*(\\S+)`, "g");
 
 /** A request the route refuses with a status and a short code. */
 export class ScribeError extends Error {
-  constructor(readonly status: number, readonly code: string) {
+  constructor(readonly status: number, readonly code: string, readonly extra: Record<string, unknown> = {}) {
     super(code);
     this.name = "ScribeError";
   }
@@ -37,6 +27,7 @@ function record(value: unknown): Row | null {
 }
 const text = (value: unknown): string | null => typeof value === "string" ? value : null;
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+const count = (value: unknown): number => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
 
 /** The tool's output object, or a refusal for a malformed one. */
 export function outputOf(value: unknown): Row {
@@ -45,123 +36,100 @@ export function outputOf(value: unknown): Row {
   return row;
 }
 
-/** One `office.scribe-query` result as a screen entry; null when malformed. */
-export function entryOf(value: unknown): ScribeEntry | null {
+function tagEntryOf(value: unknown): ScrTagEntry | null {
   const row = record(value);
   if (row === null) return null;
-  const citation = text(row.citation); const fileLine = text(row.file_line); const time = text(row.time);
-  const tag = text(row.tag); const quote = text(row.quote); const session = text(row.session_id);
-  if (citation === null || fileLine === null || time === null || tag === null || quote === null || session === null) return null;
-  return {
-    citation, file_line: fileLine, msg: text(row.msg) ?? "note", time, tag, topics: strings(row.topics), quote,
-    why: text(row.why), no_why: row.no_why === true, matter: text(row.matter), review_by: text(row.review_by),
-    stale: row.stale === true, refs: strings(row.refs), by: text(row.by), due: text(row.due), session_id: session,
-    resume: text(row.resume),
-  };
+  const id = text(row.id); const citation = text(row.citation); const group = text(row.group);
+  const msg = text(row.msg); const time = text(row.time); const by = text(row.by);
+  const scope = text(row.scope); const quote = text(row.quote);
+  if (id === null || citation === null || group === null || msg === null || time === null || by === null || scope === null || quote === null) return null;
+  const fields: Record<string, string> = {};
+  const raw = record(row.fields) ?? {};
+  for (const [key, item] of Object.entries(raw)) if (typeof item === "string") fields[key] = item;
+  return { id, citation, group, msg, time, by, scope, quote, fields };
 }
 
-function results(output: Row): Row[] {
-  if (!Array.isArray(output.results)) throw new ScribeError(502, "unavailable");
-  return output.results.map(record).filter((row): row is Row => row !== null);
-}
-
-/** Milliseconds for ordering; a line time without seconds parses in every engine. */
-function instant(time: string): number {
-  const parsed = Date.parse(time);
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-function line(entry: ScribeEntry): number {
-  return Number(entry.file_line.slice(entry.file_line.lastIndexOf(":") + 1)) || 0;
-}
-const newestFirst = (a: ScribeEntry, b: ScribeEntry): number =>
-  instant(b.time) - instant(a.time) || b.time.localeCompare(a.time) || line(b) - line(a);
-
-/** Group a general `office.scribe-query` output into the feed, the most recent session first. */
-export function feedOf(output: Row, since: string): ScribeFeed {
-  const sessions = new Map<string, ScribeSession>();
-  let shown = 0;
-  for (const row of results(output)) {
-    const entry = entryOf(row);
-    if (entry === null) continue;
-    shown += 1;
-    let session = sessions.get(entry.session_id);
-    if (session === undefined) {
-      session = {
-        session_id: entry.session_id, id: text(row.id) ?? text(row.scr_id), title: text(row.title), title_by: text(row.title_by), project: text(row.project),
-        counterpart_name: text(row.counterpart_name), scribed_through: text(row.scribed_through), latest: entry.time, entries: [],
-      };
-      sessions.set(entry.session_id, session);
-    }
-    session.entries.push(entry);
-  }
-  const list = [...sessions.values()];
-  for (const session of list) {
-    session.entries.sort(newestFirst);
-    session.latest = session.entries[0]?.time ?? session.latest;
-  }
-  list.sort((a, b) => instant(b.latest) - instant(a.latest) || b.latest.localeCompare(a.latest));
-  return {
-    sessions: list, shown, total: typeof output.count === "number" ? output.count : shown, since,
-    time_zone: text(output.time_zone) ?? "UTC", today: text(output.today) ?? since,
-  };
-}
-
-/** The `office.scribe-query` input for a canned view. `why` tries `about` as a matter, then as a topic. */
-export function viewInput(view: ScribeView, about: string | null, asTopic = false): Row {
-  const mode = view;
-  if (about === null || view === "pending" || view === "landed") return { mode };
-  if (view === "pref") return { mode, matter: about };
-  return asTopic ? { mode, topic: about } : { mode, matter: about };
-}
-
-/** A canned view's lines, exactly as the tool returned them and in its order. */
-export function viewOf(view: ScribeView, output: Row): ScribeQueryResult {
-  return {
-    view, entries: results(output).map(entryOf).filter((entry): entry is ScribeEntry => entry !== null),
-    count: typeof output.count === "number" ? output.count : 0, since: text(output.since), until: text(output.until),
-    time_zone: text(output.time_zone) ?? "UTC", today: text(output.today) ?? "",
-    files_searched: typeof output.files_searched === "number" ? output.files_searched : 0,
-  };
-}
-
-/** The `office.scribe-append` entry for a note, parsed as `/scribe note` parses it. */
-export function noteEntry(raw: string, fallbackTag: string | undefined): Row {
-  const source = raw.trim();
-  if (source === "" || source.length > 4000) throw new ScribeError(400, "note_text_required");
-  const tagged = LEADING_TAG.exec(source);
-  let tag: string; let body: string;
-  if (tagged) { tag = tagged[1] ?? ""; body = tagged[2] ?? ""; }
-  else {
-    if (fallbackTag === undefined || !TAG.test(fallbackTag)) throw new ScribeError(400, "tag_required");
-    tag = fallbackTag; body = source;
-  }
-  const entry: Row = { tag, by: "user" };
-  const put = (key: NoteKey, value: string): void => {
-    entry[key] = key === "refs" || key === "topics" ? value.split(",").filter(Boolean) : value;
-  };
-  if (tagged) {
-    for (let keyed = NOTE_KEY.exec(body); keyed; keyed = NOTE_KEY.exec(body)) {
-      put(keyed[1] as NoteKey, keyed[2] ?? ""); body = keyed[3] ?? "";
-    }
-    body = body.trim();
-    const quoted = QUOTED_NOTE.exec(body);
-    if (quoted) {
-      body = quoted[1] ?? "";
-      for (const match of (quoted[2] ?? "").matchAll(TRAILING_KEY)) put(match[1] as NoteKey, match[2] ?? "");
+/** One SCR card from a `view: list` answer; null when malformed. A withheld card never carries content. */
+export function cardOf(value: unknown): ScrCard | null {
+  const row = record(value);
+  if (row === null) return null;
+  const id = text(row.id); const path = text(row.path); const scope = text(row.scope);
+  const session = text(row.session); const started = text(row.started); const updated = text(row.updated);
+  if (id === null || path === null || scope === null || session === null || started === null || updated === null) return null;
+  const withheld = row.content_withheld === true;
+  const tagCounts: Record<string, number> = {};
+  if (!withheld) {
+    for (const [key, item] of Object.entries(record(row.tag_counts) ?? {})) {
+      if (typeof item === "number" && Number.isFinite(item) && item >= 0) tagCounts[key] = item;
     }
   }
-  if (body === "") throw new ScribeError(400, "note_text_required");
-  entry.text = body;
-  return entry;
+  return {
+    id, path, title: text(row.title), title_by: text(row.title_by), scope, project: text(row.project),
+    session, started, updated, previous: text(row.previous), scribed_through: text(row.scribed_through),
+    summary: withheld ? null : text(row.summary),
+    goals: withheld ? [] : strings(row.goals), outcome: withheld ? [] : strings(row.outcome),
+    next: withheld ? [] : strings(row.next), tag_entries: count(row.tag_entries), tag_counts: tagCounts,
+    tags: withheld ? [] : (Array.isArray(row.tags) ? row.tags : []).map(tagEntryOf).filter((entry): entry is ScrTagEntry => entry !== null),
+    withheld,
+  };
 }
 
-/** The newest session cursor among `office.scribe-query` results for one session. */
-export function cursorOf(output: Row): string | null {
-  for (const row of results(output)) {
-    const through = text(row.scribed_through);
-    if (through !== null) return through;
-  }
-  return null;
+/** The cards feed: exactly what the tool returned, in its order (global first, then projects). */
+export function feedOf(output: Row): ScrFeed {
+  if (!Array.isArray(output.cards)) throw new ScribeError(502, "unavailable");
+  const cards = output.cards.map(cardOf).filter((card): card is ScrCard => card !== null);
+  if (cards.length !== output.cards.length) throw new ScribeError(502, "unavailable");
+  return { cards, count: count(output.count), files_searched: count(output.files_searched) };
+}
+
+/** One SCR and its `previous`, for walking the chain. */
+export function detailOf(output: Row): ScrDetail {
+  const scr = cardOf(output.scr);
+  if (scr === null) throw new ScribeError(502, "unavailable");
+  const previous = output.previous === null || output.previous === undefined ? null : cardOf(output.previous);
+  if (output.previous !== null && output.previous !== undefined && previous === null) throw new ScribeError(502, "unavailable");
+  return { scr, previous };
+}
+
+/** Preference page sections from `office.scribe-query` mode `preferences`, in its order. */
+export function preferencesOf(output: Row): ScribePreferences {
+  if (!Array.isArray(output.preferences)) throw new ScribeError(502, "unavailable");
+  const preferences = output.preferences.flatMap((item: unknown) => {
+    const row = record(item);
+    if (row === null) return [];
+    const page = text(row.page); const scope = text(row.scope); const matter = text(row.matter);
+    const citation = text(row.citation); const statement = text(row.statement);
+    const statedAt = text(row.stated_at); const reviewBy = text(row.review_by);
+    if (page === null || scope === null || matter === null || citation === null || statement === null || statedAt === null || reviewBy === null) return [];
+    const proposed = (Array.isArray(row.proposed) ? row.proposed : []).flatMap((entry: unknown) => {
+      const proposalRow = record(entry);
+      const entryId = text(proposalRow?.entry); const proposal = text(proposalRow?.proposal);
+      return entryId !== null && proposal !== null ? [{ entry: entryId, proposal }] : [];
+    });
+    return [{ page, scope, matter, citation, statement, cites: strings(row.cites), stated_at: statedAt, review_by: reviewBy, stale: row.stale === true, proposed }];
+  });
+  return { preferences, count: count(output.count), today: text(output.today) ?? "" };
+}
+
+/** Ledger entries from `office.scribe-query` mode `decisions`, newest decision first for reading. */
+export function decisionsOf(output: Row): ScribeDecisions {
+  if (!Array.isArray(output.decisions)) throw new ScribeError(502, "unavailable");
+  const decisions = output.decisions.flatMap((item: unknown) => {
+    const row = record(item);
+    if (row === null) return [];
+    const id = text(row.id); const ledger = text(row.ledger); const scope = text(row.scope);
+    const decidedBy = text(row.decided_by); const decidedAt = text(row.decided_at); const source = text(row.source);
+    if (id === null || ledger === null || scope === null || decidedBy === null || decidedAt === null || source === null) return [];
+    const because = record(row.because);
+    return [{
+      id, ledger, line: count(row.line), question: text(row.question), chosen: text(row.chosen),
+      quote: text(row.quote), because: because === null ? null : text(because.text),
+      scope, decided_by: decidedBy, decided_at: decidedAt, reverses: text(row.reverses),
+      reversed_by: text(row.reversed_by), current: row.current === true, source, private: row.private === true,
+    }];
+  });
+  decisions.sort((a, b) => b.decided_at.localeCompare(a.decided_at) || b.id.localeCompare(a.id));
+  return { decisions, count: count(output.count) };
 }
 
 /**
@@ -222,11 +190,4 @@ export function answerOf(output: Row): ScribeAnswer {
     status, claims, references, dropped, since: text(output.since) ?? text(range?.since), until: text(output.until) ?? text(range?.until),
     topics: strings(output.topics), files_searched: typeof output.files_searched === "number" ? output.files_searched : 0, model,
   };
-}
-
-/** The local date `days - 1` days before `now`, in the server's time zone (YYYY-MM-DD). */
-export function windowStart(now: Date, days: number): string {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
-  const pad = (value: number): string => String(value).padStart(2, "0");
-  return `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
 }

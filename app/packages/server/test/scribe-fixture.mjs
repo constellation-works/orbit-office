@@ -1,48 +1,142 @@
 /**
- * Scribe fixture: a Library holding SCR files for two sessions, as Office
- * itself answers for it. `scribe-fixture.json` is the verbatim output of the
- * `office` binary (`office orbit-tool`) built from this revision, over a
- * fresh Library where `office.scribe-pending` and `office.scribe-append`
- * scribed two transcripts (an older "constellation" session and the most
- * recent "Scribe screen" session in "orbit-office"):
+ * Scribe fixture: the tool outputs the scribe feature shapes, in the
+ * tools' own response schemas.
  *
- * - `feed`: `office.scribe-query` with no mode (every current line);
- * - `pending`, `pref`, `landed`, `why`: the canned modes (landed defaults to today);
- * - `note`: the `office.scribe-append` a web note sends, with `through` set to
- *   the session's own cursor; `after_note`: that session's lines afterwards.
+ * `scribe-fixture.json` is the verbatim output of the `office` binary
+ * (`office orbit-tool`) over a two-session v1 Library; only the ask
+ * answers below still cite its lines (`office.scribe-ask` needs a model,
+ * so its two answers are written here by hand in the tool's schema).
  *
- * The client below answers the server's `orbit tool run` calls from those
- * outputs, records every call, and adds the appended note to later reads.
- * Office's `office.scribe-ask` needs a model, so its two answers are written
- * here by hand in the tool's response schema, citing fixture lines.
+ * The v2 outputs are written here by hand in the tools' schemas, as the
+ * Rust tests pin them (`session_brief_modules/list.rs` for the cards,
+ * `scribe_query`'s v2 modes for the panels): `feed` is
+ * `office.session-brief` with `view: list` (three cards — the latest
+ * global SCR, the latest orbit-office SCR chained to an older one, and a
+ * private project SCR), `byId` its answers with `id`, `preferences` and
+ * `decisions` the `office.scribe-query` modes, and `status` the
+ * `office.status` of a Library with one custom tag. `office.config-set`
+ * refuses the app's authority (`capability_denied`), as Orbit does until
+ * ORB-20363 grants it the `scribe.*` keys.
  *
- * `handoffs-fixture.json` is the verbatim `office.session-brief` output
- * (`view: list`) of the `office` binary built from this revision over a
- * Library of four conversation sources: "Scribe screen" (orbit-office,
- * claude) with a superseded legacy handoff, an open, an expired and a
- * resolved global and a structured handoff for ORB-21075; "Plan the
- * constellation rollout" (constellation, claude) resolving that global and
- * two handoffs for ORB-21001; "Orbit release" (orbit, codex); and a private
- * source. Each case records the input it answers (`all`, a `project`,
- * `orchestrator` and `thread` filter, and the `page` at offset 4).
+ * `handoffs-fixture.json` is the verbatim legacy `office.session-brief`
+ * output (`view: list` with `legacy: true`) over four conversation
+ * sources, as before.
  */
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 import { createScribeFeature } from "../dist/features/scribe/index.js";
 import { createHandler } from "../dist/http/router.js";
+import { OrbitExitError } from "../dist/orbit/client.js";
 
 export const office = JSON.parse(readFileSync(new URL("./scribe-fixture.json", import.meta.url), "utf8"));
 export const handoffs = JSON.parse(readFileSync(new URL("./handoffs-fixture.json", import.meta.url), "utf8"));
 const sameInput = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
 export const NOW = new Date(2026, 10, 1, 9, 0, 0);
-export const RECENT = office.after_note.results[0].session_id;
-export const OLDER = office.feed.results[0].session_id;
-const noteLine = office.after_note.results.find((row) => row.by === "user");
-const cite = (row) => row.citation;
 const decision = office.why.results.find((row) => row.why !== null);
+const cite = (row) => row.citation;
 
-/** `office.scribe-ask` answering from the fixture: one good claim and one whose quote is not on its line. */
+function card(overrides) {
+  return {
+    id: "SCR-20261031-0900-aaaa02", path: "sources/conversation/2026/11/SCR-20261031-0900-aaaa02.md",
+    title: "Ship the scribe feed", title_by: "scribe", scope: "project:orbit-office", project: "orbit-office",
+    session: "session-aaaa02", started: "2026-10-31T09:00:00Z", updated: "2026-10-31T09:00:00Z",
+    previous: "SCR-20261030-0900-aaaa01", scribed_through: "m-0003",
+    summary: "(scribe) Rework the Scribe tab into the one-card feed.",
+    goals: ["Ship the feed for ORB-21120."], outcome: ["The cards feed reads view list."],
+    next: ["ORB-21120 — finish the Tags editor. owner: agent."],
+    tag_entries: 3, tag_counts: { Decisions: 2, Preferences: 1 },
+    tags: [
+      { id: "T1", citation: "SCR-20261031-0900-aaaa02#T1", group: "Preferences", msg: "m-0001", time: "2026-10-31T09:01-07:00", by: "user", scope: "global", quote: "#preferences always draft emails, never send", fields: { matter: "email", proposal: "prop-1" } },
+      { id: "T2", citation: "SCR-20261031-0900-aaaa02#T2", group: "Decisions", msg: "m-0002", time: "2026-10-31T09:05-07:00", by: "user", scope: "project:orbit-office", quote: "#decision ship v2 first because: the feed is unusable", fields: { ledger: "dec-orbit-office-7" } },
+      { id: "T3", citation: "SCR-20261031-0900-aaaa02#T3", group: "Decisions", msg: "m-0003", time: "2026-10-31T09:06-07:00", by: "agent", scope: "project:orbit-office", quote: "#decision keep the legacy list behind legacy:true", fields: { ledger: "dec-orbit-office-8" } },
+    ],
+    sensitivity: "normal", content_withheld: false,
+    ...overrides,
+  };
+}
+
+const older = card({
+  id: "SCR-20261030-0900-aaaa01", path: "sources/conversation/2026/11/SCR-20261030-0900-aaaa01.md",
+  title: "Design the scribe feed", session: "session-aaaa01", started: "2026-10-30T09:00:00Z",
+  updated: "2026-10-30T09:00:00Z", previous: null, summary: "(scribe) Design one card per project.",
+});
+const latest = card({});
+const globalCard = card({
+  id: "SCR-20261029-0900-cccc01", path: "sources/conversation/2026/11/SCR-20261029-0900-cccc01.md",
+  title: "Plan the week", scope: "global", project: null, session: "session-cccc01",
+  started: "2026-10-29T09:00:00Z", updated: "2026-10-29T09:00:00Z", previous: null,
+  summary: "(scribe) Plan the week across projects.",
+});
+const privateCard = card({
+  id: "SCR-20261028-0900-dddd01", path: "sources/conversation/2026/11/SCR-20261028-0900-dddd01.md",
+  title: null, scope: "project:secret-project", project: "secret-project", session: "session-dddd01",
+  started: "2026-10-28T09:00:00Z", updated: "2026-10-28T09:00:00Z", previous: null,
+  summary: null, goals: [], outcome: [], next: [], tag_entries: 3, tag_counts: {}, tags: [],
+  sensitivity: "private", content_withheld: true,
+});
+
+/** `office.session-brief` `view: list` outputs: the feed and each chain step by id. */
+export const cards = {
+  feed: { cards: [globalCard, latest, privateCard], count: 3, files_searched: 4 },
+  byId: {
+    [latest.id]: { scr: latest, previous: older },
+    [older.id]: { scr: older, previous: null },
+    [globalCard.id]: { scr: globalCard, previous: null },
+    [privateCard.id]: { scr: privateCard, previous: null },
+  },
+};
+
+/** `office.scribe-query` mode `preferences`. */
+export const preferences = {
+  mode: "preferences", count: 2, today: "2026-11-01",
+  preferences: [
+    {
+      page: "dom-preferences-global", scope: "global", matter: "email", citation: "dom-preferences-global#email",
+      statement: "Always draft emails, never send.", cites: ["SCR-20261031-0900-aaaa02#T1"],
+      stated_at: "2026-10-31", review_by: "2027-01-29", stale: false,
+      proposed: [{ entry: "SCR-20261031-0900-aaaa02#T1", proposal: "prop-1" }],
+    },
+    {
+      page: "dom-preferences-orbit-office", scope: "project:orbit-office", matter: "release-with-open-defects",
+      citation: "dom-preferences-orbit-office#release-with-open-defects",
+      statement: "Hold releases with open defects for review.", cites: ["SCR-20261030-0900-aaaa01#T1"],
+      stated_at: "2026-08-01", review_by: "2026-10-31", stale: true, proposed: [],
+    },
+  ],
+};
+
+/** `office.scribe-query` mode `decisions` (ledger order; the panel shows newest first). */
+export const decisions = {
+  mode: "decisions", count: 2, ledgers: ["decisions-orbit-office"], entries_searched: 2,
+  decisions: [
+    {
+      id: "dec-orbit-office-7", question: "Ship v2 or fix the v1 feed?", question_by: "scribe",
+      options: "unrecoverable", chosen: "ship v2 first", quote: "#decision ship v2 first because: the feed is unusable",
+      ref: "SCR-20261031-0900-aaaa02#T2 m-0002", because: { text: "the feed is unusable", ref: "SCR-20261031-0900-aaaa02#T2 m-0002" },
+      scope: "project:orbit-office", context: { task_type: "feature", workspace: "ws_orbit-office", task: "ORB-21120", risk_tier: null },
+      decided_by: "human", decided_at: "2026-10-31T09:05:00-07:00", reverses: null, source: "SCR-20261031-0900-aaaa02",
+      reversed_by: null, ledger: "decisions-orbit-office", line: 7, current: true,
+    },
+    {
+      id: "dec-orbit-office-8", question: "Keep the legacy list during the window?", question_by: "scribe",
+      options: "unrecoverable", chosen: "keep it behind legacy:true", quote: "#decision keep the legacy list behind legacy:true",
+      ref: "SCR-20261031-0900-aaaa02#T3 m-0003",
+      scope: "project:orbit-office", context: { task_type: null, workspace: null, task: null, risk_tier: null },
+      decided_by: "agent", decided_at: "2026-10-31T09:06:00-07:00", reverses: null, source: "SCR-20261031-0900-aaaa02",
+      reversed_by: null, ledger: "decisions-orbit-office", line: 8, current: true,
+    },
+  ],
+};
+
+/** The two shipped defaults plus one custom tag, as `office.status` reports them. */
+export const statusTags = [
+  { name: "preferences", scope: "global", instruction: "A standing answer to a class of question, in the user's words.", sink: "preference_page", mode: "propose", capture: "markers" },
+  { name: "decisions", scope: "session", instruction: "A choice that was made, with the question and options from the turns before it.", sink: "decisions_ledger", mode: "append", capture: "markers" },
+  { name: "lesson", scope: "session", instruction: "A lesson worth proposing to polaris.", sink: "orbit_task", mode: "propose", capture: "markers", workspace: "ws_polaris" },
+];
+
+/** `office.scribe-ask` answering from the v1 fixture: one good claim and one whose quote is not on its line. */
 export const askAnswered = {
   question: "How often does the screen poll?",
   not_captured: false, status: "answered", dropped_claims: 1,
@@ -77,32 +171,35 @@ function claimOf(row, text, quote) {
     message_id: row.msg, session_id: row.session_id, content_withheld: false };
 }
 
-/** A fake Orbit client over the fixture outputs. */
+/** A fake Orbit client over the fixture outputs; `office.config-set` refuses the app's authority. */
 export function scribeClient() {
   const calls = [];
-  let noted = false;
-  const lines = () => noted ? [...office.feed.results, noteLine] : office.feed.results;
   const answer = (name, input) => {
     calls.push({ name, input: structuredClone(input) });
-    if (name === "office.scribe-query") {
-      const mode = input.mode ?? null;
-      if (mode !== null) return structuredClone(office[mode]);
-      const rows = lines().filter((row) => input.session_id === undefined || row.session_id === input.session_id);
-      // The general query keeps the newest `limit` rows (canned modes above
-      // return their canned outputs unchanged).
-      const limited = rows.slice(-(input.limit ?? 100));
-      return { ...structuredClone(office.feed), results: structuredClone(limited), count: rows.length, since: input.since ?? null };
-    }
-    if (name === "office.scribe-append") {
-      const through = office.feed.results.find((row) => row.session_id === input.session_id)?.scribed_through;
-      if (input.through !== through) throw new Error(`append moved the cursor: ${input.through}`);
-      noted = true;
-      return structuredClone(office.note);
-    }
     if (name === "office.session-brief") {
-      const recorded = Object.values(handoffs).find((entry) => sameInput(entry.input, input));
-      if (recorded === undefined) throw new Error(`no recorded handoff list for ${JSON.stringify(input)}`);
-      return structuredClone(recorded.output);
+      if (input.legacy === true) {
+        const recorded = Object.values(handoffs).find((entry) => sameInput(entry.input, input));
+        if (recorded === undefined) throw new Error(`no recorded handoff list for ${JSON.stringify(input)}`);
+        return structuredClone(recorded.output);
+      }
+      if (input.id !== undefined) {
+        const detail = cards.byId[input.id];
+        if (detail === undefined) throw new Error(`no recorded SCR for ${input.id}`);
+        return structuredClone(detail);
+      }
+      return structuredClone(cards.feed);
+    }
+    if (name === "office.scribe-query") {
+      if (input.mode === "preferences") return structuredClone(preferences);
+      if (input.mode === "decisions") return structuredClone(decisions);
+      throw new Error(`unexpected scribe-query mode ${input.mode}`);
+    }
+    if (name === "office.status") {
+      return { scribe: { cadence: { minutes: 20, turns: 10 }, tags: structuredClone(statusTags), tags_customized: true } };
+    }
+    if (name === "office.config-set") {
+      throw new OrbitExitError("office.config-set", 1, null,
+        JSON.stringify({ error: { code: "capability_denied", message: "the app does not hold office.config-set" } }));
     }
     if (name === "office.scribe-ask") return structuredClone(/lunch/.test(input.question) ? askNotCaptured : askAnswered);
     throw new Error(`unexpected fixture call ${name}`);
@@ -117,7 +214,7 @@ export function scribeClient() {
 /** The production scribe feature on a loopback server, with the app shell for the browser. */
 export async function scribeServer(t) {
   const client = scribeClient();
-  const feature = createScribeFeature(client, () => NOW);
+  const feature = createScribeFeature(client);
   const fallback = createHandler();
   const server = createServer((req, res) => {
     const route = feature.routes.find((r) => r.method === req.method && r.path === req.url.split("?")[0]);

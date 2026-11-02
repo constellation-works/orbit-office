@@ -317,7 +317,7 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
   assert.deepEqual(errors, []);
 });
 
-test("Today shows a compact Handoffs section of open globals and each open thread's newest handoff, linking to Scribe › Handoffs", { timeout: 60_000 }, async (t) => {
+test("Today shows a compact Handoffs section of the Scribe feed cards, linking to Scribe", { timeout: 60_000 }, async (t) => {
   assert.ok(process.env.PLAYWRIGHT_MODULE, "source the verified ORBIT_BROWSER_KIT_ENV first");
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE);
   const { scribeServer } = await import("../../server/test/scribe-fixture.mjs");
@@ -335,19 +335,19 @@ test("Today shows a compact Handoffs section of open globals and each open threa
     const section = page.getByRole("region", { name: "Handoffs", exact: true });
     await section.locator(".today-handoff").first().waitFor();
     assert.deepEqual(await section.locator(".today-handoff").evaluateAll((items) => items.map((item) => item.dataset.id)), [
-      "src-20261031-office#L2", "src-20261031-office#L5", "src-20261031-constellation#L3", "src-20261101-private#L1", "src-20261030-orbit#L1",
-    ], "open globals, then threads newest first; closed globals and superseded handoffs are left out");
-    await section.getByText("5", { exact: true }).waitFor();
-    assert.equal(await section.getByRole("link", { name: "ORB-21075" }).getAttribute("href"), "orbit://task/ORB-21075");
-    await section.getByText("Ship the Scribe Handoffs view for ORB-21075.").waitFor();
+      "SCR-20261031-0900-aaaa02", "SCR-20261029-0900-cccc01", "SCR-20261028-0900-dddd01",
+    ], "the same cards as the Scribe feed, most recently updated first");
+    await section.getByText("3", { exact: true }).waitFor();
+    await section.getByText("(scribe) Rework the Scribe tab into the one-card feed.").waitFor();
+    await section.locator('[data-id="SCR-20261031-0900-aaaa02"]').getByText("2 decisions · 1 preference", { exact: false }).waitFor();
     await section.getByText("Private session: content withheld.").waitFor();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal overflow at ${width}px`);
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `today-handoffs-light-${width}.png`), fullPage: true });
   }
   assert.ok(calls.every((call) => call.name !== "office.session-brief" || call.input.view === "list"));
-  await page.getByRole("link", { name: "Open Scribe › Handoffs" }).click();
+  await page.getByRole("link", { name: "Open Scribe" }).click();
   await page.getByRole("heading", { name: "Scribe", exact: true, level: 1 }).waitFor();
-  assert.equal(await page.getByRole("tab", { name: "Handoffs", exact: true }).getAttribute("aria-selected"), "true");
-  await page.getByRole("tabpanel").locator('[data-id="src-20261031-office#L5"]').waitFor();
+  assert.equal(await page.getByRole("tab", { name: "Feed", exact: true }).getAttribute("aria-selected"), "true");
+  await page.getByRole("tabpanel").locator('[data-id="SCR-20261031-0900-aaaa02"]').waitFor();
   assert.deepEqual(errors, []);
 });

@@ -1,7 +1,8 @@
-//! The handoff list behind the web app's Scribe › Handoffs view and the
-//! Today summary (`office.session-brief` with `view: list`): every thread's
-//! current handoff, the global handoffs with their state, and the paged
-//! history of project handoffs. Library reads only; nothing is inferred.
+//! The legacy handoff list (`office.session-brief` with `view: list` and
+//! `legacy: true`, kept for the scribe v2 compatibility window): every
+//! thread's current handoff, the global handoffs with their state, and the
+//! paged history of project handoffs. Library reads only; nothing is
+//! inferred. Without `legacy`, `view: list` returns the SCR cards feed.
 
 use serde::Serialize;
 

@@ -419,7 +419,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "description": "id, path, title, title_by, scope, project, session, started, updated, previous, scribed_through, summary, goals, outcome, next, tag_entries, tags (each with its <SCR>#T<n> citation), sensitivity, content_withheld."
+            "description": "id, path, title, title_by, scope, project, session, started, updated, previous, scribed_through, summary, goals, outcome, next, tag_entries, tag_counts (entries per Tags subsection), tags (each with its <SCR>#T<n> citation), sensitivity, content_withheld."
           }
         },
         "count": {
@@ -432,13 +432,13 @@
         },
         "scr": {
           "type": "object",
-          "description": "id, path, title, title_by, scope, project, session, started, updated, previous, scribed_through, summary, goals, outcome, next, tag_entries, tags (each with its <SCR>#T<n> citation), sensitivity, content_withheld."
+          "description": "id, path, title, title_by, scope, project, session, started, updated, previous, scribed_through, summary, goals, outcome, next, tag_entries, tag_counts (entries per Tags subsection), tags (each with its <SCR>#T<n> citation), sensitivity, content_withheld."
         },
         "previous": {
           "anyOf": [
             {
               "type": "object",
-              "description": "id, path, title, title_by, scope, project, session, started, updated, previous, scribed_through, summary, goals, outcome, next, tag_entries, tags (each with its <SCR>#T<n> citation), sensitivity, content_withheld."
+              "description": "id, path, title, title_by, scope, project, session, started, updated, previous, scribed_through, summary, goals, outcome, next, tag_entries, tag_counts (entries per Tags subsection), tags (each with its <SCR>#T<n> citation), sensitivity, content_withheld."
             },
             {
               "type": "null"

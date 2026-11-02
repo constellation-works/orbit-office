@@ -1,11 +1,11 @@
 /** Today: the next meeting, the user's next steps and the actions on them, live agent work, openable outcomes and the latest handoffs. */
 import type {
-  CalendarMeeting, ScribeHandoff, ScribeHandoffs, SharedLastSync, SharedSkipped, Today, TodayItem, TodayNeed, TodayResult,
+  CalendarMeeting, ScrCard, ScrFeed, SharedLastSync, SharedSkipped, Today, TodayItem, TodayNeed, TodayResult,
 } from "@orbit-office/contracts";
 
 import { dismissSharedSkipped, getJson, getLastSharedSync } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
-import { ageLabel, HANDOFFS_HREF, handoffSummary, projectLabel, taskHref } from "../../ui/handoff.js";
+import { ageLabel, cardSummary, cardTitle, scopeLabel, SCRIBE_FEED_HREF, tagCountsLabel } from "../../ui/handoff.js";
 import { card, emptyState, errorState, pill, provenanceLink, tile, tileRow } from "../../ui/index.js";
 import { ApprovalControls, serverApprovals, type ApprovalApi } from "./approvals.js";
 import { nextMeetingCard, todaysMeetings, upcoming } from "./next-meeting.js";
@@ -168,40 +168,32 @@ function section<T extends TodayItem>(title: string, items: readonly T[], empty:
   return cardSection(title, items.map(draw), empty);
 }
 
-/** Threads and open globals Today lists at most; the rest are on Scribe › Handoffs. */
+/** Feed cards Today lists at most; the rest are on the Scribe feed. */
 const HANDOFFS_SHOWN = 5;
 
-function handoffLine(handoff: ScribeHandoff, now: Date): HTMLElement {
+function handoffLine(card: ScrCard, now: Date): HTMLElement {
   const item = document.createElement("li");
   item.className = "today-handoff";
-  item.dataset.id = handoff.id;
+  item.dataset.id = card.id;
   const meta = document.createElement("p");
   meta.className = "today-handoff-meta";
-  const parts = [handoff.scope === "global" ? "Global" : projectLabel(handoff), handoff.orchestrator].filter((part): part is string => !!part);
-  meta.append(document.createTextNode(parts.join(" · ")));
-  if (handoff.assignment) {
-    const link = document.createElement("a");
-    link.href = taskHref(handoff.assignment);
-    link.textContent = handoff.assignment;
-    meta.append(document.createTextNode(" · "), link);
-  }
+  meta.append(document.createTextNode(`${scopeLabel(card)} · ${cardTitle(card)}`));
   const time = document.createElement("time");
-  time.dateTime = handoff.time;
-  time.textContent = ageLabel(handoff.time, now);
+  time.dateTime = card.updated;
+  time.textContent = ageLabel(card.updated, now);
   meta.append(document.createTextNode(" · "), time);
-  if (handoff.until) meta.append(document.createTextNode(` · until ${handoff.until.slice(0, 16).replace("T", " ")}`));
-  if (handoff.legacy) meta.append(document.createTextNode(" "), pill("Legacy"));
-  const summary = paragraph(handoffSummary(handoff));
+  if (!card.withheld) meta.append(document.createTextNode(` · ${tagCountsLabel(card)}`));
+  const summary = paragraph(cardSummary(card));
   summary.className = "today-handoff-text";
   item.append(meta, summary);
   return item;
 }
 
-/** The compact handoff summary: each open thread's newest handoff and the open globals, linking to Scribe › Handoffs. */
-function handoffSection(handoffs: ScribeHandoffs): HTMLElement | null {
-  const open = handoffs.global.filter((handoff) => handoff.state === "open");
-  if (handoffs.threads.length === 0 && open.length === 0) return null;
+/** The compact Handoffs summary: the same cards as the Scribe feed, most recently updated first, linking to Scribe. */
+function handoffSection(feed: ScrFeed): HTMLElement | null {
+  if (feed.cards.length === 0) return null;
   const now = new Date();
+  const shown = [...feed.cards].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, HANDOFFS_SHOWN);
   const element = document.createElement("section");
   element.className = "today-section today-handoffs";
   element.setAttribute("aria-label", "Handoffs");
@@ -209,19 +201,19 @@ function handoffSection(handoffs: ScribeHandoffs): HTMLElement | null {
   header.className = "today-section-heading";
   const heading = document.createElement("h2");
   heading.textContent = "Handoffs";
-  header.append(heading, pill(String(handoffs.threads.length + open.length)));
+  header.append(heading, pill(String(feed.cards.length)));
   const list = document.createElement("ul");
   list.className = "today-handoff-list";
-  for (const handoff of [...open.slice(0, HANDOFFS_SHOWN), ...handoffs.threads.slice(0, HANDOFFS_SHOWN)]) list.append(handoffLine(handoff, now));
+  for (const card of shown) list.append(handoffLine(card, now));
   const more = document.createElement("a");
-  more.href = HANDOFFS_HREF;
+  more.href = SCRIBE_FEED_HREF;
   more.className = "today-handoff-more";
-  more.textContent = "Open Scribe › Handoffs";
+  more.textContent = "Open Scribe";
   element.append(header, list, more);
   return element;
 }
 
-function drawToday(snapshot: Today, controls: ApprovalControls, shared: SharedNeeds, handoffs: ScribeHandoffs | null): HTMLElement {
+function drawToday(snapshot: Today, controls: ApprovalControls, shared: SharedNeeds, handoffs: ScrFeed | null): HTMLElement {
   const body = document.createElement("div");
   const needed = needCards(snapshot.needs_you, controls, shared);
   const needs = cardSection("Needs you", needed, "Nothing needs your attention.");
@@ -268,8 +260,8 @@ export interface TodayScreenOptions {
   meetings?: (now: Date) => Promise<CalendarMeeting[]>;
   /** How often the Next meeting card rereads the calendar. */
   meetingIntervalMs?: number;
-  /** The handoff list for the Handoffs section; tests pass their own. A failed read hides the section. */
-  handoffs?: () => Promise<ScribeHandoffs>;
+  /** The Scribe feed cards for the Handoffs section; tests pass their own. A failed read hides the section. */
+  handoffs?: () => Promise<ScrFeed>;
   /** How often the Handoffs section rereads the list (it changes slowly). */
   handoffIntervalMs?: number;
   /** The latest shared-library sync the app ran, for its skipped documents; tests pass their own. */
@@ -292,7 +284,7 @@ async function lastSkipped(sharedSync: NonNullable<TodayScreenOptions["sharedSyn
 export function createTodayScreen({
   load = () => getJson<Today>("/api/today"), approvals = serverApprovals, pollIntervalMs = 5_000,
   meetings = todaysMeetings, meetingIntervalMs = 60_000, sharedSync = serverSharedSync,
-  handoffs = () => getJson<ScribeHandoffs>("/api/scribe/handoffs"), handoffIntervalMs = 10_000,
+  handoffs = () => getJson<ScrFeed>("/api/scribe/feed"), handoffIntervalMs = 10_000,
 }: TodayScreenOptions = {}): Screen {
   return {
     id: "today",
@@ -325,10 +317,10 @@ export function createTodayScreen({
       root.replaceChildren(view);
       let previous: string | undefined;
       let shown: Today | undefined;
-      let handoffList: ScribeHandoffs | null = null;
+      let handoffList: ScrFeed | null = null;
       let handoffsRead = Number.NEGATIVE_INFINITY;
-      /** The handoff list, reread at most every `handoffIntervalMs`; null when it can't be read. */
-      async function latestHandoffs(): Promise<ScribeHandoffs | null> {
+      /** The feed cards, reread at most every `handoffIntervalMs`; null when they can't be read. */
+      async function latestHandoffs(): Promise<ScrFeed | null> {
         if (Date.now() - handoffsRead < handoffIntervalMs) return handoffList;
         handoffsRead = Date.now();
         try { handoffList = await handoffs(); } catch { handoffList = null; }

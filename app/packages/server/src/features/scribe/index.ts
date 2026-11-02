@@ -1,43 +1,38 @@
 /**
- * Scribe: a compact window over scribe v1's SCR files (specs/scribe.md;
- * specs/web-app.md, "Screens"). The feed and the canned views read
- * `office.scribe-query` (model-free); a note goes through
- * `office.scribe-append` as `/scribe note` records it; the ask box calls
- * `office.scribe-ask`, which makes the one low-cost model call through the
- * Models port. Handoffs read `office.session-brief` with `view: list`
- * (read-only, model-free). Every call is `orbit tool run`; nothing reads the Library.
- * v1 is commanded only: no automatic capture, heartbeat or capture switch.
+ * Scribe (scribe v2; specs/scribe.md, "Feed" and "Configuration";
+ * specs/web-app.md, "Screens"). The feed reads `office.session-brief`
+ * with `view: list`: one card per project plus the global card, or one SCR
+ * with its `previous`. The Preferences and Decisions panels read
+ * `office.scribe-query`. The Tags editor reads the effective tags from
+ * `office.status` and saves through `office.config-set`; until Orbit
+ * grants the app that tool for the `scribe.*` keys (ORB-20363) a save is
+ * `not_permitted` with the operator command, never a claimed success. The
+ * ask box calls `office.scribe-ask`, the one low-cost model call. The
+ * legacy v1 handoff list stays at `/api/scribe/handoffs` (`legacy: true`)
+ * for the compatibility window. Every call is `orbit tool run`; nothing
+ * reads the Library.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { ScribeAnswer, ScribeFeed, ScribeHandoffs, ScribeNoteResult, ScribeQueryResult, ScribeView } from "@orbit-office/contracts";
+import type { ScrDetail, ScrFeed, ScribeAnswer, ScribeDecisions, ScribeHandoffs, ScribePreferences, ScribeTagSaved, ScribeTags } from "@orbit-office/contracts";
 
 import type { Feature } from "../../http/types.js";
 import { createOrbitClient, OrbitExitError, type OrbitToolClient } from "../../orbit/client.js";
 import { handoffInput, handoffQuery, handoffsOf, type HandoffQuery } from "./handoffs.js";
-import {
-  answerOf, cursorOf, feedOf, noteEntry, outputOf, ScribeError, VIEWS, viewInput, viewOf, windowStart,
-} from "./model.js";
+import { answerOf, decisionsOf, detailOf, feedOf, outputOf, preferencesOf, ScribeError } from "./model.js";
+import { configSetInput, operatorCommand, tagSaveOf, tagsOf } from "./tags.js";
 
 type Client = Pick<OrbitToolClient, "callTool" | "pollTool">;
 
 const MAX_BODY_BYTES = 16_384;
-/** Lines the feed asks for at most. */
-const FEED_LIMIT = 1000;
-/**
- * Feed windows in days, widest first. The general `office.scribe-query`
- * keeps the newest lines up to the limit (oldest first within that bound),
- * so when a window holds more than the limit the feed narrows it to report
- * a tighter `since`; even the final one-day window keeps its newest lines,
- * with `total`/`shown` reporting the truncation.
- */
-const FEED_WINDOWS = [30, 7, 1] as const;
 const CODE = /^[a-z][a-z0-9_]{0,63}$/;
-const SESSION = /^[A-Za-z0-9._:-]{1,128}$/;
-const ABOUT = /^[A-Za-z0-9#._-]{1,64}$/;
+const SCR_ID = /^[A-Za-z0-9._-]{1,128}$/;
+/** Orbit's refusals of the app's authority; a tag save says `not_permitted`. */
+const PERMISSION = new Set(["capability_denied", "policy_denied", "not_permitted"]);
 
 /** A tool refusal code from an exec envelope or Orbit's stderr, if any. */
 function refusalCode(error: unknown): string | null {
+  if (error instanceof ScribeError) return error.code;
   if (!(error instanceof OrbitExitError)) return null;
   for (const line of error.stderr.split("\n").reverse()) {
     try {
@@ -64,68 +59,55 @@ function unwrap(value: unknown): unknown {
   return envelope.ok === true ? envelope.output : value;
 }
 
-export async function loadFeed(client: Client, now: Date): Promise<ScribeFeed> {
-  let feed: ScribeFeed | null = null;
-  for (const days of FEED_WINDOWS) {
-    const since = windowStart(now, days);
-    feed = feedOf(outputOf(unwrap(await client.pollTool("office.scribe-query", { since, limit: FEED_LIMIT }))), since);
-    if (feed.total <= feed.shown) break;
-  }
-  if (feed === null) throw new ScribeError(502, "unavailable");
-  return feed;
+/** The cards feed: exactly one card per project plus the global card. */
+export async function loadFeed(client: Client): Promise<ScrFeed> {
+  return feedOf(outputOf(unwrap(await client.pollTool("office.session-brief", { view: "list" }))));
 }
 
-export async function loadView(client: Client, view: ScribeView, about: string | null): Promise<ScribeQueryResult> {
-  const read = async (asTopic: boolean): Promise<ScribeQueryResult> =>
-    viewOf(view, outputOf(unwrap(await client.pollTool("office.scribe-query", viewInput(view, about, asTopic)))));
-  const result = await read(false);
-  // `/scribe why <matter|topic>`: a matter first, then the same word as a topic.
-  if (view === "why" && about !== null && result.entries.length === 0) return read(true);
-  return result;
+/** One SCR and its `previous`; walking those ids is the only way to older SCRs. */
+export async function loadScr(client: Client, id: string): Promise<ScrDetail> {
+  return detailOf(outputOf(unwrap(await client.pollTool("office.session-brief", { view: "list", id }))));
+}
+
+export async function loadPreferences(client: Client): Promise<ScribePreferences> {
+  return preferencesOf(outputOf(unwrap(await client.pollTool("office.scribe-query", { mode: "preferences" }))));
+}
+
+export async function loadDecisions(client: Client): Promise<ScribeDecisions> {
+  return decisionsOf(outputOf(unwrap(await client.pollTool("office.scribe-query", { mode: "decisions" }))));
 }
 
 export async function loadHandoffs(client: Client, query: HandoffQuery): Promise<ScribeHandoffs> {
   return handoffsOf(outputOf(unwrap(await client.pollTool("office.session-brief", handoffInput(query)))));
 }
 
-export async function addNote(client: Client, body: unknown): Promise<ScribeNoteResult> {
-  const input = noteBody(body);
-  const entry = noteEntry(input.text, input.tag);
-  // The note keeps the session's cursor: it never marks unread messages scribed.
-  const cursor = cursorOf(outputOf(unwrap(await client.callTool("office.scribe-query", { session_id: input.session_id, limit: 1 }))));
-  if (cursor === null) throw new ScribeError(409, "no_cursor");
-  const output = outputOf(unwrap(await client.callTool("office.scribe-append", {
-    session_id: input.session_id, through: cursor, entries: [entry],
-  })));
-  const path = typeof output.path === "string" ? output.path : "";
-  const added = (Array.isArray(output.added) ? output.added : []).flatMap((item: unknown) => {
-    if (item === null || typeof item !== "object") return [];
-    const row = item as Record<string, unknown>;
-    return typeof row.line === "number" && typeof row.text === "string" ? [{ file_line: `${path}:${row.line}`, text: row.text }] : [];
-  });
-  const refused = (Array.isArray(output.refused) ? output.refused : []).flatMap((item: unknown) => {
-    if (item === null || typeof item !== "object") return [];
-    const reason = (item as Record<string, unknown>).reason;
-    return typeof reason === "string" && CODE.test(reason) ? [reason] : ["refused"];
-  });
-  const duplicate = typeof output.duplicates === "number" && output.duplicates > 0;
-  if (added.length === 0) throw new ScribeError(422, refused[0] ?? (duplicate ? "duplicate" : "refused"));
-  return { added, refused };
+/** The effective tags the editor shows. */
+export async function loadTags(client: Client): Promise<ScribeTags> {
+  return tagsOf(outputOf(unwrap(await client.pollTool("office.status", {}))));
+}
+
+/**
+ * One editor save through `office.config-set`, then the effective tags read
+ * back. Orbit refusing the app's authority is `not_permitted` (403) with the
+ * operator command; Office refusing the definition keeps its own code.
+ */
+export async function saveTags(client: Client, body: unknown): Promise<ScribeTagSaved> {
+  const save = tagSaveOf(body);
+  try {
+    outputOf(unwrap(await client.callTool("office.config-set", configSetInput(save))));
+  } catch (error) {
+    const code = refusalCode(error);
+    if (code !== null && PERMISSION.has(code)) {
+      throw new ScribeError(403, "not_permitted", { command: operatorCommand(save) });
+    }
+    throw error;
+  }
+  return { saved: true, tags: await loadTags(client) };
 }
 
 export async function ask(client: Client, body: unknown): Promise<ScribeAnswer> {
   const question = questionBody(body);
   return answerOf(outputOf(unwrap(await client.callTool("office.scribe-ask", { question }))));
-}
-
-/** `{session_id, text, tag?}` and nothing else: an unknown key is refused, never ignored. */
-function noteBody(body: unknown): { session_id: string; text: string; tag?: string } {
-  if (body === null || typeof body !== "object" || Array.isArray(body)) throw new ScribeError(400, "invalid_input");
-  const row = body as Record<string, unknown>;
-  if (Object.keys(row).some((key) => key !== "session_id" && key !== "text" && key !== "tag")) throw new ScribeError(400, "invalid_input");
-  if (typeof row.session_id !== "string" || !SESSION.test(row.session_id) || typeof row.text !== "string") throw new ScribeError(400, "invalid_input");
-  if (row.tag !== undefined && typeof row.tag !== "string") throw new ScribeError(400, "invalid_input");
-  return { session_id: row.session_id, text: row.text, ...(typeof row.tag === "string" && row.tag !== "" ? { tag: row.tag } : {}) };
 }
 
 function questionBody(body: unknown): string {
@@ -136,14 +118,14 @@ function questionBody(body: unknown): string {
   return row.question.trim();
 }
 
-function viewParams(request: IncomingMessage): { view: ScribeView; about: string | null } {
+/** `?id=<SCR id>` and nothing else: an unknown key is refused, never ignored. */
+function feedParams(request: IncomingMessage): string | null {
   const url = new URL(request.url ?? "/", "http://localhost");
-  if ([...url.searchParams.keys()].some((key) => key !== "view" && key !== "about")) throw new ScribeError(400, "invalid_input");
-  const view = VIEWS.find((name) => name === url.searchParams.get("view"));
-  if (view === undefined) throw new ScribeError(400, "invalid_input");
-  const raw = (url.searchParams.get("about") ?? "").trim().replace(/^#/, "");
-  if (raw !== "" && !ABOUT.test(raw)) throw new ScribeError(400, "invalid_input");
-  return { view, about: raw === "" ? null : raw };
+  if ([...url.searchParams.keys()].some((key) => key !== "id")) throw new ScribeError(400, "invalid_input");
+  const id = url.searchParams.get("id");
+  if (id === null || id === "") return null;
+  if (!SCR_ID.test(id)) throw new ScribeError(400, "invalid_input");
+  return id;
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
@@ -176,7 +158,7 @@ async function answer(response: ServerResponse, label: string, work: () => Promi
   try {
     send(response, 200, await work());
   } catch (error) {
-    if (error instanceof ScribeError) { send(response, error.status, { error: error.code }); return; }
+    if (error instanceof ScribeError) { send(response, error.status, { error: error.code, ...error.extra }); return; }
     const code = refusalCode(error);
     if (code !== null) { send(response, 422, { error: code }); return; }
     console.error(`scribe: ${label} failed`, error instanceof Error ? error.name : "unknown");
@@ -184,25 +166,27 @@ async function answer(response: ServerResponse, label: string, work: () => Promi
   }
 }
 
-/** Routes bound to one Orbit client. Tests pass a fake client and clock. */
-export function createScribeFeature(client: Client, now: () => Date = () => new Date()): Feature {
+/** Routes bound to one Orbit client. Tests pass a fake client. */
+export function createScribeFeature(client: Client): Feature {
   return {
     name: "scribe",
     status: "built",
     routes: [
-      { method: "GET", path: "/api/scribe/feed", handle: (_request, response) => answer(response, "feed", () => loadFeed(client, now())) },
       {
-        method: "GET", path: "/api/scribe/query",
-        handle: (request, response) => answer(response, "query", async () => {
-          const { view, about } = viewParams(request);
-          return loadView(client, view, about);
+        method: "GET", path: "/api/scribe/feed",
+        handle: (request, response) => answer(response, "feed", async () => {
+          const id = feedParams(request);
+          return id === null ? loadFeed(client) : loadScr(client, id);
         }),
       },
+      { method: "GET", path: "/api/scribe/preferences", handle: (_request, response) => answer(response, "preferences", () => loadPreferences(client)) },
+      { method: "GET", path: "/api/scribe/decisions", handle: (_request, response) => answer(response, "decisions", () => loadDecisions(client)) },
+      { method: "GET", path: "/api/scribe/tags", handle: (_request, response) => answer(response, "tags", () => loadTags(client)) },
+      { method: "POST", path: "/api/scribe/tags", handle: (request, response) => answer(response, "tag save", async () => saveTags(client, await readJsonBody(request))) },
       {
         method: "GET", path: "/api/scribe/handoffs",
         handle: (request, response) => answer(response, "handoffs", async () => loadHandoffs(client, handoffQuery(request))),
       },
-      { method: "POST", path: "/api/scribe/note", handle: (request, response) => answer(response, "note", async () => addNote(client, await readJsonBody(request))) },
       { method: "POST", path: "/api/scribe/ask", handle: (request, response) => answer(response, "ask", async () => ask(client, await readJsonBody(request))) },
     ],
   };
