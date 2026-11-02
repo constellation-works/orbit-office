@@ -1,9 +1,8 @@
-//! Scribe v2 S9 migration through the built binary (STD-04): the
-//! `office.scribe-migrate` backfill (one preference proposal per scope and
-//! matter, one `ledger_append` proposal per scope, the rules-page Tags
-//! removal, nothing new on a re-run), accepting a `ledger_append` (every
-//! entry or none), the v1 `office.scribe-query` modes' `deprecated`
-//! answers, and `/scribe note #…` read as a marker. Orbit is a stateful
+//! Scribe v2 S9 migration through the built binary (STD-04):
+//! `office.scribe-migrate` (no v1 backfill, the open v1 pending lines
+//! reported, the rules-page Tags removal proposed once), the v1
+//! `office.scribe-query` modes' `deprecated` answers, and
+//! `/scribe note #…` read as a marker. Orbit is a stateful
 //! stub on `ORBIT_BIN`; temp roots only, with `HOME` and `TZ` set on the
 //! child.
 #![cfg(unix)]
@@ -89,10 +88,6 @@ impl Fixture {
         self.root.path().join("workspace")
     }
 
-    fn library(&self) -> PathBuf {
-        self.workspace().join("library")
-    }
-
     fn call(&self, tool: &str, input: Value) -> Value {
         let mut child = Command::new(env!("CARGO_BIN_EXE_office"))
             .arg("orbit-tool")
@@ -130,23 +125,12 @@ impl Fixture {
         response["output"].clone()
     }
 
-    fn refused(&self, tool: &str, input: Value) -> String {
-        let response = self.call(tool, input);
-        assert_eq!(response["ok"], false, "{response}");
-        response["error"]["code"].as_str().unwrap().to_owned()
-    }
-
     fn orbit(&self) -> Value {
         let path = self.root.path().join("orbit").join("orbit-state.json");
         std::fs::read_to_string(path).map_or_else(
             |_| json!({"tasks": []}),
             |text| serde_json::from_str(&text).unwrap(),
         )
-    }
-
-    fn set_orbit(&self, state: &Value) {
-        let path = self.root.path().join("orbit").join("orbit-state.json");
-        std::fs::write(path, state.to_string()).unwrap();
     }
 
     fn transcript(&self, session: &str, turns: &[(&str, &str)]) -> PathBuf {
@@ -163,19 +147,6 @@ impl Fixture {
         let path = self.workspace().join(format!("{session}.jsonl"));
         std::fs::write(&path, lines.join("\n") + "\n").unwrap();
         path
-    }
-
-    fn git(&self, args: &[&str]) -> String {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(self.library())
-            .env_clear()
-            .env("PATH", std::env::var("PATH").unwrap())
-            .env("HOME", self.root.path().join("home"))
-            .output()
-            .unwrap();
-        assert!(out.status.success());
-        String::from_utf8(out.stdout).unwrap()
     }
 
     /// A v1 scribe pass: a v1 SCR with decision, preference and pending
@@ -244,160 +215,21 @@ fn proposals(state: &Value, kind: &str) -> Vec<Value> {
 }
 
 #[test]
-fn migrate_files_one_proposal_per_key_once_and_reports_open_pending_lines() {
+fn migrate_backfills_nothing_and_reports_open_pending_lines() {
     let fixture = Fixture::new();
     fixture.v1_history();
 
-    let dry = fixture.ok("office.scribe-migrate", json!({"dry_run": true}));
+    // v2 starts clean: v1 preferences, directions and decisions are not
+    // proposed, and the open v1 pending line is reported, not filed.
+    let out = fixture.ok("office.scribe-migrate", json!({}));
+    assert_eq!(out["proposals"], json!([]), "{out}");
+    assert_eq!(out["pending"].as_array().unwrap().len(), 1, "{out}");
+    assert_eq!(out["pending"][0]["quote"], "waiting on the CI run");
     assert!(
-        dry["proposals"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|p| p["status"] == "planned"),
-        "{dry}"
+        out["pending"][0]["cite"].as_str().unwrap().contains("#L"),
+        "{out}"
     );
-    assert!(proposals(&fixture.orbit(), "ledger_append").is_empty());
-
-    let first = fixture.ok("office.scribe-migrate", json!({}));
-    let rows = first["proposals"].as_array().unwrap();
-    let keys: Vec<&str> = rows.iter().map(|r| r["key"].as_str().unwrap()).collect();
-    // One preference proposal per matter (merge-style keeps only the later
-    // line), one per direction, and one ledger_append for the scope.
-    assert!(keys.contains(&"pref:global:merge-style"), "{first}");
-    assert!(keys.contains(&"pref:global:reply-style"), "{first}");
-    assert!(
-        keys.contains(&"pref:global:never-deploy-on-fridays"),
-        "{first}"
-    );
-    assert!(keys.contains(&"ledger:project:orbit-office"), "{first}");
-    assert!(rows.iter().all(|r| r["status"] == "filed"), "{first}");
-    assert_eq!(dry["proposals"].as_array().unwrap().len(), rows.len());
-    // The open v1 pending line is reported, not filed.
-    assert_eq!(first["pending"].as_array().unwrap().len(), 1, "{first}");
-    assert_eq!(first["pending"][0]["quote"], "waiting on the CI run");
-
-    let state = fixture.orbit();
-    let merge = state["tasks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|t| t["title"] == "Preference: merge-style")
-        .unwrap();
-    let payload: Value = serde_json::from_str(merge["payload"].as_str().unwrap()).unwrap();
-    assert_eq!(payload["kind"], "knowledge_add", "{payload}");
-    let markdown = payload["markdown"].as_str().unwrap();
-    assert!(
-        markdown.contains("rebase merges are fine now"),
-        "{markdown}"
-    );
-    assert!(!markdown.contains("always squash merge"), "{markdown}");
-
-    let ledgers = proposals(&state, "ledger_append");
-    assert_eq!(ledgers.len(), 1);
-    let payload: Value = serde_json::from_str(ledgers[0]["payload"].as_str().unwrap()).unwrap();
-    assert_eq!(payload["scope"], "project:orbit-office");
-    let entries = payload["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 2, "{payload}");
-    let v1 = entries
-        .iter()
-        .find(|e| e["quote"] == "keep the v1 readers")
-        .unwrap();
-    assert_eq!(v1["decided_by"], "human");
-    assert_eq!(v1["options"], "unrecoverable");
-    assert_eq!(v1["because"]["text"], "they are evidence");
-    assert!(v1["source"].as_str().unwrap().contains("#L"), "{v1}");
-    assert_eq!(v1["decided_at"], "2026-10-30T10:00:00+00:00");
-
-    // A re-run files nothing new, whatever the earlier proposals' status.
-    let before = fixture.orbit()["tasks"].as_array().unwrap().len();
-    let again = fixture.ok("office.scribe-migrate", json!({}));
-    assert!(
-        again["proposals"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|p| p["status"] == "already_filed"),
-        "{again}"
-    );
-    assert_eq!(fixture.orbit()["tasks"].as_array().unwrap().len(), before);
-}
-
-#[test]
-fn accepting_a_ledger_append_appends_every_entry_in_one_commit_or_none() {
-    let fixture = Fixture::new();
-    fixture.v1_history();
-    fixture.ok("office.scribe-migrate", json!({}));
-    let state = fixture.orbit();
-    let task = proposals(&state, "ledger_append").remove(0);
-    let id = task["id"].as_str().unwrap().to_owned();
-    let ledger = fixture.library().join("sources/decisions/orbit-office.md");
-
-    // A tampered list whose second entry reverses an entry no ledger has:
-    // the adapter refuses it, so the valid first entry is not appended.
-    let mut payload: Value = serde_json::from_str(task["payload"].as_str().unwrap()).unwrap();
-    let original = task["payload"].as_str().unwrap().to_owned();
-    payload["entries"][1]["reverses"] = json!("dec-orbit-office-99");
-    let tampered = serde_json::to_string_pretty(&payload).unwrap();
-    let mut changed = state.clone();
-    for t in changed["tasks"].as_array_mut().unwrap() {
-        if t["id"] == id.as_str() {
-            t["payload"] = json!(tampered);
-        }
-    }
-    fixture.set_orbit(&changed);
-    let head = fixture.git(&["rev-parse", "HEAD"]);
-    assert_eq!(
-        fixture.refused(
-            "office.proposal-accept",
-            json!({"id": id, "sha256": sha256(&tampered)})
-        ),
-        "decision_not_found"
-    );
-    assert!(!ledger.exists());
-    assert_eq!(fixture.git(&["rev-parse", "HEAD"]), head);
-
-    // The reviewed list appends every entry, in order, in one commit.
-    let mut restored = fixture.orbit();
-    for t in restored["tasks"].as_array_mut().unwrap() {
-        if t["id"] == id.as_str() {
-            t["payload"] = json!(original);
-            t["status"] = json!("proposed");
-        }
-    }
-    fixture.set_orbit(&restored);
-    let accepted = fixture.ok(
-        "office.proposal-accept",
-        json!({"id": id, "sha256": task["sha"]}),
-    );
-    assert_eq!(
-        accepted["change"]["appended"],
-        json!(["dec-orbit-office-1", "dec-orbit-office-2"]),
-        "{accepted}"
-    );
-    let text = std::fs::read_to_string(&ledger).unwrap();
-    assert!(text.contains("keep the v1 readers"), "{text}");
-    assert!(text.contains("Ship the migration first."), "{text}");
-    let log = fixture.git(&[
-        "log",
-        "--format=%H",
-        &format!("{}..HEAD", head.trim()),
-        "--",
-        "sources/decisions/orbit-office.md",
-    ]);
-    assert_eq!(log.lines().count(), 1, "{log}");
-}
-
-#[test]
-fn proposal_create_refuses_a_ledger_append_from_any_other_caller() {
-    let fixture = Fixture::new();
-    let code = fixture.refused(
-        "office.proposal-create",
-        json!({"title":"t","description":"d","evidence":["src-x#L1"],
-            "payload":{"kind":"ledger_append","scope":"global","entries":[]}}),
-    );
-    assert_eq!(code, "invalid_argument");
-    assert!(proposals(&fixture.orbit(), "ledger_append").is_empty());
+    assert_eq!(fixture.orbit()["tasks"], json!([]));
 }
 
 #[test]
@@ -442,23 +274,6 @@ fn v1_query_modes_answer_deprecated_with_the_replacement_and_v2_first() {
         "{pref}"
     );
     assert_eq!(pref["v2_results"], json!([]), "{pref}");
-    // Once the backfilled decisions are accepted into the ledger, why
-    // answers the one with a reason from it first.
-    fixture.ok("office.scribe-migrate", json!({}));
-    let task = proposals(&fixture.orbit(), "ledger_append").remove(0);
-    fixture.ok(
-        "office.proposal-accept",
-        json!({"id": task["id"], "sha256": task["sha"]}),
-    );
-    let why = fixture.ok(
-        "office.scribe-query",
-        json!({"mode":"why","matter":"v1 readers"}),
-    );
-    assert_eq!(why["deprecated"], true);
-    assert_eq!(
-        why["v2_results"][0]["because"]["text"], "they are evidence",
-        "{why}"
-    );
 }
 
 #[test]
@@ -484,29 +299,6 @@ fn a_scribe_note_command_with_a_tag_is_read_as_that_marker() {
     assert_eq!(markers[0]["by"], "user");
 }
 
-fn sha256(text: &str) -> String {
-    let mut child = Command::new("python3")
-        .args([
-            "-I",
-            "-c",
-            "import hashlib,sys;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(text.as_bytes())
-        .unwrap();
-    String::from_utf8(child.wait_with_output().unwrap().stdout)
-        .unwrap()
-        .trim()
-        .to_owned()
-}
-
 /// The v1 branch of the shipped `scribe-query` response schema.
 fn v1_response_schema() -> Value {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -528,12 +320,6 @@ fn v1_response_schema() -> Value {
 fn v1_mode_responses_conform_to_the_published_response_schema() {
     let fixture = Fixture::new();
     fixture.v1_history();
-    fixture.ok("office.scribe-migrate", json!({}));
-    let task = proposals(&fixture.orbit(), "ledger_append").remove(0);
-    fixture.ok(
-        "office.proposal-accept",
-        json!({"id": task["id"], "sha256": task["sha"]}),
-    );
     let branch = v1_response_schema();
     assert_eq!(branch["additionalProperties"], false);
     let properties = branch["properties"].as_object().unwrap();

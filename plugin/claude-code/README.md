@@ -112,8 +112,10 @@ removes them:
 | `/scribe pref <matter>`, `why <matter\|topic>` | Answers from the preference pages and the decision ledger first, then the v1 lines. |
 | `/scribe backfill …` | Refused with `backfill_retired`: v2 never scribes a session that was not turned on. |
 
-The one-time backfill of v1 preferences and decisions is Office's
-operator tool `office.scribe-migrate`, which files proposals for review.
+v1 preferences and decisions are not backfilled: v2 starts with empty
+preference pages and ledgers. Office's operator tool `office.scribe-migrate`
+only proposes removing the v1 Tags section from the scribe rules page and
+lists the open v1 `#pending` lines for you to turn into to-dos.
 
 **Held titles.** `office.scribe-append` moves the session's cursor to the
 last message it is given. On a session that has never been scribed there is

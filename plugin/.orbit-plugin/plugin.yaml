@@ -434,10 +434,10 @@ spec:
 
     - name: scribe-migrate
       description: >-
-        Backfill scribe v1 once: file one preference proposal per scope and
-        matter, one ledger_append proposal per scope and the rules-page
-        Tags removal, skipping keys already filed, and report open v1
-        pending lines. Model-free; run by an operator.
+        Tidy up after scribe v1 once: propose removing the v1 Tags section
+        from the scribe rules page (unless already filed) and report open
+        v1 pending lines. v1 preferences and decisions are not backfilled.
+        Model-free; run by an operator.
       execution_kind: mutating
       mcp_scope: none
       input_schema: { $ref: schemas/scribe-migrate.request.json }

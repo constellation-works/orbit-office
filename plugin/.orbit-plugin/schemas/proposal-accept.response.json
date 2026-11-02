@@ -58,33 +58,6 @@
             "kept"
           ],
           "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "description": "An accepted ledger_append: every entry appended, in order, in one commit.",
-          "properties": {
-            "ledger": {
-              "type": "string",
-              "description": "decisions-<scope slug>"
-            },
-            "path": {
-              "type": "string"
-            },
-            "appended": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "string",
-                "description": "dec-<scope>-<n>"
-              }
-            }
-          },
-          "required": [
-            "ledger",
-            "path",
-            "appended"
-          ],
-          "additionalProperties": false
         }
       ]
     }

@@ -57,7 +57,7 @@ Source: spec §12. The one-call envelope is
 | `office.reindex` | mutating | **none** | Rebuild the SQLite index from the Library |
 | `office.status` | read_only | workspace | Library and index health, the private endpoint as `open_weights` or null, the shared library block as `shared` or null, the followed workspaces as `brief` (`task_workspaces`, or null when uninitialized), and the effective scribe policy as `scribe` (`cadence`, `tags`, `tags_customized`; the defaults when unset or uninitialized) (also a panel) |
 | `office.scribe-ask` | read_only | workspace | Answer a free-form question over SCR files, decision ledgers and preference pages: model-free shortlist (v2 evidence cited by entry id: `dec-<scope>-<n>`, `<page>#<matter>`, `<SCR>#T<n>`) (date/project/session filters plus lexical match on tags, matter, topics and quotes, bounded by `limit`), then one Standard-tier model call (the scribe `ask` level); every claim cites SCR file:line and message id and its quote is verbatim-checked against the cited line, unmatched quotes dropped; `not_captured` with the searched range, topics and sessions when nothing is found; private entries always by reference only to the caller, regardless of route ([scribe.md](./scribe.md#answering)) |
-| `office.scribe-migrate` | mutating | **none** | The one-time scribe v1 backfill: one preference proposal per scope and matter, one `ledger_append` proposal per scope and the `dom-scribe-rules` Tags removal, each tagged `scribe-migration` so a re-run files nothing for a key already filed; reports open v1 `#pending` lines; `dry_run` files nothing ([scribe.md](./scribe.md#migration)) |
+| `office.scribe-migrate` | mutating | **none** | The one-time scribe v1 tidy-up (no backfill of v1 preferences or decisions): one `knowledge_update` removing the `dom-scribe-rules` Tags section and `scribe:` mapping, tagged `scribe-migration` so a re-run files nothing already filed; reports open v1 `#pending` lines; `dry_run` files nothing ([scribe.md](./scribe.md#migration)) |
 
 Designed, not built and not in the manifest ([decision-precedents.md](./decision-precedents.md); slices [ORB-21217], [ORB-21218]):
 
@@ -424,7 +424,7 @@ defaults; existing explicit pack lists keep their values.
 - [ORB-21117] — added the v2 `office.scribe-pending`, `office.scribe-append` and `office.scribe-query` modes and the `office.scribe-ask` v2 shortlist.
 - [ORB-20856] — declared `office.scribe-control` and `office.scribe-append` agent-callable for the plugin's `local-cli` `[agent]` calls.
 - [ORB-21118] — added `on_by`/`scope` to `office.scribe-control` and the `scribe_managed_session` turn-on refusal.
-- [ORB-21122] — added `office.scribe-migrate`, the `ledger_append` proposal kind and the v1 query modes' `deprecated` fields.
+- [ORB-21122] — added `office.scribe-migrate` and the v1 query modes' `deprecated` fields.
 - [ORB-20247] — added `office.proposal-reconcile` and the status-partitioned proposal layout.
 - [ORB-21217] — proposes `office.decision-ingest` and its routine.
 - [ORB-21218] — proposes `office.decision-precedents`.

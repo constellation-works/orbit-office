@@ -309,17 +309,6 @@ pub trait Library {
     ) -> Result<DecisionOutcome> {
         Err(Error::LibraryUnavailable)
     }
-    /// Append every entry of an accepted `ledger_append` proposal to their
-    /// one scope's ledger in one commit, or none (specs/scribe.md,
-    /// "Migration"). The adapter assigns the next ids in list order and
-    /// refuses the whole list when any entry fails the ledger checks.
-    fn append_decisions(
-        &self,
-        _decisions: &[crate::domain::source::decisions::Decision],
-        _captured_at: &str,
-    ) -> Result<Vec<DecisionOutcome>> {
-        Err(Error::LibraryUnavailable)
-    }
     /// Re-read a transcript and atomically create or version its conversation.
     fn capture_session(
         &self,

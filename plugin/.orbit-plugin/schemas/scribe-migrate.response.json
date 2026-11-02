@@ -3,22 +3,19 @@
   "title": "office.scribe-migrate response",
   "type": "object",
   "additionalProperties": false,
-  "required": ["dry_run", "proposals", "pending", "skipped_private", "skipped_invalid"],
+  "required": ["dry_run", "proposals", "pending", "skipped_private"],
   "properties": {
     "dry_run": { "type": "boolean" },
     "proposals": {
       "type": "array",
-      "description": "One row per migration key: pref:<scope>:<matter>, ledger:<scope> or rules.",
+      "description": "At most one row: the rules-page Tags removal (key rules). v1 preferences and decisions are never backfilled.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["key", "kind", "scope", "matter", "entries", "status", "id"],
+        "required": ["key", "kind", "status", "id"],
         "properties": {
-          "key": { "type": "string" },
-          "kind": { "enum": ["knowledge_add", "knowledge_update", "ledger_append"] },
-          "scope": { "type": "string" },
-          "matter": { "type": ["string", "null"], "description": "The preference matter; null for a ledger or the rules page." },
-          "entries": { "type": ["integer", "null"], "minimum": 1, "description": "Ledger entries proposed; null for a page proposal." },
+          "key": { "const": "rules" },
+          "kind": { "const": "knowledge_update" },
           "status": { "enum": ["filed", "already_filed", "planned", "suppressed"], "description": "planned only on a dry run; suppressed when dismissal memory holds a matching proposal." },
           "id": { "type": ["string", "null"], "description": "The proposal task; null when planned." }
         }
@@ -40,7 +37,6 @@
         }
       }
     },
-    "skipped_private": { "type": "integer", "minimum": 0, "description": "Lines in private SCRs or conversations, never copied into a proposal." },
-    "skipped_invalid": { "type": "integer", "minimum": 0, "description": "Decision lines the ledger would refuse (for example a time without an offset)." }
+    "skipped_private": { "type": "integer", "minimum": 0, "description": "Pending lines in private SCRs, never reported." }
   }
 }

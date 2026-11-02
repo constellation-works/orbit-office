@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-migrate request",
-  "description": "The one-time scribe v1 backfill (specs/scribe.md, Migration). Files proposals only; a re-run files nothing for a key already filed in any status.",
+  "description": "The one-time scribe v1 tidy-up (specs/scribe.md, Migration): proposes removing the v1 Tags section from the scribe rules page and reports open v1 pending lines. v1 preferences and decisions are not backfilled. A re-run files nothing already filed in any status.",
   "type": "object",
   "additionalProperties": false,
   "properties": {

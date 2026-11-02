@@ -2,7 +2,7 @@
 //! dedupe; return the id. With `append_to`, append conversation entries.
 //! With `decision`, append one decision ledger entry.
 
-pub(crate) mod decision;
+mod decision;
 
 use office_core::domain::source::format_rfc3339_utc;
 use office_core::ports::{CaptureSourceRequest, ConversationEntry};

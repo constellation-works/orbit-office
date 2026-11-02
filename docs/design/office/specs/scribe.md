@@ -1050,19 +1050,20 @@ mapping below on 2026-11-02 ([ORB-21122]), so the window runs from
 | `/scribe backfill` (+ `--titles`) | Refused with `backfill_retired`: v2 never scribes a session that was not turned on. | Removed. |
 | `office.scribe-query` v1 modes | As the commands above. | Refused as an unknown mode. |
 | v1 SCR files `SCR-<dd-hhmm>-<slug>.md` | Stay in place, readable and grep-able. Never rewritten and not in any `previous:` chain. | Same; they remain evidence. |
-| `#preference` lines in v1 SCRs, `direction` lines in conversation logs | Backfilled once: one preference proposal per scope and `matter`, current lines only (superseded ones skipped), citing the v1 lines. | — |
-| `#decision`, `#agent-decision` lines in v1 SCRs, `decision` lines in conversation logs | Backfilled once as proposals: one `ledger_append` proposal per scope listing candidate entries (`options` unrecoverable unless stated). Accepting appends them with `source` set to the v1 citation. | — |
+| `#preference` and `#decision` / `#agent-decision` lines in v1 SCRs; `direction` and `decision` lines in conversation logs | **Not backfilled.** v2 starts with empty preference pages and decision ledgers; the v1 lines stay readable as evidence (and through the `pref` and `why` modes during the window). Daniel restates what still holds as markers. | — |
 | `#why`, `#pending`, `#resolved`, `#landed`, `#todo` lines | Not migrated. They stay readable in v1 files. Open `#pending` lines are listed once in the migration report for the user to turn into to-dos. | — |
 | `handoff` entries through `office.capture` | See [sessions.md](./sessions.md#scribe-v2-the-latest-scr-is-the-handoff). | Refused with `handoff_retired`. |
 
-`ledger_append` is a new proposal kind used only by this backfill. Its
-payload is a list of complete ledger entries. Acceptance appends them in
-one commit and refuses the whole list if any entry fails the ledger
-checks.
+**No backfill.** Daniel, 2026-11-02: "no need for backfill btw. its going
+to be noisy. I rather start clean". A backfill would have filed one
+proposal per v1 preference matter (about 184 on the real Library) plus a
+decision-ledger list per scope, all for review at once. v2 therefore starts
+with empty preference pages and ledgers; nothing reads v1 lines into them
+([decision](../4_decisions.md#scribe-v2-s9-no-v1-backfill-v2-starts-clean-the-tidy-up-is-its-own-operator-tool)).
 
 ### Built (S9)
 
-[ORB-21122] built the mapping and the backfill:
+[ORB-21122] built the mapping and the one-time tidy-up:
 
 - **Commands** (the Claude Code plugin). `/scribe` alone turns the session
   on (`on_by: user`, which runs the first pass) or, when on, runs
@@ -1081,49 +1082,18 @@ checks.
   `v2_results`: the matching preference sections (`preferences` mode) or the
   ledger entries with `because` whose question, quote, chosen or reason
   contains the matter or topic. The plugin shows `v2_results` first.
-- **Backfill.** `office.scribe-migrate` (mutating, operator only, MCP
-  scope none, `dry_run` optional) reads the v1 SCRs and the conversation
-  logs and files proposals; it never writes a store:
-  - preferences: each current v1 `#preference` line (not superseded, the
-    latest per `matter`) and each conversation-log `direction` (its matter
-    is a slug of its first six words; a v1 preference on the same matter
-    wins) becomes one proposal per scope and matter, citing the v1 line.
-    All go to `dom-preferences-global` (D3's default scope), as
-    `knowledge_add` when the page is absent, else `knowledge_update` pinned
-    to its revision. A matter whose current statement already matches is
-    skipped. Accepting one moves the page's revision, so the others filed
-    in the same run are then refused as `proposal_revision_changed`; re-run
-    after dismissing them, or accept one and let the next migration run
-    file nothing (its keys are filed), and restate the rest as markers;
-  - decisions: v1 `#decision` / `#agent-decision` lines and conversation-log
-    `decision` lines become one `ledger_append` proposal per scope (the
-    SCR's or conversation's project, else `global`): `question` "What was
-    decided in <title>?" (`question_by: scribe`), `options: "unrecoverable"`,
-    the quote as both `quote` and `chosen`, the v1 reason as `because`,
-    `ref` and `source` the v1 citation (`<SCR id>#L<n>` counted in the
-    file's body, or `<src-id>#L<n>`), `decided_by: agent` for an
-    `#agent-decision` or a non-user author and `human` otherwise, and the
-    v1 time with seconds added. The same quote twice in a scope is
-    proposed once; an entry the ledger would refuse is counted in
-    `skipped_invalid`, never filed;
-  - the rules page: when `dom-scribe-rules` still has a `## Tags` section
-    or a `scribe:` mapping, one `knowledge_update` removes both;
-  - open v1 `#pending` lines (no `#resolved` naming them) are returned in
-    `pending` for the user to turn into to-dos, never filed;
-  - private SCRs and conversations, and everything when the conversation
-    sensitivity setting is private, are skipped (`skipped_private`).
-
-  Every proposal carries the `scribe-migration` tag and a per-key tag
-  (`pref:<scope>:<matter>`, `ledger:<scope>` or `rules`, hashed), and a
-  re-run skips any key already filed in any status, so it files nothing
-  new. A missing or truncated Orbit list is refused
-  (`proposal_history_incomplete`).
-- **Accepting a `ledger_append`** re-parses every entry, checks each
-  verbatim field against the text its `ref` names (as `office.capture`'s
-  `decision` input does; a v1 SCR is read through its record), then the
-  Library appends them under one writer lock in one commit, numbering
-  them in order. Any refusal (schema, `quote_mismatch`, `reverses` naming
-  no entry) appends none.
+- **Tidy-up.** `office.scribe-migrate` (mutating, operator only, MCP
+  scope none, `dry_run` optional) backfills nothing. It:
+  - files one `knowledge_update` removing the `## Tags` section and the
+    `scribe:` mapping from `dom-scribe-rules`, when the page still has
+    either. The proposal carries the `scribe-migration` tag and a hashed
+    `rules` key tag; a re-run skips it when it was filed in any status
+    (a missing or truncated Orbit list is refused,
+    `proposal_history_incomplete`);
+  - returns the open v1 `#pending` lines (no `#resolved` naming them) in
+    `pending` for the user to turn into to-dos, never filing them; lines
+    in private SCRs, and all of them when the conversation sensitivity
+    setting is private, are skipped (`skipped_private`).
 - **Retired:** `scribe.handoff` (the capture handoff offer is always
   dropped as `disabled`; a page that still sets the flag stays valid).
 - **The AGENTS.md task** is [ORB-21239] in ws_constellation.
@@ -1144,7 +1114,7 @@ requires.
 | S6 (built) | [ORB-21119] | S4 | Session brief and `/handoff` read the latest SCR per project and global; capture `handoff` compatibility (D7; ORB-21063, ORB-21065). |
 | S7 (built) | [ORB-21120] | S2, S6 | Web app: one card per project plus the global card, `previous` chain, Preferences and Decisions panels, Tags editor (saves need [ORB-20363]) (D8, D9; ORB-21075). |
 | S8 (built) | [ORB-21121] | S1, S3 | Weekly `office-scribe-contradictions` auto-task definition, seeded disabled (D5). |
-| S9 (built) | [ORB-21122] | S4, S5, S6 | Migration: v1 command and query mapping with `deprecated`, preference and decision backfill (`ledger_append` proposals), rules-page Tags removal proposal, the ws_constellation AGENTS.md task (D11). |
+| S9 (built) | [ORB-21122] | S4, S5, S6 | Migration: v1 command and query mapping with `deprecated`, no v1 backfill (v2 starts clean), rules-page Tags removal proposal and open-pending report, the ws_constellation AGENTS.md task (D11). |
 | S10 | [ORB-21123] | S9 | Removal at the end of the 30-day window (on or after 2026-12-02): v1 commands and modes, capture `handoff`, `view: list`, the v1 title levels (D11). |
 
 ## Task References
@@ -1175,7 +1145,7 @@ requires.
 - [ORB-21119] — built slice S6: the brief and `/handoff` over the latest SCR.
 - [ORB-21120] — built slice S7: the one-card feed, `previous` chain and Tags editor.
 - [ORB-21121] — built slice S8: the weekly contradiction auto-task.
-- [ORB-21122] — built slice S9: the v1 command and query mapping, `office.scribe-migrate` and the `ledger_append` kind; opened the window on 2026-11-02.
+- [ORB-21122] — built slice S9: the v1 command and query mapping and `office.scribe-migrate` (no backfill); opened the window on 2026-11-02.
 - [ORB-21239] — replaces the root AGENTS.md decision-log rule in ws_constellation (filed by S9).
 - [ORB-21123] — proposed slice S10: removal of v1 surfaces after the window.
 
