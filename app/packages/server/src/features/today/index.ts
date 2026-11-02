@@ -15,6 +15,8 @@ interface Task {
   description: string;
   execution_summary: string | null;
   history: unknown;
+  /** The scheduled start, RFC 3339, or null; a to-do of the user's reads it as its due date. */
+  not_before: string | null;
 }
 
 class TodayDataError extends Error {}
@@ -33,12 +35,15 @@ function readList(value: unknown): { tasks: Task[]; truncated: boolean } {
         typeof row.status !== "string" || !Array.isArray(row.tags) ||
         !row.tags.every((tag: unknown) => typeof tag === "string") ||
         typeof row.description !== "string" ||
-        !(row.execution_summary === null || typeof row.execution_summary === "string")) {
+        !(row.execution_summary === null || typeof row.execution_summary === "string") ||
+        !(row.not_before === undefined || row.not_before === null ||
+          (typeof row.not_before === "string" && !Number.isNaN(Date.parse(row.not_before))))) {
       throw new TodayDataError("invalid task row");
     }
     return {
       id: row.id, title: row.title, status: row.status, tags: row.tags as string[],
       description: row.description, execution_summary: row.execution_summary, history: row.history,
+      not_before: typeof row.not_before === "string" ? row.not_before : null,
     };
   });
   return { tasks, truncated: value.truncated };
@@ -145,7 +150,7 @@ export function createTodayFeature({ client, now = () => new Date() }: TodayOpti
       async handle(_request, response) {
         // The snapshot is all-or-nothing: failed reads cannot masquerade as no work.
         try {
-          const fields = ["id", "title", "status", "tags", "description", "execution_summary", "history"];
+          const fields = ["id", "title", "status", "tags", "description", "execution_summary", "history", "not_before"];
           const [active, done] = await Promise.all([
             client.pollTool("orbit.task.list", {
               status: ["proposed", "backlog", "in-progress", "review", "blocked", "someday"], fields, limit: 200,
@@ -164,6 +169,7 @@ export function createTodayFeature({ client, now = () => new Date() }: TodayOpti
             if (kind !== undefined) {
               const need: TodayNeed = { ...item(task), kind, group: needGroup(task, kind) };
               if (need.group === SHARED_LIBRARY_GROUP) need.shared = task.tags.includes("proposal:shared_conflict") ? "conflict" : "incoming";
+              if (kind === "todo" && task.not_before !== null) need.due = task.not_before;
               snapshot.needs_you.push(need);
             }
             if (task.status === "in-progress" && task.tags.includes("owner:agent") && !task.tags.includes("owner:you")) {

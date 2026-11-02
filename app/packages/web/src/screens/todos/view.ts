@@ -8,7 +8,7 @@ import type { AgentTodo, AgentTodos, AgentTodoState, TodoItem, TodoList } from "
 
 import { sourceHref } from "../../api/source-location.js";
 import { card, emptyState, monoMeta, pill, provenanceLink, row, rows, type Tone } from "../../ui/index.js";
-import { pickerStyles, scheduledWords, schedulePicker } from "../../ui/when.js";
+import { dueWords, isOverdue, pickerStyles, scheduledWords, schedulePicker } from "../../ui/when.js";
 
 export interface TodoDrawOptions {
   /** Kept attached so a poll can tell that the screen is still showing. */
@@ -332,7 +332,7 @@ function column(
     section.append(empty);
     return section;
   }
-  for (const item of items) section.append(todoCard(item, onClose, schedule));
+  for (const item of items) section.append(todoCard(item, onClose, schedule, kind === "you"));
   return section;
 }
 
@@ -340,11 +340,12 @@ function todoCard(
   item: TodoItem,
   onClose: ((id: string) => void) | undefined,
   schedule: ScheduleActions | undefined,
+  due: boolean,
 ): HTMLElement {
   const content = document.createElement("div");
   content.className = "card-content";
   content.append(sourceBlock(item.source), knowledgeBlock(item.knowledge));
-  const when = scheduleBlock(item, schedule);
+  const when = due ? dueBlock(item, schedule) : scheduleBlock(item, schedule);
   if (when !== null) content.append(when);
   const action = item.closable && onClose !== undefined ? closeButton(item.id, onClose) : undefined;
   return action === undefined ? card(item.title, content) : card(item.title, content, action);
@@ -422,6 +423,51 @@ function scheduleBlock(item: TodoItem, schedule: ScheduleActions | undefined): H
   block.append(scheduleButton(item.scheduled === null ? "Schedule…" : "Reschedule…", () => schedule.onEdit(item.id)));
   if (item.scheduled !== null) {
     const clear = scheduleButton("Clear schedule", () => {
+      if (clear.disabled) return;
+      clear.disabled = true;
+      clear.textContent = "Clearing";
+      void schedule.onSchedule(item.id, null).catch(() => undefined);
+    });
+    block.append(clear);
+  }
+  return block;
+}
+
+/**
+ * A to-do of yours: its scheduled time is its due date, since nothing starts
+ * it for you. "Due Fri 09:00" (with **Overdue** once it has passed), and
+ * **Set due date…** (or **Change due date…** and **Clear due date**), all
+ * writing `not_before`. The open picker takes the actions' place.
+ */
+function dueBlock(item: TodoItem, schedule: ScheduleActions | undefined): HTMLElement | null {
+  const now = schedule?.now ?? new Date();
+  const canSchedule = schedule !== undefined && item.schedulable;
+  if (item.scheduled === null && !canSchedule) return null;
+  const block = document.createElement("section");
+  block.className = "todos-schedule";
+  block.setAttribute("aria-label", "Due date");
+  if (item.scheduled !== null) {
+    const words = document.createElement("p");
+    words.className = "todos-when";
+    words.textContent = dueWords(item.scheduled, now);
+    block.append(words);
+    if (isOverdue(item.scheduled, now)) block.append(pill("Overdue", "attention"));
+  }
+  if (!canSchedule) return block;
+  if (schedule.editing === item.id) {
+    block.append(schedulePicker({
+      initial: item.scheduled,
+      now,
+      label: "Due date",
+      save: (instant) => schedule.onSchedule(item.id, instant),
+      cancel: () => schedule.onEdit(null),
+      failed: () => "The due date could not be saved. Try again in a moment.",
+    }));
+    return block;
+  }
+  block.append(scheduleButton(item.scheduled === null ? "Set due date…" : "Change due date…", () => schedule.onEdit(item.id)));
+  if (item.scheduled !== null) {
+    const clear = scheduleButton("Clear due date", () => {
       if (clear.disabled) return;
       clear.disabled = true;
       clear.textContent = "Clearing";

@@ -2,7 +2,8 @@
  * To-dos: You and Agents columns. Each to-do shows its source and attached
  * knowledge, and the user can close their own. A new to-do can be created
  * from the form above the columns. Any open to-do can be
- * scheduled for a date and time, rescheduled or cleared; the poll waits
+ * scheduled for a date and time, rescheduled or cleared (for the user's own,
+ * that time is the due date); the poll waits
  * while the picker is open or a draft title is being typed (docs/design/office/specs/web-app.md).
  */
 import type { AgentTodos, TodoList } from "@orbit-office/contracts";
@@ -149,7 +150,8 @@ async function renderTodos(root: HTMLElement): Promise<void> {
     } catch (error) {
       if (notBefore !== null && editing === id) throw error;
       const message = error instanceof ApiError ? scheduleMessage(error) : "Try again in a moment.";
-      showError("Could not clear the schedule", message);
+      const yours = shown?.you.some((item) => item.id === id) === true;
+      showError(yours ? "Could not clear the due date" : "Could not clear the schedule", message);
     } finally {
       busy = false;
     }

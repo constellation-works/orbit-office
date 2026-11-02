@@ -52,18 +52,19 @@ test('Add to-do creates a to-do that persists in the list and can be closed', { 
   await page.waitForFunction(() => !document.body.innerText.includes('Buy stamps'));
 });
 
-test('Schedule… sets a to-do’s time, which then reads in words, and Clear schedule removes it', { timeout: 60000 }, async t => {
+test('Set due date… sets a to-do’s time, which then reads in words, and Clear due date removes it', { timeout: 60000 }, async t => {
   const { page, url, state, calls } = await browserFixture(t);
   const stored = id => state.tasks.find(task => task.id === id).not_before;
   for (const width of [1440, 375]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(`${url}/#todos`);
     const venue = todo(page, 'Call the venue');
-    await venue.getByText('Scheduled Thu 15:00', { exact: true }).waitFor();
-    await venue.getByRole('button', { name: 'Reschedule…' }).waitFor();
-    await venue.getByRole('button', { name: 'Clear schedule' }).waitFor();
-    // An agent's to-do can be scheduled too; one already running keeps its time and offers nothing.
-    await todo(page, 'Send the renewal draft').getByRole('button', { name: 'Schedule…', exact: true }).waitFor();
+    // A to-do of yours reads its time as its due date.
+    await venue.getByText('Due Thu 15:00', { exact: true }).waitFor();
+    await venue.getByRole('button', { name: 'Change due date…' }).waitFor();
+    await venue.getByRole('button', { name: 'Clear due date' }).waitFor();
+    // One with no due date offers to set it; one already running keeps its time and offers nothing.
+    await todo(page, 'Send the renewal draft').getByRole('button', { name: 'Set due date…', exact: true }).waitFor();
     const running = todo(page, 'Refresh the pricing sheet');
     await running.getByText('Scheduled Wed 09:00', { exact: true }).waitFor();
     assert.equal(await running.getByRole('button').count(), 0);
@@ -72,23 +73,23 @@ test('Schedule… sets a to-do’s time, which then reads in words, and Clear sc
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   const draft = todo(page, 'Send the renewal draft');
-  await draft.getByRole('button', { name: 'Schedule…', exact: true }).click();
-  const picker = draft.getByRole('form', { name: 'Schedule' });
+  await draft.getByRole('button', { name: 'Set due date…', exact: true }).click();
+  const picker = draft.getByRole('form', { name: 'Due date' });
   assert.equal(await picker.getByLabel('Date and time').inputValue(), '2026-10-29T09:00', 'it suggests tomorrow at 09:00');
   assert.match(await picker.innerText(), /In this computer's time zone, UTC\./);
   await shot(page, 'todos-picker');
   await picker.getByLabel('Date and time').fill('2026-10-30T09:00');
   await picker.getByRole('button', { name: 'Save' }).click();
-  await draft.getByText('Scheduled Fri 09:00', { exact: true }).waitFor();
+  await draft.getByText('Due Fri 09:00', { exact: true }).waitFor();
   assert.equal(stored('FIXTURE-7'), '2026-10-30T09:00:00Z');
   assert.equal(await draft.getByRole('form').count(), 0);
 
   await page.setViewportSize({ width: 375, height: 1000 });
-  await draft.getByRole('button', { name: 'Reschedule…' }).click();
+  await draft.getByRole('button', { name: 'Change due date…' }).click();
   await noOverflow(page, 'picker on a phone'); await shot(page, 'todos-picker');
   await draft.getByRole('button', { name: 'Cancel' }).click();
-  await draft.getByRole('button', { name: 'Clear schedule' }).click();
-  await draft.getByRole('button', { name: 'Schedule…', exact: true }).waitFor();
+  await draft.getByRole('button', { name: 'Clear due date' }).click();
+  await draft.getByRole('button', { name: 'Set due date…', exact: true }).waitFor();
   assert.equal(await draft.locator('.todos-when').count(), 0);
   assert.equal(stored('FIXTURE-7'), null);
   assert.equal(state.tasks.find(task => task.id === 'FIXTURE-7').status, 'backlog', 'scheduling moves no status');

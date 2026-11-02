@@ -8,6 +8,7 @@ import { sourceHref } from "../../api/source-location.js";
 import type { Screen } from "../../screen.js";
 import { ageLabel, cardSummary, cardTitle, scopeLabel, SCRIBE_FEED_HREF, tagCountsLabel } from "../../ui/handoff.js";
 import { card, emptyState, errorState, monoMeta, panel, panelBody, panelGrid, pill, provenanceLink, row, rows } from "../../ui/index.js";
+import { dueWords, isOverdue } from "../../ui/when.js";
 import { ApprovalControls, serverApprovals, type ApprovalApi } from "./approvals.js";
 import { digestPanel, digestSummary, readDigest, serverDigest, type DigestApi, type DigestState } from "./digest.js";
 import { nextMeetingCard, todaysMeetings, upcoming } from "./next-meeting.js";
@@ -43,6 +44,14 @@ const NEED_LABELS: Record<TodayNeed["kind"], string> = {
   gateway_draft: "A request waiting for your approval",
 };
 
+/** A to-do's due date in the To-dos wording: "Due Fri 09:00", and **Overdue** once it has passed. */
+function dueLine(due: string, now: Date): HTMLElement {
+  const line = paragraph(dueWords(due, now));
+  line.className = "today-due";
+  if (isOverdue(due, now)) line.append(" ", pill("Overdue", "attention"));
+  return line;
+}
+
 function needCard(item: TodayNeed, controls: ApprovalControls): HTMLElement {
   const content = document.createElement("div");
   content.className = "card-content";
@@ -61,6 +70,7 @@ function needCard(item: TodayNeed, controls: ApprovalControls): HTMLElement {
       content.append(...controls.gatewayDraft(item));
       break;
     case "todo":
+      if (item.due !== undefined) content.append(dueLine(item.due, new Date()));
       break;
   }
   return card(item.title, content, undefined, { label: NEED_LABELS[item.kind], tone: "attention" });

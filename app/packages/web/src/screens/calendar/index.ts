@@ -4,7 +4,9 @@
  * time on a phone; meetings and scheduled to-dos as blocks with their state
  * in words; the routines' runs as marks in each day's margin. External calendars
  * remain read only; local event edits stay in the workspace. A scheduled to-do's
- * time is Orbit's, and its panel can move or clear it.
+ * time is Orbit's, and its panel can move or clear it; a to-do of the user's
+ * shows on the day and time it is due, and an overdue one due before the week
+ * shown sits at the top of today.
  */
 import type { CalendarMeeting, CalendarRoutine, CalendarTask, CalendarView } from "@orbit-office/contracts";
 
@@ -14,7 +16,7 @@ import { errorState, requestRailRefresh } from "../../ui/index.js";
 import { pickerStyles } from "../../ui/when.js";
 import {
   addDays, clock, dayRuns, hourRange, meetingState, onDay, placeDay, routineTitle, sameDay, stateWords,
-  syncedWords, taskSlot, taskState, taskWords, weekLabel, weekStart, type TaskSlot,
+  isDue, syncedWords, taskSlot, taskState, taskWords, weekLabel, weekStart, type TaskSlot,
 } from "./model.js";
 import { eventEditor } from "./editor.js";
 import { meetingPanel } from "./panel.js";
@@ -58,17 +60,24 @@ function block(meeting: CalendarMeeting, now: Date, lead: number, open: (meeting
   return node;
 }
 
-/** One scheduled to-do's block: title, its state and whose it is in words, and its time. */
-function taskBlock(task: CalendarTask, open: (task: CalendarTask) => void): HTMLButtonElement {
+/**
+ * One scheduled to-do's block: title, its state and whose it is in words, and
+ * its time; "Due 09:00" for the user's own, with the date too when it falls
+ * before the week shown.
+ */
+function taskBlock(task: CalendarTask, now: Date, open: (task: CalendarTask) => void, earlier = false): HTMLButtonElement {
   const node = element("button", "", "calendar-meeting calendar-task");
   node.type = "button";
-  node.dataset.tone = taskState(task).tone;
+  node.dataset.tone = taskState(task, now).tone;
   node.dataset.task = "true";
-  const words = taskWords(task);
+  if (isDue(task)) node.dataset.due = "true";
+  const words = taskWords(task, now);
   node.title = [task.title, ...words].join(" · ");
+  const at = new Date(task.not_before);
+  const when = earlier ? `${at.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })} ${clock(at)}` : clock(at);
   const inner = element("span", "", "calendar-meeting-inner");
   inner.append(element("span", task.title, "calendar-meeting-title"), element("span", words.join(" · "), "calendar-meeting-state"),
-    element("span", `To-do · ${clock(new Date(task.not_before))}`, "calendar-meeting-meta"));
+    element("span", isDue(task) ? `Due ${when}` : `To-do · ${when}`, "calendar-meeting-meta"));
   node.append(inner);
   node.addEventListener("click", () => open(task));
   return node;
@@ -114,9 +123,12 @@ const taskKey = (task: CalendarTask): string => `task:${task.id}`;
 function grid(view: CalendarView, state: State, now: Date, open: (meeting: CalendarMeeting) => void, openTask: (task: CalendarTask) => void): HTMLElement {
   const days = Array.from({ length: 7 }, (_, index) => addDays(state.week, index));
   const lead = view.prep_lead_minutes;
-  const slots = view.tasks.map(taskSlot);
+  // The user's to-dos already overdue before this week sit at the top of today, so they stay in view.
+  const earlier = view.tasks.filter(task => Date.parse(task.not_before) < state.week.getTime());
+  const slots = view.tasks.filter(task => !earlier.includes(task)).map(taskSlot);
   const { first, last } = hourRange([...view.meetings, ...slots], days);
-  const allDayRows = Math.max(1, ...days.map(day => view.meetings.filter(meeting => meeting.all_day && onDay(meeting, day)).length));
+  const allDayRows = Math.max(1, ...days.map(day => view.meetings.filter(meeting => meeting.all_day && onDay(meeting, day)).length +
+    (sameDay(day, now) ? earlier.length : 0)));
   const table = element("div", "", "calendar-grid");
   table.style.setProperty("--hours", String(last - first));
   table.style.setProperty("--allday", `${allDayRows * 34 + 6}px`);
@@ -143,6 +155,7 @@ function grid(view: CalendarView, state: State, now: Date, open: (meeting: Calen
     head.append(element("span", day.toLocaleDateString(undefined, { weekday: "short" })), element("strong", String(day.getDate())));
     const allDay = element("div", "", "calendar-allday");
     for (const meeting of view.meetings.filter(item => item.all_day && onDay(item, day))) allDay.append(block(meeting, now, lead, open));
+    if (sameDay(day, now)) for (const task of earlier) allDay.append(taskBlock(task, now, openTask, true));
     const body = element("div", "", "calendar-body");
     const margin = element("div", "", "calendar-margin");
     margin.setAttribute("aria-label", "Routine runs");
@@ -150,7 +163,7 @@ function grid(view: CalendarView, state: State, now: Date, open: (meeting: Calen
     const events = element("div", "", "calendar-events");
     for (const placed of placeDay<CalendarMeeting | TaskSlot>([...view.meetings, ...slots], day)) {
       const entry = placed.item;
-      const node = "task" in entry ? taskBlock(entry.task, openTask) : block(entry, now, lead, open);
+      const node = "task" in entry ? taskBlock(entry.task, now, openTask) : block(entry, now, lead, open);
       const top = Math.max(0, placed.from - first * 60);
       const bottom = Math.min((last - first) * 60, placed.to - first * 60);
       node.style.top = `calc(${(top / 60).toFixed(4)} * var(--hour))`;
@@ -191,7 +204,7 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
     const style = element("style", styles + pickerStyles);
     const header = element("header", "", "screen-head calendar-header");
     const titles = element("div");
-    const intro = element("p", "Your meetings with their prep and notes, the to-dos scheduled for a time, and the routines that run. Local events stay on this machine. Connected calendars are read only. ", "intro");
+    const intro = element("p", "Your meetings with their prep and notes, the to-dos scheduled for a time or due then, and the routines that run. Local events stay on this machine. Connected calendars are read only. ", "intro");
     const connectLink = element("a", "Connect a calendar here");
     connectLink.href = "?settings=calendar#settings";
     intro.append(connectLink);
@@ -337,7 +350,7 @@ export function createCalendarScreen({ load = getCalendar, sync = syncCalendar, 
       const routines = element("a", "Open Routines");
       routines.href = "#routines";
       legend.append(element("span", "Meeting", "calendar-swatch"), element("span", "Needs you", "calendar-swatch calendar-swatch--attention"),
-        element("span", "Scheduled to-do", "calendar-swatch calendar-swatch--task"),
+        element("span", "Scheduled or due to-do", "calendar-swatch calendar-swatch--task"),
         element("span", "Marks in each day’s margin are routine runs:"), element("span", "will run", "calendar-key"),
         element("span", "paused, skipped", "calendar-key calendar-key--paused"), routines);
       if (view.routines_unavailable) legend.append(element("span", "Some routines could not be read, so their runs are not shown."));

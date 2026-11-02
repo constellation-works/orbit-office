@@ -310,11 +310,18 @@ Office adds no scheduler of its own.
 - **It runs at or after the time, not at it.** The start depends on the next
   pass, and on the computer being on. The calendar shows the actual start
   beside the scheduled time ("Scheduled 09:00, started 09:42").
-- **Your own to-dos** (`owner:you`) can carry a time too. They only appear on
-  the calendar; nothing dispatches them.
+- **Your own to-dos** (`owner:you`) can carry a time too, and since nothing
+  dispatches them, that time is their **due date** ([ORB-21610]). It is the
+  same `not_before`, with no new field. Everywhere the app shows one of yours,
+  it reads "Due Fri 09:00" instead of "Scheduled", with **Set due date…**,
+  **Change due date…** and **Clear due date** in place of the schedule
+  actions, and **Overdue** once the date passes while it is still open. The
+  Calendar shows each open one on its due day and time; an overdue one due
+  before the week shown sits at the top of today, so it stays in view. Today's
+  Needs you uses the same words. Agent to-dos keep the schedule words.
 - **New to-dos with a time** come from the orchestrator, which passes
   `not_before` to `orbit.task.add`. The app's **New to-do** form creates a
-  to-do without a time; **Schedule…** then sets its time like any other.
+  to-do without a time; **Set due date…** then sets it.
 
 ### Scheduled-task implementation
 
@@ -333,7 +340,10 @@ Office adds no scheduler of its own.
   suggests tomorrow at 09:00 and refuses a time already past. It sends the
   instant in UTC.
 - **The words:** "Scheduled Fri 09:00" within the coming week, and
-  "Scheduled Fri 13 Nov 09:00" further off or already past.
+  "Scheduled Fri 13 Nov 09:00" further off or already past. An `owner:you`
+  to-do reads "Due Fri 09:00" the same way (`dueWords` in `ui/when.ts`), with
+  an **Overdue** pill once `not_before` is at or before the clock while it is
+  open. Its picker is named "Due date".
 - **The dispatch pass** lists `not_before` with the backlog. It holds a task
   until `not_before` is at or before its clock, and ships it on the first
   pass after that time. An unreadable `not_before` fails the listing, the
@@ -343,7 +353,12 @@ Office adds no scheduler of its own.
   `tags`, `not_before` and `history`, and a limit of 200. Orbit's bounds are
   inclusive, so the server drops a task exactly at `until`. Only tasks with
   an owner tag are shown, and rejected and archived tasks are hidden.
-  A failed, truncated or malformed read keeps the meetings and sets
+  While the week holds now, a second read lists the open `owner:you` to-dos
+  (`tag: owner:you`, every status but `done`, `rejected` and `archived`) with
+  `not_before_until` set to the week's start; the ones due before it are
+  overdue and join `tasks`, first by date. A to-do exactly at the start comes
+  back from both reads and is kept once. Either read
+  failed, truncated or malformed keeps the meetings and sets
   `scheduled_unavailable`. The legend then says the scheduled to-dos could
   not be read.
 - **States**, from the status, the start time and the last `started` history
@@ -358,7 +373,10 @@ Office adds no scheduler of its own.
   | `done` | "Done" |
 
   A late start that is no longer running also reads "Started 09:42" beside its
-  state. Each block also says "For you" or "For an agent".
+  state. Each block also says "For you" or "For an agent". An `owner:you`
+  to-do reads "Due" while open (any status but `done`), "Overdue" once its
+  date has passed, and "Done"; its block says "Due 09:00" rather than
+  "To-do · 09:00", and no late start is shown.
 
 ## Settings
 
@@ -404,7 +422,10 @@ and capture need no external connection.
   ([states](#scheduled-task-implementation)). Opening one shows a panel with
   the time, the start, who it is for and who starts it. While it has not
   started, the panel offers **Reschedule** (the same picker as To-dos) and
-  **Clear schedule**. **Open To-dos** links to the list.
+  **Clear schedule**. **Open To-dos** links to the list. A to-do of yours is a
+  due item instead: "Due 09:00", "Due" or "Overdue", a "Due" time in the
+  panel, and **Change due date** and **Clear due date**. An overdue one due
+  before the week shown is listed in today's all-day row with its date.
 - **Opening a meeting** shows a panel:
   - when, where, and whether the meeting is online;
   - attendees, each linked to their person page where one matched;
@@ -580,5 +601,6 @@ inlines `plugin.tool_call` with `tool: office.meeting-prep` and `input: {}`.
 - [ORB-19214] — built Orbit's `not_before` field and its admission hold (ws_orbit).
 - [ORB-19215] — built Orbit's date-range list filter and surfaces (ws_orbit).
 - [ORB-20246] — built local calendar events, source selection and the workspace event store.
+- [ORB-21610] — read an `owner:you` to-do's `not_before` as its due date, with Overdue, on To-dos, Today and the Calendar.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

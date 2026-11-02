@@ -1,6 +1,6 @@
 /**
  * The Calendar screen's data: local events and the read-only meeting snapshot beside the
- * routines that run and the to-dos scheduled for a time, "Sync now", and
+ * routines that run, the to-dos scheduled for a time and the user's own to-dos due then, "Sync now", and
  * notes or a transcript captured from one meeting
  * (docs/design/office/specs/calendar.md, "App"). Every read and write
  * goes through Office and Orbit tools; uploads are staged the way Source
@@ -144,6 +144,8 @@ const TASK_STATES: Readonly<Record<string, CalendarTaskState>> = {
 };
 /** The fields a scheduled block needs; `history` carries when it started. */
 const TASK_FIELDS = ["id", "title", "status", "tags", "not_before", "history"];
+/** The user's to-dos still open: one due before the range that holds now is overdue. */
+const OPEN_STATUSES = ["proposed", "someday", "backlog", "blocked", "in-progress", "review"];
 /** More scheduled to-dos than this in one range reads as `scheduled_unavailable`. */
 const MAX_TASKS = 200;
 
@@ -193,6 +195,8 @@ export interface CalendarOptions {
    * is the configuration's default unless the composer passes another.
    */
   prepLeadMinutes?: number;
+  /** The clock that decides whether the range holds now, for overdue to-dos. Default now. */
+  now?: () => Date;
 }
 
 export function createCalendarFeature(options: CalendarOptions): Feature {
@@ -237,15 +241,11 @@ export function createCalendarFeature(options: CalendarOptions): Feature {
     return { routines: result, unavailable };
   }
 
-  /**
-   * To-dos scheduled in the range, through `orbit.task.list`'s `not_before`
-   * range. A failed or partial read keeps the meetings and says so.
-   */
-  async function scheduled(from: string, until: string): Promise<{ tasks: CalendarTask[]; unavailable: boolean }> {
+  /** One `orbit.task.list` read as scheduled blocks; a failed or partial read says so. */
+  async function listed(input: Row, until: string): Promise<{ tasks: CalendarTask[]; unavailable: boolean }> {
     let value: unknown;
-    try {
-      value = await client.callTool("orbit.task.list", { not_before_from: from, not_before_until: until, fields: TASK_FIELDS, limit: MAX_TASKS });
-    } catch { return { tasks: [], unavailable: true }; }
+    try { value = await client.callTool("orbit.task.list", { ...input, fields: TASK_FIELDS, limit: MAX_TASKS }); }
+    catch { return { tasks: [], unavailable: true }; }
     const list = Array.isArray(value) ? { tasks: value, truncated: false } : isRow(value) ? value : null;
     if (list === null || !Array.isArray(list.tasks)) return { tasks: [], unavailable: true };
     let unavailable = list.truncated === true;
@@ -256,7 +256,30 @@ export function createCalendarFeature(options: CalendarOptions): Feature {
         if (task !== null) tasks.push(task);
       } catch { unavailable = true; }
     }
-    return { tasks: tasks.sort((a, b) => Date.parse(a.not_before) - Date.parse(b.not_before)), unavailable };
+    return { tasks, unavailable };
+  }
+
+  /**
+   * To-dos scheduled in the range, through `orbit.task.list`'s `not_before`
+   * range. While the range holds now, the user's open to-dos due before it
+   * are overdue and come too, so they stay in view. A failed or partial read
+   * keeps the meetings and says so.
+   */
+  async function scheduled(from: string, until: string): Promise<{ tasks: CalendarTask[]; unavailable: boolean }> {
+    const at = (options.now?.() ?? new Date()).getTime();
+    const current = Date.parse(from) <= at && at < Date.parse(until);
+    const [inRange, overdue] = await Promise.all([
+      listed({ not_before_from: from, not_before_until: until }, until),
+      current
+        ? listed({ tag: "owner:you", status: OPEN_STATUSES, not_before_until: from }, until)
+        : Promise.resolve({ tasks: [], unavailable: false }),
+    ]);
+    // Orbit's bounds are inclusive, so a to-do due exactly at `from` comes back from both reads.
+    const seen = new Set(inRange.tasks.map(task => task.id));
+    const earlier = overdue.tasks.filter(task => task.owner === "you" && task.state !== "done" &&
+      Date.parse(task.not_before) < Date.parse(from) && !seen.has(task.id));
+    const tasks = [...earlier, ...inRange.tasks].sort((a, b) => Date.parse(a.not_before) - Date.parse(b.not_before));
+    return { tasks, unavailable: inRange.unavailable || overdue.unavailable };
   }
 
   async function capture(input: Row): Promise<CapturedSource> {
