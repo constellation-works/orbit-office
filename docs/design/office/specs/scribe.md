@@ -6,17 +6,19 @@ last_validated: 2026-11-02
 
 # Spec: Scribe v2
 
-Status: designed ([ORB-21083]). Slices S1–S4 and S6 are built: the
+Status: designed ([ORB-21083]). Slices S1–S6 are built: the
 [decision ledger](#decision-ledger) store, `office.capture`'s `decision`
 input and the [`note` retirement](#retiring-sourcesnote) ([ORB-21114]);
 the `scribe:` settings ([ORB-21115]); preference pages and the
-contradiction check ([ORB-21116]); and the v2 SCR, markers and the trust
+contradiction check ([ORB-21116]); the v2 SCR, markers and the trust
 rule in `office.scribe-pending` and `office.scribe-append`, with
 `office.scribe-query` and `office.scribe-ask` over the new stores
-([ORB-21117]; see [Built tools](#built-tools-s4)); and the brief and
-`/handoff` over the latest SCR ([ORB-21119]; see
+([ORB-21117]; see [Built tools](#built-tools-s4)); the Claude Code
+plugin's opt-in, Stop-hook cadence and marker routing ([ORB-21118];
+see [Built plugin](#built-plugin-s5)); and the brief and `/handoff`
+over the latest SCR ([ORB-21119]; see
 [sessions.md](./sessions.md#scribe-v2-the-latest-scr-is-the-handoff)).
-The plugin, web and migration slices are not built. Scribe v1 is built and still runs
+The web and migration slices are not built. Scribe v1 is built and still runs
 until the slices in [Build order](#build-order) land. The v1 text
 this spec replaces is at `git show d398471:docs/design/office/specs/scribe.md`,
 and its decisions stay in [4_decisions.md](../4_decisions.md#scribe-v1-commanded-capture-into-one-tagged-file-per-session).
@@ -614,11 +616,17 @@ transcript ──parse (no model)──▶ <library>/.office/state/scribe/<sessi
    statement with its `matter` and conflicts, or a task request); and,
    only for tags with inferred capture, candidates marked `by: scribe`.
 3. **Route: plugin, through the user's CLI.** Before appending, the
-   plugin files what needs an id. It calls `office.proposal-create` per
-   preference finding in propose mode, and `orbit.task.add` per scheduling
+   plugin files what needs an id: `orbit.task.add` per scheduling
    request (proposed, with `not_before`), `owner:you` to-do and
-   `orbit_task` tag finding. Idempotency keys are the SCR id plus the
-   marker's message id and line, so a retried pass files nothing twice.
+   `orbit_task` tag finding, so the task id lands on the SCR entry.
+   Preference proposals are the exception: the proposed page cites the
+   SCR entry (`<SCR>#T<n>`) only the append creates, and
+   `office.proposal-create` resolves citations, so the plugin files each
+   `needs_proposal` preference finding immediately after the append
+   ([S5 decision](../4_decisions.md#scribe-v2-s5-scribe-control-stays-agent_callable-a-managed-session-cannot-turn-scribing-on)).
+   Idempotency keys are the SCR id plus the
+   marker's message id and line, kept in the plugin's per-session routing
+   ledger (persisted before the append), so a retried pass files nothing twice.
 4. **Append: model-free, Office tool.** `office.scribe-append` writes one
    Library commit:
    - It refuses a marker-derived finding whose marker is not in the parse
@@ -708,6 +716,38 @@ its SCR is already v2, so the plugin switches over in S5
 Only the user's typed turns can carry a human marker
 ([trust rule](#trust-rule-whose-markers-count)). The v1 guard still holds:
 an assistant line never becomes a human decision or a preference in effect.
+
+### Built plugin (S5)
+
+[ORB-21118] built the provider side in `plugin/claude-code`
+(`scripts/scribe_v2.py`, the `v2_hook` in `scripts/scribe.py`):
+
+- **Opt-in.** Every session defaults off. `/scribe on [@<project>|@global]`
+  writes the shared record (`office.scribe-control`, now with `on_by` and
+  `scope`) and runs the first pass; `/scribe off` stops passes and removes
+  nothing; `update` (and the v1 `now`) runs a pass only while on; `status`
+  shows the switch, scope, SCR id, `scribed_through` and the next pass;
+  `tags` lists the definitions `office.status` reports. The v1 commands
+  keep working during the window ([Migration](#migration), slice S9).
+- **Orchestrators.** The `scribe` tool's `on` action records
+  `on_by: agent` and its reply tells the agent to announce the turn-on in
+  one line. A headless (`sdk-cli`) session is refused in the plugin
+  (`scribe_headless_session`), and any turn-on under managed-task
+  context is refused by the backend (`scribe_managed_session`).
+- **Cadence.** With the legacy `auto_capture` off, Stop and SessionEnd
+  take the v2 path: a session the plugin has never seen returns at once;
+  otherwise the hook reads the shared record and, only while the session
+  is on, the cadence (`office.status`, cached in session state). A due
+  Stop (minutes or user turns since the last pass started, or a pending
+  Capture-now) and every SessionEnd start one headless run
+  (`claude -p` driving `/scribe update`, or `SCRIBE_PASS_COMMAND`) under
+  a per-session pass lock the child inherits, and return without waiting.
+- **Routing.** The `append2` step files scheduling, `orbit_task` and
+  `owner:you` tasks before the append and preference proposals from its
+  `needs_proposal` right after, under the idempotency keys above. Agent
+  markers reach the append with no task id and are reported, never filed.
+  A private session's update still withholds everything from the scribe
+  agent, as in v1.
 
 ### Staging: tool payloads are not staged
 
@@ -1006,7 +1046,7 @@ requires.
 | S2 (built) | [ORB-21115] | — | `scribe:` settings block (tags, cadence), `office.config-set` keys and validation, defaults (D3, D9). |
 | S3 (built) | [ORB-21116] | S2 | `preferences` template and pages, proposal-time contradiction check in `office.proposal-create`, apply mode (D3, D4, D5). |
 | S4 (built) | [ORB-21117] | S1, S2, S3 | SCR v2 format, pending and append v2 (markers and the trust rule, sections, `T<n>` entries, `previous`, title from summary, ledger and page writes), query and ask over the new stores (D2, D6). |
-| S5 | [ORB-21118] | S4 | Claude Code plugin: opt-in `/scribe on\|off\|update\|status\|tags`, Stop-hook cadence, orchestrator on/ask, routing (proposals, scheduling markers as proposed tasks, `owner:you` to-dos, `orbit_task` tags) (D1, D2, D10). |
+| S5 (built) | [ORB-21118] | S4 | Claude Code plugin: opt-in `/scribe on\|off\|update\|status\|tags`, Stop-hook cadence, orchestrator on/ask, routing (proposals, scheduling markers as proposed tasks, `owner:you` to-dos, `orbit_task` tags) (D1, D2, D10). |
 | S6 (built) | [ORB-21119] | S4 | Session brief and `/handoff` read the latest SCR per project and global; capture `handoff` compatibility (D7; ORB-21063, ORB-21065). |
 | S7 | [ORB-21120] | S2, S6 | Web app: one card per project plus the global card, `previous` chain, Preferences and Decisions panels, Tags editor (saves need [ORB-20363]) (D8, D9; ORB-21075). |
 | S8 (built) | [ORB-21121] | S1, S3 | Weekly `office-scribe-contradictions` auto-task definition, seeded disabled (D5). |
@@ -1037,7 +1077,7 @@ requires.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
 - [ORB-21116] — built slice S3: preference pages, contradiction check and apply mode.
 - [ORB-21117] — built slice S4: SCR v2, markers and the trust rule, query and ask over the new stores.
-- [ORB-21118] — proposed slice S5: Claude Code opt-in, Stop-hook cadence and marker routing.
+- [ORB-21118] — built slice S5: Claude Code opt-in, Stop-hook cadence and marker routing.
 - [ORB-21119] — built slice S6: the brief and `/handoff` over the latest SCR.
 - [ORB-21120] — proposed slice S7: the one-card feed, `previous` chain and Tags editor.
 - [ORB-21121] — built slice S8: the weekly contradiction auto-task.

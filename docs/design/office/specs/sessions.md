@@ -509,21 +509,24 @@ digits, `-` or `_`) and returns the record after the op:
 | op | Extra input | Effect |
 |---|---|---|
 | `get` | — | Read. An unknown session reads as `on: null` (unset), nothing pending. |
-| `set_switch` | `on` | Set the switch. |
+| `set_switch` | `on`, and on a turn-on optional `on_by` (`user` or `agent`) and `scope` (`global` or `project:<name>`) | Set the switch. A turn-on records who asked and the scope it named (scribe v2, [ORB-21118]); `off` clears `on_by` and keeps the scope. |
 | `request_now` | — | Record a pending Capture-now request; an existing one keeps its time. |
 | `consume_now` | optional `requested_at` | Clear the pending request and report `consumed`. With `requested_at` (the `now_requested_at` read earlier), clear only that request, so a newer one survives. |
 | `set_title` | `title` | Store a single-line user title (at most 4096 bytes, trimmed). |
 | `heartbeat` | — | Record that a Scribe window is open now. |
 
-The record reports `on`, `now_requested`, `now_requested_at`, `title`,
-`heartbeat_at`, `window_open` (heartbeat under two minutes old by the
-Office clock) and `updated_at`. Records untouched for 30 days are dropped
-on a later write. The tool is `mutating`, `mcp_scope: workspace` and not
-`agent_callable`, like every Office mutation outside the four consented
-agent verbs ([plugin-surface.md](./plugin-surface.md#agent-authority-inventory));
-the plugin's hooks and commands call it through the user's own `orbit`
-CLI. A hook running inside an Orbit-managed agent session is therefore
-refused and falls back to the flag file.
+The record reports `on`, `on_by`, `scope`, `now_requested`,
+`now_requested_at`, `title`, `heartbeat_at`, `window_open` (heartbeat
+under two minutes old by the Office clock) and `updated_at`. Records
+untouched for 30 days are dropped on a later write. The tool is
+`mutating`, `mcp_scope: workspace` and `agent_callable`, as the manifest
+declares ([ORB-20856]): the plugin calls Orbit as `local-cli` holding
+`[agent]`, so the user's own session needs the grant. A turn-on under
+managed-task context (`context.task_id`) is refused with
+`scribe_managed_session` ([ORB-21118],
+[plugin-surface.md](./plugin-surface.md#agent-authority-inventory)), so a
+headless Orbit-managed session still cannot be scribed; its hooks fall
+back to the flag file.
 
 ### Trigger and debounce
 

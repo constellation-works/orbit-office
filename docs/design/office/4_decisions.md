@@ -2194,6 +2194,12 @@ an adapter crate, wired in the binary's `ports()`), and existing complete
   `orbit` CLI reach them, and a plugin hook running inside an Orbit-managed
   agent session is refused and fails open on its local flag and heartbeat
   files. Widening the verb set is a separate, consented change.
+  **Superseded for `office.scribe-control` (and `scribe-append`)** by
+  [Scribe v2 S5](#scribe-v2-s5-scribe-control-stays-agent_callable-a-managed-session-cannot-turn-scribing-on)
+  below: [ORB-20856] granted the verbs because the plugin calls Orbit as
+  `local-cli` holding `[agent]`, and S5 keeps the grant while refusing a
+  turn-on under managed-task context in the backend instead.
+  `office.recall-answer` is unchanged.
 - **Private-derived claims are withheld.** recall-answer is MCP-visible, so
   it follows "Private content is withheld from MCP-visible read tools":
   without an open-weights route private sources are listed by reference
@@ -3071,6 +3077,68 @@ shaped for this use but had no ingestion, provider or feedback rules.
 - In practice the Office provider serves scribe and captured decisions
   made in conversation, which Orbit cannot see.
 
+## Scribe v2 S5: `scribe-control` stays `agent_callable`; a managed session cannot turn scribing on
+
+**Recorded:** 2026-11-02 · [ORB-21118]
+**Code anchors:** `crates/office-core/src/domain/scribe_control.rs`
+(`Control`, `OnBy`, `Switch`),
+`crates/office-tools/src/tools/sessions/scribe_control.rs` (`managed`),
+`crates/office-store/src/scribe_control.rs` (`on_by`/`scope` columns),
+`plugin/claude-code/scripts/scribe_v2.py`,
+`plugin/claude-code/scripts/scribe.py` (`v2_hook`)
+
+### Context
+
+The [ORB-20756 entry](#recall-answers-and-scribe-control-authority-and-private-withholding)
+recorded "No `agent_callable` for either tool" for `office.scribe-control`.
+[ORB-20856] then made `scribe-control` (and `scribe-append`)
+`agent_callable: true` on purpose: the Claude Code plugin calls Orbit as
+`local-cli` holding `[agent]`, so without the grant every call from the
+user's own interactive session was refused. The manifest and this ledger
+disagreed, and the grant also let an Orbit-managed (headless) agent turn
+scribing on, which scribe v2 forbids: a headless session is never scribed
+([specs/scribe.md](./specs/scribe.md#turning-it-on)).
+
+### Decision
+
+- **Keep the grant; refuse the turn-on in the backend.** When the call
+  envelope carries managed-task context (`context.task_id`),
+  `office.scribe-control` refuses `set_switch` with `on: true` — the one
+  op that turns scribing on or records `on_by` — with the stable code
+  `scribe_managed_session`. Reads (`get`) and turning off stay allowed.
+  The plugin additionally refuses a turn-on in an `sdk-cli` transcript
+  (`scribe_headless_session`) before it calls Office.
+- **The record gains `on_by` and `scope`.** A turn-on records `on_by`
+  (`user` for `/scribe on`, the window and the pane; `agent` for the
+  orchestrator's plugin-tool `on`, whose reply tells the agent to say so
+  to the user) and the scope token it named (`global` or
+  `project:<name>`). Pre-v2 callers that name nobody keep the recorded
+  values; a first plain turn-on reads as the user's. `off` clears `on_by`
+  and keeps `scope`. An existing database gains the two columns in place.
+- **Preference proposals route after the append; tasks route before it.**
+  Pipeline step 3 files through the user's CLI before the append so ids
+  land on the SCR entry. That holds for scheduling, `orbit_task` and
+  `owner:you` tasks. A preference proposal's page cites the SCR entry
+  (`<SCR>#T<n>`) that only the append creates, and
+  `office.proposal-create` resolves citations, so preference proposals
+  are filed from the append's `needs_proposal` immediately after; the
+  entry then reads `propose: <reason>` and the proposal id is in the pass
+  report and the plugin's routing ledger (SCR id, message id, line).
+
+### Alternatives rejected
+
+- **Removing the grant again.** The user's own session would be refused
+  on every control call; that is the failure [ORB-20856] fixed.
+- **Trusting the plugin's headless check alone.** The record is the
+  shared switch every host writes, so the refusal belongs in the backend
+  next to the record rules, not in one provider's guess at its session.
+
+### Consequences
+
+- The `scribe-control` request/response schemas gain `on_by` and `scope`
+  (additive; old callers omit them). The plugin-surface row now states
+  the grant as the manifest declares it.
+
 ## Task References
 
 - [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
@@ -3114,5 +3182,7 @@ shaped for this use but had no ingestion, provider or feedback rules.
 - [ORB-21090] — designed the office precedent provider over the v2 decision ledger.
 - [ORB-21115] — built the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
 - [ORB-21217] — proposes ingestion of answered Orbit decision requests into the ledger.
+- [ORB-20856] — made `office.scribe-control` and `office.scribe-append` agent-callable so the plugin's local-cli `[agent]` calls succeed.
+- [ORB-21118] — built Scribe v2 S5: the Claude Code opt-in, Stop-hook cadence and marker routing, and the managed-session refusal above.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

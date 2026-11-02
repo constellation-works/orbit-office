@@ -1,7 +1,7 @@
 {
   "name": "office-scribe",
   "version": "0.1.0",
-  "description": "Scribe v1: commanded, tagged, grep-able notes of each session and cited answers through Orbit Office.",
+  "description": "Scribe: opt-in v2 scribing per session (markers, preferences, decisions) plus the v1 commanded notes and cited answers through Orbit Office.",
   "author": {
     "name": "Constellation Works"
   },

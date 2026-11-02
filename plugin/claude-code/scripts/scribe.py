@@ -12,6 +12,7 @@ import re
 import signal
 import socket
 import stat
+import subprocess
 import sys
 import time
 import uuid
@@ -30,7 +31,10 @@ SCAN_LIMIT = 2000
 HANDOFF_CALL = 30.0
 TOOLS = {"office.session-brief", "office.capture", "office.recall", "office.scribe-control",
          "office.scribe-pending", "office.scribe-append", "office.scribe-query",
+         "office.status", "office.proposal-create", "office.knowledge-show",
          "orbit.task.add", "orbit.task.show"}
+# Scribe v2 cadence when Office cannot be read (specs/scribe.md defaults).
+DEFAULT_CADENCE = {"minutes": 20, "turns": 10}
 
 
 def repo_project(cwd: str) -> str:
@@ -463,11 +467,156 @@ class Scribe:
         save(self.state / (sid + ".json"), state)
         return {"queued": True, "task": task["id"]}
 
+    def cadence(self, state: dict) -> dict:
+        """The `scribe.cadence` in force: Office status, else the cache.
+
+        `office.status` returns the effective block even for an
+        uncustomized Library; a hook that cannot read it keeps the last
+        cadence it saw, else the shipped defaults.
+        """
+        try:
+            block = self.call("office.status", {}).get("scribe") or {}
+            value = block.get("cadence") or {}
+            minutes, turns = value.get("minutes"), value.get("turns")
+            if (isinstance(minutes, int) and 5 <= minutes <= 240
+                    and isinstance(turns, int) and 2 <= turns <= 100):
+                state["v2_cadence"] = {"minutes": minutes, "turns": turns}
+        except Failure:
+            pass
+        cached = state.get("v2_cadence")
+        return dict(cached) if isinstance(cached, dict) else dict(DEFAULT_CADENCE)
+
+    def count_turns(self, context: dict) -> int:
+        """User turns in the live transcript, read as `snapshot` pins it."""
+        root = (Path.home() / ".claude/projects").resolve(strict=True)
+        source = Path(context.get("transcript_path", "")).resolve(strict=True)
+        if root not in source.parents or source.suffix != ".jsonl":
+            raise Failure("transcript_outside_provider_root")
+        data = read_file(source, MAX_TRANSCRIPT)
+        data = data[:data.rfind(b"\n") + 1]
+        count = 0
+        for line in data.splitlines():
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(record, dict) and user_turn(record):
+                count += 1
+        return count
+
+    def pass_command(self, sid: str) -> list[str]:
+        """The headless scribe run a due Stop hook starts.
+
+        `SCRIBE_PASS_COMMAND` (a JSON argv list, `{session_id}` replaced)
+        overrides it for tests and other hosts; the default is a headless
+        Claude run whose only job is this session's `/scribe update`.
+        """
+        raw = os.environ.get("SCRIBE_PASS_COMMAND", "")
+        if raw:
+            argv = json.loads(raw)
+            if isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv):
+                return [a.replace("{session_id}", sid) for a in argv]
+            raise Failure("invalid_pass_command")
+        prompt = ("Run one scribe v2 pass. Call the office scribe tool with "
+                  + json.dumps({"session_id": sid, "args": "update"})
+                  + " and follow the agent request in its reply exactly. "
+                  "Do nothing else.")
+        return ["claude", "-p", prompt]
+
+    def start_v2_pass(self, sid: str, state: dict, turns: int) -> dict:
+        """Start one headless pass under the per-session pass lock.
+
+        The child inherits the locked descriptor, so the lock is held
+        while it runs and a second hook finds the pass already running.
+        The hook never waits for the child (specs/scribe.md, "Cadence").
+        """
+        fd = os.open(self.state / (sid + ".pass.lock"),
+                     os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode) or os.fstat(fd).st_uid != os.getuid():
+                raise Failure("unsafe_state_lock")
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {"started": False, "reason": "pass_running"}
+            log = os.open(self.state / (sid + ".pass.log"),
+                          os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+            try:
+                child = subprocess.Popen(
+                    self.pass_command(sid), cwd=str(self.workspace),
+                    stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                    start_new_session=True, pass_fds=(fd,))
+            except OSError:
+                return {"started": False, "reason": "pass_spawn_failed"}
+            finally:
+                os.close(log)
+            state["v2_last_pass_at"] = time.time()
+            state["v2_last_pass_turns"] = turns
+            save(self.state / (sid + ".json"), state)
+            return {"started": True, "pid": child.pid}
+        finally:
+            os.close(fd)
+
+    def v2_hook(self, event: str, context: dict) -> dict:
+        """Scribe v2 Stop/SessionEnd: a pass only for an on session.
+
+        Every session defaults off: without Office's record saying on,
+        nothing is staged, started or written. A due Stop (the cadence's
+        minutes or user turns since the last pass started, or a pending
+        Capture-now) and every SessionEnd start at most one headless
+        pass and return at once. There is no timer.
+        """
+        sid = self.session_id(context.get("session_id"))
+        try:
+            if self.excluded_project(context.get("cwd")):
+                return {"excluded": True}
+            # A session this plugin has never seen cannot be on (turning
+            # on writes state here first), so its Stop stays free: no
+            # Office call, no state. SessionStart records the context
+            # before any Stop of a live session.
+            seen = any(os.path.lexists(self.state / name)
+                       for name in (sid, sid + ".json", sid + ".context.json"))
+            if not seen:
+                return {"on": False}
+            with self.locked(sid):
+                state = load(self.state / (sid + ".json"))
+                shared = self.shared_state(sid)
+                save(self.state / (sid + ".context.json"),
+                     {k: context[k] for k in ("session_id", "cwd", "transcript_path") if k in context})
+                if shared is None or shared.get("on") is not True:
+                    save(self.state / (sid + ".json"), state)
+                    return {"on": False}
+                self.mirror(sid, True)
+                turns = self.count_turns(context)
+                cadence = self.cadence(state)
+                now_requested = shared.get("now_requested") is True
+                last_at = state.get("v2_last_pass_at")
+                due = (event == "SessionEnd" or now_requested or last_at is None
+                       or time.time() - last_at >= cadence["minutes"] * 60
+                       or turns - state.get("v2_last_pass_turns", 0) >= cadence["turns"])
+                if not due:
+                    save(self.state / (sid + ".json"), state)
+                    return {"on": True, "started": False, "reason": "cadence_not_reached",
+                            "cadence": cadence}
+                result = self.start_v2_pass(sid, state, turns)
+                if result.get("started") and now_requested:
+                    with contextlib.suppress(Failure):
+                        self.control(sid, "consume_now",
+                                     requested_at=shared.get("now_requested_at"))
+                return {"on": True, "cadence": cadence, **result}
+        except Failure as error:
+            # Provider hooks fail open; the fixed code names the refusal.
+            return {"started": False, "reason": str(error).split(";", 1)[0]}
+
     def hook(self, event: str, context: dict) -> dict:
         sid = self.session_id(context.get("session_id"))
         if event in ("Stop", "SessionEnd") and not self.auto_capture:
-            # Off by default (specs/scribe.md): no Office call, no staging, no state.
-            return {"auto_capture": False}
+            # Scribe v2 (specs/scribe.md): opt-in per session, Stop-hook
+            # cadence, no timer. The legacy queue below runs only with
+            # the legacy auto_capture option on.
+            return self.v2_hook(event, context)
         if self.excluded_project(context.get("cwd")):
             return {"excluded": True}
         with self.locked(sid):
@@ -576,6 +725,8 @@ class Scribe:
                     "queue_outcome_unknown": state.get("queue_unknown", False),
                     "last_queued_at": dt.datetime.fromtimestamp(queued, dt.timezone.utc).isoformat() if queued else None,
                     "shared_state": shared is not None,
+                    "on_by": shared.get("on_by") if shared else None,
+                    "scope": shared.get("scope") if shared else None,
                     "now_requested": bool(shared and shared.get("now_requested")),
                     "window_open": self.window_open(sid, shared)}
         if action == "backfill":
@@ -588,7 +739,11 @@ class Scribe:
             on = self.switch(sid, state)
             if action in ("on", "off"):
                 # Office first: it is the shared switch; the flag file mirrors it.
-                self.control(sid, "set_switch", on=action == "on")
+                # The pane is the user's own host, so its turn-on is the user's.
+                if action == "on":
+                    self.control(sid, "set_switch", on=True, on_by="user")
+                else:
+                    self.control(sid, "set_switch", on=False)
                 self.mirror(sid, action == "on")
                 save(self.state / (sid + ".json"), state)
                 return {"on": action == "on"}

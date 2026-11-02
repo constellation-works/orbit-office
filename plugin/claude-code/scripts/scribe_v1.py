@@ -57,7 +57,8 @@ STOPWORDS = set("""a an and are as at be been but by did do does for from had ha
 its me my of on or so that the their them then there these they this to was we were what when
 where which who why will with you your about any daniel decide decided decision we've""".split())
 
-USAGE = ("usage: /scribe [note <text> | pending | pref <matter> | landed [today|<date>] | "
+USAGE = ("usage: /scribe [on [@<project>|@global] | off | update | status | tags | "
+         "note <text> | pending | pref <matter> | landed [today|<date>] | "
          "why <matter|topic> | ask <question> | title <text> | backfill [--titles] [--since <date>] [--project <name>]]")
 
 
@@ -552,6 +553,9 @@ class V1:
         rest = parts[1].strip() if len(parts) > 1 else ""
         if not head:
             return self.catchup(sid)
+        if head in ("on", "off", "update", "now", "status", "tags"):
+            import scribe_v2
+            return scribe_v2.route_v2(self, sid, head, rest)
         if head == "note":
             return self.note(sid, rest)
         if head in ("pending", "pref", "landed", "why"):
@@ -1174,7 +1178,10 @@ def dispatch(args: dict) -> dict:
     """The structured `scribe` MCP tool: a `/scribe` argument string, or one agent step."""
     allowed = {None: {"session_id", "args"}, "pending": {"session_id", "action"},
                "append": {"session_id", "action", "entries", "title", "title_by"}, "query": {"session_id", "action", "query"},
-               "verify": {"session_id", "action", "answer"}}
+               "verify": {"session_id", "action", "answer"},
+               "on": {"session_id", "action", "scope"},
+               "pending2": {"session_id", "action"},
+               "append2": {"session_id", "action", "sections", "findings", "todos", "title", "title_by"}}
     action = args.get("action")
     if action not in allowed or set(args) - allowed[action]:
         raise Failure("unknown_command_field")
@@ -1184,6 +1191,20 @@ def dispatch(args: dict) -> dict:
     sid = v1.client.session_id(args.get("session_id"))
     if action is None:
         return v1.route(sid, args["args"])
+    if action in ("on", "pending2", "append2"):
+        import scribe_v2
+        v2 = scribe_v2.V2(v1.client)
+        if action == "on":
+            # The orchestrator's turn-on: interactive sessions only, and
+            # the reply tells the agent to announce it (on_by: agent).
+            scope = args.get("scope")
+            if scope is not None and (not isinstance(scope, str) or not scope.startswith("@")):
+                raise Failure("usage: /scribe on [@<project>|@global]")
+            return v2.on(sid, scope or "", by="agent")
+        if action == "pending2":
+            return v2.step_pending_v2(sid)
+        return v2.step_append_v2(sid, args.get("sections"), args.get("findings"),
+                                 args.get("todos"), args.get("title"), args.get("title_by"))
     if action == "pending":
         return v1.step_pending(sid)
     if action == "append":

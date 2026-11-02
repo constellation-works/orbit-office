@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-control response",
-  "description": "The session's record after the op. on is null until someone sets the switch (the provider plugin's default then applies). window_open is true while the last heartbeat is under two minutes old. Records untouched for 30 days are dropped.",
+  "description": "The session's record after the op. on is null until someone sets the switch (the provider plugin's default then applies). on_by names who turned it on (null while off); scope is the session scope token a turn-on named. window_open is true while the last heartbeat is under two minutes old. Records untouched for 30 days are dropped.",
   "type": "object",
   "properties": {
     "op": {
@@ -20,6 +20,23 @@
     "on": {
       "type": [
         "boolean",
+        "null"
+      ]
+    },
+    "on_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "user",
+        "agent",
+        null
+      ]
+    },
+    "scope": {
+      "type": [
+        "string",
         "null"
       ]
     },
@@ -65,6 +82,8 @@
     "op",
     "session_id",
     "on",
+    "on_by",
+    "scope",
     "now_requested",
     "now_requested_at",
     "title",
