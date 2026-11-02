@@ -9,7 +9,7 @@ fn config_set_updates_one_setting_and_commits_only_config() {
     git(&library, &["add", "--", "unrelated.md"]);
     for (key, value) in [
         ("retention.meeting", serde_json::json!(30)),
-        ("sensitivity.note", serde_json::json!("private")),
+        ("sensitivity.decisions", serde_json::json!("private")),
         ("retention.meeting", serde_json::Value::Null),
     ] {
         let before = git(&library, &["rev-list", "--count", "HEAD"])
@@ -78,7 +78,7 @@ fn config_set_refusals_leave_config_and_head_unchanged() {
             "invalid_library_setting",
         ),
         (
-            serde_json::json!({"key": "sensitivity.note", "value": "secret-fixture-value"}),
+            serde_json::json!({"key": "sensitivity.decisions", "value": "secret-fixture-value"}),
             "invalid_library_setting",
         ),
         (

@@ -6,7 +6,7 @@ fn source_sensitivity_is_monotonic_through_the_binary() {
     let captured = env.tool(
         "office.capture",
         serde_json::json!({
-            "kind":"note", "title":"Privacy", "text":"Preserve this body.", "sensitivity":"normal"
+            "kind":"doc", "title":"Privacy", "text":"Preserve this body.", "sensitivity":"normal"
         }),
     );
     assert_eq!(captured["ok"], true, "{captured}");
@@ -78,12 +78,12 @@ fn capture_and_source_show_through_the_binary() {
     // Pasted text dedupes to one id.
     let first = env.tool(
         "office.capture",
-        serde_json::json!({"kind": "note", "title": "Binary note", "text": "Captured through the binary."}),
+        serde_json::json!({"kind": "doc", "title": "Binary note", "text": "Captured through the binary."}),
     );
     assert_eq!(first["ok"], serde_json::json!(true), "{first}");
     let second = env.tool(
         "office.capture",
-        serde_json::json!({"kind": "note", "title": "Binary note", "text": "Captured through the binary."}),
+        serde_json::json!({"kind": "doc", "title": "Binary note", "text": "Captured through the binary."}),
     );
     assert_eq!(second["output"]["id"], first["output"]["id"], "{second}");
     assert_eq!(second["output"]["deduplicated"], serde_json::json!(true));
@@ -281,7 +281,7 @@ fn private_capture_metadata_cannot_inject_frontmatter() {
         ("participants", "Alice]\nsensitivity: normal\n---\ninjected"),
     ] {
         let env = Env::with_initialized_library();
-        let mut input = serde_json::json!({"kind": "note", "title": "Private fixture", "text": "original private body\n", "sensitivity": "private"});
+        let mut input = serde_json::json!({"kind": "doc", "title": "Private fixture", "text": "original private body\n", "sensitivity": "private"});
         input[field] = if field == "participants" {
             serde_json::json!([payload])
         } else {

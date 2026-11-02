@@ -253,7 +253,7 @@ fn enumeration_error_aborts_reindex_and_preserves_the_prior_index() {
     write(
         &library,
         "sources/2026/10/src-kept/source.md",
-        "---\nid: src-kept\nkind: note\ntitle: Kept source\n---\n\nkeptsource token\n",
+        "---\nid: src-kept\nkind: doc\ntitle: Kept source\n---\n\nkeptsource token\n",
     );
     write(
         &library,

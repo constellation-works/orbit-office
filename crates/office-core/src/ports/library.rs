@@ -284,6 +284,19 @@ pub trait Library {
     ) -> Result<crate::domain::source::conversation::Session> {
         Err(Error::LibraryUnavailable)
     }
+    /// Append one decision ledger entry under the writer lock and commit it
+    /// (specs/scribe.md, Decision ledger). The adapter assigns the next
+    /// `dec-<scope>-<n>` id over `decision.id`, creates the scope's ledger on
+    /// its first entry (`captured_at` becomes its `created_at`), refuses a
+    /// `reverses` naming no entry, and never edits an earlier line. The
+    /// caller has already checked the verbatim fields against their refs.
+    fn append_decision(
+        &self,
+        _decision: &crate::domain::source::decisions::Decision,
+        _captured_at: &str,
+    ) -> Result<DecisionOutcome> {
+        Err(Error::LibraryUnavailable)
+    }
     /// Re-read a transcript and atomically create or version its conversation.
     fn capture_session(
         &self,
@@ -522,6 +535,17 @@ pub struct SourceOutcome {
     pub handoff: Option<String>,
 }
 
+/// The ledger entry `office.capture`'s `decision` input appended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DecisionOutcome {
+    /// The entry as read back, with its derived fields.
+    pub entry: crate::domain::source::decisions::EntryView,
+    /// Library-relative ledger path.
+    pub path: String,
+    /// The ledger's title.
+    pub title: String,
+}
+
 /// A source read back for `office.source-show`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SourceView {
@@ -545,6 +569,11 @@ pub struct SourceView {
     pub media_type: Option<String>,
     /// The version.
     pub version: u32,
+    /// Decision ledger entries: every entry for a ledger id, the one entry
+    /// for an entry id or a migrated source id; empty for other sources.
+    pub decisions: Vec<crate::domain::source::decisions::EntryView>,
+    /// The migrated source id this read resolved through, if any.
+    pub moved_from: Option<String>,
 }
 
 /// Source privacy update and whether it revoked sharing in the same commit.

@@ -4,6 +4,8 @@
 pub mod access;
 /// Transcript conversation extraction and provenance.
 pub mod conversation;
+/// Append-only decision ledgers (`sources/decisions/<scope>.md`).
+pub mod decisions;
 /// KT video planning and processing state.
 pub mod video;
 
@@ -54,6 +56,8 @@ fn clock_time(start_ms: u64) -> String {
 // ---------------------------------------------------------------------------
 
 /// Source kinds (specs/library.md, Sources), plus `video` (specs/kt-videos.md).
+/// `decisions` names the decision ledgers, which are written only through
+/// `office.capture`'s `decision` input (specs/scribe.md, Decision ledger).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceKind {
     /// Documented item: Video,.
@@ -72,8 +76,8 @@ pub enum SourceKind {
     Bill,
     /// Documented item: Conversation,.
     Conversation,
-    /// Documented item: Note,.
-    Note,
+    /// A decision ledger (`sources/decisions/<scope>.md`).
+    Decisions,
 }
 
 impl SourceKind {
@@ -89,7 +93,7 @@ impl SourceKind {
             Self::Receipt => "receipt",
             Self::Bill => "bill",
             Self::Conversation => "conversation",
-            Self::Note => "note",
+            Self::Decisions => decisions::KIND,
         }
     }
     /// Parse a canonical token.
@@ -104,7 +108,7 @@ impl SourceKind {
             "receipt" => Some(Self::Receipt),
             "bill" => Some(Self::Bill),
             "conversation" => Some(Self::Conversation),
-            "note" => Some(Self::Note),
+            decisions::KIND => Some(Self::Decisions),
             _ => None,
         }
     }

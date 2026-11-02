@@ -142,13 +142,13 @@ fn a_private_hit_is_listed_without_its_snippet() {
     library
         .write_document(
             Path::new("sources/2026/10/src-20261028-secret/source.md"),
-            "---\nid: src-20261028-secret\nkind: note\ntitle: Secret note\nsensitivity: private\n---\nBody holds quixotic-private-marker.\n",
+            "---\nid: src-20261028-secret\nkind: doc\ntitle: Secret note\nsensitivity: private\n---\nBody holds quixotic-private-marker.\n",
         )
         .expect("seed private document");
     library
         .write_document(
             Path::new("sources/2026/10/src-20261028-open/source.md"),
-            "---\nid: src-20261028-open\nkind: note\ntitle: Open note\nsensitivity: normal\n---\nBody holds quixotic-open-marker.\n",
+            "---\nid: src-20261028-open\nkind: doc\ntitle: Open note\nsensitivity: normal\n---\nBody holds quixotic-open-marker.\n",
         )
         .expect("seed normal document");
     let ports = Ports {

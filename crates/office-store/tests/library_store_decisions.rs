@@ -438,13 +438,13 @@ fn settings_updates_read_the_latest_config_and_do_not_lose_other_keys() {
     let b = LibraryStore::open(&library, &state).expect("store b");
     a.set_setting("retention.meeting", serde_json::json!(10))
         .unwrap();
-    b.set_setting("sensitivity.note", serde_json::json!("private"))
+    b.set_setting("sensitivity.decisions", serde_json::json!("private"))
         .unwrap();
     a.set_setting("packs", serde_json::json!(["receipts"]))
         .unwrap();
     let settings = b.settings().unwrap();
     assert_eq!(settings.retention["meeting"], Some(10));
-    assert_eq!(settings.sensitivity["note"].as_str(), "private");
+    assert_eq!(settings.sensitivity["decisions"].as_str(), "private");
     assert_eq!(settings.packs, ["receipts"]);
     assert_eq!(git(&library, &["rev-list", "--count", "HEAD"]).trim(), "3");
     assert_eq!(a.document_count().unwrap(), 0);

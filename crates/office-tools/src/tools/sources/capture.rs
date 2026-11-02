@@ -1,5 +1,8 @@
 //! `office.capture`: Create a source from an upload path or pasted text;
 //! dedupe; return the id. With `append_to`, append conversation entries.
+//! With `decision`, append one decision ledger entry.
+
+mod decision;
 
 use office_core::domain::source::format_rfc3339_utc;
 use office_core::ports::{CaptureSourceRequest, ConversationEntry};
@@ -45,6 +48,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         "participants",
         "captured_by",
         "tags",
+        "decision",
     ],
     run,
 );
@@ -104,6 +108,9 @@ fn parse_entries(call: &Call<'_>) -> Result<Vec<ConversationEntry>> {
 }
 
 pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
+    if call.input.contains_key("decision") {
+        return decision::run(call);
+    }
     if [
         "session_transcript_path",
         "session_id",

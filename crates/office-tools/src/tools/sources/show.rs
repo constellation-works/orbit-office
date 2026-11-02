@@ -62,6 +62,12 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         &markdown,
     );
     let derived_by = access::derived_by(&markdown)?;
+    // A decision ledger is one file under `sources/decisions/`; it has no
+    // sidecars, and its id or entry id names no sibling file.
+    let ledger = view.kind == office_core::domain::source::decisions::KIND;
+    if ledger {
+        return ledger_output(call, &view, &record, anchor.as_deref(), history);
+    }
     let chapters = call
         .ports
         .library
@@ -164,6 +170,68 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
             "limit_bytes":access::MEDIA_LIMIT, "too_large":too_large, "truncated":too_large,
         });
     }
+    if history {
+        crate::history::append(
+            call.ports.library.as_ref(),
+            Path::new(&view.path),
+            &mut output,
+        )?;
+    }
+    Ok(output)
+}
+
+/// A ledger, an entry or a migrated note id: the ledger or entry text,
+/// its entries with derived `reversed_by`, and the id a migrated note was
+/// read through. Ledgers are always `normal`; private entries carry no text.
+fn ledger_output(
+    call: &Call<'_>,
+    view: &office_core::ports::SourceView,
+    record: &office_core::domain::knowledge::DocumentRecord,
+    anchor: Option<&str>,
+    history: bool,
+) -> Result<Value> {
+    if call.input.contains_key("media")
+        || call.input.contains_key("frame")
+        || call.input.contains_key("document")
+    {
+        return Err(Error::InvalidArgument(
+            "a decision ledger has no media or summary".into(),
+        ));
+    }
+    let requested = view.moved_from.clone().unwrap_or_else(|| view.id.clone());
+    let (cited_by, task_citers_available, cited_by_truncated) = citers(call, &requested)?;
+    let span = anchor
+        .map(|raw| anchor_span(&view.body, parse_anchor(raw)?, raw))
+        .transpose()?;
+    let body = span.clone().unwrap_or_else(|| view.body.clone());
+    let mut output = json!({
+        "id": view.id,
+        "layer": record.layer,
+        "shared_by": record.shared_by,
+        "kind": view.kind,
+        "title": view.title,
+        "path": view.path,
+        "body": body,
+        "text": body,
+        "span": span,
+        "anchor": anchor,
+        "sensitivity": view.sensitivity,
+        "shareable": false,
+        "sha256": view.sha256,
+        "bytes": view.bytes,
+        "media_type": view.media_type,
+        "version": view.version,
+        "derived_by": {},
+        "cited_by": cited_by,
+        "task_citers_available": task_citers_available,
+        "cited_by_truncated": cited_by_truncated,
+        "chapters": [],
+        "frames": [],
+        "gotchas": [],
+        "summary": null,
+        "decisions": view.decisions,
+        "moved_from": view.moved_from,
+    });
     if history {
         crate::history::append(
             call.ports.library.as_ref(),

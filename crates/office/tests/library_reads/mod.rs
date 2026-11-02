@@ -11,7 +11,7 @@ fn private_bodies_and_snippets_are_withheld_through_the_binary() {
     let secret = "quixotic-private-marker-7f3";
     let captured = env.tool(
         "office.capture",
-        json!({"kind":"note","title":"Private note","text":format!("Body holds {secret}."),"sensitivity":"private"}),
+        json!({"kind":"doc","title":"Private note","text":format!("Body holds {secret}."),"sensitivity":"private"}),
     );
     assert_eq!(captured["ok"], true, "{captured}");
     let id = captured["output"]["id"].clone();
@@ -74,7 +74,7 @@ fn private_bodies_and_snippets_are_withheld_through_the_binary() {
     // Control: a normal source still returns its body and snippet.
     let open = env.tool(
         "office.capture",
-        json!({"kind":"note","title":"Open note","text":"Open quixotic body.","sensitivity":"normal"}),
+        json!({"kind":"doc","title":"Open note","text":"Open quixotic body.","sensitivity":"normal"}),
     );
     assert_eq!(open["ok"], true, "{open}");
     let open_id = open["output"]["id"].clone();

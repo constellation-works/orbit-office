@@ -343,7 +343,7 @@ fn rendered_source_title_with_quotes_and_backslashes_round_trips() {
     for title in titles {
         let text = render_source(&RenderSource {
             id: "src-19700101-hello",
-            kind: SourceKind::Note,
+            kind: SourceKind::Doc,
             title,
             captured_at: "1970-01-01T00:00:00+00:00",
             captured_by: "upload",
@@ -383,7 +383,7 @@ fn rendered_source_keeps_untrusted_metadata_inside_frontmatter() {
         let participants = vec![payload.to_string()];
         let text = render_source(&RenderSource {
             id: "src-19700101-private",
-            kind: SourceKind::Note,
+            kind: SourceKind::Doc,
             title: "Private",
             captured_at: "1970-01-01T00:00:00+00:00",
             captured_by: payload,

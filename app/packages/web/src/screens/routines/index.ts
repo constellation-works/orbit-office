@@ -259,7 +259,7 @@ function retentionForm(): HTMLElement {
   section.append(element("h2", "Retention"), element("p", "Choose how long to keep originals. Leave days empty to keep them indefinitely."));
   const form = document.createElement("form");
   const kindLabel = element("label", "Type "); const kind = document.createElement("select");
-  for (const [value, label] of [["video", "Video"], ["meeting", "Meeting"], ["chat", "Chat"], ["email", "Email"], ["doc", "Document"], ["receipt", "Receipt"], ["bill", "Bill"], ["conversation", "Conversation"], ["note", "Note"]] as const) {
+  for (const [value, label] of [["video", "Video"], ["meeting", "Meeting"], ["chat", "Chat"], ["email", "Email"], ["doc", "Document"], ["receipt", "Receipt"], ["bill", "Bill"], ["conversation", "Conversation"], ["decisions", "Decisions"]] as const) {
     const option = element("option", label); option.value = value; kind.append(option);
   }
   kindLabel.append(kind);

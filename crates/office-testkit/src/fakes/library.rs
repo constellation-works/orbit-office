@@ -641,6 +641,8 @@ impl Library for FakeLibrary {
             sha256: meta.sha256,
             bytes: meta.bytes,
             media_type: meta.media_type,
+            decisions: Vec::new(),
+            moved_from: None,
         };
         self.sources.borrow_mut().insert(id.into(), view.clone());
         Ok(view)
@@ -1246,17 +1248,24 @@ impl Library for FakeLibrary {
             })?),
             None => None,
         };
-        let kind = explicit_kind.unwrap_or_else(|| {
-            if is_video_extension(&upload_ext) {
-                SourceKind::Video
-            } else if request.entries.is_empty() && request.text.is_some() {
-                SourceKind::Note
-            } else if !request.entries.is_empty() {
-                SourceKind::Conversation
-            } else {
-                SourceKind::Note
+        // As the store: plain text has no default kind, and ledgers take
+        // entries only through the `decision` input.
+        let kind = match explicit_kind {
+            Some(kind) => kind,
+            None if is_video_extension(&upload_ext) => SourceKind::Video,
+            None if matches!(
+                upload_ext.as_str(),
+                "html" | "htm" | "docx" | "pptx" | "pdf" | "md" | "txt"
+            ) =>
+            {
+                SourceKind::Doc
             }
-        });
+            None if !request.entries.is_empty() => SourceKind::Conversation,
+            None => return Err(office_core::domain::source::decisions::source_kind_required()),
+        };
+        if kind == SourceKind::Decisions {
+            return Err(office_core::domain::source::decisions::decision_input_required());
+        }
         let (body, sha, bytes_len, media_type, derived) = if let Some(body) = transcript_body {
             let sha = upload_bytes.as_ref().map(|b| sha256_hex(b));
             (
@@ -1401,6 +1410,8 @@ impl Library for FakeLibrary {
             bytes: bytes_len,
             media_type: media_type.clone(),
             version: 1,
+            decisions: Vec::new(),
+            moved_from: None,
         };
         self.sources.borrow_mut().insert(id.clone(), view);
         if let Some(bytes) = &upload_bytes {
@@ -1648,6 +1659,8 @@ impl Library for FakeLibrary {
             bytes: meta.bytes,
             media_type: meta.media_type,
             version: meta.version,
+            decisions: Vec::new(),
+            moved_from: None,
         })
     }
 

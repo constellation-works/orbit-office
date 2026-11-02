@@ -28,7 +28,7 @@ fn single_setting_updates_roundtrip_and_preserve_other_settings() {
     let mut settings = Settings::default();
     for (key, value) in [
         ("retention.meeting", serde_json::json!(36500)),
-        ("retention.note", serde_json::json!(null)),
+        ("retention.decisions", serde_json::json!(null)),
         ("sensitivity.email", serde_json::json!("private")),
         ("packs", serde_json::json!(["receipts", "meetings"])),
         ("thresholds.repetition_count", serde_json::json!(10000)),
@@ -99,8 +99,8 @@ fn single_setting_refuses_unknown_leaves_and_bad_values_without_mutation() {
         ("retention.meeting", serde_json::json!(36501)),
         ("retention.meeting", serde_json::json!("30")),
         ("retention.meeting", serde_json::json!(1.5)),
-        ("sensitivity.note", serde_json::json!(null)),
-        ("sensitivity.note", serde_json::json!("secret-value")),
+        ("sensitivity.decisions", serde_json::json!(null)),
+        ("sensitivity.decisions", serde_json::json!("secret-value")),
         ("packs", serde_json::json!(["meetings", "meetings"])),
         ("packs", serde_json::json!(["unknown"])),
         ("thresholds.friction_count", serde_json::json!(10001)),
@@ -164,6 +164,7 @@ fn demo_simulated_until_takes_a_date_or_null_and_names_the_field_when_refused() 
 #[test]
 fn pre_batch_default_config_loads() {
     // Exact default emitted by office.init before the private-route change.
+    // Its retired `note` keys are ignored on read.
     let yaml = "retention:
   video: 90
   meeting: 90
@@ -208,10 +209,10 @@ fn partial_yaml_merges_policy_defaults_without_creating_observations() {
         Settings::from_yaml("{}").expect("empty mapping"),
         Settings::default()
     );
-    let settings = Settings::from_yaml("retention:\n  meeting: null\nsensitivity:\n  note: private\npacks:\n  - meetings\n  - receipts\nthresholds:\n  repetition_count: 4\nopen_weights:\n  endpoint: https://muse.internal.acme.example/v1   # OpenAI-compatible base URL\n  model: meta-models/Muse-Spark-Open-816B-A42B       # as the server names it\n  kind: company            # company | provider | own_hardware\n  label: Acme's server     # shown in the app\n  capabilities: [text, image, audio]   # written by the check below, never typed in\n  verified_at: 2026-10-27T10:02:00-04:00\n").expect("settings");
+    let settings = Settings::from_yaml("retention:\n  meeting: null\nsensitivity:\n  decisions: private\npacks:\n  - meetings\n  - receipts\nthresholds:\n  repetition_count: 4\nopen_weights:\n  endpoint: https://muse.internal.acme.example/v1   # OpenAI-compatible base URL\n  model: meta-models/Muse-Spark-Open-816B-A42B       # as the server names it\n  kind: company            # company | provider | own_hardware\n  label: Acme's server     # shown in the app\n  capabilities: [text, image, audio]   # written by the check below, never typed in\n  verified_at: 2026-10-27T10:02:00-04:00\n").expect("settings");
     assert_eq!(settings.retention["meeting"], None);
-    assert_eq!(settings.retention["note"], None);
-    assert_eq!(settings.sensitivity["note"].as_str(), "private");
+    assert_eq!(settings.retention["decisions"], None);
+    assert_eq!(settings.sensitivity["decisions"].as_str(), "private");
     assert_eq!(settings.sensitivity["meeting"].as_str(), "normal");
     assert_eq!(settings.thresholds.repetition_count, 4);
     assert_eq!(settings.thresholds.window_days, 30);
@@ -729,4 +730,26 @@ fn shared_remotes_accept_local_spaces_and_scp_absolute_paths() {
             .unwrap();
         assert_eq!(settings.shared.unwrap().remote, remote);
     }
+}
+
+#[test]
+fn retired_note_kind_is_ignored_on_read_and_refused_on_write_while_decisions_is_a_kind() {
+    let settings = Settings::from_yaml("retention:\n  note: 30\nsensitivity:\n  note: private\n")
+        .expect("a config written before note was retired still loads");
+    assert_eq!(settings, Settings::default());
+    assert!(!settings.retention.contains_key("note"));
+    assert!(!settings.sensitivity.contains_key("note"));
+    assert!(!Settings::default_yaml().contains("note"));
+    for key in ["retention.note", "sensitivity.note"] {
+        let error = settings
+            .with_setting(key, serde_json::json!(null))
+            .unwrap_err();
+        assert_eq!(error.code(), "unknown_library_setting", "{key}");
+    }
+    assert_eq!(settings.retention["decisions"], None);
+    assert_eq!(settings.sensitivity["decisions"].as_str(), "normal");
+    let updated = settings
+        .with_setting("sensitivity.decisions", serde_json::json!("private"))
+        .expect("decisions is a kind");
+    assert_eq!(updated.sensitivity["decisions"].as_str(), "private");
 }

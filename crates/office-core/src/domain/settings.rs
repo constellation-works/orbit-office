@@ -22,8 +22,12 @@ const KINDS: &[&str] = &[
     "receipt",
     "bill",
     "conversation",
-    "note",
+    "decisions",
 ];
+
+/// Retired source kinds whose keys a config written before the retirement
+/// may still hold. They are ignored on read, never accepted on write.
+const RETIRED_KINDS: &[&str] = &["note"];
 
 /// Validated Library settings. Missing keys receive documented policy defaults;
 /// there are no timestamps or fabricated observations in this shape.
@@ -432,6 +436,9 @@ impl TryFrom<Value> for Settings {
                         .ok_or_else(|| invalid(key, "expected a per-kind mapping"))?;
                     for (kind, value) in items {
                         let dotted = format!("{key}.{kind}");
+                        if RETIRED_KINDS.contains(&kind.as_str()) {
+                            continue;
+                        }
                         if !KINDS.contains(&kind.as_str()) {
                             return Err(invalid(&dotted, "unknown source kind"));
                         }

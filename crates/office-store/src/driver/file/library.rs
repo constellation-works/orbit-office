@@ -43,7 +43,8 @@ const INDEXED_DOCUMENT_LAYERS: &[(&str, &[&str])] = &[
 
 const INDEXED_DOCUMENT_KIND: &str = concat!(
     "indexed document (",
-    "sources/**/source.md, knowledge/**/*.md, artifacts/**/artifact.md",
+    "sources/**/source.md, sources/decisions/<scope>.md, knowledge/**/*.md, ",
+    "artifacts/**/artifact.md",
     ")"
 );
 
@@ -792,7 +793,9 @@ impl LibraryFs {
         for &(layer, stems) in INDEXED_DOCUMENT_LAYERS {
             collect_optional_layer(&self.root.join(layer), &mut files, stems)?;
         }
+        files.extend(self.ledger_files()?);
         files.sort();
+        files.dedup();
 
         let mut documents = Vec::new();
         for path in files {
@@ -1006,6 +1009,166 @@ impl LibraryFs {
         self.read_layer_markdown("knowledge", &[])
     }
 
+    /// Move every retired `note` source into the decision ledgers
+    /// (specs/scribe.md, "Retiring `sources/note`"): one entry per note in
+    /// its scope's ledger, `moved_sources` mapping the note id to the entry,
+    /// then the note's directory is removed. Ledgers are written before any
+    /// directory is removed, and a note already listed in `moved_sources`
+    /// is not appended again, so an interrupted run completes on a re-run.
+    /// A private note is left in place: its text cannot enter a normal
+    /// ledger. Returns the removed note directories and the written ledger
+    /// paths, both Library-relative and sorted; a re-run on a migrated
+    /// Library returns two empty lists and writes nothing.
+    pub(crate) fn migrate_note_sources(
+        &self,
+        created_at: &str,
+    ) -> Result<(Vec<String>, Vec<String>)> {
+        use office_core::domain::source::decisions::{Ledger, note_entry, note_source};
+        let mut notes = Vec::new();
+        for (path, text) in self.read_layer_markdown("sources", &["source"])? {
+            let Some(note) = note_source(&path, &text, created_at) else {
+                continue;
+            };
+            if note.private {
+                continue;
+            }
+            notes.push((
+                note.decided_at,
+                note.id,
+                path,
+                note.title,
+                note.body,
+                note.scope,
+            ));
+        }
+        if notes.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        notes.sort();
+        let mut ledgers: Vec<(Ledger, String)> = Vec::new();
+        for (path, text) in self.read_ledger_markdown()? {
+            ledgers.push((Ledger::parse(&path, &text)?, text));
+        }
+        let mut written: Vec<String> = Vec::new();
+        for (decided_at, id, _, title, body, scope) in &notes {
+            if ledgers
+                .iter()
+                .any(|(ledger, _)| ledger.moved_sources.contains_key(id))
+            {
+                continue;
+            }
+            let index = match ledgers
+                .iter()
+                .position(|(ledger, _)| ledger.scope == *scope)
+            {
+                Some(index) => index,
+                None => {
+                    let ledger = Ledger::new(scope.clone(), created_at);
+                    let text = ledger.render()?;
+                    ledgers.push((ledger, text));
+                    ledgers.len() - 1
+                }
+            };
+            let (ledger, text) = &mut ledgers[index];
+            let entry_id = ledger.next_id();
+            let decision = note_entry(scope, &entry_id, id, title, body, decided_at)?;
+            let line = decision.line()?;
+            let mut appended = office_core::domain::source::decisions::append_line(text, &line);
+            ledger.moved_sources.insert(id.clone(), entry_id);
+            // Re-render only the front matter; every body byte is kept.
+            let body = office_core::domain::source::source_body(&appended);
+            appended = format!("{}{body}", ledger.frontmatter());
+            *ledger = Ledger::parse(&ledger.path.clone(), &appended)?;
+            *text = appended;
+            if !written.contains(&ledger.path) {
+                written.push(ledger.path.clone());
+            }
+        }
+        for (ledger, text) in &ledgers {
+            if written.contains(&ledger.path) {
+                self.write_document(Path::new(&ledger.path), text)?;
+            }
+        }
+        let mut removed = Vec::new();
+        for (_, _, path, _, _, _) in &notes {
+            let Some(dir) = Path::new(path).parent() else {
+                continue;
+            };
+            self.validate_relative_path(dir)?;
+            let absolute = self.root.join(dir);
+            std::fs::remove_dir_all(&absolute)
+                .map_err(|error| Error::io("remove migrated note", &absolute, error))?;
+            removed.push(dir.to_string_lossy().replace('\\', "/"));
+            // Prune emptied month, year and kind directories up to `sources`.
+            let mut parent = absolute.parent();
+            while let Some(dir) = parent {
+                if dir == self.root.join("sources") || std::fs::remove_dir(dir).is_err() {
+                    break;
+                }
+                parent = dir.parent();
+            }
+        }
+        removed.sort();
+        written.sort();
+        Ok((removed, written))
+    }
+
+    /// Every decision ledger file (`sources/decisions/<scope>.md`), in path
+    /// order. A missing directory is empty; symlinks are never followed.
+    fn ledger_files(&self) -> Result<Vec<PathBuf>> {
+        let dir = self
+            .root
+            .join(office_core::domain::source::decisions::LEDGER_DIR);
+        match std::fs::symlink_metadata(&dir) {
+            Ok(metadata) if !metadata.is_dir() => return Ok(Vec::new()),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Vec::new());
+            }
+            Err(error) => return Err(Error::io("inspect decision ledgers", &dir, error)),
+        }
+        let mut files = Vec::new();
+        for entry in
+            std::fs::read_dir(&dir).map_err(|e| Error::io("list decision ledgers", &dir, e))?
+        {
+            let entry = entry.map_err(|e| Error::io("list decision ledgers", &dir, e))?;
+            let path = entry.path();
+            let file_type = entry
+                .file_type()
+                .map_err(|e| Error::io("inspect decision ledger", &path, e))?;
+            if !file_type.is_file() {
+                continue;
+            }
+            if path
+                .strip_prefix(&self.root)
+                .is_ok_and(office_core::domain::source::decisions::is_ledger_path)
+            {
+                files.push(path);
+            }
+        }
+        files.sort();
+        Ok(files)
+    }
+
+    /// Every decision ledger's path and Markdown, in path order.
+    pub(crate) fn read_ledger_markdown(&self) -> Result<Vec<(String, String)>> {
+        let mut out = Vec::new();
+        for path in self.ledger_files()? {
+            refuse_symlink(&path)?;
+            let text = std::fs::read_to_string(&path)
+                .map_err(|error| Error::io("read decision ledger", &path, error))?;
+            let relative = path.strip_prefix(&self.root).map_err(|_| {
+                Error::io(
+                    "relativize decision ledger",
+                    &path,
+                    std::io::Error::other("path escaped the Library"),
+                )
+            })?;
+            out.push((relative.to_string_lossy().replace('\\', "/"), text));
+        }
+        Ok(out)
+    }
+
     /// Every current source's complete Markdown; no search cap or excerpts.
     pub(crate) fn read_source_markdown(&self) -> Result<Vec<(String, String)>> {
         self.read_layer_markdown("sources", &["source"])
@@ -1106,6 +1269,9 @@ fn collect_markdown(dir: &Path, out: &mut Vec<PathBuf>, stems: &[&str]) -> Resul
 
 /// Whether `relative` is a file `scan_documents` would collect.
 fn is_indexed_document(relative: &Path) -> bool {
+    if office_core::domain::source::decisions::is_ledger_path(relative) {
+        return true;
+    }
     let mut components = relative.components();
     let Some(std::path::Component::Normal(layer)) = components.next() else {
         return false;

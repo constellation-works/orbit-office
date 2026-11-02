@@ -2888,8 +2888,52 @@ hold.
 Cost: a breaking change to `office.capture`'s accepted input, and alias
 resolution for five ids kept indefinitely.
 
+## Decision ledger build: migration in `office.init`, global by default, private notes kept
+
+**Recorded:** 2026-11-02 · [ORB-21114]
+**Code anchors:** `crates/office-core/src/domain/source/decisions.rs`;
+`crates/office-store/src/repository/library/decisions.rs`;
+`crates/office-store/src/driver/file/library.rs` (`migrate_note_sources`);
+`crates/office-tools/src/tools/sources/capture/decision.rs`
+
+### Context
+
+The [`note` retirement](#retire-sourcesnote-outright-into-the-decision-ledgers)
+asks for an operator-run, idempotent migration and a capture `decision`
+input whose `ref` names a source anchor or a task comment. The spec does
+not say where the migration runs, which ledger a note goes to, what a
+private note becomes, or how a task comment is named.
+
+### Decision
+
+- The migration is a step of `office.init`, after the legacy-layout move,
+  with the same contract: under the writer lock, one commit, and a re-run
+  that moves nothing reports `already_initialized` with no commit.
+- A note tagged `project:<name>` (or `scope:project:<name>`) goes to that
+  project's ledger; any other note goes to `global`.
+- A private note stays where it is: a ledger is always `normal`, and
+  copying private text into one would publish it.
+- A task comment ref is `orbit://task/<task-id>#comment-<n>`, read through
+  Orbit's `task_show`; its entry's `source` is `orbit-task:<task-id>`.
+- An entry record's body is its verbatim quote, so a migrated note's old
+  `#L<n>` anchors count the same lines they did before.
+
+### Alternatives rejected
+
+- **A separate `office.migrate-notes` tool.** A new tool is a new
+  contract for a one-time step; `office.init` already owns Library layout
+  migrations and their idempotence.
+- **Migrating private notes as reference-only entries.** The entry would
+  lose the text the old citations anchor into.
+
+### Consequences
+
+- Operators run `office.init` once on the Library to migrate the existing
+  notes; new `note` captures are refused from this build on.
+
 ## Task References
 
+- [ORB-21114] — built the decision ledger store, capture `decision` input and the `note` migration.
 - [ORB-20946] — ships the disposable-data QA fixture (`make qa-exec`) for mutating office tools Orbit refuses to agents.
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
 - [ORB-13117] — created the Rust CLI template this workspace was generated from.

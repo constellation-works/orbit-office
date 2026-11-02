@@ -335,7 +335,7 @@ fn malformed_or_unsafe_office_archives_leave_no_sources_or_commits() {
 #[test]
 fn capture_tags_round_trip_into_search_and_reindex_without_metadata_injection() {
     let env = initialized();
-    let captured = env.tool("office.capture", json!({"text": "Bootstrap handbook", "tags": ["bootstrap:orientation", "quote\"tag", "comma,tag"]}));
+    let captured = env.tool("office.capture", json!({"kind": "doc", "text": "Bootstrap handbook", "tags": ["bootstrap:orientation", "quote\"tag", "comma,tag"]}));
     assert_eq!(captured["ok"], true, "{captured}");
     for tag in ["quote\"tag", "comma,tag"] {
         let found = env.tool("office.search", json!({"query": "handbook", "tag": tag}));
@@ -365,14 +365,14 @@ fn capture_tags_round_trip_into_search_and_reindex_without_metadata_injection() 
     ] {
         let refused = env.tool(
             "office.capture",
-            json!({"text": "Must not persist", "tags": tags}),
+            json!({"kind": "doc", "text": "Must not persist", "tags": tags}),
         );
         assert_eq!(refused["error"]["code"], "invalid_argument", "{refused}");
         assert_eq!(git(&env.library(), &["rev-parse", "HEAD"]), head);
     }
     let duplicate = env.tool(
         "office.capture",
-        json!({"text": "Bootstrap handbook", "tags": ["bootstrap:next"]}),
+        json!({"kind": "doc", "text": "Bootstrap handbook", "tags": ["bootstrap:next"]}),
     );
     assert_eq!(duplicate["output"]["id"], captured["output"]["id"]);
     let found = env.tool(

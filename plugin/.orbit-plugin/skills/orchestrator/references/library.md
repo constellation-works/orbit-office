@@ -61,8 +61,15 @@ Pages and artifacts are cited by id without an anchor.
 Call `office.capture` before you act on anything pasted. One call makes one
 source. Fields (see `capture.request.json`):
 
-- `kind`: `video`, `meeting`, `chat`, `email`, `doc`, `receipt`, `bill`,
-  `conversation` or `note`. Inferred for uploads when absent.
+- `kind`: `video`, `meeting`, `chat`, `email`, `doc`, `receipt`, `bill`
+  or `conversation`. Inferred for uploads when absent; pasted text with no
+  kind is refused (`source_kind_required`), so name `chat`, `email` or
+  `doc` for a paste.
+- `decision`: instead of the fields above, append one decision to its
+  scope's ledger (`decisions-global` or `decisions-<project>`). Its
+  verbatim `quote`, `question`, options and `because` must match the
+  source anchor or task comment (`orbit://task/<id>#comment-<n>`) each
+  `ref` names; see `capture.request.json`.
 - `title`, and either `text` (pasted) or `upload_path` (a file inside the
   workspace or Library; documents are converted to anchorable text, up to
   32 MiB). `transcript_path` imports a `.vtt` for a video upload.
