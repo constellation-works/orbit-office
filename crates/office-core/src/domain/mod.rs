@@ -11,6 +11,7 @@ pub mod knowledge;
 pub mod metrics;
 pub mod proposal;
 pub mod scribe_control;
+pub mod scribe_settings;
 pub mod script;
 pub mod selection;
 pub mod session;

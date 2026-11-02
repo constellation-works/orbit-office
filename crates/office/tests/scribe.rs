@@ -417,3 +417,223 @@ fn an_all_refused_batch_into_an_existing_file_keeps_its_name_and_cursor() {
     let text = std::fs::read_to_string(f.library().join(&path)).unwrap();
     assert!(text.contains("\"ship parse and append first\""), "{text}");
 }
+
+fn tag_names(tags: &Value) -> Vec<&str> {
+    tags.as_array()
+        .unwrap()
+        .iter()
+        .map(|tag| tag["name"].as_str().unwrap())
+        .collect()
+}
+
+fn config_text(f: &Fixture) -> String {
+    std::fs::read_to_string(f.library().join(".office/config.yaml")).unwrap()
+}
+
+/// With no `scribe` key, status and scribe-pending report exactly the two
+/// default tags and a 20 minute / 10 turn cadence.
+#[test]
+fn without_a_scribe_key_the_defaults_are_in_force() {
+    let f = Fixture::new();
+    assert!(!config_text(&f).contains("scribe"));
+    let status = f.ok("office.status", json!({}));
+    assert_eq!(
+        status["scribe"]["cadence"],
+        json!({"minutes": 20, "turns": 10})
+    );
+    assert_eq!(
+        tag_names(&status["scribe"]["tags"]),
+        ["preferences", "decisions"]
+    );
+    assert_eq!(status["scribe"]["tags_customized"], false);
+    let tags = &status["scribe"]["tags"];
+    assert_eq!(tags[0]["sink"], "preference_page");
+    assert_eq!(tags[0]["mode"], "propose");
+    assert_eq!(tags[1]["sink"], "decisions_ledger");
+    assert_eq!(tags[1]["mode"], "append");
+    let pending = f.pending(2);
+    assert_eq!(pending["tags"], status["scribe"]["tags"]);
+    assert_eq!(pending["cadence"], json!({"minutes": 20, "turns": 10}));
+}
+
+/// Valid `scribe.*` writes persist, show in status and scribe-pending, and
+/// null restores the defaults.
+#[test]
+fn config_set_writes_cadence_and_tags_and_null_restores_defaults() {
+    let f = Fixture::new();
+    f.ok(
+        "office.config-set",
+        json!({"key":"scribe.cadence","value":{"minutes":45,"turns":6}}),
+    );
+    f.ok(
+        "office.config-set",
+        json!({"key":"scribe.tags.lesson","value":{
+            "scope":"global","instruction":"A lesson learned.","sink":"orbit_task",
+            "workspace":"polaris","capture":"markers+inferred"}}),
+    );
+    f.ok(
+        "office.config-set",
+        json!({"key":"scribe.tags.preferences","value":{
+            "scope":"global","instruction":"Standing answers.","sink":"preference_page","mode":"apply"}}),
+    );
+    let status = f.ok("office.status", json!({}));
+    assert_eq!(
+        status["scribe"]["cadence"],
+        json!({"minutes": 45, "turns": 6})
+    );
+    assert_eq!(status["scribe"]["tags_customized"], true);
+    let tags = &status["scribe"]["tags"];
+    assert_eq!(tag_names(tags), ["preferences", "decisions", "lesson"]);
+    assert_eq!(tags[0]["mode"], "apply");
+    assert_eq!(tags[2]["workspace"], "polaris");
+    assert_eq!(tags[2]["capture"], "markers+inferred");
+    assert_eq!(tags[2]["mode"], "propose");
+    let pending = f.pending(2);
+    assert_eq!(pending["tags"], *tags);
+    assert_eq!(pending["cadence"], json!({"minutes": 45, "turns": 6}));
+    assert!(config_text(&f).contains("\"lesson\""));
+
+    f.ok(
+        "office.config-set",
+        json!({"key":"scribe.tags.decisions","value":null}),
+    );
+    let status = f.ok("office.status", json!({}));
+    assert_eq!(
+        tag_names(&status["scribe"]["tags"]),
+        ["preferences", "lesson"]
+    );
+
+    f.ok(
+        "office.config-set",
+        json!({"key":"scribe.tags","value":[{
+        "name":"idea","scope":"session","instruction":"An idea.","sink":"scr_only"}]}),
+    );
+    let status = f.ok("office.status", json!({}));
+    assert_eq!(tag_names(&status["scribe"]["tags"]), ["idea"]);
+
+    f.ok(
+        "office.config-set",
+        json!({"key":"scribe.tags","value":null}),
+    );
+    f.ok(
+        "office.config-set",
+        json!({"key":"scribe.cadence","value":null}),
+    );
+    let status = f.ok("office.status", json!({}));
+    assert_eq!(
+        status["scribe"]["cadence"],
+        json!({"minutes": 20, "turns": 10})
+    );
+    assert_eq!(
+        tag_names(&status["scribe"]["tags"]),
+        ["preferences", "decisions"]
+    );
+    assert!(!config_text(&f).contains("scribe"));
+}
+
+/// Each refused case carries a typed code and leaves the file untouched.
+#[test]
+fn config_set_refuses_invalid_scribe_values_with_typed_codes() {
+    let f = Fixture::new();
+    let before = config_text(&f);
+    let tag = |sink: &str, extra: Value| {
+        let mut definition = json!({"scope":"project","instruction":"Record.","sink":sink});
+        definition
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        definition
+    };
+    let cases: Vec<(&str, Value, &str)> = vec![
+        (
+            "scribe.cadence",
+            json!({"minutes": 4}),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.cadence",
+            json!({"minutes": 241}),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.cadence",
+            json!({"turns": 1}),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.cadence",
+            json!({"turns": 101}),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            tag("tracker", json!({})),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            tag("decisions_ledger", json!({"mode":"apply"})),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            tag("orbit_task", json!({"mode":"apply"})),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            tag("scr_only", json!({"workspace":"ws"})),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.Bad_Name",
+            tag("scr_only", json!({})),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            tag("scr_only", json!({"name":"other"})),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags",
+            json!([{"name":"d","scope":"global","instruction":"i","sink":"scr_only"},
+            {"name":"d","scope":"global","instruction":"i","sink":"scr_only"}]),
+            "invalid_library_setting",
+        ),
+        (
+            "scribe.tags.x",
+            tag("/home/daniel/polaris/rules.md", json!({})),
+            "tag_sink_refused",
+        ),
+        (
+            "scribe.tags.x",
+            tag("../almanac", json!({})),
+            "tag_sink_refused",
+        ),
+        (
+            "scribe.tags.x",
+            tag("scr_only", json!({"path":"/tmp/out.md"})),
+            "tag_sink_refused",
+        ),
+        ("scribe.mode", json!(1), "unknown_library_setting"),
+    ];
+    for (key, value, code) in cases {
+        let response = f.call("office.config-set", json!({"key":key,"value":value}));
+        assert_eq!(response["ok"], false, "{key} {value}");
+        assert_eq!(response["error"]["code"], code, "{key} {value}: {response}");
+        assert_eq!(config_text(&f), before, "{key} changed the config");
+    }
+}
+
+/// No agent can change the block: `office.config-set` stays out of the MCP
+/// surface (the manifest/spec agreement is `plugin_tree.rs`).
+#[test]
+fn config_set_is_not_agent_callable() {
+    let spec = office_tools::tools()
+        .iter()
+        .find(|tool| tool.spec().name == "config-set")
+        .unwrap()
+        .spec();
+    assert_eq!(spec.mcp_scope, office_core::tool::McpScope::None);
+}

@@ -55,7 +55,7 @@ Source: spec §12. The one-call envelope is
 | `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, page templates (no pages), index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
 | `office.config-set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
 | `office.reindex` | mutating | **none** | Rebuild the SQLite index from the Library |
-| `office.status` | read_only | workspace | Library and index health, the private endpoint as `open_weights` or null, the shared library block as `shared` or null, and the followed workspaces as `brief` (`task_workspaces`, or null when uninitialized) (also a panel) |
+| `office.status` | read_only | workspace | Library and index health, the private endpoint as `open_weights` or null, the shared library block as `shared` or null, the followed workspaces as `brief` (`task_workspaces`, or null when uninitialized), and the effective scribe policy as `scribe` (`cadence`, `tags`, `tags_customized`; the defaults when unset or uninitialized) (also a panel) |
 | `office.scribe-ask` | read_only | workspace | Answer a free-form question over SCR files: model-free shortlist (date/project/session filters plus lexical match on tags, matter, topics and quotes, bounded by `limit`), then one Standard-tier model call (the scribe `ask` level); every claim cites SCR file:line and message id and its quote is verbatim-checked against the cited line, unmatched quotes dropped; `not_captured` with the searched range, topics and sessions when nothing is found; private entries always by reference only to the caller, regardless of route ([scribe.md](./scribe.md#answering)) |
 
 Rules:
@@ -143,7 +143,7 @@ and capability floor:
 | `transcribe`, `extract` (workspace MCP) | Remain Operator/Runner only. Transcription calls Muse Voice and writes source bodies; extraction makes model calls, persists derived material and can file owner-to-dos. Their cost, privacy routing and confirmation belong to operator/routine processing. |
 | `library-sync` (workspace MCP) | Remains Operator/Runner only: the backend can push shared content to an external Git remote, even though some inputs request dry-run/pull. Authority covers the whole verb. |
 | `scribe-control` (workspace MCP, mutating) | Operator/Runner only; not added to the consented agent verbs. It writes only per-session scribe control records in plugin state (switch, Capture-now request, title, window heartbeat): no Library write, model call or Orbit callback. The provider plugin's hooks and `/scribe` command call it through the user's own `orbit` CLI and fall back to their local flag file when refused ([sessions.md](./sessions.md#switch)). |
-| `scribe-pending` (workspace MCP, read-only) | Operator/Runner only; not added to the consented agent verbs. Model-free: it reads a contained transcript through the conversation adapter and writes only the private parsed message files under the Library's git-ignored `<library>/.office/state/scribe/`, inside the `{{workspace}}/library` write grant. No Library commit, model call or Orbit callback ([scribe.md](./scribe.md#pipeline)). |
+| `scribe-pending` (workspace MCP, read-only) | Operator/Runner only; not added to the consented agent verbs. Model-free: it reads a contained transcript through the conversation adapter and writes only the private parsed message files under the Library's git-ignored `<library>/.office/state/scribe/`, inside the `{{workspace}}/library` write grant. No Library commit, model call or Orbit callback. It also returns the scribe `tags` in force and the `cadence` from the Library settings ([scribe.md](./scribe.md#configuration), [pipeline](./scribe.md#pipeline)). |
 | `scribe-append` (workspace MCP, mutating) | Operator/Runner only; not added to the consented agent verbs. Model-free: it validates the scribe agent's entries against the parsed messages and the rules, then writes and commits one SCR file under `sources/conversation/`. No model call or Orbit callback ([scribe.md](./scribe.md#pipeline)). |
 | `calendar-sync`, `meeting-prep`, `video-plan`, `frames`, `source-set-sensitivity`, `share-set`, `knowledge-write`, `artifact-promote`, `init`, `reindex`, `config-set`, `private-route-check`, `proposal-accept`, `proposal-reconcile`, `selection-put`, `digest`, `script-run`, `batch-plan`, `consolidate` (MCP none) | Remain hidden and Operator/Runner only. These cover calendar/config/secrets-adjacent setup, confirmations/cost, direct knowledge/artifact/sharing writes, approvals, scripts and standing automation. Calling through a shell does not bypass authorization. |
 | `status`, `calendar-list`, `source-show`, `knowledge-list`, `knowledge-show`, `artifact-list`, `artifact-show`, `search`, `signals-scan`, `session-brief`, `bootstrap-status`, `metrics`, `review-inputs`, `recall` | Read-only, workspace MCP, unchanged Agent access. |
@@ -305,6 +305,14 @@ federated selectors). It is settable as the whole leaf
 `brief.task_workspaces`. Projecting it in `office.status` was built in
 [ORB-19740].
 
+The optional `scribe` block holds the scribe pass cadence and the tag
+definitions ([scribe.md](./scribe.md#configuration)). It is absent from a
+default file: `scribe.cadence` defaults to 20 minutes and 10 user turns
+(ranges 5–240 and 2–100), and `scribe.tags` defaults to the `preferences`
+and `decisions` tags. Because its tag list is a list of mappings, a
+customized block is written in the canonical JSON form (valid YAML), not
+in the two-level YAML subset.
+
 Retention is a positive integer up to 36,500 days or `null` (keep indefinitely).
 Sensitivity is `normal` or `private`. Packs are distinct names from `kt`,
 `meetings` and `receipts`; an empty list disables all packs. Repetition count is 1–10,000;
@@ -347,9 +355,9 @@ values):
 The value is typed JSON, not a YAML string. Supported keys are
 `retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>`, `packs`, `brief.task_workspaces`, `demo.simulated_until`,
 `shared`, `shared.remote`, `shared.branch`, `shared.member`,
-`open_weights.<endpoint|model|kind|label>` and the whole `open_weights` block
-(a mapping of those four keys, or null), using the kinds, threshold names and
-bounds above. `demo.simulated_until` is a `YYYY-MM-DD` date, or null to clear it.
+`open_weights.<endpoint|model|kind|label>`, the whole `open_weights` block
+(a mapping of those four keys, or null), `scribe.cadence`, `scribe.tags` and
+`scribe.tags.<name>`, using the kinds, threshold names and bounds above. `demo.simulated_until` is a `YYYY-MM-DD` date, or null to clear it.
 A leaf needs the block to exist. Changing the endpoint or model
 clears the recorded capabilities. A whole-block update follows the same rule:
 when both endpoint and model are unchanged, it preserves the recorded
@@ -360,6 +368,15 @@ writes them.
 The additional thresholds `friction_count` and `new_subject_count` default to
 2 (range 1–10,000); `unused_days` defaults to 30 (range 1–36,500).
 Whole retention/sensitivity/threshold mappings cannot be replaced in one call.
+The scribe keys take a cadence mapping (`minutes` 5–240, `turns` 2–100), the
+whole tag list, or one tag definition keyed by its name; null restores the
+default cadence or tag list, or deletes one tag. A tag definition naming a
+file target instead of a sink inside the Library or an Orbit task returns
+`tag_sink_refused`; the other scribe refusals (an unknown sink, `apply` off
+`preference_page`, a duplicate or malformed name, a `workspace` off
+`orbit_task`) return `invalid_library_setting`
+([scribe.md](./scribe.md#configuration)). `office.config-set` stays
+`mcp_scope: none`, so no agent can change a tag, a sink or a mode.
 Unknown keys, including secret names, return `unknown_library_setting`;
 invalid values return `invalid_library_setting`. Missing arguments or unknown
 input fields return `invalid_argument`. Refusals do not change config or HEAD.
@@ -386,6 +403,7 @@ defaults; existing explicit pack lists keep their values.
 
 - [ORB-18838] — renamed the scaffold README's KT routine from `office-meeting-inbox` to `office-kt-inbox`.
 - [ORB-19740] — projected `brief.task_workspaces` in `office.status`.
+- [ORB-21115] — added the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
 - [ORB-20247] — added `office.proposal-reconcile` and the status-partitioned proposal layout.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

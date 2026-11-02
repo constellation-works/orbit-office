@@ -2798,7 +2798,8 @@ paths that differ from the direction's wording.
 ## Scribe v2 tag definitions live in Library settings; app saves wait on ORB-20363
 
 **Recorded:** 2026-11-01 · [ORB-21083]
-**Code anchors:** none yet; [specs/scribe.md](./specs/scribe.md#configuration)
+**Code anchors:** `crates/office-core/src/domain/scribe_settings.rs`,
+`crates/office-core/src/domain/settings.rs`; [specs/scribe.md](./specs/scribe.md#configuration)
 
 ### Context
 
@@ -2818,6 +2819,17 @@ by `office-core`. App saves therefore depend on [ORB-20363], whose
 operation list must add `office.config-set`, limited to `scribe.*` keys.
 Until it lands, the Tags editor is read-only, reports a save as
 `not_permitted`, and shows the operator command.
+
+Built in [ORB-21115]. The block stays out of the file while both parts
+are default, so an unset `scribe.tags` means "the shipped defaults" and
+follows later changes to them, while an explicit list (even `[]`) is the
+user's own. A customized block is stored in the canonical JSON form that
+`Settings::to_yaml` already writes, because the settings YAML subset has
+no list of mappings. A definition that names a file target (a path-shaped
+`sink`, or a `path`, `file` or `target` key) is refused with the typed
+`tag_sink_refused`; a plain unknown sink name stays
+`invalid_library_setting`. `office.status` and `office.scribe-pending`
+return the effective block.
 
 ### Alternatives rejected
 
@@ -2927,5 +2939,6 @@ resolution for five ids kept indefinitely.
 - [ORB-21083] — designed scribe v2: opt-in sessions, marker-only tags, ledgers, SCR as handoff, `note` retired.
 - [ORB-21089] — plans Orbit's decision model, which reads decision precedent.
 - [ORB-21090] — plans the office precedent provider over the v2 decision ledger schema.
+- [ORB-21115] — built the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

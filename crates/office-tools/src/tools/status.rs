@@ -1,14 +1,16 @@
 //! `office.status`: the plugin version, which declared secrets are set
 //! (never a secret value; STD-05), Library and index health, the
 //! configured private endpoint (`open_weights`, or null), the shared library
-//! (`shared`, or null), and the followed workspaces (`brief`, or null).
+//! (`shared`, or null), the followed workspaces (`brief`, or null) and the
+//! effective scribe cadence and tags (`scribe`; the defaults until the
+//! Library sets them).
 //! The token is only `set` or `unset` under `secrets`, and
 //! `open_weights_token_binding` says whether it was saved for the configured
 //! endpoint's origin (never the token or that origin).
 //! Reading creates no Library state.
 
 use office_core::domain::endpoint::{Capability, TokenBinding};
-use office_core::domain::settings::{BriefSettings, OpenWeights};
+use office_core::domain::settings::{BriefSettings, OpenWeights, Settings};
 use office_core::domain::sharing::SharedSettings;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Result, SECRET_NAMES, VERSION};
@@ -103,6 +105,12 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         ),
         None => (Value::Null, Value::Null, Value::Null),
     };
+    // Scribe policy is never absent: an unset or uninitialized Library
+    // reads as the shipped defaults.
+    let scribe = settings.as_ref().map_or_else(
+        || Settings::default().scribe.effective(),
+        |s| s.scribe.effective(),
+    );
     Ok(json!({
         "version": VERSION,
         "secrets": secrets,
@@ -122,6 +130,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "open_weights": open_weights,
         "shared": shared,
         "brief": brief,
+        "scribe": scribe,
     }))
 }
 
