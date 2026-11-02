@@ -131,6 +131,32 @@ pub(super) fn feed(
         conflicts.push(json!({"entries":pair,"task":task,"matter":matter}));
     }
     report["conflicts"] = json!(conflicts);
+    assign(&reply, &holder, &mut holds);
+    Ok(Fed { report, holds })
+}
+
+/// Holds for a meeting whose decisions were already fed but whose holds were
+/// never recorded (filed before `filing.json`): re-check its to-dos against
+/// the open conflicts only. Appends nothing and files no conflict.
+pub(super) fn rederive(call: &Call<'_>, result: &Value) -> Result<Vec<Option<Hold>>> {
+    let to_dos = list(result, "to_dos")?;
+    let mut holds: Vec<Option<Hold>> = to_dos.iter().map(|_| None).collect();
+    let open = open_conflicts(call)?;
+    if open.is_empty() || to_dos.is_empty() {
+        return Ok(holds);
+    }
+    let reply = check(call, &BTreeMap::new(), &BTreeMap::new(), &open, to_dos)?;
+    let mut holder: BTreeMap<String, String> = BTreeMap::new();
+    for (task, left, right) in &open {
+        holder.entry(left.clone()).or_insert_with(|| task.clone());
+        holder.entry(right.clone()).or_insert_with(|| task.clone());
+    }
+    assign(&reply, &holder, &mut holds);
+    Ok(holds)
+}
+
+/// Hold each to-do the check named, on the conflict to-do holding its entry.
+fn assign(reply: &Value, holder: &BTreeMap<String, String>, holds: &mut [Option<Hold>]) {
     for held in reply["held"].as_array().into_iter().flatten() {
         let index = held["to_do"].as_u64().and_then(|i| usize::try_from(i).ok());
         let entry = held["entry"].as_str();
@@ -145,7 +171,6 @@ pub(super) fn feed(
             });
         }
     }
-    Ok(Fed { report, holds })
 }
 
 /// The ledger's current entries a meeting decision may contradict: not

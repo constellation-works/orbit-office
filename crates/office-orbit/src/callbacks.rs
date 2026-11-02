@@ -125,9 +125,10 @@ impl OrbitCallbacks {
         };
         let output = captured.map_err(|error| process_failure(tool, error))?;
         if !output.status.success() {
-            // The CLI emits {"error": "diagnostic", "code": "…"} on stderr.
-            // Classify only from that structure, never from prose or stdout.
-            if let Ok(refusal) = serde_json::from_slice::<Value>(&output.stderr)
+            // The CLI emits {"error": "diagnostic", "code": "…"} as the last
+            // stderr line; tracing warnings may precede it. Classify only from
+            // that structure, never from prose or stdout.
+            if let Ok(refusal) = serde_json::from_slice::<Value>(last_line(&output.stderr))
                 && refusal.get("error").is_some_and(Value::is_string)
                 && let Some(code) = refusal.get("code").and_then(Value::as_str)
                 && !code.is_empty()
@@ -155,6 +156,15 @@ impl OrbitCallbacks {
         serde_json::from_slice(&output.stdout)
             .map_err(|_| indeterminate(tool, Error::InvalidResponse))
     }
+}
+
+// The last non-empty line of a stream, trimmed.
+fn last_line(stream: &[u8]) -> &[u8] {
+    stream
+        .split(|b| *b == b'\n')
+        .map(<[u8]>::trim_ascii)
+        .rfind(|line| !line.is_empty())
+        .unwrap_or_default()
 }
 
 // Common's public error is non-exhaustive. A future supervisor error cannot

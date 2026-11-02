@@ -17,6 +17,10 @@
     "task": {
       "type": "string",
       "minLength": 1
+    },
+    "reconcile": {
+      "type": "boolean",
+      "description": "Meeting only: finish filing a meeting whose extraction is saved, from its filing record, without transcribing, extracting or feeding the ledger again."
     }
   },
   "required": [
@@ -37,5 +41,5 @@
       }
     }
   ],
-  "description": "Meeting profile without id runs the meeting inbox. With id it saves summary.md and to-dos; task is optional for meeting and adds a result artifact when supplied."
+  "description": "Meeting profile without id runs the meeting inbox. With id it saves summary.md and to-dos; task is optional for meeting and adds a result artifact when supplied. Every to-do gets a per-item filing outcome; when one is not filed, summary.md waits and `reconcile: true` finishes the filing later."
 }

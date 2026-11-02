@@ -257,6 +257,23 @@ fn orbit_refusals_are_typed_for_every_callback_and_discard_raw_diagnostics() {
     }
 }
 
+// ORB-21375: Orbit logs a tracing warning before its JSON refusal. A remote
+// workspace the sandbox cannot reach must stay a refusal, not an unknown write.
+#[test]
+fn a_refusal_after_a_logged_warning_stays_typed() {
+    let stub = Stub::new();
+    let adapter = stub.adapter();
+    let refusal = json!({"code":"unreachable_destination","error":"fixture-secret"});
+    stub.raw_response(json!({"exit":1,"stderr":format!(
+        "2026-11-02T09:16:03Z  WARN orbit.core.actor: no actor identity resolved\n{refusal}\n"
+    )}));
+    let error = adapter.task_add(&Map::new()).unwrap_err();
+    assert!(
+        matches!(&error, office_core::Error::OrbitRefused { code } if code == "unreachable_destination")
+    );
+    assert!(!error.to_string().contains("fixture-secret"));
+}
+
 #[test]
 fn invalid_json_and_unstructured_failure_are_distinct_and_do_not_leak_output() {
     let stub = Stub::new();

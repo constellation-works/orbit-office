@@ -345,6 +345,7 @@ pub fn validate_sidecar(name: &str) -> Result<()> {
         "digest.json",
         "summary.md",
         "extract-result.json",
+        "filing.json",
         "transcript-state.json",
     ]
     .contains(&name)
