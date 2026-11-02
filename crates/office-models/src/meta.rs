@@ -90,6 +90,9 @@ pub(crate) fn transcribe_body(
 }
 
 /// Body for a structured extraction call, asking for `schema`-shaped JSON.
+/// The schema is not `strict`: the Meta Model API's strict mode refuses any
+/// schema whose `required` omits a property (HTTP 400, seen live on
+/// 2026-11-02), and `Models::extract` validates the reply locally anyway.
 pub(crate) fn extract_body(model: &str, text: &str, schema: &Value) -> Value {
     json!({
         "model": model,
@@ -99,7 +102,7 @@ pub(crate) fn extract_body(model: &str, text: &str, schema: &Value) -> Value {
         }],
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"name": "extraction", "schema": schema, "strict": true},
+            "json_schema": {"name": "extraction", "schema": schema, "strict": false},
         },
     })
 }

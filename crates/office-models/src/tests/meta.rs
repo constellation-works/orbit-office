@@ -179,6 +179,38 @@ fn extracts_structured_json_on_the_hosted_endpoint() {
 }
 
 #[test]
+fn hosted_extraction_sends_a_non_strict_schema_and_still_validates_locally() {
+    // The Meta Model API's strict mode refuses any schema whose `required`
+    // omits a property, and office's schemas have optional fields.
+    let schema = json!({"type": "object", "additionalProperties": false,
+        "properties": {"text": {"type": "string"}, "volatile": {"type": "boolean"}},
+        "required": ["text"]});
+    let server = FakeServer::start_replies(vec![
+        (200, chat_reply(r#"{"text":"kept"}"#)),
+        (200, chat_reply(r#"{"volatile":true}"#)),
+    ]);
+    let models = client(hosted_config(&server.base_url));
+    let request = ExtractRequest {
+        tier: office_core::ports::ModelTier::Standard,
+        text: "notes".into(),
+        schema: schema.clone(),
+        sensitivity: Sensitivity::Normal,
+    };
+    assert_eq!(
+        models.extract(&request).unwrap().value,
+        json!({"text": "kept"})
+    );
+    assert_eq!(
+        models.extract(&request).unwrap_err().code(),
+        "model_invalid_response"
+    );
+    let body: serde_json::Value =
+        serde_json::from_str(&server.requests()[0].body).expect("JSON request");
+    assert_eq!(body["response_format"]["json_schema"]["strict"], false);
+    assert_eq!(body["response_format"]["json_schema"]["schema"], schema);
+}
+
+#[test]
 fn refuses_schema_violations_on_the_hosted_endpoint() {
     super::assert_extraction_refuses_schema_violations(Sensitivity::Normal);
 }

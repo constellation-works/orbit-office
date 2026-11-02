@@ -202,7 +202,11 @@ user's own use.
 ## Structured extraction
 
 `Models::extract` compiles `request.schema` before inference and validates the
-parsed JSON reply locally on both the hosted and open-weights routes. Non-JSON
+parsed JSON reply locally on both the hosted and open-weights routes. The hosted
+request sends the schema with `strict: false`: the Meta Model API's strict mode
+refuses any schema whose `required` list omits a property (the meeting and
+digest schemas have optional fields), so the schema guides generation and local
+validation enforces it. Non-JSON
 or schema-violating replies return non-retryable `model_invalid_response`.
 The schema sent to the endpoint guides generation; local validation enforces
 the contract even when the endpoint does not enforce `response_format`.
