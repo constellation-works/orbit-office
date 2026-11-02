@@ -1,18 +1,24 @@
 //! Meta Model API request shapes: Muse Spark (extraction, vision) and
 //! Muse Voice Transcribe (specs/models-and-privacy.md).
 //!
-//! Confirmed against Meta's published docs on 2026-10-27 (see the crate
-//! documentation in `lib.rs` for the source list): the API is
-//! OpenAI-compatible Chat Completions at `https://api.meta.ai/v1` with a
-//! Bearer credential, so every hosted operation is one
-//! `POST /chat/completions` whose reply text is
-//! `choices[0].message.content`. Audio reaches the model as a base64
-//! `input_audio` content part and images as a base64 `image_url` data
-//! URL; no dedicated transcription endpoint shape was published in the
-//! fetched references, so transcription asks the audio-capable model for
-//! a verbatim transcript through the same confirmed shape and for speaker
-//! turns as JSON in the reply text. A reply that is not that JSON stays
-//! text only.
+//! Extraction and vision use OpenAI-compatible Chat Completions at
+//! `https://api.meta.ai/v1` with a Bearer credential: one
+//! `POST /chat/completions` whose reply text is `choices[0].message.content`,
+//! with images as a base64 `image_url` data URL. Hosted extraction sends its
+//! JSON Schema with `strict: false`, because the API's strict mode refuses
+//! any schema with an optional property; the reply is validated locally
+//! either way.
+//!
+//! Hosted transcription uses Muse Voice Transcribe's one-shot endpoint,
+//! `POST /asr/transcribe` (Meta's cookbook, `06_muse_voice`, fetched
+//! 2026-11-02): a multipart body with a `request` JSON part (`model`, `mode`,
+//! `audioEncoding: "WAV"`, optional `languageBias`) and an `audio` part
+//! holding the WAV. The reply is `{"sessionId","transcript",
+//! "audioDurationMs","turns"}`, each turn carrying `startMs`, `transcript`
+//! and, in `DIARIZATION` mode, `speaker`. The private route keeps the
+//! OpenAI-compatible chat shape: audio as a base64 `input_audio` part, and
+//! speaker turns asked for as JSON in the reply text. A reply that is not
+//! that JSON stays text only.
 
 use base64::Engine;
 use office_core::ports::TranscriptSegment;
@@ -21,6 +27,100 @@ use serde_json::{Value, json};
 /// Chat Completions URL for a provider base URL.
 pub(crate) fn chat_url(base_url: &str) -> String {
     format!("{}/chat/completions", base_url.trim_end_matches('/'))
+}
+
+/// Hosted transcription model: Muse Voice Transcribe.
+pub(crate) const TRANSCRIBE_MODEL: &str = "muse-voice-transcribe-1.0";
+
+/// Muse Voice Transcribe one-shot URL for a provider base URL.
+pub(crate) fn asr_url(base_url: &str) -> String {
+    format!("{}/asr/transcribe", base_url.trim_end_matches('/'))
+}
+
+/// Multipart boundary for [`asr_body`]; never occurs in the JSON part, and
+/// a WAV payload is delimited by the part's own CRLF and dashes.
+const ASR_BOUNDARY: &str = "office-muse-voice-7f4507a1c9e3";
+
+/// Content type and multipart body for one hosted transcription of `wav`.
+/// `DIARIZATION` asks the model to label who spoke each turn.
+pub(crate) fn asr_body(model: &str, wav: &[u8], language: Option<&str>) -> (String, Vec<u8>) {
+    let mut request = json!({"model": model, "mode": "DIARIZATION", "audioEncoding": "WAV"});
+    if let Some(language) = language {
+        request["languageBias"] = json!([language]);
+    }
+    let mut body = format!(
+        "--{ASR_BOUNDARY}\r\nContent-Disposition: form-data; name=\"request\"\r\n\
+         Content-Type: application/json\r\n\r\n{request}\r\n\
+         --{ASR_BOUNDARY}\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"audio.wav\"\r\n\
+         Content-Type: audio/wav\r\n\r\n"
+    )
+    .into_bytes();
+    body.extend_from_slice(wav);
+    body.extend_from_slice(format!("\r\n--{ASR_BOUNDARY}--\r\n").as_bytes());
+    (
+        format!("multipart/form-data; boundary={ASR_BOUNDARY}"),
+        body,
+    )
+}
+
+/// Read a Muse Voice Transcribe reply: `transcript` is the text, and each
+/// turn with a start and text becomes a segment. A turn without `endMs`
+/// ends where the next turn starts, or at the end of the audio.
+pub(crate) fn parse_asr(
+    host: &str,
+    response: &Value,
+) -> Result<ParsedTranscript, office_core::Error> {
+    let text = response
+        .get("transcript")
+        .and_then(Value::as_str)
+        .ok_or_else(|| office_core::Error::Model {
+            code: "model_invalid_response",
+            message: format!("model endpoint {host} returned no transcript"),
+            retryable: false,
+        })?
+        .to_string();
+    let turns: Vec<&Value> = response
+        .get("turns")
+        .and_then(Value::as_array)
+        .map(|turns| turns.iter().collect())
+        .unwrap_or_default();
+    let audio_end = response.get("audioDurationMs").and_then(Value::as_u64);
+    let mut segments = Vec::new();
+    for (index, turn) in turns.iter().enumerate() {
+        let Some(start_ms) = turn.get("startMs").and_then(Value::as_u64) else {
+            continue;
+        };
+        let next_start = turns
+            .get(index + 1)
+            .and_then(|next| next.get("startMs"))
+            .and_then(Value::as_u64);
+        let end_ms = turn
+            .get("endMs")
+            .and_then(Value::as_u64)
+            .or(next_start)
+            .or(audio_end)
+            .unwrap_or(start_ms)
+            .max(start_ms);
+        let Some(turn_text) = turn
+            .get("transcript")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+        else {
+            continue;
+        };
+        let speaker = match turn.get("speaker") {
+            None => None,
+            Some(value) => speaker_name(value).flatten(),
+        };
+        segments.push(TranscriptSegment {
+            speaker,
+            start_ms,
+            end_ms,
+            text: turn_text.to_string(),
+        });
+    }
+    Ok(ParsedTranscript { text, segments })
 }
 
 /// Instruction that asks for the verbatim transcript and speaker turns.
@@ -90,6 +190,9 @@ pub(crate) fn transcribe_body(
 }
 
 /// Body for a structured extraction call, asking for `schema`-shaped JSON.
+/// The schema is not `strict`: the Meta Model API's strict mode refuses any
+/// schema whose `required` omits a property (HTTP 400, seen live on
+/// 2026-11-02), and `Models::extract` validates the reply locally anyway.
 pub(crate) fn extract_body(model: &str, text: &str, schema: &Value) -> Value {
     json!({
         "model": model,
@@ -99,7 +202,7 @@ pub(crate) fn extract_body(model: &str, text: &str, schema: &Value) -> Value {
         }],
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"name": "extraction", "schema": schema, "strict": true},
+            "json_schema": {"name": "extraction", "schema": schema, "strict": false},
         },
     })
 }

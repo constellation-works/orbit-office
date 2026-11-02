@@ -239,6 +239,8 @@ conversation entries, finished to-dos, proposal decisions and Library
 changes. Every line cites its evidence. It is promoted without review.
 
 - You do not run it: `office.digest` is not exposed to you.
+- The app can show the digest since one meeting (Decided, Shipped with PR
+  links, Needs you).
 - A day with no activity has no digest.
 - Extracted log entries and rolling handoffs are its input. Pending extraction
   can delay the latest session evidence until the next digest run.

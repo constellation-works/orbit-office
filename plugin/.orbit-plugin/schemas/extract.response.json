@@ -74,6 +74,85 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "ledger": {
+      "type": "object",
+      "description": "Meeting profile only: decisions appended to the decision ledger, decisions skipped with their refusal code, and contradictions filed as owner:you to-dos (specs/scribe.md, Meeting decisions).",
+      "properties": {
+        "appended": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "index",
+              "code"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "task": {
+                "type": "string",
+                "minLength": 1
+              },
+              "matter": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "entries",
+              "task",
+              "matter"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "checked": {
+          "type": "boolean"
+        },
+        "private": {
+          "type": "boolean"
+        },
+        "conflicts_unread": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "appended",
+        "skipped",
+        "conflicts",
+        "checked"
+      ],
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,

@@ -181,6 +181,13 @@ impl Library for FakeLibrary {
     fn decision_ledgers(&self) -> Result<Vec<LibraryText>> {
         FakeLibrary::decision_ledgers(self)
     }
+    fn append_decision(
+        &self,
+        decision: &office_core::domain::source::decisions::Decision,
+        captured_at: &str,
+    ) -> Result<office_core::ports::DecisionOutcome> {
+        FakeLibrary::append_decision(self, decision, captured_at)
+    }
     fn decision_precedent_scores(
         &self,
         _query: &str,

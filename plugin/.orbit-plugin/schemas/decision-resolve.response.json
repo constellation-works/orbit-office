@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.decision-resolve response",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "task": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stands": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reverses": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The overturned entry id."
+    },
+    "entry": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The ledger entry that records the resolution (an earlier one when the conflict was already settled)."
+    },
+    "released": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "held": {
+            "type": "string"
+          },
+          "task": {}
+        },
+        "required": [
+          "held",
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Held to-dos acting on the standing entry, filed for agents in meetings.agent_workspace."
+    },
+    "withdrawn": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Held to-dos acting on the overturned entry, rejected."
+    }
+  },
+  "required": [
+    "task",
+    "stands",
+    "reverses",
+    "entry",
+    "released",
+    "withdrawn"
+  ]
+}

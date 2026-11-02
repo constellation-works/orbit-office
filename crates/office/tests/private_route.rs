@@ -405,3 +405,37 @@ fn a_bare_token_without_an_origin_is_never_sent() {
             .all(|(authorization, _)| authorization.is_none())
     );
 }
+
+#[test]
+fn secrets_in_orbits_delivery_shape_reach_status_and_the_endpoint() {
+    // Orbit delivers each set secret as `{"value": …, "version": …}`.
+    let env = Env::new();
+    let (endpoint, received) = fake_endpoint(&[200], 3);
+    env.configured(&endpoint);
+    let secrets = json!({
+        "meta_api_key": {"value": "fixture-meta-key", "version": 1},
+        "open_weights_token": {"value": bound_token(&endpoint, "fixture-token"), "version": 2},
+    });
+
+    let status = env.tool("office.status", json!({}), secrets.clone());
+    assert_eq!(
+        status["output"]["secrets"],
+        json!({"meta_api_key": "set", "open_weights_token": "set", "baseten_token": "set"})
+    );
+    assert_eq!(
+        status["output"]["open_weights_token_binding"],
+        "this_endpoint"
+    );
+    let response = env.tool("office.private-route-check", json!({}), secrets);
+    assert_eq!(response["ok"], true, "{response}");
+
+    let received = received.lock().unwrap().clone();
+    assert_eq!(received.len(), 3);
+    for (authorization, _) in &received {
+        assert_eq!(authorization.as_deref(), Some("Bearer fixture-token"));
+    }
+    for response in [&status, &response] {
+        assert!(!response.to_string().contains("fixture-token"));
+        assert!(!response.to_string().contains("fixture-meta-key"));
+    }
+}

@@ -1,101 +1,124 @@
-# orbit-office
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/office-lockup-on-dark.svg" />
+    <img src="docs/assets/office-lockup-on-light.svg" alt="orbit office" width="400" />
+  </picture>
+</p>
 
-Orbit Office is a distribution of [Orbit](https://github.com/constellation-works/orbit):
-an app built on Orbit as its engine. It brings local-first office work to any office
-worker, software engineers included. The standalone web app (TypeScript) and its
-`office` plugin (Rust) turn onboarding material, hour-long knowledge-transfer
-videos, pasted chats and other sources into a cited Library (KT videos come back as a
-chaptered index with the tangents folded away), to-dos for you and for agents,
-evidence-backed proposals and generated reviews. Private material can go to Meta's
-open-weights Muse Spark Open on an endpoint you choose instead of the hosted API.
-Built with Muse Spark Open.
+<h3 align="center">Meetings in. Pull requests by morning.</h3>
 
-The distribution combines the app with the `office` and `gateway` component plugins,
-and optionally `cloudcli`. Its planned office workspace preset selects the initial
-configuration and automation; integration awaits Orbit's preset support
-([installation spec](docs/design/office/specs/install.md#office-workspace-preset-pending-orbit-support)).
-See the [glossary](docs/design/office/references/glossary.md) for distribution,
-component and preset.
+<p align="center">
+  <a href="https://github.com/constellation-works/orbit-office/actions/workflows/ci.yml"><img src="https://github.com/constellation-works/orbit-office/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" /></a>
+  <a href="#meta-models-at-runtime"><img src="https://img.shields.io/badge/models-Meta%20only-informational" alt="Models: Meta only" /></a>
+  <a href="https://github.com/constellation-works/orbit"><img src="https://img.shields.io/badge/built%20on-Orbit-6E9FFF" alt="Built on Orbit" /></a>
+</p>
 
-> **Pre-existing vs built for the hackathon:** Orbit is a pre-existing open-source
-> agent runtime (MIT), used here as a labelled dependency pinned to a tested commit
-> and never vendored, forked or added as a submodule. This repository was started
-> from the constellation Rust CLI template
-> ([constellation-works/rust-cli-template](https://github.com/constellation-works/rust-cli-template));
-> its structure and gates are the pattern the Rust code follows. Everything
-> else in this repository — the `office` plugin surface, the orchestrator, the
-> Library and the web app — is new work.
+<!-- Demo GIF slot: uncomment once docs/assets/office-demo.gif exists, and describe what it shows in the alt text.
+<p align="center">
+  <img src="docs/assets/office-demo.gif" alt="" width="880" />
+</p>
+-->
+
+Orbit Office turns your meetings into work that gets done. A local web app and an
+[Orbit](https://github.com/constellation-works/orbit) plugin transcribe a recording,
+pull out the decisions and to-dos, and hand the agents' share to coding crews that open
+pull requests overnight. Every decision and to-do cites the moment of the meeting it came from.
+
+- **Local-first.** Your Library is plain files and git in your own workspace; the app runs on `localhost`.
+- **Meta models only.** Every model it calls at runtime is a Meta model ([table below](#meta-models-at-runtime)).
+- **Private stays private.** Material marked `private` goes only to Muse Spark Open on an endpoint you choose, never to Meta's hosted API.
+
+## How it works
+
+```text
+1. A meeting goes in      Upload a recording, a .vtt or pasted notes.
+                          Muse Voice Transcribe returns timestamped speaker turns.
+2. Decisions and to-dos   Muse Spark extracts a summary, decisions and to-dos, each
+                          cited to a #t= turn, and splits them: yours, and agents'.
+3. Needs you              Decisions go to a ledger. One that contradicts an earlier
+                          decision becomes a question for you, and agent work on
+                          that matter waits for your answer.
+4. Overnight              Agent code to-dos become Orbit tasks in the repo you chose.
+                          Muse Code crews implement and review them as pull requests.
+5. Morning digest         Decided, Shipped (with PR links) and Needs you, since the meeting.
+```
+
+Agents never pick a side in a contradiction, and outward-facing drafts wait for your
+approval. The [meetings skill](plugin/.orbit-plugin/skills/meetings/SKILL.md) is the
+agent's side of this loop; the same app also keeps a cited Library, turns hour-long
+knowledge-transfer videos into chapters and runs your routines.
+
+## Quick start
+
+**You need:** macOS or Linux (Windows through WSL2), Node 20+, `cargo` (until a release
+ships prebuilt plugin bundles), an authenticated agent CLI (Claude Code, Codex or Muse
+Code), and a pay-as-you-go Meta Model API key.
+
+```bash
+git clone https://github.com/constellation-works/orbit-office && cd orbit-office
+./install.sh    # --agent muse to register Muse Code; --help for every option
+```
+
+The installer is idempotent: re-running it repairs a partial install. It installs
+Orbit (tested `0.39.0`) when missing, a pinned `uv` and Python, `ffmpeg`, the `office`
+and `gateway` plugins (asking once for their grants), and your API key, stored as an
+Orbit plugin secret. Then it creates the `~/orbit` workspace and Library, registers your
+agent CLI and opens the app at `http://localhost:4317`. Details:
+[install.md](docs/design/office/specs/install.md).
+
+Open your agent in `~/orbit` and talk to it: the `office-orchestrator` skill runs the
+office. To send agent to-dos to a repository, set `meetings.agent_workspace` to that
+Orbit workspace.
 
 ## Meta models at runtime
 
-Every model the project calls at runtime is a Meta model; no other model
-provider is called. Routing rules and the private route are specified in
-[models-and-privacy.md](docs/design/office/specs/models-and-privacy.md).
+Every model the project calls at runtime is a Meta model; no other model provider is
+called. Hosted calls go to the Meta Model API at `https://api.meta.ai/v1`. Routing and
+the private route: [models-and-privacy.md](docs/design/office/specs/models-and-privacy.md).
 
 | Model | Called for | Where it runs |
 |---|---|---|
-| Muse Spark 1.3 (`muse-spark-1.3`) | Meeting summaries, decisions and to-dos split between you and agents; the daily digest; document digests, KT chapters, and keyframe and receipt reading | Meta Model API (`api.meta.ai`), the hosted default |
-| Muse Voice Transcribe | Meeting and video transcription, in chunks, with timestamps from the returned turns | Meta Model API (`api.meta.ai`) |
-| Muse Wonder (`muse-wonder`) | The `careful` tier: consolidating a Library bootstrap batch by subject | Meta Model API (`api.meta.ai`) |
-| Muse Spark Open (`meta-models/Muse-Spark-Open-816B-A42B`) | Every use above whose input includes a `private` source: text, image and audio | The private route: the one endpoint you configure (your company's deployment, a hosted provider or your own hardware), never Meta's hosted API |
-| Muse Code crews `muse-spark` and `muse-wonder` | The orchestrator session, and the agents Orbit dispatches to implement agent to-dos and review their PRs | Muse Code on your machine, started by Orbit; the crews' models are Meta's hosted Muse Spark and Muse Wonder |
+| Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | Meeting and video transcription, in chunks of up to 10 minutes, with timestamped speaker turns | Meta Model API, `POST /v1/asr/transcribe` |
+| Muse Spark (`muse-spark-1.3`) | Meeting summaries, decisions and to-dos; the daily digest; document digests, KT chapters, keyframe and receipt reading | Meta Model API, `POST /v1/chat/completions` |
+| Muse Wonder (`muse-wonder`) | The `careful` tier: consolidating a Library bootstrap batch by subject | Meta Model API, `POST /v1/chat/completions` |
+| Muse Spark Open (for example `meta-models/Muse-Spark-Open-816B-A42B`) | Every use above whose input includes a `private` source: text, image and audio | The private route: the one OpenAI-compatible endpoint you configure (your company's deployment, a hosted provider or your own hardware), never Meta's hosted API |
+| Muse Code crews `muse-spark` and `muse-wonder` | The orchestrator session, and the agents Orbit dispatches to implement agent to-dos and review their PRs | Muse Code on your machine, started by Orbit, against Meta's hosted Muse Spark and Muse Wonder |
 
-"Private" means not sent to Meta's hosted API, only to the endpoint you
-chose; it does not mean the material never leaves your machine.
+"Private" means not sent to Meta's hosted API, only to the endpoint you chose; it does
+not mean the material never leaves your machine.
 
-**Status: scaffold.** The plugin manifest enables `status`, `init`, `reindex`,
-`config-set` and `signals-scan`
-([plugin/.orbit-plugin/plugin.yaml](plugin/.orbit-plugin/plugin.yaml)); the other
-tools are commented blocks there until they are built. The remaining tools (KT video
-loop, capture, knowledge, proposals, metrics and review) land in the slices listed in
-[docs/architecture.md](docs/architecture.md).
+## Built for the Meta hackathon
 
-## Layout
+- **Orbit is a pre-existing dependency.** [Orbit](https://github.com/constellation-works/orbit)
+  is my existing open-source agent runtime (MIT), installed at a tested release and never
+  vendored, forked or added as a submodule. No Orbit code is in this repository.
+- **The rest was built this week.** The `office` plugin, the orchestrator skill, the
+  Library and the web app are new work in this repository, which was created after the
+  kickoff. The Rust workspace started from the constellation
+  [Rust CLI template](https://github.com/constellation-works/rust-cli-template).
+- **Demo data is synthetic.** The Lantern meeting, the Lantern demo repo, chats, receipts
+  and people in [demo/synthetic/](demo/synthetic/) are invented, and seeded history is
+  labelled *simulated*.
 
-| Path | What |
-|---|---|
-| `crates/office-common/` | Shared foundation, after Orbit's `orbit-common`: common error type, fs mechanisms, SQLite connection defaults, small shared types. |
-| `crates/office-core/` | Pure domain (no I/O, no clap, no terminal): the exec envelope, tool contract types, domain model and port traits. |
-| `crates/office-store/` | Library persistence, structured after Orbit's `orbit-store`: file driver for sources/knowledge/artifacts, rebuildable SQLite FTS index, atomic writes, schema migrations. |
-| `crates/office-models/`, `crates/office-orbit/` | Adapters behind `office-core` ports: the Meta Model API and the private route's chosen endpoint (the only crate that speaks HTTP), and the Orbit callbacks. |
-| `crates/office-tools/` | The application: the tool registry, dispatch, and one module per tool, grouped by spec area. |
-| `crates/office-testkit/` | Test support (dev-dependency only): fake ports, Library fixtures, envelope helpers. |
-| `crates/office/` | The binary: `office orbit-tool` serves one Orbit exec call (JSON envelope on stdin, one on stdout). The plugin launcher execs this binary. |
-| `plugin/` | The installable Orbit plugin tree in `.orbit-plugin/` (`plugin.yaml`, `bin/office` launcher, schemas, skills, definitions, conformance goldens). |
-| `app/` | The local web app (TypeScript, npm workspaces `contracts`, `server`, `web`): a local server that calls Orbit as the user through `orbit tool run --json`, owns the dispatch pass, and serves the single-page UI. Conversation happens in the user's agent CLI, not here. |
-| `examples/library/` | An example Library layout. A real Library lives in the user's Orbit workspace, not in this repo. |
-| `demo/synthetic/` | Synthetic demo data only. No private or real user data is ever committed here. |
-| `docs/` | Design docs and the vendored constellation standards. The layout and its boundaries are in [ARCHITECTURE.md](ARCHITECTURE.md). |
+The demo script and the full compliance list: [delivery.md](docs/design/office/specs/delivery.md).
 
-## The backend binary
+## Learn more
 
-```sh
-office orbit-tool < request.json
-office orbit-tool < request.json > response.json
-office --help
-```
-
-Exit status is 0 on success (a tool failure is reported in the response envelope,
-not the exit code), 1 when a command fails and 2 on a usage error.
-
-## Dependency: Orbit
-
-Tested against Orbit `0.34.0`. Orbit is not vendored. The install script
-(`install.sh`, specified in `docs/design/office/specs/install.md`) installs
-it from npm when it is missing; by hand, install it separately, then add the
-`office` component plugin from a fresh export of a commit (see `plugin/README.md`).
+- **[Overview](docs/design/office/1_overview.md)**, **[design](docs/design/office/2_design.md)** and **[decisions](docs/design/office/4_decisions.md)**
+- **[Specs](docs/design/office/specs/):** meetings and digest ([sessions](docs/design/office/specs/sessions.md)), [decision precedents](docs/design/office/specs/decision-precedents.md), [web app](docs/design/office/specs/web-app.md), [plugin surface](docs/design/office/specs/plugin-surface.md)
+- **[ARCHITECTURE.md](ARCHITECTURE.md):** the Rust crates, the plugin tree and the app, and their boundaries
+- **[Glossary](docs/design/office/references/glossary.md)** and the [constellation standards](docs/standards/) this repository adopts
 
 ## Development
 
-```sh
-make ci           # fmt, structure, standards, clippy, cargo-deny, tests, goldens
-make goldens      # compare help/output goldens with the built binary
+```bash
+make ci         # Rust: fmt, structure, standards, clippy, cargo-deny, tests, goldens
+make baseline   # every stack's gate: ci, gateway, app typecheck and tests
 ```
 
-The web app CI job runs `npm --prefix app ci`, `npm --prefix app run check`,
-`npm --prefix app test` and `python3 -I scripts/check-app-boundaries.py` on
-Linux and macOS.
+`office orbit-tool` serves one Orbit exec call: a JSON envelope on stdin, one on stdout.
 
 ## License
 
-MIT; see [LICENSE](LICENSE).
+[MIT](LICENSE)

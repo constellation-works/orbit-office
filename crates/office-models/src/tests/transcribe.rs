@@ -10,7 +10,7 @@ use office_common::Sensitivity;
 use office_core::ports::{Models, TranscribeRequest, TranscriptChunk};
 use serde_json::Value;
 
-use super::{FakeServer, chat_reply, client, hosted_config};
+use super::{FakeServer, asr_reply, chat_reply, client, hosted_config};
 
 struct Ffmpeg {
     directory: tempfile::TempDir,
@@ -67,8 +67,24 @@ fn assert_chunks(server: &FakeServer, chunks: &[&[u8]], token: &str, model: &str
     let requests = server.requests();
     assert_eq!(requests.len(), chunks.len());
     for (request, chunk) in requests.iter().zip(chunks) {
-        assert_eq!(request.path, "/v1/chat/completions");
         assert_eq!(request.authorization.as_deref(), Some(token));
+        if request.path == "/v1/asr/transcribe" {
+            // Hosted: Muse Voice Transcribe's multipart upload of the WAV.
+            assert_eq!(format, "wav", "hosted audio is always sent as WAV");
+            assert!(
+                request.body.contains(&format!(r#""model":"{model}""#))
+                    && request.body.contains(r#""audioEncoding":"WAV""#)
+                    && request.body.contains(r#""languageBias":["English"]"#),
+                "language hint must stay on the transcription request"
+            );
+            let audio = format!(
+                "Content-Type: audio/wav\r\n\r\n{}\r\n--",
+                String::from_utf8_lossy(chunk)
+            );
+            assert!(request.body.contains(&audio), "chunk bytes sent as-is");
+            continue;
+        }
+        assert_eq!(request.path, "/v1/chat/completions");
         let body: Value = serde_json::from_str(&request.body).expect("JSON request");
         assert_eq!(body["model"], model);
         let content = &body["messages"][0]["content"];
@@ -122,9 +138,9 @@ fn recording(duration_seconds: u64) -> Vec<u8> {
 fn transcribes_long_recordings_in_multiple_routed_requests() {
     let ffmpeg = Ffmpeg::splitting();
     let server = FakeServer::start_replies(vec![
-        (200, chat_reply("first")),
-        (200, chat_reply("second")),
-        (200, chat_reply("third")),
+        (200, text_reply("first")),
+        (200, text_reply("second")),
+        (200, text_reply("third")),
     ]);
     let mut config = hosted_config(&server.base_url);
     config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
@@ -148,7 +164,7 @@ fn transcribes_long_recordings_in_multiple_routed_requests() {
         &server,
         &[b"audio-0-600", b"audio-600-600", b"audio-1200-300"],
         "Bearer test-meta-key",
-        "muse-spark-1.3",
+        "muse-voice-transcribe-1.0",
         "wav",
     );
     assert_eq!(
@@ -221,7 +237,7 @@ fn keeps_the_text_of_a_chunk_that_reports_no_turns() {
     let ffmpeg = Ffmpeg::splitting();
     let server = FakeServer::start_replies(vec![
         (200, turn_reply("first", "Jane", 0, 1_500)),
-        (200, chat_reply(r#"{"text":"the gap","segments":[]}"#)),
+        (200, text_reply("the gap")),
         (200, turn_reply("third", "Daniel", 500, 900)),
     ]);
     let mut config = hosted_config(&server.base_url);
@@ -256,9 +272,14 @@ fn keeps_the_text_of_a_chunk_that_reports_no_turns() {
 }
 
 fn turn_reply(text: &str, speaker: &str, start_ms: u64, end_ms: u64) -> String {
-    chat_reply(&format!(
-        r#"{{"text":"{text}","segments":[{{"speaker":"{speaker}","start_ms":{start_ms},"end_ms":{end_ms},"text":"{text}"}}]}}"#
-    ))
+    asr_reply(
+        text,
+        serde_json::json!([{"speaker": speaker, "startMs": start_ms, "endMs": end_ms, "transcript": text}]),
+    )
+}
+
+fn text_reply(text: &str) -> String {
+    asr_reply(text, serde_json::json!([]))
 }
 
 #[test]
@@ -292,7 +313,7 @@ fn routes_every_private_chunk_to_open_weights_with_configured_lengths() {
 #[test]
 fn at_or_below_threshold_never_runs_ffmpeg() {
     let ffmpeg = Ffmpeg::new("exit 99");
-    let server = FakeServer::start(200, chat_reply("unsplit"));
+    let server = FakeServer::start(200, text_reply("unsplit"));
     let mut config = hosted_config(&server.base_url);
     config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
     config.audio_splitter.threshold_seconds = 30;
@@ -314,7 +335,7 @@ fn at_or_below_threshold_never_runs_ffmpeg() {
         &server,
         &[&audio[0], &audio[1], &audio[2]],
         "Bearer test-meta-key",
-        "muse-spark-1.3",
+        "muse-voice-transcribe-1.0",
         "wav",
     );
     ffmpeg.assert_not_run();
@@ -340,7 +361,7 @@ fn split_failure_returns_an_error_without_sending_audio() {
 #[test]
 fn later_chunk_failure_returns_an_error_and_cleans_staging() {
     let ffmpeg = Ffmpeg::splitting();
-    let server = FakeServer::start_replies(vec![(200, chat_reply("first")), (503, "{}".into())]);
+    let server = FakeServer::start_replies(vec![(200, text_reply("first")), (503, "{}".into())]);
     let mut config = hosted_config(&server.base_url);
     config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
     let adapter = client(config);
@@ -422,7 +443,7 @@ fn missing_ffmpeg_output_fails_without_sending_audio_and_cleans_staging() {
 }
 
 #[test]
-fn transcribes_long_mp3_recordings_as_mp3_under_each_alias() {
+fn transcribes_long_private_mp3_recordings_as_mp3_under_each_alias() {
     for mime in ["audio/mpeg", "audio/mp3"] {
         let ffmpeg = Ffmpeg::splitting();
         let server = FakeServer::start_replies(vec![
@@ -431,10 +452,11 @@ fn transcribes_long_mp3_recordings_as_mp3_under_each_alias() {
             (200, chat_reply("third")),
         ]);
         let mut config = hosted_config(&server.base_url);
+        config.open_weights = Some(super::open_weights(&server.base_url));
         config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
         let adapter = client(config);
         let models: &dyn Models = &adapter;
-        let mut request = request(1500, Sensitivity::Normal);
+        let mut request = request(1500, Sensitivity::Private);
         request.mime = mime.into();
         let transcript = models
             .transcribe(&request)
@@ -444,8 +466,8 @@ fn transcribes_long_mp3_recordings_as_mp3_under_each_alias() {
         assert_chunks(
             &server,
             &[b"audio-0-600", b"audio-600-600", b"audio-1200-300"],
-            "Bearer test-meta-key",
-            "muse-spark-1.3",
+            "Bearer test-open-weights-token",
+            super::PRIVATE_MODEL,
             "mp3",
         );
         let calls =
@@ -465,14 +487,15 @@ fn transcribes_long_mp3_recordings_as_mp3_under_each_alias() {
 }
 
 #[test]
-fn sends_short_mp3_audio_with_the_mp3_format() {
+fn sends_short_private_mp3_audio_with_the_mp3_format() {
     let ffmpeg = Ffmpeg::new("exit 99");
     let server = FakeServer::start(200, chat_reply("unsplit"));
     let mut config = hosted_config(&server.base_url);
+    config.open_weights = Some(super::open_weights(&server.base_url));
     config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
     let adapter = client(config);
     let models: &dyn Models = &adapter;
-    let mut request = request(1, Sensitivity::Normal);
+    let mut request = request(1, Sensitivity::Private);
     request.mime = "audio/mpeg".into();
     let audio = request.audio.clone();
     assert_eq!(
@@ -482,8 +505,8 @@ fn sends_short_mp3_audio_with_the_mp3_format() {
     assert_chunks(
         &server,
         &[audio.as_slice()],
-        "Bearer test-meta-key",
-        "muse-spark-1.3",
+        "Bearer test-open-weights-token",
+        super::PRIVATE_MODEL,
         "mp3",
     );
     ffmpeg.assert_not_run();
@@ -526,7 +549,7 @@ fn refuses_containers_the_model_schema_cannot_take_before_any_model_call() {
 #[test]
 fn planned_window_is_one_request_even_with_a_shorter_general_split_threshold() {
     let ffmpeg = Ffmpeg::new("exit 99");
-    let server = FakeServer::start(200, chat_reply("Ada: No timestamps"));
+    let server = FakeServer::start(200, text_reply("Ada: No timestamps"));
     let mut config = hosted_config(&server.base_url);
     config.audio_splitter.ffmpeg_path = ffmpeg.executable.clone();
     config.audio_splitter.threshold_seconds = 10;

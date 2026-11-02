@@ -330,9 +330,11 @@ origin `automation`, the criteria, and a description listing each cited
 `<id>#t=…` anchor. It is an ordinary code-change task for that workspace's
 crews, not `office-agent-todo` work, and carries no `no-diff-expected`.
 Every other to-do is filed `owner:you` exactly as without the setting.
-Before filing, the contested hook (`filing::contested`) names the to-dos
-that touch a contested matter; those are filed `owner:you` with a
-`contested` tag and a held-from-agents note, never for agents. The decision
-ledger decides what is contested ([scribe.md](./scribe.md)). Unset, the
+Before filing, the meeting's decisions feed the decision ledger and its
+contradiction check names the to-dos that act on a contested decision
+([scribe.md](./scribe.md#meeting-decisions)). Such an agent code to-do is
+filed `owner:you` with a `contested` tag, its type and criteria, and a
+held-from-agents note, never for agents, until `office.decision-resolve`
+settles the conflict. Unset, the
 schema, prompt and filing are unchanged. When `task` is supplied, either
 profile attaches its full structured output.

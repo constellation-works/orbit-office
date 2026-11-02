@@ -1,6 +1,7 @@
 //! Cited digest, KT and meeting extraction. No knowledge proposals are filed here.
 mod digest_profile;
-mod filing;
+pub(crate) mod filing;
+pub(crate) mod ledger;
 mod meeting;
 use super::transcribe::{approved, required_string, reserve};
 use crate::registry::{Call, Tool};
@@ -326,23 +327,34 @@ fn run(call: &Call<'_>) -> Result<Value> {
     // whatever the model suggested in `item["owner"]` (a hint in the
     // structured result). With it, an agent-owned code to-do with acceptance
     // criteria becomes an ordinary code-change task in that workspace,
-    // never `office-agent-todo` work; a contested one stays with you.
-    let contested = if agent_workspace.is_some() {
-        filing::contested(call, id, &result)?
+    // never `office-agent-todo` work. Meeting decisions feed the ledger
+    // first; a to-do acting on a contested decision is held with you.
+    let fed = if profile == "meeting" {
+        Some(ledger::feed(
+            call,
+            id,
+            &view.body,
+            view.sensitivity == "private",
+            &result,
+        )?)
     } else {
-        Vec::new()
+        None
     };
     for (index, item) in items.iter().enumerate() {
+        let hold = fed.as_ref().and_then(|fed| fed.holds.get(index)?.as_ref());
         todos.push(filing::file(
             call,
             id,
             profile,
             item,
             agent_workspace.as_deref(),
-            contested.get(index).copied().unwrap_or(false),
+            hold,
         )?);
     }
-    let output = json!({"id":id,"profile":profile,"result":result,"dropped":dropped,"calls":count,"derived_by":reply.derived_by,"to_dos":todos});
+    let mut output = json!({"id":id,"profile":profile,"result":result,"dropped":dropped,"calls":count,"derived_by":reply.derived_by,"to_dos":todos});
+    if let Some(fed) = fed {
+        output["ledger"] = fed.report;
+    }
     if let Some(task) = task {
         attach(call, id, task, &output)?;
     }

@@ -115,13 +115,16 @@
       ]
     },
     "meetings": {
-      "description": "Where office.extract (profile meeting) files agent-owned engineering to-dos (meetings.agent_workspace), or null when the Library is uninitialized.",
+      "description": "Meeting to-do routing (meetings.agent_workspace), or null when the Library is uninitialized.",
       "anyOf": [
         { "type": "null" },
         {
           "type": "object",
           "properties": {
-            "agent_workspace": { "type": ["string", "null"], "description": "The target Orbit workspace selector, exactly as configured; null keeps every extracted to-do owner:you." }
+            "agent_workspace": {
+              "type": ["string", "null"],
+              "description": "The Orbit workspace selector that receives agent-owned code to-dos from meeting extraction; null keeps every meeting to-do owner:you."
+            }
           },
           "required": ["agent_workspace"],
           "additionalProperties": false

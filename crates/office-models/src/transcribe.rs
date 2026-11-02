@@ -31,6 +31,7 @@ pub(crate) fn planned(
         request.sensitivity,
         format,
         &request.audio,
+        request.duration_seconds,
         request.language.as_deref(),
     )?;
     Ok(Routed {
@@ -53,13 +54,14 @@ pub(crate) fn transcribe(
         office_core::ports::ModelTier::Standard,
         &client.config,
     )?;
-    http::check_url(&meta::chat_url(&resolved.base_url), resolved.destination())?;
+    http::check_url(&crate::transcription_url(&resolved), resolved.destination())?;
     let derived_by = resolved.derived_by();
-    let call = |audio: &[u8], offset_ms: u64| {
+    let call = |audio: &[u8], seconds: u64, offset_ms: u64| {
         let parsed = client.transcribe_chunk(
             request.sensitivity,
             format,
             audio,
+            seconds,
             request.language.as_deref(),
         )?;
         shift_turns(parsed, offset_ms)
@@ -67,7 +69,7 @@ pub(crate) fn transcribe(
     let splitter = &client.config.audio_splitter;
     if !media::needs_split(request.duration_seconds, splitter.threshold_seconds) {
         return Ok(Routed {
-            value: call(&request.audio, 0)?,
+            value: call(&request.audio, request.duration_seconds, 0)?,
             derived_by,
         });
     }
@@ -99,7 +101,7 @@ pub(crate) fn transcribe(
             .start_seconds
             .checked_mul(1_000)
             .ok_or_else(timestamp_overflow)?;
-        let chunk = call(&audio, offset_ms)?;
+        let chunk = call(&audio, piece.length_seconds, offset_ms)?;
         // `shift_turns` already classified this reply: a text-only chunk
         // stays in `chunks` where the flat turn list would drop it.
         let Transcript {
@@ -152,10 +154,11 @@ fn shift_turns(mut parsed: meta::ParsedTranscript, offset_ms: u64) -> Result<Tra
     })
 }
 
-// The model schema takes only `wav` or `mp3` for `input_audio.format`, and
-// ffmpeg picks the chunk container from the staged suffix. Both come from this
-// one canonical value, so aliases are normalized and no other container is sent
-// or relabelled. Caller-supplied MIME text never reaches a path or a request.
+// The private route's `input_audio.format` takes only `wav` or `mp3`, the
+// hosted route takes WAV (MP3 is decoded first), and ffmpeg picks the chunk
+// container from the staged suffix. All come from this one canonical value, so
+// aliases are normalized and no other container is sent or relabelled.
+// Caller-supplied MIME text never reaches a path or a request.
 fn audio_format(mime: &str) -> Result<&'static str> {
     let mime = mime
         .split(';')

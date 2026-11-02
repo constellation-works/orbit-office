@@ -1,8 +1,8 @@
 //! `office.status`: the plugin version, which declared secrets are set
 //! (never a secret value; STD-05), Library and index health, the
 //! configured private endpoint (`open_weights`, or null), the shared library
-//! (`shared`, or null), the followed workspaces (`brief`, or null), where
-//! meeting agent to-dos are filed (`meetings`, or null) and the effective scribe cadence and tags (`scribe`; the defaults until the
+//! (`shared`, or null), the followed workspaces (`brief`, or null) and the
+//! effective scribe cadence and tags (`scribe`; the defaults until the
 //! Library sets them).
 //! The token is only `set` or `unset` under `secrets`, and
 //! `open_weights_token_binding` says whether it was saved for the configured
@@ -10,7 +10,7 @@
 //! Reading creates no Library state.
 
 use office_core::domain::endpoint::{Capability, TokenBinding};
-use office_core::domain::settings::{BriefSettings, MeetingSettings, OpenWeights, Settings};
+use office_core::domain::settings::{BriefSettings, OpenWeights, Settings};
 use office_core::domain::sharing::SharedSettings;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Result, SECRET_NAMES, VERSION};
@@ -29,16 +29,10 @@ pub(crate) const TOOL: Tool = Tool::built(
 );
 
 pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
-    let delivered = call.context.get("secrets").and_then(Value::as_object);
     // Presence mirrors model routing (`crates/office/src/app.rs`
-    // `client_with_settings`): only a non-empty string counts as set, so an
+    // `client_with_settings`): both read through `protocol::secret`, so an
     // empty stored secret reads as unset everywhere status is shown.
-    let is_set = |name: &str| {
-        delivered
-            .and_then(|secrets| secrets.get(name))
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.is_empty())
-    };
+    let is_set = |name: &str| office_core::protocol::secret(call.context, name).is_some();
     // STD-01@2 §R35: `baseten_token` was renamed to `open_weights_token`;
     // the old name stays as a deprecated alias for one release, mirroring
     // the new field, and a context still carrying only the old name
@@ -87,11 +81,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         .map(|block| block.endpoint.as_str());
     // Routing reads only `open_weights_token`, so a context still carrying
     // only the retired alias has no token any call would send.
-    let stored = call
-        .context
-        .get("secrets")
-        .and_then(|secrets| secrets.get("open_weights_token"))
-        .and_then(Value::as_str);
+    let stored = office_core::protocol::secret(call.context, "open_weights_token");
     let binding = if open_weights_present && stored.is_none() {
         TokenBinding::Unbound
     } else {
@@ -102,7 +92,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
             project_open_weights(settings.open_weights.as_ref()),
             project_shared(settings.shared.as_ref()),
             project_brief(&settings.brief),
-            project_meetings(&settings.meetings),
+            json!({"agent_workspace": &settings.meetings.agent_workspace}),
         ),
         None => (Value::Null, Value::Null, Value::Null, Value::Null),
     };
@@ -176,13 +166,5 @@ fn project_open_weights(block: Option<&OpenWeights>) -> Value {
 fn project_brief(block: &BriefSettings) -> Value {
     json!({
         "task_workspaces": &block.task_workspaces,
-    })
-}
-
-/// The workspace selector agent-owned meeting code to-dos are filed into
-/// (`meetings.agent_workspace`), exactly as configured, or null when unset.
-fn project_meetings(block: &MeetingSettings) -> Value {
-    json!({
-        "agent_workspace": &block.agent_workspace,
     })
 }

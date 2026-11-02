@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: models and privacy routing — which model does what, and the private route: Meta's open-weights Muse Spark Open on an endpoint the user chooses"
-last_validated: 2026-11-01
+last_validated: 2026-11-02
 ---
 
 # Spec: Models and privacy routing
@@ -13,19 +13,23 @@ user chooses ([below](#the-private-route)).
 
 Source: spec §9.
 
-| Use | Model | Notes |
-|---|---|---|
-| Orchestrator | Muse Code (default) running Muse Spark or Muse Wonder | Any MCP-capable agent CLI works. The orchestrator plus agents loop is the candidate for the agentic bonus prize |
-| Video and meeting transcription | Muse Voice Transcribe | In chunks with our own offsets applied to returned turns; timestamps exist only where the model returns turns; skipped when a `.vtt` exists |
-| Bootstrap digest, one per source | Muse Spark | The cheap pass ([library-bootstrap.md](./library-bootstrap.md)) |
-| Bootstrap consolidation, one per subject | Muse Wonder (the `careful` tier, `models.careful`) | Merges claims across sources and flags conflicts; day-1 check that it is on the API |
-| KT keyframe reading | Muse Spark with image input | One call per deduplicated keyframe, capped per hour ([kt-videos.md](./kt-videos.md)) |
-| KT chapters, knowledge candidates, questions | Muse Spark | One call over the merged timeline, or 15-minute windows and a merge |
-| Summaries, decisions, to-do extraction | Muse Spark | Structured output validated against a JSON Schema |
-| Daily digest | Muse Spark, one call a day | Through the same routing; private items go to open weights or are listed by reference ([sessions.md](./sessions.md#daily-digest)) |
-| Receipt and bill field extraction | Muse Spark with image input | Confirm the request shape in the API reference on day 1. Fallback: local OCR, then Muse Spark on the text |
-| Anything `private`, every use above | Muse Spark Open on the private route ([below](#the-private-route)) | One model for every tier and modality: text, image and audio in, text out. Candidate for the open-weights bonus prize |
-| Implementing agents | Orbit's existing crews, including its Muse crews | Pre-existing: not counted as new Meta-tooling work |
+Every model the plugin calls at runtime is a Meta model. Hosted calls go to
+the Meta Model API at `https://api.meta.ai/v1`; `private` material goes only to
+Muse Spark Open on the endpoint the user configured.
+
+| Use | Model (id) | Where it runs | Notes |
+|---|---|---|---|
+| Orchestrator | Muse Code (default) running Muse Spark or Muse Wonder | The user's Muse Code client, against Meta's hosted models | Any MCP-capable agent CLI works. The orchestrator plus agents loop is the candidate for the agentic bonus prize |
+| Video and meeting transcription | Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | Meta Model API, `POST /v1/asr/transcribe` | In chunks of at most 10 minutes, decoded locally to 16 kHz mono WAV by ffmpeg (M4A, MP4 and other containers included); our own offsets are applied to returned turns; timestamps exist only where the model returns turns; skipped when a `.vtt` exists |
+| Bootstrap digest, one per source | Muse Spark (`muse-spark-1.3`) | Meta Model API, `POST /v1/chat/completions` | The cheap pass ([library-bootstrap.md](./library-bootstrap.md)) |
+| Bootstrap consolidation, one per subject | Muse Wonder (the `careful` tier, `models.careful`, default `muse-wonder`) | Meta Model API, `POST /v1/chat/completions` | Merges claims across sources and flags conflicts. The API lists `muse-wonder-1.0`; the default slug `muse-wonder` is not yet verified live ([below](#live-verification-2026-11-02)) |
+| KT keyframe reading | Muse Spark (`muse-spark-1.3`) with image input | Meta Model API, `POST /v1/chat/completions` | One call per deduplicated keyframe, capped per hour ([kt-videos.md](./kt-videos.md)) |
+| KT chapters, knowledge candidates, questions | Muse Spark (`muse-spark-1.3`) | Meta Model API, `POST /v1/chat/completions` | One call over the merged timeline, or 15-minute windows and a merge |
+| Summaries, decisions, to-do extraction | Muse Spark (`muse-spark-1.3`) | Meta Model API, `POST /v1/chat/completions` | Structured output validated against a JSON Schema |
+| Daily digest | Muse Spark (`muse-spark-1.3`), one call a day | Meta Model API, `POST /v1/chat/completions` | Through the same routing; private items go to open weights or are listed by reference ([sessions.md](./sessions.md#daily-digest)) |
+| Receipt and bill field extraction | Muse Spark (`muse-spark-1.3`) with image input | Meta Model API, `POST /v1/chat/completions` | Fallback: local OCR, then Muse Spark on the text |
+| Anything `private`, every use above | Muse Spark Open (`open_weights.model`, for example `meta-models/Muse-Spark-Open-816B-A42B`) | The endpoint the user chose ([below](#the-private-route)), OpenAI-compatible `POST <endpoint>/chat/completions` | One model for every tier and modality: text, image and audio in, text out. Audio goes as a `wav` or `mp3` `input_audio` part. Candidate for the open-weights bonus prize |
+| Implementing agents | Orbit's existing crews, including its Muse crews (Muse Code) | Orbit hosts, against Meta's hosted models | Pre-existing: not counted as new Meta-tooling work |
 
 ## Routing rules
 
@@ -202,7 +206,11 @@ user's own use.
 ## Structured extraction
 
 `Models::extract` compiles `request.schema` before inference and validates the
-parsed JSON reply locally on both the hosted and open-weights routes. Non-JSON
+parsed JSON reply locally on both the hosted and open-weights routes. The hosted
+request sends the schema with `strict: false`: the Meta Model API's strict mode
+refuses any schema whose `required` list omits a property (the meeting and
+digest schemas have optional fields), so the schema guides generation and local
+validation enforces it. Non-JSON
 or schema-violating replies return non-retryable `model_invalid_response`.
 The schema sent to the endpoint guides generation; local validation enforces
 the contract even when the endpoint does not enforce `response_format`.
@@ -218,25 +226,40 @@ The Models port's `TranscribeRequest.duration_seconds` carries duration from
 the caller's media metadata, rounding fractional seconds up. The adapter does
 not probe audio. `ModelConfig.audio_splitter` configures the ffmpeg executable,
 split threshold and maximum chunk length (both lengths default to 600 seconds).
-Transcription accepts WAV and MP3 only. `audio/wav`, `audio/wave` and
-`audio/x-wav` are sent as `wav`; `audio/mpeg` and `audio/mp3` are sent as `mp3`.
-The model schema takes no other `input_audio` format, so every other MIME type
-(M4A/MP4, AAC, FLAC, Ogg, WebM) is refused before staging, splitting or any model
-call, at every length. The adapter does not transcode: sources in other
-containers are converted to WAV or MP3 before transcription.
+Transcription accepts WAV and MP3. `audio/wav`, `audio/wave` and `audio/x-wav`
+are WAV; `audio/mpeg` and `audio/mp3` are MP3. Every other MIME type (M4A/MP4,
+AAC, FLAC, Ogg, WebM) is refused by the Models port before staging, splitting
+or any model call, at every length. `office.transcribe` never hits that
+refusal: it decodes each window of a meeting or video original locally with
+ffmpeg (`Models::media_audio`: 16 kHz, mono, 16-bit PCM WAV) before
+transcribing, so meetings recorded as M4A or MP4 are transcribed like WAV.
 
 At or below the threshold, transcription sends the original bytes directly and
 runs no subprocess. Above it, the adapter stages the recording privately and
 uses the supervised splitter, which keeps the WAV or MP3 container.
 
+**Hosted request.** Each hosted chunk is one `POST /v1/asr/transcribe` to Muse
+Voice Transcribe: a multipart body with a `request` part (JSON
+`{"model":"muse-voice-transcribe-1.0","mode":"DIARIZATION","audioEncoding":"WAV"}`,
+plus `"languageBias":[<language>]` when the caller gave a language hint) and an
+`audio` part holding the WAV. An MP3 chunk is decoded to WAV locally first. The
+reply's `transcript` is the chunk text; each `turns` entry with `startMs` and a
+non-empty `transcript` is a speaker turn (`speaker` when diarization labels
+one), ending at its `endMs`, else the next turn's start, else the end of the
+audio. The one-shot endpoint takes at most 10 minutes or 32 MB per request,
+which the 600-second chunks stay under.
+
+**Private request.** On the private route each chunk is one Chat Completions
+call with the audio as an `input_audio` part in its own `wav` or `mp3` format,
+asking for a JSON object `{"text","segments"}`.
+
 Every chunk passes through the same sensitivity routing with the original
 language hint. Private chunks reach only the configured open-weights endpoint.
-The request asks for a JSON object `{"text","segments"}`, one segment per
-speaker turn (`speaker`, `start_ms`, `end_ms`, `text`, milliseconds from the
-start of that chunk). When the reply is that object, those turns are kept
-and each chunk's timestamps are shifted by the chunk's start so they stay
-offsets into the original recording. A reply that is not that JSON is kept
-as transcript text with no turns. Chunk texts are joined with newlines in
+The private request asks for one segment per speaker turn (`speaker`,
+`start_ms`, `end_ms`, `text`, milliseconds from the start of that chunk); a
+private reply that is not that JSON is kept as transcript text with no turns.
+On both routes, the reported turns are kept and each chunk's timestamps are
+shifted by the chunk's start so they stay offsets into the original recording. Chunk texts are joined with newlines in
 recording order. The transcript also keeps each chunk in that order: a chunk
 that reported turns contributes those turns, and a chunk that reported none
 contributes its text. The meeting body follows that order, so a text-only
@@ -255,3 +278,32 @@ and require its verified text capability. Changed careful settings invalidate
 confirmed batch and per-call routing snapshots. The default setting preserves
 existing plan fingerprints. Offline tests verify the selected slug; live Muse
 Wonder availability and context capacity remain the Day-1 check above.
+
+## Live verification (2026-11-02)
+
+Run against `api.meta.ai` with the office plugin's `meta_api_key`, on a scratch
+Library holding synthetic content only (ORB-21338):
+
+| Check | Request | Result |
+|---|---|---|
+| Model catalogue | `GET /v1/models` | 200 in under 1 s. Lists `muse-voice-transcribe-1.0`, `muse-spark-1.3`, `muse-spark-1.2`, `muse-spark-1.1`, `muse-wonder-1.0`, `muse-wonder-full-1.0`, `muse-image-1.0`, `sam-3.1` and `-contributor` variants |
+| Meeting-profile extraction, strict schema | `POST /v1/chat/completions`, `muse-spark-1.3`, `json_schema` `strict: true` | 400 `invalid_request_error`: strict mode needs every property in `required` (the meeting schema's optional `volatile`). Fixed by sending `strict: false` |
+| Meeting-profile extraction, non-strict | Same, `strict: false` | Passes request validation; then 403 for the key ([below](#the-api-key-must-be-pay-as-you-go)) |
+| Transcription on Chat Completions | `muse-spark-1.3` with an `input_audio` part | 403 for the key |
+| Muse Voice Transcribe on Chat Completions | `muse-voice-transcribe-1.0` with an `input_audio` part | 404 `model_not_found`: the model is not served there |
+| OpenAI-style transcription | `POST /v1/audio/transcriptions` | 404: no such route |
+
+Muse Code's own `muse voice transcribe` (1.4.14) does not use this API. It
+streams 16 kHz PCM over a WebSocket speech service with a credential minted from
+the Muse Code login, so its shape is not usable from the plugin.
+
+### The API key must be pay-as-you-go
+
+Every inference request with the key stored on 2026-11-01 was refused with HTTP
+403 `client_attestation_denied`: the key is billed to a Muse Code subscription,
+which covers requests from the Muse Code client only. Hosted extraction,
+transcription and the digest need a pay-as-you-go Meta Model API key, stored
+with `orbit plugin secret set office meta_api_key`. Until one is set, a live
+transcription result (model id, latency) and schema-valid meeting JSON remain
+unverified; the request shapes above are what was confirmed.
+

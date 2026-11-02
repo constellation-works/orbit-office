@@ -1,4 +1,6 @@
 //! One routed, schema-constrained extractive daily digest. No Orbit writes.
+//! With `source`, the deterministic digest since that meeting ([`scoped`]).
+mod scoped;
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -25,7 +27,7 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::Mutating,
         mcp_scope: McpScope::None,
     },
-    &["day"],
+    &["day", "source"],
     run,
 );
 
@@ -97,6 +99,9 @@ fn noop(day: &str, reason: &str, artifact: Option<&Artifact>) -> Result<Value> {
 }
 
 fn run(call: &Call<'_>) -> Result<Value> {
+    if call.input.contains_key("source") {
+        return scoped::run(call);
+    }
     let day = day(call)?;
     if let Some(found) = existing(&artifacts(call)?, &day) {
         return noop(&day, "already_exists", Some(found));
