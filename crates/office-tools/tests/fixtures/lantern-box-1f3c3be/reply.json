@@ -1,0 +1,129 @@
+{
+  "decisions": [
+    {
+      "cites": [
+        "#L13",
+        "#t=00:00:49"
+      ],
+      "text": "We keep 50 orders per page on the dashboard [#L13][#t=00:00:49]"
+    },
+    {
+      "cites": [
+        "#L17",
+        "#t=00:01:03"
+      ],
+      "text": "We rotate ingest keys monthly starting in December [#L17][#t=00:01:03]"
+    },
+    {
+      "cites": [
+        "#L31",
+        "#t=00:01:39"
+      ],
+      "text": "Replay always keeps the original order key, no tool mints a new one [#L31][#t=00:01:39]"
+    },
+    {
+      "cites": [
+        "#L35",
+        "#t=00:01:51"
+      ],
+      "text": "The Acme pilot stays read only until that review [#L35][#t=00:01:51]"
+    }
+  ],
+  "summary": "Miravale and Jules Reed met with Nori out [#L1][#t=00:00:00]. Agenda was overnight upload failures, ingest keys, and Acme pilot review [#L3][#t=00:00:08]. The spool uploader gave up twice on 503 from the packing station [#L5][#t=00:00:16]. Weekly rotation breaks the uploader because the new key reaches packing stations hours late [#L15][#t=00:00:53]. Operators ask what a replay would resend before running it [#L21][#t=00:01:14]. Dashboard order list has off-by-one where page two repeats last order from page one [#L9][#t=00:00:35]. Empty order key at intake desk crashes the desk [#L27][#t=00:01:27].",
+  "to_dos": [
+    {
+      "acceptance_criteria": [
+        "Three attempts with back off [#L7][#t=00:00:25]",
+        "Keeps the original order key on every attempt [#L7][#t=00:00:25]"
+      ],
+      "cites": [
+        "#L7",
+        "#t=00:00:25"
+      ],
+      "owner": "agent",
+      "text": "Add a retry to the spool uploader [#L7][#t=00:00:25]",
+      "type": "feature",
+      "work": "code"
+    },
+    {
+      "acceptance_criteria": [
+        "Fix the pagination off by one [#L11][#t=00:00:43]",
+        "Add a test that walks every page [#L11][#t=00:00:43]"
+      ],
+      "cites": [
+        "#L11",
+        "#t=00:00:43",
+        "#L9",
+        "#t=00:00:35"
+      ],
+      "owner": "agent",
+      "text": "Fix the dashboard pagination off by one [#L11][#t=00:00:43]",
+      "type": "bug",
+      "work": "code"
+    },
+    {
+      "acceptance_criteria": [
+        "Prints the orders it would resend [#L25][#t=00:01:20]",
+        "Sends nothing [#L25][#t=00:01:20]"
+      ],
+      "cites": [
+        "#L25",
+        "#t=00:01:20"
+      ],
+      "owner": "agent",
+      "text": "Add a dry run flag to Lantern replay [#L25][#t=00:01:20]",
+      "type": "feature",
+      "work": "code"
+    },
+    {
+      "acceptance_criteria": [
+        "Reject an empty order key with a clear error message [#L29][#t=00:01:33]"
+      ],
+      "cites": [
+        "#L29",
+        "#t=00:01:33",
+        "#L27",
+        "#t=00:01:27"
+      ],
+      "owner": "agent",
+      "text": "Intake desk should reject an empty order key with a clear error message [#L29][#t=00:01:33]",
+      "type": "bug",
+      "work": "code"
+    },
+    {
+      "acceptance_criteria": [],
+      "cites": [
+        "#L19",
+        "#t=00:01:10"
+      ],
+      "owner": "you",
+      "text": "Tell the access desk about the new monthly schedule [#L19][#t=00:01:10]",
+      "type": "chore",
+      "work": "other"
+    },
+    {
+      "acceptance_criteria": [],
+      "cites": [
+        "#L33",
+        "#t=00:01:45"
+      ],
+      "owner": "you",
+      "text": "Book the pilot review with Acme for next Thursday [#L33][#t=00:01:45]",
+      "type": "chore",
+      "work": "other"
+    },
+    {
+      "acceptance_criteria": [],
+      "cites": [
+        "#L37",
+        "#t=00:01:55",
+        "#L39",
+        "#t=00:02:01"
+      ],
+      "owner": "you",
+      "text": "Ask Nori to review read access for the two new packing station operators [#L37][#t=00:01:55][#L39][#t=00:02:01]",
+      "type": "chore",
+      "work": "other"
+    }
+  ]
+}

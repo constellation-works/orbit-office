@@ -333,7 +333,7 @@ or dedupe fields (option `id`/`consequence`, `orbit`, `same_as`,
 | `id` | yes | `dec-<scope>-<n>`, the entry's permanent id. |
 | `question` | yes | What was being decided. When a message asked it, the verbatim question with `question_ref` (its message id). Otherwise a one-line restatement by the scribe, with `question_by: scribe`. |
 | `options` | yes | The options considered, each `{text, ref}` verbatim from a message, or the string `"unrecoverable"` when the turns do not state them. Never invented. Ingested options also carry `id` and `consequence` from the Orbit request; `office.capture` and `office.scribe-append` refuse option `id`/`consequence`. |
-| `chosen` | yes | The chosen option: a verbatim span of the decision message. |
+| `chosen` | yes | The chosen option: a span of the decision message, matched without case, punctuation or a word repeated in a row ([ORB-21431]). |
 | `quote` | yes | The decision message's verbatim text (the marker line), and |
 | `ref` | yes | its transcript line ref: SCR id, the SCR tag entry id and the message id (`SCR-…#T12 m-0187`). |
 | `because` | no | The stated rationale, verbatim with its `ref`, only when one was stated (D3). |
@@ -459,7 +459,11 @@ ledger too, not only conversation scribing. After it saves
    applies. `ref` is `<source-id>#t=hh:mm:ss` (the decision's first `#t=`
    cite, else its first anchor). `quote` is that turn as the source holds
    it. `chosen` is the turn's own span of the decision text, matched
-   without case, else the speaker's words. `question` is the decision text
+   without case, else the decision text. A transcribed turn stutters
+   ("monthly, monthly. Starting in December"), so `chosen` need only be
+   said by the turn up to case, punctuation and a word repeated in a row
+   ([ORB-21431]); a statement the turn does not say is still skipped as
+   `quote_mismatch`. `question` is the decision text
    with `question_by: scribe`. `options` is `"unrecoverable"`,
    `decided_by` is `human`, and `decided_at` is the extraction time. A
    decision that fails a check is reported in `ledger.skipped` with its
@@ -1210,6 +1214,7 @@ requires.
 - [ORB-21090] — designed the office precedent provider over the decision ledger ([decision-precedents.md](./decision-precedents.md)).
 - [ORB-21219] — built contradiction reporting to the precedent provider.
 - [ORB-21340] — built meeting decisions in the ledger, their contradiction check and `office.decision-resolve`.
+- [ORB-21431] — a decision's `chosen` matches its quote up to case, punctuation and a word repeated in a row, so a stuttered transcribed turn still feeds the ledger.
 - [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
 - [ORB-21116] — built slice S3: preference pages, contradiction check and apply mode.

@@ -3247,8 +3247,8 @@ the `model_answer_review` gate are still proposed there (human-decision-channel
   `ws_` component. `ws_<name>` goes to `project:<name>` when `<name>` is a
   ledger slug; everything else, including the Office workspace's requests
   with no category, goes to `global`.
-- **Quote.** The ledger requires `chosen` to be a verbatim span of
-  `quote`. The resolution note is the quote when it contains the chosen
+- **Quote.** The ledger requires `chosen` to be a span of `quote` (up
+  to case, punctuation and a word repeated in a row). The resolution note is the quote when it contains the chosen
   label; otherwise the quote is the label, a newline, then the note. With
   no note it is the label.
 - **Question.** The request's `question` when present, else its `summary`,

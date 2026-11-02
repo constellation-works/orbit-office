@@ -345,7 +345,8 @@ pub struct Decision {
     /// The options considered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<Options>,
-    /// The chosen option, a verbatim span of `quote`.
+    /// The chosen option: a span of `quote`, up to case, punctuation and
+    /// a word repeated in a row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chosen: Option<String>,
     /// The decision message's verbatim text.
@@ -426,6 +427,31 @@ fn offset_time(text: &str) -> bool {
 /// Collapse runs of whitespace so a wrapped span still compares verbatim.
 fn words(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Whether `quote` says `chosen`: its words appear in order in the quote
+/// once case and punctuation are folded and a word said twice in a row
+/// counts once, the noise a transcribed turn carries ("monthly, monthly.
+/// Starting"). Anything the quote does not say still fails.
+fn supports(quote: &str, chosen: &str) -> bool {
+    let tokens = |text: &str| {
+        let mut out: Vec<String> = Vec::new();
+        for word in text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+        {
+            if out.last() != Some(&word) {
+                out.push(word);
+            }
+        }
+        out
+    };
+    let (quote, chosen) = (tokens(quote), tokens(chosen));
+    !chosen.is_empty()
+        && quote
+            .windows(chosen.len())
+            .any(|span| span == chosen.as_slice())
 }
 
 fn folded(text: &str) -> String {
@@ -644,10 +670,10 @@ impl Decision {
             .as_deref()
             .ok_or_else(|| invalid("decision chosen is required"))?;
         nonempty("chosen", chosen)?;
-        if !words(quote).contains(&words(chosen)) {
+        if !supports(quote, chosen) {
             return Err(refusal(
                 "quote_mismatch",
-                "decision chosen must be a verbatim span of quote",
+                "decision chosen must be a span of quote",
             ));
         }
         if let Some(because) = &self.because {
