@@ -61,6 +61,22 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   await done.getByRole("link", { name: "About this work" }).click();
   assert.match(await done.innerText(), /The plan brings together the priorities/);
   assert.match(await done.innerText(), /From the planning meeting notes/);
+  // Stored Markdown in a result and its background is rendered, and injected markup stays inert.
+  const marked = async (route) => {
+    const response = await route.fetch(); const body = await response.json(); const item = body.done_today[0];
+    item.result = "## Outcome\n\n- **shipped** `v2`\n- second\n\n<script>window.__pwned = 1</script> [bad](javascript:window.__pwned=2) [good](https://example.org/r)";
+    item.background = "From the *planning* notes";
+    await route.fulfill({ response, json: body });
+  };
+  await page.route("**/api/today", marked); await page.reload();
+  await done.getByText("Open result", { exact: true }).click(); await done.getByRole("link", { name: "About this work" }).click();
+  const outcome = done.locator(".today-result"); await outcome.waitFor();
+  assert.equal(await outcome.locator("h5", { hasText: "Outcome" }).count(), 1); assert.equal(await outcome.locator("li").count(), 2); assert.equal(await outcome.locator("strong", { hasText: "shipped" }).count(), 1); assert.equal(await outcome.locator("code", { hasText: "v2" }).count(), 1);
+  assert.equal(await done.locator(".today-background em", { hasText: "planning" }).count(), 1);
+  assert.equal(await outcome.locator("script").count(), 0); assert.deepEqual(await outcome.locator("a").evaluateAll((links) => links.map((link) => link.getAttribute("href"))), ["https://example.org/r"]);
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+  await page.unroute("**/api/today", marked); await page.reload();
+  await done.getByText("Open result", { exact: true }).click(); await done.getByRole("link", { name: "About this work" }).click();
   const visible = await page.locator("main").innerText();
   for (const internal of ["owner:agent", "owner:you", "in-progress", "suggestion-key", "completed-key"]) {
     assert.ok(!visible.includes(internal), `internal value ${internal} is not a display label`);

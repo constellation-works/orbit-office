@@ -7,7 +7,7 @@ import type { CalendarMeeting } from "@orbit-office/contracts";
 
 import { ApiError, captureMeetingFile, captureMeetingNotes, getMeetingOutcome, getSourceCitation } from "../../api/client.js";
 import { sourceHref } from "../../api/source-location.js";
-import { pill } from "../../ui/index.js";
+import { pill, renderMarkdown } from "../../ui/index.js";
 import { clock, meetingState, prepTime, stateWords } from "./model.js";
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = "", className?: string): HTMLElementTagNameMap[K] {
@@ -53,36 +53,22 @@ function personLink(page: { id: string; title: string }, label: string): HTMLEle
   return wrap;
 }
 
-/** The brief's Markdown, drawn as headings and items, each citation a link. */
+/** The brief's Markdown, rendered by the shared renderer, each citation a link. */
 function brief(text: string, meeting: CalendarMeeting): HTMLElement {
-  const body = element("div", "", "calendar-brief");
-  let list: HTMLUListElement | null = null;
   const titles = new Map([...meeting.attendees.flatMap(a => a.person === null ? [] : [a.person]), ...meeting.people].map(page => [page.id, page.title]));
-  for (const line of text.split("\n")) {
-    if (!line.trim()) { list = null; continue; }
-    const heading = /^#{1,6}\s+(.*)$/.exec(line);
-    if (heading) {
-      const words = heading[1] ?? "";
-      body.append(element("h4", words.charAt(0).toUpperCase() + words.slice(1)));
-      list = null; continue;
-    }
-    const item = /^[-*]\s+(.*?)(?:\s*\[([^\]]+)\])?\s*$/.exec(line);
-    if (!item) { body.append(element("p", line)); list = null; continue; }
-    if (list === null) { list = element("ul"); body.append(list); }
-    const entry = element("li", item[1] ?? "");
-    for (const cite of (item[2] ?? "").split(/\s*[,;]\s*/).filter(Boolean)) {
+  return renderMarkdown(text, {
+    className: "calendar-brief",
+    headingLevel: 4,
+    cite: (cite) => {
       const [id = "", anchor] = cite.split("#", 2);
       if (/^src-[a-z0-9-]+$/.test(id)) {
         const link = element("a", "Source", "calendar-cite");
         link.href = sourceHref(id, anchor ? `#${anchor}` : "#source");
-        entry.append(" ", link);
-      } else {
-        entry.append(" ", element("span", titles.get(id) ?? "Library page", "calendar-cite"));
+        return link;
       }
-    }
-    list.append(entry);
-  }
-  return body;
+      return element("span", titles.get(id) ?? "Library page", "calendar-cite");
+    },
+  });
 }
 
 export interface PanelContext {

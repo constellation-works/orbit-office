@@ -41,7 +41,7 @@ export const styles = `
 .library-aside .library-link[aria-current="true"] { color:var(--accent); font-weight:500; }
 .library-document-body { padding:24px 28px; gap:16px; }
 .library-summary { margin:0; font-size:14px; color:var(--fg-dim); }
-.library-body { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:15px; line-height:1.65; }
+.library-body { margin:0; overflow-wrap:anywhere; font-size:15px; line-height:1.65; }
 .library-part { display:flex; flex-direction:column; gap:8px; padding-top:14px; border-top:1px solid var(--hair); }
 .library-part h2 { margin:0; font-size:11px; font-weight:500; letter-spacing:0.08em; text-transform:uppercase; color:var(--fg-mute); }
 .library-part p { margin:0; font-size:14px; color:var(--fg-dim); }

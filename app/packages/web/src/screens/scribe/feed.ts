@@ -10,7 +10,7 @@ import type { ScrCard, ScrDetail, ScrFeed } from "@orbit-office/contracts";
 
 import { ApiError, getJson } from "../../api/client.js";
 import { ageLabel, cardSummary, cardTitle, scopeLabel, tagCountsLabel } from "../../ui/handoff.js";
-import { pill } from "../../ui/index.js";
+import { pill, renderMarkdown } from "../../ui/index.js";
 import { el } from "./dom.js";
 import { messageFor, timeLabel } from "./model.js";
 
@@ -48,7 +48,7 @@ export function cardItem(card: ScrCard, now: Date, open: (card: ScrCard) => void
     item.append(el("p", cardSummary(card), "scribe-status"));
     return item;
   }
-  if (card.summary) item.append(el("p", card.summary, "scribe-card-summary"));
+  if (card.summary) item.append(renderMarkdown(card.summary, { className: "scribe-card-summary", headingLevel: 5 }));
   for (const section of [sectionList("Next", card.next), sectionList("Outcome and Blockers", card.outcome)]) {
     if (section) item.append(section);
   }
@@ -74,7 +74,7 @@ function detailItem(detail: ScrDetail, now: Date, back: () => void, previous: (i
   } else {
     if (scr.summary) {
       const box = el("div", "", "scribe-card-section");
-      box.append(el("h4", "Summary"), el("p", scr.summary, "scribe-card-summary"));
+      box.append(el("h4", "Summary"), renderMarkdown(scr.summary, { className: "scribe-card-summary", headingLevel: 5 }));
       item.append(box);
     }
     for (const section of [

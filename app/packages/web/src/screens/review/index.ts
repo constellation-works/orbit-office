@@ -2,7 +2,7 @@
 import type { ReviewList } from "@orbit-office/contracts";
 import type { Screen } from "../../screen.js";
 import { getJson } from "../../api/client.js";
-import { emptyState, errorState, panel, panelBody, screenHead } from "../../ui/index.js";
+import { emptyState, errorState, panel, panelBody, renderMarkdown, screenHead } from "../../ui/index.js";
 
 const STYLE = `
 .review { display:flex; flex-direction:column; gap:20px; min-width:0; }
@@ -12,7 +12,7 @@ const STYLE = `
 .review-list { display:flex; flex-direction:column; gap:20px; min-width:0; }
 .review-list > .panel + .panel { margin-top:0; }
 .review-body { gap:10px; }
-.review-line { margin:0; font-size:15px; line-height:1.6; color:var(--fg); white-space:pre-wrap; overflow-wrap:anywhere; }
+.review-line { margin:0; font-size:15px; line-height:1.6; color:var(--fg); overflow-wrap:anywhere; }
 .review-line a.mono-meta { margin:0 4px; }
 .review-note { margin:0; font-size:13px; color:var(--fg-mute); }
 `;
@@ -36,23 +36,17 @@ function draw(root: HTMLElement, list: ReviewList): void {
   for (const review of list.reviews) {
     const body = panelBody(); body.className = "panel-body review-body";
     if (review.body === null) { const note = document.createElement("p"); note.className = "review-note"; note.textContent = "The review text is unavailable."; body.append(note); }
-    else for (const line of review.body.split("\n")) {
-      if (!line.trim()) continue;
-      const row = document.createElement("p"); row.className = "review-line";
+    else body.append(renderMarkdown(review.body, {
+      className: "review-line",
+      citePrefixes: ["src", "dom", "rb", "art", "ORB"],
       // Citations are rendered as links with plain labels; the target retains the anchor.
-      const pattern = /\[((?:src|dom|rb|art|ORB)-[^\]\s,;]+(?:\s*[,;]\s*(?:src|dom|rb|art|ORB)-[^\]\s,;]+)*)\]/g;
-      let start = 0;
-      for (const match of line.matchAll(pattern)) {
-        const text = document.createElement("span"); text.textContent = line.slice(start, match.index); row.append(text);
-        for (const citation of (match[1] ?? "").split(/\s*[,;]\s*/)) {
-          const link = document.createElement("a"); link.className = "mono-meta"; link.textContent = "View source";
-          const [id, anchor] = citation.split("#", 2);
-          link.href = `/?citation=${encodeURIComponent(id ?? "")}${anchor === undefined ? "" : `#${encodeURIComponent(anchor).replace(/%3D/gi, "=")}`}`; row.append(link);
-        }
-        start = (match.index ?? 0) + match[0].length;
-      }
-      const rest = document.createElement("span"); rest.textContent = line.slice(start); row.append(rest); body.append(row);
-    }
+      cite: (citation) => {
+        const link = document.createElement("a"); link.className = "mono-meta"; link.textContent = "View source";
+        const [id, anchor] = citation.split("#", 2);
+        link.href = `/?citation=${encodeURIComponent(id ?? "")}${anchor === undefined ? "" : `#${encodeURIComponent(anchor).replace(/%3D/gi, "=")}`}`;
+        return link;
+      },
+    }));
     if (review.truncated) { const note = document.createElement("p"); note.className = "review-note"; note.textContent = "This review is shortened."; body.append(note); }
     const item = panel(review.title, { eyebrow: "Review", meta: new Date(review.date).toLocaleDateString() });
     item.append(body);
