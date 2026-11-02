@@ -283,3 +283,77 @@ fn conformance_golden_runs_through_public_dispatch() {
     }
     assert_eq!(count, 3, "all golden cases executed");
 }
+
+const V2_ID: &str = "SCR-20261101-0900-0a3104";
+const V2_PATH: &str = "sources/conversation/2026/11/SCR-20261101-0900-0a3104.md";
+const LEDGER_PATH: &str = "sources/decisions/orbit-office.md";
+const PAGE_PATH: &str = "knowledge/domain/dom-preferences-global.md";
+
+/// A Library holding what one v2 pass writes: the SCR with its Tags
+/// entries, the scope's decision ledger and the global preference page.
+fn v2_library() -> FakeLibrary {
+    use office_core::ports::Library;
+    let library = FakeLibrary::with_bundled_templates();
+    library.insert_scribe_file(V2_PATH, include_str!("fixtures/scribe_v2_scr.md"));
+    library
+        .write_document(
+            Path::new(LEDGER_PATH),
+            include_str!("fixtures/scribe_v2_ledger.md"),
+        )
+        .unwrap();
+    library
+        .write_document(
+            Path::new(PAGE_PATH),
+            include_str!("fixtures/scribe_v2_preferences.md"),
+        )
+        .unwrap();
+    library
+}
+
+#[test]
+fn the_shortlist_covers_ledgers_preference_pages_and_scr_tag_entries_by_entry_id() {
+    let (ports, models) = ports(v2_library());
+    models.extract_replies.borrow_mut().push_back(json!({
+        "not_captured": false,
+        "claims": [
+            {"text": "v2 ships first.", "quote": "ship v2 first", "cites": ["dec-orbit-office-1"]},
+            {"text": "Emails are drafted.", "quote": "Always draft emails; never send them.",
+             "cites": ["dom-preferences-global#email"]},
+            {"text": "The marker was typed.", "quote": "#preferences always draft emails, never send",
+             "cites": [format!("{V2_ID}#T1")]},
+            {"text": "Invented.", "quote": "ship v1 first", "cites": ["dec-orbit-office-1"]},
+            {"text": "Unknown cite.", "quote": "ship v2 first", "cites": ["dec-orbit-office-9"]}
+        ]
+    }));
+    let response = ask(
+        &ports,
+        json!({"question": "what did we decide about ship v2 first and draft emails"}),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    let out = &response["output"];
+    let cites: Vec<&str> = out["shortlist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["cite"].as_str())
+        .collect();
+    assert!(cites.contains(&"dec-orbit-office-1"), "{out}");
+    assert!(cites.contains(&"dom-preferences-global#email"), "{out}");
+    assert!(cites.contains(&format!("{V2_ID}#T1").as_str()), "{out}");
+    let claims = out["claims"].as_array().unwrap();
+    assert_eq!(claims.len(), 3, "{out}");
+    assert_eq!(claims[0]["citation"], "dec-orbit-office-1");
+    assert_eq!(claims[0]["path"], LEDGER_PATH);
+    assert_eq!(claims[1]["citation"], "dom-preferences-global#email");
+    assert_eq!(claims[1]["path"], PAGE_PATH);
+    assert_eq!(claims[2]["citation"], format!("{V2_ID}#T1"));
+    assert_eq!(claims[2]["path"], V2_PATH);
+    assert_eq!(claims[2]["msg"], "m-0001");
+    // A misquote and a cite naming no shortlisted entry are dropped.
+    assert_eq!(out["dropped_claims"], 2);
+    // The model saw the ledger, the page and the Tags entry as evidence.
+    let requests = models.extract_requests.borrow();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].text.contains("dec-orbit-office-1"));
+    assert!(requests[0].text.contains("dom-preferences-global#email"));
+}

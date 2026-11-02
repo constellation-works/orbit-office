@@ -12,6 +12,7 @@ mod naming;
 mod paths;
 mod rules;
 mod time;
+pub mod v2;
 
 pub use append::append;
 pub use entries::{Entry, Plan, Refusal, Request, Why, WhyNote, parse_entries};

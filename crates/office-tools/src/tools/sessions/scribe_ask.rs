@@ -12,10 +12,17 @@
 //! by reference only to the caller: a configured open-weights route
 //! authorizes that endpoint to read the evidence in the model request,
 //! never the MCP caller, as `recall-answer` does.
+//!
+//! The shortlist also draws on the scribe v2 stores: decision ledger
+//! entries (cited `dec-…`), preference page sections
+//! (`dom-preferences-…#<matter>`) and v2 SCR Tags entries
+//! (`<SCR id>#T<n>`), each with the same verbatim quote check.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use office_core::domain::source::conversation::scribe;
+use office_core::domain::knowledge::{Page, preferences};
+use office_core::domain::source::conversation::scribe::{self, v2};
+use office_core::domain::source::decisions::{Ledger, views};
 use office_core::ports::{ExtractRequest, ModelTier, Sensitivity};
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
@@ -118,7 +125,127 @@ fn score(entry: &Entry, query_tokens: &[String]) -> usize {
 }
 
 fn cite_of(entry: &Entry) -> String {
-    format!("{}#L{}", entry.scr_id, entry.line)
+    entry
+        .cite
+        .clone()
+        .unwrap_or_else(|| format!("{}#L{}", entry.scr_id, entry.line))
+}
+
+fn project_of_scope(scope: &str) -> Option<String> {
+    scope.strip_prefix("project:").map(str::to_owned)
+}
+
+/// The scribe v2 items as shortlist entries: ledger entries, preference
+/// sections and v2 SCR Tags entries.
+fn v2_entries(call: &Call<'_>) -> Result<Vec<Entry>> {
+    let library = call.ports.library.as_ref();
+    let mut out = Vec::new();
+    let mut ledgers = Vec::new();
+    for file in library.decision_ledgers()? {
+        ledgers.push(Ledger::parse(
+            &file.path,
+            file.markdown.as_deref().unwrap_or_default(),
+        )?);
+    }
+    for view in views(&ledgers) {
+        let d = &view.decision;
+        let text = [
+            d.question.as_deref(),
+            d.quote.as_deref(),
+            d.chosen.as_deref(),
+            d.because.as_ref().map(|b| b.text.as_str()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("\n");
+        out.push(Entry {
+            cite: Some(d.id.clone()),
+            scr_id: d.id.clone(),
+            path: ledgers
+                .iter()
+                .find(|ledger| ledger.id() == view.ledger)
+                .map(|ledger| ledger.path.clone())
+                .unwrap_or_default(),
+            line: view.line,
+            text,
+            msg: d
+                .reference
+                .rsplit(' ')
+                .next()
+                .unwrap_or_default()
+                .to_owned(),
+            time: d.decided_at.clone(),
+            tag: "decision".into(),
+            quote: d.quote.clone().unwrap_or_default(),
+            by: serde_json::to_value(d.decided_by)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned)),
+            project: project_of_scope(&d.scope),
+            topics: vec![d.scope.clone()],
+            private: d.private,
+            ..Entry::default()
+        });
+    }
+    for page in library.knowledge_pages()? {
+        let Some(slug) = page
+            .path
+            .strip_prefix(v2::PREFERENCE_DIR)
+            .and_then(|p| p.strip_prefix("/dom-preferences-"))
+            .and_then(|p| p.strip_suffix(".md"))
+        else {
+            continue;
+        };
+        let Some(markdown) = page.markdown.as_deref() else {
+            continue;
+        };
+        let parsed = Page::from_markdown(markdown)?;
+        for record in preferences::parse(&parsed.id, &parsed.body)? {
+            out.push(Entry {
+                cite: Some(format!("{}#{}", parsed.id, record.matter)),
+                scr_id: parsed.id.clone(),
+                path: page.path.clone(),
+                text: record.statement.clone(),
+                quote: record.statement.clone(),
+                time: record.stated_at.clone(),
+                tag: "preference".into(),
+                matter: Some(record.matter.clone()),
+                review_by: Some(record.review_by.clone()),
+                refs: record.cites.clone(),
+                project: (slug != "global").then(|| slug.to_owned()),
+                ..Entry::default()
+            });
+        }
+    }
+    for scr in v2::v2_files(&library.scribe_files()?)? {
+        for entry in scr.entries() {
+            let line = scr
+                .markdown
+                .lines()
+                .position(|l| l == entry.line)
+                .map_or(0, |index| index + 1);
+            out.push(Entry {
+                cite: Some(format!("{}#{}", scr.front.id, entry.id())),
+                scr_id: scr.front.id.clone(),
+                path: scr.path.clone(),
+                line,
+                text: entry.line.clone(),
+                msg: entry.msg.clone(),
+                time: entry.time.clone(),
+                tag: entry.group.to_lowercase(),
+                quote: entry.quote.clone(),
+                matter: entry.field("matter").map(str::to_owned),
+                by: Some(entry.by.clone()),
+                session_id: scr.front.session.clone(),
+                title: scr.front.title.clone(),
+                project: scr.front.project.clone(),
+                scribed_through: scr.front.scribed_through.clone(),
+                private: scr.front.private(),
+                ..Entry::default()
+            });
+        }
+    }
+    Ok(out)
 }
 
 fn render_entry(entry: &Entry, content_withheld: bool) -> Value {
@@ -184,7 +311,9 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .get("conversation")
         .is_some_and(|s| *s == Sensitivity::Private);
 
-    let files = scribe::scr_files(&call.ports.library.scribe_files()?)?;
+    let mut files = scribe::scr_files(&call.ports.library.scribe_files()?)?;
+    // v2 SCRs are read through their own entries below.
+    files.retain(|file| !v2::is_v2(&file.markdown));
     let file_count = files.len();
     // Sessions searched, with the cursor past which they are not scribed.
     let mut sessions_map: BTreeMap<String, Value> = BTreeMap::new();
@@ -212,7 +341,8 @@ fn run(call: &Call<'_>) -> Result<Value> {
     }
     let sessions: Vec<Value> = sessions_map.values().cloned().collect();
 
-    let entries = entries_of(&files);
+    let mut entries = entries_of(&files);
+    entries.extend(v2_entries(call)?);
     let filtered: Vec<&Entry> = entries
         .iter()
         .filter(|entry| {

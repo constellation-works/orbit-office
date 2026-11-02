@@ -527,6 +527,12 @@ impl Library for RealLibrary {
     ) -> office_core::Result<()> {
         LibraryStore::write_scribe_file(&self.store()?, write)
     }
+    fn decision_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(LibraryStore::decision_ledger_files(&self.store()?)?)
+    }
+    fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> office_core::Result<()> {
+        LibraryStore::write_scribe_pass(&self.store()?, pass)
+    }
     fn host_name(&self) -> Option<String> {
         office_store::scribe_parse::host_name()
     }
@@ -607,6 +613,13 @@ impl Library for RealLibrary {
         session_id: &str,
     ) -> office_core::Result<office_core::domain::source::conversation::Session> {
         office_core::ports::Library::session_transcript(&self.store()?, path, session_id)
+    }
+    fn scribe_transcript(
+        &self,
+        path: &str,
+        session_id: &str,
+    ) -> office_core::Result<office_core::domain::source::conversation::Session> {
+        office_core::ports::Library::scribe_transcript(&self.store()?, path, session_id)
     }
     fn capture_session(
         &self,

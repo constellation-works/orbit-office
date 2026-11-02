@@ -310,7 +310,9 @@ invocation (`<command-message>`, `<command-name>` and `<command-args>`)
 renders as one `/<name> <args>` line instead of the tags, with exactly one
 leading slash on the name. A user record left with no text after this
 stripping contributes no line. Pasted content is kept: it is the user's own
-material, however it was framed.
+material, however it was framed. Lines inside a `<pasted_content>` region of
+a user record are marked `pasted`, so the scribe's marker detection skips
+them ([scribe.md](./scribe.md#built-tools-s4)); the text itself is unchanged.
 
 The adapter records `orchestrator: claude`, the last non-synthetic assistant
 `message.model` (exact spelling, null if absent), and `session_id` in source

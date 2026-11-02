@@ -19,6 +19,11 @@ pub struct Message {
     pub at: String,
     /// The record's kept, scrubbed text lines joined by newlines.
     pub text: String,
+    /// 1-based lines of `text` inside a paste region the adapter saw; a
+    /// marker there is never one. Absent when the message has none, so
+    /// earlier message files still read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pasted: Vec<usize>,
 }
 
 /// The id of the message at zero-based `index`.
@@ -49,12 +54,17 @@ pub fn messages(session: &Session) -> Vec<Message> {
             Some(message) if last == Some(prefix.as_str()) => {
                 message.text.push('\n');
                 message.text.push_str(&line.text);
+                if line.pasted {
+                    let number = message.text.lines().count();
+                    message.pasted.push(number);
+                }
             }
             _ => out.push(Message {
                 id: message_id(out.len()),
                 role: line.role.clone(),
                 at: line.timestamp.clone(),
                 text: line.text.clone(),
+                pasted: if line.pasted { vec![1] } else { vec![] },
             }),
         }
         last = Some(prefix);
@@ -128,6 +138,14 @@ pub struct Parsed {
     /// for every session; see [`super::planned`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_title: Option<String>,
+    /// Scribe v2: the session scope token (`global`, `project:<name>`)
+    /// `office.scribe-pending` resolved; absent on a v1 parse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    /// Scribe v2: the session is private. Its parse is written for the
+    /// local, reference-only pass; the v1 append refuses it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub private: bool,
 }
 
 /// Workspace-relative path of a session's message file, given the

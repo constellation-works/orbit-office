@@ -8,6 +8,11 @@
 //! preference on the same matter supersedes it (and is `stale` past its
 //! `review_by`), and a `#why` note fills the `#no-why` decision it names.
 //! It never touches the Models port.
+//!
+//! The scribe v2 modes `decisions`, `preferences` and `scr` read the
+//! decision ledgers, the preference pages and the v2 SCR files ([`v2`]).
+
+mod v2;
 
 use std::collections::BTreeMap;
 
@@ -38,6 +43,12 @@ pub(crate) const TOOL: Tool = Tool::built(
         "session_id",
         "project",
         "limit",
+        "scope",
+        "decided_by",
+        "text",
+        "task",
+        "workspace",
+        "id",
     ],
     run,
 );
@@ -47,7 +58,7 @@ const MAX_LIMIT: usize = 1000;
 const MODES: &[&str] = &["pending", "pref", "landed", "why"];
 
 /// One parsed SCR entry line, with its file's front matter.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Entry {
     pub(crate) scr_id: String,
     pub(crate) aliases: Vec<String>,
@@ -78,6 +89,9 @@ pub(crate) struct Entry {
     pub(crate) file_topics: Vec<String>,
     pub(crate) scribed_through: Option<String>,
     pub(crate) private: bool,
+    /// The citation of a scribe v2 item (`dec-…`, `dom-preferences-…#<matter>`,
+    /// `<SCR id>#T<n>`); a v1 line is cited `<SCR id>#L<n>`.
+    pub(crate) cite: Option<String>,
 }
 
 impl Entry {
@@ -242,6 +256,7 @@ pub(crate) fn parse_entry(file: &ScrFile, line_number: usize, line: &str) -> Opt
     let quote = remainder[1..close].to_owned();
     let trailer = remainder[close + 1..].trim_start();
     let mut entry = Entry {
+        cite: None,
         scr_id: file.front.id.clone(),
         aliases: file.front.aliases.clone(),
         path: file.path.clone(),
@@ -373,11 +388,23 @@ fn run(call: &Call<'_>) -> Result<Value> {
     let mode = optional_text(input, "mode")?;
     if let Some(mode) = &mode
         && !MODES.contains(&mode.as_str())
+        && !v2::MODES.contains(&mode.as_str())
     {
         return Err(invalid(format!(
-            "scribe-query mode must be one of: {}",
-            MODES.join(", ")
+            "scribe-query mode must be one of: {}, {}",
+            MODES.join(", "),
+            v2::MODES.join(", ")
         )));
+    }
+    let v2_mode = mode.as_deref().filter(|mode| v2::MODES.contains(mode));
+    if v2_mode.is_none() {
+        for key in ["scope", "decided_by", "text", "task", "workspace", "id"] {
+            if input.get(key).is_some_and(|v| !v.is_null()) {
+                return Err(invalid(format!(
+                    "scribe-query {key} filters the decisions, preferences and scr modes"
+                )));
+            }
+        }
     }
     let tag_filter = optional_text(input, "tag")?.map(|tag| tag.trim_start_matches('#').to_owned());
     let matter_filter = optional_text(input, "matter")?;
@@ -428,6 +455,9 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .get("conversation")
         .is_some_and(|s| *s == Sensitivity::Private);
     let is_private = |entry: &Entry| entry.private || conversation_private;
+    if let Some(mode) = v2_mode {
+        return v2::run(call, mode, &today, conversation_private);
+    }
 
     let files = scribe::scr_files(&call.ports.library.scribe_files()?)?;
     let file_count = files.len();

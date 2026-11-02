@@ -2943,8 +2943,73 @@ private note becomes, or how a task comment is named.
 - Operators run `office.init` once on the Library to migrate the existing
   notes; new `note` captures are refused from this build on.
 
+## Scribe v2 S4: format flag, marker lists and local private parse
+
+**Recorded:** 2026-11-02 · [ORB-21117]
+**Code anchors:** `crates/office-core/src/domain/source/conversation/scribe/v2/`
+(`markers.rs`, `scr.rs`, `pass.rs`);
+`crates/office-store/src/repository/library/scribe_pass.rs`;
+`crates/office-tools/src/tools/sessions/scribe_pending.rs`,
+`scribe_append/v2.rs`, `scribe_query/v2.rs`, `scribe_ask.rs`
+
+### Context
+
+[Scribe v2](./specs/scribe.md#pipeline) reworks `office.scribe-pending`
+and `office.scribe-append`, but the plugin that drives them switches over
+only in S5, and v1 must keep running until then. The spec says
+`scribe-append` refuses a finding "whose marker is not in the parse
+result" without saying whether assistant markers are in it. It says a
+private session's markers are "detected locally", while the store's
+transcript read clears a private session's lines so that no preview can
+disclose them.
+
+### Decision
+
+- **A `format` flag, not a replacement.** `scribe-pending` and
+  `scribe-append` take `format: "v2"`; a session whose SCR is already v2
+  stays v2, and `sections`/`findings` select v2 in append. Without them
+  both tools behave as before. v1 and v2 keys in one call are refused.
+- **Two marker lists.** `markers` holds the line-start markers of the
+  user's typed turns; `agent_markers` holds the assistant's, recorded
+  `by: agent`. Append accepts a finding whose (`msg`, `line`) is in
+  either list, recomputed model-free from the parse over
+  (`scribed_through`, `through`], and an agent marker is never applied.
+- **Paste regions in the adapter.** The conversation adapter marks the
+  lines inside a `<pasted_content>` region of a user record (`pasted` on
+  the line, 1-based line numbers on the parsed message); marker detection
+  skips them as it skips fences and blockquotes.
+- **A local-only transcript read.** A new `Library::scribe_transcript`
+  port keeps a private session's lines. `scribe-pending` v2 uses it only
+  to write the private parse and detect markers; the response withholds
+  the messages and returns markers by reference.
+- **One `ScribePass` journal write (version 11)** carries the SCR, the
+  ledger files and any preference page, compare-and-swapped under the
+  writer lock, with the `previous` chain checked against the scope's
+  latest SCR.
+- **Front matter strings are JSON-quoted** (`title_by: "scribe"`,
+  `previous: null`), as every other Library front matter is rendered.
+
+### Alternatives rejected
+
+- **Replacing v1 in place.** The plugin's v1 hooks would break until S5.
+- **Refusing assistant markers outright.** The spec records them
+  `by: agent`; refusing would lose the record.
+- **Keeping lines in `session_transcript` for private sessions.** That
+  read backs the transcript preview; clearing there is the disclosure
+  guard.
+
+### Consequences
+
+- S5 passes `format: "v2"` and moves the plugin to markers, sections and
+  findings.
+- Inferred candidates (`capture: inferred`) are not built: append accepts
+  marker-derived findings only. `on_by` stays with S5.
+- The `preferences` query mode reports open proposals from the SCR
+  entries that name one (`proposal:`), not from the proposal store.
+
 ## Task References
 
+- [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
 - [ORB-21114] — built the decision ledger store, capture `decision` input and the `note` migration.
 - [ORB-20946] — ships the disposable-data QA fixture (`make qa-exec`) for mutating office tools Orbit refuses to agents.
 - [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
