@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: session continuity — the deterministic session brief, the append-only decision log, and the daily digest routine"
 last_validated: 2026-11-02
+last_updated: 2026-11-02
 ---
 
 # Spec: Session continuity
@@ -71,7 +72,7 @@ Blockers and Next sections are rewritten on every scribe pass.
   newest SCR whose Next cites the task, else the legacy thread's. The
   `view: list` SCR feed is built ([ORB-21120]; see
   [Handoff list](#handoff-list)).
-- **No thread key.** One handoff per project replaces ORB-21060's thread
+- **No thread key.** One handoff per project replaces [ORB-21060]'s thread
   per project, orchestrator and cited assignment. Two concurrent sessions
   in one project show as the handoff plus an `other_sessions` item. A
   per-assignment record is the assignment task, as the context-boundary
@@ -161,7 +162,7 @@ anchor and id.
   SessionStart hook therefore passes `claude`, not a crew name (opus, sol,
   …). Neither the transcript nor the hook knows the crew, so a crew name
   would match no source. Work that needs one thread per crew or per task
-  cites its assignment id, which keys the thread instead (ORB-21063).
+  cites its assignment id, which keys the thread instead ([ORB-21063]).
 
 
 #### Structured handoff contract
@@ -386,7 +387,7 @@ continue using it until the host hook is installed, or reconcile it explicitly.
 
 **Run on the transcript-owning host.** The Claude Code provider plugin at
 `plugin/claude-code/` supplies SessionStart, Stop and SessionEnd hooks
-([installation](../../../../plugin/claude-code/README.md), ORB-20689).
+([installation](../../../../plugin/claude-code/README.md), [ORB-20689]).
 After installing it, the operator can retire constellation
 `operations/scripts/session-brief.py` and its legacy SessionEnd stager.
 It stages the completed `~/.claude/projects/**/<session>.jsonl` under the
@@ -961,7 +962,7 @@ named line, not a blank session start.
 Cross-host selectors (`hm_…/<workspace>`) naming a registered remote host
 are routed by Orbit to that host: on 2026-10-28 `orbit tool run
 orbit.task.list` with `hm_9ca6004473492f06/ws_orbit` from the Mac returned
-box tasks (see ORB-19706 for the plugin callback contract). Every failure
+box tasks (see [ORB-19706] for the plugin callback contract). Every failure
 yields the same single `workspace_unavailable` item, including an unlisted
 host, an unreachable route (sleeping or otherwise unreachable host,
 refused callback), or a missing program grant (`ssh` must be listed in
@@ -1016,6 +1017,8 @@ No agent loop, no crew and no Orbit task is involved.
 
 ### Digest since a meeting
 
+Built in [ORB-21337]; the read-only app route followed in [ORB-21376].
+
 `office.digest` with `source: <meeting source id>` (and no `day`) answers
 "what happened since this meeting". It runs on demand: from the app
 through the server route `GET /api/sources/digest?id=…`
@@ -1055,7 +1058,7 @@ sections as JSON beside a Markdown `report`.
 - **Each task once:** a task id is counted in the first workspace that lists
   it, the office's first. A `brief.task_workspaces` selector that names the
   office workspace, or repeats another, adds no second line for a to-do,
-  shipped task or decision request.
+  shipped task or decision request ([ORB-21452]).
 - **Failures:** the office workspace is all-or-nothing, as in the brief. An
   extra workspace whose tasks or decision requests cannot be read is named in
   `unavailable` and never refuses the digest. `truncated` is true when Orbit
@@ -1071,17 +1074,19 @@ sections as JSON beside a Markdown `report`.
 - [ORB-20686] — built the live scribe's rules page, answers to questions and scribe handoff.
 - [ORB-21122] — retired the scribe handoff (`scribe.handoff`).
 - [ORB-20689] — built the per-user Claude Code hooks, commands, debounce and backfill.
-- [ORB-20755] — reserved the planned `office.recall-answer` and `office.scribe-control` scaffold (registry rows, reserved manifest blocks, this section).
 - [ORB-21060] — built per-thread handoffs within a project and the `other_sessions` section.
 - [ORB-21063] — built global-scoped handoffs (scope, expiry, resolution, the `global` section), the `brief.handoff` auto/manual setting with the assignment fallback, the `projects` section, `view: handoffs` and the Claude Code `/handoff` command.
 - [ORB-21075] — built the `view: list` handoff list behind Scribe › Handoffs and Today's Handoffs section.
-- [ORB-21083] — designed scribe v2, where the latest SCR per project and global is the handoff.
-- [ORB-21079] — gave scribe sessions a title on the first pass (v2 derives it from the SCR summary).
-- [ORB-21117] — proposed scribe v2 slice S4.
+- [ORB-21117] — built scribe v2 slice S4: SCR tools, markers, query and ask.
 - [ORB-21119] — built scribe v2 slice S6.
 - [ORB-21120] — built scribe v2 slice S7: `view: list` returns the SCR cards (or one SCR with its `previous` given `id`), with the v1 list kept behind `legacy: true`.
-- [ORB-21123] — proposed scribe v2 slice S10.
+- [ORB-21123] — removes v1 surfaces after the compatibility window; approved in backlog.
 - [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.
 - [ORB-21337] — built the digest since a meeting (`office.digest` with `source`) and its app server route.
+- [ORB-20856] — made scribe-append and scribe-control callable by the provider plugin.
+- [ORB-21065] — built structured handoffs.
+- [ORB-21118] — built the opt-in v2 provider plugin, hooks and marker routing.
+- [ORB-21376] — added the read-only source-digest verb used by the app.
+- [ORB-21452] — deduplicated source tasks across repeated workspace listings.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

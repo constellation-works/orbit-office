@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: plugin surface — the office tools, their MCP visibility, shipped definitions, config and permissions"
 last_validated: 2026-10-28
+last_updated: 2026-11-02
 ---
 
 # Spec: Plugin surface
@@ -13,6 +14,10 @@ tests.
 
 Source: spec §12. The one-call envelope is
 [output-contract.md](./output-contract.md).
+
+The v2 scribe settings [ORB-21115], SCR tools [ORB-21117], provider
+control fields [ORB-21118] and compatibility migration [ORB-21122] are
+built, as is the precedent provider [ORB-21218].
 
 ## Tools
 
@@ -228,6 +233,11 @@ Activities have no schedule switch. Definitions load only when listed in
 The digest activity names its tool in `config.tool`; the routine uses only
 Orbit's accepted routine fields and has no `required_tools` key.
 
+The agent activity's static allowlist includes `gateway.http-get` and
+`gateway.http-draft`. With Office enabled and gateway absent, Orbit refuses
+the activity catalog, so workspace jobs cannot start. [ORB-21451] tracks
+fixing or explicitly declaring this dependency; it remains proposed.
+
 A definition lands only with the tools it calls. An activity lists its
 callable tools in `spec.tools`; `required_tools` belongs to task records.
 The shipped activity is registered in `spec.definitions.activities` as
@@ -433,22 +443,6 @@ rates are finite, nonnegative numbers or null, and `costs.currency` is a
 three-letter uppercase currency code or null. Missing keys receive these
 defaults; existing explicit pack lists keep their values.
 
-## Task References
-
-- [ORB-18838] — renamed the scaffold README's KT routine from `office-meeting-inbox` to `office-kt-inbox`.
-- [ORB-19740] — projected `brief.task_workspaces` in `office.status`.
-- [ORB-21115] — added the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
-- [ORB-21117] — added the v2 `office.scribe-pending`, `office.scribe-append` and `office.scribe-query` modes and the `office.scribe-ask` v2 shortlist.
-- [ORB-20856] — declared `office.scribe-control` and `office.scribe-append` agent-callable for the plugin's `local-cli` `[agent]` calls.
-- [ORB-21118] — added `on_by`/`scope` to `office.scribe-control` and the `scribe_managed_session` turn-on refusal.
-- [ORB-21122] — added `office.scribe-migrate` and the v1 query modes' `deprecated` fields.
-- [ORB-20247] — added `office.proposal-reconcile` and the status-partitioned proposal layout.
-- [ORB-21217] — built `office.decision-ingest`, its callbacks and its routine.
-- [ORB-21218] — built `office.decision-precedents` and the Library half-life setting.
-- [ORB-21219] — proposes contradiction reporting to the precedent provider.
-
-> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
-
 ### Artifact callback reply budget
 
 The default Orbit callback capture remains 512 KiB per stream with a
@@ -490,3 +484,21 @@ timezone/recurrence rules, callback grants and persistence semantics.
 `office.share-set` takes exactly `id` and boolean `shareable`, returning `id`, `path` and `shareable`. Private approval and unshared own evidence refuse `share_private_refused` and `share_cites_unshared`; a missing id refuses `document_not_found`. Repeats write nothing. `office.source-set-sensitivity` additionally returns boolean `unshared`, true only when the call revoked approval.
 
 The closed `shared` Library setting requires `remote`, `branch` and `member`, or null to unconfigure. Its leaves require an existing complete block. Every read validates it; invalid remotes and members refuse `invalid_library_setting` naming the key without echoing the value. See [Shared Library settings](./shared-library.md#settings) for accepted remote forms and member bounds. Sync and the shared read layer are built to that spec.
+
+## Task References
+
+- [ORB-19740] — projected `brief.task_workspaces` in `office.status`.
+- [ORB-21115] — added the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
+- [ORB-21117] — added the v2 `office.scribe-pending`, `office.scribe-append` and `office.scribe-query` modes and the `office.scribe-ask` v2 shortlist.
+- [ORB-20856] — declared `office.scribe-control` and `office.scribe-append` agent-callable for the plugin's `local-cli` `[agent]` calls.
+- [ORB-21118] — added `on_by`/`scope` to `office.scribe-control` and the `scribe_managed_session` turn-on refusal.
+- [ORB-21122] — added `office.scribe-migrate` and the v1 query modes' `deprecated` fields.
+- [ORB-20247] — added `office.proposal-reconcile` and the status-partitioned proposal layout.
+- [ORB-21217] — built `office.decision-ingest`, its callbacks and its routine.
+- [ORB-21218] — built `office.decision-precedents` and the Library half-life setting.
+- [ORB-21219] — built contradiction reporting to the precedent provider.
+- [ORB-21375] — persisted per-item meeting filing outcomes and reconciliation.
+- [ORB-21376] — added the read-only source-digest verb for the app caller.
+- [ORB-21451] — fixes the agent activity's unconditional gateway dependency that prevents jobs without gateway.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

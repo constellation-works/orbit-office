@@ -3279,58 +3279,6 @@ the `model_answer_review` gate are still proposed there (human-decision-channel
 - Each run lists every closed request; `skipped` grows with Orbit's
   history until `since` is set.
 
-## Task References
-
-- [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
-- [ORB-21114] — built the decision ledger store, capture `decision` input and the `note` migration.
-- [ORB-20946] — ships the disposable-data QA fixture (`make qa-exec`) for mutating office tools Orbit refuses to agents.
-- [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
-- [ORB-13117] — created the Rust CLI template this workspace was generated from.
-- [ORB-13134] — hardened the template's gates and goldens.
-- [ORB-18729] — built the source view, upload and paste capture, including citation anchor landing.
-- [ORB-18796] — built the gateway plugin and found Orbit's verb rule.
-- [ORB-18719] — built `office.search` and `office.attach`, and decided where attach stages its copies.
-- [ORB-19747] — filed every meeting to-do as `owner:you` and left promotion to agent work to the orchestrator.
-- [ORB-19748] — marked `unused_automation` as planned across the spec, glossary and orchestrator reference.
-- [ORB-19421] — built the app's shared-library card in Needs you.
-- [ORB-19751] — registered Muse Code with `--agent muse` in the installer.
-- [ORB-19752] — withheld private content from MCP-visible read tools.
-- [ORB-20096] — enabled scoped agent permissions for Office capture and proposals.
-- [ORB-20228] — stopped the installer copying office skills the Orbit plugin already links.
-- [ORB-20242] — moved conversation evidence to session-transcript extraction on a cheap crew.
-- [ORB-20243] — partitioned Library sources by kind.
-- [ORB-20246] — kept local calendar events as workspace writes.
-- [ORB-20247] — partitioned Library proposals by status.
-- [ORB-20245] — made the app report a missing approval authority plainly instead of granting itself Operator.
-- [ORB-20362] — landed Orbit's scoped, audited application authority for user-approved tool calls.
-- [ORB-20363] — wires the office app's approval actions to that scoped application authority.
-- [ORB-20685] — built the live scribe's incremental capture and `Note:` commands.
-- [ORB-20756] — built recall answers, recall feed mode and Office-owned scribe control.
-- [ORB-20690] — orchestrated the scribe and recall push; recorded scribe v1.
-- [ORB-20780] — built `office.scribe-pending` and `office.scribe-append`.
-- [ORB-20825] — moved local calendar events into the Library's ignored state, inside the plugin's write grant.
-- [ORB-20849] — made long, tool-heavy sessions scribable by stripping tool payloads at staging.
-- [ORB-20696] — built the web Scribe screen over scribe v1.
-- [ORB-20884] — bound the private-route token to the endpoint origin it was saved for.
-- [ORB-20840] — the orbit-office on-call session where Daniel gave the scribe v2 direction.
-- [ORB-21063] — built global handoffs and `/handoff <project>`; reworked by scribe v2.
-- [ORB-21065] — built structured handoffs; their fields map onto the v2 SCR sections.
-- [ORB-21075] — built the Scribe › Handoffs view; it becomes the v2 one-card feed.
-- [ORB-21079] — gave scribe sessions a first-pass title; v2 derives it from the SCR summary.
-- [ORB-21083] — designed scribe v2: opt-in sessions, marker-only tags, ledgers, SCR as handoff, `note` retired.
-- [ORB-21089] — plans Orbit's decision model, which reads decision precedent.
-- [ORB-21090] — designed the office precedent provider over the v2 decision ledger.
-- [ORB-21115] — built the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
-- [ORB-21217] — built ingestion of answered Orbit decision requests into the ledger, and the decisions above.
-- [ORB-20856] — made `office.scribe-control` and `office.scribe-append` agent-callable so the plugin's local-cli `[agent]` calls succeed.
-- [ORB-21118] — built Scribe v2 S5: the Claude Code opt-in, Stop-hook cadence and marker routing, and the managed-session refusal above.
-- [ORB-21122] — built Scribe v2 S9: the v1 command mapping and `office.scribe-migrate` above, with no v1 backfill.
-- [ORB-21123] — removes the v1 scribe surfaces after the window.
-- [ORB-21239] — replaces the root AGENTS.md decision-log rule in ws_constellation.
-
-> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
-
-
 ## Decision precedents P3: bind v1 scope and rank a private in-memory snapshot
 
 The built Orbit v1 validator (`application/task/precedent_provider/model.rs`
@@ -3396,3 +3344,61 @@ the dropped partner. A failed read, or a list with `truncated` other than
 false or a `total` that disagrees with the rows, sets omission
 `conflicts_unread`. Rows that arrived are still applied, and the token is
 kept if omission ids are capped at 32. No wire field is added.
+
+## Task References
+
+- [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
+- [ORB-21114] — built the decision ledger store, capture `decision` input and the `note` migration.
+- [ORB-20946] — shipped the disposable-data QA fixture (`make qa-exec`) for mutating office tools Orbit refuses to agents.
+- [ORB-16585] — files the orchestrator assignment: rules, go/no-go, coordination, demo and submission for the office-work entry.
+- [ORB-13117] — created the Rust CLI template this workspace was generated from.
+- [ORB-13134] — hardened the template's gates and goldens.
+- [ORB-18729] — built the source view, upload and paste capture, including citation anchor landing.
+- [ORB-18796] — built the gateway plugin and found Orbit's verb rule.
+- [ORB-19747] — filed every meeting to-do as `owner:you` and left promotion to agent work to the orchestrator.
+- [ORB-19748] — marked `unused_automation` as planned across the spec, glossary and orchestrator reference.
+- [ORB-19421] — built the app's shared-library card in Needs you.
+- [ORB-19751] — registered Muse Code with `--agent muse` in the installer.
+- [ORB-19752] — withheld private content from MCP-visible read tools.
+- [ORB-20096] — enabled scoped agent permissions for Office capture and proposals.
+- [ORB-20228] — stopped the installer copying office skills the Orbit plugin already links.
+- [ORB-20242] — moved conversation evidence to session-transcript extraction on a cheap crew.
+- [ORB-20243] — partitioned Library sources by kind.
+- [ORB-20246] — kept local calendar events as workspace writes.
+- [ORB-20247] — partitioned Library proposals by status.
+- [ORB-20245] — made the app report a missing approval authority plainly instead of granting itself Operator.
+- [ORB-20362] — landed Orbit's scoped, audited application authority for user-approved tool calls.
+- [ORB-20363] — wires the office app's approval actions to that scoped application authority.
+- [ORB-20685] — built the live scribe's incremental capture and `Note:` commands.
+- [ORB-20756] — built recall answers, recall feed mode and Office-owned scribe control.
+- [ORB-20690] — orchestrated the scribe and recall push; recorded scribe v1.
+- [ORB-20780] — built `office.scribe-pending` and `office.scribe-append`.
+- [ORB-20825] — moved local calendar events into the Library's ignored state, inside the plugin's write grant.
+- [ORB-20849] — made long, tool-heavy sessions scribable by stripping tool payloads at staging.
+- [ORB-20696] — built the web Scribe screen over scribe v1.
+- [ORB-20884] — bound the private-route token to the endpoint origin it was saved for.
+- [ORB-20840] — recorded Daniel's scribe v2 direction in the orbit-office on-call session.
+- [ORB-21063] — built global handoffs and `/handoff <project>`; reworked by scribe v2.
+- [ORB-21065] — built structured handoffs; their fields map onto the v2 SCR sections.
+- [ORB-21075] — built the Scribe › Handoffs view; it becomes the v2 one-card feed.
+- [ORB-21079] — gave scribe sessions a first-pass title; v2 derives it from the SCR summary.
+- [ORB-21083] — designed scribe v2: opt-in sessions, marker-only tags, ledgers, SCR as handoff, `note` retired.
+- [ORB-21089] — designed Orbit's decision model, which reads decision precedent.
+- [ORB-21090] — designed the office precedent provider over the v2 decision ledger.
+- [ORB-21115] — built the `scribe` Library settings block, its `office.config-set` keys and `tag_sink_refused`.
+- [ORB-21217] — built ingestion of answered Orbit decision requests into the ledger, and the decisions above.
+- [ORB-20856] — made `office.scribe-control` and `office.scribe-append` agent-callable so the plugin's local-cli `[agent]` calls succeed.
+- [ORB-21118] — built Scribe v2 S5: the Claude Code opt-in, Stop-hook cadence and marker routing, and the managed-session refusal above.
+- [ORB-21122] — built Scribe v2 S9: the v1 command mapping and `office.scribe-migrate` above, with no v1 backfill.
+- [ORB-21123] — removes the v1 scribe surfaces after the window.
+- [ORB-21239] — replaces the root AGENTS.md decision-log rule in ws_constellation.
+- [ORB-20686] — built live scribe rules, answer decisions and handoffs.
+- [ORB-20688] — built session context, stored refs and recall.
+- [ORB-20710] — resolved recall PR refs through a live gh source.
+- [ORB-20820] — moved parsed scribe files inside the Library write grant.
+- [ORB-20919] — filtered task notifications and side-session context from scribe evidence.
+- [ORB-20935] — fixed side-session brief filtering and project names for removed worktrees.
+- [ORB-20950] — kept the desktop default title from overriding the user-derived scribe title.
+- [ORB-21060] — built per-thread handoffs within each project.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

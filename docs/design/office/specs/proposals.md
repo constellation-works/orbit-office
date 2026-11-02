@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: proposals — kinds, mechanical signals, record and lifecycle, dismissal memory"
 last_validated: 2026-10-30
+last_updated: 2026-11-02
 ---
 
 # Spec: Proposals
@@ -96,7 +97,7 @@ cadence are should-have.
 - **Onboarding set.** The proposals filed from the onboarding interview also carry the tag `onboarding`. The app shows them as one "Set up your Library" card with *Accept all* and per-page review; *Accept all* accepts each one in turn, and a refusal on one leaves the others accepted and names it.
 - **Script payload contract:** `proposal.json` carries `{kind, definition}`; the definition contains the concrete `plugin.tool_call` steps. `office.script-run` verifies the complete pinned step input against a done proposal. Acceptance calls `office_tools::prepare_script` before enabling any script step; see [scripts.md](./scripts.md#implementation-contracts).
 - **Accept:** the app calls `office.proposal-accept`, which applies the payload (creates and enables the auto-task, writes the page; for an auto-task that runs a script, it first fetches the script's dependencies and refuses the acceptance if they do not resolve, [scripts.md](./scripts.md#dependencies-are-fetched-once-at-approval)), closes the task as done with the change recorded, and commits the Library. Its evidence page moves to `accepted/YYYY/MM/` with the acceptance summary as its outcome, in the commit that records the acceptance. `proposal-accept` is `mcp_scope: none` and not `agent_callable`, so no agent can call it: it is Operator/Runner only ([plugin-surface.md](./plugin-surface.md#agent-authority-inventory)).
-- **App authority:** the app is meant to be the one non-operator caller, acting on the user's click. Orbit now provides a scoped, audited application identity for exactly this ([ORB-20362] done), but the app is not wired to it yet: the wiring task is blocked because the shipped consent contract cannot carry the app's per-proposal calls, so a decision is needed first ([ORB-20363] blocked). Until that wiring lands, the installed app runs with no `ORBIT_OPERATOR` and holds only Orbit's default capability, so Orbit still refuses its accept, accept-all, dismiss, send, approve and send-back calls with `capability_denied` (or `policy_denied`), and nothing changes. The server reports that refusal as the reason `not_permitted` on every approval route, and Today says plainly that the app isn't allowed to do this yet and that trying again won't help, rather than "Please try again". It will not grant itself Operator, nor mark the tool `agent_callable` (that would admit agents). An operator accepts from the office workspace with `ORBIT_OPERATOR=1 orbit tool run office.proposal-accept --input '{"id":"<id>","sha256":"<digest>"}'`; see the [decision](../4_decisions.md#the-app-reports-missing-approval-authority-instead-of-granting-itself-operator).
+- **App authority:** the app is meant to be the one non-operator caller, acting on the user's click. Orbit provides a scoped, audited application identity ([ORB-20362] done), but the app is not wired to it yet. The wiring task [ORB-20363] is parked as someday; its latest hold requires Orbit's callback support to be deployed before a re-pilot. The last callback slice [ORB-21042] is now done in Orbit; deployment and app integration are not verified here. Until that wiring lands, the installed app runs with no `ORBIT_OPERATOR` and holds only Orbit's default capability, so Orbit still refuses its accept, accept-all, dismiss, send, approve and send-back calls with `capability_denied` (or `policy_denied`), and nothing changes. The server reports that refusal as the reason `not_permitted` on every approval route, and Today says plainly that the app isn't allowed to do this yet and that trying again won't help, rather than "Please try again". It will not grant itself Operator, nor mark the tool `agent_callable` (that would admit agents). An operator accepts from the office workspace with `ORBIT_OPERATOR=1 orbit tool run office.proposal-accept --input '{"id":"<id>","sha256":"<digest>"}'`; see the [decision](../4_decisions.md#the-app-reports-missing-approval-authority-instead-of-granting-itself-operator).
 - **Dismiss:** closes it as rejected with an optional reason. The app then calls `office.proposal-reconcile`, which moves the page to `dismissed/YYYY/MM/` in one commit; the reason stays in the task's history. A failed move leaves the dismissal standing until the next reconcile.
 - **Reconcile:** `office.proposal-reconcile` (`{}`, mutating, `mcp_scope: none`) lists the proposal tasks (`orbit.task.list`, tag `proposal`, up to 1000, refused as `proposal_history_incomplete` when truncated) and moves every page whose folder disagrees with its task's status, so a proposal closed outside the app (an operator's CLI) catches up and legacy flat pages migrate: to `open/` while waiting (or in another non-closed status), to `accepted/` or `dismissed/` under the month of the task's `updated_at`. A legacy acceptance receipt `<id>-accepted.md` is folded into the accepted page's outcome. A page already in its folder is left alone, so a re-run moves nothing and commits nothing. Pages with no proposal task are reported as `unknown` and left in place. It returns `{moved: [{id, from, to}], unknown}`. The app runs it after a dismissal; an operator runs `orbit tool run office.proposal-reconcile --input '{}'` to migrate a Library or repair it after closing proposals outside the app.
 - **Never auto-approved.** Orbit only approves a `proposed` task automatically when a drain is started with `--approve-proposed`. The office workspace runs no drain, and the dispatch pass submits `backlog` tasks only, so a proposal changes state only when the user accepts or dismisses it.
@@ -265,13 +266,6 @@ pairs are plugin definitions rather than proposal kinds.
 
 `knowledge_add` and `knowledge_update` payloads accept optional boolean `shareable`, applied to the materialized Markdown at creation and acceptance. A `knowledge_add` page draft also accepts optional boolean `shareable` (absent false); creation materializes it into reviewed Markdown. Add and update Markdown may carry the same field. Acceptance rechecks the private-document and own-citation sharing rules before reserving the proposal; publication rechecks current cited files under the writer lock. A refusal writes no page or acceptance receipt. See [sharing approval](./shared-library.md#the-shareable-field).
 
-## Task References
-
-- [ORB-20362] — landed Orbit's scoped, audited application authority for user-approved tool calls.
-- [ORB-20363] — wires the office app's approval actions to that scoped application authority.
-
-> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
-
 ## Preference conflicts and apply mode
 
 Preference changes use `knowledge_add` for a scope's first page and
@@ -308,3 +302,12 @@ without overwriting it. This API adds no agent-callable direct-write tool.
 
 `office_core::domain::knowledge::preferences::Preference::new` supplies
 the default 90-day review date, and `markdown()` renders one matter section.
+
+## Task References
+
+- [ORB-20362] — landed Orbit's scoped, audited application authority for user-approved tool calls.
+- [ORB-20363] — wires the office app's approval actions to that scoped application authority.
+
+- [ORB-21042] — built Orbit's payload-bound auto-task callback support; deployment is unverified here.
+
+> Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

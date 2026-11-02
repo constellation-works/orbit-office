@@ -2,6 +2,7 @@
 type: design
 summary: "Spec: the scribe v2 decision ledger as a precedent source for Orbit's decision model: the learning-fit entry schema, ingestion of answered Orbit decision requests with dedupe, the read-only office.decision-precedents provider over orbit.precedent-provider/1, feedback and contradiction rules, and a read-only agreement view"
 last_validated: 2026-11-02
+last_updated: 2026-11-02
 ---
 
 # Spec: Decision ledger as a precedent provider
@@ -13,8 +14,8 @@ validation and refusals, `same_as` matching in `office.scribe-append` and
 its callbacks and the disabled `office-decision-ingest` routine) is built
 ([ORB-21217]). Slice P3 (the provider and half-life setting) is built
 ([ORB-21218]). Slice P4 (contradiction reporting) is built
-([ORB-21219]). The remaining slices are filed as proposed tasks (see
-[Build order](#build-order)).
+([ORB-21219]). Slice P5 (the Agreement view) is built ([ORB-21220]).
+All five Office slices are done (see [Build order](#build-order)).
 
 Daniel asked for a decision model (2026-11-01, in the orbit-office on-call
 session [ORB-20840]). It is a cheap model that predicts the answer to a new
@@ -69,7 +70,8 @@ Non-goals:
 ## Entry schema
 
 The ledger and its D13 entry are specified in
-[scribe.md](./scribe.md#decision-ledger) and built (S1, S4). This section
+[scribe.md](./scribe.md#decision-ledger), designed in [ORB-21083]
+and built (S1, S4). This section
 says how each field serves as precedent, and adds four optional fields.
 Every existing field keeps its name and meaning; no field is renamed or
 retyped. An entry still is one line, `dec-<scope>-<n>`, the time,
@@ -448,7 +450,7 @@ category, how often the model agreed with the human.
 
 - **Data.** Orbit's per-category readout `precedent-decision-readout/1`
   (Orbit §Per-category report), produced by the `decision-assistance-eval/4`
-  evaluator (Orbit slice ORB-21096). Office reads it; it computes nothing
+  evaluator (Orbit slice [ORB-21096]). Office reads it; it computes nothing
   and stores nothing. The app server reads it through one Orbit client
   read function (`orbit.decision.readout` with
   `{contract: "precedent-decision-readout/1"}`) behind
@@ -540,35 +542,35 @@ routine ships disabled.
   `orbit.precedent-provider/1` (or a `/2`). P4 reports conflicts in
   context as described above until such a field is available.
 - **Readout surface.** The agreement view depends on the read surface the
-  evaluator slice (ORB-21096) gives the readout.
+  evaluator slice ([ORB-21096]) gives the readout.
 
 ## Build order
 
-Each slice is a proposed task in ws_orbit-office. Each updates the docs its
+All five slices are done in ws_orbit-office. Each updates the docs its
 change makes stale in the same change.
 
 | Slice | Task | Depends on | Delivers |
 |---|---|---|---|
-| P1 | [ORB-21216] | Scribe v2 S1, S4 | Entry schema additions (option `id`/`consequence`, `orbit`, `same_as`, `confirms`), their validation and refusals, `same_as` matching in `office.scribe-append` and `office.capture`, and reading them through `office.source-show` and `office.scribe-query`. |
+| P1 (built) | [ORB-21216] | Scribe v2 S1, S4 | Entry schema additions (option `id`/`consequence`, `orbit`, `same_as`, `confirms`), their validation and refusals, `same_as` matching in `office.scribe-append` and `office.capture`, and reading them through `office.source-show` and `office.scribe-query`. |
 | P2 (built) | [ORB-21217] | P1; Orbit's `include_closed` read | `office.decision-ingest` and the disabled `office-decision-ingest` routine: request mapping, idempotence, dedupe, and the feedback entries (model, confirm, veto, re-answer). |
 | P3 (built) | [ORB-21218] | P1; Orbit [ORB-21093] for conformance | `office.decision-precedents`: the contract input and output, candidates, relevance and recency, single-option records, reversed and pulled-in entries, omissions, citations, and the `half_life_days` setting. |
 | P4 (built) | [ORB-21219] | P3 | Contradictions: the routine's category comparison and machine-readable line, and the provider's conflict reporting. |
-| P5 | [ORB-21220] | Scribe v2 S7 ([ORB-21120]); Orbit [ORB-21096]'s readout surface | The Agreement view and `GET /api/scribe/decision-agreement`. |
+| P5 (built) | [ORB-21220] | Scribe v2 S7 ([ORB-21120]); Orbit [ORB-21096]'s readout surface | The Agreement view and `GET /api/scribe/decision-agreement`. |
 
 ## Task References
 
 - [ORB-21090] — designed this spec.
 - [ORB-21089] — designed Orbit's decision model and its provider contract (Orbit repository).
 - [ORB-21083] — designed scribe v2 and the D13 ledger schema.
-- [ORB-20840] — the orbit-office on-call session where Daniel asked for the decision model.
-- [ORB-21120] — proposed scribe v2 slice S7, the Scribe screen's Decisions panel.
-- [ORB-21093] — proposes Orbit's precedent-provider contract and built-in provider (Orbit repository).
-- [ORB-21096] — proposes Orbit's `decision-assistance-eval/4` evaluator and its readout (Orbit repository).
-- [ORB-21216] — proposes slice P1: ledger schema additions and dedupe links.
+- [ORB-20840] — recorded Daniel's request for the decision model in the orbit-office on-call session.
+- [ORB-21120] — built scribe v2 slice S7 and its Decisions panel.
+- [ORB-21093] — built Orbit's precedent-provider contract and built-in provider (Orbit repository).
+- [ORB-21096] — built Orbit's decision-assistance-eval/4 evaluator and readout contract (Orbit repository).
+- [ORB-21216] — built slice P1: ledger schema additions and dedupe links.
 - [ORB-21217] — built slice P2: Orbit decision ingestion and feedback entries.
 - [ORB-21218] — built slice P3: the `office.decision-precedents` provider.
 - [ORB-21219] — built slice P4: contradiction reporting.
-- [ORB-21220] — proposes slice P5: the Agreement view.
-- [ORB-21340] — built meeting-fed decisions, their contradiction check and `office.decision-resolve`.
+- [ORB-21220] — built slice P5: the Agreement view.
+- [ORB-21340] — implemented meeting-fed decisions and contradiction resolution; code is merged, task still in progress.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
