@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use office_core::domain::scribe_control::{Change, Control, RETENTION, from_unix, to_unix};
+use office_core::domain::scribe_control::{Change, Control, OnBy, RETENTION, from_unix, to_unix};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 
 use crate::error::{Error, Result};
@@ -24,8 +24,14 @@ CREATE TABLE IF NOT EXISTS scribe_control (
     now_requested_at INTEGER,
     title TEXT,
     heartbeat_at INTEGER,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    on_by TEXT,
+    scope TEXT
 );";
+
+/// Columns added after the first release; an existing database gains
+/// them in place, its records reading as never turned on by anyone.
+const ADDED_COLUMNS: [&str; 2] = ["on_by", "scope"];
 
 /// One scribe control database. Each call opens its own connection.
 #[derive(Clone, Debug)]
@@ -43,10 +49,10 @@ impl ScribeControlStore {
         let store = Self {
             path: state_dir.join(DATABASE_FILE),
         };
-        store
-            .connect()?
-            .execute_batch(SCHEMA)
+        let conn = store.connect()?;
+        conn.execute_batch(SCHEMA)
             .map_err(|source| Error::scribe_control_sqlite(&store.path, "create schema", source))?;
+        migrate(&conn, &store.path)?;
         set_owner_only(&store.path, false);
         Ok(store)
     }
@@ -80,14 +86,16 @@ impl ScribeControlStore {
             .ok_or_else(|| corrupt(&self.path, "encode updated_at"))?;
         tx.execute(
             "INSERT INTO scribe_control
-                (session_id, switch_on, now_requested_at, title, heartbeat_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                (session_id, switch_on, now_requested_at, title, heartbeat_at, updated_at, on_by, scope)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(session_id) DO UPDATE SET
                 switch_on = excluded.switch_on,
                 now_requested_at = excluded.now_requested_at,
                 title = excluded.title,
                 heartbeat_at = excluded.heartbeat_at,
-                updated_at = excluded.updated_at",
+                updated_at = excluded.updated_at,
+                on_by = excluded.on_by,
+                scope = excluded.scope",
             params![
                 session_id,
                 control.on.map(i64::from),
@@ -95,6 +103,8 @@ impl ScribeControlStore {
                 control.title,
                 encode(&self.path, control.heartbeat_at, "heartbeat_at")?,
                 updated_at,
+                control.on_by.map(OnBy::as_str),
+                control.scope,
             ],
         )
         .map_err(|source| Error::scribe_control_sqlite(&self.path, "write record", source))?;
@@ -127,12 +137,41 @@ impl ScribeControlStore {
     }
 }
 
-type Row = (Option<i64>, Option<i64>, Option<String>, Option<i64>, i64);
+fn migrate(conn: &Connection, path: &Path) -> Result<()> {
+    let mut statement = conn
+        .prepare("PRAGMA table_info(scribe_control)")
+        .map_err(|source| Error::scribe_control_sqlite(path, "read schema", source))?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|source| Error::scribe_control_sqlite(path, "read schema", source))?
+        .collect::<std::result::Result<_, _>>()
+        .map_err(|source| Error::scribe_control_sqlite(path, "read schema", source))?;
+    drop(statement);
+    for column in ADDED_COLUMNS {
+        if !columns.iter().any(|name| name == column) {
+            conn.execute_batch(&format!(
+                "ALTER TABLE scribe_control ADD COLUMN {column} TEXT"
+            ))
+            .map_err(|source| Error::scribe_control_sqlite(path, "add column", source))?;
+        }
+    }
+    Ok(())
+}
+
+type Row = (
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+    Option<i64>,
+    i64,
+    Option<String>,
+    Option<String>,
+);
 
 fn load(conn: &Connection, path: &Path, session_id: &str) -> Result<Option<Control>> {
     let row: Option<Row> = conn
         .query_row(
-            "SELECT switch_on, now_requested_at, title, heartbeat_at, updated_at
+            "SELECT switch_on, now_requested_at, title, heartbeat_at, updated_at, on_by, scope
              FROM scribe_control WHERE session_id = ?1",
             params![session_id],
             |row| {
@@ -142,13 +181,19 @@ fn load(conn: &Connection, path: &Path, session_id: &str) -> Result<Option<Contr
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
                 ))
             },
         )
         .optional()
         .map_err(|source| Error::scribe_control_sqlite(path, "load record", source))?;
-    let Some((on, requested, title, heartbeat, updated)) = row else {
+    let Some((on, requested, title, heartbeat, updated, on_by, scope)) = row else {
         return Ok(None);
+    };
+    let on_by = match on_by.as_deref() {
+        None => None,
+        Some(word) => Some(OnBy::parse(word).ok_or_else(|| corrupt(path, "stored on_by"))?),
     };
     let on = match on {
         None => None,
@@ -162,6 +207,8 @@ fn load(conn: &Connection, path: &Path, session_id: &str) -> Result<Option<Contr
     };
     Ok(Some(Control {
         on,
+        on_by,
+        scope,
         now_requested_at: decode(requested, "stored now_requested_at")?,
         title,
         heartbeat_at: decode(heartbeat, "stored heartbeat_at")?,

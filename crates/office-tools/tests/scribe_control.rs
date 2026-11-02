@@ -22,12 +22,13 @@ fn ports_at(controls: &FakeScribeControls, secs: u64) -> Ports<'static> {
 }
 
 fn call(ports: &Ports<'_>, input: Value) -> Value {
-    let request = office_core::protocol::parse(&envelope::request(
-        "office.scribe-control",
-        input,
-        json!({}),
-    ))
-    .unwrap();
+    call_with_context(ports, input, json!({}))
+}
+
+fn call_with_context(ports: &Ports<'_>, input: Value, context: Value) -> Value {
+    let request =
+        office_core::protocol::parse(&envelope::request("office.scribe-control", input, context))
+            .unwrap();
     envelope::response(&office_tools::serve(&request, ports)).unwrap()
 }
 
@@ -105,6 +106,101 @@ fn get_set_switch_request_now_set_title_and_heartbeat_round_trip() {
     );
     // Plugin state only: the Library is untouched.
     assert_eq!(ports.library.head_commit().unwrap(), before);
+}
+
+#[test]
+fn a_turn_on_records_on_by_and_scope_and_off_clears_only_on_by() {
+    let controls = FakeScribeControls::default();
+    let ports = ports_at(&controls, T0);
+    let sid = json!("session-one");
+    let fresh = ok(&ports, json!({"op":"get","session_id":sid}));
+    assert_eq!(fresh["on_by"], Value::Null);
+    assert_eq!(fresh["scope"], Value::Null);
+
+    let on = ok(
+        &ports,
+        json!({"op":"set_switch","session_id":sid,"on":true,"on_by":"agent","scope":"project:orbit-office"}),
+    );
+    assert_eq!(on["on"], true);
+    assert_eq!(on["on_by"], "agent");
+    assert_eq!(on["scope"], "project:orbit-office");
+    // A pre-v2 caller re-setting the switch names nobody and keeps both.
+    let again = ok(
+        &ports,
+        json!({"op":"set_switch","session_id":sid,"on":true}),
+    );
+    assert_eq!(again["on_by"], "agent");
+    assert_eq!(again["scope"], "project:orbit-office");
+    // Off clears who turned it on; the scope stays for status.
+    let off = ok(
+        &ports,
+        json!({"op":"set_switch","session_id":sid,"on":false}),
+    );
+    assert_eq!(off["on_by"], Value::Null);
+    assert_eq!(off["scope"], "project:orbit-office");
+    // A plain first turn-on reads as the user's.
+    let plain = ok(
+        &ports,
+        json!({"op":"set_switch","session_id":"session-two","on":true}),
+    );
+    assert_eq!(plain["on_by"], "user");
+    for input in [
+        json!({"op":"set_switch","session_id":sid,"on":true,"on_by":"scribe"}),
+        json!({"op":"set_switch","session_id":sid,"on":true,"scope":"orbit-office"}),
+        json!({"op":"set_switch","session_id":sid,"on":true,"scope":"project:Orbit Office"}),
+        json!({"op":"set_switch","session_id":sid,"on":false,"on_by":"user"}),
+        json!({"op":"set_switch","session_id":sid,"on":false,"scope":"global"}),
+        json!({"op":"get","session_id":sid,"on_by":"user"}),
+    ] {
+        assert_eq!(
+            call(&ports, input.clone())["error"]["code"],
+            "invalid_argument",
+            "{input}"
+        );
+    }
+}
+
+#[test]
+fn a_managed_session_cannot_turn_scribing_on_but_the_users_session_can() {
+    let controls = FakeScribeControls::default();
+    let ports = ports_at(&controls, T0);
+    let managed = json!({"task_id":"ORB-123"});
+    // Turning on, with or without the v2 fields, is refused with the
+    // stable code and writes nothing.
+    for input in [
+        json!({"op":"set_switch","session_id":"session-one","on":true}),
+        json!({"op":"set_switch","session_id":"session-one","on":true,"on_by":"agent","scope":"global"}),
+    ] {
+        let refused = call_with_context(&ports, input, managed.clone());
+        assert_eq!(refused["ok"], false, "{refused}");
+        assert_eq!(refused["error"]["code"], "scribe_managed_session");
+    }
+    assert_eq!(
+        ok(&ports, json!({"op":"get","session_id":"session-one"}))["updated_at"],
+        Value::Null,
+        "the refusal wrote nothing"
+    );
+    // Reads and turning off stay allowed under managed-task context.
+    let read = call_with_context(
+        &ports,
+        json!({"op":"get","session_id":"session-one"}),
+        managed.clone(),
+    );
+    assert_eq!(read["ok"], true, "{read}");
+    // The same turn-on from the user's own session (no task context)
+    // succeeds, and a managed call may then turn it off.
+    let on = ok(
+        &ports,
+        json!({"op":"set_switch","session_id":"session-one","on":true,"on_by":"user","scope":"global"}),
+    );
+    assert_eq!(on["on_by"], "user");
+    let off = call_with_context(
+        &ports,
+        json!({"op":"set_switch","session_id":"session-one","on":false}),
+        managed,
+    );
+    assert_eq!(off["ok"], true, "{off}");
+    assert_eq!(off["output"]["on"], false);
 }
 
 #[test]
@@ -221,5 +317,5 @@ fn conformance_golden_runs_through_public_dispatch() {
             }
         }
     }
-    assert_eq!(count, 5, "all golden cases executed");
+    assert_eq!(count, 7, "all golden cases executed");
 }

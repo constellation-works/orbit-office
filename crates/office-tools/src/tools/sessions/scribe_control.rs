@@ -9,7 +9,7 @@
 //! model call, no Orbit callback.
 
 use office_core::domain::scribe_control::{
-    Change, parse_time, validate_session_id, validate_title,
+    Change, OnBy, Switch, parse_time, validate_scope, validate_session_id, validate_title,
 };
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
@@ -23,7 +23,15 @@ pub(crate) const TOOL: Tool = Tool::built(
         execution_kind: ExecutionKind::Mutating,
         mcp_scope: McpScope::Workspace,
     },
-    &["op", "session_id", "on", "title", "requested_at"],
+    &[
+        "op",
+        "session_id",
+        "on",
+        "on_by",
+        "scope",
+        "title",
+        "requested_at",
+    ],
     run,
 );
 
@@ -37,7 +45,7 @@ fn only(input: &Map<String, Value>, allowed: &[&str]) -> Result<()> {
         !["op", "session_id"].contains(&key.as_str()) && !allowed.contains(&key.as_str())
     }) {
         Some(_) => Err(invalid(
-            "scribe-control field is not valid for this op: get, heartbeat and request_now take none; set_switch takes on; set_title takes title; consume_now takes optional requested_at",
+            "scribe-control field is not valid for this op: get, heartbeat and request_now take none; set_switch takes on and optional on_by and scope; set_title takes title; consume_now takes optional requested_at",
         )),
         None => Ok(()),
     }
@@ -50,12 +58,36 @@ fn change(input: &Map<String, Value>, op: &str) -> Result<Option<Change>> {
             None
         }
         "set_switch" => {
-            only(input, &["on"])?;
+            only(input, &["on", "on_by", "scope"])?;
             let on = input
                 .get("on")
                 .and_then(Value::as_bool)
                 .ok_or_else(|| invalid("set_switch requires on (true or false)"))?;
-            Some(Change::SetSwitch(on))
+            let on_by = match input.get("on_by") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(
+                    value
+                        .as_str()
+                        .and_then(OnBy::parse)
+                        .ok_or_else(|| invalid("on_by must be user or agent"))?,
+                ),
+            };
+            let scope = match input.get("scope") {
+                None | Some(Value::Null) => None,
+                Some(value) => {
+                    let scope = value
+                        .as_str()
+                        .ok_or_else(|| invalid("scope must be global or project:<name>"))?;
+                    validate_scope(scope)?;
+                    Some(scope.to_owned())
+                }
+            };
+            if !on && (on_by.is_some() || scope.is_some()) {
+                return Err(invalid(
+                    "on_by and scope name a turn-on; omit them to turn off",
+                ));
+            }
+            Some(Change::SetSwitch(Switch { on, on_by, scope }))
         }
         "request_now" => {
             only(input, &[])?;
@@ -94,6 +126,14 @@ fn change(input: &Map<String, Value>, op: &str) -> Result<Option<Change>> {
     })
 }
 
+/// Whether the call envelope carries Orbit managed-task context.
+fn managed(call: &Call<'_>) -> bool {
+    call.context
+        .get("task_id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.trim().is_empty())
+}
+
 fn run(call: &Call<'_>) -> Result<Value> {
     let op = call
         .input
@@ -107,6 +147,15 @@ fn run(call: &Call<'_>) -> Result<Value> {
         .ok_or_else(|| invalid("scribe-control requires session_id"))?;
     validate_session_id(session_id)?;
     let change = change(call.input, op)?;
+    // The tool stays agent-callable because the user's own session calls
+    // it as local-cli holding [agent]; a turn-on from an Orbit-managed
+    // (headless) session is refused here instead. Managed-task context
+    // is the envelope's task_id, which only a managed run carries.
+    // Reads and turning off stay allowed (specs/scribe.md, "Turning it
+    // on"; the v2 entry superseding ORB-20756 in 4_decisions.md).
+    if matches!(&change, Some(Change::SetSwitch(switch)) if switch.on) && managed(call) {
+        return Err(Error::ScribeManagedSession);
+    }
     let now = call.ports.clock.now();
     let store = &call.ports.scribe_control;
     let mut view = match &change {

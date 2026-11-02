@@ -237,6 +237,13 @@ pub enum Error {
     /// The tool name is outside `office.*`, or the verb is not implemented.
     #[error("unknown tool: {0}")]
     UnknownTool(String),
+    /// An Orbit-managed (headless) session tried to turn scribing on.
+    /// `office.scribe-control` stays agent-callable for the user's own
+    /// session, so the backend refuses the turn-on itself when the call
+    /// envelope carries managed-task context (specs/scribe.md, "Turning
+    /// it on").
+    #[error("scribing cannot be turned on from an Orbit-managed session")]
+    ScribeManagedSession,
     /// Tool input is not an object, or carries keys the tool does not accept.
     #[error("invalid argument: {0}")]
     InvalidArgument(String),
@@ -280,6 +287,7 @@ impl Error {
             Self::InvalidRequest(_) => "invalid_request",
             Self::UnsupportedVersion(_) => "unsupported_schema_version",
             Self::UnknownTool(_) => "unknown_tool",
+            Self::ScribeManagedSession => "scribe_managed_session",
             Self::InvalidArgument(_) => "invalid_argument",
         }
     }
@@ -322,6 +330,7 @@ impl Error {
             Self::InvalidRequest(_) => false,
             Self::UnsupportedVersion(_) => false,
             Self::UnknownTool(_) => false,
+            Self::ScribeManagedSession => false,
             Self::InvalidArgument(_) => false,
         }
     }

@@ -1,6 +1,6 @@
 ---
-description: Scribe this session and ask the scribe — catch up, note, pending, pref, landed, why, ask, title, backfill
-argument-hint: "[note <text> | pending | pref <matter> | landed [today|<date>] | why <matter|topic> | ask <question> | title <text> | backfill [--since <date>] [--project <name>]]"
+description: Scribe this session (v2 opt-in) — on, off, update, status, tags, title, ask; v1 note, pending, pref, landed, why, backfill during the window
+argument-hint: "[on [@<project>|@global] | off | update | status | tags | title <text> | ask <question> | note <text> | pending | pref <matter> | landed [today|<date>] | why <matter|topic> | backfill [--since <date>] [--project <name>]]"
 disable-model-invocation: true
 allowed-tools: mcp__plugin_office-scribe_office__scribe, Agent
 ---

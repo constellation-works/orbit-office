@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.scribe-control request",
-  "description": "Read or change one session's scribe control record in Office plugin state. get, request_now and heartbeat take only op and session_id; set_switch takes on; set_title takes title; consume_now takes an optional requested_at (clears the pending Capture-now request only if it is still that request).",
+  "description": "Read or change one session's scribe control record in Office plugin state. get, request_now and heartbeat take only op and session_id; set_switch takes on and, on a turn-on, optional on_by and scope; set_title takes title; consume_now takes an optional requested_at (clears the pending Capture-now request only if it is still that request). A turn-on under Orbit managed-task context is refused (scribe_managed_session).",
   "type": "object",
   "properties": {
     "op": {
@@ -22,6 +22,19 @@
     "on": {
       "type": "boolean",
       "description": "set_switch only: the new switch state."
+    },
+    "on_by": {
+      "enum": [
+        "user",
+        "agent"
+      ],
+      "description": "set_switch turn-on only: who turned scribing on (the user, or an orchestrator agent in an interactive session)."
+    },
+    "scope": {
+      "type": "string",
+      "pattern": "^(global|project:[a-z0-9][a-z0-9-]*)$",
+      "maxLength": 72,
+      "description": "set_switch turn-on only: the session scope token the turn-on named."
     },
     "title": {
       "type": "string",

@@ -1,11 +1,17 @@
 # Office scribe for Claude Code
 
-Scribe v1 ([spec](../../docs/design/office/specs/scribe.md)): a cheap `scribe`
-agent that you or an orchestrator command. `/scribe` scribes the messages of
-this session that are not scribed yet into one tagged, grep-able SCR file per
-session in the Library; `/scribe note` takes direct notes; the canned queries
-and `/scribe ask` answer with exact `SCR file:line` citations. The plugin also
-keeps the SessionStart brief and `/handoff`, which loads a project's handoff.
+Scribe ([spec](../../docs/design/office/specs/scribe.md)): a cheap `scribe`
+agent that you or an orchestrator command. Scribe v2 is opt-in per session:
+nothing is scribed until `/scribe on`, then passes run from `/scribe update`
+and the Stop-hook cadence, record only what you mark (`#preferences`,
+`#decision`, `#scribe …`), and file scheduling markers and to-dos as Orbit
+tasks that stay proposed (see [Scribe v2](#scribe-v2-opt-in)). The v1
+commands keep working during the compatibility window: `/scribe` scribes the
+messages of this session that are not scribed yet into one tagged, grep-able
+SCR file per session in the Library; `/scribe note` takes direct notes; the
+canned queries and `/scribe ask` answer with exact `SCR file:line`
+citations. The plugin also keeps the SessionStart brief and `/handoff`,
+which loads a project's handoff.
 
 Requires Python 3.10+ on macOS or Linux, Claude Code with plugin user
 configuration, and a locally installed Orbit Office plugin with
@@ -36,7 +42,7 @@ Change options later through Claude's plugin configuration UI.
 |---|---|---|
 | `workspace` | (required) | The local Office workspace. |
 | `excluded_projects` | `[]` | JSON array of absolute paths never scribed. |
-| `auto_capture` | `false` | The legacy automatic Stop/SessionEnd capture ([below](#legacy-automatic-capture-off-by-default)). Off: `/scribe` is the only trigger. |
+| `auto_capture` | `false` | The legacy automatic Stop/SessionEnd capture ([below](#legacy-automatic-capture-off-by-default)). Off: Stop runs only the v2 cadence for sessions turned on with `/scribe on`. |
 | `default_on` | `false` | Legacy: with `auto_capture` on, whether live Stop passes start on. |
 | `scribe_url` | empty | The web Scribe screen, linked from the desktop pane. |
 
@@ -84,6 +90,11 @@ Each command acts on the session it is run in (`${CLAUDE_SESSION_ID}`).
 
 | Command | Does | Model |
 |---|---|---|
+| `/scribe on [@<project>\|@global]` | v2: turn scribing on for this session (every session defaults off), optionally naming its scope, and run the first pass at once. | `scribe` level |
+| `/scribe off` | v2: stop new passes. Nothing already written is removed. | none |
+| `/scribe update` | v2: run a pass now, ignoring the cadence. Works only while the session is on. `/scribe now` is the same. | `scribe` level |
+| `/scribe status` | v2: on or off (and who turned it on), the scope, the SCR id, `scribed_through` and when the next pass is due. | none |
+| `/scribe tags` | v2: the tag definitions in force and the cadence, from the Library settings. | none |
 | `/scribe` | Catch up: scribe the messages after the SCR file's `scribed_through` and report what was added (counts per tag and the new lines). A run with nothing new adds nothing and says so. | `scribe` level |
 | `/scribe note <text>` | Record `<text>` verbatim as your entry (`by: user`). Starting with a tag (`#todo …`) it is written at once with no model; otherwise the agent picks the tag. | none with a tag |
 | `/scribe pending` | Open `#pending` lines with no `#resolved` naming them, oldest first. | none |
@@ -117,7 +128,55 @@ scribe whether Daniel decided on X"). It runs the query tool first, Grep and
 Read on the shortlisted SCR files only, and verifies its quotes. Write with
 `/scribe note #<tag> …` as things happen, and run `/scribe` at the end of each
 wake. A standalone scribe session (`claude --agent office-scribe:scribe`) is
-the place for meeting notes.
+the place for meeting notes. An orchestrator in an interactive session may
+also turn v2 scribing on through the `scribe` tool's `on` action: the record
+then carries `on_by: agent`, the reply tells the agent to announce it to the
+user in one line, and the user's `/scribe off` wins. A headless session is
+refused (`scribe_headless_session` in the plugin, `scribe_managed_session`
+in Office when the call carries managed-task context).
+
+## Scribe v2 (opt-in)
+
+```
+Stop hook ──(on + cadence due)──▶ headless `claude -p` ──▶ /scribe update
+/scribe update ─▶ stage ─▶ office.scribe-pending (format: v2: markers, tags, cadence)
+                                    │
+                 scribe agent returns sections + one finding per marker
+                                    │
+        plugin routes: orbit.task.add (scheduling, orbit_task tags, owner:you to-dos)
+                                    │
+                      office.scribe-append (v2: SCR + decision ledger, one commit)
+                                    │
+        plugin routes: office.proposal-create per needs_proposal preference
+```
+
+- **Opt-in and scope.** The switch is Office's per-session record
+  (`office.scribe-control`), shared with the web window and the pane; it now
+  also records `on_by` and the scope a turn-on named. A session the plugin
+  has never seen costs its Stop hook nothing: no Office call, no state.
+- **Cadence.** While a session is on, Stop checks the minutes and user turns
+  since the last pass started against `scribe.cadence` (Library settings,
+  read through `office.status`; default 20 minutes or 10 turns). A due Stop
+  — and every SessionEnd — starts one headless run under a per-session pass
+  lock and returns without waiting; there is no timer. The run is
+  `claude -p` driving `/scribe update`; `SCRIBE_PASS_COMMAND` (a JSON argv
+  list, `{session_id}` replaced) overrides it. A pending Capture now also
+  starts a pass and is then consumed.
+- **Markers and routing.** Only markers in your own typed turns are
+  authoritative; Office detects them without a model and refuses findings
+  that invent one. Before the append the plugin files, through your own
+  `orbit` CLI: a scheduling marker (`#scribe … at <time>`, resolved by the
+  agent, checked RFC 3339 and future here) as one **proposed** task with
+  `not_before`, quoting the marker verbatim with the resolved time and
+  zone; an `orbit_task` tag finding as a proposed task in the tag's
+  workspace; and user-owned action items as `owner:you` to-dos cited in the
+  SCR's Next. A preference finding becomes one `office.proposal-create`
+  proposal, filed from the append's `needs_proposal` so it can cite the
+  SCR entry. Agent markers are recorded `by: agent` and never schedule or
+  file a task. Nothing is dispatched: every filed task is proposed or an
+  `owner:you` to-do, never backlog `owner:agent`. Each filing is keyed
+  SCR id + message id + line in `.orbit/tmp/scribe/<session-id>.routed.json`
+  (written before the append), so a retried pass files nothing twice.
 
 ## How it works
 
@@ -235,9 +294,10 @@ never instructions, and never become shell commands.
 ## Legacy automatic capture (off by default)
 
 The automatic Stop and SessionEnd passes from before v1 still ship, off by
-default: with `auto_capture` unset or `false` those hooks return at once,
-with no Office call, staging or state. Turn `auto_capture` on to restore
-them as described here. They stage snapshots and queue extraction tasks into
+default: with `auto_capture` unset or `false` the legacy queue below never
+runs (Stop runs only the v2 cadence above, and a session the plugin has
+never seen still returns at once with no Office call, staging or state).
+Turn `auto_capture` on to restore them as described here. They stage snapshots and queue extraction tasks into
 the older `src-…/source.md` layout, separate from the SCR files. The legacy
 switch, Capture now and title controls remain in the desktop pane.
 
@@ -360,9 +420,11 @@ file) and, while the heartbeat is under two minutes old, tightens the live
 debounce to two new turns, the time bound unchanged, as in
 `docs/design/office/specs/recall.md` § "Pace while the window is open".
 
-`office.scribe-control` is a mutating Office tool outside the consented agent
-verbs, so the hooks and the pane control reach it through your own `orbit` CLI; inside
-an Orbit-managed agent session it is refused and the hooks use the cache.
+`office.scribe-control` is a mutating Office tool declared `agent_callable`
+because the plugin calls as `local-cli` holding `[agent]`; the hooks and the
+pane control reach it through your own `orbit` CLI. Turning scribing on from
+an Orbit-managed session is refused (`scribe_managed_session`) and the hooks
+use the cache.
 
 ## Verification
 
@@ -378,7 +440,9 @@ entrypoint and hooks with a recording `orbit` stub that plays
 `office.scribe-pending`, `office.scribe-append` and `office.scribe-query` over
 fixture files, plus a recording `claude` stub that proves the plugin starts no
 model process; the agent's steps are driven as the agent calls them.
-`tests/test_plugin.py` covers the legacy automatic capture with
+`tests/test_scribe_v2.py` covers the v2 opt-in, cadence and routing with a
+recording stub playing the v2 Office tools and a recording pass stub for
+the headless run. `tests/test_plugin.py` covers the legacy automatic capture with
 `auto_capture` on. Tests use isolated HOME/OFFICE roots and temporary
 provider files under the repository's ignored `.orbit/tmp/`; they run no
 inference, contact no service and read no real transcript. The operator

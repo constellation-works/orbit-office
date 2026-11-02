@@ -29,12 +29,81 @@ pub const SESSION_ID_MAX: usize = 128;
 /// Longest accepted title, matching session-mode capture context.
 pub const TITLE_MAX: usize = 4096;
 
+/// Who turned scribing on for a session (specs/scribe.md, "Turning it
+/// on"): the user (`/scribe on`, the window, the pane) or an orchestrator
+/// agent in an interactive session (the plugin's `scribe` tool).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OnBy {
+    /// The user turned it on.
+    User,
+    /// An orchestrator agent turned it on; it must announce that.
+    Agent,
+}
+
+impl OnBy {
+    /// `user` or `agent`, as stored and returned.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Agent => "agent",
+        }
+    }
+
+    /// Parse the stored or requested word; `None` for anything else.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "user" => Some(Self::User),
+            "agent" => Some(Self::Agent),
+            _ => None,
+        }
+    }
+}
+
+/// Longest accepted scope token (`global` or `project:<name>`).
+pub const SCOPE_MAX: usize = 72;
+
+/// Refuse a scope token the scribe pass could not have produced: `global`
+/// or `project:<name>` with a lowercase kebab-case name, the tokens
+/// `office.scribe-pending` resolves (specs/scribe.md, "Session scope").
+pub fn validate_scope(value: &str) -> Result<()> {
+    let name = if value == "global" {
+        return Ok(());
+    } else if let Some(name) = value.strip_prefix("project:") {
+        name
+    } else {
+        return Err(Error::InvalidArgument(
+            "scope must be global or project:<name>".into(),
+        ));
+    };
+    let kebab = !name.is_empty()
+        && name.len() + "project:".len() <= SCOPE_MAX
+        && name.bytes().enumerate().all(|(index, byte)| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || (byte == b'-' && index > 0)
+        })
+        && !name.ends_with('-')
+        && !name.contains("--");
+    if kebab {
+        Ok(())
+    } else {
+        Err(Error::InvalidArgument(
+            "scope must be global or project:<name> with a lowercase kebab-case name".into(),
+        ))
+    }
+}
+
 /// One session's control record. A missing record reads as the default:
 /// switch unset (`None`, so the plugin's default applies), nothing pending.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Control {
     /// The scribe switch, once someone set it.
     pub on: Option<bool>,
+    /// Who turned scribing on; `None` while off or never turned on.
+    pub on_by: Option<OnBy>,
+    /// The session's scope token (`global` or `project:<name>`), once a
+    /// turn-on named one. Kept across `off` so status still names it.
+    pub scope: Option<String>,
     /// When an unconsumed Capture-now request was made.
     pub now_requested_at: Option<SystemTime>,
     /// The user's title for the session, applied by the plugin through capture.
@@ -45,11 +114,35 @@ pub struct Control {
     pub updated_at: Option<SystemTime>,
 }
 
+/// A switch change: the new state, and on a turn-on who asked and the
+/// scope it named (both optional for pre-v2 callers).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Switch {
+    /// The new switch state.
+    pub on: bool,
+    /// Who is turning it on; ignored on a turn-off.
+    pub on_by: Option<OnBy>,
+    /// The scope token the turn-on named; ignored on a turn-off.
+    pub scope: Option<String>,
+}
+
+impl Switch {
+    /// A plain switch change with no v2 fields (pre-v2 callers).
+    #[must_use]
+    pub fn plain(on: bool) -> Self {
+        Self {
+            on,
+            on_by: None,
+            scope: None,
+        }
+    }
+}
+
 /// A requested change to one session's record.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change {
     /// Turn the scribe on or off.
-    SetSwitch(bool),
+    SetSwitch(Switch),
     /// Record a pending Capture-now request (an existing one is kept).
     RequestNow,
     /// Clear the pending request. With `Some(at)`, clear it only when it is
@@ -122,7 +215,25 @@ impl Control {
         let now = whole_seconds(now);
         let mut consumed = false;
         match change {
-            Change::SetSwitch(on) => self.on = Some(*on),
+            Change::SetSwitch(switch) => {
+                if let Some(scope) = &switch.scope {
+                    validate_scope(scope)?;
+                }
+                self.on = Some(switch.on);
+                if switch.on {
+                    // A caller that names nobody keeps the recorded
+                    // turn-on, else reads as the user's (the window and
+                    // pane predate the field and are the user's hosts).
+                    if switch.on_by.is_some() || self.on_by.is_none() {
+                        self.on_by = Some(switch.on_by.unwrap_or(OnBy::User));
+                    }
+                    if switch.scope.is_some() {
+                        self.scope.clone_from(&switch.scope);
+                    }
+                } else {
+                    self.on_by = None;
+                }
+            }
             Change::RequestNow => {
                 self.now_requested_at.get_or_insert(now);
             }
@@ -166,6 +277,8 @@ impl Control {
         json!({
             "session_id": session_id,
             "on": self.on,
+            "on_by": self.on_by.map(OnBy::as_str),
+            "scope": self.scope,
             "now_requested": self.now_requested_at.is_some(),
             "now_requested_at": time(self.now_requested_at),
             "title": self.title,
