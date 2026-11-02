@@ -1017,9 +1017,9 @@ No agent loop, no crew and no Orbit task is involved.
 ### Digest since a meeting
 
 `office.digest` with `source: <meeting source id>` (and no `day`) answers
-"what happened since this meeting". It runs on demand: from the source
-screen's **Since this meeting** panel (`GET /api/sources/digest?id=…`) or
-from the CLI as
+"what happened since this meeting". It runs on demand: from the app
+through the server route `GET /api/sources/digest?id=…`
+([web-app.md](./web-app.md)), or from the CLI as
 `orbit tool run office.digest --input '{"source":"<id>"}'`. The daily
 routine, which passes no `source`, behaves exactly as above.
 
@@ -1073,6 +1073,6 @@ sections as JSON beside a Markdown `report`.
 - [ORB-21120] — built scribe v2 slice S7: `view: list` returns the SCR cards (or one SCR with its `previous` given `id`), with the v1 list kept behind `legacy: true`.
 - [ORB-21123] — proposed scribe v2 slice S10.
 - [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.
-- [ORB-21337] — built the digest since a meeting (`office.digest` with `source`) and the source view's Since this meeting panel.
+- [ORB-21337] — built the digest since a meeting (`office.digest` with `source`) and its app server route.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

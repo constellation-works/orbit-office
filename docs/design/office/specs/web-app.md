@@ -250,11 +250,10 @@ private route uses the configured endpoint label. Mark private calls
 
 Source JSON is served by `GET /api/sources?id=…`, originals and frames by
 `GET /api/sources/media?id=…[&frame=0000.png]`, and citing documents by
-`GET /api/sources/citation?id=…&kind=…`. A meeting source also shows a
-**Since this meeting** panel; its **Show digest** button reads
-`GET /api/sources/digest?id=…`, which calls `office.digest` with `source`
-([sessions.md](./sessions.md#digest-since-a-meeting)) and renders Decided,
-Shipped (PR and merge links) and Needs you, each line with its citations.
+`GET /api/sources/citation?id=…&kind=…`. The digest since a meeting is
+served by `GET /api/sources/digest?id=…`, which calls `office.digest` with
+`source` ([sessions.md](./sessions.md#digest-since-a-meeting)) and returns
+its Decided, Shipped and Needs you sections as `SourceDigest` JSON.
 Mutations use POST at
 `/api/sources/upload`, `/paste`, `/private` and `/plan` (each below
 `/api/sources`). Media stays behind `office.source-show` and its privacy checks;
