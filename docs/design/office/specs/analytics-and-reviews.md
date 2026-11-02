@@ -43,7 +43,12 @@ the cutoff remain unlabelled. Individual records stay unmarked.
 
 ## Reviews
 
-- **`office-review` auto-task**, condition `period_end`: quarterly and yearly reviews (must, shown over seeded history in the demo). The day-to-day summary is the daily digest, which is a routine, not an auto-task ([sessions.md](./sessions.md#daily-digest)).
+- **`office-review` auto-task:** when enabled, it mints a review to-do at
+  00:05 host-local time on Jan/Apr/Jul/Oct 1 for the quarter that just ended;
+  January also includes the previous UTC calendar year. Its shipped definition
+  emulates the period-end trigger with cron and uses `skip_if_open`. The
+  day-to-day summary is the daily digest, which is a routine, not an auto-task
+  ([sessions.md](./sessions.md#daily-digest)).
 - **Inputs:** completed tasks and their outputs, accepted proposals, metrics for the period, conversation sources (decisions), the period's daily digests, and knowledge pages created or updated.
 - **Production:** the auto-task mints an agent to-do. The agent calls `office.review-inputs` for the period's material and writes the review. Approving it promotes a `review` artifact in the series `review-<cadence>`, for example `review-quarterly`, so each review can start from the previous one (the compounding rule in [library.md](./library.md)).
 - **Sections:**

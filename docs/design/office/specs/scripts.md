@@ -9,7 +9,7 @@ last_validated: 2026-10-26
 Agents write throwaway files all the time: a one-off script, an
 intermediate CSV, a rendered chart. Some scripts earn a place in a routine.
 This spec says where scratch goes, and how a routine runs an approved script
-([decision](../4_decisions.md#routines-run-approved-scripts-through-officescriptrun-and-their-outputs-wait-for-review)).
+([decision](../4_decisions.md#routines-run-approved-scripts-through-officescript-run-and-their-outputs-wait-for-review)).
 
 ## Scratch space
 
@@ -71,9 +71,12 @@ from the caller:
    an exclusively allocated random suffix; an absent or unsafe host id uses
    `run-script-<12 alphanumeric characters>`. Repeated steps never overwrite an earlier run.
 3. **Runs the script** with the install's `uv` and pinned Python
-   ([install.md](./install.md)):
-   `uv run --offline --python <pinned> --script script.py <args>`, with the
-   run directory as the current directory. The child's environment is an
+   ([install.md](./install.md)), using the run directory as the current
+   directory:
+   ```sh
+   uv run --offline --no-config --no-project --locked --python <pinned> --script script.py <args>
+   ```
+   The child's environment is an
    allowlist (STD-05@1): `PATH`, `LANG`, `TZ`, `HOME` and `TMPDIR` set to
    the run's own folders, `UV_CACHE_DIR` set to the plugin's dependency
    cache, `UV_PYTHON_DOWNLOADS=never`, and nothing else. Secrets never reach
@@ -125,7 +128,8 @@ Orbit offering one to plugin children, and this spec does not claim it.
 
 - `ScriptRunner::prepare` is exposed through `office_tools::prepare_script`
   for proposal acceptance. It verifies the script artifact kind and bytes,
-  runs `uv lock --script` followed by `uv sync --locked --script`, and
+  runs `uv lock --no-config --python 3.12 --script script.py` followed by
+  `uv sync --no-config --python 3.12 --script script.py --locked`, and
   publishes an immutable snapshot under `uv-cache/prepared/<sha256>/`.
   Subsequent acceptance of the same bytes reuses that snapshot. Runs copy
   its lock and script, and use `uv run --offline --locked --no-config
