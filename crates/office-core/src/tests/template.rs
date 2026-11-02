@@ -97,6 +97,13 @@ fn every_bundled_template_has_the_spec_rules_and_a_usable_skeleton() {
             &[],
         ),
         (
+            "preferences",
+            "dom-preferences-<slug>",
+            false,
+            AttachPolicy::Tagged,
+            &[],
+        ),
+        (
             "runbook",
             "rb-<slug>",
             false,

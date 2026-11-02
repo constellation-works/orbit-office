@@ -320,10 +320,14 @@ pub(crate) fn rewrite_citations(body: &str, map: impl Fn(&str) -> String) -> Str
         if after.as_bytes()[close] == b']'
             && inner
                 .split([';', ','])
-                .all(|part| parse_citation(part.trim()).is_some())
+                .all(|part| parse_citation(part.trim().trim_matches(['"', '\''])).is_some())
         {
             for part in inner.split_inclusive([';', ',']) {
-                let text = part.trim().trim_end_matches([';', ',']).trim_end();
+                let text = part
+                    .trim()
+                    .trim_end_matches([';', ','])
+                    .trim_end()
+                    .trim_matches(['"', '\'']);
                 if let Some(at) = part.find(text) {
                     output.push_str(&part[..at]);
                     output.push_str(&map(text));

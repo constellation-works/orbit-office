@@ -15,6 +15,7 @@
 
 mod dispatch;
 mod history;
+pub mod preferences;
 mod registry;
 mod tools;
 

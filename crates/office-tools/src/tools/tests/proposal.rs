@@ -822,3 +822,98 @@ fn a_dismissed_proposal_closed_outside_the_app_moves_by_its_rejection_month() {
         ["proposals/dismissed/1970/02/proposal-fixture.md"]
     );
 }
+
+fn preference_page(statement: &str) -> String {
+    format!(
+        "---\nid: dom-preferences-global\ntitle: Preferences\ntemplate: preferences\n---\n## replies\nstatement: {statement}\ncites: [dec-global-1]\nstated_at: 2026-11-01\nreview_by: 2027-01-30\n## tests\nstatement: Run focused tests.\ncites: [dec-global-1]\nstated_at: 2026-11-01\nreview_by: 2027-01-30\n"
+    )
+}
+
+#[test]
+fn preference_proposal_quotes_deterministic_and_semantic_conflicts() {
+    use office_core::domain::source::sha256_hex;
+    use office_core::ports::Library;
+    use std::path::Path;
+    let library = FakeLibrary::with_bundled_templates();
+    // FakeLibrary stores the indexed entry view (the real ledger adapter
+    // projects each entry to this id and path).
+    library
+        .write_document(
+            Path::new("sources/decisions/global.md"),
+            "---\nid: dec-global-1\nkind: decisions\n---\n#decision detailed replies\n",
+        )
+        .unwrap();
+    let old = preference_page("Prefer detailed replies.");
+    library
+        .write_document(
+            Path::new("knowledge/domain/dom-preferences-global.md"),
+            &old,
+        )
+        .unwrap();
+    let (mut ports, orbit) = fixture();
+    ports.library = Box::new(library);
+    orbit.push_response(Ok(json!({"tasks":[],"truncated":false})));
+    orbit.push_response(Ok(json!({"id":"proposal-fixture","status":"proposed"})));
+    orbit.push_response(Ok(json!({})));
+    let response = call(
+        &ports,
+        "office.proposal-create",
+        json!({
+            "title":"Concise replies", "description":"Change the reply style", "evidence":["dec-global-1"],
+            "payload":{"kind":"knowledge_update","markdown":preference_page("Prefer concise replies."),"base_sha256":sha256_hex(old.as_bytes()),
+                "conflicts":[{"matter":"tests","statement":"Run focused tests.","cites":["dec-global-1"]}]}
+        }),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    let text = ports
+        .library
+        .read_text(Path::new("proposals/open/proposal-fixture.md"))
+        .unwrap();
+    let conflict_section = text
+        .split("## Conflicts\n")
+        .nth(1)
+        .unwrap()
+        .split("## Reviewed payload")
+        .next()
+        .unwrap();
+    assert!(
+        conflict_section.contains("> Prefer detailed replies."),
+        "{text}"
+    );
+    assert!(conflict_section.contains("[dec-global-1]"), "{text}");
+    assert!(conflict_section.contains("> Run focused tests."), "{text}");
+    assert_eq!(
+        ports
+            .library
+            .read_text(Path::new("knowledge/domain/dom-preferences-global.md"))
+            .unwrap(),
+        old
+    );
+}
+
+#[test]
+fn preference_draft_materializes_only_supplied_matters_and_reports_no_conflicts() {
+    let (mut ports, orbit) = fixture();
+    ports.library = Box::new(FakeLibrary::with_bundled_templates());
+    ports.library.write_document(std::path::Path::new("sources/conversation/2026/11/SCR-20261101-2231-0a3104.md"),
+        "---\nid: SCR-20261101-2231-0a3104\nkind: conversation\n---\n## Tags\n- T1 #preferences concise (m-1)\n").unwrap();
+    orbit.push_response(Ok(json!({"tasks":[],"truncated":false})));
+    orbit.push_response(Ok(json!({"id":"proposal-fixture","status":"proposed"})));
+    orbit.push_response(Ok(json!({})));
+    let input = json!({"title":"Global preferences", "description":"Record reply style", "evidence":["SCR-20261101-2231-0a3104#T1"],
+        "payload":{"kind":"knowledge_add","page":{"id":"dom-preferences-global","title":"Preferences","template":"preferences",
+            "sections":{"replies":"statement: Concise.\ncites: [SCR-20261101-2231-0a3104#T1]\nstated_at: 2026-11-01\nreview_by: 2027-01-30\n"}}}});
+    let response = call(&ports, "office.proposal-create", input);
+    assert_eq!(response["ok"], true, "{response}");
+    let evidence = ports
+        .library
+        .read_text(std::path::Path::new("proposals/open/proposal-fixture.md"))
+        .unwrap();
+    assert!(evidence.contains("## Conflicts\nNone."), "{evidence}");
+    let staged = ports.library.proposal_pages().unwrap();
+    assert_eq!(staged.len(), 1);
+    assert!(
+        !evidence.contains("communication"),
+        "no template example matter: {evidence}"
+    );
+}

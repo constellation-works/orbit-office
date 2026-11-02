@@ -113,6 +113,7 @@ the rest of its report.
 | `goals` | `dom-goals` (one) | This period's priorities or objectives | `never`; read by signals and reviews |
 | `rhythm` | `dom-rhythm` (one) | Recurring meetings and deadlines ("status update every Friday") | `never`; read by signals |
 | `scribe-rules` | `dom-scribe-rules` (one) | The scribe's tags, topics, matters, capture rules and models ([scribe.md](./scribe.md#configuration)); optional `scribe: {handoff: true}` frontmatter ([sessions.md](./sessions.md#rules-page)) | `never`; passed to the scribe's crew as data |
+| `preferences` | `dom-preferences-<slug>` (one per scope; `global` or project) | Current preferences grouped by matter | `tagged`; global on every task, project on matching `project:<scope>` |
 | `runbook` | `rb-<slug>` | Inputs, steps, done when (all required); optional `performable` and `submission` for runbooks the agent carries out as drafts ([library-bootstrap.md](./library-bootstrap.md#runbooks-the-agent-performs-as-drafts)) | named by the task, as today |
 
 The bundled files use these concrete heading names and minimum requirements.
@@ -133,6 +134,7 @@ explicitly named by a task.
 | `goals` | Priorities, Objectives | Priorities |
 | `rhythm` | Recurring meetings, Deadlines | Recurring meetings |
 | `scribe-rules` | Tags, Topics, Matters, Capture, Models | — (none; a missing section falls back to the defaults) |
+| `preferences` | Dynamic `## <matter>` sections (example: communication) | At least one matter; statement, cites, stated_at and review_by in every matter |
 | `runbook` | Inputs, Steps, Done when | Inputs, Steps, Done when |
 
 Skeleton prose prompts for evidence; it is not a populated Library page.
@@ -162,12 +164,49 @@ order:
 2. **`participants`:** person pages whose title or `aliases` match a
    participant of the task's source.
 3. **`tagged`:** client, project and topic pages whose tag the task
-   carries.
+   carries, plus global preferences and the matching project preference page.
 4. **`matched`:** the glossary, when the source's text contains one of
    its terms.
 
 Pages attached by policy do not count toward knowledge coverage, which
 counts runbooks only ([analytics-and-reviews.md](./analytics-and-reviews.md)).
+
+## Preference matter sections
+
+The bundled `preferences` template stores global and project pages at
+`knowledge/domain/dom-preferences-<scope>.md`. Each page has at least one
+unique lowercase kebab-case `## <matter>` heading. These reserved page ids
+require `template: preferences`, so removing the template cannot bypass the
+checks. Each matter's content is a closed
+mapping with four required fields:
+
+```markdown
+## replies
+statement: Prefer concise replies.
+cites: [SCR-20261101-2231-0a3104#T1, dec-global-1]
+stated_at: 2026-11-01
+review_by: 2027-01-30
+```
+
+`statement` is a nonempty single-line string (one or two sentences).
+`cites` is a nonempty list of resolvable Library citations; SCR tag entries
+use `#T<n>`, and decision ledger entries use bare `dec-` ids. YAML-quoted
+strings and lists are accepted. Both dates are real `YYYY-MM-DD` dates;
+`review_by` cannot precede `stated_at`. The `Preference::new` domain API
+defaults review to 90 calendar days after `stated_at`; complete Markdown
+writes must include the resulting date. A page without a matter section fails with
+`missing_section`; missing or malformed matter fields, duplicate matters
+and unknown keys are refused with `invalid_argument`. These checks extend template validation and apply to
+`office.knowledge-write`, proposals and apply mode. The normal 1,200-word,
+contact, sensitivity and citation rules still apply. Matter citations are
+included in indexing, backlinks and sharing approval checks.
+
+For draft proposals, `page.sections` maps matter slugs to these field
+mappings, replacing the example matter in the template. No example matter
+is silently added. Global preferences attach under the `tagged` policy
+on every task; project preferences attach when the task carries
+`project:<scope>`, without requiring a redundant tag on the page. The usual
+private-document and attachment-budget rules still apply.
 
 ## Contact details
 

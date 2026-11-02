@@ -568,3 +568,26 @@ fn malformed_input_is_refused() {
     }
     assert!(fixture.orbit.calls().is_empty());
 }
+
+#[test]
+fn preference_pages_attach_for_global_and_matching_project_scopes() {
+    let pages = ["global", "acme", "elsewhere"].map(|scope|
+        page(&format!("dom-preferences-{scope}"), "template: preferences\ntitle: Writing preferences", "## replies\nstatement: Concise.\ncites: [dec-global-1]\nstated_at: 2026-11-01\nreview_by: 2027-01-30\n"));
+    let fixture = fixture(&pages, &["project:acme"]);
+    let response = attach(&fixture, json!({"task":TASK,"dry_run":true}));
+    let picks = attached(&response);
+    assert!(
+        picks.contains(&("dom-preferences-global".into(), "tagged".into())),
+        "{response}"
+    );
+    assert!(
+        picks.contains(&("dom-preferences-acme".into(), "tagged".into())),
+        "{response}"
+    );
+    assert!(
+        !picks
+            .iter()
+            .any(|(id, reason)| id == "dom-preferences-elsewhere" && reason == "tagged"),
+        "{response}"
+    );
+}

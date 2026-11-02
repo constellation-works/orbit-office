@@ -326,3 +326,49 @@ fn init_moves_note_sources_into_the_ledgers_once_and_old_ids_keep_resolving() {
         "a re-run changes nothing"
     );
 }
+
+#[test]
+fn preference_pages_resolve_scr_tags_and_ledger_entries_through_knowledge_write() {
+    let env = Env::new();
+    library_with_evidence(&env);
+    let captured = capture(
+        &env,
+        decision("We go with per workspace pricing from March."),
+    );
+    assert_eq!(captured["ok"], true, "{captured}");
+    let scr = env
+        .library()
+        .join("sources/conversation/2026/11/SCR-20261101-2231-0a3104.md");
+    std::fs::create_dir_all(scr.parent().unwrap()).unwrap();
+    std::fs::write(&scr, "---\nid: SCR-20261101-2231-0a3104\nkind: conversation\ntitle: Preferences\n---\n## Summary\nConcise.\n## Tags\n### Preferences\n- T1 #preferences concise replies (m-1)\n```text\n- T2 an example, not an entry\n```\n## Next\n- T3 not a tag\n").unwrap();
+    assert_eq!(env.tool("office.reindex", json!({}))["ok"], true);
+    let markdown = "---\nid: dom-preferences-acme\ntitle: Acme preferences\ntemplate: preferences\n---\n## replies\nstatement: Prefer concise replies.\ncites: [\"SCR-20261101-2231-0a3104#T1\", dec-acme-1]\nstated_at: 2026-11-01\nreview_by: 2027-01-30\n";
+    let written = env.tool("office.knowledge-write", json!({"markdown":markdown}));
+    assert_eq!(written["ok"], true, "{written}");
+    assert_eq!(
+        written["output"]["path"],
+        "knowledge/domain/dom-preferences-acme.md"
+    );
+    let head = git(&env.library(), &["rev-parse", "HEAD"]);
+    for anchor in ["T0", "T01", "T2", "T3", "T999"] {
+        let refused = env.tool(
+            "office.knowledge-write",
+            json!({"markdown":markdown.replace("#T1", &format!("#{anchor}"))}),
+        );
+        assert_eq!(refused["error"]["code"], "unresolved_cite", "{refused}");
+        assert_eq!(git(&env.library(), &["rev-parse", "HEAD"]), head);
+    }
+    let missing = env.tool(
+        "office.knowledge-write",
+        json!({"markdown":markdown.replace("review_by: 2027-01-30\n", "")}),
+    );
+    assert_eq!(missing["error"]["code"], "invalid_argument", "{missing}");
+    assert_eq!(git(&env.library(), &["rev-parse", "HEAD"]), head);
+    // Reindex and read preserve the section-only citations for backlink users.
+    assert_eq!(env.tool("office.reindex", json!({}))["ok"], true);
+    let shown = env.tool(
+        "office.knowledge-show",
+        json!({"id":"dom-preferences-acme"}),
+    );
+    assert_eq!(shown["ok"], true, "{shown}");
+}

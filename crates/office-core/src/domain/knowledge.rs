@@ -10,6 +10,7 @@ pub(crate) mod frontmatter;
 pub(crate) use page::inline_citations;
 pub use page::withhold_contacts;
 mod page;
+pub mod preferences;
 
 pub use page::{
     Citation, MAX_PAGE_WORDS, POLICY_TAG, Page, PageFile, PageRef, PageStatus, PageView,
@@ -445,6 +446,15 @@ fn finish_record(
     relative: &Path,
     dates: [Option<String>; 4],
 ) -> DocumentRecord {
+    if record.template.as_deref() == Some("preferences")
+        && let Ok(matters) = preferences::parse(&record.id, &record.body)
+    {
+        for cite in matters.into_iter().flat_map(|matter| matter.cites) {
+            if !record.cites.contains(&cite) {
+                record.cites.push(cite);
+            }
+        }
+    }
     if record.id.is_empty() {
         record.id = relative
             .file_stem()

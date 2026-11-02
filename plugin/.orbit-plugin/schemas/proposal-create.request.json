@@ -236,6 +236,36 @@
             "shareable": {
               "type": "boolean",
               "description": "Explicit sharing approval applied to the page Markdown and rechecked at acceptance."
+            },
+            "conflicts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "matter": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "cites": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "matter",
+                  "statement",
+                  "cites"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -257,6 +287,36 @@
             "shareable": {
               "type": "boolean",
               "description": "Explicit sharing approval applied to the page Markdown and rechecked at acceptance."
+            },
+            "conflicts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "matter": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "cites": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "matter",
+                  "statement",
+                  "cites"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -354,6 +414,36 @@
             "shareable": {
               "type": "boolean",
               "description": "Explicit sharing approval applied to the page Markdown and rechecked at acceptance."
+            },
+            "conflicts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "matter": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "cites": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "matter",
+                  "statement",
+                  "cites"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [

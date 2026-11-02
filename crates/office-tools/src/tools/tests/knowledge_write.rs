@@ -350,3 +350,72 @@ fn malformed_input_is_refused_before_any_write() {
         .expect("response is JSON");
     assert_eq!(response["error"]["code"], json!("invalid_argument"));
 }
+
+#[test]
+fn preferences_write_validates_each_matter_and_scr_tag_citation() {
+    let ports = ports(FakeLibrary::with_bundled_templates());
+    ports.library.write_document(Path::new("sources/conversation/2026/11/SCR-20261101-2231-0a3104.md"),
+        "---\nid: SCR-20261101-2231-0a3104\nkind: conversation\n---\n## Tags\n### Preferences\n- T1 #preferences concise replies (m-1)\n").unwrap();
+    let markdown = domain(
+        "dom-preferences-global",
+        "template: preferences\n",
+        "## replies\nstatement: Prefer concise replies.\ncites: [SCR-20261101-2231-0a3104#T1]\nstated_at: 2026-11-01\nreview_by: 2027-01-30\n",
+    );
+    let response = write(&ports, &markdown);
+    assert_eq!(response["ok"], true, "{response}");
+    for removed in [
+        "statement: Prefer concise replies.\n",
+        "cites: [SCR-20261101-2231-0a3104#T1]\n",
+        "stated_at: 2026-11-01\n",
+        "review_by: 2027-01-30\n",
+    ] {
+        assert_refused(&ports, &markdown.replace(removed, ""), "invalid_argument");
+    }
+    assert_refused(&ports, &markdown.replace("#T1", "#T2"), "unresolved_cite");
+    assert_refused(
+        &ports,
+        &domain("dom-preferences-global", "template: preferences\n", ""),
+        "missing_section",
+    );
+}
+
+#[test]
+fn preference_matter_validation_refuses_bad_fields_without_committing() {
+    let ports = ports(FakeLibrary::with_bundled_templates());
+    let valid = domain(
+        "dom-preferences-global",
+        "template: preferences\n",
+        "## replies\nstatement: Concise.\ncites: [src-20261028-acme-qbr#L1]\nstated_at: 2026-11-01\nreview_by: 2027-01-30\n",
+    );
+    let before = ports.library.head_commit().unwrap();
+    for invalid in [
+        valid.replace("## replies", "## Not a slug"),
+        valid.replace("review_by: 2027-01-30", "review_by: 2026-01-30"),
+        valid.replace("2026-11-01", "2026-02-30"),
+        valid.replace(
+            "statement: Concise.",
+            "statement: Concise.\nunknown: ignored",
+        ),
+        format!(
+            "{valid}\n## replies\nstatement: Detailed.\ncites: [src-20261028-acme-qbr#L1]\nstated_at: 2026-11-01\nreview_by: 2027-01-30\n"
+        ),
+    ] {
+        assert_refused(&ports, &invalid, "invalid_argument");
+        assert_eq!(ports.library.head_commit().unwrap(), before);
+    }
+    assert_refused(
+        &ports,
+        &valid.replace("Concise.", "\"\""),
+        "invalid_argument",
+    );
+    assert_refused(
+        &ports,
+        &valid.replace("template: preferences\n", ""),
+        "invalid_frontmatter",
+    );
+    assert_refused(
+        &ports,
+        &valid.replace("dom-preferences-global", "dom-other"),
+        "page_id_mismatch",
+    );
+}

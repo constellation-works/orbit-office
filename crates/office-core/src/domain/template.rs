@@ -306,6 +306,9 @@ impl Template {
                 actual: kind.as_str(),
             });
         }
+        if self.template == "preferences" {
+            super::knowledge::preferences::parse(id, body)?;
+        }
         let populated = populated_sections(body);
         for section in &self.required {
             if !populated.iter().any(|heading| heading == section) {
@@ -742,6 +745,10 @@ pub const BUNDLED: &[BundledTemplate] = &[
     BundledTemplate {
         filename: "scribe-rules.md",
         markdown: include_str!("../../templates/scribe-rules.md"),
+    },
+    BundledTemplate {
+        filename: "preferences.md",
+        markdown: include_str!("../../templates/preferences.md"),
     },
     BundledTemplate {
         filename: "runbook.md",

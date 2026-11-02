@@ -57,6 +57,19 @@ fn valid_id(id: &str) -> bool {
     let Some(rest) = id.strip_prefix("SCR-") else {
         return false;
     };
+    let parts: Vec<_> = rest.split('-').collect();
+    if let [date, time, session] = parts.as_slice()
+        && date.len() == 8
+        && date.bytes().all(|b| b.is_ascii_digit())
+        && time.len() == 4
+        && time.bytes().all(|b| b.is_ascii_digit())
+        && session.len() == 6
+        && session
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    {
+        return true;
+    }
     let bytes = rest.as_bytes();
     bytes.len() > 8
         && bytes.len() <= 8 + SLUG_MAX + 1 + CLASH_SUFFIX
@@ -87,7 +100,7 @@ pub fn validate_scr_path(relative: &Path) -> Result<()> {
     } else {
         Err(refusal(
             "scribe_path_invalid",
-            "SCR files live at sources/conversation/<yyyy>/<mm>/SCR-<dd-hhmm>-<slug>.md",
+            "SCR files live at sources/conversation/<yyyy>/<mm>/SCR-<dd-hhmm>-<slug>.md or SCR-<yyyymmdd>-<hhmm>-<session6>.md",
         ))
     }
 }
