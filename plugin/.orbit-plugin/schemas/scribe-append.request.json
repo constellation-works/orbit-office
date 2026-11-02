@@ -402,6 +402,13 @@
                   "null"
                 ],
                 "description": "dec-<scope>-<n> of the entry this one reverses."
+              },
+              "same_as": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "dec-<scope>-<n> of an earlier entry recording the same decision; must exist. orbit, confirms and option id/consequence are ingestion-only and refused."
               }
             },
             "additionalProperties": false

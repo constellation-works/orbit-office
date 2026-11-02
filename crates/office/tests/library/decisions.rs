@@ -160,6 +160,131 @@ fn a_decision_whose_verbatim_fields_do_not_match_its_evidence_is_refused_without
     assert!(!library.join("sources/decisions").exists());
 }
 
+fn seed_ingested(env: &Env, entries: &[(&str, &str)]) {
+    // entries: (decided_at, chosen) for dec-acme-1.. in project:acme, each
+    // carrying orbit, option id/consequence and source orbit-decision:*.
+    let library = env.library();
+    let dir = library.join("sources/decisions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut text = String::from(
+        "---\nid: decisions-acme\nkind: decisions\ntitle: \"Decisions (project:acme)\"\nscope: \"project:acme\"\ncreated_at: \"2026-10-28T09:00:00+01:00\"\nsensitivity: normal\nmoved_sources: {}\n---\n",
+    );
+    for (n, (at, chosen)) in entries.iter().enumerate() {
+        let entry = json!({
+            "id": format!("dec-acme-{}", n + 1),
+            "question": "Should we price per seat or per workspace?", "question_by": "scribe",
+            "options": [
+                {"text": "per seat", "ref": "orbit-decision:REQ-1#a1", "id": "a1", "consequence": "Bill on seats."},
+                {"text": "per workspace", "ref": "orbit-decision:REQ-1#a2", "id": "a2", "consequence": "Bill on workspaces."}
+            ],
+            "chosen": chosen, "quote": chosen, "ref": "orbit-decision:REQ-1",
+            "scope": "project:acme",
+            "context": {"task_type": "feature", "workspace": "acme", "task": "<task>", "risk_tier": "low"},
+            "decided_by": "human", "decided_at": at, "reverses": null,
+            "orbit": {"request_id": "REQ-1", "gate": "pricing", "category": "pricing", "topic": null, "answered_by": "human", "channel": "task"},
+            "source": "orbit-decision:REQ-1"
+        });
+        text.push_str(&format!("- dec-acme-{} {at} #decision {entry}\n", n + 1));
+    }
+    std::fs::write(dir.join("acme.md"), text).unwrap();
+}
+
+#[test]
+fn capture_refuses_ingestion_only_fields_and_a_same_as_naming_no_entry() {
+    let env = Env::new();
+    library_with_evidence(&env);
+    let quote = "We go with per workspace pricing from March.";
+    let mut orbit = decision(quote);
+    orbit["orbit"] = json!({"request_id": "REQ-1"});
+    let mut confirms = decision(quote);
+    confirms["confirms"] = json!("dec-acme-1");
+    let mut opt_id = decision(quote);
+    opt_id["options"][0]["id"] = json!("a1");
+    let mut opt_consequence = decision(quote);
+    opt_consequence["options"][0]["consequence"] = json!("Bill on seats.");
+    let mut same_as_missing = decision(quote);
+    same_as_missing["same_as"] = json!("dec-acme-9");
+    for (code, input) in [
+        ("invalid_decision", orbit),
+        ("invalid_decision", confirms),
+        ("invalid_decision", opt_id),
+        ("invalid_decision", opt_consequence),
+        ("decision_not_found", same_as_missing),
+    ] {
+        let refused = capture(&env, input);
+        assert_eq!(refused["ok"], false, "{code}: {refused}");
+        assert_eq!(refused["error"]["code"], code, "{refused}");
+    }
+    assert!(!env.library().join("sources/decisions").exists());
+}
+
+#[test]
+fn capture_sets_same_as_on_exactly_one_ingested_match_and_reads_return_the_new_fields() {
+    let env = Env::new();
+    library_with_evidence(&env);
+    seed_ingested(
+        &env,
+        &[("2026-10-28T09:45:00+01:00", "per workspace pricing")],
+    );
+    let captured = capture(
+        &env,
+        decision("We go with per workspace pricing from March."),
+    );
+    assert_eq!(captured["ok"], true, "{captured}");
+    assert_eq!(
+        captured["output"]["entry"]["same_as"], "dec-acme-1",
+        "{captured}"
+    );
+    assert_eq!(
+        captured["output"]["entry"]["orbit"],
+        Value::Null,
+        "{captured}"
+    );
+    let shown = env.tool("office.source-show", json!({"id": "decisions-acme"}));
+    assert_eq!(shown["ok"], true, "{shown}");
+    let entries = shown["output"]["decisions"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "{shown}");
+    assert_eq!(entries[0]["orbit"]["request_id"], "REQ-1");
+    assert_eq!(entries[0]["options"][1]["id"], "a2");
+    assert_eq!(
+        entries[0]["options"][1]["consequence"],
+        "Bill on workspaces."
+    );
+    assert_eq!(entries[1]["same_as"], "dec-acme-1");
+    let queried = env.tool(
+        "office.scribe-query",
+        json!({"mode": "decisions", "scope": "project:acme"}),
+    );
+    assert_eq!(queried["ok"], true, "{queried}");
+    let decisions = queried["output"]["decisions"].as_array().unwrap();
+    assert_eq!(decisions[0]["orbit"]["category"], "pricing", "{queried}");
+    assert_eq!(decisions[1]["same_as"], "dec-acme-1", "{queried}");
+}
+
+#[test]
+fn capture_links_nothing_when_the_ingested_match_is_ambiguous() {
+    let env = Env::new();
+    library_with_evidence(&env);
+    seed_ingested(
+        &env,
+        &[
+            ("2026-10-28T09:45:00+01:00", "per workspace pricing"),
+            ("2026-10-28T09:50:00+01:00", "per workspace pricing"),
+        ],
+    );
+    let captured = capture(
+        &env,
+        decision("We go with per workspace pricing from March."),
+    );
+    assert_eq!(captured["ok"], true, "{captured}");
+    assert_eq!(captured["output"]["id"], "dec-acme-3", "{captured}");
+    assert_eq!(
+        captured["output"]["entry"].get("same_as"),
+        None,
+        "ambiguous match links nothing: {captured}"
+    );
+}
+
 #[test]
 fn a_plain_text_capture_without_a_kind_is_refused_naming_the_paste_kinds_and_the_decision_input() {
     let env = Env::with_initialized_library();

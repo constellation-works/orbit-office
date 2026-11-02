@@ -134,6 +134,106 @@ impl Fixture {
     }
 }
 
+fn seed_ingested_orbit_office(fixture: &Fixture, count: usize) {
+    let dir = fixture.library().join("sources/decisions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut text = String::from(
+        "---\nid: decisions-orbit-office\nkind: decisions\ntitle: \"Decisions (project:orbit-office)\"\nscope: \"project:orbit-office\"\ncreated_at: \"2026-11-01T08:00:00Z\"\nsensitivity: normal\nmoved_sources: {}\n---\n",
+    );
+    for n in 1..=count {
+        let entry = json!({
+            "id": format!("dec-orbit-office-{n}"),
+            "question": "Which slice ships first?", "question_by": "scribe",
+            "options": [{"text": "ship v2 first", "ref": "orbit-decision:REQ-9#a1", "id": "a1", "consequence": "Ships v2."}],
+            "chosen": "ship v2 first", "quote": "ship v2 first", "ref": "orbit-decision:REQ-9",
+            "scope": "project:orbit-office",
+            "context": {"task_type": null, "workspace": null, "task": "ORB-12345", "risk_tier": null},
+            "decided_by": "human", "decided_at": "2026-11-01T09:05:00Z", "reverses": null,
+            "orbit": {"request_id": "REQ-9", "gate": "ship", "category": "release", "topic": null, "answered_by": "human", "channel": "task"},
+            "source": "orbit-decision:REQ-9"
+        });
+        text.push_str(&format!(
+            "- dec-orbit-office-{n} 2026-11-01T09:05:00Z #decision {entry}\n"
+        ));
+    }
+    std::fs::write(dir.join("orbit-office.md"), text).unwrap();
+}
+
+#[test]
+fn append_refuses_ingestion_only_decision_fields_and_a_same_as_naming_no_entry() {
+    let fixture = Fixture::new();
+    fixture.pending(SESSION, 9, &turns());
+    let head = fixture.head();
+    let out = fixture.append(
+        SESSION,
+        "m-0003",
+        json!([
+            {"msg":"m-0001","line":1,"tag":"decisions","decision": {
+                "question":"Which slice ships first?","question_by":"scribe","options":"unrecoverable",
+                "chosen":"ship v2 first","decided_by":"human","orbit":{"request_id":"REQ-1"}}},
+            {"msg":"m-0001","line":1,"tag":"decisions","decision": {
+                "question":"Which slice ships first?","question_by":"scribe","options":"unrecoverable",
+                "chosen":"ship v2 first","decided_by":"human","confirms":"dec-orbit-office-1"}},
+            {"msg":"m-0001","line":1,"tag":"decisions","decision": {
+                "question":"Which slice ships first?","question_by":"scribe",
+                "options":[{"text":"ship v2 first","msg":"m-0001","id":"a1"}],
+                "chosen":"ship v2 first","decided_by":"human"}},
+            {"msg":"m-0001","line":1,"tag":"decisions","decision": {
+                "question":"Which slice ships first?","question_by":"scribe","options":"unrecoverable",
+                "chosen":"ship v2 first","decided_by":"human","same_as":"dec-orbit-office-9"}},
+        ]),
+    );
+    let codes: Vec<&str> = out["refused"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["code"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        codes,
+        [
+            "invalid_decision",
+            "invalid_decision",
+            "invalid_decision",
+            "decision_not_found"
+        ],
+        "{out}"
+    );
+    assert_eq!(out["written"], false, "{out}");
+    assert_eq!(fixture.head(), head);
+}
+
+#[test]
+fn append_sets_same_as_on_an_ingested_match_and_query_returns_the_new_fields() {
+    let fixture = Fixture::new();
+    seed_ingested_orbit_office(&fixture, 1);
+    fixture.pending(SESSION, 9, &turns());
+    let mut d = decision("ship v2 first", "human");
+    d["context"] =
+        json!({"task_type": null, "workspace": null, "task": "ORB-12345", "risk_tier": null});
+    let out = fixture.append(
+        SESSION,
+        "m-0003",
+        json!([{"msg":"m-0001","line":1,"tag":"decisions","decision":d}]),
+    );
+    assert_eq!(out["written"], true, "{out}");
+    assert_eq!(out["refused"], json!([]), "{out}");
+    let queried = fixture.ok(
+        "office.scribe-query",
+        json!({"mode":"decisions","scope":"project:orbit-office"}),
+    );
+    let entries = queried["decisions"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "{queried}");
+    assert_eq!(entries[0]["orbit"]["request_id"], "REQ-9", "{queried}");
+    assert_eq!(entries[0]["options"][0]["id"], "a1", "{queried}");
+    assert_eq!(entries[1]["same_as"], "dec-orbit-office-1", "{queried}");
+    let shown = fixture.ok("office.source-show", json!({"id": "dec-orbit-office-2"}));
+    assert_eq!(
+        shown["decisions"][0]["same_as"], "dec-orbit-office-1",
+        "{shown}"
+    );
+}
+
 fn sections(summary: &str) -> Value {
     json!({"summary": summary, "goals": ["Build the scribe v2 slice for ORB-12345."],
         "outcome": ["The pass format is drafted."],

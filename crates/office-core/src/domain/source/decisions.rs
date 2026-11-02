@@ -160,7 +160,9 @@ pub enum DecidedBy {
     Model,
 }
 
-/// One verbatim span and the ref it was read from.
+/// One verbatim span and the ref it was read from. Options may also carry
+/// the stable `id` and one-line `consequence` of an Orbit answer; those are
+/// set only by Orbit ingestion (see decision-precedents.md, Entry schema).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cited {
@@ -169,6 +171,91 @@ pub struct Cited {
     /// Where it was said.
     #[serde(rename = "ref")]
     pub reference: String,
+    /// The option's stable id; set only by Orbit ingestion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// The option's one-line consequence; set only by Orbit ingestion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consequence: Option<String>,
+}
+
+/// The model citation on an ingested entry answered by the model: the
+/// assessment, policy, model identity, probability and cited precedents.
+/// Probability is kept as its written decimal text so the entry stays `Eq`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrbitModel {
+    /// The assessment id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assessment_id: Option<String>,
+    /// The policy digest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_digest: Option<String>,
+    /// The model identity.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "model_identity",
+        alias = "identity"
+    )]
+    pub model: Option<String>,
+    /// The model's probability for its answer, as written.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "de_probability"
+    )]
+    pub probability: Option<String>,
+    /// The precedents the model cited.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "precedents",
+        alias = "cited"
+    )]
+    pub cited_precedents: Option<Vec<String>>,
+}
+
+fn de_probability<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => Ok(Some(text)),
+        Some(Value::Number(number)) => Ok(Some(number.to_string())),
+        Some(_) => Err(serde::de::Error::custom(
+            "orbit model probability must be a number",
+        )),
+    }
+}
+
+/// The Orbit request an ingested entry records (decision-precedents.md,
+/// Entry schema): copied from the answered request, plus the model
+/// citation when `answered_by` is `model`. Written only by ingestion.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrbitInfo {
+    /// The Orbit decision request id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    /// The request's gate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate: Option<String>,
+    /// The request's category.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// The request's topic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    /// Who answered the request (`human`, `model`, ...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answered_by: Option<String>,
+    /// The channel the answer arrived on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
+    /// The model citation, when `answered_by` is `model`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<OrbitModel>,
 }
 
 /// The options considered: listed verbatim, or `"unrecoverable"`.
@@ -207,7 +294,17 @@ impl From<Options> for Value {
             Options::Listed(items) => Value::Array(
                 items
                     .into_iter()
-                    .map(|item| serde_json::json!({"text": item.text, "ref": item.reference}))
+                    .map(|item| {
+                        let mut object =
+                            serde_json::json!({"text": item.text, "ref": item.reference});
+                        if let Some(id) = item.id {
+                            object["id"] = Value::String(id);
+                        }
+                        if let Some(consequence) = item.consequence {
+                            object["consequence"] = Value::String(consequence);
+                        }
+                        object
+                    })
                     .collect(),
             ),
         }
@@ -270,6 +367,15 @@ pub struct Decision {
     /// The entry this one overturns.
     #[serde(default)]
     pub reverses: Option<String>,
+    /// The Orbit request this entry ingests; ingestion only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orbit: Option<OrbitInfo>,
+    /// An earlier entry recording the same decision from the other source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub same_as: Option<String>,
+    /// The `decided_by: model` entry this human entry confirms; ingestion only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirms: Option<String>,
     /// The evidence's source id.
     pub source: String,
     /// A reference-only entry from a private session.
@@ -321,6 +427,81 @@ fn words(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn folded(text: &str) -> String {
+    words(text).to_lowercase()
+}
+
+/// Whether two chosen texts name the same answer: equal after case and
+/// whitespace folding, or one contains the other (decision-precedents.md,
+/// Entries without options).
+#[must_use]
+pub fn chosen_matches(one: &str, other: &str) -> bool {
+    let (one, other) = (folded(one), folded(other));
+    !one.is_empty()
+        && !other.is_empty()
+        && (one == other || one.contains(&other) || other.contains(&one))
+}
+
+/// The `same_as` dedupe match (decision-precedents.md, Dedupe against
+/// scribe entries): an ingested entry (one carrying `orbit`) recording the
+/// same decision as `candidate` — same task, `decided_at` within 30
+/// minutes, and `candidate`'s chosen matching the ingested entry's chosen
+/// answer. Exactly one such entry is returned; none or several give `None`
+/// (an ambiguous match links nothing and never blocks the append).
+#[must_use]
+pub fn same_as_match<'a>(
+    candidate: &Decision,
+    existing: impl IntoIterator<Item = &'a Decision>,
+) -> Option<String> {
+    let task = candidate
+        .context
+        .task
+        .as_deref()
+        .filter(|t| !t.trim().is_empty())?;
+    let chosen = candidate.chosen.as_deref()?;
+    let candidate_at = crate::domain::metrics::timestamp(&candidate.decided_at)?;
+    let mut found: Option<String> = None;
+    for entry in existing {
+        // `existing` holds only entries written before `candidate` (its id
+        // may still be provisional, so ids are not compared here).
+        if entry.orbit.is_none() {
+            continue;
+        }
+        if entry.context.task.as_deref() != Some(task) {
+            continue;
+        }
+        let Some(entry_at) = crate::domain::metrics::timestamp(&entry.decided_at) else {
+            continue;
+        };
+        if (candidate_at - entry_at).abs() > 30 * 60 {
+            continue;
+        }
+        let Some(entry_chosen) = entry.chosen.as_deref() else {
+            continue;
+        };
+        // The candidate's chosen must name the ingested entry's chosen
+        // answer: the listed option that is the chosen one, when listed.
+        let matches = match &entry.options {
+            Some(Options::Listed(items)) => {
+                items
+                    .iter()
+                    .find(|item| chosen_matches(&item.text, entry_chosen))
+                    .is_some_and(|item| chosen_matches(chosen, &item.text))
+                    || chosen_matches(chosen, entry_chosen)
+            }
+            Some(Options::Unrecoverable) | None => chosen_matches(chosen, entry_chosen),
+        };
+        if !matches {
+            continue;
+        }
+        if found.is_some() {
+            return None;
+        }
+        found = Some(entry.id.clone());
+    }
+    found
+}
+
 impl Decision {
     /// The parsed scope.
     pub fn parsed_scope(&self) -> Result<Scope> {
@@ -356,6 +537,52 @@ impl Decision {
                 return Err(invalid(
                     "decision reverses must name a dec-<scope>-<n> entry",
                 ));
+            }
+        }
+        for (field, target) in [("same_as", &self.same_as), ("confirms", &self.confirms)] {
+            if let Some(target) = target
+                && parse_entry_id(target).is_none()
+            {
+                return Err(invalid(format!(
+                    "decision {field} must name a dec-<scope>-<n> entry"
+                )));
+            }
+        }
+        if let Some(orbit) = &self.orbit {
+            for (field, value) in [
+                ("request_id", &orbit.request_id),
+                ("gate", &orbit.gate),
+                ("category", &orbit.category),
+                ("topic", &orbit.topic),
+                ("answered_by", &orbit.answered_by),
+                ("channel", &orbit.channel),
+            ] {
+                if let Some(value) = value {
+                    one_line(&format!("orbit.{field}"), value)?;
+                }
+            }
+            if let Some(model) = &orbit.model {
+                for (field, value) in [
+                    ("assessment_id", &model.assessment_id),
+                    ("policy_digest", &model.policy_digest),
+                    ("model", &model.model),
+                ] {
+                    if let Some(value) = value {
+                        one_line(&format!("orbit.model.{field}"), value)?;
+                    }
+                }
+                if let Some(probability) = &model.probability
+                    && !matches!(probability.parse::<f64>(), Ok(p) if (0.0..=1.0).contains(&p))
+                {
+                    return Err(invalid(
+                        "decision orbit.model.probability must be a number between 0 and 1",
+                    ));
+                }
+                if let Some(cited) = &model.cited_precedents {
+                    for precedent in cited {
+                        one_line("orbit.model.cited_precedents", precedent)?;
+                    }
+                }
             }
         }
         for (field, value) in [
@@ -409,6 +636,12 @@ impl Decision {
                 for item in items {
                     nonempty("option text", &item.text)?;
                     one_line("option ref", &item.reference)?;
+                    if let Some(id) = &item.id {
+                        one_line("option id", id)?;
+                    }
+                    if let Some(consequence) = &item.consequence {
+                        one_line("option consequence", consequence)?;
+                    }
                 }
             }
         }
@@ -431,6 +664,11 @@ impl Decision {
         if let Some(because) = &self.because {
             nonempty("because text", &because.text)?;
             one_line("because ref", &because.reference)?;
+            if because.id.is_some() || because.consequence.is_some() {
+                return Err(invalid(
+                    "decision because carries no option id or consequence",
+                ));
+            }
         }
         Ok(())
     }
@@ -512,6 +750,8 @@ struct Input {
     #[serde(default)]
     reverses: Option<String>,
     #[serde(default)]
+    same_as: Option<String>,
+    #[serde(default)]
     source: Option<String>,
     #[serde(default)]
     private: bool,
@@ -523,9 +763,39 @@ struct Input {
 /// against the source its `ref` names. `decided_by: model` is refused: only
 /// the precedent provider's feedback path writes it.
 pub fn decision_from_input(value: &Value) -> Result<(Decision, Option<String>)> {
+    // Ingestion-only fields are refused here, as `decided_by: model` is:
+    // only Orbit decision ingestion writes `orbit`, `confirms` and option
+    // `id`/`consequence`.
+    if let Some(object) = value.as_object() {
+        for key in ["orbit", "confirms"] {
+            if object.contains_key(key) {
+                return Err(invalid(format!(
+                    "decision {key} is written only by Orbit decision ingestion"
+                )));
+            }
+        }
+        if let Some(options) = object.get("options").and_then(Value::as_array) {
+            for item in options {
+                if let Some(item) = item.as_object()
+                    && (item.contains_key("id") || item.contains_key("consequence"))
+                {
+                    return Err(invalid(
+                        "decision option id and consequence are written only by Orbit decision ingestion",
+                    ));
+                }
+            }
+        }
+        if let Some(because) = object.get("because").and_then(Value::as_object)
+            && (because.contains_key("id") || because.contains_key("consequence"))
+        {
+            return Err(invalid(
+                "decision option id and consequence are written only by Orbit decision ingestion",
+            ));
+        }
+    }
     let input: Input = serde_json::from_value(value.clone()).map_err(|error| {
         invalid(format!(
-            "decision must be an object of the D13 fields (question, question_ref, question_by, options, chosen, quote, ref, because, scope, context, decided_by, decided_at, reverses, source, private): {error}"
+            "decision must be an object of the D13 fields (question, question_ref, question_by, options, chosen, quote, ref, because, scope, context, decided_by, decided_at, reverses, same_as, source, private): {error}"
         ))
     })?;
     if input.decided_by == DecidedBy::Model {
@@ -550,6 +820,9 @@ pub fn decision_from_input(value: &Value) -> Result<(Decision, Option<String>)> 
         decided_by: input.decided_by,
         decided_at: input.decided_at,
         reverses: input.reverses,
+        orbit: None,
+        same_as: input.same_as,
+        confirms: None,
         source: String::from("pending"),
         private: input.private,
     };
@@ -1050,6 +1323,9 @@ pub fn note_entry(
         decided_by: DecidedBy::Human,
         decided_at: decided_at.into(),
         reverses: None,
+        orbit: None,
+        same_as: None,
+        confirms: None,
         source: source_id.into(),
         private: false,
     };

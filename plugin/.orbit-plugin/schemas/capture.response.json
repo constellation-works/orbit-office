@@ -108,6 +108,16 @@
                       "ref": {
                         "type": "string",
                         "minLength": 1
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The option's stable id; set only by Orbit ingestion."
+                      },
+                      "consequence": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The option's one-line consequence; set only by Orbit ingestion."
                       }
                     },
                     "required": [
@@ -197,6 +207,109 @@
                 "string",
                 "null"
               ]
+            },
+            "orbit": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Ingestion only: the Orbit request copied from the answered request; present on ingested entries.",
+              "properties": {
+                "request_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "gate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "category": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "topic": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "answered_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "channel": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "model": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "assessment_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "policy_digest": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "probability": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "cited_precedents": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "same_as": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "An earlier entry recording the same decision from the other source."
+            },
+            "confirms": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Ingestion only: the decided_by model entry this human entry confirms."
             },
             "source": {
               "type": "string"

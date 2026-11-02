@@ -342,6 +342,9 @@ or dedupe fields (option `id`/`consequence`, `orbit`, `same_as`,
 | `reversed_by` | derived | Never written, since entries are append-only. Readers compute it from later entries' `reverses`, and `office.scribe-query` returns it. |
 | `source` | yes | The evidence's source id: the SCR id; for a migrated note, its original `src-…` id; for an answered Orbit decision request that [ORB-21090] ingests, `orbit-decision:<id>`. |
 | `private` | no | `true` for a reference-only entry ([Privacy](#privacy)). |
+| `orbit` | no | Ingestion only ([decision-precedents.md](./decision-precedents.md#entry-schema)): `{request_id, gate, category, topic, answered_by, channel}`, plus `model` (the model citation) when `answered_by` is `model`. `office.capture` and `office.scribe-append` refuse it. An option may likewise carry an ingestion-only `id` (the request answer's stable id) and `consequence` (its one-line consequence), which both tools also refuse. |
+| `same_as` | no | The id of an earlier entry recording the same decision from the other source. Both tools accept it, checked like `reverses` (`decision_not_found`), and on append each runs the dedupe match against ingested entries (same task, `decided_at` within 30 minutes, chosen matching the chosen answer): exactly one match sets `same_as`; an ambiguous match links nothing and never blocks the append. |
+| `confirms` | no | Ingestion only: the id of a `decided_by: model` entry this human entry confirms. `office.capture` and `office.scribe-append` refuse it. |
 
 ```markdown
 - dec-orbit-office-7 2026-11-01T22:39:00-07:00 #decision {"id":"dec-orbit-office-7","question":"Should sources/note get a compatibility window?","question_by":"scribe","options":"unrecoverable","chosen":"deprecate outright","quote":"#decision there are no users for this. so we can deprecate outright","ref":"SCR-20261101-2231-0a3104#T4 m-0187","scope":"project:orbit-office","context":{"task_type":"feature","workspace":"ws_orbit-office","task":"ORB-<id>","risk_tier":null},"decided_by":"human","decided_at":"2026-11-01T22:39:00-07:00","reverses":null,"source":"SCR-20261101-2231-0a3104"}
@@ -365,8 +368,10 @@ set from it (`orbit-task:<task-id>` for a comment), and a different
 (`quote_mismatch`), an unreadable ref is refused
 (`decision_ref_unresolved`), a ref to a private source is refused unless
 the entry is `private` (`decision_source_private`), `decided_by: model`
-is refused (`decided_by_mismatch`), and `reverses` naming no existing
-entry is refused (`decision_not_found`). `kind: decisions` with text is
+is refused (`decided_by_mismatch`), `orbit`, `confirms` and option
+`id`/`consequence` are refused as ingestion-only, and `reverses` or
+`same_as` naming no existing entry is refused (`decision_not_found`).
+On append the dedupe match above may set `same_as`. `kind: decisions` with text is
 refused (`decision_input_required`). The append takes the writer lock
 and commits once. This replaces
 v1's "append to the decision log" rule ([Retiring

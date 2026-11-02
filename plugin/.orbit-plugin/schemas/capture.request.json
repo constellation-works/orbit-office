@@ -602,6 +602,13 @@
           ],
           "description": "The dec-<scope>-<n> entry this one overturns; it must exist."
         },
+        "same_as": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "An earlier entry recording the same decision from the other source; it must exist (decision_not_found). orbit, confirms and option id/consequence are ingestion-only and refused here."
+        },
         "source": {
           "type": "string",
           "description": "Optional; must equal the source the ref names (the source id, or orbit-task:<task-id>)."

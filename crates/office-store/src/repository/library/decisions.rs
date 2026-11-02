@@ -3,7 +3,8 @@
 //! one entry under the writer lock.
 
 use office_core::domain::source::decisions::{
-    Decision, Ledger, Resolved, append_line, entry_record, parse_entry_id, resolve, views,
+    Decision, Ledger, Resolved, append_line, entry_record, parse_entry_id, resolve, same_as_match,
+    views,
 };
 use office_core::domain::source::source_body;
 use office_core::ports::{DecisionOutcome, SourceView};
@@ -143,6 +144,25 @@ impl LibraryStore {
                 code: "decision_not_found",
                 message: format!("reverses names {target}, which no decision ledger holds"),
             });
+        }
+        if let Some(target) = &decision.same_as
+            && !ledgers
+                .iter()
+                .any(|(ledger, _)| ledger.entry(target).is_some())
+        {
+            return Err(office_core::Error::Library {
+                code: "decision_not_found",
+                message: format!("same_as names {target}, which no decision ledger holds"),
+            });
+        }
+        if decision.same_as.is_none() {
+            let existing: Vec<Decision> = ledgers
+                .iter()
+                .flat_map(|(ledger, _)| ledger.entries.iter().map(|entry| entry.decision.clone()))
+                .collect();
+            if let Some(target) = same_as_match(&decision, existing.iter()) {
+                decision.same_as = Some(target);
+            }
         }
         let path = ledgers[index].0.path.clone();
         let text = append_line(&ledgers[index].1, &decision.line()?);
