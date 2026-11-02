@@ -525,7 +525,7 @@
         },
         "chosen": {
           "type": "string",
-          "description": "The chosen option: a verbatim span of quote."
+          "description": "The chosen option: a span of quote, matched without case, punctuation or a word repeated in a row (transcription noise); words quote does not say are refused with quote_mismatch."
         },
         "quote": {
           "type": "string",

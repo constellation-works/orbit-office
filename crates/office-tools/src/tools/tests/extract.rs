@@ -746,3 +746,81 @@ fn meeting_items_citing_copied_turn_links_are_kept_and_an_all_dropped_reply_hold
             .is_none()
     );
 }
+
+#[test]
+fn a_recorded_hosted_meeting_feeds_every_decision_its_stuttered_turn_supports() {
+    // ORB-21431: the box run at 1f3c3be. Muse Voice transcribed the monthly
+    // decision as "monthly, monthly. Starting in December", Muse Spark said
+    // "monthly starting in December", and the ledger skipped it as
+    // quote_mismatch, so the September "weekly" contradiction never surfaced.
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lantern-box-1f3c3be");
+    let body = std::fs::read_to_string(dir.join("transcript.md")).unwrap();
+    let mut reply: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("reply.json")).unwrap()).unwrap();
+    // Not said in that turn: "weekly" is there, but not as this statement.
+    reply["decisions"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"text":"We rotate ingest keys weekly","cites":["#t=00:01:03"]}));
+    let (mut ports, models) = fixture(Settings::default(), false, false);
+    let library = FakeLibrary::initialized();
+    library.write_document(Path::new(PATH), &format!("---\nid: {ID}\nkind: meeting\ntitle: SIMULATED Lantern engineering sync\nsensitivity: normal\n---\n{body}")).unwrap();
+    let weekly = json!({"id":"dec-global-1","question":"How often do we rotate ingest keys?","question_by":"scribe",
+        "options":"unrecoverable","chosen":"rotate ingest keys weekly","quote":"rotate ingest keys weekly",
+        "ref":"src-20260921-synthetic-security-review#L4","scope":"global","decided_by":"human",
+        "context":{"task_type":null,"workspace":null,"task":null,"risk_tier":null},
+        "decided_at":"2026-09-21T16:00:00Z","reverses":null,"source":"src-20260921-synthetic-security-review"});
+    library.write_document(Path::new("sources/decisions/global.md"), &format!("---\nid: decisions-global\nkind: decisions\nscope: global\ncreated_at: 2026-09-21T16:00:00Z\n---\n- dec-global-1 2026-09-21T16:00:00Z #decision {weekly}\n")).unwrap();
+    ports.library = Box::new(library);
+    models.extract_replies.borrow_mut().extend([
+        reply,
+        json!({"conflicts":[{"new":"dec-global-3","prior":"dec-global-1","matter":"ingest key rotation"}],"held":[]}),
+    ]);
+    ports.models = Box::new(models);
+    let orbit = FakeOrbit::default();
+    orbit.push_response(Ok(json!({"tasks":[]})));
+    for _ in 0..16 {
+        orbit.push_response(Ok(json!({"id":"task-fixture"})));
+    }
+    ports.orbit = Box::new(orbit.clone());
+    let output = call(
+        &ports,
+        "office.extract",
+        json!({"id":ID,"profile":"meeting"}),
+    );
+    assert_eq!(output["ok"], true, "{output}");
+    let ledger = &output["output"]["ledger"];
+    assert_eq!(
+        ledger["appended"],
+        json!([
+            "dec-global-2",
+            "dec-global-3",
+            "dec-global-4",
+            "dec-global-5"
+        ]),
+        "{ledger}"
+    );
+    assert_eq!(
+        ledger["skipped"],
+        json!([{"index":4,"code":"quote_mismatch"}])
+    );
+    assert_eq!(
+        ledger["conflicts"][0]["entries"],
+        json!(["dec-global-1", "dec-global-3"])
+    );
+    let conflict = orbit
+        .calls()
+        .into_iter()
+        .find(|c| {
+            c.tool == "orbit.task.add"
+                && c.input["title"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .starts_with("Which decision stands")
+        })
+        .expect("the monthly-vs-weekly conflict is filed");
+    assert_eq!(
+        conflict.input["title"],
+        "Which decision stands: \"rotate ingest keys weekly\" or \"We rotate ingest keys monthly starting in December\"?"
+    );
+}

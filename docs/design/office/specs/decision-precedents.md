@@ -79,7 +79,7 @@ retyped. An entry still is one line, `dec-<scope>-<n>`, the time,
 |---|---|
 | `question` | The precedent's question. A scribe restatement (`question_by: scribe`) is allowed; a verbatim one has `question_ref`. An ingested Orbit request sets `question_ref: orbit-decision:<id>`. |
 | `options` | The options considered, or `"unrecoverable"` (see [Entries without options](#entries-without-options)). Each option is `{text, ref}`, as built. **Added, optional:** `id` (the option's stable id; set only by Orbit ingestion, from the request's `answers[].id`) and `consequence` (the request's one-line consequence). |
-| `chosen` | The chosen option. For a scribe entry, a verbatim span of the decision message; for an ingested entry, the chosen answer's label. |
+| `chosen` | The chosen option. For a scribe entry, a span of the decision message (up to case, punctuation and a word repeated in a row); for an ingested entry, the chosen answer's label. |
 | `quote`, `ref` | The evidence: the verbatim decision text and its transcript or Orbit reference. |
 | `because` | The stated rationale, when one was stated. It goes into the precedent's `context`. |
 | `scope` | `global` or `project:<name>`. Used to filter candidates. |
