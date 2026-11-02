@@ -1,14 +1,97 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.digest response",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["day", "written", "reason", "artifact", "path"],
-  "properties": {
-    "day": { "type": "string" },
-    "written": { "type": "boolean" },
-    "reason": { "enum": [null, "no_activity", "already_exists", "no_supported_lines"] },
-    "artifact": { "type": ["string", "null"] },
-    "path": { "type": ["string", "null"] }
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["day", "written", "reason", "artifact", "path"],
+      "properties": {
+        "day": { "type": "string" },
+        "written": { "type": "boolean" },
+        "reason": { "enum": [null, "no_activity", "already_exists", "no_supported_lines"] },
+        "artifact": { "type": ["string", "null"] },
+        "path": { "type": ["string", "null"] }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "title", "decided", "shipped", "needs_you", "report", "unavailable", "truncated"],
+      "properties": {
+        "source": { "type": "string" },
+        "title": { "type": "string" },
+        "decided": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text", "cites"],
+            "properties": {
+              "text": { "type": "string" },
+              "cites": { "$ref": "#/$defs/cites" }
+            }
+          }
+        },
+        "shipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["task", "title", "workspace", "delivery_status", "pr", "merge", "cites"],
+            "properties": {
+              "task": { "type": "string" },
+              "title": { "type": "string" },
+              "workspace": { "type": ["string", "null"] },
+              "delivery_status": { "type": ["string", "null"] },
+              "pr": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["number", "url"],
+                    "properties": { "number": { "type": "integer", "minimum": 0 }, "url": { "type": ["string", "null"] } }
+                  }
+                ]
+              },
+              "merge": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["commit", "url"],
+                    "properties": { "commit": { "type": "string" }, "url": { "type": ["string", "null"] } }
+                  }
+                ]
+              },
+              "cites": { "$ref": "#/$defs/cites" }
+            }
+          }
+        },
+        "needs_you": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "text", "task", "workspace", "cites"],
+            "properties": {
+              "kind": { "enum": ["to_do", "contradiction", "decision"] },
+              "text": { "type": "string" },
+              "task": { "type": "string" },
+              "workspace": { "type": ["string", "null"] },
+              "cites": { "$ref": "#/$defs/cites" }
+            }
+          }
+        },
+        "report": { "type": "string" },
+        "unavailable": { "type": "array", "items": { "type": "string" } },
+        "truncated": { "type": "boolean" }
+      }
+    }
+  ],
+  "$defs": {
+    "cites": { "type": "array", "minItems": 1, "items": { "type": "string" } }
   }
 }

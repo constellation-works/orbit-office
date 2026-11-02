@@ -265,8 +265,9 @@ fn read_conflicts(pool: &Pool, conflicts: ConflictList) -> ConflictPass {
     }
 }
 
-/// The two entry ids an open decision-conflict to-do names on its last
-/// `Conflicting entries:` line, or `None` for any other task.
+/// The two conflicting ledger entry ids of an open contradiction to-do
+/// (`owner:you`, `office-scribe-contradictions`, a final `Conflicting
+/// entries: <a> <b>` line), or `None` for any other task row.
 #[must_use]
 pub fn conflicting_pair(task: &Value) -> Option<(String, String)> {
     let status = task.get("status").and_then(Value::as_str)?;

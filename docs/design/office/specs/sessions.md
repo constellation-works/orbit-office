@@ -18,6 +18,7 @@ is the cheapest mechanism that can do its job
 | **Handoff** | the agent, as `handoff` entries in that log; optionally the live scribe (planned) | refreshed whenever the plan changes | none; the scribe's handoff uses the low-complexity pool |
 | **Session brief** | `office.session-brief`, computed on demand | at session start | none |
 | **Daily digest** | `office.digest`, from the `office-daily-digest` routine | once a day | one Muse Spark call |
+| **Digest since a meeting** | `office.digest` with `source`, from the app or `orbit tool run` | on demand | none |
 
 The handoff is never left to the end of a session, which often ends with
 the terminal simply closing. The agent rewrites it whenever the plan
@@ -1013,6 +1014,44 @@ No agent loop, no crew and no Orbit task is involved.
   Older digests without the tag retain approval-date selection. A quarterly
   review starts from about ninety cited summaries rather than raw records.
 
+### Digest since a meeting
+
+`office.digest` with `source: <meeting source id>` (and no `day`) answers
+"what happened since this meeting". It runs on demand: from the app
+through the server route `GET /api/sources/digest?id=…`
+([web-app.md](./web-app.md)), or from the CLI as
+`orbit tool run office.digest --input '{"source":"<id>"}'`. The daily
+routine, which passes no `source`, behaves exactly as above.
+
+It is deterministic and read-only: no model call, no Library write, no
+Orbit write. Every line cites its evidence, and the response returns the
+sections as JSON beside a Markdown `report`.
+
+- **Decided:** the meeting's decisions from its extract result
+  (`extract-result.json`, written by `office.extract` with the `meeting`
+  profile), each citing its `<id>#t=…` or `<id>#L…` anchors. A decision
+  without an anchor is left out. A `private` meeting's decisions are listed by
+  reference only. A meeting that has not been extracted is refused with
+  `meeting_not_extracted`; a source of another kind with
+  `invalid_source_kind`.
+- **Shipped:** every `done` task tagged `source:<id>` that is not
+  `owner:you`, read from the office workspace and each
+  `brief.task_workspaces` selector. Each task cites its id and carries the PR
+  number and merged commit from its newest delivery record
+  (`orbit.task.show` with `field: delivery`). Links are built for an
+  `owner/name` repository as GitHub pull-request and commit URLs. A task whose
+  delivery record cannot be read still appears, marked "no delivery record".
+- **Needs you:** the open `owner:you` tasks tagged `source:<id>` (the human
+  to-dos), the open Orbit decision requests on any of the source's tasks,
+  and contradictions. A contradiction is a source to-do also tagged
+  `office-scribe-contradictions`; when its description ends with the
+  `Conflicting entries: <a> <b>` line, it cites both ledger entries as well as
+  the task.
+- **Failures:** the office workspace is all-or-nothing, as in the brief. An
+  extra workspace whose tasks or decision requests cannot be read is named in
+  `unavailable` and never refuses the digest. `truncated` is true when Orbit
+  reported more source tasks than it returned.
+
 ## Task References
 
 - [ORB-19702] — built session-brief merging of tasks from configured extra workspaces.
@@ -1034,5 +1073,6 @@ No agent loop, no crew and no Orbit task is involved.
 - [ORB-21120] — built scribe v2 slice S7: `view: list` returns the SCR cards (or one SCR with its `previous` given `id`), with the v1 list kept behind `legacy: true`.
 - [ORB-21123] — proposed scribe v2 slice S10.
 - [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.
+- [ORB-21337] — built the digest since a meeting (`office.digest` with `source`) and its app server route.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
