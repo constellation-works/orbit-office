@@ -257,6 +257,12 @@ pub fn chat_reply(content: &str) -> String {
     json!({"choices": [{"message": {"content": content}}]}).to_string()
 }
 
+/// A Muse Voice Transcribe reply with `transcript` and `turns`.
+pub fn asr_reply(transcript: &str, turns: serde_json::Value) -> String {
+    json!({"sessionId": "fixture", "transcript": transcript, "audioDurationMs": 1_000, "turns": turns})
+        .to_string()
+}
+
 /// Client config pointing the hosted endpoint at `hosted_base`.
 pub fn hosted_config(hosted_base: &str) -> ModelConfig {
     let mut config = ModelConfig::new(Some("test-meta-key".into()), Some(FIXTURE_TOKEN.into()));

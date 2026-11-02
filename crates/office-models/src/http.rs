@@ -84,6 +84,28 @@ pub(crate) fn post_json(
     destination: Destination<'_>,
     timeout: Option<Duration>,
 ) -> Result<Value, Error> {
+    post_bytes(
+        agent,
+        url,
+        api_key,
+        "application/json",
+        body.to_string().as_bytes(),
+        destination,
+        timeout,
+    )
+}
+
+/// POST `body` with `content_type` to `url`, as [`post_json`] does, and
+/// return the parsed JSON response.
+pub(crate) fn post_bytes(
+    agent: &ureq::Agent,
+    url: &str,
+    api_key: Option<&str>,
+    content_type: &str,
+    body: &[u8],
+    destination: Destination<'_>,
+    timeout: Option<Duration>,
+) -> Result<Value, Error> {
     let host = check_url(url, destination)?;
     tracing::debug!(host = %host, "model call");
     let request = agent.post(url);
@@ -91,12 +113,12 @@ pub(crate) fn post_json(
         Some(timeout) => request.config().timeout_global(Some(timeout)).build(),
         None => request,
     };
-    let mut request = request.header("Content-Type", "application/json");
+    let mut request = request.header("Content-Type", content_type);
     if let Some(key) = api_key {
         request = request.header("Authorization", format!("Bearer {key}"));
     }
     let mut response = request
-        .send_json(body)
+        .send(body)
         .map_err(|error| map_error(&host, error))?;
     let text = response
         .body_mut()

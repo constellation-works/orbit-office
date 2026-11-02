@@ -6,7 +6,7 @@ use office_core::ports::{
 };
 use serde_json::json;
 
-use super::{FakeServer, chat_reply, client, hosted_config};
+use super::{FakeServer, asr_reply, chat_reply, client, hosted_config};
 
 #[test]
 fn digest_schema_accepts_the_shared_shape_and_refuses_wrong_claim_types() {
@@ -49,8 +49,11 @@ fn transcribe_request() -> TranscribeRequest {
 
 #[test]
 fn maps_reported_speaker_turns_through_the_models_port() {
-    let content = r#"{"text":"Jane opened. Daniel agreed.","segments":[{"speaker":"Jane","start_ms":0,"end_ms":4000,"text":"Jane opened."},{"speaker":null,"start_ms":751000,"end_ms":752500,"text":"Daniel agreed."}]}"#;
-    let server = FakeServer::start(200, chat_reply(content));
+    let turns = json!([
+        {"speaker": "A", "startMs": 0, "endMs": 4000, "transcript": "Jane opened."},
+        {"startMs": 751_000, "transcript": "Daniel agreed."}
+    ]);
+    let server = FakeServer::start(200, asr_reply("Jane opened. Daniel agreed.", turns));
     let adapter = client(hosted_config(&server.base_url));
     let models: &dyn Models = &adapter;
     let transcript = models
@@ -59,35 +62,25 @@ fn maps_reported_speaker_turns_through_the_models_port() {
         .value;
     assert_eq!(transcript.text, "Jane opened. Daniel agreed.");
     assert_eq!(transcript.segments.len(), 2);
-    assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Jane"));
+    assert_eq!(transcript.segments[0].speaker.as_deref(), Some("A"));
     assert_eq!(transcript.segments[0].start_ms, 0);
     assert_eq!(transcript.segments[0].end_ms, 4000);
     assert_eq!(transcript.segments[0].text, "Jane opened.");
     assert_eq!(transcript.segments[1].speaker, None);
     assert_eq!(transcript.segments[1].start_ms, 751_000);
-    assert_eq!(transcript.segments[1].end_ms, 752_500);
+    // No `endMs` and no later turn: the turn ends with the audio, never
+    // before it starts.
+    assert_eq!(transcript.segments[1].end_ms, 751_000);
     assert_eq!(transcript.segments[1].text, "Daniel agreed.");
     assert_eq!(
         transcript.chunks,
         vec![TranscriptChunk::Turns(transcript.segments.clone())]
     );
-    let body: serde_json::Value =
-        serde_json::from_str(&server.requests()[0].body).expect("JSON request");
-    let instruction = body["messages"][0]["content"][0]["text"]
-        .as_str()
-        .expect("instruction");
-    assert!(
-        instruction.contains("segments")
-            && instruction.contains("start_ms")
-            && instruction.contains("speaker"),
-        "transcription must ask for speaker turns and timestamps"
-    );
-    assert_eq!(body["response_format"]["json_schema"]["name"], "transcript");
 }
 
 #[test]
 fn keeps_text_and_no_turns_when_the_reply_reports_none() {
-    let server = FakeServer::start(200, chat_reply(r#"{"text":"no turns","segments":[]}"#));
+    let server = FakeServer::start(200, asr_reply("no turns", json!([])));
     let models: &dyn Models = &client(hosted_config(&server.base_url));
     let transcript = models
         .transcribe(&transcribe_request())
@@ -103,37 +96,51 @@ fn keeps_text_and_no_turns_when_the_reply_reports_none() {
 
 #[test]
 fn drops_a_malformed_turn_and_keeps_its_siblings() {
-    let content = r#"{"text":"kept","segments":[
-        {"speaker":"  Ada  ","start_ms":0,"end_ms":10,"text":"  hello  "},
-        {"speaker":"Nope","end_ms":10,"text":"missing start"},
-        {"speaker":"Late","start_ms":20,"end_ms":10,"text":"ends before it starts"},
-        {"speaker":"","start_ms":30,"end_ms":40,"text":"blank speaker"},
-        {"speaker":1,"start_ms":50,"end_ms":60,"text":"bad speaker"}
-    ]}"#;
-    let server = FakeServer::start(200, chat_reply(content));
+    let turns = json!([
+        {"speaker": "  Ada  ", "startMs": 0, "endMs": 10, "transcript": "  hello  "},
+        {"speaker": "Nope", "endMs": 10, "transcript": "missing start"},
+        {"speaker": "Quiet", "startMs": 15, "transcript": "   "},
+        {"speaker": "", "startMs": 30, "transcript": "blank speaker"},
+        {"speaker": 1, "startMs": 50, "endMs": 60, "transcript": "bad speaker"}
+    ]);
+    let server = FakeServer::start(200, asr_reply("kept", turns));
     let models: &dyn Models = &client(hosted_config(&server.base_url));
     let transcript = models
         .transcribe(&transcribe_request())
         .expect("transcribe")
         .value;
     assert_eq!(transcript.text, "kept");
-    assert_eq!(transcript.segments.len(), 2);
+    assert_eq!(transcript.segments.len(), 3);
     assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Ada"));
     assert_eq!(transcript.segments[0].text, "hello");
     assert_eq!(transcript.segments[1].speaker, None);
     assert_eq!(transcript.segments[1].text, "blank speaker");
     assert_eq!(transcript.segments[1].start_ms, 30);
+    // An open turn ends where the next one starts.
+    assert_eq!(transcript.segments[1].end_ms, 50);
+    assert_eq!(transcript.segments[2].speaker, None);
 }
 
 #[test]
-fn reads_speaker_turns_from_a_fenced_json_reply() {
+fn refuses_a_reply_without_a_transcript() {
+    let server = FakeServer::start(200, chat_reply("chat shape"));
+    let models: &dyn Models = &client(hosted_config(&server.base_url));
+    let error = models
+        .transcribe(&transcribe_request())
+        .expect_err("no transcript");
+    assert_eq!(error.code(), "model_invalid_response");
+}
+
+#[test]
+fn reads_speaker_turns_from_a_fenced_json_reply_on_the_private_route() {
     let content = "```json\n{\"text\":\"hello\",\"segments\":[{\"speaker\":\"Jane\",\"start_ms\":1000,\"end_ms\":2000,\"text\":\"hello\"}]}\n```";
     let server = FakeServer::start(200, chat_reply(content));
-    let models: &dyn Models = &client(hosted_config(&server.base_url));
-    let transcript = models
-        .transcribe(&transcribe_request())
-        .expect("transcribe")
-        .value;
+    let mut config = hosted_config(&server.base_url);
+    config.open_weights = Some(super::open_weights(&server.base_url));
+    let models: &dyn Models = &client(config);
+    let mut request = transcribe_request();
+    request.sensitivity = Sensitivity::Private;
+    let transcript = models.transcribe(&request).expect("transcribe").value;
     assert_eq!(transcript.text, "hello");
     assert_eq!(transcript.segments.len(), 1);
     assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Jane"));
@@ -143,21 +150,36 @@ fn reads_speaker_turns_from_a_fenced_json_reply() {
 
 #[test]
 fn transcribes_audio_on_the_hosted_endpoint() {
-    let server = FakeServer::start(200, chat_reply("hello from the meeting"));
+    let server = FakeServer::start(200, asr_reply("hello from the meeting", json!([])));
     let models = client(hosted_config(&server.base_url));
-    let transcript = models
-        .transcribe(&transcribe_request())
-        .expect("transcribe")
-        .value;
-    assert_eq!(transcript.text, "hello from the meeting");
-    assert!(transcript.segments.is_empty());
+    let mut request = transcribe_request();
+    request.language = Some("en".into());
+    let routed = models.transcribe(&request).expect("transcribe");
+    assert_eq!(routed.value.text, "hello from the meeting");
+    assert!(routed.value.segments.is_empty());
+    assert_eq!(routed.derived_by.model, "muse-voice-transcribe-1.0");
     let requests = server.requests();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].path, "/v1/chat/completions");
+    assert_eq!(requests[0].path, "/v1/asr/transcribe");
     assert_eq!(
         requests[0].authorization.as_deref(),
         Some("Bearer test-meta-key")
     );
+    let body = &requests[0].body;
+    let (_, after_request) = body.split_once("name=\"request\"").expect("request part");
+    let json_part = after_request
+        .split("\r\n\r\n")
+        .nth(1)
+        .and_then(|part| part.split("\r\n").next())
+        .expect("request JSON");
+    let sent: serde_json::Value = serde_json::from_str(json_part).expect("JSON part");
+    assert_eq!(
+        sent,
+        json!({"model": "muse-voice-transcribe-1.0", "mode": "DIARIZATION", "audioEncoding": "WAV", "languageBias": ["en"]})
+    );
+    assert!(body.contains(
+        "name=\"audio\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\nfake-audio\r\n--"
+    ));
 }
 
 #[test]

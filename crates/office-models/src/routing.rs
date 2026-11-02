@@ -74,9 +74,17 @@ pub(crate) fn route(
             Ok(ResolvedCall {
                 base_url: config.meta_base_url.trim_end_matches('/').to_string(),
                 api_key: Some(api_key),
-                model: match tier {
-                    ModelTier::Standard => config.hosted_model.clone(),
-                    ModelTier::Careful => config.careful_model.clone(),
+                // Hosted audio goes to Muse Voice Transcribe at every tier.
+                model: match (needs, tier) {
+                    (Capability::Audio, ModelTier::Standard | ModelTier::Careful) => {
+                        config.transcribe_model.clone()
+                    }
+                    (Capability::Text | Capability::Image, ModelTier::Standard) => {
+                        config.hosted_model.clone()
+                    }
+                    (Capability::Text | Capability::Image, ModelTier::Careful) => {
+                        config.careful_model.clone()
+                    }
                 },
                 route: ModelRoute::Hosted,
             })

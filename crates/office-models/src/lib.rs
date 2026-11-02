@@ -14,16 +14,22 @@
 //!   (LiteLLM's Meta provider page and Meta-derived developer guides,
 //!   fetched 2026-10-27). Hosted extraction and vision therefore use
 //!   `POST /v1/chat/completions` with model `muse-spark-1.3`; the reply
-//!   text is `choices[0].message.content`. No dedicated Muse Voice
-//!   Transcribe request shape was published in the fetched references,
-//!   so transcription sends the audio as a base64 `input_audio` content
-//!   part through the same confirmed shape. The reply is parsed as JSON
-//!   `{"text","segments"}` when the endpoint reports that object (a
-//!   markdown code fence around the object is accepted); each segment is
-//!   a speaker turn with millisecond `start_ms` and `end_ms`. A reply
-//!   that is not that JSON is kept as the transcript text and its
-//!   segments stay empty. The live model's compliance with the requested
-//!   JSON is still unverified.
+//!   text is `choices[0].message.content`. Hosted extraction sends its
+//!   schema with `strict: false`: live on 2026-11-02 the API refused a
+//!   strict schema with an optional property (HTTP 400, "'required' is
+//!   required to be supplied and to be an array including every key in
+//!   properties"), and the reply is validated locally either way.
+//!   Hosted transcription uses Muse Voice Transcribe
+//!   (`muse-voice-transcribe-1.0`, listed by `GET /v1/models` on
+//!   2026-11-02) through its one-shot endpoint `POST /v1/asr/transcribe`
+//!   (Meta's `meta-model-cookbook`, `06_muse_voice`, fetched 2026-11-02):
+//!   multipart parts `request` (JSON: `model`, `mode: "DIARIZATION"`,
+//!   `audioEncoding: "WAV"`, optional `languageBias`) and `audio` (the WAV).
+//!   The reply's `transcript` is the text, and each `turns` entry with
+//!   `startMs` and `transcript` becomes a segment, ending at its `endMs`,
+//!   else the next turn's start, else the end of the audio. Chat
+//!   Completions does not serve that model (HTTP 404 `model_not_found`
+//!   live). MP3 audio is decoded locally to WAV first.
 //! - **The private route** (Muse Spark Open on the endpoint the user
 //!   chose: a company's vLLM or SGLang deployment, a hosted provider such
 //!   as Baseten's Model APIs, <https://docs.baseten.co/inference/model-apis/overview>,
@@ -68,9 +74,11 @@
 //! position it occupies. A failed chunk fails the transcription; temporary
 //! audio is removed on success and error.
 //! Transcription accepts WAV (`audio/wav`, `audio/wave`, `audio/x-wav`) and
-//! MP3 (`audio/mpeg`, `audio/mp3`) audio, sent to the model as `wav` or `mp3`.
-//! Other containers are refused before staging or any model call, because the
-//! model schema takes no other `input_audio` format.
+//! MP3 (`audio/mpeg`, `audio/mp3`) audio. The private route receives it as
+//! `wav` or `mp3` `input_audio`; the hosted route always receives WAV.
+//! Other containers are refused before staging or any model call; callers
+//! decode them first (`Models::media_audio`, which `office.transcribe` uses
+//! for every meeting and video original, M4A and MP4 included).
 
 // Library code never prints; diagnostics go through `tracing` (STD-02 R15).
 #![deny(clippy::print_stderr, clippy::print_stdout)]
@@ -124,6 +132,8 @@ pub struct ModelConfig {
     pub hosted_model: String,
     /// Hosted model for careful synthesis; defaults to Muse Wonder.
     pub careful_model: String,
+    /// Hosted transcription model; defaults to Muse Voice Transcribe.
+    pub transcribe_model: String,
     /// Executable, split threshold and maximum chunk length for transcription.
     pub audio_splitter: media::AudioSplitter,
 }
@@ -140,6 +150,7 @@ impl ModelConfig {
             open_weights: None,
             hosted_model: DEFAULT_HOSTED_MODEL.to_string(),
             careful_model: office_core::domain::settings::ModelSettings::default().careful,
+            transcribe_model: meta::TRANSCRIBE_MODEL.to_string(),
             audio_splitter: media::AudioSplitter::default(),
         }
     }
@@ -238,23 +249,64 @@ impl RoutedClient {
         Ok((meta::reply_text(&host, &response)?, derived_by))
     }
 
-    /// Transcribe one audio chunk in `format` (`wav` or `mp3`). Segment
-    /// timestamps are relative to this chunk; the caller shifts them onto the
-    /// original recording.
+    /// Transcribe one audio chunk of `seconds` in `format` (`wav` or `mp3`).
+    /// Hosted chunks go to Muse Voice Transcribe as WAV, an MP3 chunk being
+    /// decoded locally first; private chunks keep the chat `input_audio`
+    /// shape. Segment timestamps are relative to this chunk; the caller
+    /// shifts them onto the original recording.
     fn transcribe_chunk(
         &self,
         sensitivity: office_common::Sensitivity,
         format: &str,
         audio: &[u8],
+        seconds: u64,
         language: Option<&str>,
     ) -> Result<meta::ParsedTranscript> {
-        let (host, response, _) = self.post(
+        let resolved = routing::route(
             sensitivity,
             Capability::Audio,
             ModelTier::Standard,
-            |resolved| meta::transcribe_body(&resolved.model, format, audio, language),
+            &self.config,
         )?;
-        meta::parse_transcript(&host, &response)
+        if resolved.is_private() {
+            let body = meta::transcribe_body(&resolved.model, format, audio, language);
+            let (host, response) = self.send(&resolved, &body)?;
+            return meta::parse_transcript(&host, &response);
+        }
+        let decoded;
+        let wav = if format == "wav" {
+            audio
+        } else {
+            decoded = media::VideoProcessor {
+                ffmpeg: self.config.audio_splitter.ffmpeg_path.clone(),
+                ..media::VideoProcessor::default()
+            }
+            .audio(audio, 0, seconds)?;
+            decoded.as_slice()
+        };
+        let url = transcription_url(&resolved);
+        let host = http::host_of(&url).unwrap_or_default();
+        let (content_type, body) = meta::asr_body(&resolved.model, wav, language);
+        let response = http::post_bytes(
+            &self.agent,
+            &url,
+            resolved.api_key.as_deref(),
+            &content_type,
+            &body,
+            resolved.destination(),
+            None,
+        )?;
+        meta::parse_asr(&host, &response)
+    }
+}
+
+/// Where a resolved transcription call is sent: Muse Voice Transcribe when
+/// hosted, Chat Completions on the private route.
+fn transcription_url(resolved: &routing::ResolvedCall) -> String {
+    if resolved.is_private() {
+        meta::chat_url(&resolved.base_url)
+    } else {
+        meta::asr_url(&resolved.base_url)
     }
 }
 
