@@ -200,7 +200,7 @@ pub enum ConflictList {
 
 /// To-dos Office treats as still open. `done`, `archived` and `rejected`
 /// have left the user's queue.
-const OPEN_TODO: &[&str] = &[
+pub const OPEN_TODO: &[&str] = &[
     "proposed",
     "backlog",
     "in-progress",
@@ -265,7 +265,10 @@ fn read_conflicts(pool: &Pool, conflicts: ConflictList) -> ConflictPass {
     }
 }
 
-fn conflicting_pair(task: &Value) -> Option<(String, String)> {
+/// The two entry ids an open decision-conflict to-do names on its last
+/// `Conflicting entries:` line, or `None` for any other task.
+#[must_use]
+pub fn conflicting_pair(task: &Value) -> Option<(String, String)> {
     let status = task.get("status").and_then(Value::as_str)?;
     if !OPEN_TODO.contains(&status) {
         return None;

@@ -401,6 +401,12 @@ about. Each decision-conflict to-do's description ends with the last line
 `Conflicting entries: <entry id> <entry id>` (the two ids, one space
 between them, lexicographic order, nothing else on that line).
 
+Meeting extraction files the same to-do, with the same tags and last
+line, when a meeting decision contradicts a prior entry. The provider
+reads those to-dos alike. `office.decision-resolve` settles either kind
+in one call: a `reverses` entry for the losing decision, then the to-do
+closed ([scribe.md](./scribe.md#meeting-decisions), [ORB-21340]).
+
 The provider reports a conflict that is still unresolved. It reads open
 to-dos with `orbit.task.list` (tags `owner:you` and
 `office-scribe-contradictions`, both required; status `proposed`,
@@ -563,5 +569,6 @@ change makes stale in the same change.
 - [ORB-21218] — built slice P3: the `office.decision-precedents` provider.
 - [ORB-21219] — built slice P4: contradiction reporting.
 - [ORB-21220] — proposes slice P5: the Agreement view.
+- [ORB-21340] — built meeting-fed decisions, their contradiction check and `office.decision-resolve`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

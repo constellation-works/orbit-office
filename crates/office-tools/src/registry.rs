@@ -131,6 +131,7 @@ static TOOLS: &[Tool] = &[
     sessions::scribe_migrate::TOOL,
     sessions::decision_ingest::TOOL,
     sessions::decision_precedents::TOOL,
+    sessions::decision_resolve::TOOL,
     // recall (specs/recall.md)
     recall::TOOL,
     recall::answer::TOOL,

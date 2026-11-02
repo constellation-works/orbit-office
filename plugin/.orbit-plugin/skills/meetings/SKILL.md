@@ -60,6 +60,19 @@ How the to-dos split depends on the Library setting
   code, stays `owner:you` as before. A to-do on a contested matter is held
   back: it is filed `owner:you` with a `contested` tag instead.
 
+## Decisions and contradictions
+
+Extraction also appends each cited decision to the decision ledger
+(`decisions-global`, cited at its `#t=` turn; a private meeting feeds
+nothing). It then checks the new decisions against earlier ones. When a
+meeting decision contradicts an earlier decision, an `owner:you` to-do
+asking which stands shows under Needs you, citing both. Agent work on that
+matter is held until the user answers. When the user says which stands,
+call `office.decision-resolve` with that to-do's `task` and the standing
+entry id as `stands`. It records the answer in the ledger, closes the
+to-do, files the held agent work if its decision stood, and rejects it
+otherwise. Never pick a side yourself.
+
 A non-code `owner:you` to-do becomes `owner:agent` only later, when the
 orchestrator promotes it: a permitted tool path or attached runbook can
 produce the result, and promotion adds acceptance criteria,

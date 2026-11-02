@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::registry::Call;
 
-pub(super) fn run(call: &Call<'_>) -> Result<Value> {
+pub(in crate::tools::sources) fn run(call: &Call<'_>) -> Result<Value> {
     if let Some(key) = call.input.keys().find(|key| key.as_str() != "decision") {
         return Err(Error::InvalidArgument(format!(
             "capture decision cannot be combined with {key}"
