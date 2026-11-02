@@ -146,6 +146,23 @@ test("routine permission refusal preserves filtered auto-tasks and marks the cou
   assert.equal(result.routines_unavailable, true);
 });
 
+test("plugin-prefixed listing names and the CLI's capability_denied refusal still show the shipped auto-tasks", async t => {
+  const { OrbitExitError } = await import("../dist/orbit/client.js");
+  const files = await fixture(t);
+  await files.definitions(0, [], ["review"]);
+  await files.definitions(1, [], ["audit"]);
+  const client = { async callTool(name) {
+    if (name === "orbit.auto_task.list") return [autoTask("office-review"), autoTask("qa-sweep")];
+    throw new OrbitExitError(name, 1, null, JSON.stringify({ error: "capability denied: operation 'orbit.routine.control' requires the `operator` capability", code: "capability_denied" }));
+  } };
+  const url = await serve(t, createRoutinesFeature(client, { pluginRoots: files.roots }));
+  const response = await fetch(`${url}/api/routines`);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.deepEqual(result.routines.map(row => row.name), ["office-review"]);
+  assert.equal(result.routines_unavailable, true);
+});
+
 test("missing shipped definitions refuse the snapshot instead of hiding everything", async t => {
   const files = await fixture(t);
   await files.definitions(0, [], ["review"]);

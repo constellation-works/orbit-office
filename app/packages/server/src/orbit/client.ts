@@ -338,6 +338,19 @@ function orbitRefusal(stderr: string): { code: string; message: string } | null 
   return null;
 }
 
+/**
+ * Whether a call failed because Orbit denied a capability this app does not
+ * hold: a typed `not_permitted` error, or the CLI's own `capability_denied`
+ * or `policy_denied` refusal on a nonzero exit.
+ */
+export function isCapabilityDenied(error: unknown): boolean {
+  if (error instanceof OrbitNotPermittedError) return true;
+  if (!(error instanceof OrbitExitError)) return false;
+  const refusal = orbitRefusal(error.stderr);
+  const code = refusal?.code ?? "";
+  return code === "capability_denied" || code === "policy_denied" || (refusal?.message ?? error.stderr).toLowerCase().includes("capability denied");
+}
+
 /** Map an `orbit.auto_task.mint` failure to its typed error, or keep it. */
 function mapMintError(name: string, error: unknown): unknown {
   if (!(error instanceof OrbitExitError)) return error;

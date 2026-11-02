@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Feature } from "../../http/types.js";
-import { createOrbitClient, type OrbitToolClient } from "../../orbit/client.js";
+import { createOrbitClient, isCapabilityDenied, type OrbitToolClient } from "../../orbit/client.js";
 import { defaultPluginRoots, readDefinitionNames, routineListing, type DefinitionNames } from "../../orbit/definitions.js";
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -55,7 +55,7 @@ export function createRoutinesFeature(client: OrbitToolClient, options: { plugin
         let routinesUnavailable = false;
         try { jobs = await routineListing(client); }
         catch (error) {
-          if (!object(error) || error.code !== "not_permitted") throw error;
+          if (!isCapabilityDenied(error) && !(object(error) && error.code === "not_permitted")) throw error;
           routinesUnavailable = true;
         }
         const visible = routines.filter(row => shipped.auto_tasks.has(row.name));

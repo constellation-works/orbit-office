@@ -82,6 +82,8 @@ export function readDefinitionNames(pluginRoots: readonly string[]): DefinitionN
     const manifest = lines(readFileSync(resolve(root, "plugin.yaml"), "utf8"));
     if (!manifest.some(line => /^spec:\s*(?:#.*)?$/.test(line))) throw new Error("missing shipped plugin spec");
     const definitions = block(block(manifest, "spec", 0), "definitions", 2);
+    // Orbit lists a plugin's definitions under `<plugin>-<name>`; older builds listed the bare name.
+    const plugin = scalar(block(manifest, "metadata", 0).find(line => line.startsWith("  name:"))?.slice(7) ?? "");
     for (const kind of ["routines", "auto_tasks"] as const) {
       for (const relative of paths(definitions, kind)) {
         const file = realpathSync(resolve(root, relative));
@@ -91,6 +93,7 @@ export function readDefinitionNames(pluginRoots: readonly string[]): DefinitionN
         const name = scalar(declarations[0]?.slice(5) ?? "");
         if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) throw new Error("invalid shipped definition name");
         names[kind].add(name);
+        names[kind].add(`${plugin}-${name}`);
       }
     }
   }
