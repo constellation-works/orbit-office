@@ -3329,3 +3329,45 @@ the `model_answer_review` gate are still proposed there (human-decision-channel
 - [ORB-21239] — replaces the root AGENTS.md decision-log rule in ws_constellation.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
+
+
+## Decision precedents P3: bind v1 scope and rank a private in-memory snapshot
+
+The built Orbit v1 validator (`application/task/precedent_provider/model.rs`
+and `validation.rs`, Orbit contract commit `b11244a4719cd0d33487146fd745e9eb98f5e35d`)
+requires `scope.workspace_id` and `scope.category` to be nonempty strings;
+workspace must equal the query's workspace. It also caps response rows at
+`k`, strings at 8192 bytes, options at eight and the encoded response at
+262144 bytes. This overrides the earlier Office design's nullable global
+scope fields. Office binds every row to the querying workspace and uses
+the request category when the ledger has none, without modifying the ledger.
+The category bonus still uses only an actual `orbit.category` match.
+Library settings have no owner-name field, so `decided_by` uses `user`.
+
+The existing Library search index ranks whole documents and does not expose
+per-entry scores. The provider ranks only its eligible entry snapshot using
+the same FTS5 tokenizer/BM25 in an in-memory index behind the Library port.
+Each positive BM25 magnitude is divided by the best magnitude, giving
+0..1 lexical relevance. Quoted prefix terms are ORed for lexical overlap;
+private, future and other excluded text never enters that index.
+The binary uses the existing file-only read-open path so even absent plugin
+state stays absent. Malformed/unreadable ledgers are isolated and named.
+
+Reversal evidence consumes the same `k` budget: a pair displaces the lowest
+remaining unpaired candidate. If a chain cannot fit, newer reversal evidence
+wins and truncation is explicit. Relationships at or after `as_of` have no
+effect; an excluded reversal never leaks its text, while its old entry stays
+flagged and an omission records the gap. Unresolved-conflict reporting is P4.
+
+The P3 brief explicitly assigns tool registration, manifest, schemas and
+ARCHITECTURE changes to this task; the necessary shared-list edits are part
+of that integration. No dependency or crate edge changes. Companion port,
+composition, file-reader and testkit edits make the real binary implement
+the contract and keep the read-only boundary intact.
+
+For `STD-01@2 §R11` and `§R34`, this host contract follows Orbit's exact
+wire shape: absent optional scope topic is omitted and no `total` field is
+added. The normal ranked top-k shortlist is the requested retrieval result,
+so it does not set `truncated`; byte cuts, omission overflow and reversal
+pairs that cannot fit do. This preserves the consumer's distinction between
+a shortlist and an incomplete evidence packet.

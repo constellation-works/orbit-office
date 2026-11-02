@@ -3021,6 +3021,16 @@ impl office_core::ports::Library for LibraryStore {
     fn decision_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::decision_ledger_files(self)?)
     }
+    fn decision_precedent_scores(
+        &self,
+        query: &str,
+        entries: &[(String, String)],
+    ) -> office_core::Result<std::collections::BTreeMap<String, f64>> {
+        Ok(Self::decision_precedent_scores(self, query, entries)?)
+    }
+    fn decision_precedent_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
+        Ok(Self::decision_precedent_ledgers(self)?)
+    }
     fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> office_core::Result<()> {
         Self::write_scribe_pass(self, pass)
     }

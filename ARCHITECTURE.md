@@ -46,6 +46,15 @@ so the domain stays pure. Port interfaces and fakes are established together for
 operations arrive with the first task that needs them. Each port has its own file.
 The testkit depends on core for those fakes; tools use the testkit only as a dev-dependency.
 
+`office.decision-precedents` selects evidence in the pure
+`office-core::domain::source::decision_precedents` module. Its Library ports
+retain unreadable ledger identities and rank eligible decision text with the
+Library index's FTS5 tokenizer/BM25 in a transient in-memory index. Ledger lines
+are not persistent index documents. The binary uses the existing file-only
+read opening path, without layout creation, migrations, recovery or disk index
+writes; no model or Orbit callback is involved. The testkit exposes explicit
+lexical scores for fixtures. No crate or dependency edge is added.
+
 The plugin backend is one process per call, so it is synchronous: no async runtime. HTTP
 goes through a blocking client inside `office-models`.
 
@@ -89,7 +98,7 @@ crates/office-tools/src/
     library/             init  reindex  config_set  search  attach  private_route_check   (specs/library.md, plugin-surface.md, models-and-privacy.md)
     proposals/           signals_scan  create  accept  reconcile      (specs/proposals.md)
     selection/           get  put                                     (specs/selection-sharing.md)
-    sessions/            brief  digest  scribe_control (scribe-control)  scribe_pending (scribe-pending)  scribe_append (scribe-append)  scribe_query (scribe-query)  scribe_ask (scribe-ask)  scribe_migrate (scribe-migrate)  decision_ingest (decision-ingest)   (specs/sessions.md, specs/scribe.md, specs/decision-precedents.md)
+    sessions/            brief  digest  scribe_control (scribe-control)  scribe_pending (scribe-pending)  scribe_append (scribe-append)  scribe_query (scribe-query)  scribe_ask (scribe-ask)  scribe_migrate (scribe-migrate)  decision_ingest (decision-ingest)  decision_precedents (decision-precedents)   (specs/sessions.md, specs/scribe.md, specs/decision-precedents.md)
     scripts/             run                                          (specs/scripts.md)
     bootstrap/           batch_plan  consolidate  status              (specs/library-bootstrap.md)
     calendar/            sync  list                                  (specs/calendar.md)

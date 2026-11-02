@@ -1,0 +1,116 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "workspace_id",
+    "request",
+    "as_of",
+    "k"
+  ],
+  "properties": {
+    "contract": {
+      "const": "orbit.precedent-provider/1"
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "gate",
+        "category",
+        "question",
+        "options",
+        "raised_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "gate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "question": {
+          "type": "string",
+          "maxLength": 8192,
+          "minLength": 1
+        },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 8192,
+                "minLength": 1
+              },
+              "consequence": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 8192
+              }
+            }
+          }
+        },
+        "topic": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 8192
+        },
+        "raised_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Must equal request.raised_at; decisions must be strictly earlier."
+    },
+    "k": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "office.decision-precedents request",
+  "description": "The closed orbit.precedent-provider/1 request. Runtime enforces UTF-8 byte bounds: request <=65536, each string <=8192, ids <=256 and option ids <=64. Different contract: precedent_contract_unsupported."
+}

@@ -335,7 +335,11 @@ impl Settings {
             map.insert(name.into(), value);
             return Self::try_from(encoded);
         }
-        if key == "scribe.cadence" || key == "scribe.tags" || key.starts_with("scribe.tags.") {
+        if key == "scribe.cadence"
+            || key == "scribe.tags"
+            || key.starts_with("scribe.tags.")
+            || key == "scribe.precedents.half_life_days"
+        {
             super::scribe_settings::set(&mut encoded, key, value)?;
             return Self::try_from(encoded);
         }

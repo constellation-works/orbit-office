@@ -36,6 +36,9 @@ mod decisions;
 #[path = "library/decision_ingest.rs"]
 mod decision_ingest;
 
+#[path = "library/decision_precedents.rs"]
+mod decision_precedents;
+
 #[path = "library/bootstrap.rs"]
 mod bootstrap;
 

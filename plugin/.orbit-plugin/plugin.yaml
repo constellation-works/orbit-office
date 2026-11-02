@@ -459,6 +459,16 @@ spec:
       input_schema: { $ref: schemas/decision-ingest.request.json }
       output_schema: { $ref: schemas/decision-ingest.response.json }
 
+    - name: decision-precedents
+      description: >-
+        Return bounded decision ledger evidence under orbit.precedent-provider/1,
+        ranked by lexical relevance and recency. Read-only and model-free;
+        private, agent and unconfirmed model entries are excluded.
+      execution_kind: read_only
+      mcp_scope: none
+      input_schema: { $ref: schemas/decision-precedents.request.json }
+      output_schema: { $ref: schemas/decision-precedents.response.json }
+
     # ---- recall ----
 
     - name: recall

@@ -4,6 +4,7 @@
 
 pub(crate) mod brief;
 pub(crate) mod decision_ingest;
+pub(crate) mod decision_precedents;
 pub(crate) mod digest;
 pub(crate) mod scribe_append;
 pub(crate) mod scribe_ask;

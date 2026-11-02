@@ -55,20 +55,16 @@ Source: spec §12. The one-call envelope is
 | `office.init` | mutating | **none** | Scaffold the Library: layout, git repository, config, `.gitignore`, page templates (no pages), index; idempotent ([library.md](./library.md#scaffolding-officeinit)) |
 | `office.config-set` | mutating | **none** | Validate and write one Library setting in `.office/config.yaml`; commit |
 | `office.reindex` | mutating | **none** | Rebuild the SQLite index from the Library |
-| `office.status` | read_only | workspace | Library and index health, the private endpoint as `open_weights` or null, the shared library block as `shared` or null, the followed workspaces as `brief` (`task_workspaces`, or null when uninitialized), and the effective scribe policy as `scribe` (`cadence`, `tags`, `tags_customized`; the defaults when unset or uninitialized) (also a panel) |
+| `office.status` | read_only | workspace | Library and index health, the private endpoint as `open_weights` or null, the shared library block as `shared` or null, the followed workspaces as `brief` (`task_workspaces`, or null when uninitialized), and the effective scribe policy as `scribe` (`cadence`, `tags`, `tags_customized`, `precedents`; the defaults when unset or uninitialized) (also a panel) |
 | `office.scribe-ask` | read_only | workspace | Answer a free-form question over SCR files, decision ledgers and preference pages: model-free shortlist (v2 evidence cited by entry id: `dec-<scope>-<n>`, `<page>#<matter>`, `<SCR>#T<n>`) (date/project/session filters plus lexical match on tags, matter, topics and quotes, bounded by `limit`), then one Standard-tier model call (the scribe `ask` level); every claim cites SCR file:line and message id and its quote is verbatim-checked against the cited line, unmatched quotes dropped; `not_captured` with the searched range, topics and sessions when nothing is found; private entries always by reference only to the caller, regardless of route ([scribe.md](./scribe.md#answering)) |
 | `office.scribe-migrate` | mutating | **none** | The one-time scribe v1 tidy-up (no backfill of v1 preferences or decisions): one `knowledge_update` removing the `dom-scribe-rules` Tags section and `scribe:` mapping, tagged `scribe-migration` so a re-run files nothing already filed; reports open v1 `#pending` lines; `dry_run` files nothing ([scribe.md](./scribe.md#migration)) |
 | `office.decision-ingest` | mutating | **none** | Append answered Orbit decision requests in the followed workspaces (the Office workspace and `brief.task_workspaces`) to the decision ledgers, one entry per answer: human and `model` answers, `model_answer_review` confirms (`confirms`) and vetoes (`reverses`), and a human re-answer reversing the model entry; skips `precedent`-actor, superseded, expired and already-ingested requests (keyed by request id and answer time); links one matching scribe entry with `same_as` and reports several as `dedupe_ambiguous`; one commit per run; `dry_run` writes nothing; reads through the `orbit.decision.list` and `orbit.decision.show` callbacks ([decision-precedents.md](./decision-precedents.md#ingesting-orbit-decisions)) |
-
-Designed, not built and not in the manifest ([decision-precedents.md](./decision-precedents.md); slice [ORB-21218]):
-
-| Tool | Kind | MCP | Purpose |
-|---|---|---|---|
-| `office.decision-precedents` | read_only | **none** | Implement Orbit's `orbit.precedent-provider/1`: take the contract request (question, options, workspace, category, `as_of`, `k`) and return at most `k` human or human-confirmed ledger entries as the contract's precedents, recency-weighted, reversed ones flagged with their reversing entry, unresolved conflicts noted, each with a citation; model-free and never an answer ([decision-precedents.md](./decision-precedents.md#the-precedent-tool)) |
+| `office.decision-precedents` | read_only | **none** | Host-facing `orbit.precedent-provider/1`: closed request, `k` 1–8, eligible ledger evidence ranked by FTS5 overlap and recency, reversal pairing, bounded options/context, original-line SHA-256 citations and explicit omissions/truncation. No model or Orbit callback; writes no state. Private, agent, unconfirmed model, ingested and ingested-duplicate evidence is excluded ([decision-precedents.md](./decision-precedents.md#the-precedent-tool)). |
 
 Rules:
 
-- `mcp_scope: none` tools are callable only by the app, through
+- `mcp_scope: none` tools are callable only by the app, authorized host
+  callbacks (`office.decision-precedents`), through
   `orbit tool run`, and by the install script and the app acting as the user for `office.init`. The
   orchestrator cannot scaffold the Library, approve its own proposals,
   write knowledge, promote artifacts, record selections, change source sensitivity or settings,
@@ -162,7 +158,7 @@ and capability floor:
 | `scribe-control` (workspace MCP, mutating) | `agent_callable: true`, as the manifest declares ([ORB-20856]): the provider plugin calls Orbit as `local-cli` holding `[agent]`, so the user's own session needs the grant. It writes only per-session scribe control records in plugin state (switch, who turned it on and the scope it named, Capture-now request, title, window heartbeat): no Library write, model call or Orbit callback. A turn-on (`set_switch` with `on: true`, the op that records `on_by`) under managed-task context (`context.task_id`) is refused in the backend with `scribe_managed_session`, so a headless Orbit-managed session still cannot be scribed; reads and `off` stay allowed. The provider plugin's hooks and `/scribe` command call it through the user's own `orbit` CLI and fall back to their local flag file when refused ([sessions.md](./sessions.md#switch), [S5 decision](../4_decisions.md#scribe-v2-s5-scribe-control-stays-agent_callable-a-managed-session-cannot-turn-scribing-on)). |
 | `scribe-pending` (workspace MCP, read-only) | Operator/Runner only; not added to the consented agent verbs. Model-free: it reads a contained transcript through the conversation adapter and writes only the private parsed message files under the Library's git-ignored `<library>/.office/state/scribe/`, inside the `{{workspace}}/library` write grant. No Library commit, model call or Orbit callback. It also returns the scribe `tags` in force and the `cadence` from the Library settings ([scribe.md](./scribe.md#configuration), [pipeline](./scribe.md#pipeline)). With `format: "v2"` (or a session whose SCR is v2) it also returns the model-free `markers` of the user's typed turns, the `agent_markers` kept apart, the session `scope` and the scope's `previous` SCR; a private session's markers come by reference only ([scribe.md](./scribe.md#built-tools-s4)). |
 | `scribe-append` (workspace MCP, mutating) | `agent_callable: true`, as the manifest declares ([ORB-20856]), for the same `local-cli` `[agent]` reason as `scribe-control`. Model-free: it validates the scribe agent's entries against the parsed messages and the rules, then writes and commits one SCR file under `sources/conversation/`. A v2 pass (`sections`, `findings`) checks every finding against the markers `scribe-pending` returned and commits the v2 SCR with its decision ledger lines (`sources/decisions/`) and any apply-mode preference page (`knowledge/domain/dom-preferences-<scope>.md`) in one commit. No model call or Orbit callback ([scribe.md](./scribe.md#pipeline), [built tools](./scribe.md#built-tools-s4)). |
-| `calendar-sync`, `meeting-prep`, `video-plan`, `scribe-migrate`, `decision-ingest`, `frames`, `source-set-sensitivity`, `share-set`, `knowledge-write`, `artifact-promote`, `init`, `reindex`, `config-set`, `private-route-check`, `proposal-accept`, `proposal-reconcile`, `selection-put`, `digest`, `script-run`, `batch-plan`, `consolidate` (MCP none) | Remain hidden and Operator/Runner only. These cover calendar/config/secrets-adjacent setup, confirmations/cost, direct knowledge/artifact/sharing writes, approvals, scripts and standing automation. Calling through a shell does not bypass authorization. |
+| `decision-precedents`, `calendar-sync`, `meeting-prep`, `video-plan`, `scribe-migrate`, `decision-ingest`, `frames`, `source-set-sensitivity`, `share-set`, `knowledge-write`, `artifact-promote`, `init`, `reindex`, `config-set`, `private-route-check`, `proposal-accept`, `proposal-reconcile`, `selection-put`, `digest`, `script-run`, `batch-plan`, `consolidate` (MCP none) | Remain hidden and Operator/Runner only. These include the host-only precedent evidence read and cover calendar/config/secrets-adjacent setup, confirmations/cost, direct knowledge/artifact/sharing writes, approvals, scripts and standing automation. Calling through a shell does not bypass authorization. |
 | `status`, `calendar-list`, `source-show`, `knowledge-list`, `knowledge-show`, `artifact-list`, `artifact-show`, `search`, `signals-scan`, `session-brief`, `bootstrap-status`, `metrics`, `review-inputs`, `recall` | Read-only, workspace MCP, unchanged Agent access. |
 | `recall-answer` (workspace MCP) | Read-only, ordinary Agent access. It makes at most one Standard-tier model call over recall evidence; private entries go only to a configured open-weights route, and claims citing them return by reference with `content_withheld` ([recall.md](./recall.md#answering-in-each-host)). |
 | `scribe-ask` (workspace MCP) | Read-only, ordinary Agent access. It makes at most one Standard-tier model call over a model-free SCR shortlist; every quote is verbatim-checked against its cited SCR line and unmatched quotes are dropped; private SCR entries are always cited by reference only to the caller with `content_withheld`; a configured route authorizes only that endpoint to read model-request evidence ([scribe.md](./scribe.md#answering)). |
@@ -328,8 +324,9 @@ The optional `scribe` block holds the scribe pass cadence and the tag
 definitions ([scribe.md](./scribe.md#configuration)). It is absent from a
 default file: `scribe.cadence` defaults to 20 minutes and 10 user turns
 (ranges 5–240 and 2–100), and `scribe.tags` defaults to the `preferences`
-and `decisions` tags. Because its tag list is a list of mappings, a
-customized block is written in the canonical JSON form (valid YAML), not
+and `decisions` tags. `scribe.precedents.half_life_days` defaults to 90
+(integer 1–3650; null on config-set restores 90). Because its tag list is a
+list of mappings, a customized block is written in the canonical JSON form (valid YAML), not
 in the two-level YAML subset.
 
 Retention is a positive integer up to 36,500 days or `null` (keep indefinitely).
@@ -375,8 +372,8 @@ The value is typed JSON, not a YAML string. Supported keys are
 `retention.<kind>`, `sensitivity.<kind>`, `thresholds.<name>`, `scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>`, `packs`, `brief.task_workspaces`, `demo.simulated_until`,
 `shared`, `shared.remote`, `shared.branch`, `shared.member`,
 `open_weights.<endpoint|model|kind|label>`, the whole `open_weights` block
-(a mapping of those four keys, or null), `scribe.cadence`, `scribe.tags` and
-`scribe.tags.<name>`, using the kinds, threshold names and bounds above. `demo.simulated_until` is a `YYYY-MM-DD` date, or null to clear it.
+(a mapping of those four keys, or null), `scribe.cadence`, `scribe.tags`,
+`scribe.tags.<name>` and `scribe.precedents.half_life_days`, using the kinds, threshold names and bounds above. `demo.simulated_until` is a `YYYY-MM-DD` date, or null to clear it.
 A leaf needs the block to exist. Changing the endpoint or model
 clears the recorded capabilities. A whole-block update follows the same rule:
 when both endpoint and model are unchanged, it preserves the recorded
@@ -432,7 +429,7 @@ defaults; existing explicit pack lists keep their values.
 - [ORB-21122] — added `office.scribe-migrate` and the v1 query modes' `deprecated` fields.
 - [ORB-20247] — added `office.proposal-reconcile` and the status-partitioned proposal layout.
 - [ORB-21217] — built `office.decision-ingest`, its callbacks and its routine.
-- [ORB-21218] — proposes `office.decision-precedents`.
+- [ORB-21218] — built `office.decision-precedents` and the Library half-life setting.
 - [ORB-21219] — proposes contradiction reporting to the precedent provider.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

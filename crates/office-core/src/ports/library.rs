@@ -389,6 +389,21 @@ pub trait Library {
     fn decision_ledgers(&self) -> Result<Vec<LibraryText>> {
         Err(Error::LibraryUnavailable)
     }
+    /// Provider scan: retain unreadable ledger identities with no Markdown,
+    /// so partial retrieval can report omissions instead of hiding a gap.
+    fn decision_precedent_ledgers(&self) -> Result<Vec<LibraryText>> {
+        self.decision_ledgers()
+    }
+    /// FTS5/BM25 lexical overlap on an ephemeral index of eligible decision
+    /// texts. Returns only matching ids, with scores normalized to (0, 1].
+    /// Never persists an index or ranks private/excluded decision text.
+    fn decision_precedent_scores(
+        &self,
+        _query: &str,
+        _entries: &[(String, String)],
+    ) -> Result<std::collections::BTreeMap<String, f64>> {
+        Err(Error::LibraryUnavailable)
+    }
     /// One scribe v2 pass (specs/scribe.md, "Pipeline" step 4): the SCR and
     /// every ledger and preference page file it plans, written and
     /// committed once under the writer lock. Refused with `scribe_changed`,

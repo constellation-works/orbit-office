@@ -181,6 +181,13 @@ impl Library for FakeLibrary {
     fn decision_ledgers(&self) -> Result<Vec<LibraryText>> {
         FakeLibrary::decision_ledgers(self)
     }
+    fn decision_precedent_scores(
+        &self,
+        _query: &str,
+        _entries: &[(String, String)],
+    ) -> Result<std::collections::BTreeMap<String, f64>> {
+        Ok(self.decision_precedent_scores.clone())
+    }
 
     fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> Result<()> {
         FakeLibrary::write_scribe_pass(self, pass)

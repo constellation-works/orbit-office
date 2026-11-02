@@ -1,0 +1,23 @@
+schemaVersion: 1
+kind: PluginTest
+tests:
+  - name: decision_precedents_empty
+    tool: decision-precedents
+    input: {"contract": "orbit.precedent-provider/1", "workspace_id": "ws_example", "request": {"id": "request-example", "gate": "agent_request", "category": "ws_example/agent_request", "question": "What should ship?", "options": [{"id": "ship", "label": "Ship"}], "raised_at": "2026-11-01T12:00:00Z"}, "as_of": "2026-11-01T12:00:00Z", "k": 8}
+    expect:
+      output: {"contract":"orbit.precedent-provider/1","precedents":[],"omissions":[],"truncated":false}
+  - name: decision_precedents_contract_refused
+    tool: decision-precedents
+    input: {"contract":"orbit.precedent-provider/2"}
+    expect:
+      error: {"code":"precedent_contract_unsupported"}
+  - name: decision_precedents_nested_unknown_refused
+    tool: decision-precedents
+    input: {"contract": "orbit.precedent-provider/1", "workspace_id": "ws_example", "request": {"id": "request-example", "gate": "agent_request", "category": "ws_example/agent_request", "question": "What should ship?", "options": [{"id": "ship", "label": "Ship"}], "raised_at": "2026-11-01T12:00:00Z", "extra": true}, "as_of": "2026-11-01T12:00:00Z", "k": 8}
+    expect:
+      error: {"code":"invalid_argument"}
+  - name: decision_precedents_k_refused
+    tool: decision-precedents
+    input: {"contract": "orbit.precedent-provider/1", "workspace_id": "ws_example", "request": {"id": "request-example", "gate": "agent_request", "category": "ws_example/agent_request", "question": "What should ship?", "options": [{"id": "ship", "label": "Ship"}], "raised_at": "2026-11-01T12:00:00Z"}, "as_of": "2026-11-01T12:00:00Z", "k": 9}
+    expect:
+      error: {"code":"invalid_argument"}

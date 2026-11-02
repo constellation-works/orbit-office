@@ -116,8 +116,9 @@
     },
     "scribe": {
       "type": "object",
-      "description": "The effective scribe policy from the Library settings (scribe.cadence, scribe.tags). Never null: an unset key, or an uninitialized Library, reads as the shipped defaults (cadence 20 minutes or 10 turns; the preferences and decisions tags).",
+      "description": "The effective scribe policy from the Library settings (scribe.cadence, scribe.tags, scribe.precedents; half_life_days defaults to 90). Never null: an unset key, or an uninitialized Library, reads as the shipped defaults (cadence 20 minutes or 10 turns; the preferences and decisions tags).",
       "properties": {
+        "precedents": {"type": "object", "additionalProperties": false, "required": ["half_life_days"], "properties": {"half_life_days": {"type": "integer", "minimum": 1, "maximum": 3650, "default": 90}}},
         "cadence": {
           "type": "object",
           "properties": {
@@ -147,7 +148,7 @@
         },
         "tags_customized": { "type": "boolean", "description": "False while no scribe.tags key is set and the defaults apply." }
       },
-      "required": ["cadence", "tags", "tags_customized"],
+      "required": ["cadence", "tags", "tags_customized", "precedents"],
       "additionalProperties": false
     }
   },
