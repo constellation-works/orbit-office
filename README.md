@@ -26,6 +26,23 @@ component and preset.
 > else in this repository — the `office` plugin surface, the orchestrator, the
 > Library and the web app — is new work.
 
+## Meta models at runtime
+
+Every model the project calls at runtime is a Meta model; no other model
+provider is called. Routing rules and the private route are specified in
+[models-and-privacy.md](docs/design/office/specs/models-and-privacy.md).
+
+| Model | Called for | Where it runs |
+|---|---|---|
+| Muse Spark 1.3 (`muse-spark-1.3`) | Meeting summaries, decisions and to-dos split between you and agents; the daily digest; document digests, KT chapters, and keyframe and receipt reading | Meta Model API (`api.meta.ai`), the hosted default |
+| Muse Voice Transcribe | Meeting and video transcription, in chunks, with timestamps from the returned turns | Meta Model API (`api.meta.ai`) |
+| Muse Wonder (`muse-wonder`) | The `careful` tier: consolidating a Library bootstrap batch by subject | Meta Model API (`api.meta.ai`) |
+| Muse Spark Open (`meta-models/Muse-Spark-Open-816B-A42B`) | Every use above whose input includes a `private` source: text, image and audio | The private route: the one endpoint you configure (your company's deployment, a hosted provider or your own hardware), never Meta's hosted API |
+| Muse Code crews `muse-spark` and `muse-wonder` | The orchestrator session, and the agents Orbit dispatches to implement agent to-dos and review their PRs | Muse Code on your machine, started by Orbit; the crews' models are Meta's hosted Muse Spark and Muse Wonder |
+
+"Private" means not sent to Meta's hosted API, only to the endpoint you
+chose; it does not mean the material never leaves your machine.
+
 **Status: scaffold.** The plugin manifest enables `status`, `init`, `reindex`,
 `config-set` and `signals-scan`
 ([plugin/.orbit-plugin/plugin.yaml](plugin/.orbit-plugin/plugin.yaml)); the other

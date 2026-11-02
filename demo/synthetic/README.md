@@ -6,7 +6,9 @@ token and endpoints are synthetic. No exports from real accounts or other
 repositories are used. Every source title and origin says SIMULATED.
 
 The pack contains six weeks (2026-09-14 through 2026-10-25) of meetings,
-chats, receipts and work receipts; four About pages; onboarding documents;
+chats, receipts and work receipts, including a 2026-09-21 security review
+whose decision, "rotate ingest keys weekly", is seeded into the
+`decisions-lantern` ledger as `dec-lantern-1`; four About pages; onboarding documents;
 a loopback Acme CRM; and a scripted 15-minute KT video. The last seeded
 history record is a weekly recap on 2026-10-25. `demo.simulated_until` is set to that date;
 Insights labels those six weeks simulated and leaves the following week
@@ -50,6 +52,31 @@ cannot dispatch work. Synthetic proposal/work/task records live in
 `demo-orbit.json`. This makes a rehearsal safe on a shared host and lets the
 actual app render its queue without altering host tasks.
 
+## The Lantern engineering-sync meeting
+
+The demo's meeting is a two-minute synthetic engineering sync between Mira
+and Jules. [meeting/lantern-sync.txt](meeting/lantern-sync.txt) is the
+script, one `Speaker: line` turn per line;
+[meeting/expected.json](meeting/expected.json) is the answer key: four
+decisions (one of them "rotate ingest keys monthly", which contradicts the
+seeded September decision), three to-dos for you and four agent-sized
+engineering to-dos for the Lantern demo repo.
+
+```sh
+python3 demo/synthetic/meeting.py --output .orbit/tmp/lantern-sync
+```
+
+Needs macOS with the Samantha (Mira) and Daniel (Jules) `say` voices and
+FFmpeg. The output root must be new. It writes `lantern-sync.wav`,
+`lantern-sync.m4a`, a `lantern-sync.vtt` transcript with one cue per turn,
+`script.json` with each turn's timing, `answer-key.json` (the answer key
+with each item's `#t=` timestamp) and `manifest.json` (SHA-256 of both
+audio files, voices, macOS and FFmpeg versions). The generator refuses an
+answer-key quote that is not spoken verbatim in exactly one turn. Two runs
+on the same toolchain produce identical audio; compare the manifests'
+`wav_sha256` and `m4a_sha256` when refreshing evidence. The audio is never
+committed. Upload the `.m4a` without the `.vtt` to exercise transcription.
+
 ## Determinism and behavior checks
 
 ```sh
@@ -58,8 +85,8 @@ python3 demo/synthetic/compare.py .orbit/tmp/synthetic-check/left .orbit/tmp/syn
 ```
 
 Verification seeds two complete fresh Libraries sequentially and checks
-About proposal receipts, citations, bootstrap proposals, the performable
-runbook, gateway redaction, the pending PATCH, private KT provenance and the
+About proposal receipts, the seeded September ledger decision, citations,
+bootstrap proposals, the performable runbook, gateway redaction, the pending PATCH, private KT provenance and the
 simulated cutoff. It also mutates page content and links to prove comparison
 detects drift, then restores the file and checks equality again. Re-seeding
 an existing root must fail.

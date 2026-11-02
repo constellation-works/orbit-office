@@ -92,6 +92,26 @@ class Demo:
         return result
 
 
+def seed_key_rotation(demo):
+    """The September precedent the demo meeting contradicts ("monthly")."""
+    review = demo.capture('key-review', kind='meeting', title='SIMULATED Lantern security review 2026-09-21',
+        occurred_at='2026-09-21T15:00:00Z', participants=['Mira Vale', 'Nori Chen'],
+        text='SIMULATED Lantern security review 2026-09-21\n'
+             'Nori: How often should we rotate the Lantern ingest keys?\n'
+             'Mira: The options are weekly or monthly.\n'
+             'Mira: Decision: we rotate ingest keys weekly.\n'
+             'Nori: A leaked ingest key should stop working within days, not weeks.')
+    return demo.call('office.capture', {'decision': {
+        'question': 'How often should we rotate the Lantern ingest keys?', 'question_ref': review + '#L2',
+        'options': [{'text': 'weekly', 'ref': review + '#L3'}, {'text': 'monthly', 'ref': review + '#L3'}],
+        'chosen': 'rotate ingest keys weekly', 'quote': 'Decision: we rotate ingest keys weekly.',
+        'ref': review + '#L4',
+        'because': {'text': 'A leaked ingest key should stop working within days, not weeks.', 'ref': review + '#L5'},
+        'scope': 'project:lantern',
+        'context': {'task_type': None, 'workspace': None, 'task': None, 'risk_tier': None},
+        'decided_by': 'human', 'decided_at': '2026-09-21T15:00:00Z'}})
+
+
 def seed(root, binary, video=None, provider_config=None):
     demo = Demo(root, binary)
     with ExitStack() as stack:
@@ -159,6 +179,7 @@ def seed(root, binary, video=None, provider_config=None):
                   'tags': ['simulated', 'owner:agent' if day % 3 else 'owner:you']}, demo.root)['task']['id']
             for state in ['in-progress', 'review', 'done']:
                 callback('orbit.task.update', {'id': work, 'status': state, 'at': f'{current}T17:00:00Z'}, demo.root)
+        key_decision = seed_key_rotation(demo)
         demo.capture('weekly-close', kind='note', title='SIMULATED final weekly recap',
             occurred_at='2026-10-25T17:00:00Z',
             text='SIMULATED: the six-week Lantern rehearsal ended today. The access request and CRM update remain drafts for review. No real work, access grant or payment occurred.')
@@ -248,7 +269,7 @@ def seed(root, binary, video=None, provider_config=None):
         metrics = demo.call('office.metrics', {'since': '2026-09-14', 'until': '2026-11-01'})
         manifest = {'simulated': True, 'sources': demo.sources, 'last_seeded_day': '2026-10-25',
                     'about_pages': [p['id'] for p in pages], 'bootstrap': {'docs': docs, 'process': process},
-                    'access_runbook': runbook_id, 'access_draft': request, 'crm_get': get, 'crm_draft': draft,
+                    'ingest_key_decision': key_decision, 'access_runbook': runbook_id, 'access_draft': request, 'crm_get': get, 'crm_draft': draft,
                     'crm_patch_requests': crm.patch_count, 'status': status, 'setup': bootstrap,
                     'video': video_evidence, 'video_source': video_source,
                     'hosted_provider_verified': bool(video and provider_config),

@@ -12,7 +12,11 @@ from seed import seed
 
 def examine(root, manifest, video):
     library = root / 'library'
-    assert len(manifest['sources']) == (98 if video else 97), 'six weeks plus recap, onboarding and draft sources'
+    assert len(manifest['sources']) == (99 if video else 98), 'six weeks plus key review, recap, onboarding and draft sources'
+    key = manifest['ingest_key_decision']['entry']
+    assert key['ledger'] == 'decisions-lantern' and key['decided_at'].startswith('2026-09')
+    assert key['chosen'] == 'rotate ingest keys weekly' and key['decided_by'] == 'human'
+    assert key['source'] == manifest['sources']['key-review'] and 'simulated' in key['source']
     calls = json.loads((root / 'calls.json').read_text())
     db = json.loads((root / 'demo-orbit.json').read_text())
     accepted = [c for c in calls if c['tool'] == 'office.proposal-accept']

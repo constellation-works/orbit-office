@@ -1,8 +1,8 @@
 ---
 type: design
-summary: "Spec: delivery — hackathon compliance, the 3-minute demo script and the day-by-day build plan"
-last_updated: 2026-10-27
-last_validated: 2026-11-01
+summary: "Spec: delivery — hackathon compliance, the locked 3-minute meeting-to-PRs demo script and the remaining build plan"
+last_updated: 2026-11-02
+last_validated: 2026-11-02
 ---
 
 # Spec: Delivery
@@ -16,45 +16,63 @@ Source: spec §14–§16.
 
 - **Repository.** `constellation-works/orbit-office` is public, created after the Oct 26 12:00 ET kickoff, and its first commit is new work. Orbit is listed as a dependency with its tested commit. No Orbit code is in the repo.
 - **The video** opens with: *"Orbit is my existing open-source agent runtime. This week I built the office plugin, the orchestrator skill, the Library and the app."*
-- **Demo data is synthetic only:** a KT video about a made-up system, chats, receipts, people. Weeks of seeded history are labelled *simulated* on screen. No polaris, almanac, private repos or constellation state appears anywhere.
+- **Demo data is synthetic only:** the Lantern engineering-sync meeting, the Lantern demo repo, chats, receipts and people are all invented. Weeks of seeded history, including the September ledger decision, are labelled *simulated* on screen. No polaris, almanac, private repos or constellation state appears anywhere.
+- **Meta models only.** Every model the project calls at runtime is a Meta model ([README](../../../../README.md#meta-models-at-runtime)).
 - **Ownership.** No outside contributions to entry code during the event. Muse Code may be used.
-- **Eligibility.** Confirm the startup-track eligibility question in Discord `#questions`.
+- **Eligibility.** The entry is in the Indie Developer track (theme "Build for Your World"); confirm any open eligibility question in Discord `#questions`.
 - The Rust workspace was started from the constellation Rust CLI template; that provenance is stated in the repo README.
 
 ## Demo script (3 minutes)
 
-1. **0:00 Opening line** (compliance), then the problem in one sentence: cloud agents run your work where you can't see or keep it.
-2. **0:15 Today screen:** seeded weeks of work. The automation ratio has climbed from 10% to 55% (labelled simulated).
-3. **0:30 Day one in a new role:** drop the onboarding folder and a 50-minute KT video. Library setup shows the batch preview; press Process. Pages arrive grouped by subject, one per topic rather than one per document. **The KT video** (marked private at the preview, so every call goes to Muse Spark Open on the private route, labelled with where it runs): The cost preview appears; press Process. The result: a 6-minute chaptered index with tangents folded and one gotcha lifted out, a key-rotation runbook and three system pages proposed, and two questions for the presenter in your to-dos, every line citing `#t=…` or `#frame=…`. Ask "how do I rotate the ingest keys?" and the answer links to 00:31:12.
-4. **1:10 Paste a Slack thread into Muse Code.** It is saved as a source, and the orchestrator links it to the client page and answers with citations. Then highlight a line in the KT transcript and say "make this a to-do for me". The task appears, citing that timestamp.
-5. **1:35 "Request access to the ingest AD group for me."** The agent follows the `performable` runbook the onboarding folder produced and drafts the request. Needs you: approve it (copied, not sent: the trust gate).
-6. **1:55 A proposal appears.** "You've prepared a QBR deck by hand three times. Want a routine?" It shows the evidence, you accept, and it appears in Routines.
-7. **2:20 Insights:** the conversion appears under "what got automated", with hours returned.
-8. **2:35 Generate the quarterly review.** Every line is cited. Close on the Library and routines: you can see everything, and it is yours.
+Locked 2026-11-02 ([ORB-21334]). It replaces the KT-onboarding script;
+the KT video path, SAM 3.1 and the app's chain view are cut from the demo.
 
-## Build plan (Oct 27 – Nov 4)
+| Time | Beat |
+|---|---|
+| 0:00–0:15 | **Opening line** (compliance, above), then the problem: decisions made in meetings never turn into work. |
+| 0:15–0:50 | **A meeting goes in.** The synthetic Lantern engineering sync ([demo/synthetic/meeting/](../../../../demo/synthetic/meeting/)) is uploaded. Muse Voice Transcribe transcribes it; Muse Spark extracts decisions and to-dos, split between you and agents, each cited to a `#t=` timestamp. |
+| 0:50–1:10 | **Contradiction.** The meeting decides "rotate ingest keys monthly"; the seeded September ledger decision (labelled simulated) says weekly. It goes under Needs you, and agents leave rotation alone until it is resolved. |
+| 1:10–2:10 | **Overnight time-lapse.** The agent to-dos become Orbit tasks in the synthetic Lantern demo repo; Muse Code crews (`muse-spark`, `muse-wonder`) implement them, Muse reviews, and the PRs merge. |
+| 2:10–2:45 | **Morning digest:** Decided, Shipped (with PR links) and Needs you. Resolve the contradiction in one click. |
+| 2:45–3:00 | **Close:** every model is Meta's, shown with the where-it-runs table from the [README](../../../../README.md#meta-models-at-runtime). |
 
-| Day | Plugin | App / orchestrator | Demo |
-|---|---|---|---|
-| Tue 10-27 | Repo, manifest, `init`, `capture`, Library layout, index, `reindex` | Muse Code wired to Orbit MCP with the office skill (day-1 checks: the skill is listed, and whether a prompt hook exists); app skeleton | Synthetic data plan |
-| Wed 10-28 | `transcribe`, `video-plan`, `frames`, `extract` (KT profile), the KT routine | Today and To-dos screens; upload with cost preview | Generate the synthetic KT video |
-| Thu 10-29 | `knowledge.*`, `attach`, the agent to-do activity, `artifact-promote`; document capture, `extract` digest profile, `batch-plan`, `consolidate`, `bootstrap-status` | Source view, Library screen with Library setup | Synthetic onboarding folder; seed 6 weeks of history |
-| Fri 10-30 | `signals-scan`, proposals create and accept | Needs you, Routines screens | |
-| Sat 10-31 | `metrics`, `review`, `selection.*` | Insights, Review screens; selection tray and hook | First full run-through |
-| Sun 11-01 | Open-weight routing; receipts pack if on track | Polish; installable PWA; the paste capture moment | |
-| Mon 11-02 | Hardening; [install script](./install.md) | Polish | Record the video |
-| Tue 11-03 | Buffer | Buffer | Edit the video; README |
-| Wed 11-04 | — | — | Submit before 21:00 ET; post on X for the viral bonus |
+The meeting's answer key ([expected.json](../../../../demo/synthetic/meeting/expected.json))
+is what the extraction beat must show:
 
-Day-1 checks that gate later work: the interactive Muse Code session
-lists `office-orchestrator`; whether Muse Code has a prompt-submit hook;
-the Muse Spark multimodal request shape (fallback: local OCR, then
-Muse Spark on the text); and the KT checks in
-[kt-videos.md](./kt-videos.md#day-1-checks).
+- **Decisions:** keep fifty orders per page on the dashboard; rotate ingest
+  keys monthly, starting in December (the contradiction); replay always keeps
+  the original order key; the Acme pilot stays read-only until the review.
+- **Your to-dos (3):** tell the access desk about the new rotation schedule;
+  book the Acme pilot review for next Thursday; ask Nori to review read
+  access for the two new packing-station operators.
+- **Agent to-dos (4), each sized for one overnight crew run:** add a retry
+  with backoff to the spool uploader; fix the dashboard pagination
+  off-by-one and test every page; add a `--dry-run` flag to `lantern
+  replay`; make the intake desk reject an empty order key with a clear error.
+
+Every model call in the demo is a Meta model; see
+[models-and-privacy.md](./models-and-privacy.md).
+
+## Build plan
+
+Oct 27 – Nov 1 built the plugin, the Library, the app and the synthetic
+pack; the [slice tasks](#slice-tasks) below record what landed. The rest
+of the week, against the locked script (orchestration record [ORB-21334]):
+
+| Day | Build | Demo |
+|---|---|---|
+| Mon 11-02 | Meeting extraction with `#t=` citations, the you/agent split and the ledger contradiction check ([ORB-21336]); the morning digest's Decided / Shipped / Needs you ([ORB-21337]); Meta-only model routing with Muse Voice Transcribe ([ORB-21338]) | Synthetic meeting, September ledger seed, this script and the README model table ([ORB-21339]); create the synthetic Lantern demo repo sized to the four agent to-dos |
+| Tue 11-03 | Fixes from the first full run-through | Full run-through on synthetic data; file the agent to-dos as Orbit tasks in the Lantern repo and let the Muse Code crews run overnight, recorded for the time-lapse |
+| Wed 11-04 | Freeze; README pass | Record and edit the video; submit before 21:00 ET; post on X |
+
+Checks that gate the run-through: the meeting extraction cites a `#t=`
+timestamp for every decision and to-do in the answer key; the monthly
+rotation decision is reported against `dec-lantern-1`; and no runtime call
+goes to a non-Meta model.
 
 ### Slice tasks
 
-The calendar above is the order. These are the tasks that implement it.
+These are the tasks that built the plugin and app the demo runs on.
 "Done" means the task is done and its merged commit is in this checkout.
 
 Landed:
@@ -148,5 +166,10 @@ Pending or not verified as landed in this checkout:
 - [ORB-18799] — installed the gateway plugins and the agent CLI deny rules.
 - [ORB-18800] — built the read-only cloudcli plugin.
 - [ORB-18809] — built `office.video-plan` and `office.frames`.
+- [ORB-21334] — orchestrates the hackathon demo and locked this script.
+- [ORB-21336] — meeting extraction for the demo.
+- [ORB-21337] — the morning digest for the demo.
+- [ORB-21338] — Meta-only runtime models.
+- [ORB-21339] — the synthetic meeting, the September ledger seed, this script and the README model table.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
