@@ -708,6 +708,12 @@
             "markers+inferred"
           ]
         },
+        "trigger": {
+          "enum": [
+            "cadence",
+            "marker"
+          ]
+        },
         "workspace": {
           "type": "string",
           "description": "orbit_task only: the Orbit workspace selector the proposed task is filed in."

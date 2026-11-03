@@ -157,6 +157,7 @@
               "sink": { "enum": ["decisions_ledger", "preference_page", "scr_only", "orbit_task"] },
               "mode": { "enum": ["propose", "apply", "append"] },
               "capture": { "enum": ["markers", "markers+inferred"] },
+              "trigger": { "enum": ["cadence", "marker"] },
               "workspace": { "type": "string", "description": "orbit_task only: the Orbit workspace selector." }
             },
             "required": ["name", "scope", "instruction", "sink", "mode", "capture"],

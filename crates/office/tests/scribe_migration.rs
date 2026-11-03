@@ -361,3 +361,35 @@ fn v1_mode_responses_conform_to_the_published_response_schema() {
         }
     }
 }
+
+/// The tag definitions in a tool response, and the closed item schema the
+/// shipped response schema declares for them.
+fn tag_item_properties(schema_file: &str, pointer: &str) -> serde_json::Map<String, Value> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugin/.orbit-plugin/schemas")
+        .join(schema_file);
+    let schema: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let items = schema.pointer(pointer).unwrap();
+    assert_eq!(items["additionalProperties"], false, "{schema_file}");
+    items["properties"].as_object().unwrap().clone()
+}
+
+/// Every key a tag definition carries in `office.status` and
+/// `office.scribe-pending` is declared by the closed tag schema, so Orbit's
+/// output validation admits the response.
+#[test]
+fn tag_definitions_conform_to_the_published_response_schemas() {
+    let fixture = Fixture::new();
+    let status = fixture.ok("office.status", json!({}));
+    let declared = tag_item_properties(
+        "status.response.json",
+        "/properties/scribe/properties/tags/items",
+    );
+    let tags = status["scribe"]["tags"].as_array().unwrap();
+    assert!(!tags.is_empty(), "{status}");
+    for tag in tags {
+        for key in tag.as_object().unwrap().keys() {
+            assert!(declared.contains_key(key), "status: undeclared {key}");
+        }
+    }
+}
