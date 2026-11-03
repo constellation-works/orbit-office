@@ -142,5 +142,7 @@ a page directly, and it attaches a report of its outcomes.
 
 This definition is **registered** under `spec.definitions.auto_tasks` as
 `definitions/auto_tasks/office-scribe-contradictions.yaml`; enabling it
-remains an operator decision. See `docs/design/office/specs/scribe.md`
-("Contradiction checks").
+remains an operator decision. See `docs/design/office/specs/decisions.md`
+("Contradiction checks"). The name keeps its `scribe` prefix so open
+to-dos and dedupe still match; the scribe itself moved to
+`constellation-works/scribe`.

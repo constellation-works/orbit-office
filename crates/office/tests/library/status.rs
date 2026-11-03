@@ -148,3 +148,74 @@ fn status_reports_an_unreplayable_write_journal_as_its_typed_error_and_keeps_it(
         text
     );
 }
+
+/// The scribe moved to the standalone scribe plugin: a Library whose
+/// settings file still carries the `scribe` block an earlier build wrote
+/// keeps loading, reports no scribe policy, refuses the retired
+/// `scribe.*` keys, and leaves its SCR files on disk.
+#[test]
+fn a_legacy_scribe_block_loads_and_its_keys_are_retired() {
+    let env = Env::with_initialized_library();
+    let library = env.library();
+    let config = library.join(".office/config.yaml");
+    // As an earlier build's office.config-set wrote it: pretty JSON.
+    let mut settings = serde_json::json!({"packs": ["kt", "meetings"]});
+    settings["scribe"] = serde_json::json!({
+        "cadence": {"minutes": 30, "turns": 4},
+        "tags": [{"name": "lesson", "scope": "project", "instruction": "Record this.",
+                  "sink": "scr_only", "mode": "append", "capture": "markers"}],
+        "precedents": {"half_life_days": 7}
+    });
+    std::fs::write(&config, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+    let scr = "sources/conversation/2026/11/SCR-20261101-0900-abcdef.md";
+    std::fs::create_dir_all(library.join("sources/conversation/2026/11")).unwrap();
+    std::fs::write(
+        library.join(scr),
+        "---\nid: SCR-20261101-0900-abcdef\n---\n",
+    )
+    .unwrap();
+
+    let status = env.tool("office.status", serde_json::json!({}));
+    assert_eq!(status["ok"], serde_json::json!(true), "{status}");
+    assert!(status["output"].get("scribe").is_none(), "{status}");
+    assert_eq!(
+        status["output"]["precedents"],
+        serde_json::json!({"half_life_days": 90})
+    );
+    for key in [
+        "scribe.cadence",
+        "scribe.tags",
+        "scribe.precedents.half_life_days",
+    ] {
+        let out = env.tool(
+            "office.config-set",
+            serde_json::json!({"key": key, "value": null}),
+        );
+        assert_eq!(
+            out["error"]["code"], "unknown_library_setting",
+            "{key}: {out}"
+        );
+    }
+    let set = env.tool(
+        "office.config-set",
+        serde_json::json!({"key": "precedents.half_life_days", "value": 30}),
+    );
+    assert_eq!(set["ok"], serde_json::json!(true), "{set}");
+    let status = env.tool("office.status", serde_json::json!({}));
+    assert_eq!(
+        status["output"]["precedents"],
+        serde_json::json!({"half_life_days": 30})
+    );
+    for tool in [
+        "office.scribe-append",
+        "office.scribe-query",
+        "office.scribe-control",
+    ] {
+        let out = env.tool(tool, serde_json::json!({}));
+        assert_eq!(out["error"]["code"], "unknown_tool", "{tool}: {out}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(library.join(scr)).unwrap(),
+        "---\nid: SCR-20261101-0900-abcdef\n---\n"
+    );
+}

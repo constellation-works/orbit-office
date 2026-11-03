@@ -73,7 +73,6 @@ impl Run {
                 selections: Box::new(office_testkit::fakes::FakeSelections::default()),
                 shared: Box::new(office_testkit::fakes::FakeShared::default()),
                 pr: Box::new(office_core::ports::UnavailablePullRequests),
-                scribe_control: Box::new(office_core::ports::UnavailableScribeControls),
             },
         }
     }

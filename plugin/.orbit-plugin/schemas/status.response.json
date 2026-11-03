@@ -143,46 +143,17 @@
         }
       ]
     },
-    "scribe": {
+    "precedents": {
       "type": "object",
-      "description": "The effective scribe policy from the Library settings (scribe.cadence, scribe.tags, scribe.precedents; half_life_days defaults to 90). Never null: an unset key, or an uninitialized Library, reads as the shipped defaults (cadence 20 minutes or 10 turns; the preferences and decisions tags).",
+      "description": "The effective decision-precedent recency from the Library settings (precedents.half_life_days, default 90). Never null: an unset key, or an uninitialized Library, reads as the default.",
       "properties": {
-        "precedents": {"type": "object", "additionalProperties": false, "required": ["half_life_days"], "properties": {"half_life_days": {"type": "integer", "minimum": 1, "maximum": 3650, "default": 90}}},
-        "cadence": {
-          "type": "object",
-          "properties": {
-            "minutes": { "type": "integer", "minimum": 5, "maximum": 240 },
-            "turns": { "type": "integer", "minimum": 2, "maximum": 100 }
-          },
-          "required": ["minutes", "turns"],
-          "additionalProperties": false
-        },
-        "tags": {
-          "type": "array",
-          "description": "The tag definitions in force, in configured order.",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": { "type": "string" },
-              "scope": { "enum": ["global", "project", "session"] },
-              "instruction": { "type": "string" },
-              "sink": { "enum": ["decisions_ledger", "preference_page", "scr_only", "orbit_task"] },
-              "mode": { "enum": ["propose", "apply", "append"] },
-              "capture": { "enum": ["markers", "markers+inferred"] },
-              "trigger": { "enum": ["cadence", "marker"] },
-              "workspace": { "type": "string", "description": "orbit_task only: the Orbit workspace selector." }
-            },
-            "required": ["name", "scope", "instruction", "sink", "mode", "capture"],
-            "additionalProperties": false
-          }
-        },
-        "tags_customized": { "type": "boolean", "description": "False while no scribe.tags key is set and the defaults apply." }
+        "half_life_days": { "type": "integer", "minimum": 1, "maximum": 3650, "default": 90 }
       },
-      "required": ["cadence", "tags", "tags_customized", "precedents"],
+      "required": ["half_life_days"],
       "additionalProperties": false
     }
   },
-  "required": ["version", "secrets", "open_weights_token_binding", "library", "hosted", "open_weights", "shared", "brief", "meetings", "scribe"],
+  "required": ["version", "secrets", "open_weights_token_binding", "library", "hosted", "open_weights", "shared", "brief", "meetings", "precedents"],
   "additionalProperties": false,
   "$defs": {
     "presence": { "type": "string", "enum": ["set", "unset"] }

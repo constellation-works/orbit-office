@@ -61,7 +61,7 @@ fn clock_time(start_ms: u64) -> String {
 
 /// Source kinds (specs/library.md, Sources), plus `video` (specs/kt-videos.md).
 /// `decisions` names the decision ledgers, which are written only through
-/// `office.capture`'s `decision` input (specs/scribe.md, Decision ledger).
+/// `office.capture`'s `decision` input (specs/decisions.md, Decision ledger).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceKind {
     /// Documented item: Video,.

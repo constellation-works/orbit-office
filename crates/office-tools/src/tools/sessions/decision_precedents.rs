@@ -40,7 +40,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
         &request,
         &pool,
         &scores,
-        settings.scribe.precedents.half_life_days,
+        settings.precedents.half_life_days,
         conflicts,
     )
 }

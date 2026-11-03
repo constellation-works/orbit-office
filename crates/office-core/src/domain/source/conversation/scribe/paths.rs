@@ -1,57 +1,9 @@
-//! SCR identifiers and Library-relative path validation.
+//! Library-relative SCR path validation.
 
 use std::path::Path;
 
-use chrono::{DateTime, FixedOffset};
-
-use super::{CLASH_SUFFIX, SCR_DIR, SLUG_MAX, refusal};
+use super::{CLASH_SUFFIX, SLUG_MAX, refusal};
 use crate::Result;
-
-/// Lowercase ASCII letters and digits, other runs as one `-`, at most
-/// [`SLUG_MAX`] characters.
-#[must_use]
-pub fn slug(text: &str) -> String {
-    let mut out = String::new();
-    for c in text.chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c.to_ascii_lowercase());
-        } else if !out.is_empty() && !out.ends_with('-') {
-            out.push('-');
-        }
-        if out.len() >= SLUG_MAX {
-            break;
-        }
-    }
-    out.truncate(SLUG_MAX);
-    out.trim_end_matches('-').to_owned()
-}
-
-/// `SCR-<dd-hhmm>-<slug>` for a session starting at `start` (local).
-#[must_use]
-pub fn scr_id(start: DateTime<FixedOffset>, slug: &str) -> String {
-    let slug = if slug.is_empty() { "session" } else { slug };
-    format!("SCR-{}-{slug}", start.format("%d-%H%M"))
-}
-
-/// `sources/conversation/<yyyy>/<mm>/<id>.md`.
-#[must_use]
-pub fn scr_path(start: DateTime<FixedOffset>, id: &str) -> String {
-    format!("{SCR_DIR}/{}/{id}.md", start.format("%Y/%m"))
-}
-
-/// `id` with the clash suffix: the session id's first characters.
-#[must_use]
-pub fn with_suffix(id: &str, session_id: &str) -> String {
-    let suffix: String = session_id
-        .chars()
-        .take(CLASH_SUFFIX)
-        .map(|c| match c {
-            '_' => '-',
-            c => c.to_ascii_lowercase(),
-        })
-        .collect();
-    format!("{id}-{suffix}")
-}
 
 fn valid_id(id: &str) -> bool {
     let Some(rest) = id.strip_prefix("SCR-") else {

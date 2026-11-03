@@ -16,8 +16,8 @@ backend only through Orbit's tools) and `gateway/` (two small Python plugins, se
 | Tier | Crate | Owns | May depend on (internal) |
 |------|-------|------|--------------------------|
 | 0. Foundation | `office-common` | The common error, fs mechanisms (path safety, atomic writes, SHA-256), SQLite connection defaults (`sqlite` feature), bounded subprocess supervision shared by adapters and fixtures, small shared types. | — |
-| 1. Domain | `office-core` | **Pure.** The exec envelope (`protocol`), tool contract types (`tool`), declared secret names, the domain model and its rules (`domain/`, including Library records, validated settings and scribe control rules), the bundled knowledge templates (`templates/*.md`, compiled in with `include_str!`), and the port traits the application calls (`ports/`, one file each; among them `ScribeControls` in `ports/scribe_control.rs`, exposed to tools as `Ports.scribe_control`). No I/O. | `office-common` |
-| 2. Adapters | `office-store` | Implements the Library port: Markdown files (the source of truth), the rebuildable SQLite index, the Library's own git repository and its writer lock. Also owns plugin state, including the calendar snapshot in `calendar/events.json`, the selection tray in `selections.sqlite`, the per-session scribe control records in `scribe_control.sqlite` (`ScribeControlStore`, which the `ScribeControls` port uses) and the shared library clone and sync state under `shared/` (the only code that runs git against the team remote, with an allowlisted environment; specs/shared-library.md), and implements the selections and script-runner ports: run directories under `plugin_state/runs/` and the supervised `uv` child (specs/scripts.md). Structured after `orbit-store`. | `office-common`, `office-core` |
+| 1. Domain | `office-core` | **Pure.** The exec envelope (`protocol`), tool contract types (`tool`), declared secret names, the domain model and its rules (`domain/`, including Library records and validated settings), the bundled knowledge templates (`templates/*.md`, compiled in with `include_str!`), and the port traits the application calls (`ports/`, one file each). No I/O. | `office-common` |
+| 2. Adapters | `office-store` | Implements the Library port: Markdown files (the source of truth), the rebuildable SQLite index, the Library's own git repository and its writer lock. Also owns plugin state, including the calendar snapshot in `calendar/events.json`, the selection tray in `selections.sqlite` and the shared library clone and sync state under `shared/` (the only code that runs git against the team remote, with an allowlisted environment; specs/shared-library.md), and implements the selections and script-runner ports: run directories under `plugin_state/runs/` and the supervised `uv` child (specs/scripts.md). Structured after `orbit-store`. | `office-common`, `office-core` |
 | 2. Adapters | `office-models` | Implements the model ports: the configured hosted OpenAI-compatible endpoint (`models.endpoint`, by default Meta's Model API with Muse Spark and Muse Voice Transcribe), the private route (an open-weights model on the one endpoint the user chose), privacy routing, the private-endpoint check and local JSON Schema validation of extraction replies. The only crate that may speak HTTP. | `office-common`, `office-core` |
 | 2. Adapters | `office-orbit` | Implements the Orbit port: the manifest's `orbit_tools` callbacks (`task.add`, `task.artifact.put`, …). | `office-common`, `office-core` |
 | 3. Application | `office-tools` | One module per tool, the tool registry and dispatch. Talks to adapters **only through `office-core` ports**, so every tool runs against fakes. | `office-common`, `office-core` |
@@ -100,7 +100,7 @@ crates/office-tools/src/
     library/             init  reindex  config_set  search  attach  private_route_check   (specs/library.md, plugin-surface.md, models-and-privacy.md)
     proposals/           signals_scan  create  accept  reconcile      (specs/proposals.md)
     selection/           get  put                                     (specs/selection-sharing.md)
-    sessions/            brief  digest  scribe_control (scribe-control)  scribe_pending (scribe-pending)  scribe_append (scribe-append)  scribe_query (scribe-query)  scribe_ask (scribe-ask)  scribe_migrate (scribe-migrate)  decision_ingest (decision-ingest)  decision_precedents (decision-precedents)  decision_resolve (decision-resolve)   (specs/sessions.md, specs/scribe.md, specs/decision-precedents.md)
+    sessions/            brief  digest  decision_ingest (decision-ingest)  decision_precedents (decision-precedents)  decision_resolve (decision-resolve)   (specs/sessions.md, specs/decisions.md, specs/decision-precedents.md)
     scripts/             run                                          (specs/scripts.md)
     bootstrap/           batch_plan  consolidate  status              (specs/library-bootstrap.md)
     calendar/            sync  list                                  (specs/calendar.md)
@@ -149,7 +149,7 @@ app/packages/
                      auto-task names with the routine listing (shared by routines and calendar)
     dispatch/        the 30-second dispatch pass
     features/<f>/    one folder per feature: today, calendar, sources, todos, agents,
-                     approvals, routines, library, insights, review, selection, scribe, settings
+                     approvals, routines, library, insights, review, selection, settings
   web/
     static/          index.html, demo.html, manifest.webmanifest, icons/, fonts/, style.css
     src/
@@ -161,7 +161,7 @@ app/packages/
       ui/            shared pieces (cards, pills, tiles, provenance links, primary actions)
                      and the schedule reader Routines and Calendar share
       screens/<s>/   one folder per screen: today, calendar, source, todos, agents,
-                     routines, library, insights, review, scribe, settings
+                     routines, library, insights, review, settings
 ```
 
 A feature or screen is a module exporting one constant with `status: "planned"` until it is

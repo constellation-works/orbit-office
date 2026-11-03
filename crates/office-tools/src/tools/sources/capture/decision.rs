@@ -1,5 +1,5 @@
 //! `office.capture` with a `decision` input: append one decision ledger
-//! entry (specs/scribe.md, Decision ledger). Every verbatim field is
+//! entry (specs/decisions.md, Decision ledger). Every verbatim field is
 //! checked against the source anchor or task comment its ref names before
 //! the Library appends it.
 

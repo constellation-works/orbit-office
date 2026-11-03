@@ -1,4 +1,4 @@
-//! Through the built binary: decision ledgers (specs/scribe.md, Decision
+//! Through the built binary: decision ledgers (specs/decisions.md, Decision
 //! ledger). `office.capture`'s `decision` input appends one D13 entry whose
 //! verbatim fields are checked against the cited anchor, reads derive
 //! `reversed_by`, a kindless paste is refused, and `office.init` moves

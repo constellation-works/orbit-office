@@ -11,7 +11,6 @@ use serde_json::{Map, Value};
 
 use super::endpoint::{Capability, EndpointKind};
 use super::metrics::date_seconds;
-pub use super::scribe_settings::ScribeSettings;
 use crate::{Error, Result};
 
 const KINDS: &[&str] = &[
@@ -65,9 +64,57 @@ pub struct Settings {
     /// Meeting to-do routing; omitted from the file while default.
     #[serde(skip_serializing_if = "MeetingSettings::is_default")]
     pub meetings: MeetingSettings,
-    /// Scribe cadence and tag definitions; omitted from the file while default.
-    #[serde(skip_serializing_if = "ScribeSettings::is_default")]
-    pub scribe: ScribeSettings,
+    /// Decision-precedent recency; omitted from the file while default.
+    #[serde(skip_serializing_if = "PrecedentSettings::is_default")]
+    pub precedents: PrecedentSettings,
+}
+
+/// Recency weighting for `office.decision-precedents`
+/// (specs/decision-precedents.md, "Configuration").
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PrecedentSettings {
+    /// Days until a precedent's relevance halves (1–3650, default 90).
+    pub half_life_days: u32,
+}
+
+impl Default for PrecedentSettings {
+    fn default() -> Self {
+        Self { half_life_days: 90 }
+    }
+}
+
+impl PrecedentSettings {
+    /// Whether the block is entirely default (and so omitted from the file).
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    fn parse(value: &Value) -> Result<Self> {
+        let map = value
+            .as_object()
+            .ok_or_else(|| invalid("precedents", "expected a mapping of half_life_days"))?;
+        let mut out = Self::default();
+        for (name, value) in map {
+            if name != "half_life_days" {
+                return Err(invalid(
+                    &format!("precedents.{name}"),
+                    "unknown precedent setting",
+                ));
+            }
+            out.half_life_days = value
+                .as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .filter(|n| (1..=3650).contains(n))
+                .ok_or_else(|| {
+                    invalid(
+                        "precedents.half_life_days",
+                        "expected an integer from 1 to 3650",
+                    )
+                })?;
+        }
+        Ok(out)
+    }
 }
 
 /// Session-brief policy (specs/sessions.md#session-brief).
@@ -356,7 +403,7 @@ impl Default for Settings {
             scripts: Default::default(),
             brief: BriefSettings::default(),
             meetings: MeetingSettings::default(),
-            scribe: ScribeSettings::default(),
+            precedents: PrecedentSettings::default(),
         }
     }
 }
@@ -433,12 +480,20 @@ impl Settings {
             map.insert(name.into(), value);
             return Self::try_from(encoded);
         }
-        if key == "scribe.cadence"
-            || key == "scribe.tags"
-            || key.starts_with("scribe.tags.")
-            || key == "scribe.precedents.half_life_days"
-        {
-            super::scribe_settings::set(&mut encoded, key, value)?;
+        if key == "precedents.half_life_days" {
+            let root = encoded
+                .as_object_mut()
+                .ok_or_else(|| invalid("config", "expected a mapping"))?;
+            let precedents = root
+                .entry("precedents")
+                .or_insert_with(|| Value::Object(serde_json::Map::new()))
+                .as_object_mut()
+                .ok_or_else(|| invalid("precedents", "expected a mapping of half_life_days"))?;
+            if value.is_null() {
+                precedents.remove("half_life_days");
+            } else {
+                precedents.insert("half_life_days".into(), value);
+            }
             return Self::try_from(encoded);
         }
         if key == "open_weights" || key.starts_with("open_weights.") {
@@ -769,7 +824,13 @@ impl TryFrom<Value> for Settings {
                         }
                     }
                 }
-                "scribe" => settings.scribe = ScribeSettings::parse(value)?,
+                "precedents" => settings.precedents = PrecedentSettings::parse(value)?,
+                // A `scribe:` block written by an earlier build (the scribe
+                // moved to the standalone scribe plugin, 4_decisions.md) is
+                // accepted and ignored, so an existing Library still loads.
+                // It is not carried forward when office.config-set rewrites
+                // the file; the Library's git history keeps it.
+                "scribe" => {}
                 "shared" => settings.shared = super::sharing::SharedSettings::parse(value)?,
                 "calendar" => {
                     settings.calendar = super::calendar::CalendarSettings::parse(value)?;

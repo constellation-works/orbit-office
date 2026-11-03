@@ -190,9 +190,6 @@ impl Clock for SystemClock {
     fn now(&self) -> SystemTime {
         SystemTime::now()
     }
-    fn time_zone(&self) -> Option<String> {
-        office_store::scribe_parse::time_zone()
-    }
 }
 
 fn context_path(context: &Context, keys: &[&str]) -> Option<PathBuf> {
@@ -357,16 +354,6 @@ impl RealLibrary {
         Ok(store.with_upload_roots(roots))
     }
 
-    /// Parsed scribe files live under the granted Library root's ignored
-    /// `.office/state/scribe/`, inside the plugin's write grant.
-    fn scribe_parse(&self) -> office_core::Result<office_store::ScribeParseStore> {
-        self.ensure_grant()?;
-        let (Some(workspace), Some(library)) = (&self.workspace, &self.library) else {
-            return Err(office_core::Error::LibraryUnavailable);
-        };
-        Ok(office_store::ScribeParseStore::new(workspace, library)?)
-    }
-
     fn looks_initialized(&self) -> bool {
         self.library.as_ref().is_some_and(|root| {
             root.join(".office/config.yaml").exists() && root.join(".git").exists()
@@ -497,31 +484,8 @@ impl Library for RealLibrary {
     fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::knowledge_pages(&self.store()?)?)
     }
-    fn scribe_parse_path(&self, session_id: &str) -> office_core::Result<String> {
-        self.scribe_parse()?.relative_path(session_id)
-    }
-    fn write_scribe_parse(
-        &self,
-        session_id: &str,
-        messages: &str,
-        meta: &str,
-    ) -> office_core::Result<String> {
-        self.scribe_parse()?.write(session_id, messages, meta)
-    }
-    fn read_scribe_parse(
-        &self,
-        session_id: &str,
-    ) -> office_core::Result<Option<office_core::ports::ScribeParse>> {
-        self.scribe_parse()?.read(session_id)
-    }
     fn scribe_files(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::scribe_files(&self.store()?)?)
-    }
-    fn write_scribe_file(
-        &self,
-        write: &office_core::ports::ScribeWrite,
-    ) -> office_core::Result<()> {
-        LibraryStore::write_scribe_file(&self.store()?, write)
     }
     fn decision_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::decision_ledger_files(&self.store()?)?)
@@ -536,17 +500,11 @@ impl Library for RealLibrary {
     ) -> office_core::Result<std::collections::BTreeMap<String, f64>> {
         Library::decision_precedent_scores(&self.store()?, query, entries)
     }
-    fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> office_core::Result<()> {
-        LibraryStore::write_scribe_pass(&self.store()?, pass)
-    }
     fn write_decision_ledgers(
         &self,
-        files: &[office_core::domain::source::conversation::scribe::v2::PlannedFile],
+        files: &[office_core::domain::source::decisions::PlannedFile],
     ) -> office_core::Result<()> {
         LibraryStore::write_decision_ledgers(&self.store()?, files)
-    }
-    fn host_name(&self) -> Option<String> {
-        office_store::scribe_parse::host_name()
     }
     fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(LibraryStore::source_documents(&self.store()?)?)
@@ -626,13 +584,6 @@ impl Library for RealLibrary {
     ) -> office_core::Result<office_core::domain::source::conversation::Session> {
         office_core::ports::Library::session_transcript(&self.store()?, path, session_id)
     }
-    fn scribe_transcript(
-        &self,
-        path: &str,
-        session_id: &str,
-    ) -> office_core::Result<office_core::domain::source::conversation::Session> {
-        office_core::ports::Library::scribe_transcript(&self.store()?, path, session_id)
-    }
     fn capture_session(
         &self,
         request: &office_core::domain::source::conversation::Request,
@@ -701,44 +652,6 @@ fn ports(context: &Context, bootstrap_read_only: bool) -> Ports<'_> {
         shared: shared(context),
         calendar: Box::new(RealCalendar { context }),
         pr: Box::new(GhPullRequests::new()),
-        scribe_control: scribe_control(context),
-    }
-}
-
-/// Per-session scribe control records at `plugin_state/scribe_control.sqlite`.
-/// Construction does no I/O; the store opens on the first operation.
-struct RealScribeControls {
-    state: PathBuf,
-}
-
-impl RealScribeControls {
-    fn open(&self) -> office_core::Result<office_store::ScribeControlStore> {
-        Ok(office_store::ScribeControlStore::open(&self.state)?)
-    }
-}
-
-impl office_core::ports::ScribeControls for RealScribeControls {
-    fn get(
-        &self,
-        session_id: &str,
-    ) -> office_core::Result<office_core::domain::scribe_control::Control> {
-        Ok(self.open()?.get(session_id)?)
-    }
-
-    fn apply(
-        &self,
-        session_id: &str,
-        change: &office_core::domain::scribe_control::Change,
-        now: SystemTime,
-    ) -> office_core::Result<(office_core::domain::scribe_control::Control, bool)> {
-        Ok(self.open()?.apply(session_id, change, now)?)
-    }
-}
-
-fn scribe_control(context: &Context) -> Box<dyn office_core::ports::ScribeControls + '_> {
-    match context_state_dir(context) {
-        Some(state) => Box::new(RealScribeControls { state }),
-        None => Box::new(office_core::ports::UnavailableScribeControls),
     }
 }
 

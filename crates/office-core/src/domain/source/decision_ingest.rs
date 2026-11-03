@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::conversation::scribe::v2::PlannedFile;
+use super::decisions::PlannedFile;
 use super::decisions::{
     Cited, Context, DecidedBy, Decision, Ledger, Options, OrbitInfo, OrbitModel, Scope,
     append_line, chosen_matches,

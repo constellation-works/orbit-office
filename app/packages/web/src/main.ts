@@ -7,7 +7,7 @@
 import type { SetupResult, SetupStatus, Today } from "@orbit-office/contracts";
 
 import { screenHash } from "./api/source-location.js";
-import { getCalendar, getContradictions, getJson, getPrivateRoute, postJson } from "./api/client.js";
+import { getCalendar, getJson, getPrivateRoute, postJson } from "./api/client.js";
 import { drawRail, setRailCount } from "./nav.js";
 import { registerServiceWorker } from "./pwa/register.js";
 import { navigableScreens, screenForHash } from "./router.js";
@@ -23,7 +23,7 @@ function drawNav(nav: HTMLElement): void {
 
 /**
  * Counts beside the rail entries: how many routines are on, how many rows
- * wait on you today (open contradictions included), how many of today's
+ * wait on you today, how many of today's
  * past meetings have no notes yet, and how many tasks are in Working now
  * (both plain counts, not alerts).
  * A failed read hides the count; it never shows 0.
@@ -38,15 +38,11 @@ async function loadCounts(nav: HTMLElement): Promise<void> {
         setRailCount(nav, "routines", `${on}/${routines.length}`);
       })
       .catch(() => setRailCount(nav, "routines", null)),
-    Promise.all([
-      getJson<Partial<Today>>("/api/today"),
-      // An unreadable contradiction list counts none; it never hides the count.
-      getContradictions().then(({ contradictions }) => Array.isArray(contradictions) ? contradictions.length : 0, () => 0),
-    ])
-      .then(([{ needs_you }, contradictions]) => {
+    getJson<Partial<Today>>("/api/today")
+      .then(({ needs_you }) => {
         if (!Array.isArray(needs_you)) throw new Error("malformed today");
-        // Grouped proposals share one row and each open contradiction is a row of its own, as on Today.
-        const rows = new Set(needs_you.map((item) => item.group?.key ?? `item:${item.key}`)).size + contradictions;
+        // Grouped proposals share one row, as on Today.
+        const rows = new Set(needs_you.map((item) => item.group?.key ?? `item:${item.key}`)).size;
         setRailCount(nav, "today", rows > 0 ? String(rows) : null, true);
       })
       .catch(() => setRailCount(nav, "today", null)),

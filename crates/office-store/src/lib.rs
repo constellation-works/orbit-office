@@ -33,13 +33,8 @@ pub use driver::script::ScriptStore;
 pub use error::{Error, Result};
 pub use pr::GhPullRequests;
 pub use repository::LibraryStore;
-pub use scribe_control::ScribeControlStore;
-pub use scribe_parse::ScribeParseStore;
 pub use selection::SelectionStore;
 
-mod scribe_control;
-/// The scribe's parsed message files and host facts.
-pub mod scribe_parse;
 mod selection;
 
 #[cfg(test)]

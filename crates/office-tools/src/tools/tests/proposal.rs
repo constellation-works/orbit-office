@@ -17,7 +17,6 @@ fn fixture() -> (Ports<'static>, FakeOrbit) {
         selections: Box::new(FakeSelections::default()),
         shared: Box::new(office_testkit::fakes::FakeShared::default()),
         pr: Box::new(office_core::ports::UnavailablePullRequests),
-        scribe_control: Box::new(office_core::ports::UnavailableScribeControls),
     };
     (ports, orbit)
 }

@@ -61,7 +61,7 @@ test('the week shows meetings with their state in words, routine marks and the r
   assert.equal(await page.getByRole('link', { name: /Developer/ }).count(), 0);
   assert.equal(await page.getByRole('link', { name: 'Office review at 10:00' }).count(), 1, 'the weekly review runs on Monday only');
   // One flat rail: Calendar right after Today, with a plain count of today's meetings still without notes.
-  assert.deepEqual(await page.locator('#nav .rail-list').first().locator('a.rail-item').evaluateAll(links => links.map(link => link.dataset.screen)), ['today', 'calendar', 'todos', 'scribe', 'library', 'insights']);
+  assert.deepEqual(await page.locator('#nav .rail-list').first().locator('a.rail-item').evaluateAll(links => links.map(link => link.dataset.screen)), ['today', 'calendar', 'todos', 'library', 'insights']);
   assert.equal(await page.locator('#nav .rail-group-label, #nav .rail-children').count(), 0, 'no group labels or nested children');
   const count = page.locator('#nav a[data-screen="calendar"] .rail-count');
   await page.waitForFunction(() => document.querySelector('#nav a[data-screen="calendar"] .rail-count')?.textContent === '1');

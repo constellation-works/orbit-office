@@ -475,31 +475,6 @@ button.today-row-title { cursor: pointer; }
 .today-cite { padding: 1px 6px; border-radius: 4px; background: var(--bg-hover); color: var(--fg-dim); font-size: 11.5px; }
 a.today-cite { color: var(--fg-dim); }
 a.today-cite:hover { color: var(--fg); background: var(--border-strong); }
-.today-row--contradiction { background: var(--attention-wash); }
-.today-row--contradiction > .today-row-line:hover { background: transparent; }
-.today-choices { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 14px 44px; }
-.today-choice {
-  flex: 1 1 220px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--fg);
-  font-size: 13.5px;
-  text-align: left;
-  cursor: pointer;
-}
-.today-choice:hover { border-color: var(--accent); background: var(--highlight-bg); }
-.today-choice[aria-pressed="true"] { border-color: var(--attention); background: var(--attention-bg); }
-.today-choice:disabled { opacity: .6; cursor: default; }
-.today-choice .mono-meta { font-size: 11.5px; }
-.today-choice-status { margin: 0; padding: 0 20px 14px 44px; font-size: 12.5px; color: var(--done-soft); }
-.today-choice-status[data-tone="error"] { color: var(--danger); }
 .today-empty { margin: 0; padding: 12px 20px; border-top: 1px solid var(--hair); color: var(--fg-mute); font-size: 13px; }
 .today-list-head + .today-empty { border-top: 0; }
 .today-outcome { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 20px; border-top: 1px solid var(--hair); color: var(--fg-dim); font-size: 13px; }
@@ -524,10 +499,6 @@ a.today-cite:hover { color: var(--fg); background: var(--border-strong); }
 .today-next-title { font-size: 13.5px; font-weight: 500; }
 .today-next-time { font-size: 12.5px; color: var(--fg-dim); }
 .today-next a { margin-top: 4px; font-size: 12.5px; }
-.today-handoff { display: grid; gap: 2px; padding: 8px 0; border-top: 1px solid var(--hair); min-width: 0; }
-.today-handoff-title { font-size: 13px; overflow-wrap: anywhere; }
-.today-handoff-meta { margin: 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-mute); overflow-wrap: anywhere; }
-.today-handoff-text { margin: 0; font-size: 12.5px; color: var(--fg-dim); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .today-result:not(.md), .today-background:not(.md) { white-space: pre-wrap; }
 .today-result.md, .today-background.md { font-size: 13.5px; color: var(--fg-dim); }
 /* Approval controls inside a row: compact, the primary as a bordered ghost and the rest quiet. */
@@ -548,7 +519,7 @@ a.today-cite:hover { color: var(--fg); background: var(--border-strong); }
 .today-view summary { color: var(--accent); cursor: pointer; font-size: 13px; }
 @media (max-width: 640px) {
   .today-bar, .today-row-line, .today-list-head, .today-empty, .today-outcome { padding-left: 16px; padding-right: 16px; }
-  .today-row-detail, .today-row-live, .today-choices, .today-choice-status { padding-left: 16px; padding-right: 16px; }
+  .today-row-detail, .today-row-live { padding-left: 16px; padding-right: 16px; }
   .today-aside { padding-left: 16px; padding-right: 16px; }
   /* The meta drops under the title, so one or two actions stay beside it when they fit. */
   .today-row-line { padding-top: 4px; padding-bottom: 4px; }

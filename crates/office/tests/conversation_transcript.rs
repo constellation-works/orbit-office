@@ -604,7 +604,7 @@ fn scribe_note(next: &str) -> String {
 #[test]
 fn scribe_handoff_is_retired_and_dropped_even_when_the_rules_page_sets_it() {
     // Scribe v2 S9: the SCR is the handoff, so `scribe.handoff` is retired
-    // (specs/scribe.md, "Configuration"). An offered crew handoff is
+    // (specs/sessions.md, "Live capture"). An offered crew handoff is
     // dropped as `disabled` with the setting absent or set; the pass's
     // decision still lands and no handoff line is written.
     let script = vec![

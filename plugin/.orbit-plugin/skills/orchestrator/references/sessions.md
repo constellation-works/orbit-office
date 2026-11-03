@@ -36,7 +36,7 @@ The response is `sections`, in this order. Each section has `kind`, `items`,
 |---|---|---|---|
 | `handoff` | only if your project has one | Your project's latest SCR, rendered as its title and `updated`, then Summary (`(scribe)` marker), Goals, Outcome and Blockers and Next; the item id is the SCR id and its link the SCR path. A project with no SCR keeps its thread's newest project-scoped `handoff` entry, rendered in structured field order (legacy text is marked), with time (your project, preferring your orchestrator; a thread is the first task id its handoff cites, else its conversation's project plus orchestrator) | Resume from it (below) |
 | `global` | only while a global handoff exists | The latest global SCR first, then open legacy `scope: global` handoffs from any project (text starts `(global)` or `(global until <time>)`, marked legacy after the SCR), newest first, at most five in all; one your handoff cites is always listed, once | Apply them alongside your own handoff |
-| `projects` | only in manual output (no project chosen) | One item per project with a handoff, newest first: `id`/`text` name the project, `link`/`time` are its latest SCR's (or its newest legacy handoff's, when it has no SCR) | Ask which project, or run `/handoff <project>` |
+| `projects` | only in manual output (no project chosen) | One item per project with a handoff, newest first: `id`/`text` name the project, `link`/`time` are its latest SCR's (or its newest legacy handoff's, when it has no SCR) | Ask which project, then load its handoff (below) |
 | `other_sessions` | only with a project, when another recent session has one | For a project with SCRs, its other SCRs updated within seven days of its newest; else one cited handoff item per other legacy thread; newest first, at most five | Note in one line; do not resume from another session's handoff |
 | `since` | always (empty with no previous session) | The newest conversation source in your project: id, path, title, last entry time | Note the time; "since" means since then |
 | `waiting_on_you` | always | Proposals awaiting a decision, agent to-dos in `review`, open `owner:you` to-dos; oldest first | Open with these |
@@ -56,9 +56,9 @@ the one of the newest SCR whose Next cites your open assignment (else the
 one its legacy thread was recorded in), and with no such assignment the
 brief is the manual output. In `manual` the hook's brief has
 no `handoff` and no `other_sessions`, only `global` and `projects`. In either
-mode, `/handoff <project>` (Claude Code) or `office.session-brief` with
+mode, `office.session-brief` with
 `{"view":"handoffs","project":"<project>"}` loads a project's handoff merged
-with the globals, also mid-session; `/handoff` alone lists the projects.
+with the globals, also mid-session; without `project` it lists the projects.
 
 Links:
 
@@ -104,10 +104,10 @@ scrubs credentials, treats unclear statements as open, and records the
 session's `orchestrator`, exact `model` and `session_id` separately from
 `captured_by: transcript-extractor`. Private evidence stays off the crew.
 
-In a scribed (v2) session the SCR is the handoff: its rewritten sections
-are refreshed every scribe pass, and the latest SCR per project and global
-is what the brief and `/handoff` show. In an unscribed session, during the
-window, keep the rolling handoff yourself as below; the brief reads it
+SCR files already in the Library (written by the scribe, which is now the
+separate `constellation-works/scribe` plugin) are read as handoffs: the
+latest SCR per project and global is what the brief shows. Office never
+writes them. Keep the rolling handoff yourself as below; the brief reads it
 only while that scope has no SCR. With the host integration installed, when
 the first handoff is needed, open the session source from its staged transcript
 and keep the returned id:
@@ -166,10 +166,10 @@ Do not write an end-of-session summary.
 
 Write `{kind:"handoff", structured_handoff:{...}}` instead of `text`.
 The old text keys remain accepted; existing one-line entries render unchanged
-with `legacy:true` (and `/handoff` labels them `(legacy)`). A structured entry
+with `legacy:true` (and the brief labels them `(legacy)`). A structured entry
 cannot also supply text, correction or by. `scope` and `until` work as before.
 
-The brief and `/handoff` render these fields in this order:
+The brief renders these fields in this order:
 
 | Field | Meaning | Budget (Unicode characters) |
 |---|---|---|
@@ -268,7 +268,7 @@ Approved scripts that run on a schedule go through routines and
 `office.script-run`, which you do not call. Proposing one is in
 [proposals-and-insights.md](proposals-and-insights.md).
 
-When the opt-in scribe offers a handoff, it uses the same structure. Invalid
-or legacy offers are dropped with a reason, retaining the pass's other
-evidence. A valid scribe note also needs a plan-changing entry and valid
-local `#L<n>` citations; its `(scribe)` marker remains visible.
+When the transcript-extraction crew offers a handoff, it uses the same
+structure. Invalid or legacy offers are dropped with a reason, retaining the
+pass's other evidence. A valid crew note also needs a plan-changing entry
+and valid local `#L<n>` citations; its `(scribe)` marker remains visible.

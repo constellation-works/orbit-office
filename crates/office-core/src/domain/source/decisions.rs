@@ -1,4 +1,4 @@
-//! Decision ledgers (specs/scribe.md, "Decision ledger"): one append-only
+//! Decision ledgers (specs/decisions.md, "Decision ledger"): one append-only
 //! file per scope at `sources/decisions/<scope>.md`, id `decisions-<scope>`,
 //! one `dec-<scope>-<n>` entry per body line in the D13 schema.
 //!
@@ -1277,7 +1277,7 @@ pub fn note_source(path: &str, markdown: &str, fallback: &str) -> Option<NoteSou
     })
 }
 
-/// The ledger entry a retired `note` source becomes (specs/scribe.md,
+/// The ledger entry a retired `note` source becomes (specs/decisions.md,
 /// "Retiring `sources/note`"): the title restated as the question, options
 /// unrecoverable, the body verbatim as the quote, its first line as the
 /// chosen span, `decided_by: human` and `source` set to the note's id.
@@ -1329,4 +1329,16 @@ pub fn note_entry(
     };
     decision.validate()?;
     Ok(decision)
+}
+
+/// One decision ledger file to write, compare-and-set: `expected` is the
+/// text read before planning (`None`: the file must not exist yet).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlannedFile {
+    /// Library-relative path.
+    pub path: String,
+    /// Full new text.
+    pub text: String,
+    /// The text planned against.
+    pub expected: Option<String>,
 }

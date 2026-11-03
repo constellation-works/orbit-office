@@ -1,40 +1,29 @@
 ---
 type: design
-summary: "Spec: recall — one scribe across every conversation, and answers about past conversations without involving an orchestrator"
-last_validated: 2026-11-01
-last_updated: 2026-11-02
+summary: "Spec: recall — answers about past conversations from captured conversation sources: session context and titles, stored and live refs, the model-free office.recall, cited office.recall-answer, and append-only corrections"
+last_validated: 2026-11-03
+last_updated: 2026-11-03
 ---
 
 # Spec: Recall
 
-> Scribe v2 ([scribe.md](./scribe.md)) now answers over SCR files, the
-> decision ledger and preference pages ([ORB-21117]). The recall backend
-> below remains built; its original provider flow is superseded by scribe.
+Status: built ([ORB-20688]): session context and title ownership,
+deterministic stored refs, read-only `office.recall` with feed mode,
+`office.recall-answer` ([ORB-20756]), live PR refs through `gh`
+([ORB-20710]), and append-only corrections with repeated-correction
+signals ([ORB-20695]).
 
-Status: the Orbit backend is built ([ORB-20688]): session context and title
-ownership, deterministic stored refs, read-only `office.recall`, and append-only
-corrections with repeated-correction signals ([ORB-20695]). The Claude Code
-provider plugin, commands/subagent and backfill are built ([ORB-20689]); see the
-[installation guide](../../../../plugin/claude-code/README.md). Scribe v1
-([ORB-20799]) replaced `/recall` and the `recall` subagent with `/scribe ask`
-and the `scribe` agent, and turned the automatic Stop/SessionEnd passes off
-by default (plugin option `auto_capture`); the pane's ask box now answers in
-the pane. The desktop
-Scribe pane is built ([ORB-20697]). The web Scribe screen was built over scribe v1 instead of recall
-([ORB-20696]) and reworked into the v2 feed and ledger panels
-([ORB-21120]; [scribe.md](./scribe.md#relation-to-what-is-built)).
-PR refs resolve live through a `gh` source ([ORB-20710], below). Recall feed
-mode, `office.recall-answer` and the Office-owned scribe control state
-(`office.scribe-control`) are built ([ORB-20756], below).
+Recall answers "where did we discuss X?", "what did we decide about Y?"
+and "did Z land?" from the conversation sources the Library already
+holds, with citations and a way back to the conversation, without asking
+an orchestrator. Conversation capture itself is specified in
+[sessions.md](./sessions.md).
 
-One scribe follows the user across every agent conversation they hold, in
-every project, and answers "where did we discuss X?", "what did we decide
-about Y?" and "did Z land?" from what it captured. It answers with
-citations and a way back to the conversation, and it never asks an
-orchestrator. The scribe is the live and SessionEnd extractor of
-[sessions.md](./sessions.md); this spec covers how it is installed for
-the user rather than per project, how conversations are told apart, how
-talk is linked to outcomes, and how questions are answered.
+The scribe that used to drive capture and present recall (the provider
+plugin, `/scribe`, `/recall`, the Scribe window and its controls) moved to
+`constellation-works/scribe` and was removed from orbit-office
+([The scribe moved to constellation-works/scribe](../4_decisions.md#the-scribe-moved-to-constellation-worksscribe)).
+That plugin is a client of the tools below, like any other caller.
 
 ## Why This Exists
 
@@ -43,38 +32,7 @@ which one held a discussion, what was decided there and whether the
 result shipped, and asks again. Asking the orchestrator of the current
 conversation costs its context and its time, and it does not know what
 other conversations said. The Library already holds one conversation
-source per session; nothing yet lets the user query them as one memory.
-
-## Distribution: a provider plugin
-
-The scribe is installed once per user as a provider plugin, not wired into
-each project's settings.
-
-- **Claude Code:** a Claude Code plugin shipped from this repository at
-  `plugin/claude-code/` (`.claude-plugin/plugin.json`, `hooks/`,
-  `commands/`, `agents/`), installable from a marketplace. It carries:
-  - the SessionStart hook (the brief), the end-of-turn hook (live passes)
-    and the SessionEnd hook (final pass and staging), as specified in
-    [sessions.md](./sessions.md#live-scribe);
-  - commands `/scribe on|off|now|status|title|backfill` and `/recall <question>`;
-  - the `recall` subagent.
-- **Codex** gets an equivalent package once its transcript adapter exists;
-  until then Codex sessions are not captured and recall says so.
-- **Configuration** is plugin user configuration, not Library settings:
-  the office workspace selector to capture into, the default switch state
-  for new sessions, and a list of excluded project paths that are never
-  captured whatever the switch says.
-- The plugin talks to Office only through Orbit's tool surface
-  (`orbit tool run office.<tool>`); it holds no Library path and no
-  credentials, and hooks fail open (fixed diagnostic and exit 0) with a
-  one-second Orbit budget so a broken scribe cannot block a conversation.
-  The workspace selector is an absolute local checkout path, which Orbit
-  accepts as a selector; remote selectors are refused. The marketplace and
-  per-user configuration ship inside `plugin/claude-code/`. Claude namespaces
-  the commands as `/office-scribe:scribe` and `/office-scribe:recall`.
-
-The Orbit plugin (`plugin/.orbit-plugin/`) stays the only writer of the
-Library. The provider plugin is a client of it.
+source per session; recall lets the user query them as one memory.
 
 ## Telling conversations apart
 
@@ -88,7 +46,7 @@ branch: agent-main                                # git branch at start, null ou
 started_at: 2026-11-01T01:02:03Z                  # first conversational record
 last_active_at: 2026-11-01T03:10:00Z              # last conversational record captured
 resume: { provider: claude, command: "claude --resume <session-id>" }
-title: "Live scribe and recall"                   # short title
+title: "Session context and recall"               # short title
 title_by: scribe                                  # scribe | user
 ```
 
@@ -96,11 +54,11 @@ title_by: scribe                                  # scribe | user
   from the transcript and the hook, deterministically.
 - `title` is proposed by the extraction crew from the captured entries,
   at most 8 words, and marked `title_by: scribe`. It is replaced on later
-  passes until the user sets one (`/scribe title <text>`, `title_by:
-  user`), which is never overwritten. With no crew (private sessions) the
+  passes until the user sets one (`title_by: user`), which is never
+  overwritten. With no crew (private sessions) the
   title is the first user line, truncated to 8 words.
 - The provider's own conversation link (for example the desktop app's
-  session link) is recorded in `resume` when the hook can read it; the
+  session link) is recorded in `resume` when the caller supplies it; the
   command form is always present for Claude Code.
 
 ### Capture contract (built)
@@ -115,9 +73,9 @@ a later hook can supply its provider link. No resume value is executed.
 
 The crew passes its proposed title with `title_by: scribe` (the default).
 With no proposal, the first user line supplies at most eight words. Private
-capture ignores scribe proposals and uses that local fallback; an explicit
+capture ignores crew title proposals and uses that local fallback; an explicit
 user title is retained. A hook can set or change a user title with `title`
-and `title_by: user`, including on an unchanged transcript. Later scribe
+and `title_by: user`, including on an unchanged transcript. Later crew
 passes cannot replace it. No model call is added to capture.
 
 `repository` is a known GitHub `owner/repo` supplied by the hook, for projects
@@ -207,12 +165,11 @@ Private sources contribute session items and refs but never entry text.
 ### Feed mode (built)
 
 With `question` absent or null, `office.recall` returns every entry newest
-first, under the same filters and the same response shape: this is the
-Scribe window's feed. `limit` is 1–200 in feed mode (default 20), so a
-window can show a long session; with a question it stays 1–50. `session_id`
+first, under the same filters and the same response shape. `limit` is
+1–200 in feed mode (default 20), so a caller can read a long session; with a question it stays 1–50. `session_id`
 is an exact match on the source's engine session identity, in both modes:
-only that session's conversation source contributes, so a window scopes the
-feed to its own session without relying on the search terms. Private
+only that session's conversation source contributes, so a caller scopes the
+feed to one session without relying on the search terms. Private
 entries still count toward the limit and contribute only their session
 item and refs.
 
@@ -244,118 +201,27 @@ can retry. Backend contract and offline conformance checks live in
 `schemas/recall.{request,response}.json` and `tests/conformance/recall.yaml`
 under `plugin/.orbit-plugin/`.
 
-### Answering: the `recall` subagent
-
-`/recall <question>` runs the `recall` subagent, a low-cost model with one
-tool, `office.recall`. Its answer:
-
-- cites every claim to a source anchor (`src-…#Ln`) and names the
-  conversation by title, project and date with its `resume` command;
-- reports work status only from the live `refs` result;
-- says "not captured" when the result holds no evidence, citing
-  `coverage`, and never fills the gap from its own knowledge;
-- quotes user directions and decisions verbatim, as captured.
-
-Because it runs as a subagent, the conversation it was asked from receives
-only the answer, not the search. The same tool serves two more entry
-points with the same rules: `office recall "<question>"` from a terminal,
-and a Recall box in the web app.
-
-## The Scribe window
-
-The user sees what the scribe writes as it writes it, corrects it in place
-and asks it questions, in one small window beside their conversations. The
-window is a view over the same Library and tools; it adds no store and no
-second writer.
-
-### Two hosts, one screen
-
-- **Web app:** a compact **Scribe** screen in the orbit-office app
-  (`/scribe`), laid out for a narrow window (from 320 px wide) and usable
-  as an installed PWA window. It works for every provider and for terminal
-  sessions.
-- **Claude desktop mod:** a pane beside the chat (`$.ui.open`), shipped
-  with the Claude Code plugin. It shows the same three parts for the
-  session it sits in, using the session identity the engine supplies, and
-  links to the web screen for everything else. It reaches Office the same
-  way the plugin's hooks do, through `orbit tool run office.*`; it holds no
-  Library path or credentials. Built: `plugin/claude-code/mod/scribe-pane.tsx`,
-  validated with `claude plugin validate` and
-  `claude plugin test`. Its feed is `office.recall` queried with the
-  engine-supplied session id as the question (recall matches the id
-  against each source's session identity and returns that session's
-  entries newest first; feed mode's exact `session_id` filter, above, is
-  the contract the web screen uses);
-  corrections are one `office.capture` `append_to` append per choice; the
-  switch, **Capture now** and title controls go through the plugin's
-  structured pane control (`scripts/pane.py`); the ask box spawns the
-  `recall` subagent, renders its answer from that agent's `turn.complete`,
-  and falls back to rendering `office.recall`'s cited evidence when the
-  spawn is refused or no answer comes. The pane control writes the switch,
-  Capture-now request, title and heartbeat through `office.scribe-control`
-  (below) and keeps the plugin's files under `.orbit/tmp/scribe/` as their
-  local cache. When Orbit is
-  unreachable the pane shows a single `scribe unavailable` line.
-
-### What it shows
-
-- **Feed:** captured entries, newest first, as they land: kind, the copied
-  line, time and a link to its anchor (and, in the mod, to the line's place
-  in the conversation where the surface supports it). The current
-  conversation comes first; others are grouped by title and project, the
-  same fields recall uses. It refreshes by polling, like the rest of the
-  app; there is no event bus.
-- **Status line:** switch state for the current session, the last pass
-  ("2 min ago, 3 entries"), and a pending pass if one is queued.
-- **Controls:** the session's switch, **Capture now** (`/scribe now`), and
-  the session title (`/scribe title`).
-- **Ask box:** a question answered by recall's rules: cited, conversation
-  named with its resume command, live status for refs, "not captured" with
-  coverage. Answers open feed entries and conversations by link.
-
-### Controls (built)
-
-Per-session scribe control state is owned by Office behind
-`office.scribe-control` (`get`, `set_switch`, `request_now`,
-`consume_now`, `set_title`, `heartbeat`), specified in
-[sessions.md](./sessions.md#switch) and kept in plugin state
-(`plugin_state/scribe_control.sqlite`), not the Library. The provider
-plugin's hooks read that state, so the web window and the plugin share one
-switch:
-
-- **Switch:** the window calls `set_switch`; the session's next end-of-turn
-  hook mirrors it into the flag file (`.orbit/tmp/scribe/<session-id>`),
-  the plugin's local cache. `/scribe on|off` writes Office first.
-- **Capture now:** the window calls `request_now`; the next end-of-turn
-  hook queues a forced pass and then `consume_now`s that request, once.
-  While an earlier pass is pending the request waits. `/scribe now` records
-  the request and runs it at once.
-- **Title:** the window calls `set_title`; the next end-of-turn hook (switch
-  on) applies it once through `office.capture` with `title_by: user`.
-  `/scribe title` writes both.
-- **Status line:** `get` reports the switch, a pending request and whether
-  a window heartbeat is fresh.
-
 ### Corrections
 
-Each feed entry offers **Not a decision**, **Wrong kind…**, **Wrong
-wording** and **Remove**; the window also offers **Missed something…**
-with a free-text box. The log stays append-only: a correction is a new
-`correction` entry in the same source that names the corrected anchor and
-the user's choice, written through `office.capture` with `append_to`.
+Built ([ORB-20695]).
 
-- Readers apply corrections: the brief, the digest, `office.recall` and the
-  feed treat a corrected entry as its corrected kind, or as absent after
+A captured entry can be corrected as **Not a decision**, **Wrong kind**,
+**Wrong wording** or **Remove**, and a missed line can be added. The log
+stays append-only: a correction is a new `correction` entry in the same
+source that names the corrected anchor and the user's choice, written
+through `office.capture` with `append_to`. Office ships no correction
+screen; a client such as `constellation-works/scribe` calls the backend.
+
+- Readers apply corrections: the brief, the digest and `office.recall`
+  treat a corrected entry as its corrected kind, or as absent after
   **Remove**, and show that it was corrected.
-- **Missed something…** writes the user's text as a `direction`,
+- A missed entry writes the user's text as a `direction`,
   `decision` or `fact` entry chosen by the user, verbatim, marked
   `by: user`.
 - Repeated corrections of the same kind are a signal for a
   `knowledge_update` proposal to `dom-scribe-rules`, quoting the corrected
   entries ([proposals.md](./proposals.md#signals)).
 
-The correction backend is built; the desktop pane's controls are built
-(the web Scribe screen, built over scribe v1, has no correction controls).
 Append through `office.capture`, for example:
 
 ```json
@@ -397,23 +263,7 @@ summary quotes the original entries with original and correction anchors. The
 scan clock excludes future corrections; the window includes its exact lower
 boundary. This proposes a change for review and never edits the rules page.
 
-### Pace while the window is open
-
-The feed is only as fresh as the last pass. While a window is open on a
-session, its debounce tightens to `max_turns: 2` (the time bound unchanged),
-and **Capture now** covers the rest. With no window open, the defaults of
-[sessions.md](./sessions.md#trigger-and-debounce) apply.
-
-A window records its heartbeat with `office.scribe-control`'s `heartbeat`
-op while it is open (the desktop pane on every refresh, through the
-plugin's pane control; the web Scribe screen for its session). The
-end-of-turn hook reads the record once per turn and treats a heartbeat
-under two minutes old (`window_open`) as "window open", applying the
-tighter turn bound. The desktop pane also refreshes
-`.orbit/tmp/scribe/<session-id>.window-open` in the Office workspace, the
-plugin's local cache, which the hook uses when Office cannot be read.
-
-### Answering in each host
+### Answering: `office.recall-answer`
 
 `office.recall` stays model-free. A separate tool, `office.recall-answer`
 (built, [ORB-20756]; read-only, `mcp_scope: workspace`, not `agent_callable`
@@ -448,38 +298,26 @@ Without the route, private sources are listed in `private_references`
 (source id, title, path, project, session id, resume) and their text goes
 to no model.
 
-- In Claude Code, `/recall` and the mod's ask box use the `recall` subagent.
-- In the web app, the server calls `office.recall-answer`, so the same
-  cited-answer rules apply without involving an orchestrator.
-
-## Backfill
-
-`/scribe backfill [--since <date>]` queues SessionEnd extraction for the
-user's existing provider transcripts in non-excluded projects, oldest
-first, through the same staging and dedupe as SessionEnd. Sessions already
-captured are no-ops. Recall's `coverage` reports how far back capture
-reaches.
+The answer is cited, names each conversation with its resume command,
+takes work status only from the live `refs`, and says "not captured" with
+`coverage` when nothing answers. It never fills a gap from model
+knowledge, and it never involves an orchestrator.
 
 ## Invariants
 
-- One writer: the Library is written only through `office.capture`;
-  the Scribe window writes corrections through it too.
+- One writer: the Library is written only through `office.capture`,
+  corrections included.
 - Answers come only from captured entries and live ref status.
 - Raw transcripts never leave the host that holds them; only captured
   entries reach the Library and its sync.
-- Excluded projects are never staged, captured or backfilled.
 
 ## Task References
 
 - [ORB-20688] — built session context, stored refs and the recall backend.
-- [ORB-20689] — built the original Claude Code provider plugin and recall commands.
+- [ORB-20689] — built the original Claude Code provider plugin and recall commands (since removed).
 - [ORB-20695] — built append-only corrections and effective-entry projection.
-- [ORB-20696] — built the original web Scribe screen over v1.
-- [ORB-20697] — built the desktop Scribe pane.
 - [ORB-20710] — resolved PR refs through a live gh source.
-- [ORB-20756] — built recall-answer, feed mode and scribe-control.
-- [ORB-20799] — replaced recall commands with the v1 scribe agent and ask command.
-- [ORB-21117] — built v2 query and ask over SCR files, preferences and decisions.
-- [ORB-21120] — reworked the web Scribe screen into the v2 feed and ledger panels.
+- [ORB-20756] — built recall-answer and feed mode.
+- [ORB-21749] — removed the scribe and its provider plugin from orbit-office.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

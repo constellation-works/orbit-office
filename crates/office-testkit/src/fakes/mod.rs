@@ -6,7 +6,6 @@ mod library;
 mod models;
 mod orbit;
 mod pr;
-mod scribe_control;
 mod scripts;
 mod selection;
 mod shared;
@@ -17,7 +16,6 @@ pub use library::{FakeLibrary, FakeStaging};
 pub use models::FakeModels;
 pub use orbit::{FakeOrbit, OrbitCall};
 pub use pr::FakePullRequests;
-pub use scribe_control::FakeScribeControls;
 pub use scripts::FakeScripts;
 pub use selection::FakeSelections;
 pub use shared::FakeShared;
@@ -56,7 +54,6 @@ impl PortsBuilder {
             selections: Box::new(FakeSelections::default()),
             shared: Box::new(FakeShared::default()),
             pr: Box::new(FakePullRequests::default()),
-            scribe_control: Box::new(FakeScribeControls::default()),
         }
     }
 }

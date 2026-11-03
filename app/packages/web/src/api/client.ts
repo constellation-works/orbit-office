@@ -3,7 +3,7 @@ import type {
   CalendarSources, LocalCalendarChange, AcceptAllResult, AcceptRequest, ApprovalDetail, CalendarSynced, CalendarView, MeetingOutcome, ApprovalOk, ApproveResult, ConnectionSaved, ConnectionWrite,
   GatewaySendResult, PrivateRouteSaved, PrivateRouteStatus, PrivateRouteWrite, SettingsApiCalls,
   SettingsConnections, SettingsStatus, SignInPoll, SignInStarted, BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, SourceDigest, SourcePlan, SourceView, SelectionInput, SelectionCount, TodoCreated, TodoScheduled,
-  AgentTodos, AgentWorkspaceSaved, Contradictions, ContradictionResolve, ModelsView, TodayDigest,
+  AgentTodos, AgentWorkspaceSaved, ModelsView, TodayDigest,
   ConflictChoice, ShareDocument, SharedLastSync, SharedLibraryBlock, SharedLibrarySaved, SharedLibraryStatus, SharedSync, ShareRequest, ShareResult,
 } from "@orbit-office/contracts";
 
@@ -267,14 +267,4 @@ export function saveAgentWorkspace(workspace: string | null): Promise<AgentWorks
 /** Every job's model, where it runs and what the app could check. */
 export function getModels(): Promise<ModelsView> {
   return getJson<ModelsView>("/api/settings/models");
-}
-
-/** Open contradictions between a meeting decision and the prior ledger. */
-export function getContradictions(): Promise<Contradictions> {
-  return getJson<Contradictions>("/api/scribe/contradictions");
-}
-
-/** Record which decision stands; held agent to-dos are then released. */
-export function resolveContradiction(input: ContradictionResolve): Promise<{ ok: true }> {
-  return postJson<{ ok: true }>("/api/scribe/contradictions/resolve", input);
 }

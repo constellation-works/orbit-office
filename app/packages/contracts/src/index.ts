@@ -6,30 +6,6 @@
  * built.
  */
 export type {
-  ScribeAnswer,
-  ScribeClaim,
-  ScrCard,
-  ScrDetail,
-  ScrFeed,
-  ScrTagEntry,
-  ScribeDecision,
-  ScribeDecisions,
-  ScribeAgreementCategory,
-  ScribeAgreementResponse,
-  ScribeDecisionAgreement,
-  ScribePreference,
-  ScribePreferences,
-  ScribeTagDef,
-  ScribeTagMode,
-  ScribeTagSave,
-  ScribeTagSaved,
-  ScribeTagScope,
-  ScribeTagSink,
-  ScribeTags,
-  ScribeHandoff,
-  ScribeHandoffs,
-  HandoffClosing,
-  HandoffFields,
   AcceptAllRequest,
   AcceptAllResult,
   AcceptRequest,
@@ -110,6 +86,6 @@ export type { BootstrapPhase, CapturedSource, CapturePaste, SourceCitation, Sour
 export type { SelectionInput, SelectionCount } from "./api.js";
 export type { CalendarSources, LocalCalendarEvent, LocalCalendarChange } from "./api.js";
 export type {
-  AgentTodo, AgentTodos, AgentTodoState, AgentWorkspaceSaved, AgentWorkspaceWrite, Contradiction, ContradictionResolve,
-  Contradictions, ContradictionSide, ModelJob, ModelsView, TaskPr, TodayDigest,
+  AgentTodo, AgentTodos, AgentTodoState, AgentWorkspaceSaved, AgentWorkspaceWrite,
+  ModelJob, ModelsView, TaskPr, TodayDigest,
 } from "./api.js";

@@ -1,7 +1,6 @@
 //! Settings through the public, pure parsing/deserialization boundary.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 use office_core::domain::endpoint::{Capability, EndpointKind};
-use office_core::domain::scribe_settings::{TagMode, TagSink, TagTrigger};
 use office_core::{Error, domain::settings::Settings};
 use serde_json::json;
 
@@ -733,338 +732,78 @@ fn shared_remotes_accept_local_spaces_and_scp_absolute_paths() {
     }
 }
 
-fn default_tag_names(settings: &Settings) -> Vec<String> {
-    settings
-        .scribe
-        .effective_tags()
-        .into_iter()
-        .map(|tag| tag.name)
-        .collect()
-}
-
-fn tag(name: &str, sink: &str) -> serde_json::Value {
-    json!({"name": name, "scope": "project", "instruction": "Record this.", "sink": sink})
+#[test]
+fn a_legacy_scribe_block_loads_is_ignored_and_is_not_written_back() {
+    // A settings file as an earlier build wrote it (pretty JSON), with a
+    // full scribe block, including values that build would have refused.
+    let file = json!({
+        "packs": ["kt"],
+        "scribe": {
+            "cadence": {"minutes": 30, "turns": 4},
+            "tags": [{"name": "lesson", "scope": "project", "instruction": "Record this.",
+                      "sink": "scr_only", "mode": "apply"}],
+            "precedents": {"half_life_days": 7}
+        }
+    });
+    let settings = Settings::from_yaml(&serde_json::to_string_pretty(&file).expect("json"))
+        .expect("a legacy scribe block loads");
+    let expected = Settings::default()
+        .with_setting("packs", json!(["kt"]))
+        .expect("packs");
+    assert_eq!(settings, expected);
+    // The retired block's half-life does not carry over to precedents.
+    assert_eq!(settings.precedents.half_life_days, 90);
+    let written = settings.to_yaml().expect("encode");
+    assert!(!written.contains("scribe"), "{written}");
+    // A hand-edited YAML block and a scalar scribe value load the same way.
+    Settings::from_yaml("scribe:\n  cadence: 3\n").expect("yaml mapping");
+    Settings::from_yaml("scribe: 3\n").expect("scalar");
 }
 
 #[test]
-fn no_scribe_key_means_the_two_default_tags_and_the_default_cadence() {
-    for settings in [
-        Settings::default(),
-        Settings::from_yaml(&Settings::default_yaml()).expect("default yaml"),
-        Settings::from_yaml("packs: [kt]\n").expect("no scribe key"),
-    ] {
-        assert_eq!(settings.scribe.cadence.minutes, 20);
-        assert_eq!(settings.scribe.cadence.turns, 10);
-        assert_eq!(default_tag_names(&settings), ["preferences", "decisions"]);
-        let tags = settings.scribe.effective_tags();
-        assert_eq!(tags[0].sink, TagSink::PreferencePage);
-    }
-    // A default block is not written to the file, so later default changes apply.
-    let yaml = Settings::default().to_yaml().expect("yaml");
-    assert!(!yaml.contains("\"scribe\""), "{yaml}");
-}
-
-#[test]
-fn scribe_cadence_accepts_bounds_and_null_restores_defaults() {
-    let set = Settings::default()
-        .with_setting("scribe.cadence", json!({"minutes": 5, "turns": 100}))
-        .expect("bounds");
-    assert_eq!(
-        (set.scribe.cadence.minutes, set.scribe.cadence.turns),
-        (5, 100)
-    );
-    let set = set
-        .with_setting("scribe.cadence", json!({"minutes": 240}))
-        .expect("partial keeps the other default");
-    assert_eq!(
-        (set.scribe.cadence.minutes, set.scribe.cadence.turns),
-        (240, 10)
-    );
-    let back = Settings::from_yaml(&set.to_yaml().expect("yaml")).expect("round trip");
-    assert_eq!(back, set);
-    let reset = set
-        .with_setting("scribe.cadence", json!(null))
-        .expect("null");
-    assert_eq!(reset, Settings::default());
-    for (value, key) in [
-        (json!({"minutes": 4}), "scribe.cadence.minutes"),
-        (json!({"minutes": 241}), "scribe.cadence.minutes"),
-        (json!({"turns": 1}), "scribe.cadence.turns"),
-        (json!({"turns": 101}), "scribe.cadence.turns"),
-        (json!({"turns": "10"}), "scribe.cadence.turns"),
-        (json!({"hours": 1}), "scribe.cadence.hours"),
-        (json!(20), "scribe.cadence"),
-    ] {
-        assert_eq!(
-            refused_key(Settings::default().with_setting("scribe.cadence", value)),
-            key
-        );
-    }
-}
-
-#[test]
-fn scribe_tag_trigger_defaults_to_cadence_accepts_marker_and_refuses_others() {
-    let defaults = Settings::default().scribe.effective_tags();
-    assert!(
-        defaults
-            .iter()
-            .all(|tag| tag.trigger == TagTrigger::Cadence)
-    );
-    // A Library written before the field existed keeps today's behavior.
-    let legacy = Settings::from_yaml(
-        r#"{"scribe": {"tags": [{"name": "idea", "scope": "session", "instruction": "An idea.", "sink": "scr_only"}]}}"#,
-    )
-    .expect("a tag without trigger");
-    assert_eq!(
-        legacy.scribe.effective_tags()[0].trigger,
-        TagTrigger::Cadence
-    );
-    let mut marked = tag("idea", "scr_only");
-    marked["trigger"] = json!("marker");
-    let set = Settings::default()
-        .with_setting("scribe.tags.idea", marked)
-        .expect("marker trigger");
-    let tags = set.scribe.effective_tags();
-    assert_eq!(tags[2].trigger, TagTrigger::Marker);
-    assert_eq!(tags[0].trigger, TagTrigger::Cadence);
-    let back = Settings::from_yaml(&set.to_yaml().expect("yaml")).expect("round trip");
-    assert_eq!(back, set);
-    for value in [json!("always"), json!("Marker"), json!(true), json!(null)] {
-        let mut definition = tag("idea", "scr_only");
-        definition["trigger"] = value;
-        // InvalidSetting is the invalid_library_setting code.
-        assert_eq!(
-            refused_key(Settings::default().with_setting("scribe.tags.idea", definition)),
-            "scribe.tags.idea.trigger"
-        );
-    }
-}
-
-#[test]
-fn scribe_tags_set_replace_and_delete_one_definition() {
-    let base = Settings::default();
-    let added = base
-        .with_setting(
-            "scribe.tags.lesson",
-            json!({"scope": "global", "instruction": "A lesson.", "sink": "orbit_task", "workspace": "polaris"}),
-        )
-        .expect("add");
-    assert_eq!(
-        default_tag_names(&added),
-        ["preferences", "decisions", "lesson"]
-    );
-    let lesson = &added.scribe.effective_tags()[2];
-    assert_eq!(lesson.workspace.as_deref(), Some("polaris"));
-    let replaced = added
-        .with_setting(
-            "scribe.tags.preferences",
-            json!({"scope": "global", "instruction": "Standing answers.", "sink": "preference_page", "mode": "apply"}),
-        )
-        .expect("replace a default");
-    assert_eq!(
-        replaced.scribe.effective_tags()[0].instruction,
-        "Standing answers."
-    );
-    let deleted = replaced
-        .with_setting("scribe.tags.decisions", json!(null))
-        .expect("delete a default");
-    assert_eq!(default_tag_names(&deleted), ["preferences", "lesson"]);
-    let back = Settings::from_yaml(&deleted.to_yaml().expect("yaml")).expect("round trip");
-    assert_eq!(back, deleted);
-    // Null on the whole list restores the two defaults.
-    let restored = deleted
-        .with_setting("scribe.tags", json!(null))
-        .expect("restore");
-    assert_eq!(restored, Settings::default());
-    // Deleting every tag is an explicit empty list, not the defaults.
-    let none = Settings::default()
-        .with_setting("scribe.tags", json!([]))
-        .expect("empty list");
-    assert!(none.scribe.effective_tags().is_empty());
-    let whole = Settings::default()
-        .with_setting(
-            "scribe.tags",
-            json!([tag("one", "scr_only"), tag("two", "decisions_ledger")]),
-        )
-        .expect("whole list");
-    assert_eq!(default_tag_names(&whole), ["one", "two"]);
-    assert_eq!(whole.scribe.effective_tags()[0].mode, TagMode::Append);
-}
-
-#[test]
-fn scribe_tags_refuse_each_invalid_definition_without_changing_settings() {
-    let base = Settings::default();
-    let cases: Vec<(&str, serde_json::Value, &str)> = vec![
-        (
-            "scribe.tags.x",
-            tag("x", "ledger"),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "decisions_ledger", "mode": "apply"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "scr_only", "mode": "apply"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "preference_page", "mode": "append"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "mode": "apply"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "mode": "append"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "decisions_ledger", "mode": "propose"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "scr_only", "mode": "propose"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "preference_page", "workspace": "ws"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.Bad_Name",
-            tag("Bad_Name", "scr_only"),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.-x",
-            tag("-x", "scr_only"),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x--y",
-            tag("x--y", "scr_only"),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            tag("y", "scr_only"),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "galaxy", "instruction": "i", "sink": "scr_only"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": " ", "sink": "scr_only"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "scr_only", "capture": "guess"}),
-            "invalid_library_setting",
-        ),
-        (
-            "scribe.tags.x",
-            json!("scr_only"),
-            "invalid_library_setting",
-        ),
-        ("scribe.tags.gone", json!(null), "invalid_library_setting"),
-        (
-            "scribe.tags.x",
-            tag("x", "/home/daniel/polaris/rules.md"),
-            "tag_sink_refused",
-        ),
-        ("scribe.tags.x", tag("x", "../polaris"), "tag_sink_refused"),
-        (
-            "scribe.tags.x",
-            tag("x", "~/almanac/notes.md"),
-            "tag_sink_refused",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "scr_only", "path": "/etc/passwd"}),
-            "tag_sink_refused",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "workspace": "/etc/passwd"}),
-            "tag_sink_refused",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "workspace": "ws/../passwd"}),
-            "tag_sink_refused",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "workspace": ".passwd"}),
-            "tag_sink_refused",
-        ),
-        (
-            "scribe.tags.x",
-            json!({"scope": "project", "instruction": "i", "sink": "orbit_task", "workspace": "~passwd"}),
-            "tag_sink_refused",
-        ),
-    ];
-    for (key, value, code) in cases {
-        let error = base
-            .with_setting(key, value.clone())
-            .expect_err(&format!("{key} {value}"));
-        assert_eq!(error.code(), code, "{key} {value}: {error}");
-        assert!(
-            !error.to_string().contains("passwd"),
-            "echoed the value: {error}"
-        );
-    }
-    // Duplicates and malformed names in the whole list, and an oversize list.
-    let duplicate = base.with_setting(
+fn scribe_keys_are_unknown_settings_for_config_set() {
+    for key in [
+        "scribe",
+        "scribe.cadence",
         "scribe.tags",
-        json!([tag("same", "scr_only"), tag("same", "scr_only")]),
-    );
-    assert_eq!(refused_key(duplicate), "scribe.tags.same");
+        "scribe.tags.lesson",
+        "scribe.precedents.half_life_days",
+    ] {
+        let error = Settings::default()
+            .with_setting(key, json!(null))
+            .expect_err("scribe keys are retired");
+        assert_eq!(error.code(), "unknown_library_setting", "{key}: {error}");
+    }
+}
+
+#[test]
+fn precedents_half_life_days_accepts_bounds_and_null_restores_the_default() {
+    let defaults = Settings::default();
+    assert_eq!(defaults.precedents.half_life_days, 90);
+    assert!(!defaults.to_yaml().expect("encode").contains("precedents"));
+    for days in [1, 3650] {
+        let set = Settings::default()
+            .with_setting("precedents.half_life_days", json!(days))
+            .expect("in range");
+        assert_eq!(set.precedents.half_life_days, days);
+        let reloaded = Settings::from_yaml(&set.to_yaml().expect("encode")).expect("reload");
+        assert_eq!(reloaded, set);
+    }
+    let restored = Settings::default()
+        .with_setting("precedents.half_life_days", json!(30))
+        .and_then(|set| set.with_setting("precedents.half_life_days", json!(null)))
+        .expect("null restores");
+    assert_eq!(restored, Settings::default());
+    for value in [json!(0), json!(3651), json!("90"), json!(1.5)] {
+        assert_eq!(
+            refused_key(Settings::default().with_setting("precedents.half_life_days", value)),
+            "precedents.half_life_days"
+        );
+    }
     assert_eq!(
-        refused_key(base.with_setting("scribe.tags", json!([tag("Bad", "scr_only")]))),
-        "scribe.tags[0].name"
+        refused_key(Settings::from_yaml("precedents:\n  window: 3\n")),
+        "precedents.window"
     );
-    assert_eq!(
-        refused_key(base.with_setting(
-            "scribe.tags",
-            json!([tag("good", "scr_only"), tag("Bad", "scr_only")])
-        )),
-        "scribe.tags[1].name"
-    );
-    let many: Vec<_> = (0..33).map(|n| tag(&format!("t{n}"), "scr_only")).collect();
-    assert_eq!(
-        refused_key(base.with_setting("scribe.tags", json!(many))),
-        "scribe.tags"
-    );
-    // Unknown scribe leaves are an unknown setting.
-    let error = base
-        .with_setting("scribe.mode", json!(1))
-        .expect_err("unknown");
-    assert_eq!(error.code(), "unknown_library_setting");
-    // A hand-edited file is held to the same rules.
-    let file = json!({"scribe": {"tags": [
-        {"name": "x", "scope": "global", "instruction": "i", "sink": "scr_only", "mode": "apply"}
-    ]}});
-    let error = Settings::from_yaml(&file.to_string()).expect_err("apply off preference_page");
-    assert_eq!(error.code(), "invalid_library_setting", "{error}");
-    let Error::InvalidSetting { key, .. } = error else {
-        panic!("wrong error: {error:?}")
-    };
-    assert_eq!(key, "scribe.tags.x.mode");
 }
 
 #[test]

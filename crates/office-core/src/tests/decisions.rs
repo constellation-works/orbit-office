@@ -1,5 +1,5 @@
 //! Decision ledgers: ids, line parsing, derived `reversed_by`, aliases and
-//! the note migration's entry (specs/scribe.md, Decision ledger).
+//! the note migration's entry (specs/decisions.md, Decision ledger).
 
 use crate::domain::knowledge::{DocumentKind, parse_citation};
 use crate::domain::source::decisions::{

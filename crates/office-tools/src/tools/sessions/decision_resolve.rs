@@ -1,7 +1,7 @@
 //! `office.decision-resolve`: settle one open decision conflict in one call.
 //! Records which entry stands as a new ledger entry that `reverses` the
 //! other, closes the conflict to-do, and releases the agent to-dos it held
-//! (specs/scribe.md, "Meeting decisions"). Model-free.
+//! (specs/decisions.md, "Meeting decisions"). Model-free.
 use office_core::domain::source::decision_precedents::{OPEN_TODO, conflicting_pair};
 use office_core::domain::source::decisions::{DecidedBy, views};
 use office_core::domain::source::format_rfc3339_utc;
