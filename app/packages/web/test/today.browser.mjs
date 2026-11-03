@@ -10,7 +10,7 @@ import { createHandler } from "../../server/dist/http/router.js";
 import { OrbitExitError } from "../../server/dist/orbit/client.js";
 import { fakeTodayClient, now } from "../../server/test/today-fixture.mjs";
 
-test("Today renders fake Orbit sections, results, empty states, failures and live updates at desktop and phone widths", { timeout: 30_000 }, async (t) => {
+test("Today renders fake Orbit row lists, results, empty states, failures and live updates at desktop and phone widths", { timeout: 30_000 }, async (t) => {
   assert.ok(process.env.PLAYWRIGHT_MODULE, "source the verified ORBIT_BROWSER_KIT_ENV first");
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE);
   const browser = await chromium.launch({ headless: true });
@@ -43,22 +43,27 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   await page.goto(origin);
   await page.getByRole("heading", { name: "Needs you", exact: true }).waitFor();
   const needs = page.getByRole("region", { name: "Needs you", exact: true });
-  const working = page.getByRole("region", { name: "Agents working on", exact: true });
+  const working = page.getByRole("region", { name: "Agents working", exact: true });
   const done = page.getByRole("region", { name: "Done today", exact: true });
-  assert.equal(await needs.locator("article").count(), 3);
+  // Done today starts collapsed; its rows open their result.
+  const doneToggle = done.getByRole("button", { name: /^Done today/ });
+  const result = done.getByRole("button", { name: "A clearer plan for the week", exact: true });
+  const openResult = async () => { await doneToggle.click(); await result.click(); };
+  assert.equal(await doneToggle.getAttribute("aria-expanded"), "false");
+  assert.equal(await needs.locator("li.today-row").count(), 3);
   assert.equal(await working.locator("li").count(), 1);
-  assert.equal(await done.locator("article").count(), 1);
+  assert.equal(await done.locator("li.today-row").count(), 1);
   for (const title of ["Turn meeting notes into a weekly brief", "The project brief is ready to read", "Send your feedback on the plan"]) {
-    assert.equal(await needs.getByRole("heading", { name: title }).count(), 1);
+    assert.equal(await needs.getByRole("button", { name: title, exact: true }).count(), 1);
   }
   assert.match(await working.innerText(), /Preparing the research notes/);
-  assert.match(await done.innerText(), /A clearer plan for the week/);
+  assert.equal(await page.getByText("Good morning").count(), 0, "no greeting");
   assert.equal(await page.locator('[data-slot="drop-zone"]').count(), 1);
   await page.locator('.today-next-slot[aria-busy="false"]').waitFor({ state: "attached" });
   assert.equal(await page.locator(".today-next").count(), 0);
   assert.equal(await needs.locator('[data-slot="approval-actions"]').count(), 2);
-  await done.getByText("Open result", { exact: true }).click();
-  await done.getByRole("link", { name: "About this work" }).click();
+  await openResult();
+  assert.match(await done.innerText(), /A clearer plan for the week/);
   assert.match(await done.innerText(), /The plan brings together the priorities/);
   assert.match(await done.innerText(), /From the planning meeting notes/);
   // Stored Markdown in a result and its background is rendered, and injected markup stays inert.
@@ -69,14 +74,14 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
     await route.fulfill({ response, json: body });
   };
   await page.route("**/api/today", marked); await page.reload();
-  await done.getByText("Open result", { exact: true }).click(); await done.getByRole("link", { name: "About this work" }).click();
+  await openResult();
   const outcome = done.locator(".today-result"); await outcome.waitFor();
   assert.equal(await outcome.locator("h5", { hasText: "Outcome" }).count(), 1); assert.equal(await outcome.locator("li").count(), 2); assert.equal(await outcome.locator("strong", { hasText: "shipped" }).count(), 1); assert.equal(await outcome.locator("code", { hasText: "v2" }).count(), 1);
   assert.equal(await done.locator(".today-background em", { hasText: "planning" }).count(), 1);
   assert.equal(await outcome.locator("script").count(), 0); assert.deepEqual(await outcome.locator("a").evaluateAll((links) => links.map((link) => link.getAttribute("href"))), ["https://example.org/r"]);
   assert.equal(await page.evaluate(() => window.__pwned), undefined);
   await page.unroute("**/api/today", marked); await page.reload();
-  await done.getByText("Open result", { exact: true }).click(); await done.getByRole("link", { name: "About this work" }).click();
+  await openResult();
   const visible = await page.locator("main").innerText();
   for (const internal of ["owner:agent", "owner:you", "in-progress", "suggestion-key", "completed-key"]) {
     assert.ok(!visible.includes(internal), `internal value ${internal} is not a display label`);
@@ -90,14 +95,15 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `today-light-${width}.png`), fullPage: true });
   }
 
-  // A changed snapshot keeps open results, background and keyboard focus.
+  // A changed snapshot keeps open lists, open rows and keyboard focus.
   fake.state.tasks[3].title = "Finishing the research notes";
-  await done.getByText("Open result", { exact: true }).focus();
+  await result.focus();
   await page.clock.fastForward(5_000);
   await working.getByText("Finishing the research notes").waitFor();
-  assert.equal(await done.locator("details").evaluate((element) => element.open), true);
-  assert.equal(await done.getByRole("link").getAttribute("aria-expanded"), "true");
-  assert.equal(await page.evaluate(() => document.activeElement.textContent), "Open result");
+  assert.equal(await doneToggle.getAttribute("aria-expanded"), "true");
+  assert.equal(await result.getAttribute("aria-expanded"), "true");
+  assert.match(await done.innerText(), /The plan brings together the priorities/);
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), "A clearer plan for the week");
 
   fake.state.failure = new Error("private diagnostic");
   await page.clock.fastForward(5_000);
@@ -111,7 +117,7 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   fake.state.failure = null;
   fake.state.tasks = [];
   await page.clock.fastForward(5_000);
-  await page.getByRole("heading", { name: "Nothing needs your attention.", exact: true }).waitFor();
+  await needs.getByText("Nothing needs you.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("alert").count(), 0);
   assert.match(await working.innerText(), /No agent work is underway/);
   assert.match(await done.innerText(), /No completed work yet today/);
@@ -124,10 +130,10 @@ test("Today renders fake Orbit sections, results, empty states, failures and liv
   fake.state.failure = new Error("unavailable");
   await page.reload();
   await page.getByRole("alert").waitFor();
-  assert.equal(await page.getByRole("heading", { name: "Nothing needs your attention." }).count(), 0);
+  assert.equal(await needs.getByText("Nothing needs you.").count(), 0);
   fake.state.failure = null;
   await page.clock.fastForward(5_000);
-  await page.getByRole("heading", { name: "Nothing needs your attention." }).waitFor();
+  await needs.getByText("Nothing needs you.").waitFor();
 
   // Navigation between polls must prevent even one more request.
   await page.evaluate(async () => {
@@ -236,27 +242,30 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
   await page.clock.install();
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const needs = page.getByRole("region", { name: "Needs you", exact: true });
-  await needs.getByRole("heading", { name: "Set up your Library" }).waitFor();
-  const cardOf = (title) => needs.locator("article.card").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+  await needs.getByRole("button", { name: "Set up your Library", exact: true }).waitFor();
+  // One row per need or group; its title opens the details, its actions sit inline.
+  const cardOf = (title) => needs.locator("li.today-row").filter({ has: page.getByRole("button", { name: title, exact: true }) });
+  const open = async (title) => { await cardOf(title).getByRole("button", { name: title, exact: true }).click(); return cardOf(title); };
 
   // One card per group; each page is reviewable on its own.
   const onboarding = cardOf("Set up your Library");
   assert.equal(await onboarding.locator(".approval-page").count(), 2);
   assert.equal(await cardOf("Ingest service").locator(".approval-page").count(), 2);
   assert.equal(await cardOf("Pages about your processes and policies").locator(".approval-page").count(), 1);
-  assert.equal(await needs.locator("article.card").count(), 8);
+  assert.equal(await needs.locator("li.today-row").count(), 8);
+  await open("Set up your Library");
   await onboarding.getByText("Review this page").first().click();
   await onboarding.getByText("What the team agreed").first().waitFor();
 
   // The draft shows exactly what would be sent; script and review cards list their files.
-  const draft = cardOf("Add a follow-up note to the Acme account");
+  const draft = await open("Add a follow-up note to the Acme account");
   await draft.getByText("https://api.acme.example/v2/accounts/acme/notes").waitFor();
   assert.match(await draft.innerText(), /POST/);
   assert.match(await draft.innerText(), /Following up on Tuesday's call\./);
-  await cardOf("Receipt catalog for October").getByText("receipts.csv").waitFor();
+  await (await open("Receipt catalog for October")).getByText("receipts.csv").waitFor();
   assert.equal(await cardOf("Receipt catalog for October").getByText("script-run.json").count(), 0);
-  await cardOf("The project brief is ready to read").getByText("brief.md").waitFor();
-  assert.equal(await cardOf("Send your feedback on the plan").getByRole("button").count(), 0);
+  await (await open("The project brief is ready to read")).getByText("brief.md").waitFor();
+  assert.equal(await cardOf("Send your feedback on the plan").locator(".today-row-actions button").count(), 0, "the user's own to-do has no inline action");
 
   const visible = async () => page.locator("main").innerText();
   for (const internal of ["onboard-1", "boot-1", "bootstrap:", "subject:", "gd-0123", "script-output", "gateway-draft", "proposal:", "bbbbbbbb"]) {
@@ -301,7 +310,7 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
 
   // Orbit refusing the app's authority is said plainly, never "Please try again", and nothing changes.
   orbit.deny.add("office.proposal-accept");
-  const ingest = cardOf("Ingest service");
+  const ingest = await open("Ingest service");
   const overview = ingest.locator('.approval-page[data-key="boot-1"]');
   await overview.getByRole("button", { name: "Accept", exact: true }).click();
   await overview.getByRole("alert").waitFor();
@@ -311,7 +320,7 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
   await ingest.getByRole("button", { name: "Accept all" }).click();
   await ingest.getByText(/Accepted 0 of 2 pages\. .* still here to review\. The app isn’t allowed to do this yet, so nothing changed\./).waitFor();
   orbit.deny.add("orbit.task.update");
-  const policies = cardOf("Pages about your processes and policies");
+  const policies = await open("Pages about your processes and policies");
   await policies.getByRole("button", { name: "Dismiss", exact: true }).click();
   await policies.getByText("Couldn’t dismiss this. The app isn’t allowed to do this yet, so nothing changed. Trying again won’t help.").waitFor();
   for (const id of ["boot-1", "boot-2", "boot-3"]) assert.equal(fake.state.tasks.find((row) => row.id === id).status, "proposed");
@@ -369,7 +378,7 @@ test("Today shows a compact Handoffs section of the Scribe feed cards, linking t
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `today-handoffs-light-${width}.png`), fullPage: true });
   }
   assert.ok(calls.every((call) => call.name !== "office.session-brief" || call.input.view === "list"));
-  await page.getByRole("link", { name: "Open Scribe" }).click();
+  await page.getByRole("link", { name: "All handoffs" }).click();
   await page.getByRole("heading", { name: "Scribe", exact: true, level: 1 }).waitFor();
   await page.getByRole("region", { name: "Feed · one card per project", exact: true }).locator('[data-id="SCR-20261031-0900-aaaa02"]').waitFor();
   assert.deepEqual(errors, []);

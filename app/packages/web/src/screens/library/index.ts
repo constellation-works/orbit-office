@@ -1,6 +1,7 @@
 /** Browse Library pages, outputs and setup progress. */
 import type { Screen } from "../../screen.js";
 import { getJson } from "../../api/client.js";
+import { sourceHref } from "../../api/source-location.js";
 import { errorState, panel, panelBody, renderMarkdown, row as listRow, rows as listRows, sharedLabel, shareSwitch } from "../../ui/index.js";
 import { styles } from "./style.js";
 
@@ -104,6 +105,8 @@ async function render(root: HTMLElement): Promise<void> {
       const kicker = page.querySelector(".library-kicker"); if (kicker) kicker.textContent = data.page !== undefined ? (names[str(item.template)] ?? (str(item.id).startsWith("rb-") ? "How-to" : "Page")) : data.artifact !== undefined ? "Output" : data.source !== undefined ? "Source" : "";
       const article = el("article"); article.className = "panel library-document"; const doc = panelBody(); doc.classList.add("library-document-body"); article.append(doc); page.append(article);
       const actions = page.querySelector(".library-detail-actions, .screen-head-actions"); if (actions) sharing(actions, id, data, item);
+      // A source opens in full, with its anchored spans, on the Source screen.
+      if (actions && data.source !== undefined) { const open = document.createElement("a"); open.className = "library-source-link"; open.href = sourceHref(id, anchor ? `#${anchor}` : "#source"); open.textContent = "Open in Source"; actions.prepend(open); }
       if (str(item.summary)) { const summary = el("p", str(item.summary)); summary.className = "library-summary"; doc.append(summary); }
       const body = str(item.body ?? data.body); if (body) doc.append(renderMarkdown(body, { className: "library-body", cite: (cite) => documentButton(cite, "View source", "library-cite") }));
       if (data.content_withheld === true) doc.append(el("p", "This document is private, so its text is withheld here. It is only processed on your chosen private endpoint."));
@@ -131,7 +134,8 @@ async function render(root: HTMLElement): Promise<void> {
     return form;
   }
   async function overview(): Promise<void> {
-    const page = layout("Library", "Pages, how-tos and outputs your office keeps, each cited to where it came from.", searchForm());
+    const add = document.createElement("a"); add.className = "library-source-link"; add.href = "#source"; add.textContent = "Add a source";
+    const page = layout("Library", "Pages, how-tos and outputs your office keeps, each cited to where it came from.", add, searchForm());
     const loading = el("p", "Loading Library."); page.append(loading);
     try {
       const data = await request(); if (!alive() || !page.isConnected) return;

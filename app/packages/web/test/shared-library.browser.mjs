@@ -261,10 +261,10 @@ test("Shared library browser: connect in Settings, share a page with its source,
   await noInternals();
   await shot("library-private-page");
 
-  // Needs you: one card for the sync's update, conflict and skipped document.
+  // Needs you: one row for the sync's update, conflict and skipped document; its title opens them.
   await page.goto(`${origin}/#today`);
   const card = page.locator('[data-group="shared-library"]');
-  await card.getByRole("heading", { name: "Changes from the shared library" }).waitFor();
+  await card.getByRole("button", { name: "Changes from the shared library", exact: true }).click();
   assert.equal(await page.locator('[data-group="shared-library"]').count(), 1);
   await card.getByText("Scratch notes", { exact: true }).waitFor();
   assert.match(await card.innerText(), /wasn’t shared\. It’s marked private/);

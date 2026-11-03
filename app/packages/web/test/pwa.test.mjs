@@ -180,6 +180,7 @@ const SHELL = [
   "/screens/today/digest.js",
   "/screens/today/index.js",
   "/screens/today/next-meeting.js",
+  "/screens/today/rows.js",
   "/screens/todos/index.js",
   "/screens/todos/view.js",
 ];
