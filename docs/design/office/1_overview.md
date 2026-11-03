@@ -22,6 +22,13 @@ related_artifacts: [ORB-16585]
 The meeting-to-PR demo is coordinated in [ORB-21334]. Its on-call record
 [ORB-21404] confirms the end-to-end run; recording and close-out remain.
 
+The feature remains **building**: the demo build has landed, but Scribe's
+v1 removal is approved for the compatibility window's end ([ORB-21123]),
+the gateway-independent agent activity is still queued ([ORB-21451]),
+and app approval wiring is parked ([ORB-20363]). These open slices do not
+change the design's **Draft** status; whole-design owner approval remains
+unverified in the related tasks.
+
 Orbit Office is a distribution of Orbit: an app built on Orbit as its engine.
 The product combines the standalone app, the `office` and `gateway` component
 plugins, optional `cloudcli`, and an office workspace preset. Orbit supplies
@@ -186,5 +193,8 @@ core.
 - [ORB-21452] — deduplicated Today digest needs by task id across repeated workspace listings.
 - [ORB-21641] — removed the Agent work screen; Today and To-dos show agent work.
 - [ORB-21404] — tracks the completed demo run and the remaining recording and close-out work.
+- [ORB-21123] — removes Scribe v1 surfaces on or after 2026-12-02; approved in backlog.
+- [ORB-21451] — removes the agent activity's unconditional gateway dependency; approved in backlog.
+- [ORB-20363] — holds scoped app approval wiring; parked as someday.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

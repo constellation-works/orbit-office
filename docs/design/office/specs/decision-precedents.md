@@ -571,6 +571,6 @@ change makes stale in the same change.
 - [ORB-21218] — built slice P3: the `office.decision-precedents` provider.
 - [ORB-21219] — built slice P4: contradiction reporting.
 - [ORB-21220] — built slice P5: the Agreement view.
-- [ORB-21340] — implemented meeting-fed decisions and contradiction resolution; code is merged, task still in progress.
+- [ORB-21340] — built meeting-fed decisions and contradiction resolution; done, merged as `59e36d4`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
