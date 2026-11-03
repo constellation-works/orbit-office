@@ -422,7 +422,7 @@ refuses a second report for the same key. Other artifacts omit this field.
 
 **Rules by kind:**
 
-- **`draft`** (an email or message for someone else) records `sent_at` once the user sends it. In the hackathon build, sending copies the draft to the clipboard.
+- **`draft`** (an email or message for someone else) records `sent_at` once the user sends it. In the current build, sending copies the draft to the clipboard.
 - **`script`** in the shared layer is always refused by `office.script-run`; it must first be copied into the user's Library through a proposal. An own script is never run because it was promoted. A script runs only as a step of a routine or auto-task whose accepted proposal named it. That step pins the artifact version by `sha256` and runs inside Orbit's sandbox. That step calls `office.script-run`, which runs it with the install's pinned Python in its own run directory, offline, with dependencies fetched once at approval, and files its outputs for review ([scripts.md](./scripts.md)). Changing the script means a new version and a new proposal.
 - **`review`** holds the generated reviews ([analytics-and-reviews.md](./analytics-and-reviews.md)).
 - **`report`** in the series `digest-daily` is the daily digest, the one artifact promoted without review (`approved.by: routine`; [sessions.md](./sessions.md#daily-digest)).

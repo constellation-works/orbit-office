@@ -409,12 +409,15 @@ null), which writes `meetings.agent_workspace` with `office.config-set`.
 ### Models
 
 Built ([ORB-21345]). Settings › Models (`GET /api/settings/models`,
-`ModelsView`) lists, per job, the Meta model that runs it and where it runs:
-transcribing meetings (Muse Voice Transcribe), extracting decisions and to-dos
-(Muse Spark), careful reasoning (Muse Wonder), private sources (Muse Spark Open
-on the private route) and agent to-dos (Muse Code crews), as
-[models-and-privacy.md](./models-and-privacy.md) assigns them. Each row's check
-is live: the Meta API key's presence (`set`/`unset` only), the private route's
+`ModelsView`) lists, per job, the model that runs it and where it runs:
+transcribing meetings (`models.transcribe`), extracting decisions and to-dos
+(`models.standard`), careful reasoning (`models.careful`), private sources
+(`open_weights.model` on the private route) and agent to-dos (the agent
+CLI's crews), as [models-and-privacy.md](./models-and-privacy.md) assigns
+them. The hosted rows read `office.status`'s `hosted` block: its endpoint's
+host ("Meta Model API (api.meta.ai)" by default) and models (the Muse
+defaults while unset). The panel is titled "Models". Each row's check
+is live: the hosted API key's presence (`set`/`unset` only), the private route's
 last verification, and the agent CLI's connection; a job without a check reads
 "off". Below the table: a private route summary linking to its tab and the
 same **Where agent to-dos go** picker as To-dos. No model is called to build
@@ -520,7 +523,7 @@ view are built ([ORB-18798]).
 The Private route section is built ([ORB-18841]). It asks for the endpoint
 kind (your company's server, a hosted provider, or your own hardware), the
 URL, the model and the label, and shows where that material goes. The section
-always says "Private means not sent to Meta's hosted API, sent only to the
+always says "Private means not sent to the hosted model API, sent only to the
 endpoint you chose". Saving writes the whole `open_weights` block with
 `office.config-set`, then runs `office.private-route-check` once. A token, when
 one was typed, goes only to `orbit plugin secret set office open_weights_token`

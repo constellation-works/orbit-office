@@ -243,8 +243,8 @@ runbook.
 
 ## Day-1 checks
 
-- Whether Muse Wonder (or another stronger model) is on the Meta Model API
-  for the `careful` tier, and its context window.
+- Whether Muse Wonder (or another stronger model) is on the configured
+  hosted endpoint for the `careful` tier, and its context window.
 - The size of a typical Confluence export, to set the digest call's input
   cap and the windowing for long documents.
 

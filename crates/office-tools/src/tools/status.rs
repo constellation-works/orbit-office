@@ -1,6 +1,8 @@
 //! `office.status`: the plugin version, which declared secrets are set
-//! (never a secret value; STD-05), Library and index health, the
-//! configured private endpoint (`open_weights`, or null), the shared library
+//! (never a secret value; STD-05), Library and index health, the hosted
+//! route (`hosted`: the configured endpoint and models, else the
+//! defaults; the endpoint never carries credentials, which settings
+//! refuse), the configured private endpoint (`open_weights`, or null), the shared library
 //! (`shared`, or null), the followed workspaces (`brief`, or null) and the
 //! effective scribe cadence and tags (`scribe`; the defaults until the
 //! Library sets them).
@@ -102,6 +104,17 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         || Settings::default().scribe.effective(),
         |s| s.scribe.effective(),
     );
+    // The hosted route is never absent: an uninitialized Library reads as
+    // the shipped defaults (Meta's Model API and the Muse models).
+    let models = settings
+        .as_ref()
+        .map_or_else(|| Settings::default().models, |s| s.models.clone());
+    let hosted = json!({
+        "endpoint": models.hosted_endpoint(),
+        "standard": models.standard_model(),
+        "careful": &models.careful,
+        "transcribe": models.transcribe_model(),
+    });
     Ok(json!({
         "version": VERSION,
         "secrets": secrets,
@@ -118,6 +131,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
             "pages_off_template": health.pages_off_template,
             "template_invalid": health.template_invalid,
         },
+        "hosted": hosted,
         "open_weights": open_weights,
         "shared": shared,
         "brief": brief,

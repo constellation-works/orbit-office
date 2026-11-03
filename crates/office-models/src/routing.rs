@@ -31,7 +31,9 @@ impl ResolvedCall {
     /// The allowlist this call is checked against before a socket opens.
     pub(crate) fn destination(&self) -> Destination<'_> {
         match self.route {
-            ModelRoute::Hosted => Destination::Hosted,
+            ModelRoute::Hosted => Destination::Hosted {
+                endpoint: &self.base_url,
+            },
             ModelRoute::Private(_) => Destination::Private {
                 endpoint: &self.base_url,
             },
@@ -54,7 +56,7 @@ impl ResolvedCall {
 
 /// The one routing decision (STD-02 R24) for a call needing `needs`.
 ///
-/// `Normal` material goes to the hosted Meta endpoint. `Private` material
+/// `Normal` material goes to the configured hosted endpoint. `Private` material
 /// goes only to the configured private endpoint, and only when its last
 /// check accepted text and `needs`. With no endpoint configured the call is
 /// refused here and never falls back to a hosted model.
@@ -66,13 +68,13 @@ pub(crate) fn route(
 ) -> Result<ResolvedCall, Error> {
     match sensitivity {
         Sensitivity::Normal => {
-            let api_key = config.meta_api_key.clone().ok_or_else(|| Error::Model {
+            let api_key = config.hosted_api_key.clone().ok_or_else(|| Error::Model {
                 code: "model_unavailable",
-                message: "Meta Model API key is not configured".to_string(),
+                message: "the hosted model API key (meta_api_key) is not configured".to_string(),
                 retryable: false,
             })?;
             Ok(ResolvedCall {
-                base_url: config.meta_base_url.trim_end_matches('/').to_string(),
+                base_url: config.hosted_base_url.trim_end_matches('/').to_string(),
                 api_key: Some(api_key),
                 // Hosted audio goes to Muse Voice Transcribe at every tier.
                 model: match (needs, tier) {

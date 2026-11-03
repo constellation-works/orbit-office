@@ -6,7 +6,7 @@ use office_core::domain::endpoint::Capability;
 use office_core::ports::{Routed, TranscribeRequest, Transcript, TranscriptChunk};
 use office_core::{Error, Result};
 
-use crate::{RoutedClient, http, media, meta, routing};
+use crate::{RoutedClient, chat, http, media, routing};
 
 /// A planned window always spends exactly one inference, independently of the
 /// general audio splitter's configurable threshold.
@@ -54,7 +54,10 @@ pub(crate) fn transcribe(
         office_core::ports::ModelTier::Standard,
         &client.config,
     )?;
-    http::check_url(&crate::transcription_url(&resolved), resolved.destination())?;
+    http::check_url(
+        &crate::transcription_url(&resolved, client.config.hosted_asr),
+        resolved.destination(),
+    )?;
     let derived_by = resolved.derived_by();
     let call = |audio: &[u8], seconds: u64, offset_ms: u64| {
         let parsed = client.transcribe_chunk(
@@ -131,7 +134,7 @@ fn timestamp_overflow() -> Error {
     }
 }
 
-fn shift_turns(mut parsed: meta::ParsedTranscript, offset_ms: u64) -> Result<Transcript> {
+fn shift_turns(mut parsed: chat::ParsedTranscript, offset_ms: u64) -> Result<Transcript> {
     for segment in &mut parsed.segments {
         segment.start_ms = segment
             .start_ms

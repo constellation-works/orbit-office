@@ -37,7 +37,8 @@ spec:
     fs:
       read: ["{{workspace}}", "{{plugin_state}}"]
       write: ["{{workspace}}/library", "{{plugin_state}}"]
-    # Meta Model API and the open-weights endpoint only (enforced in code).
+    # The configured hosted endpoint (models.endpoint, api.meta.ai by
+    # default) and the open-weights endpoint only (enforced in code).
     network: any
     orbit_tools:
       - orbit.task.add
@@ -58,10 +59,10 @@ spec:
 
   secrets:
     - name: meta_api_key
-      description: Meta Model API key for Muse Spark and Muse Voice Transcribe.
+      description: API key for the hosted model endpoint (models.endpoint; Meta's Model API by default).
       rotatable: true
     - name: open_weights_token
-      description: Token for the private route's Muse Spark Open endpoint (the one you chose for `private` sources), when it needs one.
+      description: Token for the private route's open-weights endpoint (the one you chose for `private` sources), when it needs one.
       rotatable: true
 
   tools:
@@ -117,8 +118,8 @@ spec:
 
     - name: transcribe
       description: >-
-        Transcribe a meeting source's original into its body (Muse Voice
-        Transcribe).
+        Transcribe a meeting source's original into its body (the
+        configured transcription model, Muse Voice Transcribe by default).
       execution_kind: mutating
       mcp_scope: workspace
       input_schema: { $ref: schemas/transcribe.request.json }
@@ -138,7 +139,7 @@ spec:
     - name: frames
       description: >-
         Extract a confirmed video's planned keyframes and read each with
-        Muse Spark image input; run only by the KT routine.
+        the standard model's image input; run only by the KT routine.
       execution_kind: mutating
       mcp_scope: none
       input_schema: { $ref: schemas/frames.request.json }
@@ -375,7 +376,7 @@ spec:
 
     - name: digest
       description: >-
-        Write the day's digest artifact with one Muse Spark call (the
+        Write the day's digest artifact with one model call (the
         office-daily-digest routine), or, with `source`, return the cited
         digest since that meeting: Decided, Shipped with PR and merge links,
         and Needs you. The source digest makes no model call and writes

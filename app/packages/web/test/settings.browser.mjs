@@ -140,7 +140,7 @@ test("Settings browser: add, edit, disable, write-only secret, newest-first audi
   assert.equal((await page.locator("#site-footer").innerText()).trim(), "");
   await page.getByRole("button", { name: "Private route", exact: true }).click();
   const privateRegion = page.getByRole("region", { name: "Private route", exact: true });
-  await privateRegion.getByText("Private means not sent to Meta's hosted API, sent only to the endpoint you chose", { exact: true }).waitFor();
+  await privateRegion.getByText("Private means not sent to the hosted model API, sent only to the endpoint you chose", { exact: true }).waitFor();
   assert.equal(await privateRegion.locator(".settings-attribution").isHidden(), true);
   await privateRegion.getByLabel("Endpoint kind", { exact: true }).selectOption("company");
   await privateRegion.getByText("Your employer's infrastructure. The strongest option for work material.", { exact: true }).waitFor();

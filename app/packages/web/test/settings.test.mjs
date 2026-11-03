@@ -38,7 +38,7 @@ test("Settings renders real gateway audit fixture rows newest first and only pub
 
 test("private route capability notes and the attribution follow a configured endpoint", () => {
   const audio = "this server doesn't take audio, so private videos can't be transcribed";
-  assert.equal(PRIVATE_ROUTE_WORDING, "Private means not sent to Meta's hosted API, sent only to the endpoint you chose");
+  assert.equal(PRIVATE_ROUTE_WORDING, "Private means not sent to the hosted model API, sent only to the endpoint you chose");
   assert.equal(MUSE_SPARK_OPEN_ATTRIBUTION, "Built with Muse Spark Open");
   assert.equal(capabilityLine({ capability: "audio", accepted: false, note: audio }), audio);
   assert.equal(capabilityLine({ capability: "audio", accepted: false, note: null }), audio);

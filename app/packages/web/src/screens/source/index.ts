@@ -75,7 +75,7 @@ async function render(root: HTMLElement): Promise<void> {
     panel.append(el("p", `${preview.sources} ${preview.sources === 1 ? "source" : "sources"} · ${Math.ceil(preview.minutes)} minutes · ${preview.frames} frames · ${preview.calls} model calls`));
     panel.append(el("p", preview.estimate === null ? "Rates unset" : `Estimated cost: ${preview.estimate.amount.toFixed(2)} ${preview.estimate.currency}`));
     const privateControl = privateBox(); privateControl.input.checked = preview.private; privateControl.input.disabled = preview.private; panel.append(privateControl.label);
-    panel.append(el("p", "Private means not sent to Meta's hosted API, sent only to the endpoint you chose."));
+    panel.append(el("p", "Private means not sent to the hosted model API, sent only to the endpoint you chose."));
     const status = el("p"); status.setAttribute("role", "status");
     const process = button("Process", () => {
       process.disabled = true; privateControl.input.disabled = true; locked(true);

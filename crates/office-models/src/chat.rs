@@ -1,8 +1,10 @@
-//! Meta Model API request shapes: Muse Spark (extraction, vision) and
-//! Muse Voice Transcribe (specs/models-and-privacy.md).
+//! Request shapes: OpenAI-compatible Chat Completions (extraction, vision
+//! and private or non-Meta transcription) on any configured endpoint, and
+//! Meta's Muse Voice Transcribe one-shot endpoint (specs/models-and-privacy.md).
 //!
-//! Extraction and vision use OpenAI-compatible Chat Completions at
-//! `https://api.meta.ai/v1` with a Bearer credential: one
+//! Extraction and vision use OpenAI-compatible Chat Completions at the
+//! endpoint's base URL (Meta's `https://api.meta.ai/v1` by default) with a
+//! Bearer credential: one
 //! `POST /chat/completions` whose reply text is `choices[0].message.content`,
 //! with images as a base64 `image_url` data URL. Hosted extraction sends its
 //! JSON Schema with `strict: false`, because the API's strict mode refuses
@@ -28,9 +30,6 @@ use serde_json::{Value, json};
 pub(crate) fn chat_url(base_url: &str) -> String {
     format!("{}/chat/completions", base_url.trim_end_matches('/'))
 }
-
-/// Hosted transcription model: Muse Voice Transcribe.
-pub(crate) const TRANSCRIBE_MODEL: &str = "muse-voice-transcribe-1.0";
 
 /// Muse Voice Transcribe one-shot URL for a provider base URL.
 pub(crate) fn asr_url(base_url: &str) -> String {

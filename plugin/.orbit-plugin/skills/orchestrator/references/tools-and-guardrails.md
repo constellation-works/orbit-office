@@ -119,7 +119,8 @@ A tool answers with one envelope:
 
 Only model inference leaves the machine. Where it goes depends on sensitivity:
 
-- **`normal`**: hosted Meta Model API (`api.meta.ai`).
+- **`normal`**: the configured hosted endpoint (`models.endpoint`; Meta's Model API at
+  `api.meta.ai` while unset). `office.status` reports it under `hosted`.
 - **`private`**: only the one open-weights endpoint the user configured (the private route).
   Any model call whose input includes a private source goes there. With no verified endpoint,
   private material is refused, never sent to the hosted API.

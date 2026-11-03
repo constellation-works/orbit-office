@@ -1,25 +1,22 @@
 ---
 type: design
-summary: "Spec: delivery — hackathon compliance, the locked 3-minute meeting-to-PRs demo script and the remaining build plan"
-last_updated: 2026-11-02
+summary: "Spec: delivery — the demo's ground rules, the locked 3-minute meeting-to-PRs demo script and the remaining build plan"
+last_updated: 2026-11-03
 last_validated: 2026-11-02
 ---
 
 # Spec: Delivery
 
-How the entry stays compliant, what the demo shows, and in what order it
-is built.
+What the demo may show, what it shows, and in what order it is built.
 
 Source: spec §14–§16.
 
-## Compliance
+## Ground rules
 
-- **Repository.** `constellation-works/orbit-office` is public, created after the Oct 26 12:00 ET kickoff, and its first commit is new work. Orbit is listed as a dependency with its tested commit. No Orbit code is in the repo.
-- **The video** opens with: *"Orbit is my existing open-source agent runtime. This week I built the office plugin, the orchestrator skill, the Library and the app."*
+- **Repository.** `constellation-works/orbit-office` is public. Orbit is listed as a dependency with its tested commit. No Orbit code is in the repo.
+- **The video** opens with: *"Orbit is my existing open-source agent runtime. I built the office plugin, the orchestrator skill, the Library and the app on top of it."*
 - **Demo data is synthetic only:** the Lantern engineering-sync meeting, the Lantern demo repo, chats, receipts and people are all invented. Weeks of seeded history, including the September ledger decision, are labelled *simulated* on screen. No polaris, almanac, private repos or constellation state appears anywhere.
-- **Meta models only.** Every model the project calls at runtime is a Meta model ([README](../../../../README.md#meta-models-at-runtime)).
-- **Ownership.** No outside contributions to entry code during the event. Muse Code may be used.
-- **Eligibility.** The entry is in the Indie Developer track (theme "Build for Your World"); confirm any open eligibility question in Discord `#questions`.
+- **Models.** The demo runs on the default hosted route (Meta's Model API and the Muse models); model routing is configurable ([README](../../../../README.md#models-at-runtime)).
 - The Rust workspace was started from the constellation Rust CLI template; that provenance is stated in the repo README.
 
 ## Demo script (3 minutes)
@@ -29,12 +26,12 @@ the KT video path, SAM 3.1 and the app's chain view are cut from the demo.
 
 | Time | Beat |
 |---|---|
-| 0:00–0:15 | **Opening line** (compliance, above), then the problem: decisions made in meetings never turn into work. |
+| 0:00–0:15 | **Opening line** (ground rules, above), then the problem: decisions made in meetings never turn into work. |
 | 0:15–0:50 | **A meeting goes in.** The synthetic Lantern engineering sync ([demo/synthetic/meeting/](../../../../demo/synthetic/meeting/)) is uploaded. Muse Voice Transcribe transcribes it; Muse Spark extracts decisions and to-dos, split between you and agents, each cited to a `#t=` timestamp. |
 | 0:50–1:10 | **Contradiction.** The meeting decides "rotate ingest keys monthly"; the seeded September ledger decision (labelled simulated) says weekly. It goes under Needs you, and agents leave rotation alone until it is resolved. |
 | 1:10–2:10 | **Overnight time-lapse.** The agent to-dos become Orbit tasks in the synthetic Lantern demo repo; Muse Code crews (`muse-spark`, `muse-wonder`) implement them, Muse reviews, and the PRs merge. |
 | 2:10–2:45 | **Morning digest:** Decided, Shipped (with PR links) and Needs you. Resolve the contradiction in one click. |
-| 2:45–3:00 | **Close:** every model is Meta's, shown with the where-it-runs table from the [README](../../../../README.md#meta-models-at-runtime). |
+| 2:45–3:00 | **Close:** the model behind every job and where it runs, shown with the table from the [README](../../../../README.md#models-at-runtime). |
 
 The meeting's answer key ([expected.json](../../../../demo/synthetic/meeting/expected.json))
 is what the extraction beat must show:
@@ -50,8 +47,8 @@ is what the extraction beat must show:
   off-by-one and test every page; add a `--dry-run` flag to `lantern
   replay`; make the intake desk reject an empty order key with a clear error.
 
-Every model call in the demo is a Meta model; see
-[models-and-privacy.md](./models-and-privacy.md).
+Every model call in the demo goes to the default hosted route or the private
+route; see [models-and-privacy.md](./models-and-privacy.md).
 
 ## Build plan
 
@@ -61,14 +58,14 @@ of the week, against the locked script (orchestration record [ORB-21334]):
 
 | Day | Build | Demo |
 |---|---|---|
-| Mon 11-02 | Meeting extraction with `#t=` citations, the you/agent split and the ledger contradiction check ([ORB-21336]); the morning digest's Decided / Shipped / Needs you ([ORB-21337]); Meta-only model routing with Muse Voice Transcribe ([ORB-21338]) | Synthetic meeting, September ledger seed, this script and the README model table ([ORB-21339]); create the synthetic Lantern demo repo sized to the four agent to-dos |
+| Mon 11-02 | Meeting extraction with `#t=` citations, the you/agent split and the ledger contradiction check ([ORB-21336]); the morning digest's Decided / Shipped / Needs you ([ORB-21337]); hosted model routing with Muse Voice Transcribe ([ORB-21338]) | Synthetic meeting, September ledger seed, this script and the README model table ([ORB-21339]); create the synthetic Lantern demo repo sized to the four agent to-dos |
 | Tue 11-03 | Fixes from the first full run-through | Full run-through on synthetic data; file the agent to-dos as Orbit tasks in the Lantern repo and let the Muse Code crews run overnight, recorded for the time-lapse |
 | Wed 11-04 | Freeze; README pass | Record and edit the video; submit before 21:00 ET; post on X |
 
 Checks that gate the run-through: the meeting extraction cites a `#t=`
 timestamp for every decision and to-do in the answer key; the monthly
-rotation decision is reported against `dec-lantern-1`; and no runtime call
-goes to a non-Meta model.
+rotation decision is reported against `dec-lantern-1`; and every runtime call
+goes to the configured hosted or private endpoint.
 
 ### Slice tasks
 
@@ -172,10 +169,11 @@ Pending or not verified as landed in this checkout:
 - [ORB-18799] — installed the gateway plugins and the agent CLI deny rules.
 - [ORB-18800] — built the read-only cloudcli plugin.
 - [ORB-18809] — built `office.video-plan` and `office.frames`.
-- [ORB-21334] — orchestrates the hackathon demo and locked this script.
+- [ORB-21334] — orchestrates the demo and locked this script.
 - [ORB-21336] — meeting extraction for the demo.
 - [ORB-21337] — built the morning digest for the demo.
-- [ORB-21338] — Meta-only runtime models.
+- [ORB-21338] — built the hosted route on Meta's Model API with Muse Voice Transcribe.
+- [ORB-21751] — made the hosted route configurable.
 - [ORB-21339] — built the synthetic meeting, September ledger seed, this script and the README model table.
 - [ORB-21340] — built meeting-ledger contradictions, held to-dos and one-call resolution.
 

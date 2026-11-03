@@ -44,11 +44,11 @@ office workspace preset supplies configuration and automation defaults
 │        │                     plugin_state/index.sqlite (rebuildable)   │
 └────────┼───────────────────────────────────────────────────────────────┘
          ▼
-  Meta Model API (Muse Spark, Muse Voice Transcribe)   ·   Muse Spark Open (user-chosen private endpoint)
+  Hosted model API (models.endpoint; Meta's by default)  ·  open weights (user-chosen private endpoint)
 ```
 
 - **Repository:** this repo, `constellation-works/orbit-office`, public,
-  created after kickoff, holding `plugin/` and `app/` plus the Rust
+  holding `plugin/` and `app/` plus the Rust
   workspace at its root. Orbit is a labelled dependency (README states the
   tested commit). It is never vendored, forked or added as a submodule.
 - **Office plugin:** namespace `office`, `exec` backend. The spec proposed
@@ -92,7 +92,7 @@ See [ARCHITECTURE.md](../../../ARCHITECTURE.md). In short: a pure domain
 (`office-core`: envelope, tool contract types, domain model, port traits),
 adapters behind those ports (`office-store` for the Library, structured
 after `orbit-store` — [specs/store.md](./specs/store.md); `office-models`
-for the Meta API and the user's chosen private endpoint; `office-orbit` for
+for the configured hosted model API and the user's chosen private endpoint; `office-orbit` for
 Orbit callbacks), the
 application (`office-tools`: one module per tool, the registry and
 dispatch), and composition plus surface (`office`: stdin → tools →
@@ -162,7 +162,7 @@ Three actors, three authorities:
   submissions, anything leaving the machine apart from model inference)
   are never executed directly. The agent's draft lands in `review`.
   Approving it promotes a `draft` artifact with a Send action, and Send
-  records `sent_at`. In the hackathon build, Send copies the draft to the
+  records `sent_at`. In the current build, Send copies the draft to the
   clipboard. Nothing is sent.
 - **Standing automation** and **knowledge writes** go through proposals
   with no exceptions. When the user asks for a page change in

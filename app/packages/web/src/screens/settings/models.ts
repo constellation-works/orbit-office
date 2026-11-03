@@ -1,5 +1,5 @@
 /**
- * Settings › Models: "Every model is Meta's". Each job, its Meta model,
+ * Settings › Models: "Models". Each job, the model it calls (as configured),
  * where it runs and what the app could check (`GET /api/settings/models`);
  * a summary of the private route; and where meeting agent to-dos go
  * (`meetings.agent_workspace`, read through `GET /api/todos/agents`).
@@ -22,7 +22,7 @@ function modelsTable(view: ModelsView): HTMLElement {
   const passed = view.jobs.filter((job) => job.check.state === "passed").length;
   const at = new Date(view.checked_at);
   const time = Number.isFinite(at.getTime()) ? ` · ${at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : "";
-  const element = panel("Every model is Meta’s", {
+  const element = panel("Models", {
     id: "settings-models-heading",
     meta: `${passed} of ${view.jobs.length} checks passed${time}`,
   });

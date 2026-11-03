@@ -21,7 +21,7 @@ use office_core::domain::endpoint::Capability;
 use office_core::ports::{RouteCheck, RouteProbe};
 use serde_json::{Value, json};
 
-use crate::{RoutedClient, http, meta, open_weights, routing};
+use crate::{RoutedClient, chat, http, open_weights, routing};
 
 /// A valid 1×1 transparent PNG.
 const PNG_1X1: [u8; 67] = [
@@ -47,7 +47,7 @@ pub(crate) fn check(client: &RoutedClient) -> Result<RouteCheck> {
 pub(crate) fn check_with_budget(client: &RoutedClient, budget: Duration) -> Result<RouteCheck> {
     let resolved = routing::private_endpoint(&client.config)?;
     // A host outside the allowlist is a refusal, not a missing capability.
-    http::check_url(&meta::chat_url(&resolved.base_url), resolved.destination())?;
+    http::check_url(&chat::chat_url(&resolved.base_url), resolved.destination())?;
     let deadline = Instant::now() + budget;
     let mut probes = Vec::with_capacity(Capability::ALL.len());
     let mut reported_model = None;
@@ -68,7 +68,7 @@ pub(crate) fn check_with_budget(client: &RoutedClient, budget: Duration) -> Resu
             client
                 .send_with_timeout(&resolved, &body, Some(remaining / probes_left))
                 .and_then(|(host, response)| {
-                    meta::reply_text(&host, &response)?;
+                    chat::reply_text(&host, &response)?;
                     Ok(response)
                 })
         };
@@ -111,13 +111,13 @@ fn probe_body(capability: Capability, model: &str) -> Value {
             "The weekly review is on Tuesday.",
             &json!({"type": "object"}),
         ),
-        Capability::Image => meta::image_body(
+        Capability::Image => chat::image_body(
             model,
             "image/png",
             &PNG_1X1,
             "Describe this image in one word.",
         ),
-        Capability::Audio => meta::transcribe_body(model, "wav", &silent_wav(), None),
+        Capability::Audio => chat::transcribe_body(model, "wav", &silent_wav(), None),
     }
 }
 

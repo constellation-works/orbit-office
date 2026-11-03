@@ -194,7 +194,7 @@ pub enum Error {
     },
     /// A single-setting update named no supported policy leaf (including secrets).
     #[error(
-        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, calendar.<connection|window_days_past|window_days_ahead|prep_lead_minutes|prep_max_per_run>, scribe.cadence, scribe.tags, scribe.tags.<name> or scribe.precedents.half_life_days, packs, demo.simulated_until, shared or shared.<remote|branch|member>, open_weights or open_weights.<endpoint|model|kind|label>"
+        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, calendar.<connection|window_days_past|window_days_ahead|prep_lead_minutes|prep_max_per_run>, scribe.cadence, scribe.tags, scribe.tags.<name> or scribe.precedents.half_life_days, packs, models.<careful|standard|transcribe|endpoint>, demo.simulated_until, shared or shared.<remote|branch|member>, open_weights or open_weights.<endpoint|model|kind|label>"
     )]
     UnknownSetting {
         /// Refused key, never the supplied value.

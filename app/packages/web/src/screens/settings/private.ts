@@ -5,7 +5,7 @@ import { MUSE_SPARK_OPEN_ATTRIBUTION } from "../../ui/index.js";
 
 /** The sentence the private-route section always shows. */
 export const PRIVATE_ROUTE_WORDING =
-  "Private means not sent to Meta's hosted API, sent only to the endpoint you chose";
+  "Private means not sent to the hosted model API, sent only to the endpoint you chose";
 
 const REFUSAL: Record<RouteCapability, string> = {
   text: "this server didn't answer a text request, so nothing private is sent to it",
@@ -27,7 +27,7 @@ const KIND_LABELS: Record<PrivateRouteWrite["kind"], string> = {
 
 const DESTINATIONS: Record<PrivateRouteWrite["kind"], string> = {
   company: "Your employer's infrastructure. The strongest option for work material.",
-  provider: "That provider, under its terms. Not Meta's hosted API, but not your company either.",
+  provider: "That provider, under its terms. Not the hosted model API, but not your company either.",
   own_hardware: "Machines you own.",
 };
 

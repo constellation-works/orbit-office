@@ -1066,7 +1066,7 @@ export interface Contradictions {
 /** `POST /api/scribe/contradictions/resolve`: which decision stands. */
 export interface ContradictionResolve { key: string; stands: "newer" | "prior" }
 
-/** One job the office runs, the Meta model it calls and where it runs. */
+/** One job the office runs, the model it calls and where it runs. */
 export interface ModelJob {
   job: string;
   model: string;
@@ -1075,7 +1075,7 @@ export interface ModelJob {
   check: { state: "passed" | "attention" | "off"; label: string };
 }
 
-/** `GET /api/settings/models`: every model the office calls, all Meta's. */
+/** `GET /api/settings/models`: every model the office calls, as configured. */
 export interface ModelsView {
   jobs: ModelJob[];
   /** RFC 3339 time the checks were read. */
