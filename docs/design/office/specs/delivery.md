@@ -77,6 +77,12 @@ These are the tasks that built the plugin and app the demo runs on.
 
 Landed:
 
+- Meeting you/agent to-do split and target-workspace filing — [ORB-21336] done
+- Morning digest since a meeting — [ORB-21337] done
+- Hosted Muse Voice transcription and live Meta API verification — [ORB-21338] done
+- Synthetic meeting assets and the locked demo script — [ORB-21339] done
+- Meeting decision ledger, contradiction holds and resolution — [ORB-21340] done
+
 - App server, Orbit client, static serving, dispatch pass — [ORB-18725] done
 - Web UI kit — [ORB-18726] done
 - Today screen — [ORB-18727] done
@@ -171,5 +177,6 @@ Pending or not verified as landed in this checkout:
 - [ORB-21337] — built the morning digest for the demo.
 - [ORB-21338] — Meta-only runtime models.
 - [ORB-21339] — built the synthetic meeting, September ledger seed, this script and the README model table.
+- [ORB-21340] — built meeting-ledger contradictions, held to-dos and one-call resolution.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

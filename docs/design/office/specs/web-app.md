@@ -546,7 +546,7 @@ The Library browses the newest 100 matching outputs from `office.artifact-list`;
 
 ### Markdown rendering
 
-Stored prose is Markdown, and every screen shows it through one renderer,
+Stored prose is Markdown ([ORB-21605]), and every screen shows it through one renderer,
 `renderMarkdown` in `web/src/ui/markdown.ts` (exported from `ui/index.ts`),
 rather than as raw text. It handles headings, paragraphs (line breaks kept),
 bullet, numbered and nested lists with task boxes, bold, italic, strikethrough,
@@ -596,7 +596,7 @@ shown anywhere yet; a view for them renders through the same function. Tests:
 - [ORB-20696] — built the original Scribe screen over v1.
 - [ORB-21337] — built the deterministic digest since a meeting.
 - [ORB-21605] — built the shared Markdown renderer and used it for Library bodies, Today's background and result, Review, the prep brief and Scribe summaries.
-- [ORB-21340] — implemented meeting-ledger contradictions and resolution; code is merged, task still in progress.
+- [ORB-21340] — built meeting-ledger contradictions and resolution; done, merged as `59e36d4`.
 - [ORB-21376] — added read-only office.source-digest and switched the app routes to it.
 - [ORB-21452] — deduplicated source-digest needs across repeated workspace listings.
 - [ORB-21610] — read the user's to-do schedule as its due date on To-dos, Today and the Calendar, with Overdue.

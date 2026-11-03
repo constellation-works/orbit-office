@@ -235,8 +235,12 @@ Orbit's accepted routine fields and has no `required_tools` key.
 
 The agent activity's static allowlist includes `gateway.http-get` and
 `gateway.http-draft`. With Office enabled and gateway absent, Orbit refuses
-the activity catalog, so workspace jobs cannot start. [ORB-21451] tracks
-fixing or explicitly declaring this dependency; it remains proposed.
+the activity catalog, so workspace jobs cannot start. [ORB-21451] is
+approved in backlog to remove both entries and make agent to-dos stop at
+a local draft when a gateway step is needed. The owner's recorded choice
+keeps Office usable without gateway; it does not add a required plugin.
+[ORB-21660] is the approved follow-up to restore gateway calls after Orbit
+supports optional allowlist entries. Neither change is in this checkout.
 
 A definition lands only with the tools it calls. An activity lists its
 callable tools in `spec.tools`; `required_tools` belongs to task records.
@@ -499,6 +503,7 @@ The closed `shared` Library setting requires `remote`, `branch` and `member`, or
 - [ORB-21219] — built contradiction reporting to the precedent provider.
 - [ORB-21375] — persisted per-item meeting filing outcomes and reconciliation.
 - [ORB-21376] — added the read-only source-digest verb for the app caller.
-- [ORB-21451] — fixes the agent activity's unconditional gateway dependency that prevents jobs without gateway.
+- [ORB-21451] — removes the agent activity's unconditional gateway dependency; approved in backlog.
+- [ORB-21660] — restores gateway calls after optional allowlist support; approved in backlog.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

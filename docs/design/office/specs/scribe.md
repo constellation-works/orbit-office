@@ -473,8 +473,8 @@ Contradictions are checked twice (D5).
 
 ### Meeting decisions
 
-The implementation from [ORB-21340] is in this checkout (merged as
-`59e36d4`); the task remains in progress. `office.extract` with
+The implementation from [ORB-21340] is done and in this checkout (merged as
+`59e36d4`). `office.extract` with
 `profile: meeting` feeds the ledger too, not only conversation scribing. After it saves
 `extract-result.json`, and before it files to-dos:
 
@@ -1246,7 +1246,7 @@ requires.
 - [ORB-21089] — designed Orbit's decision model, a consumer of decision precedent.
 - [ORB-21090] — designed the office precedent provider over the decision ledger ([decision-precedents.md](./decision-precedents.md)).
 - [ORB-21219] — built contradiction reporting to the precedent provider.
-- [ORB-21340] — implemented meeting decisions and contradiction resolution; code is merged, task still in progress.
+- [ORB-21340] — built meeting decisions and contradiction resolution; done, merged as `59e36d4`.
 - [ORB-21431] — accepted a decision's `chosen` up to case, punctuation and a word repeated in a row, while preserving the verbatim quote check.
 - [ORB-21114] — built slice S1: decision ledger store, capture `decision` input and the `note` retirement.
 - [ORB-21115] — built slice S2: `scribe:` tag and cadence settings.
