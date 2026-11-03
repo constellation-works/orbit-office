@@ -154,6 +154,82 @@ fn careful_model_settings_default_roundtrip_update_and_closed_validation() {
 }
 
 #[test]
+fn hosted_route_defaults_to_meta_and_accepts_another_configured_endpoint() {
+    use serde_json::json;
+    let defaults = Settings::from_yaml("").unwrap();
+    assert_eq!(defaults.models.hosted_endpoint(), "https://api.meta.ai/v1");
+    assert_eq!(defaults.models.standard_model(), "muse-spark-1.3");
+    assert_eq!(
+        defaults.models.transcribe_model(),
+        "muse-voice-transcribe-1.0"
+    );
+    assert!(defaults.models.hosted_is_meta());
+    // An unset hosted route leaves the file and the video-plan digest as
+    // they were before the keys existed.
+    assert!(!defaults.to_yaml().unwrap().contains("endpoint"));
+    let explicit_meta = Settings::from_yaml(
+        "models:\n  careful: muse-wonder\n  endpoint: https://api.meta.ai/v1\n  standard: muse-spark-1.3\n",
+    )
+    .unwrap();
+    assert!(explicit_meta.models.hosted_is_meta());
+    assert_eq!(explicit_meta.models.standard_model(), "muse-spark-1.3");
+
+    let other = defaults
+        .with_setting("models.endpoint", json!("https://api.example-llm.com/v1"))
+        .and_then(|s| s.with_setting("models.standard", json!("acme-chat-large")))
+        .and_then(|s| s.with_setting("models.transcribe", json!("acme-whisper")))
+        .unwrap();
+    assert_eq!(
+        other.models.hosted_endpoint(),
+        "https://api.example-llm.com/v1"
+    );
+    assert_eq!(other.models.standard_model(), "acme-chat-large");
+    assert_eq!(other.models.transcribe_model(), "acme-whisper");
+    assert!(!other.models.hosted_is_meta());
+    assert_eq!(
+        Settings::from_yaml(&other.to_yaml().unwrap()).unwrap(),
+        other
+    );
+    assert_ne!(
+        crate::domain::source::video::settings_digest(&defaults).unwrap(),
+        crate::domain::source::video::settings_digest(&other).unwrap()
+    );
+    let cleared = other
+        .with_setting("models.endpoint", json!(null))
+        .and_then(|s| s.with_setting("models.standard", json!(null)))
+        .and_then(|s| s.with_setting("models.transcribe", json!(null)))
+        .unwrap();
+    assert_eq!(cleared, defaults);
+
+    for (key, value) in [
+        ("models.endpoint", json!("http://api.example-llm.com/v1")),
+        (
+            "models.endpoint",
+            json!("https://user:pw@api.example-llm.com/v1"),
+        ),
+        (
+            "models.endpoint",
+            json!("https://api.example-llm.com/v1?key=x"),
+        ),
+        ("models.endpoint", json!("https://api.example-llm.com/v1#x")),
+        ("models.endpoint", json!("ftp://api.example-llm.com/v1")),
+        ("models.endpoint", json!(42)),
+        ("models.standard", json!("bad slug")),
+        ("models.transcribe", json!("")),
+    ] {
+        let error = defaults.with_setting(key, value.clone()).unwrap_err();
+        assert_eq!(error.code(), "invalid_library_setting", "{key} {value}");
+        assert!(!error.to_string().contains("user:pw"), "{error}");
+    }
+    // Loopback stays allowed over plain HTTP, as for the private route.
+    assert!(
+        defaults
+            .with_setting("models.endpoint", json!("http://127.0.0.1:8080/v1"))
+            .is_ok()
+    );
+}
+
+#[test]
 fn brief_handoff_mode_defaults_to_auto_and_accepts_only_auto_or_manual() {
     use crate::domain::settings::HandoffMode;
     use serde_json::json;

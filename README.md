@@ -10,12 +10,12 @@
 <p align="center">
   <a href="https://github.com/constellation-works/orbit-office/actions/workflows/ci.yml"><img src="https://github.com/constellation-works/orbit-office/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" /></a>
-  <a href="#meta-models-at-runtime"><img src="https://img.shields.io/badge/models-Meta%20only-informational" alt="Models: Meta only" /></a>
+  <a href="#models-at-runtime"><img src="https://img.shields.io/badge/models-configurable-informational" alt="Models: configurable" /></a>
   <a href="https://github.com/constellation-works/orbit"><img src="https://img.shields.io/badge/built%20on-Orbit-6E9FFF" alt="Built on Orbit" /></a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/office-demo.gif" alt="Animated tour of the real Orbit Office app on a synthetic workspace, captured November 2, 2026: a meeting goes in on the Source page and comes back as a timestamped transcript; Muse Spark pulls out four decisions, each linked to the second it was said, and splits the to-dos into yours and the agents'; a contradiction between rotating ingest keys monthly and the earlier weekly decision waits under Needs you with both sources cited; Muse Code crews pick up the agent to-dos as Orbit tasks and four pull requests merge on the lantern repository with tests green; the Today morning digest reads 4 decided, 4 shipped, 4 need you, every line cited; and Settings, Models shows every job running on a Meta model." width="880" />
+  <img src="docs/assets/office-demo.gif" alt="Animated tour of the real Orbit Office app on a synthetic workspace, captured November 2, 2026: a meeting goes in on the Source page and comes back as a timestamped transcript; Muse Spark pulls out four decisions, each linked to the second it was said, and splits the to-dos into yours and the agents'; a contradiction between rotating ingest keys monthly and the earlier weekly decision waits under Needs you with both sources cited; Muse Code crews pick up the agent to-dos as Orbit tasks and four pull requests merge on the lantern repository with tests green; the Today morning digest reads 4 decided, 4 shipped, 4 need you, every line cited; and Settings, Models shows the model behind every job and where it runs." width="880" />
 </p>
 
 Orbit Office turns your meetings into work that gets done. A local web app and an
@@ -24,8 +24,8 @@ pull out the decisions and to-dos, and hand the agents' share to coding crews th
 pull requests overnight. Every decision and to-do cites the moment of the meeting it came from.
 
 - **Local-first.** Your Library is plain files and git in your own workspace; the app runs on `localhost`.
-- **Meta models only.** Every model it calls at runtime is a Meta model ([table below](#meta-models-at-runtime)).
-- **Private stays private.** Material marked `private` goes only to Muse Spark Open on an endpoint you choose, never to Meta's hosted API.
+- **Configurable model routing.** Hosted calls go to the OpenAI-compatible endpoint and models you configure; the defaults are Meta's Model API and the Muse models ([table below](#models-at-runtime)).
+- **Private stays private.** Material marked `private` goes only to the open-weights model on an endpoint you choose, never to the hosted endpoint.
 
 ## How it works
 
@@ -51,7 +51,8 @@ knowledge-transfer videos into chapters and runs your routines.
 
 **You need:** macOS or Linux (Windows through WSL2), Node 24+, `cargo` (until a release
 ships prebuilt plugin bundles), an authenticated agent CLI (Claude Code, Codex or Muse
-Code), and a pay-as-you-go Meta Model API key.
+Code), and an API key for the hosted model endpoint (by default a pay-as-you-go Meta
+Model API key).
 
 ```bash
 git clone https://github.com/constellation-works/orbit-office && cd orbit-office
@@ -69,37 +70,40 @@ Open your agent in `~/orbit` and talk to it: the `office-orchestrator` skill run
 office. To send agent to-dos to a repository, set `meetings.agent_workspace` to that
 Orbit workspace.
 
-## Meta models at runtime
+## Models at runtime
 
-Every model the project calls at runtime is a Meta model; no other model provider is
-called. Hosted calls go to the Meta Model API at `https://api.meta.ai/v1`. Routing and
-the private route: [models-and-privacy.md](docs/design/office/specs/models-and-privacy.md).
+Model routing is configurable in the Library settings (`.office/config.yaml`, or
+`office.config-set`). `normal` material goes to one hosted, OpenAI-compatible endpoint,
+`models.endpoint`; `private` material goes only to the private route, `open_weights`.
+Each job's model is a setting too. Unset keys keep the defaults below: Meta's Model API
+at `https://api.meta.ai/v1` and the Muse models. Every endpoint must use HTTPS (plain
+HTTP only on loopback) and carry no credentials; the hosted key is the `meta_api_key`
+plugin secret whatever the provider. Routing and the private route:
+[models-and-privacy.md](docs/design/office/specs/models-and-privacy.md).
 
-| Model | Called for | Where it runs |
+| Job | Setting (default) | Where it runs |
 |---|---|---|
-| Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | Meeting and video transcription, in chunks of up to 10 minutes, with timestamped speaker turns | Meta Model API, `POST /v1/asr/transcribe` |
-| Muse Spark (`muse-spark-1.3`) | Meeting summaries, decisions and to-dos; the daily digest; document digests, KT chapters, keyframe and receipt reading | Meta Model API, `POST /v1/chat/completions` |
-| Muse Wonder (`muse-wonder`) | The `careful` tier: consolidating a Library bootstrap batch by subject | Meta Model API, `POST /v1/chat/completions` |
-| Muse Spark Open (for example `meta-models/Muse-Spark-Open-816B-A42B`) | Every use above whose input includes a `private` source: text, image and audio | The private route: the one OpenAI-compatible endpoint you configure (your company's deployment, a hosted provider or your own hardware), never Meta's hosted API |
-| Muse Code crews `muse-spark` and `muse-wonder` | The orchestrator session, and the agents Orbit dispatches to implement agent to-dos and review their PRs | Muse Code on your machine, started by Orbit, against Meta's hosted Muse Spark and Muse Wonder |
+| Meeting and video transcription, in chunks of up to 10 minutes, with timestamped speaker turns | `models.transcribe` (`muse-voice-transcribe-1.0`) | The hosted endpoint: `POST /v1/asr/transcribe` on Meta's Model API, Chat Completions `input_audio` on any other |
+| Meeting summaries, decisions and to-dos; the daily digest; document digests, KT chapters, keyframe and receipt reading | `models.standard` (`muse-spark-1.3`) | The hosted endpoint, `POST /chat/completions` |
+| The `careful` tier: consolidating a Library bootstrap batch by subject | `models.careful` (`muse-wonder`) | The hosted endpoint, `POST /chat/completions` |
+| Every use above whose input includes a `private` source: text, image and audio | `open_weights.model` (for example `meta-models/Muse-Spark-Open-816B-A42B`) | The private route: the one OpenAI-compatible endpoint you configure (your company's deployment, a hosted provider or your own hardware), never Meta's hosted API |
+| The orchestrator session, and the agents Orbit dispatches to implement agent to-dos and review their PRs | Your agent CLI and Orbit crews | Your machine, started by Orbit, against whatever models that CLI is set up for |
 
-"Private" means not sent to Meta's hosted API, only to the endpoint you chose; it does
+"Private" means not sent to the hosted endpoint, only to the endpoint you chose; it does
 not mean the material never leaves your machine.
 
-## Built for the Meta hackathon
+## Provenance
 
-- **Orbit is a pre-existing dependency.** [Orbit](https://github.com/constellation-works/orbit)
-  is my existing open-source agent runtime (MIT), installed at a tested release and never
+- **Orbit is a dependency.** [Orbit](https://github.com/constellation-works/orbit)
+  is an existing open-source agent runtime (MIT), installed at a tested release and never
   vendored, forked or added as a submodule. No Orbit code is in this repository.
-- **The rest was built this week.** The `office` plugin, the orchestrator skill, the
-  Library and the web app are new work in this repository, which was created after the
-  kickoff. The Rust workspace started from the constellation
+- **The Rust workspace** started from the constellation
   [Rust CLI template](https://github.com/constellation-works/rust-cli-template).
 - **Demo data is synthetic.** The Lantern meeting, the Lantern demo repo, chats, receipts
   and people in [demo/synthetic/](demo/synthetic/) are invented, and seeded history is
   labelled *simulated*.
 
-The demo script and the full compliance list: [delivery.md](docs/design/office/specs/delivery.md).
+The demo script: [delivery.md](docs/design/office/specs/delivery.md).
 
 ## Learn more
 

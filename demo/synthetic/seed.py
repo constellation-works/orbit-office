@@ -126,7 +126,7 @@ def seed(root, binary, video=None, provider_config=None):
                  'label': 'Acme Inference (SIMULATED loopback)'}
         demo.call('office.config-set', {'key': 'open_weights', 'value': route})
         demo.call('office.private-route-check')
-        # Bootstrap inference is private even in rehearsal: never send it to Meta.
+        # Bootstrap inference is private even in rehearsal: never send it to the hosted endpoint.
         facts = demo.capture('interview', kind='conversation', title='SIMULATED onboarding interview',
             occurred_at='2026-09-14T09:00:00Z', entries=[
                 {'kind': 'fact', 'text': 'SIMULATED: Jules Reed is the pilot lead at Acme Paper Kites.'},

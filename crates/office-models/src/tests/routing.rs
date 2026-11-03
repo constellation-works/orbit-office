@@ -399,3 +399,60 @@ fn a_token_stored_without_an_origin_is_never_sent() {
 
     assert_eq!(authorizations(&company), vec![None]);
 }
+
+#[test]
+fn a_hosted_endpoint_from_settings_receives_its_configured_models_in_chat_shapes() {
+    use office_core::domain::settings::Settings;
+    let hosted = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
+    let settings = Settings::default()
+        .with_setting("models.endpoint", json!(hosted.base_url))
+        .and_then(|s| s.with_setting("models.standard", json!("acme-chat-large")))
+        .and_then(|s| s.with_setting("models.transcribe", json!("acme-whisper")))
+        .expect("a loopback hosted endpoint is accepted");
+    let config =
+        crate::ModelConfig::with_models(Some("test-hosted-key".into()), None, &settings.models);
+    assert!(!config.hosted_asr);
+    let models = client(config);
+
+    let routed = models
+        .extract(&extract(Sensitivity::Normal))
+        .expect("extract");
+    assert_eq!(routed.derived_by.route.to_string(), "hosted");
+    assert_eq!(routed.derived_by.model, "acme-chat-large");
+    let transcript = models
+        .transcribe(&TranscribeRequest {
+            audio: b"fake-audio".to_vec(),
+            duration_seconds: 1,
+            mime: "audio/wav".into(),
+            sensitivity: Sensitivity::Normal,
+            language: None,
+        })
+        .expect("transcribe");
+    assert_eq!(transcript.derived_by.model, "acme-whisper");
+
+    let requests = hosted.requests();
+    assert_eq!(requests.len(), 2);
+    for request in &requests {
+        // A non-Meta endpoint takes audio as Chat Completions `input_audio`,
+        // not Meta's one-shot `/asr/transcribe`.
+        assert_eq!(request.path, "/v1/chat/completions");
+        assert_eq!(
+            request.authorization.as_deref(),
+            Some("Bearer test-hosted-key")
+        );
+    }
+    let audio: serde_json::Value = serde_json::from_str(&requests[1].body).unwrap();
+    assert_eq!(audio["model"], "acme-whisper");
+    assert!(requests[1].body.contains("input_audio"));
+}
+
+#[test]
+fn the_default_settings_keep_meta_and_the_muse_models() {
+    let settings = office_core::domain::settings::Settings::default();
+    let config = crate::ModelConfig::with_models(None, None, &settings.models);
+    assert_eq!(config.hosted_base_url, "https://api.meta.ai/v1");
+    assert!(config.hosted_asr);
+    assert_eq!(config.hosted_model, "muse-spark-1.3");
+    assert_eq!(config.careful_model, "muse-wonder");
+    assert_eq!(config.transcribe_model, "muse-voice-transcribe-1.0");
+}

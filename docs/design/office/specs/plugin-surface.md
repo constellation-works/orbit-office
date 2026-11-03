@@ -261,7 +261,7 @@ outward-facing action.
   every read. Secrets are never in it.
 - **Permissions** (`spec.permissions`, granted at `orbit plugin enable`):
   - fs read and write on `{{workspace}}/library` and `{{plugin_state}}`.
-  - network `any`, the only setting that reaches remote hosts. The plugin calls only `api.meta.ai` and the one private endpoint the user configured ([models-and-privacy.md](./models-and-privacy.md#the-private-route)), and its `git` child reaches only the shared library's configured remote ([shared-library.md](./shared-library.md#transport)).
+  - network `any`, the only setting that reaches remote hosts. The plugin calls only the configured hosted endpoint (`models.endpoint`, `api.meta.ai` by default; [models-and-privacy.md](./models-and-privacy.md#the-hosted-route)) and the one private endpoint the user configured ([models-and-privacy.md](./models-and-privacy.md#the-private-route)), and its `git` child reaches only the shared library's configured remote ([shared-library.md](./shared-library.md#transport)).
   - `orbit_tools`: the callbacks listed above.
   - `agent_tools`: exactly `attach,capture,proposal-create,selection-get`,
     derived by Orbit from the four declarations, bound to the manifest digest.

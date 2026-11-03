@@ -2,9 +2,9 @@
 //! touches the live network: every endpoint points at loopback, `127.0.0.1`
 //! or `[::1]` for the IPv6 case.
 
+mod chat;
 mod http;
 mod media;
-mod meta;
 mod open_weights;
 mod route_check;
 mod routing;
@@ -266,7 +266,7 @@ pub fn asr_reply(transcript: &str, turns: serde_json::Value) -> String {
 /// Client config pointing the hosted endpoint at `hosted_base`.
 pub fn hosted_config(hosted_base: &str) -> ModelConfig {
     let mut config = ModelConfig::new(Some("test-meta-key".into()), Some(FIXTURE_TOKEN.into()));
-    config.meta_base_url = hosted_base.to_string();
+    config.hosted_base_url = hosted_base.to_string();
     config
 }
 

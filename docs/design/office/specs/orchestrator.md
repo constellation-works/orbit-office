@@ -21,9 +21,8 @@ agent session supervises Orbit. The project ships no agent loop: what it
 ships is the skill and the tool surface, and the boundaries below come
 from that surface, not from instructions.
 
-- **Provider.** Muse Code is the default orchestrator provider and the
-  one shown in the demo, which keeps the conversation on Meta models.
-  Claude Code and Codex work too, because the surface is Orbit MCP plus a
+- **Provider.** Any MCP-capable agent CLI is the orchestrator; Muse Code
+  is the one shown in the demo. Claude Code and Codex work too, because the surface is Orbit MCP plus a
   skill. The installer registers one CLI per run: Claude Code by default
   (the installer's own `--agent` default is `claude`), or Muse Code or
   Codex with `--agent muse` or `--agent codex` ([install.md](./install.md)).

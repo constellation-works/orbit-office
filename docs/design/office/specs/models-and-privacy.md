@@ -1,58 +1,89 @@
 ---
 type: design
-summary: "Spec: models and privacy routing — which model does what, and the private route: Meta's open-weights Muse Spark Open on an endpoint the user chooses"
+summary: "Spec: models and privacy routing — which model does what, the configurable hosted route, and the private route: an open-weights model on an endpoint the user chooses"
 last_validated: 2026-11-02
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 ---
 
 # Spec: Models and privacy routing
 
 Only inference leaves the user's machine. Which model it goes to depends
-on what the input contains: the hosted Meta Model API by default, or the
-**private route**, Meta's open-weights Muse Spark Open on an endpoint the
-user chooses ([below](#the-private-route)).
+on what the input contains: the configured **hosted route** by default, or
+the **private route**, an open-weights model (by default Meta's Muse Spark
+Open) on an endpoint the user chooses ([below](#the-private-route)).
 
 Source: spec §9.
 
-Every model the plugin calls at runtime is a Meta model. Hosted calls go to
-the Meta Model API at `https://api.meta.ai/v1`; `private` material goes only to
-Muse Spark Open on the endpoint the user configured.
+Model routing is configuration, not a provider rule
+([decision](../4_decisions.md#model-routing-is-configurable-not-meta-only)).
+Hosted calls go to one OpenAI-compatible endpoint, `models.endpoint`
+([below](#the-hosted-route)); while it is unset that is Meta's Model API at
+`https://api.meta.ai/v1`, and each job's model defaults to the Muse model
+named below. `private` material goes only to the model on the endpoint the
+user configured.
 
-| Use | Model (id) | Where it runs | Notes |
+| Use | Model (setting, default) | Where it runs | Notes |
 |---|---|---|---|
-| Orchestrator | Muse Code (default) running Muse Spark or Muse Wonder | The user's Muse Code client, against Meta's hosted models | Any MCP-capable agent CLI works. The orchestrator plus agents loop is the candidate for the agentic bonus prize |
-| Video and meeting transcription | Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | Meta Model API, `POST /v1/asr/transcribe` | In chunks of at most 10 minutes, decoded locally to 16 kHz mono WAV by ffmpeg (M4A, MP4 and other containers included); our own offsets are applied to returned turns; timestamps exist only where the model returns turns; skipped when a `.vtt` exists |
-| Bootstrap digest, one per source | Muse Spark (`muse-spark-1.3`) | Meta Model API, `POST /v1/chat/completions` | The cheap pass ([library-bootstrap.md](./library-bootstrap.md)) |
-| Bootstrap consolidation, one per subject | Muse Wonder (the `careful` tier, `models.careful`, default `muse-wonder`) | Meta Model API, `POST /v1/chat/completions` | Merges claims across sources and flags conflicts. The API lists `muse-wonder-1.0`; the default slug `muse-wonder` is not yet verified live ([below](#live-verification-2026-11-02)) |
-| KT keyframe reading | Muse Spark (`muse-spark-1.3`) with image input | Meta Model API, `POST /v1/chat/completions` | One call per deduplicated keyframe, capped per hour ([kt-videos.md](./kt-videos.md)) |
-| KT chapters, knowledge candidates, questions | Muse Spark (`muse-spark-1.3`) | Meta Model API, `POST /v1/chat/completions` | One call over the merged timeline, or 15-minute windows and a merge |
-| Summaries, decisions, to-do extraction | Muse Spark (`muse-spark-1.3`) | Meta Model API, `POST /v1/chat/completions` | Structured output validated against a JSON Schema |
-| Daily digest | Muse Spark (`muse-spark-1.3`), one call a day | Meta Model API, `POST /v1/chat/completions` | Through the same routing; private items go to open weights or are listed by reference ([sessions.md](./sessions.md#daily-digest)) |
-| Receipt and bill field extraction | Muse Spark (`muse-spark-1.3`) with image input | Meta Model API, `POST /v1/chat/completions` | Fallback: local OCR, then Muse Spark on the text |
-| Anything `private`, every use above | Muse Spark Open (`open_weights.model`, for example `meta-models/Muse-Spark-Open-816B-A42B`) | The endpoint the user chose ([below](#the-private-route)), OpenAI-compatible `POST <endpoint>/chat/completions` | One model for every tier and modality: text, image and audio in, text out. Audio goes as a `wav` or `mp3` `input_audio` part. Candidate for the open-weights bonus prize |
-| Implementing agents | Orbit's existing crews, including its Muse crews (Muse Code) | Orbit hosts, against Meta's hosted models | Pre-existing: not counted as new Meta-tooling work |
+| Orchestrator | The user's agent CLI (Claude Code, Codex, Muse Code or any MCP-capable CLI) | That CLI, against whatever models it is set up for | Not configured by the plugin |
+| Video and meeting transcription | `models.transcribe` (`muse-voice-transcribe-1.0`, Muse Voice Transcribe) | The hosted endpoint: `POST /v1/asr/transcribe` on Meta's Model API, Chat Completions with an `input_audio` part on any other endpoint | In chunks of at most 10 minutes, decoded locally to 16 kHz mono WAV by ffmpeg (M4A, MP4 and other containers included); our own offsets are applied to returned turns; timestamps exist only where the model returns turns; skipped when a `.vtt` exists |
+| Bootstrap digest, one per source | `models.standard` (`muse-spark-1.3`, Muse Spark) | The hosted endpoint, `POST <endpoint>/chat/completions` | The cheap pass ([library-bootstrap.md](./library-bootstrap.md)) |
+| Bootstrap consolidation, one per subject | `models.careful` (`muse-wonder`, Muse Wonder) | The hosted endpoint, `POST <endpoint>/chat/completions` | Merges claims across sources and flags conflicts. Meta's API lists `muse-wonder-1.0`; the default slug `muse-wonder` is not yet verified live ([below](#live-verification-2026-11-02)) |
+| KT keyframe reading | `models.standard` with image input | The hosted endpoint, `POST <endpoint>/chat/completions` | One call per deduplicated keyframe, capped per hour ([kt-videos.md](./kt-videos.md)) |
+| KT chapters, knowledge candidates, questions | `models.standard` | The hosted endpoint, `POST <endpoint>/chat/completions` | One call over the merged timeline, or 15-minute windows and a merge |
+| Summaries, decisions, to-do extraction | `models.standard` | The hosted endpoint, `POST <endpoint>/chat/completions` | Structured output validated against a JSON Schema |
+| Daily digest | `models.standard`, one call a day | The hosted endpoint, `POST <endpoint>/chat/completions` | Through the same routing; private items go to open weights or are listed by reference ([sessions.md](./sessions.md#daily-digest)) |
+| Receipt and bill field extraction | `models.standard` with image input | The hosted endpoint, `POST <endpoint>/chat/completions` | Fallback: local OCR, then the same model on the text |
+| Anything `private`, every use above | `open_weights.model` (for example `meta-models/Muse-Spark-Open-816B-A42B`) | The endpoint the user chose ([below](#the-private-route)), OpenAI-compatible `POST <endpoint>/chat/completions` | One model for every tier and modality: text, image and audio in, text out. Audio goes as a `wav` or `mp3` `input_audio` part |
+| Implementing agents | Orbit's existing crews | Orbit hosts, against whatever models those crews are set up for | Not configured by the plugin |
+
+## The hosted route
+
+`normal` material goes to one hosted, OpenAI-compatible endpoint. Its keys
+live in the `models` block of `.office/config.yaml` and are set like any
+other policy leaf (`office.config-set`); every one is optional, and an unset
+key keeps its default, so a config written before these keys existed keeps
+working unchanged:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `models.endpoint` | unset: `https://api.meta.ai/v1` | Base URL. HTTPS, or plain HTTP only on loopback; no credentials, query or fragment. `null` restores the default |
+| `models.standard` | `muse-spark-1.3` | Extraction, digests, chapters and image reading |
+| `models.careful` | `muse-wonder` | The `careful` tier (bootstrap consolidation) |
+| `models.transcribe` | `muse-voice-transcribe-1.0` | Transcription |
+
+The endpoint's key is the `meta_api_key` plugin secret, whatever provider the
+endpoint names; the secret keeps its name so existing installs keep working.
+On Meta's Model API (host `api.meta.ai`) transcription uses its one-shot
+`POST /v1/asr/transcribe`; any other endpoint receives audio as a Chat
+Completions `input_audio` part, the private route's shape. `office.status`
+reports the effective route as `hosted` (`endpoint`, `standard`, `careful`,
+`transcribe`), and Settings › Models shows it. Changing any `models` key
+changes the settings digest, so a confirmed video or bootstrap plan is
+re-confirmed.
 
 ## Routing rules
 
 - **Sensitivity.** Set per source (default by kind, for example `email` → `private`) or by the user. Any model call whose input includes a `private` source goes to the open-weight model. The routing decision is logged in the source's `derived_by` and in the task.
-- **Model hosts.** Hosted calls go only to `api.meta.ai`. Private calls go only to the one open-weights endpoint the user configured ([below](#the-private-route)): its exact host, over HTTPS unless it is loopback. Any other host is refused when Library settings load, and again before a socket opens.
+- **Model hosts.** Hosted calls go only to the configured hosted endpoint ([above](#the-hosted-route); `api.meta.ai` by default). Private calls go only to the one open-weights endpoint the user configured ([below](#the-private-route)), never `api.meta.ai`. Either way a call opens a socket only to the endpoint's exact origin (scheme, host and port), over HTTPS unless it is loopback, and an endpoint never carries credentials, a query or a fragment. Any other host is refused when Library settings load, and again before a socket opens.
 - **Redirects.** The model HTTP client does not follow redirects. Each request therefore stays on the host checked by the model endpoint allowlist before the socket opens.
 - **Artifacts inherit sensitivity:** an artifact's `sensitivity` is the strictest of what it cites ([library.md](./library.md)).
 - **Selections from private objects carry no quote** ([selection-sharing.md](./selection-sharing.md)); the agent re-reads through the tools so the routing applies.
-- **Secrets.** The Meta API key and the private route's token (`open_weights_token`, bound to the endpoint origin it was saved for; [below](#the-private-routes-token)) are stored with `orbit plugin secret set office <name>`, never in config or the Library. Knowledge pages never hold secrets; `refs` name files, links, contacts, accounts and artifacts only.
+- **Secrets.** The hosted endpoint's API key (`meta_api_key`) and the private route's token (`open_weights_token`, bound to the endpoint origin it was saved for; [below](#the-private-routes-token)) are stored with `orbit plugin secret set office <name>`, never in config or the Library. Knowledge pages never hold secrets; `refs` name files, links, contacts, accounts and artifacts only.
 - **Contact details never reach a model.** Model inputs and task attachments carry a page's model view, in which each `contact` ref keeps its label and loses its value; page bodies may not contain email addresses or phone numbers ([knowledge-templates.md](./knowledge-templates.md#contact-details)).
 - **Other people's words.** Pasted chats contain third parties' messages. They stay local unless the user marks the source shareable, which sends them only to the team's shared library ([shared-library.md](./shared-library.md)). The demo uses synthetic content only.
 
 The plugin's network grant is `any` (the only setting that reaches remote
-hosts), but the code calls only `api.meta.ai` (hosted) and the one
-configured private endpoint. Its `git` child reaches only the shared
+hosts), but the code calls only the configured hosted endpoint
+(`api.meta.ai` by default) and the one configured private endpoint. Its `git` child reaches only the shared
 library's configured remote, carrying only documents marked `shareable`
 ([shared-library.md](./shared-library.md#transport)). Any other host is refused before a socket
 opens. That restriction is a code rule, reviewed, not a sandbox setting.
 
 ## The private route
 
-Muse Spark Open is Meta's open-weights model: 816B parameters with 42B
+The private route takes any OpenAI-compatible open-weights model
+(`open_weights.model`); the default suggestion and the one the specs
+describe is Muse Spark Open, Meta's open-weights model: 816B parameters with 42B
 active per token, text, image, video and audio in, text out, a 1M-token
 context, and BF16 and NVFP4 weights. It needs at least about 700 GB of GPU
 memory, so it **does not run on a laptop**. The private route is therefore
@@ -67,7 +98,7 @@ that label is shown wherever the route is used:
 | Choice | Label in the app | Where private material goes |
 |---|---|---|
 | **Your company's deployment** (vLLM or SGLang on its own GPUs, or in its cloud account) | "Private: Acme's server" | Your employer's infrastructure. The strongest option for work material. |
-| **A hosted provider** (for example Baseten's model API) | "Private: Baseten (third party)" | That provider, under its terms. Not Meta's hosted API, but not your company either. |
+| **A hosted provider** (for example Baseten's model API) | "Private: Baseten (third party)" | That provider, under its terms. Not the hosted model API, but not your company either. |
 | **Your own hardware** (for example two M5 Ultra Mac Studios with MLX, on loopback or your LAN) | "Private: your hardware" | Machines you own. |
 
 Settings keys (`library/.office/config.yaml`, validated on every read):
@@ -126,9 +157,9 @@ saved for, and is sent to no other origin:
 
 ### Honest wording
 
-- **"Private" means "not sent to Meta's hosted API; sent only to the
+- **"Private" means "not sent to the hosted model API; sent only to the
   endpoint you chose".** It never means "never leaves your machine". The
-  Settings screen, the README and the pitch all say exactly that.
+  Settings screen and the README say exactly that.
 - Every model call records its route in `derived_by` (`hosted` or
   `private:<kind>`), and the source view shows the badge with the endpoint's
   label. For `kind: provider`, the source badge appends “(third party)”
@@ -208,7 +239,7 @@ user's own use.
 
 `Models::extract` compiles `request.schema` before inference and validates the
 parsed JSON reply locally on both the hosted and open-weights routes. The hosted
-request sends the schema with `strict: false`: the Meta Model API's strict mode
+request sends the schema with `strict: false`: Meta's Model API's strict mode
 refuses any schema whose `required` list omits a property (the meeting and
 digest schemas have optional fields), so the schema guides generation and local
 validation enforces it. Non-JSON

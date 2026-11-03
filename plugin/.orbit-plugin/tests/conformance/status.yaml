@@ -25,6 +25,11 @@ tests:
             artifact: 0
           pages_off_template: 0
           template_invalid: []
+        hosted:
+          endpoint: https://api.meta.ai/v1
+          standard: muse-spark-1.3
+          careful: muse-wonder
+          transcribe: muse-voice-transcribe-1.0
         open_weights: null
         shared: null
         brief: {task_workspaces: []}

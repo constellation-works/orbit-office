@@ -30,7 +30,7 @@ Reviewers check every change against the adopted standards and report violations
 
 ## Branching
 
-- `main` — the integration branch for this repo during the hackathon window; commit directly.
+- `main` — the integration branch for this repo; commit directly.
 
 ## Gates
 

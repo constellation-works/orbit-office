@@ -415,7 +415,7 @@ pub fn plan(
         }
         json!({"route":format!("private:{}",block.kind.as_str()),"endpoint":block.endpoint,"model":block.model})
     } else {
-        json!({"route":"hosted","endpoint":"https://api.meta.ai/v1","model":"muse-spark-1.3"})
+        json!({"route":"hosted","endpoint":settings.models.hosted_endpoint(),"model":settings.models.standard_model()})
     };
     let mut rates_unset = Vec::new();
     let mut rate = |name: &str, value: &Option<serde_json::Number>, needed: bool| {

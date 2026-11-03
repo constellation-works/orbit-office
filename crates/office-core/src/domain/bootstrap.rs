@@ -478,11 +478,18 @@ fn route(settings: &Settings, private: bool, careful: bool) -> Result<Route> {
     } else {
         Ok(Route {
             route: "hosted".into(),
-            label: "Meta hosted API".into(),
-            model: if careful {
-                &settings.models.careful
+            label: if settings.models.hosted_is_meta() {
+                "Meta hosted API".into()
             } else {
-                "muse-spark-1.3"
+                format!(
+                    "Hosted: {}",
+                    super::endpoint::host_of(settings.models.hosted_endpoint()).unwrap_or_default()
+                )
+            },
+            model: if careful {
+                settings.models.careful.as_str()
+            } else {
+                settings.models.standard_model()
             }
             .into(),
         })

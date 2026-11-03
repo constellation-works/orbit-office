@@ -2,8 +2,9 @@
 //! then one blocking JSON POST.
 //!
 //! [`check_url`] allows only:
-//! - for hosted calls, `api.meta.ai` over HTTPS (or loopback, which only a
-//!   test configures as the hosted base URL);
+//! - for hosted calls, exactly the configured hosted endpoint's origin
+//!   (`models.endpoint`, by default `api.meta.ai`), over HTTPS unless it
+//!   is loopback, with no credentials in the URL;
 //! - for private calls, exactly the configured endpoint's origin (scheme,
 //!   host and port), over HTTPS unless it is loopback, and never
 //!   `api.meta.ai`.
@@ -25,8 +26,11 @@ use serde_json::Value;
 /// The allowlist one request is checked against.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Destination<'a> {
-    /// The hosted Meta Model API.
-    Hosted,
+    /// The configured hosted endpoint (its base URL).
+    Hosted {
+        /// The configured base URL whose origin the request must match.
+        endpoint: &'a str,
+    },
     /// The configured private endpoint (its base URL).
     Private {
         /// The configured base URL whose origin the request must match.
@@ -43,7 +47,7 @@ pub(crate) fn host_of(url: &str) -> Option<String> {
 /// Whether `url` may be contacted for `destination`. Returns the host.
 pub(crate) fn check_url(url: &str, destination: Destination<'_>) -> Result<String, Error> {
     let checked = match destination {
-        Destination::Hosted => endpoint::allow_hosted_url(url),
+        Destination::Hosted { endpoint } => endpoint::allow_hosted_url(url, endpoint),
         Destination::Private { endpoint } => endpoint::allow_private_url(url, endpoint),
     };
     checked.map_err(|error| match error {
@@ -51,8 +55,8 @@ pub(crate) fn check_url(url: &str, destination: Destination<'_>) -> Result<Strin
             refused("model endpoint is not an HTTP(S) URL with a host".to_string())
         }
         ModelUrlError::HostNotAllowed { host } => refused(match destination {
-            Destination::Hosted => format!(
-                "model endpoint host {host} is not the Meta Model API host; refusing the call"
+            Destination::Hosted { .. } => format!(
+                "model endpoint host {host} is not the configured hosted endpoint; refusing the call"
             ),
             Destination::Private { .. } => format!(
                 "model endpoint host {host} is not the configured private endpoint; refusing the call"

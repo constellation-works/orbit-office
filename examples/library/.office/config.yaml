@@ -13,7 +13,16 @@ packs:
 thresholds:
   repetition_count: 3
   window_days: 30
-# The private route: Muse Spark Open on the one endpoint you chose. Null
+# The hosted route: any OpenAI-compatible endpoint and its models. Every
+# key is optional; unset keys use Meta's Model API and the Muse models.
+# The endpoint's key is the meta_api_key plugin secret, never this file.
+models:
+  careful: muse-wonder
+#   endpoint: https://api.example-llm.com/v1   # HTTPS (HTTP only on loopback)
+#   standard: muse-spark-1.3
+#   transcribe: muse-voice-transcribe-1.0
+# The private route: an open-weights model (for example Muse Spark Open) on
+# the one endpoint you chose. Null
 # refuses private material rather than sending it to the hosted API.
 # capabilities and verified_at are written by office.private-route-check.
 open_weights: null

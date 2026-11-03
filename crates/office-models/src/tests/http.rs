@@ -8,6 +8,10 @@ use serde_json::json;
 
 const COMPANY: &str = "https://muse.internal.acme.example/v1";
 
+fn hosted_to(endpoint: &str) -> Destination<'_> {
+    Destination::Hosted { endpoint }
+}
+
 fn private_to(endpoint: &str) -> Destination<'_> {
     Destination::Private { endpoint }
 }
@@ -100,7 +104,7 @@ fn host_of_refuses_an_unterminated_ipv6_literal() {
 #[test]
 fn check_url_accepts_an_ipv6_loopback_endpoint_over_http() {
     assert_eq!(
-        check_url("http://[::1]:8080/v1", Destination::Hosted).expect("loopback"),
+        check_url("http://[::1]:8080/v1", hosted_to("http://[::1]:8080/v1")).expect("loopback"),
         "::1"
     );
     assert_eq!(
@@ -115,15 +119,19 @@ fn check_url_accepts_an_ipv6_loopback_endpoint_over_http() {
 
 #[test]
 fn check_url_refuses_a_non_loopback_ipv6_host() {
-    let error = check_url("http://[2001:db8::1]:8080/v1", Destination::Hosted)
-        .expect_err("not allowlisted");
+    let error = check_url(
+        "http://[2001:db8::1]:8080/v1",
+        hosted_to("http://[2001:db8::1]:8080/v1"),
+    )
+    .expect_err("not allowlisted");
     assert_eq!(error.code(), "model_host_not_allowed");
 }
 
 #[test]
-fn hosted_calls_reach_only_the_meta_api_over_https() {
+fn hosted_calls_reach_the_default_meta_api_over_https() {
+    let meta = office_core::domain::endpoint::DEFAULT_HOSTED_ENDPOINT;
     assert_eq!(
-        check_url("https://api.meta.ai/v1", Destination::Hosted).expect("meta"),
+        check_url("https://api.meta.ai/v1/chat/completions", hosted_to(meta)).expect("meta"),
         "api.meta.ai"
     );
     for url in [
@@ -131,13 +139,61 @@ fn hosted_calls_reach_only_the_meta_api_over_https() {
         "https://inference.baseten.co/v1",
         "https://model-abc.api.baseten.co/v1",
         "https://muse.internal.acme.example/v1",
+        "https://user:pw@api.meta.ai/v1/chat/completions",
     ] {
         assert_eq!(
-            check_url(url, Destination::Hosted)
+            check_url(url, hosted_to(meta))
                 .expect_err("not the hosted API")
                 .code(),
             "model_host_not_allowed",
             "{url}"
+        );
+    }
+}
+
+#[test]
+fn hosted_calls_reach_only_the_configured_hosted_endpoints_exact_origin() {
+    let configured = "https://api.example-llm.com/v1";
+    assert_eq!(
+        check_url(
+            "https://api.example-llm.com/v1/chat/completions",
+            hosted_to(configured)
+        )
+        .expect("configured hosted endpoint"),
+        "api.example-llm.com"
+    );
+    for url in [
+        "https://api.meta.ai/v1/chat/completions",
+        "https://api.example-llm.com:8443/v1/chat/completions",
+        "http://api.example-llm.com/v1/chat/completions",
+        "https://api.example-llm.com.evil.example/v1/chat/completions",
+        "https://user:pw@api.example-llm.com/v1/chat/completions",
+    ] {
+        assert_eq!(
+            check_url(url, hosted_to(configured))
+                .expect_err("not the configured hosted origin")
+                .code(),
+            "model_host_not_allowed",
+            "{url}"
+        );
+    }
+}
+
+#[test]
+fn a_hosted_endpoint_off_https_or_with_credentials_reaches_nothing() {
+    for endpoint in [
+        "http://api.example-llm.com/v1",
+        "https://user:pw@api.example-llm.com/v1",
+        "https://api.example-llm.com/v1?key=x",
+        "ftp://api.example-llm.com/v1",
+    ] {
+        let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
+        assert_eq!(
+            check_url(&url, hosted_to(endpoint))
+                .expect_err("endpoint refused")
+                .code(),
+            "model_host_not_allowed",
+            "{endpoint}"
         );
     }
 }

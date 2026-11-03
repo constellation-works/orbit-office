@@ -316,8 +316,9 @@ fn maps_a_client_error_to_a_non_retryable_typed_error() {
 
 #[test]
 fn refuses_a_non_allowlisted_host_before_any_request() {
-    let mut config = hosted_config("https://evil.example.com/v1");
-    config.meta_base_url = "https://evil.example.com/v1".into();
+    // A hosted endpoint over plain HTTP off loopback is refused even when
+    // configured: only the host is configurable, not the transport rule.
+    let config = hosted_config("http://evil.example.com/v1");
     let models = client(config);
     let error = models
         .transcribe(&transcribe_request())
@@ -332,7 +333,7 @@ fn never_leaks_the_secret_into_an_error_or_a_log_line() {
     // A hostile endpoint echoes the credential back in its error body.
     let server = FakeServer::start(401, format!(r#"{{"error":"bad key {secret}"}}"#));
     let mut config = hosted_config(&server.base_url);
-    config.meta_api_key = Some(secret.into());
+    config.hosted_api_key = Some(secret.into());
     let models = client(config);
 
     let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));

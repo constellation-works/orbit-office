@@ -134,13 +134,13 @@ Full contracts: [specs/library.md](./specs/library.md). Terms:
 | Selection sharing between app and agent CLI | [specs/selection-sharing.md](./specs/selection-sharing.md) | [ORB-18723] done |
 | Models and privacy routing | [specs/models-and-privacy.md](./specs/models-and-privacy.md) | [ORB-18712] done |
 | Office workspace preset and install | [specs/install.md](./specs/install.md) | [ORB-19197] done |
-| Hackathon compliance, demo and build plan | [specs/delivery.md](./specs/delivery.md) | [ORB-16585] |
+| Demo ground rules, script and build plan | [specs/delivery.md](./specs/delivery.md) | [ORB-16585] |
 | Directions beyond the event | [3_vision.md](./3_vision.md) | [ORB-16585] |
 
-### Hackathon scope (spec §3)
+### Initial scope (spec §3)
 
-**Must:** orchestrator setup (Muse Code wired to Orbit MCP with the office
-skill); sources store with paste capture and video upload; knowledge
+**Must:** orchestrator setup (the user's agent CLI wired to Orbit MCP with the
+office skill); sources store with paste capture and video upload; knowledge
 store (domain, runbook; frictions in Orbit); artifacts store; KT pack
 (cost preview → transcribe and read keyframes → chaptered index with
 tangents folded → cited knowledge proposals, a runbook and questions for the

@@ -2,18 +2,25 @@
 //! Library settings and `office-models`' `check_url`
 //! (specs/models-and-privacy.md, "The private route").
 //!
-//! Hosted calls go only to `api.meta.ai` (or loopback, which only a test
-//! configures). Private calls go only to the one configured open-weights
-//! endpoint: the same scheme, exact host and port, over HTTPS unless the
-//! host is loopback, and never the hosted Meta API. Any other host is
-//! refused, at settings load and again before a socket opens.
+//! Hosted calls go only to the configured hosted endpoint
+//! (`models.endpoint`, by default Meta's [`DEFAULT_HOSTED_ENDPOINT`]).
+//! Private calls go only to the one configured open-weights endpoint and
+//! never to Meta's hosted API. Either way a call must open a socket to
+//! exactly the configured origin (scheme, host and port), over HTTPS unless
+//! the host is loopback, and a configured endpoint never carries
+//! credentials, a query or a fragment. Any other host is refused, at
+//! settings load and again before a socket opens.
 
 use std::fmt;
 
 use serde::Serialize;
 
-/// The hosted Meta Model API host.
+/// The hosted Meta Model API host. Private endpoints may never be it.
 pub const META_HOST: &str = "api.meta.ai";
+
+/// The hosted endpoint used when `models.endpoint` is unset: Meta's
+/// OpenAI-compatible Model API.
+pub const DEFAULT_HOSTED_ENDPOINT: &str = "https://api.meta.ai/v1";
 
 /// Where a private endpoint runs; shown with its label wherever it is used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -85,7 +92,7 @@ impl Capability {
 /// `derived_by.route`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelRoute {
-    /// The hosted Meta Model API.
+    /// The configured hosted endpoint (`models.endpoint`).
     Hosted,
     /// The configured private endpoint of this kind.
     Private(EndpointKind),
@@ -123,7 +130,7 @@ pub enum ModelUrlError {
     },
 }
 
-/// Refusal reported for a private endpoint over plain HTTP off loopback.
+/// Refusal reported for an endpoint over plain HTTP off loopback.
 /// Static, so a settings error never echoes the configured URL.
 const HTTPS_REQUIRED: &str = "expected an HTTPS URL (plain HTTP only on loopback)";
 const META_REFUSED: &str =
@@ -184,17 +191,28 @@ pub fn is_loopback(host: &str) -> bool {
     matches!(host, "127.0.0.1" | "localhost" | "::1")
 }
 
-/// The hosted allowlist: `api.meta.ai` over HTTPS, or a loopback host
-/// (only a test points the hosted base URL there). Returns the host.
-pub fn allow_hosted_url(url: &str) -> Result<String, ModelUrlError> {
-    let host = host_of(url).ok_or(ModelUrlError::NotHttpUrl)?;
-    if is_loopback(&host) {
-        return Ok(host);
+/// The hosted allowlist: `url` must open a socket to exactly the origin
+/// (scheme, host and port) of the configured hosted `endpoint`, over HTTPS
+/// unless loopback, with no credentials in its authority. The endpoint
+/// itself must pass the settings rule ([`allow_hosted_endpoint`]), so a
+/// malformed or credential-bearing endpoint reaches nothing. Returns the
+/// host.
+pub fn allow_hosted_url(url: &str, endpoint: &str) -> Result<String, ModelUrlError> {
+    let (scheme, host, port) = origin_of(url).ok_or(ModelUrlError::NotHttpUrl)?;
+    if authority_has_userinfo(url) {
+        return Err(ModelUrlError::NotHttpUrl);
     }
-    if host != META_HOST {
+    let configured = match allow_hosted_endpoint(endpoint) {
+        Ok(()) => origin_of(endpoint),
+        Err(_) => None,
+    };
+    let Some(configured) = configured else {
+        return Err(ModelUrlError::HostNotAllowed { host });
+    };
+    if (scheme, &host, &port) != (configured.0, &configured.1, &configured.2) {
         return Err(ModelUrlError::HostNotAllowed { host });
     }
-    if !url.starts_with("https://") {
+    if scheme != "https" && !is_loopback(&host) {
         return Err(ModelUrlError::HttpsRequired { host });
     }
     Ok(host)
@@ -217,12 +235,31 @@ pub fn allow_private_url(url: &str, endpoint: &str) -> Result<String, ModelUrlEr
     Ok(host)
 }
 
+/// Accept a configured hosted endpoint (`models.endpoint`), or the static
+/// reason settings should report. Any OpenAI-compatible host is allowed
+/// (the user chose it), over HTTPS unless loopback. Embedded credentials,
+/// a query or a fragment are refused. The returned reason never contains
+/// the URL.
+pub fn allow_hosted_endpoint(url: &str) -> Result<(), &'static str> {
+    let host = well_formed_host(url)?;
+    require_https_off_loopback(url, &host)
+}
+
 /// Accept a configured private endpoint, or the static reason settings
-/// should report. Any host is allowed (the user chose it), over HTTPS
-/// unless loopback, except Meta's hosted API. Embedded credentials, a
-/// query or a fragment are refused. The returned reason never contains
+/// should report: the hosted rule ([`allow_hosted_endpoint`]), except that
+/// Meta's hosted API is never private. The returned reason never contains
 /// the URL.
 pub(crate) fn allow_private_endpoint(url: &str) -> Result<(), &'static str> {
+    let host = well_formed_host(url)?;
+    if host == META_HOST {
+        return Err(META_REFUSED);
+    }
+    require_https_off_loopback(url, &host)
+}
+
+/// The lowercase host of a well-formed HTTP(S) base URL with no
+/// credentials, query or fragment.
+fn well_formed_host(url: &str) -> Result<String, &'static str> {
     if url.chars().any(|c| c.is_whitespace() || c.is_control())
         || url.contains(['?', '#'])
         || authority_has_userinfo(url)
@@ -230,11 +267,12 @@ pub(crate) fn allow_private_endpoint(url: &str) -> Result<(), &'static str> {
     {
         return Err(MALFORMED_ENDPOINT);
     }
-    let host = host_of(url).ok_or(MALFORMED_ENDPOINT)?;
-    if host == META_HOST {
-        return Err(META_REFUSED);
-    }
-    if !url.starts_with("https://") && !is_loopback(&host) {
+    host_of(url).ok_or(MALFORMED_ENDPOINT)
+}
+
+/// Plain HTTP only on loopback.
+fn require_https_off_loopback(url: &str, host: &str) -> Result<(), &'static str> {
+    if !url.starts_with("https://") && !is_loopback(host) {
         return Err(HTTPS_REQUIRED);
     }
     Ok(())

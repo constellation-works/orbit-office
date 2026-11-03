@@ -1,8 +1,8 @@
 ---
 title: office — Decisions
 owner: daniel
-last_updated: 2026-11-01
-last_validated: 2026-11-01
+last_updated: 2026-11-03
+last_validated: 2026-11-03
 status: Draft
 feature: office
 doc_role: decisions
@@ -175,8 +175,8 @@ app has no Chat screen.
 
 ### Consequences
 
-- One conversation surface, on the user's chosen provider; the demo keeps
-  it on Meta models through Muse Code.
+- One conversation surface, on the user's chosen provider; the demo runs
+  it through Muse Code.
 - Cost: behaviour depends on the host CLI's skill and hook support, so
   skill discovery and prompt hooks are day-1 checks, and the selection
   pull rule must work without any hook.
@@ -609,7 +609,7 @@ lists at build time (more machinery, and generated files still conflict).
 **Deviation from STD-02@3 §R17 (fewest moving parts), scoped to the scaffold.** Planned
 tool modules, reserved domain, port and adapter modules, and planned features and screens
 exist before the code that uses them. Each holds only its contract (a `ToolSpec`, a feature
-or screen record) and its documentation, no logic. Scope: the hackathon build window. Any
+or screen record) and its documentation, no logic. Scope: the initial build window. Any
 module still planned at submission (2026-11-04) is deleted with its registry row, reserved
 manifest block and router entry, and its path is added to the retired-paths list.
 
@@ -1035,7 +1035,8 @@ machine", which it does not.
   `api.meta.ai` plus the one configured endpoint's exact host, over HTTPS
   unless it is loopback, which replaces the Baseten-or-loopback rule.
 - "Private" is worded as **"not sent to Meta's hosted API; sent only to the
-  endpoint you chose"**, everywhere it appears.
+  endpoint you chose"**, everywhere it appears. (Now "not sent to the hosted
+  model API"; see [model routing is configurable](#model-routing-is-configurable-not-meta-only).)
 - **`office.private-route-check` records what the endpoint can take**
   (text, image, audio). Private KT videos and bootstrap batches route
   every tier and modality to it, and are refused only for a missing
@@ -3345,6 +3346,60 @@ false or a `total` that disagrees with the rows, sets omission
 `conflicts_unread`. Rows that arrived are still applied, and the token is
 kept if omission ids are capped at 32. No wire field is added.
 
+## Model routing is configurable, not Meta-only
+
+### Context
+
+orbit-office was built under a rule that every model it calls at runtime is
+a Meta model. The code enforced it: hosted calls were hard-locked to
+`api.meta.ai` (`allow_hosted_url`, `DEFAULT_META_BASE_URL`), the hosted
+models were fixed in code, and the README, specs, plugin descriptions and
+Settings › Models ("Every model is Meta's") all stated it. On 2026-11-02
+Daniel dropped the rule ("remove meta-model only frames everywhere"), so it
+no longer constrains the design.
+
+### Decision
+
+- **The hosted route is a configured OpenAI-compatible endpoint.** New
+  optional Library settings `models.endpoint`, `models.standard` and
+  `models.transcribe` join `models.careful`. Unset keys keep the old
+  behaviour: Meta's Model API at `https://api.meta.ai/v1` and the Muse
+  models, so an existing config loads and routes unchanged and the
+  settings digest of an unchanged config is unchanged. Meta is one choice,
+  not the only one ([models-and-privacy.md](./specs/models-and-privacy.md#the-hosted-route)).
+- **Only which host is allowed changes, not the transport rule** (STD-05).
+  A hosted endpoint must be HTTPS, or plain HTTP on loopback, with no
+  credentials, query or fragment, checked when settings load. Before a
+  socket opens, a hosted request must target exactly the configured
+  endpoint's origin (scheme, host and port), the rule the private route
+  already used, and carry no credentials in its URL.
+- **The private route keeps its own rule**, including never `api.meta.ai`.
+- **The secret keeps its name.** The hosted key is still `meta_api_key`
+  (a declared secret and a status contract), now described as the hosted
+  endpoint's key whatever the provider.
+- **Transcription follows the endpoint.** Meta's Model API keeps its
+  one-shot `/asr/transcribe`; any other hosted endpoint gets Chat
+  Completions `input_audio`, the shape the private route already sends.
+- `office.status` gains a `hosted` block (endpoint and models) so the app
+  shows the configured route instead of a fixed Meta table.
+- The adapter module `meta.rs` is renamed `chat.rs`: it holds the
+  OpenAI-compatible Chat Completions shapes plus Meta's ASR shape.
+
+### Consequences
+
+- Users can point hosted calls at any OpenAI-compatible provider without a
+  code change; nothing requires a Meta model, though the Muse defaults stay.
+- A hostile config can now name any HTTPS host for `normal` material. That
+  is the user's own choice, as for the private route; credentials still
+  never appear in config, and `private` material never reaches the hosted
+  endpoint.
+- The earlier entries that state the Meta-only rule (the private-route
+  decision's "`api.meta.ai` plus the one configured endpoint" allowlist)
+  stay as written for their reasoning; this entry supersedes their
+  Meta-only parts.
+- Cost: hosted audio on a non-Meta endpoint depends on that provider
+  accepting `input_audio`, which is not verified against any provider yet.
+
 ## Task References
 
 - [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
@@ -3400,5 +3455,6 @@ kept if omission ids are capped at 32. No wire field is added.
 - [ORB-20935] — fixed side-session brief filtering and project names for removed worktrees.
 - [ORB-20950] — kept the desktop default title from overriding the user-derived scribe title.
 - [ORB-21060] — built per-thread handoffs within each project.
+- [ORB-21751] — removed the Meta-models-only rule and made the hosted endpoint configurable.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

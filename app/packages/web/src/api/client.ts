@@ -264,7 +264,7 @@ export function saveAgentWorkspace(workspace: string | null): Promise<AgentWorks
   return postJson<AgentWorkspaceSaved>("/api/settings/agent-workspace", { workspace });
 }
 
-/** Every job's Meta model, where it runs and what the app could check. */
+/** Every job's model, where it runs and what the app could check. */
 export function getModels(): Promise<ModelsView> {
   return getJson<ModelsView>("/api/settings/models");
 }

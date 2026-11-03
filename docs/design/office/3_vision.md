@@ -7,7 +7,7 @@ status: Draft
 feature: office
 doc_role: vision
 type: design
-summary: Open questions and directions beyond the hackathon — routine packs, the business model, a human-owned task flag, and shared Library machinery.
+summary: Open questions and directions beyond the initial scope — routine packs, the business model, a human-owned task flag, and shared Library machinery.
 tags: [office, plugin, orbit]
 paths: ["crates/**", "plugin/**", "app/**"]
 related_features: [office]
@@ -18,7 +18,7 @@ related_artifacts: [ORB-16585]
 
 Speculative. Everything here is a direction, not a commitment; the
 must/should scope for the event is in
-[1_overview.md](./1_overview.md#hackathon-scope-spec-3).
+[1_overview.md](./1_overview.md#initial-scope-spec-3).
 
 ## Routine packs (pitch slide at the event)
 

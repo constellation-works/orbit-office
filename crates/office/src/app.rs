@@ -55,15 +55,17 @@ impl ContextModels<'_> {
     ) -> office_core::Result<office_models::RoutedClient> {
         let secret =
             |name: &str| office_core::protocol::secret(self.context, name).map(str::to_string);
-        let mut config =
-            office_models::ModelConfig::new(secret("meta_api_key"), secret("open_weights_token"));
+        let mut config = office_models::ModelConfig::with_models(
+            secret("meta_api_key"),
+            secret("open_weights_token"),
+            &settings.models,
+        );
         // Settings that fail to load are reported as their own error (for
         // example `invalid_library_setting` naming the offending key), not
         // swallowed into an unset `open_weights` block: that would misreport
         // the verified cause as `private_endpoint_unconfigured`. A load that
         // succeeds with no block still refuses private material rather than
         // sending it hosted.
-        config.careful_model = settings.models.careful;
         config.open_weights = settings.open_weights;
         Ok(office_models::RoutedClient::new(config))
     }

@@ -6,6 +6,10 @@
 //!
 //! # Confirmed request and response shapes (2026-10-27)
 //!
+//! These are the default provider's shapes. Another hosted endpoint gets
+//! the same OpenAI-compatible Chat Completions bodies, and its audio as a
+//! Chat Completions `input_audio` part rather than Meta's ASR endpoint.
+//!
 //! Spec §18.5 left these shapes unverified; they were confirmed against
 //! the providers' published documentation before this implementation:
 //!
@@ -45,10 +49,14 @@
 //!   non-retryable `model_invalid_schema`; local references are supported,
 //!   and schema validation never retrieves URLs or files.
 //!
-//! [`http::check_url`] allows `api.meta.ai` for hosted calls and, for
-//! private calls, only the configured endpoint's exact origin (HTTPS unless
-//! loopback, never `api.meta.ai`), refusing every other host before a
-//! socket opens. Every call crosses the one routing function
+//! The hosted endpoint is configurable (`models.endpoint`, any
+//! OpenAI-compatible provider; Meta's Model API while unset), and so are
+//! its models (`models.standard`, `models.careful`, `models.transcribe`).
+//! [`http::check_url`] allows, for hosted calls, only the configured
+//! hosted endpoint's exact origin and, for private calls, only the
+//! configured private endpoint's exact origin (never `api.meta.ai`); both
+//! over HTTPS unless loopback, refusing every other host before a socket
+//! opens. Every call crosses the one routing function
 //! ([`routing::route`]): `private` material, at every tier and modality,
 //! goes only to the configured model, and is refused when no endpoint is
 //! configured, when the endpoint has not passed
@@ -85,9 +93,9 @@
 // Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
+mod chat;
 mod http;
 pub mod media;
-mod meta;
 mod open_weights;
 mod route_check;
 mod routing;
@@ -105,27 +113,34 @@ use office_core::ports::{
 };
 use serde_json::Value;
 
-/// Default hosted model (Muse Spark).
-pub const DEFAULT_HOSTED_MODEL: &str = "muse-spark-1.3";
-/// Default Meta Model API base URL.
-pub const DEFAULT_META_BASE_URL: &str = "https://api.meta.ai/v1";
+/// Default hosted model for the standard tier (Muse Spark).
+pub const DEFAULT_HOSTED_MODEL: &str = office_core::domain::settings::DEFAULT_STANDARD_MODEL;
+/// Default hosted base URL: Meta's Model API, used while `models.endpoint`
+/// is unset.
+pub const DEFAULT_HOSTED_BASE_URL: &str = office_core::domain::endpoint::DEFAULT_HOSTED_ENDPOINT;
 
 /// Endpoints, credentials and limits for [`RoutedClient`].
 ///
-/// Credentials come from the call context (`meta_api_key`,
-/// `open_weights_token`); the private endpoint comes from Library
+/// Credentials come from the call context (`meta_api_key` for the hosted
+/// endpoint, `open_weights_token`); both endpoints come from Library
 /// settings. No credential is ever logged or put in an error.
 #[derive(Clone, Debug, Default)]
 pub struct ModelConfig {
-    /// Meta Model API key (hosted calls). Required for `normal` material.
-    pub meta_api_key: Option<String>,
+    /// The hosted endpoint's API key (the `meta_api_key` secret, whatever
+    /// provider `models.endpoint` names). Required for `normal` material.
+    pub hosted_api_key: Option<String>,
     /// The stored `open_weights_token` record, exactly as Orbit delivered
     /// it: the private endpoint's token bound to the origin it was saved
     /// for ([`office_core::domain::endpoint::BoundToken`]). Routing sends
     /// the token only to that origin; any other value is never sent.
     pub open_weights_token: Option<String>,
-    /// Hosted Meta base URL.
-    pub meta_base_url: String,
+    /// Hosted OpenAI-compatible base URL (`models.endpoint`); every hosted
+    /// call must open a socket to exactly its origin.
+    pub hosted_base_url: String,
+    /// Whether hosted audio uses Meta's one-shot `/asr/transcribe`
+    /// endpoint (true for Meta's Model API). Otherwise hosted audio goes
+    /// to Chat Completions as `input_audio`, as on the private route.
+    pub hosted_asr: bool,
     /// The private route from Library settings; `None` refuses `private`.
     pub open_weights: Option<OpenWeights>,
     /// Hosted model slug.
@@ -139,25 +154,41 @@ pub struct ModelConfig {
 }
 
 impl ModelConfig {
-    /// Configuration with the published hosted endpoint and model, and no
-    /// private route.
+    /// Configuration with the default hosted endpoint (Meta's Model API)
+    /// and models, and no private route.
     #[must_use]
-    pub fn new(meta_api_key: Option<String>, open_weights_token: Option<String>) -> Self {
-        Self {
-            meta_api_key,
+    pub fn new(hosted_api_key: Option<String>, open_weights_token: Option<String>) -> Self {
+        Self::with_models(
+            hosted_api_key,
             open_weights_token,
-            meta_base_url: DEFAULT_META_BASE_URL.to_string(),
+            &office_core::domain::settings::ModelSettings::default(),
+        )
+    }
+
+    /// Configuration with the hosted endpoint and models from Library
+    /// settings (`models.*`), and no private route.
+    #[must_use]
+    pub fn with_models(
+        hosted_api_key: Option<String>,
+        open_weights_token: Option<String>,
+        models: &office_core::domain::settings::ModelSettings,
+    ) -> Self {
+        Self {
+            hosted_api_key,
+            open_weights_token,
+            hosted_base_url: models.hosted_endpoint().to_string(),
+            hosted_asr: models.hosted_is_meta(),
             open_weights: None,
-            hosted_model: DEFAULT_HOSTED_MODEL.to_string(),
-            careful_model: office_core::domain::settings::ModelSettings::default().careful,
-            transcribe_model: meta::TRANSCRIBE_MODEL.to_string(),
+            hosted_model: models.standard_model().to_string(),
+            careful_model: models.careful.clone(),
+            transcribe_model: models.transcribe_model().to_string(),
             audio_splitter: media::AudioSplitter::default(),
         }
     }
 }
 
 /// The routed model client: implements the `office-core` model port over
-/// the hosted Meta API and the private endpoint, routing every call by
+/// the configured hosted endpoint and the private endpoint, routing every call by
 /// sensitivity.
 pub struct RoutedClient {
     config: ModelConfig,
@@ -205,7 +236,7 @@ impl RoutedClient {
         body: &Value,
         timeout: Option<Duration>,
     ) -> Result<(String, Value)> {
-        let url = meta::chat_url(&resolved.base_url);
+        let url = chat::chat_url(&resolved.base_url);
         let host = http::host_of(&url).unwrap_or_default();
         let response = http::post_json(
             &self.agent,
@@ -237,21 +268,22 @@ impl RoutedClient {
                     if resolved.is_private() {
                         open_weights::extract_body(&resolved.model, text, schema)
                     } else {
-                        meta::extract_body(&resolved.model, text, schema)
+                        chat::extract_body(&resolved.model, text, schema)
                     }
                 }
                 Operation::Image {
                     mime,
                     image,
                     prompt,
-                } => meta::image_body(&resolved.model, mime, image, prompt),
+                } => chat::image_body(&resolved.model, mime, image, prompt),
             })?;
-        Ok((meta::reply_text(&host, &response)?, derived_by))
+        Ok((chat::reply_text(&host, &response)?, derived_by))
     }
 
     /// Transcribe one audio chunk of `seconds` in `format` (`wav` or `mp3`).
-    /// Hosted chunks go to Muse Voice Transcribe as WAV, an MP3 chunk being
-    /// decoded locally first; private chunks keep the chat `input_audio`
+    /// Hosted chunks on Meta's Model API go to Muse Voice Transcribe as WAV,
+    /// an MP3 chunk being decoded locally first; private chunks, and hosted
+    /// chunks on any other configured endpoint, keep the chat `input_audio`
     /// shape. Segment timestamps are relative to this chunk; the caller
     /// shifts them onto the original recording.
     fn transcribe_chunk(
@@ -261,17 +293,17 @@ impl RoutedClient {
         audio: &[u8],
         seconds: u64,
         language: Option<&str>,
-    ) -> Result<meta::ParsedTranscript> {
+    ) -> Result<chat::ParsedTranscript> {
         let resolved = routing::route(
             sensitivity,
             Capability::Audio,
             ModelTier::Standard,
             &self.config,
         )?;
-        if resolved.is_private() {
-            let body = meta::transcribe_body(&resolved.model, format, audio, language);
+        if resolved.is_private() || !self.config.hosted_asr {
+            let body = chat::transcribe_body(&resolved.model, format, audio, language);
             let (host, response) = self.send(&resolved, &body)?;
-            return meta::parse_transcript(&host, &response);
+            return chat::parse_transcript(&host, &response);
         }
         let decoded;
         let wav = if format == "wav" {
@@ -284,9 +316,9 @@ impl RoutedClient {
             .audio(audio, 0, seconds)?;
             decoded.as_slice()
         };
-        let url = transcription_url(&resolved);
+        let url = transcription_url(&resolved, self.config.hosted_asr);
         let host = http::host_of(&url).unwrap_or_default();
-        let (content_type, body) = meta::asr_body(&resolved.model, wav, language);
+        let (content_type, body) = chat::asr_body(&resolved.model, wav, language);
         let response = http::post_bytes(
             &self.agent,
             &url,
@@ -296,17 +328,17 @@ impl RoutedClient {
             resolved.destination(),
             None,
         )?;
-        meta::parse_asr(&host, &response)
+        chat::parse_asr(&host, &response)
     }
 }
 
 /// Where a resolved transcription call is sent: Muse Voice Transcribe when
-/// hosted, Chat Completions on the private route.
-fn transcription_url(resolved: &routing::ResolvedCall) -> String {
-    if resolved.is_private() {
-        meta::chat_url(&resolved.base_url)
+/// hosted on Meta's Model API, else Chat Completions.
+fn transcription_url(resolved: &routing::ResolvedCall, hosted_asr: bool) -> String {
+    if resolved.is_private() || !hosted_asr {
+        chat::chat_url(&resolved.base_url)
     } else {
-        meta::asr_url(&resolved.base_url)
+        chat::asr_url(&resolved.base_url)
     }
 }
 

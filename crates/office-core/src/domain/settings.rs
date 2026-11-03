@@ -149,18 +149,94 @@ impl Default for VideoSettings {
         }
     }
 }
-/// Hosted synthesis model selection. No endpoint or credential is accepted here.
+/// Default hosted model for the standard tier (extraction and vision).
+pub const DEFAULT_STANDARD_MODEL: &str = "muse-spark-1.3";
+/// Default hosted model for careful cross-source synthesis.
+pub const DEFAULT_CAREFUL_MODEL: &str = "muse-wonder";
+/// Default hosted transcription model.
+pub const DEFAULT_TRANSCRIBE_MODEL: &str = "muse-voice-transcribe-1.0";
+
+/// The hosted route: which OpenAI-compatible endpoint `normal` material
+/// goes to and which models it names (specs/models-and-privacy.md, "The
+/// hosted route"). Unset keys fall back to Meta's Model API and the Muse
+/// models, so an existing config keeps its behaviour; any other endpoint
+/// and models may be configured instead. No credential is accepted here:
+/// the endpoint's key is the `meta_api_key` secret.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ModelSettings {
     /// Model slug for careful cross-source synthesis.
     pub careful: String,
+    /// Hosted OpenAI-compatible base URL; `None` means
+    /// [`super::endpoint::DEFAULT_HOSTED_ENDPOINT`]. HTTPS unless loopback,
+    /// no credentials, query or fragment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Model slug for the standard tier; `None` means [`DEFAULT_STANDARD_MODEL`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub standard: Option<String>,
+    /// Model slug for transcription; `None` means [`DEFAULT_TRANSCRIBE_MODEL`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcribe: Option<String>,
 }
 impl Default for ModelSettings {
     fn default() -> Self {
         Self {
-            careful: "muse-wonder".into(),
+            careful: DEFAULT_CAREFUL_MODEL.into(),
+            endpoint: None,
+            standard: None,
+            transcribe: None,
         }
     }
+}
+
+impl ModelSettings {
+    /// The hosted base URL calls go to: `models.endpoint`, else Meta's.
+    #[must_use]
+    pub fn hosted_endpoint(&self) -> &str {
+        self.endpoint
+            .as_deref()
+            .unwrap_or(super::endpoint::DEFAULT_HOSTED_ENDPOINT)
+    }
+
+    /// The standard-tier hosted model.
+    #[must_use]
+    pub fn standard_model(&self) -> &str {
+        self.standard.as_deref().unwrap_or(DEFAULT_STANDARD_MODEL)
+    }
+
+    /// The hosted transcription model.
+    #[must_use]
+    pub fn transcribe_model(&self) -> &str {
+        self.transcribe
+            .as_deref()
+            .unwrap_or(DEFAULT_TRANSCRIBE_MODEL)
+    }
+
+    /// Whether the hosted endpoint is Meta's Model API, whose one-shot
+    /// transcription endpoint (`/asr/transcribe`) hosted audio uses. Any
+    /// other endpoint receives audio as Chat Completions `input_audio`.
+    #[must_use]
+    pub fn hosted_is_meta(&self) -> bool {
+        super::endpoint::host_of(self.hosted_endpoint()).as_deref()
+            == Some(super::endpoint::META_HOST)
+    }
+}
+
+/// The `models` keys besides `careful`, omitted from the file while unset.
+const MODEL_OPTIONAL: [&str; 3] = ["endpoint", "standard", "transcribe"];
+
+/// A model slug: nonempty, at most 128 ASCII letters, digits and `-._/:`.
+fn model_slug(value: &Value, key: &str) -> Result<String> {
+    value
+        .as_str()
+        .filter(|v| {
+            !v.is_empty()
+                && v.len() <= 128
+                && v.bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"-._/:".contains(&c))
+        })
+        .map(str::to_string)
+        .ok_or_else(|| invalid(key, "expected a model slug of at most 128 ASCII bytes"))
 }
 
 /// Optional per-unit rates for the cost preview.
@@ -370,6 +446,11 @@ impl Settings {
             return Self::try_from(encoded);
         }
         let target = match key.split_once('.') {
+            // Omitted while unset, so the leaf is inserted before it is set.
+            Some(("models", name)) if MODEL_OPTIONAL.contains(&name) => encoded
+                .get_mut("models")
+                .and_then(Value::as_object_mut)
+                .map(|map| map.entry(name).or_insert(Value::Null)),
             Some((section, name))
                 if [
                     "retention",
@@ -574,21 +655,34 @@ impl TryFrom<Value> for Settings {
                         .ok_or_else(|| invalid(key, "expected a mapping"))?;
                     for (name, value) in items {
                         let key = format!("models.{name}");
-                        if name != "careful" {
-                            return Err(invalid(&key, "unknown model tier"));
+                        match name.as_str() {
+                            "careful" => settings.models.careful = model_slug(value, &key)?,
+                            "standard" | "transcribe" => {
+                                let slug = if value.is_null() {
+                                    None
+                                } else {
+                                    Some(model_slug(value, &key)?)
+                                };
+                                if name == "standard" {
+                                    settings.models.standard = slug;
+                                } else {
+                                    settings.models.transcribe = slug;
+                                }
+                            }
+                            "endpoint" => {
+                                settings.models.endpoint = if value.is_null() {
+                                    None
+                                } else {
+                                    let url = value.as_str().ok_or_else(|| {
+                                        invalid(&key, "expected a base URL or null")
+                                    })?;
+                                    super::endpoint::allow_hosted_endpoint(url)
+                                        .map_err(|reason| invalid(&key, reason))?;
+                                    Some(url.into())
+                                }
+                            }
+                            _ => return Err(invalid(&key, "unknown model tier")),
                         }
-                        settings.models.careful = value
-                            .as_str()
-                            .filter(|v| {
-                                !v.is_empty()
-                                    && v.len() <= 128
-                                    && v.bytes()
-                                        .all(|c| c.is_ascii_alphanumeric() || b"-._/:".contains(&c))
-                            })
-                            .ok_or_else(|| {
-                                invalid(&key, "expected a model slug of at most 128 ASCII bytes")
-                            })?
-                            .into();
                     }
                 }
                 "costs" => {

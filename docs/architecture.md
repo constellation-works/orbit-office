@@ -42,15 +42,17 @@ observe -> propose -> approve -> automate -> measure
 
 ## Models
 
-| Use | Model |
-|---|---|
-| Orchestrator (the user's agent CLI) | Muse Code |
-| Summaries, extraction, receipts (vision) | Muse Spark (Meta Model API) |
-| Meeting transcription | Muse Voice Transcribe |
-| Sources marked `private` | Muse Spark Open (open weights) on the endpoint the user chose |
+Model routing is configurable in Library settings; the defaults are shown.
 
-API keys are Orbit plugin secrets (`meta_api_key`, `open_weights_token`), never
-config or Library content.
+| Use | Model (default) |
+|---|---|
+| Orchestrator (the user's agent CLI) | Whatever the agent CLI runs |
+| Summaries, extraction, receipts (vision) | `models.standard` on the hosted endpoint `models.endpoint` (Muse Spark on Meta's Model API) |
+| Meeting transcription | `models.transcribe` on the hosted endpoint (Muse Voice Transcribe) |
+| Sources marked `private` | `open_weights.model` (open weights) on the endpoint the user chose |
+
+API keys are Orbit plugin secrets (`meta_api_key` for the hosted endpoint,
+`open_weights_token`), never config or Library content.
 
 ## Build slices
 
