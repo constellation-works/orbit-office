@@ -39,7 +39,7 @@ Source: spec §13.1–§13.2 and §13.4.
 
 | Screen | Content |
 |---|---|
-| **Today** | Library setup card when missing; otherwise a header (the date, a greeting, the digest's one-line summary and **Open the meeting**), the **Morning digest** (below), then Agents working on, Next meeting (time and prep; "Nothing else on your calendar today." once the day's meetings are over) and a drop zone side by side, then Needs you (proposals, with the onboarding set as one "Set up your Library" card; approvals, including routine script outputs and drafted API writes; bootstrap proposals grouped by subject; a shared-library sync's updates, conflicts and skipped documents as one card; the user's to-dos, each with "Due Fri 09:00" and **Overdue** as on To-dos when it has a due date), Agents working on (one line each, live, across the office workspace and followed workspaces), Done today (openable results), a compact Handoffs section (the same cards as the Scribe feed ([ORB-21120], reworking [ORB-21075]): at most five, most recently updated first, each with project or Global, its title, age, its Summary (or the withheld notice for a private session) and its tag counts, linking to Scribe; read from `GET /api/scribe/feed` at most every 10 seconds and hidden when there is none or the read fails). The drop zone uploads a recording or notes through the Source upload and opens the new source |
+| **Today** | Library setup card when missing; otherwise a 48px top bar (**Today**, the date, and one **Add source** button that opens a file picker; a file dropped anywhere on Today uploads the same way and opens the new source, and pasted notes or a folder go through the Source screen), then two columns. The main column holds three row lists ([ORB-21727]): **Needs you** (its count in the header bar; the open contradictions first, each asking which decision stands with its two sides as one-click choices, its sources and dates, and "holds N agent to-dos"; then proposals, approvals, routine script outputs, drafted API writes and the user's to-dos, each with "Due Fri 09:00", amber with **Overdue** once past, as on To-dos; the onboarding set ("Set up your Library"), each bootstrap subject and a shared-library sync's updates, conflicts and skipped documents are one row each that opens to their controls), **Since <meeting>** (the digest: decided lines with citation chips, shipped lines with their PR and merge, the meeting's other asks, and **Open meeting**) and **Done today** (collapsed; each row opens its result). The right column (below the main one on a phone) holds Next meeting (time, place and prep; "Nothing else on your calendar today." once the day's meetings are over), Agents working (one line each, live, across the office workspace and followed workspaces, with the crew in mono) and Handoffs (the same cards as the Scribe feed ([ORB-21120], reworking [ORB-21075]): at most five, most recently updated first, each with its title, project or Global, age, tag counts and Summary (or the withheld notice for a private session), with **All** linking to Scribe; read from `GET /api/scribe/feed` at most every 10 seconds and hidden when there is none or the read fails). No greeting, intro line or helper copy |
 | **Source view** | A back link to Library, the title and a meta line (kind, length, turn count, Private); the original (video or audio player, or image) with a timeline whose marks are the source's chapters (asides for tangents) and gotchas; the transcript as speaker turns (`[hh:mm:ss] Name: text` lines, each with its timestamp link and tagged with the chapter or gotcha marks that fall in it; untagged otherwise); the chapter list with tangents folded and gotchas shown, and keyframe thumbnails; and an aside with **Cited by** (the tasks and pages that cite it) and **Where it ran** (the recorded model routes, the sensitivity, Mark private and team sharing). Video citation links open the player at their second ([kt-videos.md](./kt-videos.md#app)) |
 | **Calendar** | Week view (day view on a phone) of the user's meetings, authored locally or read from Outlook or an ICS feed, with each meeting's prep and capture state in words and the routines' runs as margin marks, tasks scheduled for a date as blocks, and the user's own to-dos as due items on their due day and time (overdue open ones stay in view); a meeting opens its attendees, agenda, cited prep brief and **Add notes or transcript** ([calendar.md](./calendar.md#app); local events [ORB-20246]) |
 | **To-dos** | An **Agent to-dos go to** picker (the followed workspaces, or None); You and Agents columns, the Agents column led by the meeting agent to-dos (below); each to-do shows its source and attached knowledge, and its scheduled time when it has one: for your own, that time is the due date ("Due Fri 09:00", **Overdue** once past); a **New to-do** form creates one of your own; **Schedule…** (on yours, **Set due date…**) sets or clears the time ([calendar.md](./calendar.md#scheduled-tasks)) |
@@ -106,35 +106,47 @@ for existing workspaces and custom definitions outside the shipped components.
 
 ### Today implementation
 
-Today and `GET /api/today` are built ([ORB-18727]). The endpoint polls `orbit.task.list`
+Today and `GET /api/today` are built ([ORB-18727]); the row-list layout is
+[ORB-21727]. The endpoint polls `orbit.task.list`
 through a shared Orbit client, with separate active and completed listings
 (200 items each). Its shared contract is `Today` in `app/packages/contracts`.
 The browser polls the endpoint five seconds after the preceding read settles.
 Navigating away stops polling and prevents a late response replacing the new
-screen. Open results, background panels and keyboard focus survive refreshes.
+screen. A redraw keeps open rows and lists (by their `data-focus` key), open
+previews, typed comments and keyboard focus.
 
 - Needs you selects `proposed` tasks tagged `gateway-draft`, then
   `script-output`, then `proposal`; all `review` tasks; then unfinished
   `owner:you` tasks. This order also determines the label when a task
   matches more than one kind. Proposals tagged `onboarding` share one
-  "Set up your Library" card; proposals tagged `bootstrap:<phase>` share a
-  card per `subject:<name>` tag, or per phase without one.
-- Agents working on selects `in-progress` tasks tagged `owner:agent`,
+  "Set up your Library" row; proposals tagged `bootstrap:<phase>` share a
+  row per `subject:<name>` tag, or per phase without one.
+- Agents working selects `in-progress` tasks tagged `owner:agent`,
   excluding `owner:you`, and shows one line per task.
 - Done today selects `done` tasks whose latest transition to `done` falls
   between local midnight and the snapshot time. Last-edit timestamps do not
   establish completion. Each result opens its recorded execution summary;
-  missing summaries are explicitly identified. “About this work” opens the
-  recorded task description as provenance on every item. The Source screen also provides direct anchored navigation.
+  missing summaries are explicitly identified. The Source screen also provides direct anchored navigation.
 
-Empty sections have their own messages. A failed or malformed Orbit read
-refuses the whole snapshot; the UI reports that failure and retains previous
-data when available. A capped listing and completed work without a usable
-completion date are explicitly reported. Limits may omit older unfinished
+Every row is an `li.today-row` with a `data-key` (and `data-kind` or
+`data-group`). Its title is a `<button>` named by the title alone with
+`aria-expanded`; it opens the row's detail: the recorded task description
+(its background, rendered Markdown) and, for a need, the files, request,
+preview or pages its controls show. The row's own `approval-actions` sit
+inline at the right; a send-back form and every outcome or error message
+stay visible under the row, so a refusal is never hidden in a closed row. The
+user's own to-dos have no inline action. The page-level outcome line under
+the Needs-you header (`aria-live`) outlives the row it came from.
+
+Empty lists show one quiet line ("Nothing needs you.", "No completed work
+yet today.", "No agent work is underway."). A failed or malformed Orbit read
+refuses the whole snapshot; the UI reports that failure (`role="alert"`) and
+retains previous data when available. A capped listing and completed work
+without a usable completion date are explicitly reported. Limits may omit older unfinished
 work or a result whose record was subsequently edited; this is a bounded
-snapshot, not a complete history. The view uses the shared dark theme.
-An empty `drop-zone` slot reserves the upload integration point; uploading
-remains a separate feature. Each Needs-you card except the user's own to-dos
+snapshot, not a complete history. The view's root carries the
+`drop-zone` slot: dropping a file anywhere on it uploads through the Source
+upload, like **Add source**. Each Needs-you row except the user's own to-dos
 carries its `approval-actions` (below).
 
 ### Morning digest
@@ -146,12 +158,14 @@ the read-only `office.source-digest` verb ([ORB-21376]). `GET /api/today/digest`
 turn: a source that is not a meeting is skipped, `meeting_not_extracted`
 answers `not_extracted`, no candidate answers `no_meeting`, and any other
 refusal (including `office.source-digest` being unavailable) answers
-`unavailable`. The panel shows the meeting's title, then **Decided**,
-**Shipped** and **Needs you** columns, each item with its shortened citation
-linked into the Source screen; a decision with an open contradiction (from
-`GET /api/scribe/contradictions`) shows the two sides as "Keep: …" choices
-that resolve through the Scribe route. Each state has its own quiet message;
-the panel rereads every 30 seconds and never invents items.
+`unavailable`. Today's **Since <meeting>** list shows its decided lines, its
+shipped lines and the meeting's other asks of the user, each with its shortened
+citation linked into the Source screen, and **Open meeting**. An open
+contradiction (from `GET /api/scribe/contradictions`) is the first Needs-you
+row instead: the matter as a question, its two sides (each with where and
+when it was decided) as choices that resolve through the Scribe route in one
+click, and its two citations. Each state has its own quiet line; the digest
+rereads every 30 seconds, at once after a choice, and never invents items.
 
 The digest counts each task id once across the office workspace and
 `brief.task_workspaces`, keeping the office workspace's copy first
@@ -233,9 +247,9 @@ row with their date, so an overdue one stays in view
 On Today, a Needs you to-do carries `due` (its `not_before`) and reads "Due Fri
 09:00", with **Overdue** once past, from the same `ui/when.ts` helpers.
 
-The rail lists Calendar under Work between Today and To-dos, with a plain
+The rail lists Calendar between Today and To-dos, with a plain
 count of today's past meetings that have no notes (hidden at zero or on a
-failed read). Today's Next meeting card shows the meeting now or next today,
+failed read). Today's Next meeting shows the meeting now or next today,
 its time and place, and "Prep ready" linking to its panel
 (`?meeting=<key>#calendar`, cleared once read); it rereads every minute and
 is hidden when nothing is left today or the calendar cannot be read.
@@ -335,9 +349,9 @@ from `office.status` (`brief.task_workspaces`, [ORB-19740]) and lists
 Orbit tasks in progress, in review, queued and done today for the office
 workspace and each followed workspace. An unreachable workspace is
 reported per workspace without failing the whole response. Today's
-**Agents working on** panel reads it for the followed workspaces. The
+**Agents working** section reads it for the followed workspaces. The
 Agent work screen that also showed it ([ORB-19741]) was removed in
-[ORB-21641]: Today's Agents working on, Needs you and Done today and the
+[ORB-21641]: Today's Agents working, Needs you and Done today and the
 To-dos Agents column already show the same work, so the rail has no
 Agent work item and an old `#agents` link opens Today.
 
@@ -409,9 +423,12 @@ the page.
 ## Look
 
 One dark theme, taken from Orbit's dashboard and written fresh for the app:
-Geist (bundled under the OFL in `web/static/fonts/`), a side rail that
-stacks above the content on a phone, and panels drawn with a border on the
-edge and hairlines inside. `web/static/style.css` defines the colour tokens
+Geist (bundled under the OFL in `web/static/fonts/`), a flat side rail on
+the darkest surface (`--bg`), the content in an inset bordered panel beside
+it (`--bg-panel`, 8px from the window, 10px radius) that goes edge to edge
+under the rail on a phone, and panels drawn with a border on the edge and
+hairlines inside. `--fg-mute` stays at least 4.5:1 on the panel, raised
+surfaces and hover. `web/static/style.css` defines the colour tokens
 and the shared patterns. Screens style themselves with `var(--…)` tokens,
 never literal colours:
 
@@ -422,17 +439,32 @@ never literal colours:
 - **Tile**: one number and its label, in a wrapping row (Today's counts,
   Insights).
 - **Section label**: small upper-case heading over a panel.
-- **Rail**: screens in labelled groups (Work, Knowledge, Observe, Manage),
-  each with an icon; a screen can nest under a parent (Library › Source,
-  Insights › Review, Automation › Routines). Counts sit at the right: routines
-  on of total, today's past meetings without notes beside Calendar, and
-  Today's waiting cards as an amber pill. A failed read hides
-  a count rather than showing 0. The layout lives in `web/src/nav.ts`.
+- **Rail**: one flat list of 32px items with an icon and 13px label, no
+  group labels or nested children ([ORB-21727]): Today, Calendar, To-dos,
+  Scribe, Library and Insights at the top; Routines, Settings and the
+  private-route footer pinned at the bottom. The current item has a quiet
+  filled background. Source opens from Library (**Add a source**, and
+  **Open in Source** on a source document) and Review from Insights
+  (**Reviews**); Library and Insights read as open while they are shown.
+  A built screen the layout does not name still gets a link. Counts are
+  plain mute numbers at the right (routines on of total, today's past
+  meetings without notes beside Calendar), except Today's waiting rows in
+  amber text. A failed read hides a count rather than showing 0. The
+  layout lives in `web/src/nav.ts`; on a phone the rail wraps above the
+  content.
+- **Row list** (Today, `screens/today/rows.ts`): a 40px header bar (h2 and a
+  mono count, or a toggle for a collapsed list) over hairline rows; each row
+  has a 14px kind icon (to-do ring, half-filled review, dashed suggestion,
+  outgoing-request arrow, amber swap for a contradiction) or a state dot,
+  its title as a button that opens the row's detail, a short meta (amber when
+  due), and its actions inline at the right as compact ghost (primary) and
+  quiet (secondary) buttons, 44px tall on a phone.
 - **Panel**: a bordered box with an eyebrow head (`ui/panel.ts`): plain,
   dashed (drop zones) or split into hairline columns; rows inside carry a
   state dot, a title, a mono meta line and a trailing pill or link.
 - **Screen head**: date or eyebrow, the h1, a one-line intro and the screen's
-  primary action.
+  primary action. Today uses a 48px top bar instead: the h1, the date in
+  mute and **Add source**.
 - **Callout**: an attention-washed block with two choices (contradictions).
 - **Table rows** (Routines): a header row of column labels over hairline
   rows; on a phone each row stacks and every cell carries its label.
@@ -564,8 +596,8 @@ DOM nodes directly from the text. It is safe by construction:
   **View source** keeps working inside rendered content.
 
 Where it is used: the Library page, output and source body (citations open the document
-in the same view); Today's **About this work** (a task's description) and **Open result**
-(its execution summary); Review text; Calendar's prep brief; and Scribe's card summary.
+in the same view); a Today row's background (a task's description) and a Done-today row's
+result (its execution summary); Review text; Calendar's prep brief; and Scribe's card summary.
 The web app has no task detail view, so a task's acceptance criteria and comments are not
 shown anywhere yet; a view for them renders through the same function. Tests:
 `web/test/markdown.test.mjs` (the renderer, including an injected `<script>` and a
@@ -601,5 +633,6 @@ shown anywhere yet; a view for them renders through the same function. Tests:
 - [ORB-21452] — deduplicated source-digest needs across repeated workspace listings.
 - [ORB-21610] — read the user's to-do schedule as its due date on To-dos, Today and the Calendar, with Overdue.
 - [ORB-21641] — removed the Agent work screen, its rail item and count; `GET /api/agents` stays for Today.
+- [ORB-21727] — rebuilt Today as row lists with a top bar and right column, flattened the rail, and set the content in an inset panel.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

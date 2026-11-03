@@ -9,165 +9,339 @@
 <x-dc>
 <helmet>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
 <style>
-body{margin:0;background:#0b0d10}
-a{color:#7aa7ff}a:hover{color:#a9c6ff}
+body{margin:0;background:#08090a}
+a{color:#a9c6ff}a:hover{color:#d3e2ff}
+.oo *{box-sizing:border-box}
+.oo button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer}
+.oo :focus-visible{outline:2px solid #7aa7ff;outline-offset:2px;border-radius:6px}
+.nav-item{display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:6px;color:#a6aab2;text-decoration:none;font-size:13px}
+.nav-item:hover{background:#16181c;color:#e6e7ea}
+.nav-item[aria-current="page"]{background:#1a1c21;color:#e6e7ea}
+.nav-item svg{flex:none;color:#80858e}
+.nav-item[aria-current="page"] svg{color:#e6e7ea}
+.nav-count{margin-left:auto;font-size:12px;color:#80858e;font-variant-numeric:tabular-nums}
+.btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:6px;font-size:12.5px;font-weight:500;white-space:nowrap}
+.btn-ghost{color:#a6aab2;border:1px solid #26292f !important}
+.btn-ghost:hover{color:#e6e7ea;background:#1a1c21 !important}
+.btn-quiet{color:#80858e}
+.btn-quiet:hover{color:#e6e7ea;background:#1a1c21 !important}
+.row{display:flex;align-items:center;gap:12px;padding:0 20px;border-top:1px solid #1a1c20}
+.row:hover{background:#131417}
+.row-title{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:10px;text-align:left;font-size:13.5px;color:#e6e7ea;min-height:44px}
+.row-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-actions{display:flex;gap:6px;flex:none}
+.mono{font-family:"Geist Mono",ui-monospace,Menlo,monospace;font-size:11.5px;color:#80858e}
+.cite{font-family:"Geist Mono",ui-monospace,Menlo,monospace;font-size:11.5px;color:#a6aab2;text-decoration:none;padding:1px 6px;border-radius:4px;background:#17191d}
+.cite:hover{color:#e6e7ea;background:#1f2228}
+.side-row{display:flex;align-items:center;gap:10px;min-height:36px;font-size:13px;color:#e6e7ea}
+.choice{flex:1 1 220px;display:flex;flex-direction:column;gap:2px;text-align:left;padding:10px 12px;border-radius:8px;border:1px solid #2b2e35 !important}
+.choice:hover{border-color:#7aa7ff !important;background:#141821 !important}
 </style>
 </helmet>
-<div style="display: flex; flex-wrap: wrap; min-height: 100vh; background: #0b0d10; color: #e7eaee; font-family: Geist, ui-sans-serif, system-ui, sans-serif">
-<nav aria-label="Office" style="flex: 1 0 232px; box-sizing: border-box; padding: 20px 12px; background: #0e1115; border-right: 1px solid #22272e; display: flex; flex-direction: column; gap: 18px">
-<div style="display: flex; align-items: center; gap: 10px; padding: 0 10px; font-weight: 600; font-size: 15px">
-<svg aria-hidden="true" width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="#7aa7ff" stroke-width="1.5"><circle cx="10" cy="10" r="7"></circle><circle cx="10" cy="10" r="2.5"></circle></svg>
-<span>Orbit Office</span>
-</div>
-<sc-for list="{{groups}}" as="g" hint-placeholder-count="4">
-<div style="display: flex; flex-direction: column; gap: 2px">
-<div style="padding: 0 10px 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8b95a3">{{g.label}}</div>
-<sc-for list="{{g.items}}" as="it" hint-placeholder-count="3">
-<a href="{{it.href}}" style="{{it.style}}">
-<svg aria-hidden="true" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="{{it.d0}}"></path><path d="{{it.d1}}"></path></svg>
-<span style="flex: 1">{{it.t}}</span>
-<span style="{{it.countStyle}}">{{it.count}}</span>
-</a>
-</sc-for>
-</div>
-</sc-for>
-</nav>
-<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px 48px">
-<div style="max-width: 1120px; display: flex; flex-direction: column; gap: 28px">
-<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
-<div style="display: flex; flex-direction: column; gap: 6px">
-<div style="font-size: 13px; color: #8b95a3">Tuesday 3 November · 08:12</div>
-<h1 style="margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.01em">Good morning, Daniel</h1>
-<p style="margin: 0; font-size: 15px; color: #a3acb8">While you slept, agents shipped 3 of the 4 to-dos from yesterday's Lantern sync. One decision needs you.</p>
-</div>
-<a href="Source.dc.html" style="display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 6px; border: 1px solid #2c333d; color: #e7eaee; text-decoration: none; font-size: 14px">Open the meeting</a>
-</header>
+<div class="oo" style="min-height: 100vh; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0; background: #08090a; color: #e6e7ea; font-family: Geist, ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased">
 
-<section aria-labelledby="digest-h" style="border: 1px solid #22272e; border-radius: 10px; background: #121519; overflow: hidden">
-<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #1b1f25">
-<div style="display: flex; flex-direction: column; gap: 4px">
-<div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8b95a3">Morning digest</div>
-<h2 id="digest-h" style="margin: 0; font-size: 18px; font-weight: 600">Since Lantern eng sync · Mon 2 Nov, 16:00</h2>
-</div>
-<span style="font-size: 12px; color: #8b95a3; font-family: 'Geist Mono', ui-monospace, monospace">Muse Spark 1.3 · every line cited</span>
-</div>
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0">
-<div style="padding: 18px 20px; border-right: 1px solid #1b1f25; display: flex; flex-direction: column; gap: 14px">
-<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #a3acb8"><span style="width: 8px; height: 8px; border-radius: 50%; background: #7aa7ff"></span>Decided</div>
-<sc-for list="{{decided}}" as="d" hint-placeholder-count="3">
-<div style="display: flex; flex-direction: column; gap: 4px">
-<div style="font-size: 14px; line-height: 1.45">{{d.text}}</div>
-<a href="Source.dc.html" style="font-size: 12px; font-family: 'Geist Mono', ui-monospace, monospace; text-decoration: none">{{d.cite}}</a>
-</div>
-</sc-for>
-</div>
-<div style="padding: 18px 20px; border-right: 1px solid #1b1f25; display: flex; flex-direction: column; gap: 14px">
-<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #a3acb8"><span style="width: 8px; height: 8px; border-radius: 50%; background: #63d297"></span>Shipped</div>
-<sc-for list="{{shipped}}" as="s" hint-placeholder-count="3">
-<div style="display: flex; flex-direction: column; gap: 6px">
-<div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap">
-<span style="font-size: 14px; line-height: 1.45; flex: 1 1 160px">{{s.text}}</span>
-<span style="{{s.pillStyle}}">{{s.pill}}</span>
-</div>
-<div style="font-size: 12px; color: #8b95a3; font-family: 'Geist Mono', ui-monospace, monospace">{{s.meta}}</div>
-</div>
-</sc-for>
-</div>
-<div style="padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; background: #15130e">
-<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #f2d29b"><span style="width: 8px; height: 8px; border-radius: 50%; background: #f2b24c"></span>Needs you</div>
-<div style="border: 1px solid #4a3a1c; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: #2a2112">
-<div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #f2d29b">Contradiction</div>
-<div style="font-size: 14px; line-height: 1.45">Rotate ingest keys <strong>monthly</strong> (yesterday) conflicts with <strong>weekly</strong> (14 Sep). Rotation work is held until you choose.</div>
-<div style="display: flex; flex-wrap: wrap; gap: 8px">
-<button type="button" onClick="{{pickMonthly}}" style="{{monthlyStyle}}">Keep monthly</button>
-<button type="button" onClick="{{pickWeekly}}" style="{{weeklyStyle}}">Keep weekly</button>
-</div>
-<sc-if value="{{resolved}}" hint-placeholder-val="{{ false }}">
-<div style="font-size: 12px; color: #a6e8c3">Recorded in the ledger. The held rotation task is released to agents.</div>
-</sc-if>
-</div>
-<sc-for list="{{needs}}" as="n" hint-placeholder-count="2">
-<div style="display: flex; flex-direction: column; gap: 4px">
-<div style="font-size: 14px; line-height: 1.45">{{n.text}}</div>
-<div style="font-size: 12px; color: #8b95a3">{{n.meta}}</div>
-</div>
-</sc-for>
-</div>
-</div>
-</section>
+  <!-- Sidebar -->
+  <nav aria-label="Main" style="flex: 1 1 224px; max-width: 100%; display: flex; flex-direction: column; gap: 20px; padding: 14px 10px">
+    <a href="#today" style="display: flex; align-items: center; gap: 9px; padding: 4px 10px; color: #e6e7ea; text-decoration: none; font-weight: 600; font-size: 13.5px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><ellipse cx="12" cy="12" rx="10" ry="4.5" transform="rotate(-25 12 12)"></ellipse></svg>
+      Office
+    </a>
+    <div style="display: flex; flex-direction: column; gap: 1px">
+      <a class="nav-item" href="#today" aria-current="page">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M10 6.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"></path><path d="M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5"></path></svg>
+        Today
+        <span class="nav-count" style="color: #f2b24c">{{needCount}}</span>
+      </a>
+      <a class="nav-item" href="#calendar">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 5h12v11.5H4z"></path><path d="M4 8.5h12M7.5 3v3.5M12.5 3v3.5"></path></svg>
+        Calendar
+      </a>
+      <a class="nav-item" href="#todos">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5.5l1.5 1.5 2.5-2.5M10.5 6h6M3.5 12.5l1.5 1.5 2.5-2.5M10.5 13h6"></path></svg>
+        To-dos
+        <span class="nav-count">9</span>
+      </a>
+      <a class="nav-item" href="#scribe">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M5 3.5h10v13H5z"></path><path d="M7.5 7h5M7.5 10h5M7.5 13h3"></path></svg>
+        Scribe
+      </a>
+      <a class="nav-item" href="#library">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h5a2 2 0 0 1 2 2v10a2 2 0 0 0-2-2H4z"></path><path d="M16 4h-5a2 2 0 0 0-2 2v10a2 2 0 0 1 2-2h5z"></path></svg>
+        Library
+      </a>
+      <a class="nav-item" href="#insights">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M5 16v-6M10 16V4M15 16V8"></path></svg>
+        Insights
+      </a>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 1px; margin-top: auto">
+      <a class="nav-item" href="#routines">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14z"></path><path d="M10 6v4l3 2"></path></svg>
+        Routines
+      </a>
+      <a class="nav-item" href="#settings">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 6h12M4 14h12"></path><circle cx="8" cy="6" r="1.6"></circle><circle cx="12" cy="14" r="1.6"></circle></svg>
+        Settings
+      </a>
+      <p style="margin: 8px 10px 0; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #80858e"><span style="width: 6px; height: 6px; border-radius: 3px; background: #c4a7ff"></span>Private Library</p>
+    </div>
+  </nav>
 
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px">
-<section aria-labelledby="working-h" style="border: 1px solid #22272e; border-radius: 10px; background: #121519; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
-<h2 id="working-h" style="margin: 0; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8b95a3; font-weight: 500">Agents working on</h2>
-<sc-for list="{{working}}" as="w" hint-placeholder-count="2">
-<div style="display: flex; align-items: center; gap: 10px; min-height: 36px; border-top: 1px solid #1b1f25; padding-top: 10px">
-<span style="width: 8px; height: 8px; border-radius: 50%; background: #5cc8f0; flex: 0 0 auto"></span>
-<span style="font-size: 14px; flex: 1">{{w.text}}</span>
-<span style="font-size: 12px; color: #8b95a3; font-family: 'Geist Mono', ui-monospace, monospace">{{w.crew}}</span>
-</div>
-</sc-for>
-</section>
-<section aria-labelledby="next-h" style="border: 1px solid #22272e; border-radius: 10px; background: #121519; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px">
-<h2 id="next-h" style="margin: 0; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8b95a3; font-weight: 500">Next meeting</h2>
-<div style="font-size: 16px; font-weight: 600">Ingest review with Priya</div>
-<div style="font-size: 13px; color: #a3acb8">11:00–11:30 · prep brief ready, cites 4 sources</div>
-<a href="Calendar.dc.html" style="font-size: 13px; text-decoration: none">Open prep</a>
-</section>
-<section aria-labelledby="drop-h" style="border: 1px dashed #2c333d; border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; justify-content: center">
-<h2 id="drop-h" style="margin: 0; font-size: 15px; font-weight: 600">Drop a recording or notes</h2>
-<div style="font-size: 13px; color: #a3acb8; line-height: 1.5">Audio, .vtt or pasted text. Muse Voice transcribes it; Muse Spark finds the decisions and to-dos.</div>
-<label style="display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 14px; border-radius: 6px; background: #7aa7ff; color: #0b0d10; font-size: 14px; font-weight: 500; width: fit-content; cursor: pointer">Choose a file<input type="file" style="position: absolute; width: 1px; height: 1px; opacity: 0"></label>
-</section>
-</div>
-</div>
-</main>
+  <!-- Content panel -->
+  <main style="flex: 999 1 560px; min-width: 0; margin: 8px 8px 8px 0; background: #0f1012; border: 1px solid #1c1e22; border-radius: 10px; overflow: hidden">
+
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 48px; padding: 8px 20px; border-bottom: 1px solid #1a1c20">
+      <h1 style="margin: 0; font-size: 14px; font-weight: 500; letter-spacing: -0.005em">Today</h1>
+      <span style="font-size: 13px; color: #80858e">Mon, Nov 2</span>
+      <div style="margin-left: auto; display: flex; gap: 8px">
+        <button class="btn btn-ghost" type="button">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"></path></svg>
+          Add source
+        </button>
+      </div>
+    </header>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: stretch">
+
+      <!-- Main column -->
+      <div style="flex: 999 1 520px; min-width: 0; padding-bottom: 40px">
+
+        <section aria-labelledby="needs-h">
+          <div style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 20px; background: #121316">
+            <h2 id="needs-h" style="margin: 0; font-size: 13px; font-weight: 500">Needs you</h2>
+            <span class="mono" style="font-size: 12px">{{needCount}}</span>
+          </div>
+
+          <sc-if value="{{showUndo}}" hint-placeholder-val="{{ false }}">
+            <div role="status" style="display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 20px; border-top: 1px solid #1a1c20; font-size: 13px; color: #a6aab2">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#63d297" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"></path></svg>
+              <span style="flex: 1 1 auto; min-width: 0">{{lastText}}</span>
+              <button class="btn btn-quiet" type="button" onClick="{{undo}}">Undo</button>
+            </div>
+          </sc-if>
+
+          <!-- Contradiction: one decision, two sides, one click -->
+          <sc-if value="{{openContradiction}}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 20px 16px; border-top: 1px solid #1a1c20; background: #14120d">
+              <div style="display: flex; align-items: center; gap: 10px">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#f2b24c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h10l-2.5-2.5M14 11H4l2.5 2.5"></path></svg>
+                <span style="font-size: 13.5px; font-weight: 500">Which decision on ingest key rotation stands?</span>
+                <span class="mono" style="margin-left: auto">holds 1 agent to-do</span>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px">
+                <button class="choice" type="button" onClick="{{pickNewer}}">
+                  <span style="font-size: 13.5px; color: #e6e7ea">Monthly, from December</span>
+                  <span class="mono">Lantern sync · Nov 2 · 03:12</span>
+                </button>
+                <button class="choice" type="button" onClick="{{pickPrior}}">
+                  <span style="font-size: 13.5px; color: #e6e7ea">Weekly</span>
+                  <span class="mono">Security review · Sep 21</span>
+                </button>
+              </div>
+              <div style="display: flex; gap: 6px; flex-wrap: wrap"><a class="cite" href="#source">lantern-sync #t=00:03:12</a><a class="cite" href="#source">security-review #t=00:12:01</a></div>
+            </div>
+          </sc-if>
+
+          <ul style="list-style: none; margin: 0; padding: 0">
+            <sc-for list="{{needs}}" as="item" hint-placeholder-count="6">
+              <li>
+                <div class="row">
+                  <button class="row-title" type="button" aria-expanded="{{item.expanded}}" onClick="{{item.toggle}}" style="min-height: {{rowH}}">
+                    <span style="flex: none; display: inline-flex; color: {{item.iconColor}}">
+                      <sc-if value="{{item.isTodo}}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="8" r="5.5"></circle></svg></sc-if>
+                      <sc-if value="{{item.isReview}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="8" r="5.5"></circle><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"></path></svg></sc-if>
+                      <sc-if value="{{item.isSuggestion}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.4 2.2" aria-hidden="true"><circle cx="8" cy="8" r="5.5"></circle></svg></sc-if>
+                      <sc-if value="{{item.isOutgoing}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11l6-6M6 5h5v5"></path></svg></sc-if>
+                    </span>
+                    <span>{{item.title}}</span>
+                    <span style="flex: none; margin-left: auto; font-size: 12px; color: {{item.metaColor}}">{{item.meta}}</span>
+                  </button>
+                  <sc-if value="{{item.hasPrimary}}" hint-placeholder-val="{{ true }}">
+                    <div class="row-actions">
+                      <button class="btn btn-ghost" type="button" onClick="{{item.primary}}">{{item.primaryLabel}}</button>
+                      <sc-if value="{{item.hasSecondary}}" hint-placeholder-val="{{ false }}">
+                        <button class="btn btn-quiet" type="button" onClick="{{item.secondary}}">{{item.secondaryLabel}}</button>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                </div>
+                <sc-if value="{{item.expanded}}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; flex-direction: column; gap: 8px; padding: 2px 20px 14px 44px; font-size: 13px; color: #a6aab2">
+                    <p style="margin: 0; max-width: 62ch">{{item.background}}</p>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap"><a class="cite" href="#source">{{item.cite}}</a></div>
+                  </div>
+                </sc-if>
+              </li>
+            </sc-for>
+          </ul>
+        </section>
+
+        <section aria-labelledby="since-h" style="margin-top: 28px">
+          <div style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 20px; background: #121316">
+            <h2 id="since-h" style="margin: 0; font-size: 13px; font-weight: 500">Since Lantern sync</h2>
+            <span class="mono" style="font-size: 12px">9:30</span>
+            <a href="#source" style="margin-left: auto; font-size: 12.5px; color: #80858e; text-decoration: none">Open meeting</a>
+          </div>
+          <ul style="list-style: none; margin: 0; padding: 0">
+            <sc-for list="{{decided}}" as="d" hint-placeholder-count="4">
+              <li class="row" style="min-height: 40px">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a6aab2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M3.5 8.5l3 3 6-7"></path></svg>
+                <span style="flex: 1 1 auto; min-width: 0; font-size: 13.5px">{{d.text}}</span>
+                <a class="cite" href="#source">{{d.cite}}</a>
+              </li>
+            </sc-for>
+            <li class="row" style="min-height: 40px">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#63d297" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="5" cy="4" r="1.5"></circle><circle cx="5" cy="12" r="1.5"></circle><circle cx="11" cy="8" r="1.5"></circle><path d="M5 5.5v5M5 8h4.5"></path></svg>
+              <span style="flex: 1 1 auto; min-width: 0; font-size: 13.5px">Fix the dashboard pagination off-by-one</span>
+              <span class="mono">lantern #141 · merged</span>
+            </li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="done-h" style="margin-top: 28px">
+          <button type="button" aria-expanded="{{doneOpen}}" onClick="{{toggleDone}}" style="display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 0 20px; background: #121316; text-align: left">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#80858e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform: {{doneChevron}}"><path d="M4.5 3l3 3-3 3"></path></svg>
+            <h2 id="done-h" style="margin: 0; font-size: 13px; font-weight: 500">Done today</h2>
+            <span class="mono" style="font-size: 12px">3</span>
+          </button>
+          <sc-if value="{{doneOpen}}" hint-placeholder-val="{{ false }}">
+            <ul style="list-style: none; margin: 0; padding: 0">
+              <li class="row" style="min-height: 40px; color: #a6aab2; font-size: 13.5px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #63d297; flex: none"></span>Transcribed the Lantern sync<a href="#source" style="margin-left: auto; font-size: 12.5px">Result</a></li>
+              <li class="row" style="min-height: 40px; color: #a6aab2; font-size: 13.5px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #63d297; flex: none"></span>Filed 4 agent to-dos from the sync<a href="#todos" style="margin-left: auto; font-size: 12.5px">Result</a></li>
+              <li class="row" style="min-height: 40px; color: #a6aab2; font-size: 13.5px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #63d297; flex: none"></span>Fixed the dashboard pagination off-by-one<a href="#todos" style="margin-left: auto; font-size: 12.5px">Result</a></li>
+            </ul>
+          </sc-if>
+        </section>
+      </div>
+
+      <!-- Aside -->
+      <aside style="flex: 1 1 280px; min-width: 0; border-left: 1px solid #1a1c20; padding: 16px 20px 32px; display: flex; flex-direction: column; gap: 28px">
+
+        <section aria-labelledby="next-h" style="display: flex; flex-direction: column; gap: 6px">
+          <h2 id="next-h" style="margin: 0; font-size: 12px; font-weight: 500; color: #80858e">Next meeting</h2>
+          <a href="#calendar" style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; margin: 0 -12px; border-radius: 8px; color: #e6e7ea; text-decoration: none">
+            <span style="font-size: 13.5px; font-weight: 500">Acme Paper Kites review</span>
+            <span style="font-size: 12.5px; color: #a6aab2">14:00–14:30 · Room 4B</span>
+            <span style="font-size: 12.5px">Prep ready</span>
+          </a>
+        </section>
+
+        <section aria-labelledby="agents-h" style="display: flex; flex-direction: column; gap: 4px">
+          <h2 id="agents-h" style="margin: 0 0 4px; font-size: 12px; font-weight: 500; color: #80858e">Agents working <span class="mono">2</span></h2>
+          <div class="side-row">
+            <span style="width: 8px; height: 8px; border-radius: 4px; background: #5cc8f0; flex: none"></span>
+            <span style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Dry-run flag for lantern replay</span>
+            <span class="mono">sol</span>
+          </div>
+          <div class="side-row">
+            <span style="width: 8px; height: 8px; border-radius: 4px; background: #5cc8f0; flex: none"></span>
+            <span style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Reject an empty order key</span>
+            <span class="mono">grok</span>
+          </div>
+        </section>
+
+        <section aria-labelledby="handoffs-h" style="display: flex; flex-direction: column; gap: 4px">
+          <div style="display: flex; align-items: baseline; margin-bottom: 4px">
+            <h2 id="handoffs-h" style="margin: 0; font-size: 12px; font-weight: 500; color: #80858e">Handoffs</h2>
+            <a href="#scribe" style="margin-left: auto; font-size: 12px; color: #80858e; text-decoration: none">All</a>
+          </div>
+          <a href="#scribe" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0; color: #e6e7ea; text-decoration: none; border-top: 1px solid #1a1c20">
+            <span style="font-size: 13px">Uploader retry plan</span>
+            <span class="mono">lantern · 2 h · 3 decisions</span>
+          </a>
+          <a href="#scribe" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0; color: #e6e7ea; text-decoration: none; border-top: 1px solid #1a1c20">
+            <span style="font-size: 13px">Acme pilot scope</span>
+            <span class="mono">lantern · 5 h · 1 direction</span>
+          </a>
+          <a href="#scribe" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0; color: #e6e7ea; text-decoration: none; border-top: 1px solid #1a1c20">
+            <span style="font-size: 13px">Session brief cleanup</span>
+            <span class="mono">global · 1 d</span>
+          </a>
+        </section>
+      </aside>
+    </div>
+  </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1200}}'>
-var FILES={today:'Main.dc.html',calendar:'Calendar.dc.html',todos:'Todos.dc.html',agents:'Agents.dc.html',scribe:'Scribe.dc.html',library:'Library.dc.html',source:'Source.dc.html',insights:'Insights.dc.html',review:'Review.dc.html',routines:'Routines.dc.html',settings:'Settings.dc.html'};
-var NAMES={today:'Today',calendar:'Calendar',todos:'To-dos',agents:'Agent work',scribe:'Scribe',library:'Library',source:'Source',insights:'Insights',review:'Review',routines:'Routines',settings:'Settings'};
-var DOT='M10 9.2a.8.8 0 1 0 0 1.6.8.8 0 0 0 0-1.6z';
-var ICONS={today:['M10 6.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z','M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5M4.7 4.7l1 1M14.3 14.3l1 1M4.7 15.3l1-1M14.3 5.7l1-1'],calendar:['M4 5h12v11.5H4z','M4 8.5h12M7.5 3v3.5M12.5 3v3.5'],todos:['M3.5 5.5l1.5 1.5 2.5-2.5M10.5 6h6M3.5 12.5l1.5 1.5 2.5-2.5','M10.5 13h6'],agents:['M6.5 9.5h7V14a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2z','M10 9.5V7M10 5.2v.6M8.3 12.3v.8M11.7 12.3v.8'],scribe:['M5 3.5h10v13H5z','M7.5 7h5M7.5 10h5M7.5 13h3'],library:['M4 4h5a2 2 0 0 1 2 2v10a2 2 0 0 0-2-2H4z','M16 4h-5a2 2 0 0 0-2 2v10a2 2 0 0 1 2-2h5z'],source:[DOT,''],insights:['M5 16v-6M10 16V4M15 16V8','M2.5 16.5h15'],review:[DOT,''],routines:['M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14z','M10 6v4l3 2'],settings:['M4 6h12M4 10h12M4 14h12','M8 4.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM13 8.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2z']};
-var GROUPS=[['Work',['today','calendar','todos','agents','scribe']],['Knowledge',['library','source']],['Observe',['insights','review']],['Manage',['routines','settings']]];
-var NESTED={source:1,review:1};
-var COUNTS={today:'1',todos:'2',agents:'1',routines:'6/9'};
-var TONES={attention:['#2a2112','#f2d29b'],working:['#12252e','#9fdcf3'],done:['#13261c','#a6e8c3'],private:['#221c33','#dcccff'],danger:['#2a1614','#ffb3a8'],neutral:['#18202e','#c9d2de']};
-function pill(tone,text){var t=TONES[tone];return {pill:text,pillStyle:'display:inline-flex;align-items:center;font-size:12px;line-height:1;padding:5px 9px;border-radius:999px;white-space:nowrap;background:'+t[0]+';color:'+t[1]};}
-function rail(active){return GROUPS.map(function(g){return {label:g[0],items:g[1].map(function(id){var on=id===active;var ic=ICONS[id];return {t:NAMES[id],href:FILES[id],d0:ic[0],d1:ic[1],count:COUNTS[id]||'',countStyle:(id==='today'?'font-size:12px;padding:2px 8px;border-radius:999px;background:#2a2112;color:#f2d29b':'font-size:12px;color:#8b95a3'),style:'display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px 0 '+(NESTED[id]?'30px':'10px')+';border-radius:6px;text-decoration:none;font-size:14px;'+(on?'background:#18202e;color:#e7eaee;font-weight:500':'color:#a3acb8')};})};});}
-function btn(on){return 'min-height:40px;padding:0 14px;border-radius:6px;font:inherit;font-size:14px;cursor:pointer;'+(on?'background:#f2b24c;color:#0b0d10;border:1px solid #f2b24c':'background:transparent;color:#f2d29b;border:1px solid #6b5426');}
-function withPill(o,tone,text){var p=pill(tone,text);o.pill=p.pill;o.pillStyle=p.pillStyle;return o;}
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#7aa7ff","options":["#7aa7ff","#8b8cf6","#63d297"]},"density":{"editor":"enum","options":["comfortable","compact"],"default":"comfortable"},"$preview":{"width":1440,"height":1120}}'>
 class Component extends DCLogic {
-renderVals() {
-var self=this; var pick=(this.state&&this.state.pick)||'';
-return {
-groups: rail('today'),
-decided: [
-{text:'Rotate the ingest keys monthly from now on.',cite:'lantern-sync #t=00:02:14'},
-{text:'Move the uploader to the v2 ingest API before the 20th.',cite:'lantern-sync #t=00:05:40'},
-{text:'Freeze the events schema until Friday.',cite:'lantern-sync #t=00:09:02'}
-],
-shipped: [
-withPill({text:'Retry with backoff in the uploader',meta:'lantern#14 · merged 02:41 · muse-spark'},'done','Merged'),
-withPill({text:'Fix off-by-one in event pagination',meta:'lantern#15 · merged 04:07 · muse-wonder'},'done','Merged'),
-withPill({text:'Add --dry-run to lantern sync',meta:'lantern#16 · merged 06:55 · muse-spark'},'done','Merged'),
-withPill({text:'Rotation script for ingest keys',meta:'held · decision open'},'attention','Held')
-],
-needs: [
-{text:'Review the key-rotation runbook',meta:'Yours · from lantern-sync #t=00:02:40'},
-{text:'Ask Priya for the ingest AD group',meta:'Yours · before 11:00'}
-],
-working: [
-{text:'Uploader v2 migration: reading the API spec',crew:'muse-wonder'}
-],
-resolved: !!pick,
-monthlyStyle: btn(pick==='monthly'),
-weeklyStyle: btn(pick==='weekly'),
-pickMonthly: function(){self.setState({pick:'monthly'});},
-pickWeekly: function(){self.setState({pick:'weekly'});}
-};
-}
+  constructor(props) {
+    super(props);
+    this.state = { gone: {}, open: {}, choice: null, doneOpen: false, last: null };
+  }
+  act(id, text) {
+    this.setState({ gone: { ...this.state.gone, [id]: true }, last: { id, text } });
+  }
+  renderVals() {
+    const s = this.state;
+    const accent = this.props.accent ?? '#7aa7ff';
+    const compact = (this.props.density ?? 'comfortable') === 'compact';
+    const NEEDS = [
+      { id: 'n1', kind: 'review', title: 'Retry for the spool uploader', meta: 'Review', primaryLabel: 'Approve', secondaryLabel: 'Send back',
+        done: 'Approved the spool uploader retry.', back: 'Sent the spool uploader retry back.',
+        background: 'Three attempts with backoff, keeping the original order key on every attempt. Tests pass; one new test covers a 503 from the packing station.', cite: 'lantern-sync 00:41' },
+      { id: 'n2', kind: 'todo', title: 'Tell the access desk about the new key rotation schedule', meta: 'Overdue · Due Mon 09:00', due: true,
+        done: 'Marked the access desk note done.',
+        background: 'Jules took this in the Lantern sync, after the move to monthly rotation.', cite: 'lantern-sync 03:20' },
+      { id: 'n3', kind: 'todo', title: 'Book the Acme pilot review for next Thursday', meta: 'Due Thu 10:00',
+        done: 'Marked the Acme booking done.',
+        background: 'The Acme pilot stays read-only until this review.', cite: 'lantern-sync 05:02' },
+      { id: 'n4', kind: 'todo', title: 'Ask Nori to review read access for two new operators', meta: '',
+        done: 'Marked the read-access request done.',
+        background: 'Two new packing station operators need read access reviewed.', cite: 'lantern-sync 05:30' },
+      { id: 'n5', kind: 'outgoing', title: 'Update Acme CRM: pilot review booked', meta: 'Request', primaryLabel: 'Approve and send', secondaryLabel: 'Dismiss',
+        done: 'Sent the Acme CRM update.', back: 'Dismissed the Acme CRM update.',
+        background: 'Sets the pilot stage to “Review booked” on the Acme Paper Kites account.', cite: 'gateway draft' },
+      { id: 'n6', kind: 'suggestion', title: 'Lantern sync pages', meta: '3 pages', primaryLabel: 'Accept all',
+        done: 'Accepted all 3 pages.',
+        background: 'Decisions: page size, replay order keys, Acme pilot access.', cite: 'lantern-sync' },
+    ];
+    const tone = { todo: '#80858e', review: accent, suggestion: '#a6aab2', outgoing: '#c4a7ff' };
+    const needs = NEEDS.filter((n) => !s.gone[n.id]).map((n) => ({
+      ...n,
+      isTodo: n.kind === 'todo', isReview: n.kind === 'review', isSuggestion: n.kind === 'suggestion', isOutgoing: n.kind === 'outgoing',
+      hasPrimary: n.primaryLabel !== undefined,
+      hasSecondary: n.secondaryLabel !== undefined,
+      iconColor: tone[n.kind],
+      metaColor: n.due ? '#f2b24c' : '#80858e',
+      expanded: !!s.open[n.id],
+      toggle: () => this.setState({ open: { ...this.state.open, [n.id]: !this.state.open[n.id] } }),
+      primary: () => this.act(n.id, n.done),
+      secondary: () => this.act(n.id, n.back ?? n.done),
+    }));
+    const pick = (side) => () => this.setState({ choice: side, last: { id: null, text: 'Recorded your choice in the ledger. Held agent to-dos are released.' } });
+    return {
+      accent,
+      rowH: compact ? '36px' : '44px',
+      needs,
+      needCount: needs.length + (s.choice === null ? 1 : 0),
+      openContradiction: s.choice === null,
+      pickNewer: pick('newer'),
+      pickPrior: pick('prior'),
+      showUndo: s.last !== null,
+      lastText: s.last === null ? '' : s.last.text,
+      undo: () => {
+        const last = this.state.last;
+        if (last === null) return;
+        if (last.id === null) { this.setState({ choice: null, last: null }); return; }
+        const gone = { ...this.state.gone };
+        delete gone[last.id];
+        this.setState({ gone, last: null });
+      },
+      decided: [
+        { text: 'Keep fifty orders per page on the dashboard', cite: '01:48' },
+        { text: 'Rotate ingest keys monthly, starting in December', cite: '03:12' },
+        { text: 'Replay always keeps the original order key', cite: '04:36' },
+        { text: 'The Acme pilot stays read-only until the review', cite: '05:10' },
+      ],
+      doneOpen: s.doneOpen,
+      doneChevron: s.doneOpen ? 'rotate(90deg)' : 'none',
+      toggleDone: () => this.setState({ doneOpen: !this.state.doneOpen }),
+    };
+  }
 }
 </script>
 </body>

@@ -1,12 +1,11 @@
 /**
- * Today's "Next meeting" card: the meeting now or next today, its time, and
- * "Prep ready" linking to its brief on the Calendar. Hidden when nothing is
- * left today, and when the calendar cannot be read.
+ * Today's Next meeting: the meeting now or next today, its time, and "Prep
+ * ready" linking to its brief on the Calendar. A quiet line takes its place
+ * when nothing is left today or the calendar cannot be read.
  */
 import type { CalendarMeeting } from "@orbit-office/contracts";
 
 import { getCalendar } from "../../api/client.js";
-import { card, pill } from "../../ui/index.js";
 
 /** Meetings from now to the end of today; null hides the card. */
 export async function todaysMeetings(now: Date): Promise<CalendarMeeting[]> {
@@ -27,23 +26,24 @@ export function upcoming(meetings: readonly CalendarMeeting[], now: Date): Calen
 }
 
 export function nextMeetingCard(meeting: CalendarMeeting, now: Date): HTMLElement {
-  const content = document.createElement("div");
-  content.className = "card-content today-next-meeting";
+  const element = document.createElement("div");
+  element.className = "today-next";
+  element.dataset.key = meeting.key;
+  const title = document.createElement("span");
+  title.className = "today-next-title";
+  title.textContent = meeting.title;
   const start = new Date(meeting.start);
-  const time = document.createElement("p");
-  time.textContent = `${start.getTime() <= now.getTime() ? "Now, " : ""}${clock(start)}–${clock(new Date(meeting.end))}${meeting.location ? ` · ${meeting.location}` : ""}`;
-  content.append(time);
-  if (meeting.private) content.append(pill("Private", "private"));
+  const time = document.createElement("span");
+  time.className = "today-next-time";
+  time.textContent = [
+    `${start.getTime() <= now.getTime() ? "Now, " : ""}${clock(start)}–${clock(new Date(meeting.end))}`,
+    meeting.location,
+    meeting.private ? "Private" : "",
+    meeting.prep === null ? "No prep brief yet" : "",
+  ].filter(Boolean).join(" · ");
   const link = document.createElement("a");
   link.href = `?${new URLSearchParams({ meeting: meeting.key })}#calendar`;
   link.textContent = meeting.prep === null ? "Open in Calendar" : "Prep ready";
-  if (meeting.prep === null) {
-    const note = document.createElement("p");
-    note.textContent = "No prep brief yet.";
-    content.append(note);
-  }
-  content.append(link);
-  const element = card(meeting.title, content, undefined, { label: "Next meeting", tone: meeting.prep === null ? "working" : "done" });
-  element.classList.add("today-next");
+  element.append(title, time, link);
   return element;
 }

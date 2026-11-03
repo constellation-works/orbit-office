@@ -101,7 +101,8 @@ export function createInsightsScreen(load = () => getJson<Insights>("/api/insigh
   return { id: "insights", title: "Insights", status: "built", async render(root) {
     const badge = document.createElement("div");
     const view = document.createElement("div");
-    view.append(screenHead("Insights", "See how your work is changing.", badge));
+    const reviews = document.createElement("a"); reviews.className = "link-button"; reviews.href = "#review"; reviews.textContent = "Reviews";
+    view.append(screenHead("Insights", "See how your work is changing.", badge, reviews));
     const content = document.createElement("div"); content.append(element("p", "Gathering your insights…")); view.append(content); root.replaceChildren(view);
     try {
       const data = await load();
