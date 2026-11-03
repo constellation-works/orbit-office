@@ -1,16 +1,15 @@
 ---
 type: design
 summary: "Spec: proposals — kinds, mechanical signals, record and lifecycle, dismissal memory"
-last_validated: 2026-10-30
-last_updated: 2026-11-02
+last_validated: 2026-11-03
+last_updated: 2026-11-03
 ---
 
 # Spec: Proposals
 
 Proposals are how the system gets better over time without the user
 designing it. Nothing becomes standing automation, and no knowledge page
-changes, without the user accepting a proposal, except the explicitly configured
-scribe preference apply mode described below.
+changes, without the user accepting a proposal.
 
 Source: spec §7.
 
@@ -274,7 +273,7 @@ Preference changes use `knowledge_add` for a scope's first page and
 matter with the current scope page. A matching matter with a different
 statement (after trimming outer whitespace) is a deterministic conflict;
 changes only to dates or citations are not. Other matters are compared
-only when the scribe reports a semantic conflict.
+only when the caller reports a semantic conflict.
 
 Both knowledge payloads accept optional `conflicts`, a list of closed
 `{matter, statement, cites}` objects quoting current preferences. Each
@@ -287,9 +286,12 @@ retains reported conflicts. Conflicts require a preference page. Accepting
 the reviewed, revision-pinned update deliberately overrides the old
 statement; page history preserves it. Creation itself changes no preference.
 
-The public Rust API `office_tools::preferences::apply_preference` is the
-write boundary for scribe v2 append (whose marker extraction is a separate
-slice). Its caller supplies model-free provenance, the complete originating
+The public Rust API `office_tools::preferences::apply_preference` was the
+write boundary for the scribe's preference apply mode. It stays as a
+library API, but since the scribe moved to `constellation-works/scribe`
+([decision](../4_decisions.md#the-scribe-moved-to-constellation-worksscribe))
+no Office tool calls it, so every preference change in Office goes through
+a proposal. Its caller supplies model-free provenance, the complete originating
 turn, the replacement Markdown and semantic conflicts. It returns `Applied`
 after one validated write for `UserMarker`, or `Propose(reason)` without
 writing for an agent marker, inferred or untrusted candidate, a turn over

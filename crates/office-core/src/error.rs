@@ -194,20 +194,11 @@ pub enum Error {
     },
     /// A single-setting update named no supported policy leaf (including secrets).
     #[error(
-        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, calendar.<connection|window_days_past|window_days_ahead|prep_lead_minutes|prep_max_per_run>, scribe.cadence, scribe.tags, scribe.tags.<name> or scribe.precedents.half_life_days, packs, models.<careful|standard|transcribe|endpoint>, demo.simulated_until, shared or shared.<remote|branch|member>, open_weights or open_weights.<endpoint|model|kind|label>"
+        "unknown Library setting {key}; use retention.<kind>, sensitivity.<kind>, thresholds.<name>, scripts.<timeout_seconds|log_bytes|output_files|output_file_bytes>, calendar.<connection|window_days_past|window_days_ahead|prep_lead_minutes|prep_max_per_run>, precedents.half_life_days, packs, models.<careful|standard|transcribe|endpoint>, demo.simulated_until, shared or shared.<remote|branch|member>, open_weights or open_weights.<endpoint|model|kind|label>"
     )]
     UnknownSetting {
         /// Refused key, never the supplied value.
         key: String,
-    },
-    /// A scribe tag definition named a file target instead of a sink inside
-    /// the Library or an Orbit task.
-    #[error("scribe tag refused at {key}: {reason}")]
-    TagSinkRefused {
-        /// Dotted configuration key, never the supplied value.
-        key: String,
-        /// Why the sink was refused.
-        reason: &'static str,
     },
     /// The private endpoint or model changed (or was removed) while
     /// `office.private-route-check` ran, so its result was not recorded.
@@ -237,13 +228,6 @@ pub enum Error {
     /// The tool name is outside `office.*`, or the verb is not implemented.
     #[error("unknown tool: {0}")]
     UnknownTool(String),
-    /// An Orbit-managed (headless) session tried to turn scribing on.
-    /// `office.scribe-control` stays agent-callable for the user's own
-    /// session, so the backend refuses the turn-on itself when the call
-    /// envelope carries managed-task context (specs/scribe.md, "Turning
-    /// it on").
-    #[error("scribing cannot be turned on from an Orbit-managed session")]
-    ScribeManagedSession,
     /// Tool input is not an object, or carries keys the tool does not accept.
     #[error("invalid argument: {0}")]
     InvalidArgument(String),
@@ -282,12 +266,10 @@ impl Error {
             Self::Model { code, .. } => code,
             Self::InvalidSetting { .. } => "invalid_library_setting",
             Self::UnknownSetting { .. } => "unknown_library_setting",
-            Self::TagSinkRefused { .. } => "tag_sink_refused",
             Self::PrivateRouteChanged => "private_route_changed",
             Self::InvalidRequest(_) => "invalid_request",
             Self::UnsupportedVersion(_) => "unsupported_schema_version",
             Self::UnknownTool(_) => "unknown_tool",
-            Self::ScribeManagedSession => "scribe_managed_session",
             Self::InvalidArgument(_) => "invalid_argument",
         }
     }
@@ -325,12 +307,10 @@ impl Error {
             Self::Library { .. } => false,
             Self::InvalidSetting { .. } => false,
             Self::UnknownSetting { .. } => false,
-            Self::TagSinkRefused { .. } => false,
             Self::PrivateRouteChanged => false,
             Self::InvalidRequest(_) => false,
             Self::UnsupportedVersion(_) => false,
             Self::UnknownTool(_) => false,
-            Self::ScribeManagedSession => false,
             Self::InvalidArgument(_) => false,
         }
     }

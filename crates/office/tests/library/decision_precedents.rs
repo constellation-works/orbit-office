@@ -192,7 +192,7 @@ fn recency_and_validated_half_life_change_the_top_k() {
     ] {
         let out = env.tool(
             "office.config-set",
-            json!({"key":"scribe.precedents.half_life_days", "value":value}),
+            json!({"key":"precedents.half_life_days", "value":value}),
         );
         assert_eq!(out["error"]["code"], "invalid_library_setting", "{out}");
         assert_eq!(
@@ -204,7 +204,7 @@ fn recency_and_validated_half_life_change_the_top_k() {
     for value in [json!(3650), json!(1), Value::Null] {
         let out = env.tool(
             "office.config-set",
-            json!({"key":"scribe.precedents.half_life_days", "value":value}),
+            json!({"key":"precedents.half_life_days", "value":value}),
         );
         assert_eq!(out["ok"], true, "{out}");
         let expected = if value == 3650 {
@@ -262,11 +262,7 @@ fn half_life_is_checked_when_reading_hand_edited_library_settings() {
     ] {
         let env = Env::with_initialized_library();
         let path = env.library().join(".office/config.yaml");
-        std::fs::write(
-            path,
-            json!({"scribe":{"precedents":precedents}}).to_string(),
-        )
-        .unwrap();
+        std::fs::write(path, json!({"precedents":precedents}).to_string()).unwrap();
         let out = env.tool("office.status", json!({}));
         assert_eq!(out["error"]["code"], "invalid_library_setting", "{out}");
     }

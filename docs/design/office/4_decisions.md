@@ -1870,7 +1870,7 @@ is the same move as a standalone step.
 ## The scribe is watched and corrected in a small window
 
 **Recorded:** 2026-11-01 · approved by the user in conversation
-**Code anchors:** none yet; [specs/recall.md](./specs/recall.md#the-scribe-window)
+**Code anchors:** none yet; [specs/recall.md](./specs/recall.md) (the scribe window moved to `constellation-works/scribe`)
 
 ### Context
 
@@ -1954,7 +1954,7 @@ in [ORB-20685] (`office-core/src/domain/source/conversation.rs`,
 questions and scribe handoff built in [ORB-20686] (the same files,
 `office-core/templates/scribe-rules.md` and the `scribe` page field in
 `office-core/src/domain/knowledge/page.rs`); the switch, trigger and
-feedback have none yet; [specs/sessions.md](./specs/sessions.md#live-scribe)
+feedback have none yet; [specs/sessions.md](./specs/sessions.md#live-capture)
 
 ### Context
 
@@ -2222,7 +2222,7 @@ an adapter crate, wired in the binary's `ports()`), and existing complete
 ## Scribe v1: commanded capture into one tagged file per session
 
 **Recorded:** 2026-11-01 · [ORB-20690]
-**Code anchors:** none yet; [specs/scribe.md](./specs/scribe.md)
+**Code anchors:** none yet; `specs/scribe.md` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`)
 
 ### Context
 
@@ -2267,7 +2267,7 @@ v1 has proven what to keep.
 `write_scribe_parse`, `scribe_files`, `write_scribe_file`, `host_name`),
 `office-core/src/ports/clock.rs`
 (`time_zone`), `office-store/src/scribe_parse.rs` (`ScribeParseStore`);
-[specs/scribe.md](./specs/scribe.md#pipeline).
+`specs/scribe.md` `#pipeline` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`).
 
 - **A message is one transcript record.** `office.scribe-pending` reuses
   the conversation adapter unchanged and joins the kept lines of one record
@@ -2326,7 +2326,7 @@ v1 has proven what to keep.
 `_strip_record`, `_strip_block`, `_credential_fragments`;
 `crates/office-core/src/domain/source/conversation.rs::parse` (keeps only
 `text` blocks), `crates/office-store/src/repository/library.rs::load_session`
-(the 8 MiB refusal); [specs/scribe.md](./specs/scribe.md#staging-tool-payloads-are-not-staged)
+(the 8 MiB refusal); `specs/scribe.md` `#staging-tool-payloads-are-not-staged` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`)
 
 ### Context
 
@@ -2369,7 +2369,7 @@ current remedy.
 (`loadFeed`, `addNote`, `ask`), `app/packages/server/src/features/scribe/model.ts`
 (`noteEntry`, `answerOf`), `app/packages/web/src/screens/scribe/`,
 `crates/office-tools/src/tools/sessions/scribe_query.rs` (result keys
-`title`, `project`, `scribed_through`); [specs/scribe.md](./specs/scribe.md#relation-to-what-is-built),
+`title`, `project`, `scribed_through`); `specs/scribe.md` `#relation-to-what-is-built` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`),
 [specs/web-app.md](./specs/web-app.md#screens)
 
 ### Context
@@ -2463,7 +2463,7 @@ state, since the token and the endpoint were stored independently.
 `parse` (brief role, title record), `crates/office-core/src/domain/source/conversation/scribe.rs::planned`
 (slug source), `crates/office-tools/src/tools/sessions/scribe_pending.rs` (`project` input),
 `plugin/claude-code/scripts/scribe_v1.py::repo_project`, `_is_scribe_only_session`;
-[specs/scribe.md](./specs/scribe.md), [specs/sessions.md](./specs/sessions.md#adapter-and-provenance)
+`specs/scribe.md` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`), [specs/sessions.md](./specs/sessions.md#adapter-and-provenance)
 
 ### Context
 
@@ -2509,7 +2509,7 @@ git worktree recording the worktree directory as `project`/topic.
 `crates/office-core/src/domain/source/conversation/scribe.rs::planned_slug`, `project_of`,
 `crates/office-tools/src/tools/sessions/scribe_pending.rs` (`custom_title` input),
 `plugin/claude-code/scripts/scribe_v1.py::repo_project`, `V1.stage`, `V1.pending`;
-[specs/scribe.md](./specs/scribe.md)
+`specs/scribe.md` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`)
 
 ### Context
 
@@ -2548,7 +2548,7 @@ basename fallback.
 **Code anchors:** `crates/office-core/src/domain/source/conversation/scribe.rs::placeholder_title`,
 `named_title`, `planned_slug`; regression test
 `crates/office-tools/tests/scribe.rs::placeholder_custom_title_is_absent_and_a_real_title_still_names_the_file`;
-[specs/scribe.md](./specs/scribe.md)
+`specs/scribe.md` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`)
 
 ### Context
 
@@ -2649,8 +2649,8 @@ decision, not an extension of this one.
 ## Scribe v2: opt-in sessions, marker-only tags, ledgers and the SCR as handoff
 
 **Recorded:** 2026-11-01 · [ORB-21083]
-**Code anchors:** none yet; [specs/scribe.md](./specs/scribe.md),
-[specs/sessions.md](./specs/sessions.md#scribe-v2-the-latest-scr-is-the-handoff)
+**Code anchors:** none yet; `specs/scribe.md` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`),
+[specs/sessions.md](./specs/sessions.md#legacy-scr-files-as-handoffs)
 
 ### Context
 
@@ -2667,7 +2667,7 @@ already shipped: [ORB-21063], [ORB-21065], [ORB-21075] and [ORB-21079].
 ### Decision
 
 Each point traces to the direction (D1–D13 in
-[specs/scribe.md](./specs/scribe.md#spec-scribe-v2)):
+`specs/scribe.md` `#spec-scribe-v2` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`)):
 
 1. **Opt-in** (D1). Sessions default off. `/scribe on|off|update` is the
    surface. A Stop hook starts a pass every N minutes or N user turns,
@@ -2751,7 +2751,7 @@ the v1 and v2 surfaces, and two more Library stores to index.
 ## Scribe v2 store paths: a decisions source kind and templated preference pages
 
 **Recorded:** 2026-11-01 · [ORB-21083]
-**Code anchors:** none yet; [specs/scribe.md](./specs/scribe.md#tag-stores),
+**Code anchors:** none yet; [specs/decisions.md](./specs/decisions.md#stores),
 [specs/library.md](./specs/library.md#layout)
 
 ### Context
@@ -2808,7 +2808,7 @@ paths that differ from the direction's wording.
 
 **Recorded:** 2026-11-01 · [ORB-21083]
 **Code anchors:** `crates/office-core/src/domain/scribe_settings.rs`,
-`crates/office-core/src/domain/settings.rs`; [specs/scribe.md](./specs/scribe.md#configuration)
+`crates/office-core/src/domain/settings.rs`; `specs/scribe.md` `#configuration` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`)
 
 ### Context
 
@@ -2963,7 +2963,7 @@ private note becomes, or how a task comment is named.
 
 ### Context
 
-[Scribe v2](./specs/scribe.md#pipeline) reworks `office.scribe-pending`
+Scribe v2 (`specs/scribe.md` at `807a154`, removed) reworks `office.scribe-pending`
 and `office.scribe-append`, but the plugin that drives them switches over
 only in S5, and v1 must keep running until then. The spec says
 `scribe-append` refuses a finding "whose marker is not in the parse
@@ -3020,7 +3020,7 @@ disclose them.
 
 **Recorded:** 2026-11-01 · [ORB-21090]
 **Code anchors:** none yet; [specs/decision-precedents.md](./specs/decision-precedents.md),
-[specs/scribe.md](./specs/scribe.md#decision-ledger)
+[specs/decisions.md](./specs/decisions.md#decision-ledger)
 
 ### Context
 
@@ -3100,7 +3100,7 @@ recorded "No `agent_callable` for either tool" for `office.scribe-control`.
 user's own interactive session was refused. The manifest and this ledger
 disagreed, and the grant also let an Orbit-managed (headless) agent turn
 scribing on, which scribe v2 forbids: a headless session is never scribed
-([specs/scribe.md](./specs/scribe.md#turning-it-on)).
+(`specs/scribe.md` `#turning-it-on` (removed; see `git show 807a154:docs/design/office/specs/scribe.md`)).
 
 ### Decision
 
@@ -3400,6 +3400,81 @@ no longer constrains the design.
 - Cost: hosted audio on a non-Meta endpoint depends on that provider
   accepting `input_audio`, which is not verified against any provider yet.
 
+## The scribe moved to constellation-works/scribe
+
+### Context
+
+The scribe grew inside orbit-office: six exec tools
+(`office.scribe-append`, `-ask`, `-control`, `-migrate`, `-pending` and
+`-query`), a `scribe:` settings block, a control store, a parse store, the
+SCR writer, the app's Scribe screen with Today's Handoffs and
+contradiction pieces, and the `office-scribe` Claude Code plugin under
+`plugin/claude-code/`. On 2026-11-02 Daniel asked for it to leave: "it
+doesn't belong there. if we are reusing the code then we can remove it
+after". The scribe is now the standalone plugin `constellation-works/scribe`
+(workspace `ws_scribe`, design [ORB-21747]), which carried over the code it
+reuses before this removal ran ([ORB-21749]).
+
+### Decision
+
+- **Removed:** the six `office.scribe-*` tools with their schemas,
+  manifest blocks, conformance cases and goldens; the scribe control and
+  parse stores and their ports; the SCR and pass writers; the `scribe:`
+  settings block and its `office.config-set` keys; the `scribe` field of
+  `office.status`; the app's `/api/scribe/*` routes, Scribe screen and nav
+  entry, Today's Handoffs section and contradiction rows; and the whole
+  `plugin/claude-code/` tree (`/scribe`, `/handoff`, the scribe agent, its
+  hooks, scripts, pane and tests; `/handoff` ran through the scribe's MCP
+  bridge, so it went with it). The scribe's spec
+  (`specs/scribe.md`) and `docs/design/claude-code-scribe/` are deleted;
+  the scribe decisions above stay as history and are superseded by this
+  entry.
+- **Kept, because they are not the scribe:** `office.capture` (including
+  its `title_by: scribe` and `question_by: scribe` contract values, which
+  name a writer, not a tool), the session brief, Library sources, the
+  decision ledgers and `office.decision-ingest`, `-precedents` and
+  `-resolve`, preference pages, meeting decisions, the disabled weekly
+  `office-scribe-contradictions` auto-task (its name kept so open to-dos
+  and dedupe still match), and the `dom-scribe-rules` page that capture
+  reads. Their spec is now [decisions.md](./specs/decisions.md).
+- **Existing user data is read, never deleted.** SCR files stay where they
+  are; the session brief still reads them, with its contract unchanged, so
+  handoffs a user already has keep showing. `scribe_control.sqlite` and
+  the `.office/state/scribe/` parse files are left on disk and no longer
+  read. The store's `scribe` and `scribe_pass` journal kinds stay
+  recoverable, so a write an older build left unfinished still completes.
+- **Settings tolerate the old block.** A settings file with a `scribe:`
+  block loads without error; the block is ignored and dropped on the next
+  `office.config-set` rewrite (the Library's git history keeps it). The one
+  setting Office itself still uses, the precedent half-life, moves to
+  top-level `precedents.half_life_days`; an old
+  `scribe.precedents.half_life_days` value is not migrated, so the provider
+  uses the default 90 days until the new key is set.
+
+### Alternatives rejected
+
+- **Keep the tools as stubs that point at the new plugin.** A removed tool
+  already answers `unknown_tool`; a stub would be a second contract to
+  maintain for no caller.
+- **Migrate `scribe.precedents.half_life_days` on load.** Settings reads
+  never write, and a silent rewrite of a hand-edited block is surprising;
+  no Library is known to have customised it.
+- **Delete or move SCR files and the scribe's state.** They are user data
+  that the new plugin may read; removing code must not remove data.
+
+### Consequences
+
+- A host that still has the `office-scribe` Claude Code plugin installed
+  from this repository gets `unknown_tool` from its calls; installing
+  `constellation-works/scribe` replaces it.
+- Cost: the session brief keeps a read-only SCR reader in this repository,
+  so a change to the SCR format in `constellation-works/scribe` must stay
+  readable here or be followed by a change here.
+
+**Code anchors:** `crates/office-core/src/domain/settings.rs` (`PrecedentSettings`, the
+`"scribe"` arm of the settings parse), `crates/office-tools/src/tools/sessions/brief/cards.rs`,
+`crates/office-store/src/repository/library/scribe_pass.rs`.
+
 ## Task References
 
 - [ORB-21117] — built Scribe v2 S4: the SCR v2 format, markers and the trust rule, and query and ask over the new stores.
@@ -3456,5 +3531,7 @@ no longer constrains the design.
 - [ORB-20950] — kept the desktop default title from overriding the user-derived scribe title.
 - [ORB-21060] — built per-thread handoffs within each project.
 - [ORB-21751] — removed the Meta-models-only rule and made the hosted endpoint configurable.
+- [ORB-21747] — designed the standalone scribe plugin, `constellation-works/scribe`.
+- [ORB-21749] — removed the scribe from orbit-office.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

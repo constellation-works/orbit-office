@@ -1,8 +1,8 @@
 ---
 type: design
 summary: "Spec: session continuity — the deterministic session brief, the append-only decision log, and the daily digest routine"
-last_validated: 2026-11-02
-last_updated: 2026-11-02
+last_validated: 2026-11-03
+last_updated: 2026-11-03
 ---
 
 # Spec: Session continuity
@@ -15,8 +15,8 @@ is the cheapest mechanism that can do its job
 
 | Piece | Written by | When | Model |
 |---|---|---|---|
-| **Decision log** | transcript extractor, through `office.capture` | SessionEnd; while the [live scribe](#live-scribe) is on, every few turns; sweep recovers misses | configured low-complexity pool |
-| **Handoff** | the agent, as `handoff` entries in that log; optionally the live scribe (planned) | refreshed whenever the plan changes | none; the scribe's handoff uses the low-complexity pool |
+| **Decision log** | transcript extractor, through `office.capture` | SessionEnd; on [live capture](#live-capture), every few turns; sweep recovers misses | configured low-complexity pool |
+| **Handoff** | the agent, as `handoff` entries in that log; or the latest SCR file ([below](#legacy-scr-files-as-handoffs)) | refreshed whenever the plan changes | none |
 | **Session brief** | `office.session-brief`, computed on demand | at session start | none |
 | **Daily digest** | `office.digest`, from the `office-daily-digest` routine | once a day | one Muse Spark call |
 | **Digest since a meeting** | `office.source-digest` (the app) or `office.digest` with `source` (`orbit tool run`) | on demand | none |
@@ -28,69 +28,56 @@ retains its last handoff. The recovery sweep extracts its available transcript;
 until extraction finishes, the brief has the existing evidence, not a promise
 that the last session has already been processed.
 
-Scribe v2 replaces the Handoff piece: the latest SCR of a scribed session
-is the handoff ([below](#scribe-v2-the-latest-scr-is-the-handoff)).
+Where a Library holds SCR files, the latest SCR per scope is the handoff
+([below](#legacy-scr-files-as-handoffs)).
 
-## Scribe v2: the latest SCR is the handoff
+## Legacy SCR files as handoffs
 
-Status: built ([ORB-21119]). The brief and `/handoff` read the latest SCR
-per project and global as below. The legacy handoff sections below stay in
-force through the 30-day window, for scopes with no SCR only. Direction
-points D7 and D8 are in [scribe.md](./scribe.md#spec-scribe-v2).
-
-In v2 the handoff is no longer an entry the agent writes into a
-conversation log. It is the latest **SCR** of a scribed session
-([scribe.md](./scribe.md#the-scr-file)), whose Summary, Goals, Outcome and
-Blockers and Next sections are rewritten on every scribe pass.
+Status: built ([ORB-21119], [ORB-21120]). SCR files are session records
+written by the scribe, which moved to `constellation-works/scribe`
+([The scribe moved to constellation-works/scribe](../4_decisions.md#the-scribe-moved-to-constellation-worksscribe)).
+Office never writes them; it only reads the ones in the Library
+([decisions.md](./decisions.md#legacy-scr-files)). An SCR's Summary,
+Goals, Outcome and Blockers and Next sections hold the session's latest
+state, so the brief reads it as the handoff. The contract below is
+unchanged by the removal.
 
 - **Project handoff.** The latest SCR (by `updated`) with `scope: project`
-  for a project is that project's handoff (D7).
+  for a project is that project's handoff.
 - **Global handoff.** The latest SCR with `scope: global` is the global
-  handoff (D7).
-- **The brief merges both** (D7, built). `office.session-brief` puts the
+  handoff.
+- **The brief merges both** (built). `office.session-brief` puts the
   project's handoff first, rendered from its SCR: the item's id is the
   SCR id, its link is the SCR's Library path, its time is `updated`, and
   its text is `<title> (<updated>)`, then `Summary:` (keeping the
   `(scribe)` marker), `Goals:`, `Outcome and Blockers:` and `Next:`, each
   a `- ` list (`- None recorded.` when empty). The `global` section is
   the latest global SCR first, then the open legacy global handoffs
-  (during the window) marked `legacy`, newest first, at most five items
-  in all; a legacy global the handoff cites by anchor is always listed,
-  exactly once. In manual output the `projects` section lists the latest
-  SCR per project (its link and time are the SCR's path and `updated`),
-  and a project with no SCR keeps its legacy thread item; newest first,
-  at most 20. `other_sessions` is the other SCRs in the same project
-  updated within seven days of that project's newest SCR (concurrent
-  sessions in one project fork the `previous` chain, and this section
-  keeps the sibling visible), at most five. A scope with no SCR — a
-  project, or global when no global SCR exists — keeps its legacy
-  behaviour below, and a structured legacy entry renders unchanged;
-  `office.capture` still accepts `handoff` entries (text and structured)
-  through the window. With no project and no manual mode, the newest
-  project SCR overall leads, else the legacy single-conversation lead.
-  The assignment fallback (`brief.handoff: auto`) is the project of the
-  newest SCR whose Next cites the task, else the legacy thread's. The
-  `view: list` SCR feed is built ([ORB-21120]; see
-  [Handoff list](#handoff-list)).
-- **No thread key.** One handoff per project replaces [ORB-21060]'s thread
-  per project, orchestrator and cited assignment. Two concurrent sessions
-  in one project show as the handoff plus an `other_sessions` item. A
-  per-assignment record is the assignment task, as the context-boundary
-  rule already says.
-- **Unscribed and headless sessions** write no SCR and therefore no
-  handoff. A headless on-call orchestrator records its state on its
+  marked `legacy`, newest first, at most five items in all; a legacy
+  global the handoff cites by anchor is always listed, exactly once. In
+  manual output the `projects` section lists the latest SCR per project
+  (its link and time are the SCR's path and `updated`), and a project
+  with no SCR keeps its legacy thread item; newest first, at most 20.
+  `other_sessions` is the other SCRs in the same project updated within
+  seven days of that project's newest SCR (concurrent sessions in one
+  project fork the `previous` chain, and this section keeps the sibling
+  visible), at most five. A scope with no SCR — a project, or global when
+  no global SCR exists — keeps its legacy behaviour below, and a
+  structured legacy entry renders unchanged; `office.capture` still
+  accepts `handoff` entries (text and structured). With no project and no
+  manual mode, the newest project SCR overall leads, else the legacy
+  single-conversation lead. The assignment fallback (`brief.handoff:
+  auto`) is the project of the newest SCR whose Next cites the task, else
+  the legacy thread's. The `view: list` SCR cards are built
+  ([Handoff list](#handoff-list)).
+- **No thread key.** One SCR handoff per project replaces [ORB-21060]'s
+  thread per project, orchestrator and cited assignment. Two concurrent
+  sessions in one project show as the handoff plus an `other_sessions`
+  item.
+- **Sessions without an SCR** fall back to the legacy handoff entries
+  below. A headless on-call orchestrator records its state on its
   assignment task, and the brief's Agents working on already lists it.
-- **Read surfaces.** `/handoff <project>` returns that project's SCR then
-  the global SCR. `/handoff` alone returns the global SCR and the
-  `projects` list. `view: handoffs` reads only the Library, as today.
-
-### Shipped handoff work in v2
-
-| Shipped | Kept | Reworked | Retired | Slice |
-|---|---|---|---|---|
-| [ORB-21063] global handoffs, `brief.handoff` auto/manual, `projects`, `view: handoffs`, `/handoff <project>` | `brief.handoff` and its auto/manual project choice (including the assignment fallback); the `global` and `projects` sections; `view: handoffs`; `/handoff [<project>]`. | The global section shows the latest global SCR. `projects` lists the latest SCR per project. The assignment fallback finds the project of the newest SCR whose Next cites the task. | Global handoff log entries (`scope: global`, `until`, closing by `resolved`) and the cap of five open globals. During the 30-day window, open legacy globals are still listed after the global SCR, marked legacy. After it, capture refuses `handoff` with `handoff_retired`. | [ORB-21119], [ORB-21123] |
-| [ORB-21065] structured handoffs | The validator: complete task ids, no bare numbers, single-line text, observation times with offsets and rechecks, no inferred consent, per-field budgets. The SCR's rewritten sections use it. | Fields map onto SCR sections: `objective` to Goals (with the assignment id); `next` to Next (each item cites a task id); `authorization` to each Next item's `owner:` and verbatim `authorized:` clause; `observations` to Outcome and Blockers lines with `observed_at` and `recheck`; `evidence` to the citations in those sections. | `{kind:"handoff", structured_handoff}` capture input and the scribe handoff (`scribe.handoff`). Legacy structured and one-line entries stay readable in their sources but leave the brief after the window. | [ORB-21117], [ORB-21119], [ORB-21123] |
-| [ORB-21075] Scribe › Handoffs view and `view: list` | The read-only, Library-only, model-free contract and private withholding. | The view becomes the Scribe feed: one card per project plus the global card ([scribe.md](./scribe.md#feed)). Current maps to the project cards, Global to the global card, and History to each card's `previous:` chain. `view: list` returns those cards, or one SCR with its `previous` given `id`. | Thread grouping, `superseded`, `resolved_by`, the `include_closed` toggle, and History paging and filters. During the window the old shape stays available as `view: list` with `legacy: true`; after it, it is removed. | [ORB-21120], [ORB-21123] |
+- **Read surface.** `view: handoffs` reads only the Library.
 
 ## Decision log
 
@@ -127,10 +114,9 @@ One `conversation` source per orchestrator session ([library.md](./library.md#so
 
 ### Handoff
 
-> Scribe v2 replaces handoff entries with the latest SCR per project and
-> global ([Scribe v2](#scribe-v2-the-latest-scr-is-the-handoff), built);
-> this section stays in force through the 30-day window, for scopes with
-> no SCR only. Capture still accepts these entries during the window.
+> Where a scope has an SCR file, its latest SCR is the handoff
+> ([Legacy SCR files as handoffs](#legacy-scr-files-as-handoffs)); this
+> section applies to scopes with no SCR. Capture accepts these entries.
 
 The handoff is the agent's note to its next session: what it was about to
 do, what the user is waiting on it for, and the context the structured state
@@ -331,8 +317,8 @@ renders as one `/<name> <args>` line instead of the tags, with exactly one
 leading slash on the name. A user record left with no text after this
 stripping contributes no line. Pasted content is kept: it is the user's own
 material, however it was framed. Lines inside a `<pasted_content>` region of
-a user record are marked `pasted`, so the scribe's marker detection skips
-them ([scribe.md](./scribe.md#built-tools-s4)); the text itself is unchanged.
+a user record are marked `pasted`, so a client that reads inline markers
+can skip them; the text itself is unchanged.
 
 The adapter records `orchestrator: claude`, the last non-synthetic assistant
 `message.model` (exact spelling, null if absent), and `session_id` in source
@@ -349,7 +335,7 @@ Adding an adapter must keep tool blocks, synthetic context and provider
 instructions out of user evidence. Sessions that change model record the last
 reported conversational model; the transcript digest identifies the input.
 
-Manual Scribe-window feedback uses the same append path: a `correction`
+Manual feedback uses the same append path: a `correction`
 entry targets an earlier original anchor, and a missed entry keeps its chosen
 `direction`, `decision` or `fact` kind with explicit `by: user` attribution.
 See [Corrections](./recall.md#corrections) for the built backend contract.
@@ -368,7 +354,7 @@ invented consent. Facts must be unambiguous user statements. Assistant action
 lines are reported actions, not independent verification of their outcomes.
 Quoted external material is not a user's decision; the crew must exclude
 pasted documents too, including unmarked pastes that an adapter cannot detect.
-The live scribe adds two narrow ways a user line becomes a decision
+Live capture adds two narrow ways a user line becomes a decision
 or direction without these cues: an explicit `Note:` command (built,
 [ORB-20685]) and an answer
 to a concrete question ([below](#answers-to-questions), built, [ORB-20686]).
@@ -385,12 +371,11 @@ continue using it until the host hook is installed, or reconcile it explicitly.
 
 ### Host, trigger and cheap crew
 
-**Run on the transcript-owning host.** The Claude Code provider plugin at
-`plugin/claude-code/` supplies SessionStart, Stop and SessionEnd hooks
-([installation](../../../../plugin/claude-code/README.md), [ORB-20689]).
-After installing it, the operator can retire constellation
-`operations/scripts/session-brief.py` and its legacy SessionEnd stager.
-It stages the completed `~/.claude/projects/**/<session>.jsonl` under the
+**Run on the transcript-owning host.** A provider-side client on that
+host (the constellation `operations/scripts/session-brief.py` SessionEnd
+stager, or the `constellation-works/scribe` plugin) stages transcripts;
+orbit-office ships no provider hooks since the scribe moved out
+([ORB-21749]). The stager stages the completed `~/.claude/projects/**/<session>.jsonl` under the
 workspace's `.orbit/tmp/session-transcripts/`, together with its session id,
 using owner-only directories/files and atomic publication. Each completed input
 has a sibling JSON descriptor `{session_id, transcript_path, transcript_sha256,
@@ -398,11 +383,10 @@ completed_at}`; paths are absolute and the descriptor is published last. The
 host sweep and extraction task enumerate these descriptors, not growing files.
 The path passed to
 office must physically resolve inside the granted workspace or Library;
-symlink escapes and special files are refused. The plugin does not widen its
+symlink escapes and special files are refused. The stager does not widen its
 grants to read the user's provider home or transfer raw transcripts to the
-owner. Local staging is the operator-authorized provider hook shipped in this
-repository; it never reads a Library path or transfers transcripts. Its
-`provider-scribe-` immutable filenames avoid legacy stager publication races.
+owner; it never reads a Library path. Immutable, uniquely prefixed
+filenames avoid publication races between stagers.
 
 The hook queues one extraction task/job for that session on that host, using
 the instruction in `definitions/auto_tasks/office-conversation-extract.yaml`
@@ -420,8 +404,8 @@ capture succeeds; host retention owns their later removal.
 The auto-task is shipped **disabled** with `dedupe: skip_if_open` and
 `complexity: low`, and is **registered** under `spec.definitions.auto_tasks`
 in `plugin.yaml`. This feature ships the definition registered but not
-enabled. Installing the provider plugin on the transcript-owning host and
-enabling any desired recovery sweep remain operator deployment steps.
+enabled. Installing a stager on the transcript-owning host and enabling
+any desired recovery sweep remain operator deployment steps.
 
 ### Secrets, privacy and retries
 
@@ -455,111 +439,33 @@ previewed. A retry after a committed write is a no-op; journal recovery covers
 interrupted publication. Historical snapshots remain subject to the source's
 privacy; a source changed to private stays private on later extraction.
 
-## Live scribe
+## Live capture
 
-> Scribe v1 ([scribe.md](./scribe.md)) replaces automatic live passes with
-> the `/scribe` command; the passes below are off by default from v1.
-
-Status: partly built. The incremental passes and the user `Note:`/`Scribe:`
-commands below are built ([ORB-20685]); the rules page, answers to
-questions and scribe handoff are built ([ORB-20686]); the Claude Code
-switch, trigger and debounce are built ([ORB-20689]), and the switch is
-Office-owned state shared with the Scribe window ([ORB-20756]). The feedback section
-remains specified, not built. Everything above still applies; this section
-changes when extraction runs, how much of the transcript each pass reads,
-and three narrow rules about what it may write.
+Status: built ([ORB-20685], [ORB-20686]): incremental passes, the user
+`Note:`/`Scribe:` commands, the rules page and answers to questions.
+Everything above still applies; this section changes how much of the
+transcript each pass reads, and three narrow rules about what it may
+write. When and whether to stage live snapshots is the provider client's
+choice (the scribe's opt-in switch, cadence and controls moved to
+`constellation-works/scribe` with it); Office only processes what is
+staged.
 
 SessionEnd extraction leaves the orchestrator writing captures by hand
 during the session, and a session that runs all day has an empty log until
-it ends. The live scribe is the same extractor run while the conversation is
-still going, switched on per session. It reads the conversation only — the
-adapter already drops tool calls, tool results, thinking and sidechains —
-and writes through `office.capture` as before. It is not a participant: it
-never posts into the conversation.
+it ends. Live capture is the same extractor run while the conversation is
+still going. It reads the conversation only — the adapter already drops
+tool calls, tool results, thinking and sidechains — and writes through
+`office.capture` as before. It is not a participant: it never posts into
+the conversation.
 
-### Switch
-
-The switch is Office-owned per-session state, kept in plugin state
-(`plugin_state/scribe_control.sqlite`) behind `office.scribe-control`
-(built, [ORB-20756]); it is not Library evidence. One record per session
-holds the switch, a pending **Capture now** request, the user's title and
-the last Scribe window heartbeat. The web Scribe window and the provider
-plugin read and write the same record, so both hosts share one switch.
-A provider command (`/scribe on|off|now|status|title` for Claude Code;
-scribe v2 maps `now` to `update` and defaults every session off,
-[scribe.md](./scribe.md#turning-it-on)) writes it; the default for new sessions is a setting of the provider
-plugin, not of the Library. Turning the scribe off stops new passes; it
-never removes evidence already captured. The hooks and commands ship as a
-per-user provider plugin from this repository
-([recall.md](./recall.md#distribution-a-provider-plugin)), so one scribe
-covers every project; answering questions across conversations is
-[recall.md](./recall.md).
-
-The plugin's per-session flag file, `.orbit/tmp/scribe/<session-id>`,
-owner-only, in the office workspace beside the transcript staging
-directory (present means on), is its local cache of that record. Each
-end-of-turn hook reads the record once and mirrors the switch into the
-flag file; on the first turn Office sees for a session (switch unset) the
-hook publishes its own switch (the plugin default) so the window shows the
-same state. `/scribe on|off` writes Office first, then the flag file. When
-Orbit cannot answer (unreachable, an older office plugin, the one-second
-hook budget spent) the hook fails open on the cached flag file.
-
-`office.scribe-control` takes `op` and `session_id` (1–128 ASCII letters,
-digits, `-` or `_`) and returns the record after the op:
-
-| op | Extra input | Effect |
-|---|---|---|
-| `get` | — | Read. An unknown session reads as `on: null` (unset), nothing pending. |
-| `set_switch` | `on`, and on a turn-on optional `on_by` (`user` or `agent`) and `scope` (`global` or `project:<name>`) | Set the switch. A turn-on records who asked and the scope it named (scribe v2, [ORB-21118]); `off` clears `on_by` and keeps the scope. |
-| `request_now` | — | Record a pending Capture-now request; an existing one keeps its time. |
-| `consume_now` | optional `requested_at` | Clear the pending request and report `consumed`. With `requested_at` (the `now_requested_at` read earlier), clear only that request, so a newer one survives. |
-| `set_title` | `title` | Store a single-line user title (at most 4096 bytes, trimmed). |
-| `heartbeat` | — | Record that a Scribe window is open now. |
-
-The record reports `on`, `on_by`, `scope`, `now_requested`,
-`now_requested_at`, `title`, `heartbeat_at`, `window_open` (heartbeat
-under two minutes old by the Office clock) and `updated_at`. Records
-untouched for 30 days are dropped on a later write. The tool is
-`mutating`, `mcp_scope: workspace` and `agent_callable`, as the manifest
-declares ([ORB-20856]): the plugin calls Orbit as `local-cli` holding
-`[agent]`, so the user's own session needs the grant. A turn-on under
-managed-task context (`context.task_id`) is refused with
-`scribe_managed_session` ([ORB-21118],
-[plugin-surface.md](./plugin-surface.md#agent-authority-inventory)), so a
-headless Orbit-managed session still cannot be scribed; its hooks fall
-back to the flag file.
-
-### Trigger and debounce
-
-The provider's end-of-turn hook (`Stop` in Claude Code) reads the shared
-record (above), checks the switch and, when it is on, stages a snapshot and
-may queue a pass. It never waits for inference.
-
-- **Snapshot.** The hook copies the live transcript up to its last complete
-  record (the last newline), never a partial record, and publishes it
-  atomically with a descriptor carrying `mode: live`, `session_id`, the
-  snapshot's byte length and SHA-256. The adapter's refusal of truncated
-  records therefore never fires on a live snapshot.
-- **Debounce.** At most one pass is queued or running per session. A new
-  pass is queued only when the previous one was queued at least
-  `min_interval` ago (default 5 minutes) or at least `max_turns` new user
-  turns (default 8) have arrived since it; `max_turns` is 2 while the
-  record's window heartbeat is fresh ([recall.md](./recall.md#pace-while-the-window-is-open)).
-  `/scribe now` records a Capture-now request in Office and runs it
-  immediately, ignoring the debounce, while reusing an outstanding live task.
-  A request made in the window runs at the session's next end-of-turn hook,
-  even with the switch off. Either way the request is consumed only after
-  its pass is queued (or found already queued), naming the request it read;
-  while an earlier pass is still pending it stays pending for a later turn.
-  SessionEnd always requests a digest-deduplicated final task; it depends on
-  an outstanding live task so no extraction runs concurrently for the session.
-  This closes the race with a live worker finishing its last descriptor scan.
-- **Dedupe** for live passes uses session id plus snapshot length, so a
-  burst of hooks on an unchanged transcript queues nothing.
-
-Each pass is the existing low-complexity extraction task: no crew pinned,
-the configured pool chooses.
+A live snapshot is the transcript up to its last complete record (the
+last newline), never a partial record, published atomically with a
+descriptor carrying `mode: live`, `session_id`, the snapshot's byte
+length and SHA-256, so the adapter's refusal of truncated records never
+fires on it. Dedupe for live passes uses session id plus snapshot length.
+A final (SessionEnd) descriptor supersedes live descriptors for the same
+transcript digest. Each pass is the existing low-complexity extraction
+task: no crew pinned, the configured pool chooses.
 
 ### Incremental passes
 
@@ -592,7 +498,7 @@ A pass reads only what earlier passes have not.
 
 Built ([ORB-20686]).
 
-What the scribe notes is the user's to define, on a Library page with the
+What extraction notes is the user's to define, on a Library page with the
 id `dom-scribe-rules` (a one-per-Library template, `scribe-rules`). Its
 body has three sections: **Note** (what to capture, for example standing
 directions, decisions with their reason, rejected options and why, changes
@@ -623,15 +529,14 @@ extraction task apply.
   The prefix is a cue for the guard, not an instruction to any model.
 - **Orchestrator:** `office.capture` with `append_to` is unchanged, for the
   rare entry the conversation does not contain (an `action` with its task
-  id, a `resolved`). `/scribe now` flushes a pass. The orchestrator stops
-  capturing decisions and directions itself while the scribe is on.
+  id, a `resolved`).
 
 ### Answers to questions
 
 Built ([ORB-20686]).
 
 Most decisions are a short reply to a concrete question ("Yes, file it").
-The cue guard keeps those `open`. The scribe may record such a reply as a
+The cue guard keeps those `open`. Extraction may record such a reply as a
 `decision` when all of these hold, each checked deterministically:
 
 - the crew's selection carries `answers: <line>`, naming an assistant line;
@@ -677,65 +582,24 @@ As built, the checks are deliberately narrower than the list above:
 
 ### Scribe handoff
 
-Built ([ORB-20686]); retired by scribe v2 ([ORB-21122]). Every v2 pass
-writes the SCR that is the handoff, so `office.capture` now drops an
-offered scribe handoff as `disabled` whether or not the rules page sets
-`scribe.handoff`, and the conversation preview reports `rules.handoff:
-false`. A page that still sets the flag stays valid; the migration
-proposes removing it with the rules page's Tags section
-([scribe.md](./scribe.md#migration)). The behavior below is the retired
-v1 design, kept for the record.
-
-Optional, off by default: `scribe.handoff: true` in the rules page's
-frontmatter, written as the one-level mapping `scribe:` with
-`handoff: true`. When on, a pass whose new lines change the plan (a new
-decision, direction or `action`) may offer one structured handoff using the
-capture field `structured_handoff` beside `selections`, following the fields,
-checks and budgets above. The compatible `handoff` string remains accepted,
-but unstructured prose is dropped as `structured_required`. A valid offer is
-written as `[<time>] handoff: (scribe) (structured) <compact JSON>`;
-the log grammar has one kind token per entry, so a `handoff (scribe)`
-kind would be refused by every log reader. Unlike every other entry it is
-model-authored, so:
-
-- the `(scribe)` marker is part of the line, and the session brief shows it;
-- it must cite at least one entry anchor (`#L<n>` or `#L<n>-<m>`) of the
-  current source after this pass's entries, and every anchor it cites must
-  name a log entry, or the handoff is dropped (the pass's other entries
-  still land);
-- the newest handoff in its thread wins, whoever wrote it, so an
-  orchestrator handoff written later in the same thread replaces it in
-  that thread's brief; a handoff in another thread never displaces it,
-  and nothing is edited or removed.
-
-A handoff offered while the setting is off, in a private session, or by a
-pass that adds no decision, direction or action is dropped too. The
-capture response then carries `handoff`: `written`, or the reason it was
-dropped (`disabled`, `private`, `invalid`, `structured_required`,
-`no_plan_change`, `no_anchor`, `unresolved_anchor`, or the specific structured
-validation error above). The other extracted evidence still lands.
-
-This is what lets the orchestrator stop maintaining the handoff. Without
-it, the orchestrator keeps doing so as today.
-
-### Feedback to the session
-
-Optional and constellation-owned: a `UserPromptSubmit` hook may add one
-line of context — "scribe captured N entries since <time> in <source id>"
-— so the orchestrator neither repeats a capture nor assumes one happened.
-It reads the source's entry count; it never quotes entries back.
+Retired ([ORB-21122]). `office.capture` drops an offered
+`structured_handoff` from an extraction pass as `disabled` whether or not
+the rules page sets `scribe.handoff`, and the conversation preview reports
+`rules.handoff: false`. A page that still sets the flag stays valid.
+Handoffs it wrote earlier (`handoff: (scribe) (structured) <compact
+JSON>`, model-authored, so marked) stay readable, and the brief keeps
+their leading `(scribe)` marker.
 
 ### Providers and limits
 
 - Claude Code only, like extraction. Codex rollout JSONL (Codex CLI, T3
   Code) needs its adapter first; live mode refuses other formats exactly as
   SessionEnd extraction does.
-- A pass's preview is bounded by the existing 8 MiB transcript limit and by
-  `max_turns`; a long backlog after the scribe is switched on mid-session is
-  read in successive passes, oldest first.
+- A pass's preview is bounded by the existing 8 MiB transcript limit; a
+  long backlog is read in successive passes, oldest first.
 - Privacy is unchanged: private sessions use the local conservative path,
-  which honours `Note:` commands but not answers to questions or the scribe
-  handoff, since both need the crew.
+  which honours `Note:` commands but not answers to questions, since they
+  need the crew.
 
 ## Session brief
 
@@ -745,7 +609,7 @@ assembled from Orbit and the Library, with no model call, so it is free,
 always current and cannot invent anything:
 
 - **Handoff:** the current project's latest SCR rendered as above
-  ([Scribe v2](#scribe-v2-the-latest-scr-is-the-handoff)): the SCR id and
+  ([Legacy SCR files as handoffs](#legacy-scr-files-as-handoffs)): the SCR id and
   path as the item's id and link, `updated` as its time, and the title,
   Summary (with the `(scribe)` marker), Goals, Outcome and Blockers and
   Next sections as its text. A project with no SCR keeps the legacy
@@ -860,18 +724,17 @@ state cannot appear empty.
 ### Handoff list
 
 Built ([ORB-21120], reworking [ORB-21075]). `office.session-brief` with
-`view: list` is the read-only feed behind the web app's Scribe tab and
-Today's Handoffs section ([web-app.md](./web-app.md#screens);
-[scribe.md](./scribe.md#feed)). It reads only the Library (no Orbit task
-reads, no model call).
+`view: list` is a read-only list of handoffs. The web app's Scribe tab
+and Today's Handoffs section, which read it, were removed with the scribe;
+the contract is kept for other clients. It reads only the Library (no
+Orbit task reads, no model call).
 
 - **Cards (the default).** Exactly the latest v2 SCR per project plus the
   latest global SCR, as `cards` (global first, then projects by scope),
   with `count` and `files_searched`. Each card is the SCR's front matter,
   its rewritten Summary, Goals, Outcome and Blockers and Next sections,
   its Tags entries with `<SCR id>#T<n>` citations, `tag_entries` and
-  `tag_counts` (entries per Tags subsection) — the same shape
-  `office.scribe-query` mode `scr` returns. A private SCR (or a private
+  `tag_counts` (entries per Tags subsection). A private SCR (or a private
   conversation sensitivity setting) withholds its summary, sections,
   entries and counts (`content_withheld`); its id, path, scope and times
   remain as references.
@@ -880,9 +743,8 @@ reads, no model call).
   when that file is gone). Walking `previous` ids is the only way to
   reach an older SCR; there is no history list. An unknown id is
   `scribe_scr_not_found`.
-- **Legacy (`legacy: true`).** For the 30-day window the v1 list below
-  stays available as `view: list` with `legacy: true`; after it, it is
-  removed ([ORB-21123]). The legacy filters and paging (`project`,
+- **Legacy (`legacy: true`).** The v1 list below stays available as
+  `view: list` with `legacy: true`. The legacy filters and paging (`project`,
   `orchestrator`, `thread`, `include_closed`, `offset`, `limit`) require
   `legacy: true` and are refused without it, as are `id` with `legacy`
   and either new key without `view: list`.
@@ -1070,22 +932,18 @@ sections as JSON beside a Markdown `report`.
 - [ORB-19706] — built federated workspace reads for plugin callbacks.
 - [ORB-19733] — built cross-host session-brief routing to federated workspaces.
 - [ORB-20242] — built conversation transcript extraction through the `office.capture` session mode and the SessionEnd sweep.
-- [ORB-20685] — built the live scribe's incremental passes and `Note:`/`Scribe:` commands.
-- [ORB-20686] — built the live scribe's rules page, answers to questions and scribe handoff.
+- [ORB-20685] — built live capture's incremental passes and `Note:`/`Scribe:` commands.
+- [ORB-20686] — built live capture's rules page, answers to questions and the scribe handoff.
 - [ORB-21122] — retired the scribe handoff (`scribe.handoff`).
-- [ORB-20689] — built the per-user Claude Code hooks, commands, debounce and backfill.
+- [ORB-20689] — built the per-user Claude Code hooks, commands, debounce and backfill (removed with the scribe).
 - [ORB-21060] — built per-thread handoffs within a project and the `other_sessions` section.
-- [ORB-21063] — built global-scoped handoffs (scope, expiry, resolution, the `global` section), the `brief.handoff` auto/manual setting with the assignment fallback, the `projects` section, `view: handoffs` and the Claude Code `/handoff` command.
-- [ORB-21075] — built the `view: list` handoff list behind Scribe › Handoffs and Today's Handoffs section.
-- [ORB-21117] — built scribe v2 slice S4: SCR tools, markers, query and ask.
-- [ORB-21119] — built scribe v2 slice S6.
-- [ORB-21120] — built scribe v2 slice S7: `view: list` returns the SCR cards (or one SCR with its `previous` given `id`), with the v1 list kept behind `legacy: true`.
-- [ORB-21123] — removes v1 surfaces after the compatibility window; approved in backlog.
-- [ORB-20756] — built `office.scribe-control` (Office-owned switch, Capture-now request, title and heartbeat) and the plugin hooks that share it.
+- [ORB-21063] — built global-scoped handoffs (scope, expiry, resolution, the `global` section), the `brief.handoff` auto/manual setting with the assignment fallback, the `projects` section, `view: handoffs` and the Claude Code `/handoff` command (since removed).
+- [ORB-21075] — built the `view: list` handoff list.
+- [ORB-21119] — built the brief over the latest SCR per scope.
+- [ORB-21120] — built `view: list` returning the SCR cards (or one SCR with its `previous` given `id`), with the v1 list kept behind `legacy: true`.
 - [ORB-21337] — built the digest since a meeting (`office.digest` with `source`) and its app server route.
-- [ORB-20856] — made scribe-append and scribe-control callable by the provider plugin.
 - [ORB-21065] — built structured handoffs.
-- [ORB-21118] — built the opt-in v2 provider plugin, hooks and marker routing.
+- [ORB-21749] — removed the scribe and its provider plugin from orbit-office.
 - [ORB-21376] — added the read-only source-digest verb used by the app.
 - [ORB-21452] — deduplicated source tasks across repeated workspace listings.
 

@@ -600,7 +600,7 @@ impl LibraryFs {
         Ok(write_atomic(&path, text.as_bytes())?)
     }
 
-    /// An SCR file path (specs/scribe.md), checked component by component.
+    /// A legacy SCR file path (specs/decisions.md, "Legacy SCR files"), checked component by component.
     pub(crate) fn validate_scribe_path(&self, relative: &Path) -> Result<()> {
         office_core::domain::source::conversation::scribe::validate_scr_path(relative)?;
         self.validate_relative_path(relative)
@@ -625,17 +625,6 @@ impl LibraryFs {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(Error::io("remove renamed SCR file", path, error)),
-        }
-    }
-
-    /// One SCR file's text, `None` when absent.
-    pub(crate) fn read_scribe(&self, relative: &Path) -> Result<Option<String>> {
-        self.validate_scribe_path(relative)?;
-        let path = self.root.join(relative);
-        match std::fs::read_to_string(&path) {
-            Ok(text) => Ok(Some(text)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(Error::io("read SCR file", path, error)),
         }
     }
 
@@ -1010,7 +999,7 @@ impl LibraryFs {
     }
 
     /// Move every retired `note` source into the decision ledgers
-    /// (specs/scribe.md, "Retiring `sources/note`"): one entry per note in
+    /// (specs/decisions.md, "Retiring `sources/note`"): one entry per note in
     /// its scope's ledger, `moved_sources` mapping the note id to the entry,
     /// then the note's directory is removed. Ledgers are written before any
     /// directory is removed, and a note already listed in `moved_sources`

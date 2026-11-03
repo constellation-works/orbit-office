@@ -4,8 +4,8 @@
 //! defaults; the endpoint never carries credentials, which settings
 //! refuse), the configured private endpoint (`open_weights`, or null), the shared library
 //! (`shared`, or null), the followed workspaces (`brief`, or null) and the
-//! effective scribe cadence and tags (`scribe`; the defaults until the
-//! Library sets them).
+//! effective decision-precedent recency (`precedents`; the default until
+//! the Library sets it).
 //! The token is only `set` or `unset` under `secrets`, and
 //! `open_weights_token_binding` says whether it was saved for the configured
 //! endpoint's origin (never the token or that origin).
@@ -98,12 +98,11 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         ),
         None => (Value::Null, Value::Null, Value::Null, Value::Null),
     };
-    // Scribe policy is never absent: an unset or uninitialized Library
-    // reads as the shipped defaults.
-    let scribe = settings.as_ref().map_or_else(
-        || Settings::default().scribe.effective(),
-        |s| s.scribe.effective(),
-    );
+    // Precedent recency is never absent: an unset or uninitialized Library
+    // reads as the shipped default.
+    let precedents = settings
+        .as_ref()
+        .map_or_else(|| Settings::default().precedents, |s| s.precedents.clone());
     // The hosted route is never absent: an uninitialized Library reads as
     // the shipped defaults (Meta's Model API and the Muse models).
     let models = settings
@@ -136,7 +135,7 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "shared": shared,
         "brief": brief,
         "meetings": meetings,
-        "scribe": scribe,
+        "precedents": precedents,
     }))
 }
 

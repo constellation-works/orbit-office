@@ -287,7 +287,7 @@ impl LibraryStore {
             Vec::new()
         };
         // Retired `note` sources move into the decision ledgers (specs/
-        // scribe.md, "Retiring `sources/note`"); a migrated Library has none,
+        // decisions.md, "Retiring `sources/note`"); a migrated Library has none,
         // so a re-run reports `already_initialized` and commits nothing.
         let (removed_notes, note_ledgers) = if candidate.exists() {
             files.migrate_note_sources(&office_core::domain::source::format_rfc3339_utc(
@@ -950,57 +950,6 @@ impl LibraryStore {
                 markdown: Some(markdown),
             })
             .collect())
-    }
-
-    /// Create, update or rename one SCR file and commit it, under the writer
-    /// lock. The file must still hold what the caller planned against.
-    pub fn write_scribe_file(
-        &self,
-        write: &office_core::ports::ScribeWrite,
-    ) -> office_core::Result<()> {
-        use office_core::domain::source::video::refusal;
-        let _lock = WriterLock::acquire(&self.state)?;
-        self.recover()?;
-        self.require_initialized()?;
-        let target = Path::new(&write.path);
-        self.files.validate_scribe_path(target)?;
-        let mut removed = Vec::new();
-        match &write.previous {
-            Some((path, text)) => {
-                if self.files.read_scribe(Path::new(path))?.as_deref() != Some(text.as_str()) {
-                    return Err(refusal(
-                        "scribe_changed",
-                        "the SCR file changed since it was read; retry",
-                    ));
-                }
-                if path != &write.path {
-                    if self.files.read_scribe(target)?.is_some() {
-                        return Err(refusal(
-                            "scribe_exists",
-                            "an SCR file already has the new name",
-                        ));
-                    }
-                    removed.push(path.clone());
-                }
-            }
-            None => {
-                if self.files.read_scribe(target)?.is_some() {
-                    return Err(refusal(
-                        "scribe_changed",
-                        "the SCR file changed since it was read; retry",
-                    ));
-                }
-            }
-        }
-        let pending = self.decide_with(
-            WriteKind::Scribe,
-            &write.path,
-            &write.text,
-            None,
-            None,
-            Some(removed),
-        )?;
-        Ok(self.finish(&pending)?)
     }
 
     /// Every proposal page with its Markdown, in path order. No writer-lock wait.
@@ -2187,7 +2136,7 @@ impl LibraryStore {
             ),
             None => None,
         };
-        // Plain text has no default kind (specs/scribe.md, "Retiring
+        // Plain text has no default kind (specs/decisions.md, "Retiring
         // `sources/note`"): a paste names its kind, and a decision goes in
         // the `decision` input, never a ledger by default.
         let kind = match explicit_kind {
@@ -3012,12 +2961,6 @@ impl office_core::ports::Library for LibraryStore {
     fn scribe_files(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::scribe_files(self)?)
     }
-    fn write_scribe_file(
-        &self,
-        write: &office_core::ports::ScribeWrite,
-    ) -> office_core::Result<()> {
-        Self::write_scribe_file(self, write)
-    }
     fn decision_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::decision_ledger_files(self)?)
     }
@@ -3031,12 +2974,9 @@ impl office_core::ports::Library for LibraryStore {
     fn decision_precedent_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
         Ok(Self::decision_precedent_ledgers(self)?)
     }
-    fn write_scribe_pass(&self, pass: &office_core::ports::ScribePass) -> office_core::Result<()> {
-        Self::write_scribe_pass(self, pass)
-    }
     fn write_decision_ledgers(
         &self,
-        files: &[office_core::domain::source::conversation::scribe::v2::PlannedFile],
+        files: &[office_core::domain::source::decisions::PlannedFile],
     ) -> office_core::Result<()> {
         Self::write_decision_ledgers(self, files)
     }
@@ -3105,13 +3045,6 @@ impl office_core::ports::Library for LibraryStore {
             session.lines.clear();
         }
         Ok(session)
-    }
-    fn scribe_transcript(
-        &self,
-        path: &str,
-        session_id: &str,
-    ) -> office_core::Result<office_core::domain::source::conversation::Session> {
-        self.read_transcript(path, session_id)
     }
     fn capture_session(
         &self,

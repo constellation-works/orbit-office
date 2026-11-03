@@ -1,4 +1,4 @@
-//! Decision ledgers in the Library store (specs/scribe.md, Decision
+//! Decision ledgers in the Library store (specs/decisions.md, Decision
 //! ledger): resolving ledger, entry and migrated note ids, appending one
 //! entry under the writer lock, and writing a planned batch of ledger files
 //! once (Orbit decision ingestion, journal version 12).
@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use office_core::domain::artifact::ArtifactFile;
-use office_core::domain::source::conversation::scribe::v2::PlannedFile;
+use office_core::domain::source::decisions::PlannedFile;
 use office_core::domain::source::decisions::is_ledger_path;
 
 use office_core::domain::source::decisions::{

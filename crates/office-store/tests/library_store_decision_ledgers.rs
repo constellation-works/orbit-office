@@ -9,7 +9,7 @@ mod support;
 
 use support::*;
 
-use office_core::domain::source::conversation::scribe::v2::PlannedFile;
+use office_core::domain::source::decisions::PlannedFile;
 use office_core::domain::source::decisions::{Ledger, Scope};
 use office_core::ports::Library;
 use office_store::LibraryStore;

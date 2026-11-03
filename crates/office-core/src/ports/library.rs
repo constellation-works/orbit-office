@@ -284,20 +284,8 @@ pub trait Library {
     ) -> Result<crate::domain::source::conversation::Session> {
         Err(Error::LibraryUnavailable)
     }
-    /// Read and scrub a contained session transcript for local, model-free
-    /// marker detection (specs/scribe.md, "Privacy"). Unlike
-    /// [`Library::session_transcript`], a private session keeps its lines:
-    /// the caller writes them only to the private scribe parse and never
-    /// returns them.
-    fn scribe_transcript(
-        &self,
-        _path: &str,
-        _session_id: &str,
-    ) -> Result<crate::domain::source::conversation::Session> {
-        Err(Error::LibraryUnavailable)
-    }
     /// Append one decision ledger entry under the writer lock and commit it
-    /// (specs/scribe.md, Decision ledger). The adapter assigns the next
+    /// (specs/decisions.md, Decision ledger). The adapter assigns the next
     /// `dec-<scope>-<n>` id over `decision.id`, creates the scope's ledger on
     /// its first entry (`captured_at` becomes its `created_at`), refuses a
     /// `reverses` naming no entry, and never edits an earlier line. The
@@ -350,37 +338,9 @@ pub trait Library {
     fn reindex(&self) -> Result<u32> {
         Err(Error::LibraryUnavailable)
     }
-    /// The workspace-relative path of a session's parsed message file,
-    /// `<library>/.office/state/scribe/<id>.jsonl`, without I/O.
-    fn scribe_parse_path(&self, _session_id: &str) -> Result<String> {
-        Err(Error::LibraryUnavailable)
-    }
-    /// Write a session's parsed scribe messages and its session facts
-    /// (`<id>.jsonl` and `<id>.meta.json`) under the Library's git-ignored
-    /// `.office/state/scribe/`, owner-only, replacing earlier copies.
-    /// Returns the workspace-relative path of the `.jsonl`.
-    fn write_scribe_parse(
-        &self,
-        _session_id: &str,
-        _messages: &str,
-        _meta: &str,
-    ) -> Result<String> {
-        Err(Error::LibraryUnavailable)
-    }
-    /// Read a session's parsed messages and session facts, if present.
-    fn read_scribe_parse(&self, _session_id: &str) -> Result<Option<ScribeParse>> {
-        Err(Error::LibraryUnavailable)
-    }
     /// Every SCR file (`sources/conversation/<yyyy>/<mm>/SCR-*.md`), in
     /// path order. They are not indexed; symlinks are never followed.
     fn scribe_files(&self) -> Result<Vec<LibraryText>> {
-        Err(Error::LibraryUnavailable)
-    }
-    /// Create, update or rename one SCR file and commit it, under the
-    /// writer lock. Refused with `scribe_changed` when the file no longer
-    /// holds `previous` (or exists when `previous` is `None`), and with
-    /// `scribe_exists` when a rename target exists.
-    fn write_scribe_file(&self, _write: &ScribeWrite) -> Result<()> {
         Err(Error::LibraryUnavailable)
     }
     /// Every decision ledger file (`sources/decisions/<scope>.md`) with its
@@ -404,15 +364,6 @@ pub trait Library {
     ) -> Result<std::collections::BTreeMap<String, f64>> {
         Err(Error::LibraryUnavailable)
     }
-    /// One scribe v2 pass (specs/scribe.md, "Pipeline" step 4): the SCR and
-    /// every ledger and preference page file it plans, written and
-    /// committed once under the writer lock. Refused with `scribe_changed`,
-    /// writing nothing, when the SCR or any file no longer holds what the
-    /// pass planned against, or, for a new SCR, when the scope's latest SCR
-    /// is no longer the planned `previous`.
-    fn write_scribe_pass(&self, _pass: &ScribePass) -> Result<()> {
-        Err(Error::LibraryUnavailable)
-    }
     /// Write planned decision ledger files and commit them once under the
     /// writer lock (Orbit decision ingestion, decision-precedents.md).
     /// Each file is compare-and-set against `expected` (`None`: a new
@@ -420,13 +371,9 @@ pub trait Library {
     /// when any differs. Only ledger paths are accepted; no files: no write.
     fn write_decision_ledgers(
         &self,
-        _files: &[crate::domain::source::conversation::scribe::v2::PlannedFile],
+        _files: &[crate::domain::source::decisions::PlannedFile],
     ) -> Result<()> {
         Err(Error::LibraryUnavailable)
-    }
-    /// The host's name for SCR provenance; `None` when unknown.
-    fn host_name(&self) -> Option<String> {
-        None
     }
     /// Library and index health, without creating Library state.
     fn health(&self) -> Result<LibraryHealth> {
@@ -435,51 +382,6 @@ pub trait Library {
             ..LibraryHealth::default()
         })
     }
-}
-
-/// A session's parsed scribe files, as read back.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ScribeParse {
-    /// The `.jsonl` message file.
-    pub messages: String,
-    /// The `.meta.json` session facts.
-    pub meta: String,
-}
-
-/// One SCR file write: the new text at `path`, replacing `previous`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ScribeWrite {
-    /// Library-relative SCR path to write.
-    pub path: String,
-    /// Full new Markdown.
-    pub text: String,
-    /// The file as read before planning (`path`, Markdown); a different
-    /// path is removed in the same commit (a rename).
-    pub previous: Option<(String, String)>,
-}
-
-/// One scribe v2 pass write.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ScribePass {
-    /// The SCR file: `previous` is the file as read (`None`: a new SCR).
-    pub scr: ScribeWrite,
-    /// Ledger (`sources/decisions/<scope>.md`) and preference page
-    /// (`knowledge/domain/dom-preferences-<scope>.md`) files.
-    pub files: Vec<crate::domain::source::conversation::scribe::v2::PlannedFile>,
-    /// For a new SCR: its scope token, its session id and the `previous`
-    /// it names, rechecked under the lock.
-    pub chain: Option<ScribeChain>,
-}
-
-/// The `previous` link a new v2 SCR names.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ScribeChain {
-    /// `global` or `project:<name>`.
-    pub scope: String,
-    /// The new SCR's session id.
-    pub session: String,
-    /// The scope's latest other SCR as planned.
-    pub previous: Option<String>,
 }
 
 /// One conversation entry to append (specs/sessions.md).

@@ -396,78 +396,13 @@ spec:
       input_schema: { $ref: schemas/source-digest.request.json }
       output_schema: { $ref: schemas/source-digest.response.json }
 
-    - name: scribe-control
-      description: >-
-        Own per-session scribe control state: get the switch, set it,
-        request Capture now (and consume it), set the title and record the
-        window-open heartbeat. The provider plugin's hooks read this state;
-        the flag file is their local cache. Plugin state only.
-      execution_kind: mutating
-      agent_callable: true
-      mcp_scope: workspace
-      input_schema: { $ref: schemas/scribe-control.request.json }
-      output_schema: { $ref: schemas/scribe-control.response.json }
-
-    - name: scribe-pending
-      description: >-
-        Parse a session transcript into the scribe's message file and return
-        the messages after the session's scribed_through, with its SCR
-        metadata and the scribe rules. Model-free.
-      execution_kind: read_only
-      mcp_scope: workspace
-      input_schema: { $ref: schemas/scribe-pending.request.json }
-      output_schema: { $ref: schemas/scribe-pending.response.json }
-
-    - name: scribe-append
-      description: >-
-        Validate the scribe's entries against the transcript and append them
-        to the session's SCR file, refusing any quote that is not an exact
-        substring of its message; commit to the Library. Model-free.
-      execution_kind: mutating
-      agent_callable: true
-      mcp_scope: workspace
-      input_schema: { $ref: schemas/scribe-append.request.json }
-      output_schema: { $ref: schemas/scribe-append.response.json }
-
-    - name: scribe-query
-      description: >-
-        Filter the session SCR lines by tag, matter, topic, author, date
-        range, refs or session, and resolve the links between lines.
-        Model-free.
-      execution_kind: read_only
-      mcp_scope: workspace
-      input_schema: { $ref: schemas/scribe-query.request.json }
-      output_schema: { $ref: schemas/scribe-query.response.json }
-
-    - name: scribe-ask
-      description: >-
-        Answer a question with one Standard-tier model call over a
-        model-free SCR shortlist, verbatim-checking every quoted span
-        against its cited SCR line. Private entries are cited by
-        reference only when no open-weights route is configured.
-      execution_kind: read_only
-      mcp_scope: workspace
-      input_schema: { $ref: schemas/scribe-ask.request.json }
-      output_schema: { $ref: schemas/scribe-ask.response.json }
-
-    - name: scribe-migrate
-      description: >-
-        Tidy up after scribe v1 once: propose removing the v1 Tags section
-        from the scribe rules page (unless already filed) and report open
-        v1 pending lines. v1 preferences and decisions are not backfilled.
-        Model-free; run by an operator.
-      execution_kind: mutating
-      mcp_scope: none
-      input_schema: { $ref: schemas/scribe-migrate.request.json }
-      output_schema: { $ref: schemas/scribe-migrate.response.json }
-
     - name: decision-ingest
       description: >-
         Append answered Orbit decision requests in the followed workspaces
         to the decision ledgers, one entry per answer: human and model
         answers, review-gate confirms and vetoes, and re-answers that
         reverse a model answer. Skips precedent-actor, superseded, expired
-        and already-ingested requests, links a matching scribe entry with
+        and already-ingested requests, links a matching ledger entry with
         same_as and reports ambiguous matches. Model-free; run by the
         office-decision-ingest routine or an operator.
       execution_kind: mutating
@@ -502,7 +437,7 @@ spec:
       description: >-
         Answer where a conversation discussed a topic, what was decided and
         whether it landed, from captured entries; without a question, list
-        entries newest first (optionally one session's) for the Scribe feed.
+        entries newest first (optionally one session's).
         No model call; private sources give no entry text.
       execution_kind: read_only
       mcp_scope: workspace

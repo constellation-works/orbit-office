@@ -109,8 +109,8 @@ fn validate_task_ids(text: &str) -> Result<()> {
     Ok(())
 }
 
-/// The scribe v2 SCR's rewritten sections (specs/scribe.md, "The SCR
-/// file"), checked by the structured handoff rules: single-line items,
+/// A legacy SCR's rewritten sections (specs/decisions.md, "Legacy SCR
+/// files"), checked by the structured handoff rules: single-line items,
 /// no credentials, complete task ids, observation times with offsets, a
 /// complete task id on every Next item, and budgets of 500 (Summary),
 /// 500 (Goals), 2000 (Outcome and Blockers) and 1000 (Next) characters.

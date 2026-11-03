@@ -76,7 +76,7 @@
       }
     },
     "ledger": {
-      "description": "Meeting profile only: decisions appended to the decision ledger, decisions skipped with their refusal code, and contradictions filed as owner:you to-dos (specs/scribe.md, Meeting decisions). A reconcile of a meeting filed before filing.json reports only reconciled_without_record.",
+      "description": "Meeting profile only: decisions appended to the decision ledger, decisions skipped with their refusal code, and contradictions filed as owner:you to-dos (specs/decisions.md, Meeting decisions). A reconcile of a meeting filed before filing.json reports only reconciled_without_record.",
       "anyOf": [
         {
           "type": "object",

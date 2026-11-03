@@ -34,7 +34,7 @@ pub struct Line {
     /// Inside a paste region the adapter can see (a `<pasted_content>`
     /// wrapper in a user record, the wrapper's own lines included). The
     /// text is kept, but a scribe marker on it is never one
-    /// (specs/scribe.md, "Trust rule").
+    /// (the trust rule of the scribe, now `constellation-works/scribe`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub pasted: bool,
 }
@@ -1133,7 +1133,7 @@ pub struct Rules {
     /// Library-relative path.
     pub path: String,
     /// `scribe.handoff`: retired with scribe v2, whose SCR is the handoff
-    /// (specs/scribe.md, "Configuration"), so always false. A page that
+    /// (see the scribe removal in 4_decisions.md), so always false. A page that
     /// still sets it stays valid; the migration proposes removing it.
     pub handoff: bool,
     /// The page body, passed to the crew as data; `None` for a private page,

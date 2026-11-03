@@ -1,5 +1,8 @@
-//! Scribe SCR files in the Library store (specs/scribe.md): committed, not
-//! indexed, refused on a stale read, and a journaled rename replays once.
+//! Legacy SCR files in the Library store. This build writes no SCR (the
+//! scribe moved to the standalone scribe plugin), but SCR files an earlier
+//! build wrote stay on disk: they are read in path order, never indexed and
+//! never removed, and an interrupted SCR journal from an earlier build still
+//! replays once on open, so no Library data is lost.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 #[path = "library_store_support.rs"]
@@ -7,65 +10,53 @@ mod support;
 
 use support::*;
 
-use office_core::ports::{Library, ScribeWrite};
+use office_core::ports::Library;
 use office_store::LibraryStore;
 
 const OLD: &str = "sources/conversation/2026/11/SCR-01-0300-first-words.md";
 const NEW: &str = "sources/conversation/2026/11/SCR-01-0300-a-title.md";
 
-fn write(path: &str, text: &str, previous: Option<(&str, &str)>) -> ScribeWrite {
-    ScribeWrite {
-        path: path.into(),
-        text: text.into(),
-        previous: previous.map(|(p, t)| (p.into(), t.into())),
-    }
+/// Commit one SCR file the way an earlier build's scribe left it.
+fn seed_scr(root: &std::path::Path, relative: &str, text: &str) {
+    write(root, relative, text);
+    git(root, &["add", relative]);
+    git(root, &["commit", "-q", "-m", "seed SCR"]);
 }
 
 #[test]
-fn scr_files_commit_without_indexing_and_refuse_stale_or_unsafe_writes() {
+fn existing_scr_files_are_read_untouched_and_not_indexed() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("library");
     let state = temp.path().join("state");
     let store = LibraryStore::open(&root, &state).unwrap();
     Library::initialize(&store, None).unwrap();
     let before = store.document_count().unwrap();
+    seed_scr(&root, OLD, "---\nid: a\n---\n");
 
-    Library::write_scribe_file(&store, &write(OLD, "---\nid: a\n---\n", None)).unwrap();
-    assert_eq!(git(&root, &["status", "--porcelain"]), "");
     assert_eq!(store.reindex().unwrap(), before);
     let files = Library::scribe_files(&store).unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].path, OLD);
-
-    // Creating over an existing file, or updating from a stale read, is refused.
-    let error = Library::write_scribe_file(&store, &write(OLD, "x", None)).unwrap_err();
-    assert_eq!(error.code(), "scribe_changed");
-    let error =
-        Library::write_scribe_file(&store, &write(OLD, "x", Some((OLD, "old text")))).unwrap_err();
-    assert_eq!(error.code(), "scribe_changed");
-    // Only SCR-shaped paths under sources/conversation/<yyyy>/<mm>/.
-    for path in [
-        "sources/conversation/2026/11/notes.md",
-        "sources/conversation/2026/SCR-01-0300-x.md",
-        "knowledge/domain/SCR-01-0300-x.md",
-    ] {
-        let error = Library::write_scribe_file(&store, &write(path, "x", None)).unwrap_err();
-        assert_eq!(error.code(), "scribe_path_invalid", "{path}");
-    }
+    assert_eq!(files[0].markdown.as_deref(), Some("---\nid: a\n---\n"));
+    drop(store);
+    // Reopening and reindexing leave the file and the history alone.
+    let store = LibraryStore::open(&root, &state).unwrap();
+    store.reindex().unwrap();
     assert_eq!(
         std::fs::read_to_string(root.join(OLD)).unwrap(),
         "---\nid: a\n---\n"
     );
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
 }
 
 #[test]
-fn an_interrupted_scr_rename_replays_once_on_open() {
+fn an_interrupted_scr_rename_from_an_earlier_build_replays_once_on_open() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("library");
     let state = temp.path().join("state");
     let store = LibraryStore::open(&root, &state).unwrap();
     Library::initialize(&store, None).unwrap();
-    Library::write_scribe_file(&store, &write(OLD, "old", None)).unwrap();
+    seed_scr(&root, OLD, "old");
     drop(store);
     let pending = serde_json::json!({"version":10,"kind":"scribe","root":root.canonicalize().unwrap(),"relative":NEW,"text":"renamed","token":"123-789","removed":[OLD]});
     std::fs::write(

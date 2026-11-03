@@ -1,8 +1,8 @@
 ---
 type: design
 summary: "Spec: the KT pack — an hour-long knowledge-transfer video becomes a chaptered index with tangents folded away, cited knowledge proposals, a runbook and questions for the presenter, behind a cost preview"
-last_validated: 2026-11-01
-last_updated: 2026-11-02
+last_validated: 2026-11-03
+last_updated: 2026-11-03
 ---
 
 # Spec: KT videos (the hero pack)
@@ -340,7 +340,7 @@ crews, not `office-agent-todo` work, and carries no `no-diff-expected`.
 Every other to-do is filed `owner:you` exactly as without the setting.
 Before filing, the meeting's decisions feed the decision ledger and its
 contradiction check names the to-dos that act on a contested decision
-([scribe.md](./scribe.md#meeting-decisions)). Such an agent code to-do is
+([decisions.md](./decisions.md#meeting-decisions)). Such an agent code to-do is
 filed `owner:you` with a `contested` tag, its type and criteria, and a
 held-from-agents note, never for agents, until `office.decision-resolve`
 settles the conflict. Unset, the

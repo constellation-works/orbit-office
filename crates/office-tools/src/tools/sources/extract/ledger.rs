@@ -1,5 +1,5 @@
 //! Meeting decisions into the decision ledger, and the contradiction check
-//! that decides which to-dos are held from agents (specs/scribe.md,
+//! that decides which to-dos are held from agents (specs/decisions.md,
 //! "Meeting decisions"). Every model call goes through the Models port.
 use super::{Call, Result, Value, array, closed, json, list, object};
 use crate::tools::sources::capture::decision;

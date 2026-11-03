@@ -16,8 +16,8 @@ use office_core::domain::source::{
 };
 use office_core::domain::template::BUNDLED;
 use office_core::ports::{
-    CaptureSourceRequest, InitOutcome, Library, LibraryHealth, LibraryText, ScribeParse,
-    ScribeWrite, SourceOutcome, SourceView, not_initialized_error,
+    CaptureSourceRequest, InitOutcome, Library, LibraryHealth, LibraryText, SourceOutcome,
+    SourceView, not_initialized_error,
 };
 use office_core::{Error, Result};
 use std::path::PathBuf;
@@ -53,12 +53,8 @@ pub struct FakeLibrary {
     pub templates: Vec<LibraryText>,
     commits: RefCell<usize>,
     staging: FakeStaging,
-    /// Parsed scribe files by session id, in memory.
-    scribe_parses: RefCell<BTreeMap<String, ScribeParse>>,
     /// SCR files by Library path, in memory.
     scribe_texts: RefCell<BTreeMap<String, String>>,
-    /// Host name reported for SCR provenance.
-    pub host: Option<String>,
     /// Explicit normalized FTS scores for precedent-provider fixtures.
     pub decision_precedent_scores: BTreeMap<String, f64>,
 }

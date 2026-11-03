@@ -1,4 +1,4 @@
-//! The v2 SCR file (specs/scribe.md, "The SCR file"): one file per scribed
+//! The v2 SCR file (specs/decisions.md, "Legacy SCR files"): one file per scribed
 //! session at `sources/conversation/<yyyy>/<mm>/SCR-<yyyymmdd>-<hhmm>-<session6>.md`,
 //! with one-line front matter keys, four rewritten upper sections and an
 //! append-only Tags section whose entries carry permanent `T<n>` ids.

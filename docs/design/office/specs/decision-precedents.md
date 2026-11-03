@@ -1,16 +1,15 @@
 ---
 type: design
-summary: "Spec: the scribe v2 decision ledger as a precedent source for Orbit's decision model: the learning-fit entry schema, ingestion of answered Orbit decision requests with dedupe, the read-only office.decision-precedents provider over orbit.precedent-provider/1, feedback and contradiction rules, and a read-only agreement view"
-last_validated: 2026-11-02
-last_updated: 2026-11-02
+summary: "Spec: the decision ledger as a precedent source for Orbit's decision model: the learning-fit entry schema, ingestion of answered Orbit decision requests with dedupe, the read-only office.decision-precedents provider over orbit.precedent-provider/1, feedback and contradiction rules; the agreement view was removed with the scribe"
+last_validated: 2026-11-03
+last_updated: 2026-11-03
 ---
 
 # Spec: Decision ledger as a precedent provider
 
 Status: designed ([ORB-21090]). Slice P1 (entry schema additions, their
-validation and refusals, `same_as` matching in `office.scribe-append` and
-`office.capture`, and reading them through `office.source-show` and
-`office.scribe-query`) is built ([ORB-21216]). Slice P2 (`office.decision-ingest`,
+validation and refusals, `same_as` matching in `office.capture`, and
+reading them through `office.source-show`) is built ([ORB-21216]). Slice P2 (`office.decision-ingest`,
 its callbacks and the disabled `office-decision-ingest` routine) is built
 ([ORB-21217]). Slice P3 (the provider and half-life setting) is built
 ([ORB-21218]). Slice P4 (contradiction reporting) is built
@@ -33,7 +32,7 @@ spec is written against those documents as of Orbit `agent-main` commit
 spec's section of that name.
 
 This spec designs only the Office half: the
-[scribe v2 decision ledger](./scribe.md#decision-ledger) as a precedent
+[decision ledger](./decisions.md#decision-ledger) as a precedent
 source. Orbit core holds no Office-specific code (Orbit §Precedent
 provider). Office implements Orbit's generic contract and never answers a
 decision.
@@ -43,7 +42,7 @@ decision.
 Goals:
 
 1. The ledger entry carries every field a precedent needs, under the names
-   the scribe already writes ([Entry schema](#entry-schema)).
+   the ledger already uses ([Entry schema](#entry-schema)).
 2. Answered Orbit decision requests are written into the ledger, so both
    sources sit in one place, without counting one decision twice
    ([Ingesting Orbit decisions](#ingesting-orbit-decisions)).
@@ -64,14 +63,14 @@ Non-goals:
 - Office never shows a model's per-request prediction. A visible prediction
   would bias the label it is scored against (Orbit §Purpose and limits). The
   agreement view shows aggregates only.
-- No change to how the scribe extracts decisions, or to the trust rule
-  ([scribe.md](./scribe.md#trust-rule-whose-markers-count)).
+- No change to how decisions reach the ledger
+  ([decisions.md](./decisions.md#decision-ledger)).
 
 ## Entry schema
 
 The ledger and its D13 entry are specified in
-[scribe.md](./scribe.md#decision-ledger), designed in [ORB-21083]
-and built (S1, S4). This section
+[decisions.md](./decisions.md#decision-ledger), designed in [ORB-21083]
+and built. This section
 says how each field serves as precedent, and adds four optional fields.
 Every existing field keeps its name and meaning; no field is renamed or
 retyped. An entry still is one line, `dec-<scope>-<n>`, the time,
@@ -79,9 +78,9 @@ retyped. An entry still is one line, `dec-<scope>-<n>`, the time,
 
 | Field | As precedent |
 |---|---|
-| `question` | The precedent's question. A scribe restatement (`question_by: scribe`) is allowed; a verbatim one has `question_ref`. An ingested Orbit request sets `question_ref: orbit-decision:<id>`. |
+| `question` | The precedent's question. A restatement (`question_by: scribe`) is allowed; a verbatim one has `question_ref`. An ingested Orbit request sets `question_ref: orbit-decision:<id>`. |
 | `options` | The options considered, or `"unrecoverable"` (see [Entries without options](#entries-without-options)). Each option is `{text, ref}`, as built. **Added, optional:** `id` (the option's stable id; set only by Orbit ingestion, from the request's `answers[].id`) and `consequence` (the request's one-line consequence). |
-| `chosen` | The chosen option. For a scribe entry, a span of the decision message (up to case, punctuation and a word repeated in a row); for an ingested entry, the chosen answer's label. |
+| `chosen` | The chosen option. For a recorded entry, a span of the decision's evidence (up to case, punctuation and a word repeated in a row); for an ingested entry, the chosen answer's label. |
 | `quote`, `ref` | The evidence: the verbatim decision text and its transcript or Orbit reference. |
 | `because` | The stated rationale, when one was stated. It goes into the precedent's `context`. |
 | `scope` | `global` or `project:<name>`. Used to filter candidates. |
@@ -92,13 +91,13 @@ retyped. An entry still is one line, `dec-<scope>-<n>`, the time,
 | `source` | The source id: an SCR id, a migrated note's `src-…` id, `orbit-task:<id>` for a captured task comment, or `orbit-decision:<id>` for an ingested request. |
 | `private` | A reference-only entry. Never returned by the provider ([Privacy](#privacy)). |
 | `orbit` | **Added, optional; ingestion only.** `{request_id, gate, category, topic, answered_by, channel}` copied from the answered request (Orbit human-decision-channel §2.1), plus `model` (the model citation: assessment id, policy digest, model identity, probability, cited precedents) when `answered_by` is `model`. |
-| `same_as` | **Added, optional.** The id of an earlier entry that records the same decision from the other source ([Dedupe](#dedupe-against-scribe-entries)). |
+| `same_as` | **Added, optional.** The id of an earlier entry that records the same decision from the other source ([Dedupe](#dedupe-against-recorded-entries)). |
 | `confirms` | **Added, optional; ingestion only.** The id of a `decided_by: model` entry this human entry confirms ([Feedback](#feedback)). |
 
-`office.capture`'s `decision` input and `office.scribe-append` refuse
-`orbit`, `confirms` and option `id`/`consequence`, as they refuse
+`office.capture`'s `decision` input refuses
+`orbit`, `confirms` and option `id`/`consequence`, as it refuses
 `decided_by: model`: only ingestion writes them (`decided_by_mismatch` for
-`model`, and the existing unknown-key refusal for the rest). They accept
+`model`, and the existing unknown-key refusal for the rest). It accepts
 `same_as`, checked like `reverses` (`decision_not_found` when no such
 entry exists).
 
@@ -113,7 +112,7 @@ single-option record: `options: [{"id": "chosen", "label": <chosen>}]`,
 Orbit's check that `chosen_option` is one of the precedent's own options
 (Orbit §Host validation) without inventing an alternative.
 
-Recovered options from a scribe entry have no ids. The provider numbers
+Recovered options from a recorded entry have no ids. The provider numbers
 them `o1`…`on` in ledger order, labels each with its `text`, and maps
 `chosen` to the option whose text equals it after case and whitespace
 folding, or else the one option whose text contains it or is contained by
@@ -124,7 +123,7 @@ ingested entry keeps the request's own answer ids.
 ## Ingesting Orbit decisions
 
 Answered Orbit human-decision requests are appended to the ledger, so the
-Library's readers (`office.scribe-ask`, the Decisions panel, the weekly
+Library's readers (`office.source-show`, `office.search`, the weekly
 contradiction routine) see both sources.
 
 **Tool:** `office.decision-ingest` (mutating, `mcp_scope: none`), run by a
@@ -203,25 +202,26 @@ Build details ([decisions](../4_decisions.md#decision-precedents-p2-ingestion-re
   `message`), `dedupe[]` (`same_as` or `dedupe_ambiguous` with
   `candidates`) and `unavailable[]`.
 
-### Dedupe against scribe entries
+### Dedupe against recorded entries
 
 The same decision can arrive twice: Daniel answers an Orbit request and
-also marks `#decision` in the session where he did it. Both entries stay
+also records it from the session where he did it (with `office.capture`,
+or earlier through the scribe). Both entries stay
 (the ledger is append-only, and each is evidence), and the later one links
 the earlier with `same_as`.
 
-A scribe or captured entry and an ingested entry match when all hold:
+A recorded entry and an ingested entry match when all hold:
 
 - the same task (`context.task` equals the request's task);
 - `decided_at` within 30 minutes of each other;
-- the scribe entry's `chosen` matches one of the request's answers, by the
+- the recorded entry's `chosen` matches one of the request's answers, by the
   same folding and containment rule as in
   [Entries without options](#entries-without-options), and that answer is
   the one chosen.
 
 Exactly one match links. Ingestion sets `same_as` on the ingested entry
-when the scribe entry came first. When the scribe entry comes later,
-`office.scribe-append` and `office.capture` run the same match against
+when the recorded entry came first. When the recorded entry comes later,
+`office.capture` runs the same match against
 ingested entries and set `same_as`. More than one candidate links nothing
 and is reported as `dedupe_ambiguous` in the ingest output. A rejected
 match never blocks the append.
@@ -237,8 +237,8 @@ entries. The provider never returns a group that has an ingested member
 names it in Orbit's host-only provider list (Orbit §Configuration); Orbit
 calls it through the plugin callback route under its grant (Orbit
 §Sources). `mcp_scope: none` keeps it out of agents' tool lists: it is a
-host-facing contract, and `office.scribe-ask` already answers agents'
-questions over the ledger.
+host-facing contract; agents read the ledger with `office.source-show`
+and `office.search`.
 
 **Input** is the contract request, exactly: `contract`, `workspace_id`,
 `request` (`id`, `gate`, `category`, `question`, `options[]` of `{id,
@@ -301,7 +301,7 @@ Each candidate scores:
   category.
 - **Recency:** the score is multiplied by `0.5^(age_days / half_life)`,
   where `age_days` is `as_of - decided_at` and `half_life` is the Library
-  setting `scribe.precedents.half_life_days` (default 90, matching Orbit's
+  setting `precedents.half_life_days` (default 90, matching Orbit's
   `precedent_half_life_days` default; Orbit §Drift). Newer entries rank
   higher.
 
@@ -380,12 +380,12 @@ The rules, as invariants every reader keeps:
   human_confirmed`, and a later veto or reversal still flags it `reversed`.
   This stops the model learning from itself (Orbit §Feedback rules).
 - **An override is a `reverses` entry, and it is precedent.** Whether it
-  comes from an Orbit re-answer, an Orbit veto, a `#decision` marker that
-  reverses an earlier entry, or `office.capture` with `reverses`, it is a
+  comes from an Orbit re-answer, an Orbit veto, an older scribe entry that
+  reverses an earlier one, or `office.capture` with `reverses`, it is a
   human decision like any other. Only feedback marks (a review-gate
   `confirm` or `veto` entry) are not returned.
-- **Only ingestion writes `decided_by: model` and `confirms`.** The scribe
-  and `office.capture` keep refusing `decided_by: model`, and refuse
+- **Only ingestion writes `decided_by: model` and `confirms`.**
+  `office.capture` keeps refusing `decided_by: model`, and refuses
   `confirms`.
 
 ## Contradictions
@@ -394,10 +394,10 @@ Built in P4 ([ORB-21219]).
 
 The weekly `office-scribe-contradictions` routine files one `owner:you`
 to-do for two decisions that conflict with no `reverses` link
-([scribe.md](./scribe.md#contradiction-checks)). It also compares current
+([decisions.md](./decisions.md#contradiction-checks)). It also compares current
 decisions within one Orbit category, even when the question text differs:
-an ingested entry's category is its `orbit.category`, and a scribe entry's
-category is its `same_as` partner's `orbit.category`. Conflicting answers
+an ingested entry's category is its `orbit.category`, and any other
+entry's category is its `same_as` partner's `orbit.category`. Conflicting answers
 to the same kind of request are the case the consumer most needs to know
 about. Each decision-conflict to-do's description ends with the last line
 `Conflicting entries: <entry id> <entry id>` (the two ids, one space
@@ -407,7 +407,7 @@ Meeting extraction files the same to-do, with the same tags and last
 line, when a meeting decision contradicts a prior entry. The provider
 reads those to-dos alike. `office.decision-resolve` settles either kind
 in one call: a `reverses` entry for the losing decision, then the to-do
-closed ([scribe.md](./scribe.md#meeting-decisions), [ORB-21340]).
+closed ([decisions.md](./decisions.md#meeting-decisions), [ORB-21340]).
 
 The provider reports a conflict that is still unresolved. It reads open
 to-dos with `orbit.task.list` (tags `owner:you` and
@@ -444,70 +444,14 @@ ids are capped at 32.
 
 ## Agreement view
 
-A read-only **Agreement** view in the Scribe screen's Decisions panel
-([web-app.md](./web-app.md), [scribe.md](./scribe.md#feed)): per
-category, how often the model agreed with the human.
-
-- **Data.** Orbit's per-category readout `precedent-decision-readout/1`
-  (Orbit §Per-category report), produced by the `decision-assistance-eval/4`
-  evaluator (Orbit slice [ORB-21096]). Office reads it; it computes nothing
-  and stores nothing. The app server reads it through one Orbit client
-  read function (`orbit.decision.readout` with
-  `{contract: "precedent-decision-readout/1"}`) behind
-  `GET /api/scribe/decision-agreement`, at most every 60 seconds (the
-  server caches a successful or hidden read for 60 seconds, and the
-  screen throttles its own agreement fetch the same way). While Orbit
-  offers no such tool, or the tool reports no readout, that read reports
-  "no readout" and the view stays hidden; wiring to a differently named
-  live Orbit surface later changes only that one read function.
-  The readout's shape is pinned here (derived from the `/4` per-category
-  score output; a JSON fixture of this shape lives at
-  `app/packages/server/test/decision-agreement-fixture.json`):
-
-  ```json
-  {
-    "contract": "precedent-decision-readout/1",
-    "consumer_mode": "shadow | enabled | off",
-    "generated_at": "<RFC 3339 time the readout was produced>",
-    "window": { "start": "<RFC 3339>", "end": "<RFC 3339>" },
-    "min_samples": 30,
-    "categories": [{
-      "category": "<workspace>:<kind>, e.g. ws_orbit-office:agent_request",
-      "workspace": "<workspace id or null>",
-      "kind": "<request kind, e.g. agent_request>",
-      "mode": "shadow | enabled",
-      "scored_requests": 42,
-      "accuracy": 0.81, "accuracy_wilson_low": 0.68, "accuracy_wilson_high": 0.90,
-      "coverage": 0.74, "calibration_error": 0.04,
-      "abstention_rate": 0.12, "conflict_rate": 0.05,
-      "min_samples": 30
-    }]
-  }
-  ```
-
-  Rates and accuracy are fractions in `0..1`; the Wilson fields are the
-  95% interval bounds for `accuracy`. A category's `min_samples` overrides
-  the readout's. The server forwards only these aggregate fields: any
-  per-request field a readout carried (a prediction, a probability for
-  one request, a request id) is dropped and never reaches the browser.
-- **Rows.** One per category the readout names: the category in words
-  (workspace and kind), its mode (shadow or enabled, from Orbit), scored
-  requests, accuracy at the threshold with its Wilson 95% interval,
-  coverage, calibration error, the abstention and conflict rates, and the
-  readout's window and time. Sample sizes below the registered
-  `min_samples` show "Not enough decisions yet" instead of a percentage.
-- **Never per-request predictions.** The view shows aggregates only, never
-  what the model predicted for any request, so it cannot contaminate a
-  category under measurement (Orbit §Concerns, "Shadow requires hiding").
-- **No actions.** No enable, disable, confirm or veto. Those stay in
-  Orbit's own surfaces under its operator rules.
-- **States.** Hidden when the consumer is off or no readout exists (the
-  Decisions panel then shows only its ledger entries). A readout with no
-  categories shows "No decisions yet." A category below `min_samples`
-  shows "Not enough decisions yet" instead of its percentages.
-  "Could not read Orbit's measurement" when the read fails (the route
-  answers `502 {error: "agreement_unavailable"}`). Laid out from 320 px
-  like the rest of the Scribe screen.
+Removed. The read-only Agreement view (per category, how often the model
+agreed with the human, from Orbit's `precedent-decision-readout/1`) lived
+in the Scribe screen's Decisions panel behind
+`GET /api/scribe/decision-agreement` ([ORB-21220]). Both left orbit-office
+with the scribe
+([The scribe moved to constellation-works/scribe](../4_decisions.md#the-scribe-moved-to-constellation-worksscribe)).
+Orbit's own surfaces still show the readout. Office never shows a model's
+per-request prediction.
 
 ## Privacy
 
@@ -517,14 +461,16 @@ category, how often the model agreed with the human.
 - Entries are Daniel's own words. Orbit's enablement names precedent text
   as sent evidence (Orbit §Packet); this tool only returns what Orbit asks
   for, within the contract's bounds.
-- The provider and the agreement view read; neither writes the Library.
+- The provider reads; it never writes the Library.
 
 ## Configuration
 
-One Library setting, under the existing `scribe:` block
-([scribe.md](./scribe.md#configuration)):
+One Library setting
+([decisions.md](./decisions.md#precedent-recency)):
 
-- `scribe.precedents.half_life_days`: integer, 1..3650, default 90.
+- `precedents.half_life_days`: integer, 1..3650, default 90. It was
+  `scribe.precedents.half_life_days` before the scribe moved out; an old
+  value is ignored, not migrated.
 
 Orbit holds the rest (provider list, `k`, the consumer's mode, its
 policy) in its host-only configuration. The `office-decision-ingest`
@@ -541,8 +487,6 @@ routine ships disabled.
   Office-detected conflict needs an additive `conflicts` field in
   `orbit.precedent-provider/1` (or a `/2`). P4 reports conflicts in
   context as described above until such a field is available.
-- **Readout surface.** The agreement view depends on the read surface the
-  evaluator slice ([ORB-21096]) gives the readout.
 
 ## Build order
 
@@ -551,26 +495,27 @@ change makes stale in the same change.
 
 | Slice | Task | Depends on | Delivers |
 |---|---|---|---|
-| P1 (built) | [ORB-21216] | Scribe v2 S1, S4 | Entry schema additions (option `id`/`consequence`, `orbit`, `same_as`, `confirms`), their validation and refusals, `same_as` matching in `office.scribe-append` and `office.capture`, and reading them through `office.source-show` and `office.scribe-query`. |
+| P1 (built) | [ORB-21216] | The decision ledger ([ORB-21114]) | Entry schema additions (option `id`/`consequence`, `orbit`, `same_as`, `confirms`), their validation and refusals, `same_as` matching in `office.capture`, and reading them through `office.source-show`. |
 | P2 (built) | [ORB-21217] | P1; Orbit's `include_closed` read | `office.decision-ingest` and the disabled `office-decision-ingest` routine: request mapping, idempotence, dedupe, and the feedback entries (model, confirm, veto, re-answer). |
 | P3 (built) | [ORB-21218] | P1; Orbit [ORB-21093] for conformance | `office.decision-precedents`: the contract input and output, candidates, relevance and recency, single-option records, reversed and pulled-in entries, omissions, citations, and the `half_life_days` setting. |
 | P4 (built) | [ORB-21219] | P3 | Contradictions: the routine's category comparison and machine-readable line, and the provider's conflict reporting. |
-| P5 (built) | [ORB-21220] | Scribe v2 S7 ([ORB-21120]); Orbit [ORB-21096]'s readout surface | The Agreement view and `GET /api/scribe/decision-agreement`. |
+| P5 (built, removed) | [ORB-21220] | Orbit [ORB-21096]'s readout surface | The Agreement view, since removed with the scribe ([ORB-21749]). |
 
 ## Task References
 
 - [ORB-21090] — designed this spec.
 - [ORB-21089] — designed Orbit's decision model and its provider contract (Orbit repository).
-- [ORB-21083] — designed scribe v2 and the D13 ledger schema.
+- [ORB-21083] — designed the D13 ledger schema (in scribe v2).
 - [ORB-20840] — recorded Daniel's request for the decision model in the orbit-office on-call session.
-- [ORB-21120] — built scribe v2 slice S7 and its Decisions panel.
 - [ORB-21093] — built Orbit's precedent-provider contract and built-in provider (Orbit repository).
 - [ORB-21096] — built Orbit's decision-assistance-eval/4 evaluator and readout contract (Orbit repository).
 - [ORB-21216] — built slice P1: ledger schema additions and dedupe links.
 - [ORB-21217] — built slice P2: Orbit decision ingestion and feedback entries.
 - [ORB-21218] — built slice P3: the `office.decision-precedents` provider.
 - [ORB-21219] — built slice P4: contradiction reporting.
-- [ORB-21220] — built slice P5: the Agreement view.
+- [ORB-21220] — built slice P5: the Agreement view (removed with the scribe).
+- [ORB-21114] — built the decision ledger store.
+- [ORB-21749] — removed the scribe from orbit-office.
 - [ORB-21340] — built meeting-fed decisions and contradiction resolution; done, merged as `59e36d4`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

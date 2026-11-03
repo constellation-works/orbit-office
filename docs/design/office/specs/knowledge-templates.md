@@ -1,7 +1,8 @@
 ---
 type: design
 summary: "Spec: About templates — the bundled page templates, the template field, attach policies, contact privacy and the onboarding interview"
-last_validated: 2026-11-01
+last_validated: 2026-11-03
+last_updated: 2026-11-03
 ---
 
 # Spec: About templates and onboarding
@@ -112,7 +113,7 @@ the rest of its report.
 | `glossary` | `dom-glossary` (one) | Terms and acronyms, one `### Term` each, citing where it was first seen | `matched` |
 | `goals` | `dom-goals` (one) | This period's priorities or objectives | `never`; read by signals and reviews |
 | `rhythm` | `dom-rhythm` (one) | Recurring meetings and deadlines ("status update every Friday") | `never`; read by signals |
-| `scribe-rules` | `dom-scribe-rules` (one) | The scribe's tags, topics, matters, capture rules and models ([scribe.md](./scribe.md#configuration)); the Tags section and the optional `scribe: {handoff: true}` frontmatter are no longer read by scribe v2 and the migration proposes removing them ([scribe.md](./scribe.md#migration)) | `never`; passed to the scribe's crew as data |
+| `scribe-rules` | `dom-scribe-rules` (one) | What conversation capture should note or skip: topics, matters, capture rules and models. `office.capture`'s transcript preview returns it to the extracting crew as data ([sessions.md](./sessions.md)). The Tags section and the optional `scribe: {handoff: true}` frontmatter are no longer read; the id keeps its name so existing pages still load | `never`; passed to the extracting crew as data |
 | `preferences` | `dom-preferences-<slug>` (one per scope; `global` or project) | Current preferences grouped by matter | `tagged`; global on every task, project on matching `project:<scope>` |
 | `runbook` | `rb-<slug>` | Inputs, steps, done when (all required); optional `performable` and `submission` for runbooks the agent carries out as drafts ([library-bootstrap.md](./library-bootstrap.md#runbooks-the-agent-performs-as-drafts)) | named by the task, as today |
 
@@ -252,7 +253,7 @@ of them:
 5. Recurring meetings and deadlines → `rhythm`
 6. Tools, and where things live: issue tracker projects, folders, channels → `systems`, and `refs` on the other pages
 7. Your priorities this period (optional) → `goals`
-8. What the scribe should note or skip in your conversations (optional) → `scribe-rules`
+8. What conversation capture should note or skip (optional) → `scribe-rules`
 
 Jargon that comes up goes to the glossary.
 

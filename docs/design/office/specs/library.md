@@ -1,7 +1,8 @@
 ---
 type: design
 summary: "Spec: Library — layout, sources, knowledge pages, artifacts and frictions"
-last_validated: 2026-10-27
+last_validated: 2026-11-03
+last_updated: 2026-11-03
 ---
 
 # Spec: Library
@@ -60,12 +61,13 @@ library/
   so the history of every page is recoverable. Binaries (`original.*`),
   generated frames (`frames/`) and per-machine writer state
   (`.office/state/`: `index.sqlite` plus its `-shm`/`-wal`,
-  `library.writer.lock`, `library.writer.owner.json`, the scribe's
-  private parse files under `scribe/` and the authored local calendar
-  events under `local-calendar/`) are ignored by
+  `library.writer.lock`, `library.writer.owner.json` and the authored
+  local calendar events under `local-calendar/`) are ignored by
   the Library's own `.gitignore`, and each binary is pinned by the
   `sha256` in its source's frontmatter. `.office/config.yaml` and
-  `.office/templates/` stay tracked.
+  `.office/templates/` stay tracked. Parse files an older build's scribe
+  left under `.office/state/scribe/` stay on disk and are no longer read
+  ([decision](../4_decisions.md#the-scribe-moved-to-constellation-worksscribe)).
 - The workspace repository ignores `/library/`. Orbit refuses a plugin
   write grant on the workspace's `.git`, and plugin writes to tracked
   files in the primary checkout would fail running agent tasks with
@@ -110,7 +112,7 @@ a second workspace or a repair. Fresh workspaces use the office preset to suppre
    makes no commit, and a source whose destination already exists is
    left in place. Reads accept the legacy layout until the move runs.
    It then moves each retired `note` source that is not private into the
-   [decision ledgers](./scribe.md#retiring-sourcesnote), records its old
+   [decision ledgers](./decisions.md#retiring-sourcesnote), records its old
    id in the ledger's `moved_sources`, and removes its directory. This
    move is idempotent too: an id already in `moved_sources` is skipped,
    and a re-run with nothing left makes no commit.
@@ -182,7 +184,7 @@ append-only ledger per scope, id `decisions-<scope>`, one
 `dec-<scope>-<n>` entry per line. Enumeration, the index, search,
 `office.source-show` and citation resolution read it beside the other
 layouts; entry ids and the old ids of migrated notes resolve to their
-entries ([scribe.md](./scribe.md#decision-ledger)).
+entries ([decisions.md](./decisions.md#decision-ledger)).
 
 **`source.md` frontmatter:**
 
@@ -293,14 +295,14 @@ reports `unshared: true` when approval was revoked (otherwise false) ([shared-li
 - **Email, doc:** paragraphs. The anchor is `#L…`. Converted documents add `#slide=<n>` (PowerPoint) and `#page=<n>` (PDF); conversions are in [library-bootstrap.md](./library-bootstrap.md#document-capture).
 - **Digest:** any source may carry `digest.json` beside `source.md`: the per-source summary, subjects, cited claims, procedures and terms that the bootstrap's consolidation reads ([library-bootstrap.md](./library-bootstrap.md#stage-1-a-digest-per-source-cheap)).
 - **Receipt, bill:** extracted fields as a YAML block plus the raw OCR text.
-- **Decisions:** one ledger line per decision, `- <id> <time> #decision <JSON>` in the D13 schema; `#L<n>` anchors a ledger line, and an entry id cited bare or with `#L<n>` resolves to its verbatim quote ([scribe.md](./scribe.md#decision-ledger)).
+- **Decisions:** one ledger line per decision, `- <id> <time> #decision <JSON>` in the D13 schema; `#L<n>` anchors a ledger line, and an entry id cited bare or with `#L<n>` resolves to its verbatim quote ([decisions.md](./decisions.md#decision-ledger)).
 - **Conversation:** the decision log of one orchestrator session: one timestamped line per decision, direction (verbatim), fact the user stated, action, open question, resolution or handoff, anchored `#L<n>`. It is append-only (`office.capture` with `append_to`), so nothing already recorded changes. The session-end cheap crew extracts transcript evidence; the orchestrator writes rolling handoffs and explicit resolutions ([sessions.md](./sessions.md#transcript-extraction)).
 
 **Rules:**
 
 - **Immutable versions.** Model transcription publishes `v1.md`, then corrections or additional completed chunks publish `v2.md`, `v3.md`, and so on, with `supersedes` set. Existing version files are never replaced. `source.md` is the materialized current view for display and indexing; its update and the new snapshot share one writer-locked journal decision. Citations name a version when it matters, otherwise the latest.
 - **Dedupe.** If the `sha256` of the original, or of the normalized pasted text, matches an existing source, capture returns that source instead of creating a new one.
-- **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. A paste names its `kind`: plain text with no kind (and no file, entries or `append_to` to infer one from) is refused with `source_kind_required`, which names `chat`, `email`, `doc` and the `decision` input. A decision goes in `office.capture`'s `decision` input, which appends one ledger entry ([scribe.md](./scribe.md#decision-ledger)); `kind: decisions` with text is refused with `decision_input_required`. Short directives typed by the user are not captured separately: they go in the `conversation` source.
+- **Paste capture.** When the user pastes external content into the orchestrator session (a Slack thread, an email), the skill has the agent call `office.capture` *before* acting on it, then cite the new source id in its reply. A paste names its `kind`: plain text with no kind (and no file, entries or `append_to` to infer one from) is refused with `source_kind_required`, which names `chat`, `email`, `doc` and the `decision` input. A decision goes in `office.capture`'s `decision` input, which appends one ledger entry ([decisions.md](./decisions.md#decision-ledger)); `kind: decisions` with text is refused with `decision_input_required`. Short directives typed by the user are not captured separately: they go in the `conversation` source.
 - **Conversation sources.** The session-end extractor opens or updates one `conversation` source per transcript session, with nullable `orchestrator`, `model` and `session_id` provenance validated by the plugin. Directions and facts copy user evidence verbatim except credential scrubbing; ambiguous decisions remain open. Repeated session/hash inputs make no commit; changed transcripts bump `version`/`supersedes` and snapshot the previous source. Instead of an end-of-session summary, the agent keeps a rolling `handoff` entry current, and the next session starts from `office.session-brief`, which leads with that handoff ([sessions.md](./sessions.md)). The extractor's identity is `captured_by: transcript-extractor`, separate from the session provider/model. Definition registration and the constellation SessionEnd hook are deployment prerequisites; see the session spec.
 - **Retention** is per kind (`retention.<kind>` and `sensitivity.<kind>` for each kind above plus `decisions`; a config written before the `note` kind was retired still loads, and `note` keys are ignored on read and refused on write) and shown on the Routines screen: for example, keep meeting transcripts forever and drop the audio after 90 days. Expiry deletes only the `original.*` file and records that in the frontmatter.
 
@@ -336,7 +338,7 @@ shareable: true                # optional; pushed to the shared library (shared-
 - **Writes** go through `office.knowledge-write` (`{"markdown": "<the whole page>"}`), which is hidden from MCP ([plugin-surface.md](./plugin-surface.md)). It writes `knowledge/domain/<id>.md` or `knowledge/runbooks/<id>.md`, replacing an existing page with that id, and commits once. A claim's extent is not machine-readable, so "every claim cites" is enforced by resolving every citation a page makes, not by refusing uncited sentences; the skill and the proposal review keep claims cited (user-authored pages may have none). Every check runs first, so a refusal writes and commits nothing. In order:
   1. **Frontmatter** (`invalid_frontmatter`, naming the field, never its value): only the fields above plus `sensitivity`, `shareable`, `as_of`, `performable`, `submission` and `scribe`; `id` is `dom-<slug>` or `rb-<slug>` and `title` is required; `type`, when present, is `domain` or `runbook` (else the id prefix decides); `status` is `current`, `stale` or `retired`; dates are `YYYY-MM-DD`; `related` holds page ids. The supported YAML is a flat mapping of plain or quoted scalars, inline `[…]` and `{…}` collections, indented block lists (of scalars, flow mappings or `key: value` items), one level of indented mapping (`submission`, `scribe`) and comments.
   2. **Template**, when the page names one ([knowledge-templates.md](./knowledge-templates.md#the-template-field-on-pages)).
-  3. **Base rules:** the id prefix matches the type; `refs` only on domain pages, and `performable` (`agent` | `you`) and `submission` (`system`, `via: draft | gateway`, and `connection` for a gateway) only on runbooks; `scribe` (only `handoff: true | false`) only on `dom-scribe-rules` (still accepted, but no longer read since the scribe handoff retired; [sessions.md](./sessions.md#scribe-handoff)); each ref has a `label`, exactly one target, and optionally `authoritative: true` and `as_of` (`account` is `system:key`, `artifact` an `art-` id, a `url` carries no credentials); no email address or phone number in the body (`contact_in_body`); at most 1,200 words of body (`page_too_long`); and a page tagged `policy`, or with a section whose `##` heading ends in `[policy]`, needs an `authoritative` ref and an `as_of` on that ref or the page (`policy_without_source`; [library-bootstrap.md](./library-bootstrap.md#page-rules)).
+  3. **Base rules:** the id prefix matches the type; `refs` only on domain pages, and `performable` (`agent` | `you`) and `submission` (`system`, `via: draft | gateway`, and `connection` for a gateway) only on runbooks; `scribe` (only `handoff: true | false`) only on `dom-scribe-rules` (still accepted, but no longer read); each ref has a `label`, exactly one target, and optionally `authoritative: true` and `as_of` (`account` is `system:key`, `artifact` an `art-` id, a `url` carries no credentials); no email address or phone number in the body (`contact_in_body`); at most 1,200 words of body (`page_too_long`); and a page tagged `policy`, or with a section whose `##` heading ends in `[policy]`, needs an `authoritative` ref and an `as_of` on that ref or the page (`policy_without_source`; [library-bootstrap.md](./library-bootstrap.md#page-rules)).
   4. **Sharing approval:** a boolean `shareable` defaults to false; true refuses private documents and unshared own citations (frontmatter, inline and artifact refs) before publication ([shared-library.md](./shared-library.md#the-shareable-field)).
   5. **Citations** (`unresolved_cite`): every frontmatter `cites` entry and every inline `[id#anchor]` (several may share brackets, separated by `;` or `,`) names a Library document of the kind its prefix says (`src-`, `SCR-`, `dec-`, `decisions-`, `dom-`, `rb-`, `art-`), never the page itself. A member-qualified citation (`<member>/<id>`) resolves against the read-only shared layer, or against the own document when the member equals `shared.member` ([shared-library.md](./shared-library.md#the-shared-layer)). A source cite needs an anchor present in that source's body: `t=hh:mm:ss` from the first speaker turn's timestamp to the last's, `L<n>` or `L<n>-<m>` within the body's lines (counted after the frontmatter, surrounding blank lines trimmed), or `slide=<n>`/`page=<n>` naming a `Slide <n>`/`Page <n>` heading. `frame=` and `chapter=` anchors are refused until `frames.md` and `chapters.md` are readable through the Library port. SCR files are resolved directly from their contained conversation paths, including v2 filenames, even before an index rebuild. SCR tag anchors use `T<n>` with a positive number and resolve an exact `- T<n>` entry in the SCR's `## Tags` section, outside fenced examples. A decision ledger entry (`dec-`) can be cited bare; an optional anchor addresses its quote. Other documents are cited without an anchor. Preference matter `cites` lists also participate in validation and indexing. Refs are pointers and are never resolved.
 - **Reads:** `office.knowledge-show` (`{"id": "<page id>"}`, `page_not_found` otherwise) returns the page's model view, since it is visible to agents ([knowledge-templates.md](./knowledge-templates.md#contact-details)), and its back-links: the indexed sources, pages and artifacts whose frontmatter `cites` (bare or anchored) or `related` name it, each with `via: [cites, related]`. The model view is `office_core::domain::knowledge::Page::model_view`; `PageView::to_markdown` renders it for task attachments. The page carries `layer`, `shared_by` and `sha256`, the SHA-256 of the page file's exact bytes that `office.proposal-create` checks as `base_sha256` for a `knowledge_update` pin; it is returned for every page, including a private page whose body is withheld. A plain id prefers the own page, falling back to the shared page. `<member>/<id>` explicitly selects a shared page, or the own document for the configured member. `office.knowledge-list` includes both copies when present, each with the same fields. `office.source-show` and `office.artifact-show` return top-level `layer` and `shared_by`. Own documents always report `shared_by: null`.

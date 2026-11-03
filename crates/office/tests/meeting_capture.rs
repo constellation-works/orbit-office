@@ -128,7 +128,6 @@ impl Fixture {
             selections: Box::new(UnavailableSelections),
             shared: Box::new(office_core::ports::UnavailableShared),
             pr: Box::new(office_core::ports::UnavailablePullRequests),
-            scribe_control: Box::new(office_core::ports::UnavailableScribeControls),
         };
         Self {
             root,

@@ -27,9 +27,8 @@ test("Today renders fake Orbit row lists, results, empty states, failures and li
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ from: "", until: "", synced_at: now.toISOString(), sync_failed: false, prep_lead_minutes: 120, meetings: [], routines: [], routines_unavailable: false }));
     }
-    // The digest, contradictions and other workspaces' agent work have their own routes; here they are quiet.
+    // The digest and other workspaces' agent work have their own routes; here they are quiet.
     else if (request.url === "/api/today/digest") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "no_meeting", source: null, digest: null })); }
-    else if (request.url === "/api/scribe/contradictions") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ available: false, contradictions: [] })); }
     else if (request.url === "/api/agents") { response.writeHead(503, { "content-type": "application/json" }); response.end("{}"); }
     else fallback(request, response);
   });
@@ -38,6 +37,8 @@ test("Today renders fake Orbit row lists, results, empty states, failures and li
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  const requested = [];
+  page.on("request", (request) => requested.push(new URL(request.url()).pathname));
   await page.clock.install();
   const origin = `http://127.0.0.1:${server.address().port}`;
   await page.goto(origin);
@@ -94,6 +95,10 @@ test("Today renders fake Orbit row lists, results, empty states, failures and li
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal overflow at ${width}px`);
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `today-light-${width}.png`), fullPage: true });
   }
+  // The scribe moved to its own plugin: no Handoffs section, no Scribe rail entry and no /api/scribe reads.
+  assert.equal(await page.getByRole("region", { name: "Handoffs", exact: true }).count(), 0);
+  assert.equal(await page.locator('#nav a.rail-item[data-screen="scribe"]').count(), 0);
+  assert.deepEqual(requested.filter((path) => path.startsWith("/api/scribe")), []);
 
   // A changed snapshot keeps open lists, open rows and keyboard focus.
   fake.state.tasks[3].title = "Finishing the research notes";
@@ -228,9 +233,8 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
     const route = [...today.routes, ...approvals.routes].find((item) => item.method === request.method && item.path === path);
     if (path === "/api/setup") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "ready" })); }
     else if (route) void route.handle(request, response);
-    // The digest, contradictions and other workspaces' agent work have their own routes; here they are quiet.
+    // The digest and other workspaces' agent work have their own routes; here they are quiet.
     else if (request.url === "/api/today/digest") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ state: "no_meeting", source: null, digest: null })); }
-    else if (request.url === "/api/scribe/contradictions") { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ available: false, contradictions: [] })); }
     else if (request.url === "/api/agents") { response.writeHead(503, { "content-type": "application/json" }); response.end("{}"); }
     else fallback(request, response);
   });
@@ -347,39 +351,5 @@ test("Needs you approves, sends back, accepts and dismisses at desktop and phone
   assert.equal(fake.state.tasks.find((row) => row.id === "suggestion").status, "rejected");
   await page.clock.fastForward(5_000);
   await page.waitForFunction(() => !document.body.innerText.includes("Receipt catalog for October"));
-  assert.deepEqual(errors, []);
-});
-
-test("Today shows a compact Handoffs section of the Scribe feed cards, linking to Scribe", { timeout: 60_000 }, async (t) => {
-  assert.ok(process.env.PLAYWRIGHT_MODULE, "source the verified ORBIT_BROWSER_KIT_ENV first");
-  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE);
-  const { scribeServer } = await import("../../server/test/scribe-fixture.mjs");
-  const browser = await chromium.launch({ headless: true });
-  t.after(() => browser.close());
-  const { url, calls } = await scribeServer(t);
-  const page = await browser.newPage();
-  const errors = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  const screenshotDir = process.env.TODAY_SCREENSHOTS_DIR;
-  if (screenshotDir) await mkdir(screenshotDir, { recursive: true });
-  for (const width of [1440, 375]) {
-    await page.setViewportSize({ width, height: 1100 });
-    await page.goto(`${url}/#today`);
-    const section = page.getByRole("region", { name: "Handoffs", exact: true });
-    await section.locator(".today-handoff").first().waitFor();
-    assert.deepEqual(await section.locator(".today-handoff").evaluateAll((items) => items.map((item) => item.dataset.id)), [
-      "SCR-20261031-0900-aaaa02", "SCR-20261029-0900-cccc01", "SCR-20261028-0900-dddd01",
-    ], "the same cards as the Scribe feed, most recently updated first");
-    await section.getByText("3", { exact: true }).waitFor();
-    await section.getByText("(scribe) Rework the Scribe tab into the one-card feed.").waitFor();
-    await section.locator('[data-id="SCR-20261031-0900-aaaa02"]').getByText("2 decisions · 1 preference", { exact: false }).waitFor();
-    await section.getByText("Private session: content withheld.").waitFor();
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal overflow at ${width}px`);
-    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `today-handoffs-light-${width}.png`), fullPage: true });
-  }
-  assert.ok(calls.every((call) => call.name !== "office.session-brief" || call.input.view === "list"));
-  await page.getByRole("link", { name: "All handoffs" }).click();
-  await page.getByRole("heading", { name: "Scribe", exact: true, level: 1 }).waitFor();
-  await page.getByRole("region", { name: "Feed · one card per project", exact: true }).locator('[data-id="SCR-20261031-0900-aaaa02"]').waitFor();
   assert.deepEqual(errors, []);
 });

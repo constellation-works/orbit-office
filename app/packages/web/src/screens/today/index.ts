@@ -1,22 +1,21 @@
 /**
- * Today: what needs the user (with the open contradictions first), what was
- * decided and shipped since the latest meeting, what finished today, and
- * beside them the next meeting, live agent work and the latest handoffs.
+ * Today: what needs the user, what was decided and shipped since the
+ * latest meeting, what finished today, and beside them the next meeting and
+ * live agent work.
  * Lists are hairline rows (rows.ts); a row's title opens its background and
  * its details, and its actions sit inline.
  */
 import type {
-  AgentWork, AgentWorkTask, CalendarMeeting, ScrCard, ScrFeed, SharedLastSync, SharedSkipped, Today, TodayItem, TodayNeed, TodayResult,
+  AgentWork, AgentWorkTask, CalendarMeeting, SharedLastSync, SharedSkipped, Today, TodayItem, TodayNeed, TodayResult,
 } from "@orbit-office/contracts";
 
 import { dismissSharedSkipped, getJson, getLastSharedSync, uploadSource } from "../../api/client.js";
 import { sourceHref } from "../../api/source-location.js";
 import type { Screen } from "../../screen.js";
-import { ageLabel, cardSummary, cardTitle, scopeLabel, SCRIBE_FEED_HREF, tagCountsLabel } from "../../ui/handoff.js";
-import { errorState, monoMeta, renderMarkdown, requestRailRefresh } from "../../ui/index.js";
+import { errorState, monoMeta, renderMarkdown } from "../../ui/index.js";
 import { dueWords, isOverdue } from "../../ui/when.js";
 import { ApprovalControls, serverApprovals, type ApprovalApi } from "./approvals.js";
-import { contradictionRows, readDigest, serverDigest, SINCE_HEADING, sinceContent, type DigestApi, type DigestState } from "./digest.js";
+import { readDigest, serverDigest, SINCE_HEADING, sinceContent, type DigestApi, type DigestState } from "./digest.js";
 import { nextMeetingCard, todaysMeetings, upcoming } from "./next-meeting.js";
 import { dot, glyph, listHead, listSection, meta, quiet, rowList, text, type Glyph } from "./rows.js";
 
@@ -204,37 +203,6 @@ function resultRow(item: TodayResult, expanded: Expanded): HTMLLIElement {
   return expandableRow({ key: item.key, glyph: dot("done"), title: item.title, detail, focus: `${item.key}-result` }, expanded);
 }
 
-/** Feed cards Today lists at most; the rest are on the Scribe feed. */
-const HANDOFFS_SHOWN = 5;
-
-function handoffLine(card: ScrCard, now: Date): HTMLElement {
-  const item = document.createElement("li");
-  item.className = "today-handoff";
-  item.dataset.id = card.id;
-  const title = text("span", cardTitle(card), "today-handoff-title");
-  const line = document.createElement("p");
-  line.className = "today-handoff-meta";
-  const time = document.createElement("time");
-  time.dateTime = card.updated;
-  time.textContent = ageLabel(card.updated, now);
-  line.append(`${scopeLabel(card)} · `, time);
-  if (!card.withheld) line.append(` · ${tagCountsLabel(card)}`);
-  item.append(title, line);
-  const summary = cardSummary(card);
-  if (summary !== "") item.append(text("p", summary, "today-handoff-text"));
-  return item;
-}
-
-/** The latest Scribe feed cards, most recently updated first; null hides the section. */
-function handoffRows(feed: ScrFeed | null): HTMLElement | null {
-  if (feed === null || feed.cards.length === 0) return null;
-  const now = new Date();
-  const list = document.createElement("ul");
-  list.className = "today-side-rows";
-  for (const card of [...feed.cards].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, HANDOFFS_SHOWN)) list.append(handoffLine(card, now));
-  return list;
-}
-
 /**
  * The Agents working rows: in-progress agent tasks in the office workspace,
  * then those in the followed and target workspaces with their crew
@@ -274,15 +242,11 @@ export interface TodayScreenOptions {
   meetings?: (now: Date) => Promise<CalendarMeeting[]>;
   /** How often Next meeting rereads the calendar. */
   meetingIntervalMs?: number;
-  /** The Scribe feed cards for Handoffs; tests pass their own. A failed read hides the section. */
-  handoffs?: () => Promise<ScrFeed>;
-  /** How often Handoffs rereads the list (it changes slowly). */
-  handoffIntervalMs?: number;
   /** The latest shared-library sync the app ran, for its skipped documents; tests pass their own. */
   sharedSync?: { last(): Promise<SharedLastSync>; dismissSkipped(): Promise<unknown> };
   /** Agent work across the followed workspaces, for Agents working; a failed read shows the office's only. */
   agents?: () => Promise<AgentWork>;
-  /** The digest and contradiction calls; tests pass their own. */
+  /** The digest call; tests pass its own. */
   digest?: DigestApi;
   /** How often the digest rereads (it changes slowly). */
   digestIntervalMs?: number;
@@ -377,7 +341,6 @@ function addSource(view: HTMLElement): HTMLElement {
 export function createTodayScreen({
   load = () => getJson<Today>("/api/today"), approvals = serverApprovals, pollIntervalMs = 5_000,
   meetings = todaysMeetings, meetingIntervalMs = 60_000, sharedSync = serverSharedSync,
-  handoffs = () => getJson<ScrFeed>("/api/scribe/feed"), handoffIntervalMs = 10_000,
   digest = serverDigest, digestIntervalMs = 30_000, agents = () => getJson<AgentWork>("/api/agents"),
 }: TodayScreenOptions = {}): Screen {
   return {
@@ -400,7 +363,7 @@ export function createTodayScreen({
       date.textContent = started.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
       bar.append(heading, date, addSource(view));
 
-      // Main column: Needs you (contradictions first), Since <meeting>, Done today.
+      // Main column: Needs you, Since <meeting>, Done today.
       const columns = document.createElement("div");
       columns.className = "today-body";
       const main = document.createElement("div");
@@ -416,13 +379,10 @@ export function createTodayScreen({
       const outcome = text("p", "", "today-outcome");
       outcome.setAttribute("aria-live", "polite");
       outcome.hidden = true;
-      const contradictionList = rowList();
-      contradictionList.dataset.slot = "contradictions";
-      contradictionList.hidden = true;
       const needsBody = document.createElement("div");
       needsBody.append(quiet("Gathering your work…"));
       needsBody.setAttribute("aria-busy", "true");
-      needsSection.append(needsHead, outcome, contradictionList, needsBody);
+      needsSection.append(needsHead, outcome, needsBody);
 
       const since = listSection(SINCE_HEADING);
       since.dataset.section = "since";
@@ -456,7 +416,7 @@ export function createTodayScreen({
       const notice = document.createElement("div");
       main.append(feedback, needsSection, since, done, notice);
 
-      // Right column: Next meeting, Agents working, Handoffs.
+      // Right column: Next meeting, Agents working.
       const aside = document.createElement("aside");
       aside.className = "today-aside";
       const next = side("Next meeting", "today-next-heading");
@@ -469,17 +429,7 @@ export function createTodayScreen({
       workingCount.hidden = true;
       working.head.append(workingCount);
       working.body.append(paragraph("Gathering agent work…"));
-      const handoffBlock = side("Handoffs", "today-handoffs-heading");
-      handoffBlock.section.classList.add("today-handoffs");
-      handoffBlock.section.hidden = true;
-      const handoffCount = text("span", "", "today-count");
-      const allHandoffs = document.createElement("a");
-      allHandoffs.className = "today-list-link";
-      allHandoffs.href = SCRIBE_FEED_HREF;
-      allHandoffs.textContent = "All";
-      allHandoffs.setAttribute("aria-label", "All handoffs");
-      handoffBlock.head.append(handoffCount, allHandoffs);
-      aside.append(next.section, working.section, handoffBlock.section);
+      aside.append(next.section, working.section);
       columns.append(main, aside);
       view.append(bar, columns);
       root.replaceChildren(view);
@@ -487,20 +437,7 @@ export function createTodayScreen({
       let previous: string | undefined;
       let shown: Today | undefined;
       let elsewhere: AgentWorkTask[] = [];
-      let contradictions = 0;
       const expanded: Expanded = new Set();
-      let handoffList: ScrFeed | null = null;
-      let handoffsRead = Number.NEGATIVE_INFINITY;
-      /** The feed cards, reread at most every `handoffIntervalMs`; null when they can't be read. */
-      async function latestHandoffs(): Promise<ScrFeed | null> {
-        if (Date.now() - handoffsRead < handoffIntervalMs) return handoffList;
-        handoffsRead = Date.now();
-        try {
-          const feed = await handoffs();
-          handoffList = Array.isArray(feed?.cards) ? feed : null;
-        } catch { handoffList = null; }
-        return handoffList;
-      }
       let skipped: SharedSkipped[] = [];
       const shared: SharedNeeds = {
         get skipped() { return skipped; },
@@ -519,14 +456,10 @@ export function createTodayScreen({
       const controls = new ApprovalControls(approvals, say);
       const alive = (): boolean => root.contains(view) && view.isConnected;
 
-      /** The Needs-you count is its rows and the open contradictions; nothing at all reads as one quiet line. */
-      function countNeeds(rows: number | null): void {
-        const cards = rows ?? (shown === undefined ? null : needsBody.querySelectorAll(":scope > ul > li").length);
-        needsCount.hidden = cards === null;
-        needsCount.textContent = String((cards ?? 0) + contradictions);
-        contradictionList.hidden = contradictions === 0;
-        const empty = needsBody.querySelector(".today-empty[data-empty]");
-        if (empty instanceof HTMLElement) empty.hidden = contradictions > 0;
+      /** The Needs-you count is its rows; nothing at all reads as one quiet line. */
+      function countNeeds(rows: number): void {
+        needsCount.hidden = false;
+        needsCount.textContent = String(rows);
       }
 
       function drawWorking(snapshot: Today): void {
@@ -538,7 +471,7 @@ export function createTodayScreen({
 
       /** Redraw, keeping open rows and panels, typed comments and focus. */
       function paint(snapshot: Today): void {
-        const painted = [needsBody, doneBody, working.body, handoffBlock.body];
+        const painted = [needsBody, doneBody, working.body];
         const within = (selector: string): Element[] => painted.flatMap((slot) => Array.from(slot.querySelectorAll(selector)));
         const open = new Set(within("details[open]").map((detail) => (detail as HTMLElement).dataset.key));
         const typed = new Map(within("textarea[data-focus]").map((field) => [(field as HTMLElement).dataset.focus, (field as HTMLTextAreaElement).value]));
@@ -571,10 +504,6 @@ export function createTodayScreen({
           ].filter(Boolean).join(" ")));
         }
         drawWorking(snapshot);
-        const handoffRowsDrawn = handoffRows(handoffList);
-        handoffBlock.section.hidden = handoffRowsDrawn === null;
-        handoffCount.textContent = String(handoffList?.cards.length ?? 0);
-        handoffBlock.body.replaceChildren(...(handoffRowsDrawn === null ? [] : [handoffRowsDrawn]));
         shown = snapshot;
 
         for (const detail of within("details") as HTMLDetailsElement[]) detail.open = open.has(detail.dataset.key);
@@ -591,10 +520,10 @@ export function createTodayScreen({
       async function refresh(): Promise<void> {
         if (!alive()) return;
         try {
-          const [snapshot, left, latest] = await Promise.all([load(), lastSkipped(sharedSync), latestHandoffs()]);
+          const [snapshot, left] = await Promise.all([load(), lastSkipped(sharedSync)]);
           if (!alive()) return;
           skipped = left;
-          const serialized = JSON.stringify([snapshot, left, latest]);
+          const serialized = JSON.stringify([snapshot, left]);
           if (serialized !== previous) {
             paint(snapshot);
             previous = serialized;
@@ -632,8 +561,8 @@ export function createTodayScreen({
         }
       }
       let digestShown: string | undefined;
-      /** The digest rereads slowly, and at once after a contradiction is resolved. */
-      async function morningDigest(again = true): Promise<void> {
+      /** The digest rereads slowly. */
+      async function morningDigest(): Promise<void> {
         if (!alive()) return;
         let state: DigestState;
         try { state = await readDigest(digest); }
@@ -643,17 +572,9 @@ export function createTodayScreen({
         // A redraw would drop a pending choice's status line; only draw on change.
         if (serialized !== digestShown) {
           digestShown = serialized;
-          const rows = contradictionRows(state, digest, () => {
-            say("done", "Recorded your choice in the ledger. Held agent to-dos are released.");
-            requestRailRefresh();
-            window.setTimeout(() => { void morningDigest(false); }, 1_500);
-          });
-          contradictionList.replaceChildren(...rows);
-          contradictions = rows.length;
-          countNeeds(null);
           since.replaceChildren(...sinceContent(state));
         }
-        if (again && alive()) window.setTimeout(() => { void morningDigest(); }, digestIntervalMs);
+        if (alive()) window.setTimeout(() => { void morningDigest(); }, digestIntervalMs);
       }
       /** Agent work in other workspaces: its own slower loop, so a slow read never holds Today. */
       async function agentWork(): Promise<void> {

@@ -1,48 +1,37 @@
 /**
  * Today's digest since the latest meeting: what was Decided and Shipped
- * (`GET /api/today/digest`, office.source-digest), and the open
- * contradictions, each resolved in one click from its Needs-you row
- * (`/api/scribe/contradictions`). Every line keeps its citation. When a piece
- * is not available yet the section says why instead of showing sample content.
+ * and what the meeting asks of the user (`GET /api/today/digest`,
+ * office.source-digest). Every line keeps its citation. When the digest is
+ * not available yet the section says why instead of showing sample content.
  */
-import type { Contradiction, ContradictionSide, Contradictions, SourceDigest, TodayDigest } from "@orbit-office/contracts";
+import type { SourceDigest, TodayDigest } from "@orbit-office/contracts";
 
-import { ApiError, getContradictions, getTodayDigest, resolveContradiction } from "../../api/client.js";
+import { getTodayDigest } from "../../api/client.js";
 import { sourceHref } from "../../api/source-location.js";
 import { monoMeta } from "../../ui/index.js";
 import { cite, cites, glyph, listHead, meta, quiet, rowList, text, type Glyph } from "./rows.js";
 
 export interface DigestApi {
   digest(): Promise<TodayDigest>;
-  contradictions(): Promise<Contradictions>;
-  resolve(key: string, stands: "newer" | "prior"): Promise<unknown>;
 }
 
 export const serverDigest: DigestApi = {
   digest: getTodayDigest,
-  contradictions: getContradictions,
-  resolve: (key, stands) => resolveContradiction({ key, stands }),
 };
 
-/** What the digest and contradiction reads returned; either may have failed. */
+/** What the digest read returned; null when it failed. */
 export interface DigestState {
   digest: TodayDigest | null;
-  contradictions: Contradictions | null;
 }
 
 export async function readDigest(api: DigestApi): Promise<DigestState> {
-  const [digest, contradictions] = await Promise.all([
-    api.digest().catch(() => null),
-    api.contradictions().catch(() => null),
-  ]);
+  const digest = await api.digest().catch(() => null);
   // Anything but the expected shapes reads as unavailable.
   const states = ["ready", "no_meeting", "not_extracted", "unavailable"];
   return {
     digest: digest !== null && typeof digest === "object" && states.includes(digest.state) &&
       (digest.state !== "ready" || (digest.digest !== null && typeof digest.digest === "object" && Array.isArray(digest.digest.decided) &&
         Array.isArray(digest.digest.shipped) && Array.isArray(digest.digest.needs_you))) ? digest : null,
-    contradictions: contradictions !== null && typeof contradictions === "object" && Array.isArray(contradictions.contradictions)
-      ? contradictions : null,
   };
 }
 
@@ -83,71 +72,6 @@ function needLine(item: SourceDigest["needs_you"][number]): HTMLLIElement {
   return line(NEED_GLYPHS[item.kind], text("span", item.text, "today-row-text"), meta(NEED_LABELS[item.kind], true), cites(item.cites));
 }
 
-function day(at: string | null): string {
-  if (at === null || !Number.isFinite(Date.parse(at))) return "";
-  return new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
-
-/** The matter as the question the user answers: `release-with-open-defects` reads "Which decision on release with open defects stands?". */
-function question(matter: string): string {
-  return `Which decision on ${matter.replace(/[-_]+/g, " ").trim()} stands?`;
-}
-
-function side(choice: ContradictionSide): HTMLElement[] {
-  const where = [choice.context ?? "", day(choice.decided_at)].filter(Boolean).join(" · ");
-  return [text("span", choice.text), ...(where === "" ? [] : [monoMeta(where)])];
-}
-
-/** One open contradiction as the first Needs-you rows: the matter as a question, its two sides as the choices. */
-function contradictionRow(item: Contradiction, api: DigestApi, done: () => void): HTMLLIElement {
-  const row = line("contradiction", text("span", question(item.matter), "today-row-text"),
-    ...(item.held === 0 ? [] : [meta(`holds ${item.held} agent ${item.held === 1 ? "to-do" : "to-dos"}`)]));
-  row.classList.add("today-row--contradiction");
-  row.dataset.key = item.key;
-  row.dataset.kind = "contradiction";
-  const choices = document.createElement("div");
-  choices.className = "today-choices";
-  const status = text("p", "", "today-choice-status");
-  status.hidden = true;
-  status.setAttribute("aria-live", "polite");
-  const buttons = (["newer", "prior"] as const).map((stands) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "today-choice";
-    button.dataset.stands = stands;
-    button.setAttribute("aria-pressed", "false");
-    button.append(...side(stands === "newer" ? item.newer : item.prior));
-    button.addEventListener("click", () => {
-      for (const other of buttons) other.disabled = true;
-      button.setAttribute("aria-pressed", "true");
-      void api.resolve(item.key, stands).then(() => {
-        status.textContent = "Recorded in the ledger. Held agent to-dos are released.";
-        delete status.dataset.tone;
-        status.hidden = false;
-        done();
-      }).catch((error: unknown) => {
-        button.setAttribute("aria-pressed", "false");
-        for (const other of buttons) other.disabled = false;
-        status.textContent = error instanceof ApiError && error.code === "not_available"
-          ? "Resolving contradictions isn’t available yet." : "Couldn’t record your choice. Try again.";
-        status.dataset.tone = "error";
-        status.hidden = false;
-      });
-    });
-    return button;
-  });
-  choices.append(...buttons);
-  const sources = cites([item.newer.cite, item.prior.cite]);
-  sources.classList.add("today-choice-status");
-  row.append(choices, sources, status);
-  return row;
-}
-
-/** The open contradictions, as Needs-you rows. `resolved` rereads after one is settled. */
-export function contradictionRows(state: DigestState, api: DigestApi, resolved: () => void): HTMLLIElement[] {
-  return (state.contradictions?.contradictions ?? []).map((item) => contradictionRow(item, api, resolved));
-}
-
 const EMPTY: Record<Exclude<TodayDigest["state"], "ready">, string> = {
   no_meeting: "No meeting has filed to-dos yet. Add a recording or notes, and its digest appears here.",
   not_extracted: "This meeting hasn’t been extracted yet. Its decisions and to-dos appear here once it is.",
@@ -159,14 +83,13 @@ export const SINCE_HEADING = "today-since-heading";
 /**
  * The Since <meeting> section's header bar and rows: decided lines with
  * their citations, shipped lines with their PR and merge, and the meeting's
- * other asks of the user. Contradictions are Needs-you rows instead.
+ * other asks of the user.
  */
 export function sinceContent(state: DigestState): HTMLElement[] {
   const digest = state.digest;
   const ready = digest !== null && digest.state === "ready" && digest.digest !== null ? digest.digest : null;
   const title = digest?.source === null || digest?.source === undefined ? "Since your last meeting" : `Since ${digest.source.title}`;
-  const contradictions = state.contradictions?.contradictions ?? [];
-  const needs = (ready?.needs_you ?? []).filter((item) => item.kind !== "contradiction" || contradictions.length === 0);
+  const needs = ready?.needs_you ?? [];
   const items = ready === null ? [] : [
     ...ready.decided.map((item) => line("decided", text("span", item.text, "today-row-text"), cites(item.cites))),
     ...ready.shipped.map(shippedLine),

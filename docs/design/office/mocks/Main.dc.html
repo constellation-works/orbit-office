@@ -64,10 +64,6 @@ a{color:#a9c6ff}a:hover{color:#d3e2ff}
         To-dos
         <span class="nav-count">9</span>
       </a>
-      <a class="nav-item" href="#scribe">
-        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M5 3.5h10v13H5z"></path><path d="M7.5 7h5M7.5 10h5M7.5 13h3"></path></svg>
-        Scribe
-      </a>
       <a class="nav-item" href="#library">
         <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h5a2 2 0 0 1 2 2v10a2 2 0 0 0-2-2H4z"></path><path d="M16 4h-5a2 2 0 0 0-2 2v10a2 2 0 0 1 2-2h5z"></path></svg>
         Library
@@ -120,28 +116,6 @@ a{color:#a9c6ff}a:hover{color:#d3e2ff}
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#63d297" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"></path></svg>
               <span style="flex: 1 1 auto; min-width: 0">{{lastText}}</span>
               <button class="btn btn-quiet" type="button" onClick="{{undo}}">Undo</button>
-            </div>
-          </sc-if>
-
-          <!-- Contradiction: one decision, two sides, one click -->
-          <sc-if value="{{openContradiction}}" hint-placeholder-val="{{ true }}">
-            <div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 20px 16px; border-top: 1px solid #1a1c20; background: #14120d">
-              <div style="display: flex; align-items: center; gap: 10px">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#f2b24c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h10l-2.5-2.5M14 11H4l2.5 2.5"></path></svg>
-                <span style="font-size: 13.5px; font-weight: 500">Which decision on ingest key rotation stands?</span>
-                <span class="mono" style="margin-left: auto">holds 1 agent to-do</span>
-              </div>
-              <div style="display: flex; flex-wrap: wrap; gap: 8px">
-                <button class="choice" type="button" onClick="{{pickNewer}}">
-                  <span style="font-size: 13.5px; color: #e6e7ea">Monthly, from December</span>
-                  <span class="mono">Lantern sync · Nov 2 · 03:12</span>
-                </button>
-                <button class="choice" type="button" onClick="{{pickPrior}}">
-                  <span style="font-size: 13.5px; color: #e6e7ea">Weekly</span>
-                  <span class="mono">Security review · Sep 21</span>
-                </button>
-              </div>
-              <div style="display: flex; gap: 6px; flex-wrap: wrap"><a class="cite" href="#source">lantern-sync #t=00:03:12</a><a class="cite" href="#source">security-review #t=00:12:01</a></div>
             </div>
           </sc-if>
 
@@ -242,25 +216,6 @@ a{color:#a9c6ff}a:hover{color:#d3e2ff}
             <span class="mono">grok</span>
           </div>
         </section>
-
-        <section aria-labelledby="handoffs-h" style="display: flex; flex-direction: column; gap: 4px">
-          <div style="display: flex; align-items: baseline; margin-bottom: 4px">
-            <h2 id="handoffs-h" style="margin: 0; font-size: 12px; font-weight: 500; color: #80858e">Handoffs</h2>
-            <a href="#scribe" style="margin-left: auto; font-size: 12px; color: #80858e; text-decoration: none">All</a>
-          </div>
-          <a href="#scribe" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0; color: #e6e7ea; text-decoration: none; border-top: 1px solid #1a1c20">
-            <span style="font-size: 13px">Uploader retry plan</span>
-            <span class="mono">lantern · 2 h · 3 decisions</span>
-          </a>
-          <a href="#scribe" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0; color: #e6e7ea; text-decoration: none; border-top: 1px solid #1a1c20">
-            <span style="font-size: 13px">Acme pilot scope</span>
-            <span class="mono">lantern · 5 h · 1 direction</span>
-          </a>
-          <a href="#scribe" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0; color: #e6e7ea; text-decoration: none; border-top: 1px solid #1a1c20">
-            <span style="font-size: 13px">Session brief cleanup</span>
-            <span class="mono">global · 1 d</span>
-          </a>
-        </section>
       </aside>
     </div>
   </main>
@@ -312,15 +267,11 @@ class Component extends DCLogic {
       primary: () => this.act(n.id, n.done),
       secondary: () => this.act(n.id, n.back ?? n.done),
     }));
-    const pick = (side) => () => this.setState({ choice: side, last: { id: null, text: 'Recorded your choice in the ledger. Held agent to-dos are released.' } });
     return {
       accent,
       rowH: compact ? '36px' : '44px',
       needs,
-      needCount: needs.length + (s.choice === null ? 1 : 0),
-      openContradiction: s.choice === null,
-      pickNewer: pick('newer'),
-      pickPrior: pick('prior'),
+      needCount: needs.length,
       showUndo: s.last !== null,
       lastText: s.last === null ? '' : s.last.text,
       undo: () => {

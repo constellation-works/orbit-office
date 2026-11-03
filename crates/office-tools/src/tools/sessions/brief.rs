@@ -17,7 +17,7 @@ use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
 use office_core::{Error, Result};
 use serde_json::{Value, json};
 
-use super::scribe_query;
+mod cards;
 use crate::registry::{Call, Tool};
 
 pub(crate) const TOOL: Tool = Tool::built(
@@ -309,7 +309,7 @@ fn run(call: &Call<'_>) -> Result<Value> {
             .get("conversation")
             .is_some_and(|s| *s == Sensitivity::Private);
         let files = scr_v2::v2_files(&scr_files)?;
-        let cards = scribe_query::v2::scr_cards(&files, private, scr_id.as_deref(), None)?;
+        let cards = cards::scr_cards(&files, private, scr_id.as_deref(), None)?;
         if library.head_commit()? != head {
             return Err(library_changed());
         }

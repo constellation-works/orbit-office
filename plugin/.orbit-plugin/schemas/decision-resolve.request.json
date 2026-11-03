@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "office.decision-resolve request",
-  "description": "Settle one open decision-conflict to-do: record which entry stands as a new ledger entry reversing the other, close the to-do, and release the agent to-dos it held (specs/scribe.md, Meeting decisions). Retry-safe.",
+  "description": "Settle one open decision-conflict to-do: record which entry stands as a new ledger entry reversing the other, close the to-do, and release the agent to-dos it held (specs/decisions.md, Meeting decisions). Retry-safe.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
