@@ -1,7 +1,7 @@
 ---
 title: office — Decisions
 owner: daniel
-last_updated: 2026-11-03
+last_updated: 2026-11-07
 last_validated: 2026-11-03
 status: Draft
 feature: office
@@ -3435,8 +3435,9 @@ reuses before this removal ran ([ORB-21749]).
   decision ledgers and `office.decision-ingest`, `-precedents` and
   `-resolve`, preference pages, meeting decisions, the disabled weekly
   `office-scribe-contradictions` auto-task (its name kept so open to-dos
-  and dedupe still match), and the `dom-scribe-rules` page that capture
-  reads. Their spec is now [decisions.md](./specs/decisions.md).
+  and dedupe still match; retired later, see
+  [The weekly contradiction routine is retired](#the-weekly-contradiction-routine-is-retired)),
+  and the `dom-scribe-rules` page that capture reads. Their spec is now [decisions.md](./specs/decisions.md).
 - **Existing user data is read, never deleted.** SCR files stay where they
   are; the session brief still reads them, with its contract unchanged, so
   handoffs a user already has keep showing. `scribe_control.sqlite` and
@@ -3474,6 +3475,55 @@ reuses before this removal ran ([ORB-21749]).
 **Code anchors:** `crates/office-core/src/domain/settings.rs` (`PrecedentSettings`, the
 `"scribe"` arm of the settings parse), `crates/office-tools/src/tools/sessions/brief/cards.rs`,
 `crates/office-store/src/repository/library/scribe_pass.rs`.
+
+## The weekly contradiction routine is retired
+
+### Context
+
+[The scribe moved to constellation-works/scribe](#the-scribe-moved-to-constellation-worksscribe)
+kept one scribe-era piece here: the disabled weekly
+`office-scribe-contradictions` auto-task definition. On 2026-11-07 Daniel
+judged the office plugin "way too bloated" and moved session context to
+the standalone scribe plugin, whose design ("Outside this repository")
+asks orbit-office to retire its own scribe so the two never overlap. The
+definition was the last piece: still seeded on every export, never
+enabled, and at least once refused by Orbit for a malformed acceptance
+criterion ([ORB-22833]).
+
+### Decision
+
+- **Removed:** `definitions/auto_tasks/office-scribe-contradictions.yaml`
+  and its entry in `spec.definitions.auto_tasks`. No scheduled
+  contradiction check runs. Contradictions are found at proposal time and
+  when a meeting is extracted
+  ([decisions.md](./specs/decisions.md#contradiction-checks)).
+- **Kept, because they are contracts on existing data:** the
+  `office-scribe-contradictions` tag and the `Conflicting entries:` last
+  line on a decision-conflict to-do. Meeting extraction still files them,
+  and `office.decision-precedents`, `office.decision-resolve`, the source
+  digest and the session brief read them. Renaming the tag would orphan
+  every open to-do. Also kept: the read-only SCR reader, `title_by` and
+  `question_by: scribe` on `office.capture`, and `dom-scribe-rules`, for
+  the reasons that entry gives.
+
+### Alternatives rejected
+
+- **Rename the tag to drop `scribe`.** Open to-dos carry the old tag, and
+  the provider would have to read both names; the cost buys nothing a
+  caller sees.
+- **Keep the definition disabled.** It ships a weekly agent task nobody
+  runs, which overlaps what the standalone scribe now owns.
+
+### Consequences
+
+- A host that enabled the routine loses it on the next plugin export; open
+  to-dos it filed still resolve through `office.decision-resolve`.
+- Preference-vs-preference conflicts across pages and page consolidation
+  are no longer proposed automatically; a user or agent files them as
+  ordinary `knowledge_update` proposals.
+
+**Code anchors:** `plugin/.orbit-plugin/plugin.yaml` (`spec.definitions.auto_tasks`),
+`crates/office-tools/src/tools/sources/extract/ledger.rs` (`CONFLICT_TAG`).
 
 ## Task References
 
@@ -3533,5 +3583,6 @@ reuses before this removal ran ([ORB-21749]).
 - [ORB-21751] — removed the Meta-models-only rule and made the hosted endpoint configurable.
 - [ORB-21747] — designed the standalone scribe plugin, `constellation-works/scribe`.
 - [ORB-21749] — removed the scribe from orbit-office.
+- [ORB-22833] — retired the weekly `office-scribe-contradictions` auto-task.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

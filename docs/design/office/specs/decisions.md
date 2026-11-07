@@ -1,8 +1,8 @@
 ---
 type: design
-summary: "Spec: decision ledgers (an append-only decisions source per scope), preference pages changed by proposal, the contradiction checks over both (weekly and when a meeting is extracted), the precedent half-life setting, the sources/note retirement, and read-only legacy SCR files"
+summary: "Spec: decision ledgers (an append-only decisions source per scope), preference pages changed by proposal, the contradiction checks over both (at proposal time and when a meeting is extracted), the precedent half-life setting, the sources/note retirement, and read-only legacy SCR files"
 last_validated: 2026-11-03
-last_updated: 2026-11-03
+last_updated: 2026-11-07
 ---
 
 # Spec: Decision ledgers and preference pages
@@ -14,6 +14,9 @@ its tools, the Scribe screen and the Claude Code plugin) moved to the
 standalone plugin `constellation-works/scribe` ([ORB-21747]) and was
 removed from orbit-office ([ORB-21749]; see
 [The scribe moved to constellation-works/scribe](../4_decisions.md#the-scribe-moved-to-constellation-worksscribe)).
+Its last piece here, the disabled weekly `office-scribe-contradictions`
+auto-task, went with [ORB-22833]
+([The weekly contradiction routine is retired](../4_decisions.md#the-weekly-contradiction-routine-is-retired)).
 What stays here is everything Office itself reads or writes without the
 scribe: the decision ledgers, preference pages, the contradiction checks,
 meeting decisions, the precedent setting and the read-only use of SCR
@@ -143,8 +146,9 @@ A page changes only through an accepted proposal (D3, D4): `knowledge_add`
 for a scope's first page, else `knowledge_update` pinned to the page's
 `sha256`. A new preference on an existing matter replaces that section's
 statement; the page's history keeps the old one. Pages keep the
-1,200-word body cap; past 1,000 words the
-[weekly check](#contradiction-checks) proposes a consolidation.
+1,200-word body cap; a page past 1,000 words is consolidated by an
+ordinary `knowledge_update` proposal that keeps every statement and
+citation.
 
 ### Private entries
 
@@ -161,24 +165,17 @@ Contradictions are checked when they can arise (D5).
   same-`matter` conflict, and any supplied `conflicts`, as a `## Conflicts`
   section on the proposal's evidence page, quoting the current statement
   and its citation, so accepting is a deliberate override.
-- **Weekly.** The `office-scribe-contradictions` auto-task definition
-  (weekly, `dedupe: skip_if_open`, `complexity: low`, no crew pinned) ships
-  **disabled**, registered under `spec.definitions.auto_tasks` in
-  `plugin.yaml` like every office routine. Its name is kept so open to-dos
-  and dedupe keep matching. It reads every decision ledger and preference
-  page. For a preference that conflicts with another preference, or with
-  a later decision, it files one proposal to settle the page. For two
-  decisions that conflict with no `reverses` link, it files one `owner:you`
-  to-do asking which stands. The user's answer is recorded as a new
-  decision with `reverses`. One proposal or to-do per conflict, each
-  citing both entries. It never edits a ledger. It also compares decisions
-  within an Orbit category (an ingested entry's `orbit.category`, or a
-  `same_as` partner's category), even when the question text differs, and
-  ends each decision-conflict to-do with a machine-readable
-  `Conflicting entries:` line. The precedent provider reports a conflict
-  whose to-do is still open
-  ([ORB-21219]; [decision-precedents.md](./decision-precedents.md#contradictions)).
 - **When a meeting is extracted.** See [Meeting decisions](#meeting-decisions).
+
+No scheduled check runs. The weekly `office-scribe-contradictions`
+auto-task shipped disabled and was retired with the rest of the scribe
+([ORB-22833]). A decision-conflict to-do keeps its contract: tags
+`owner:you` and `office-scribe-contradictions` (the name stays so open
+to-dos keep matching) and a last description line
+`Conflicting entries: <entry id> <entry id>` (the two ids, one space
+between them, lexicographic order). The precedent provider reports one
+whose to-do is still open
+([ORB-21219]; [decision-precedents.md](./decision-precedents.md#contradictions)).
 
 ### Meeting decisions
 
@@ -213,8 +210,9 @@ ledger. After it saves `extract-result.json`, and before it files to-dos:
    tagged `office-scribe-contradictions` and `source:<id>`. Its title asks
    which decision stands. Its description cites both entries (id, time,
    chosen, ref) and ends with the `Conflicting entries:` line. It is
-   exactly the weekly check's to-do, so the precedent provider reports it
-   as an unresolved conflict. A failed read of open conflicts is reported
+   the decision-conflict to-do described under
+   [Contradiction checks](#contradiction-checks), so the precedent
+   provider reports it as an unresolved conflict. A failed read of open conflicts is reported
    as `ledger.conflicts_unread`.
 4. **Hold.** An agent code to-do (see `meetings.agent_workspace`,
    [kt-videos.md](./kt-videos.md)) that acts on a contested entry is not
@@ -322,7 +320,7 @@ Retired outright, with no compatibility window (D12).
 - [ORB-21083] — designed scribe v2, where these stores come from.
 - [ORB-21114] — built the decision ledger store, capture's `decision` input and the `note` retirement.
 - [ORB-21116] — built preference pages and the proposal-time contradiction check.
-- [ORB-21121] — built the weekly contradiction auto-task.
+- [ORB-21121] — built the weekly contradiction auto-task (retired by [ORB-22833]).
 - [ORB-21219] — reports an open conflict through the precedent provider.
 - [ORB-21340] — built meeting decisions into the ledger.
 - [ORB-21431] — relaxed `chosen` matching for transcribed stutters.
@@ -330,5 +328,6 @@ Retired outright, with no compatibility window (D12).
 - [ORB-21090] — the decision ledger as a precedent provider.
 - [ORB-21747] — designed the standalone scribe plugin, `constellation-works/scribe`.
 - [ORB-21749] — removed the scribe from orbit-office.
+- [ORB-22833] — retired the weekly `office-scribe-contradictions` auto-task.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

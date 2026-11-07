@@ -2,7 +2,7 @@
 type: design
 summary: "Spec: plugin surface — the office tools, their MCP visibility, shipped definitions, config and permissions"
 last_validated: 2026-11-03
-last_updated: 2026-11-03
+last_updated: 2026-11-07
 ---
 
 # Spec: Plugin surface
@@ -217,7 +217,6 @@ Activities have no schedule switch. Definitions load only when listed in
 - **Auto-tasks:**
   - `office-knowledge-maintenance`: weekly. Re-verifies stale pages against newer sources and frictions, and files `knowledge_update` proposals.
   - `office-review`: on period end.
-  - `office-scribe-contradictions`: weekly (`0 1 * * 1`), seeded disabled, no pinned crew. Checks every decision ledger and preference page; files one `knowledge_update` proposal per preference conflict, one `owner:you` to-do per unlinked decision conflict, and a consolidation proposal for a page over 1,000 words; never writes a ledger ([decisions.md](./decisions.md#contradiction-checks)). It also compares decisions within an Orbit category and ends each decision-conflict to-do with a `Conflicting entries:` line ([ORB-21219]; [decision-precedents.md](./decision-precedents.md#contradictions)).
 - **Activities:** `office-agent-todo`, an agent loop that executes an `owner:agent` to-do with its attached runbook and example artifacts, and writes its output as task artifacts with the manifest. Its `proc.spawn` allowlist has `python3` and no cloud CLI, so its agents can use the `gateway` plugin and Orbit refuses them `cloudcli` ([gateway.md](./gateway.md)).
 - **Skills:** `orchestrator`, `library-conventions` (how to cite, write pages and package outputs), and one skill per pack (`kt`, `meetings`, later `receipts`).
 
@@ -475,6 +474,7 @@ The closed `shared` Library setting requires `remote`, `branch` and `member`, or
 - [ORB-21218] — built `office.decision-precedents` and the Library half-life setting.
 - [ORB-21749] — removed the scribe tools, the `scribe` settings block and the `scribe` status field (moved to `constellation-works/scribe`).
 - [ORB-21219] — built contradiction reporting to the precedent provider.
+- [ORB-22833] — retired the weekly `office-scribe-contradictions` auto-task.
 - [ORB-21375] — persisted per-item meeting filing outcomes and reconciliation.
 - [ORB-21376] — added the read-only source-digest verb for the app caller.
 - [ORB-21451] — removes the agent activity's unconditional gateway dependency; approved in backlog.

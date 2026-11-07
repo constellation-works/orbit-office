@@ -2,7 +2,7 @@
 type: design
 summary: "Spec: the decision ledger as a precedent source for Orbit's decision model: the learning-fit entry schema, ingestion of answered Orbit decision requests with dedupe, the read-only office.decision-precedents provider over orbit.precedent-provider/1, feedback and contradiction rules; the agreement view was removed with the scribe"
 last_validated: 2026-11-03
-last_updated: 2026-11-03
+last_updated: 2026-11-07
 ---
 
 # Spec: Decision ledger as a precedent provider
@@ -392,21 +392,17 @@ The rules, as invariants every reader keeps:
 
 Built in P4 ([ORB-21219]).
 
-The weekly `office-scribe-contradictions` routine files one `owner:you`
-to-do for two decisions that conflict with no `reverses` link
-([decisions.md](./decisions.md#contradiction-checks)). It also compares current
-decisions within one Orbit category, even when the question text differs:
-an ingested entry's category is its `orbit.category`, and any other
-entry's category is its `same_as` partner's `orbit.category`. Conflicting answers
-to the same kind of request are the case the consumer most needs to know
-about. Each decision-conflict to-do's description ends with the last line
-`Conflicting entries: <entry id> <entry id>` (the two ids, one space
-between them, lexicographic order, nothing else on that line).
+Meeting extraction files one `owner:you` to-do, tagged `owner:you` and
+`office-scribe-contradictions`, when a meeting decision contradicts a prior
+entry with no `reverses` link
+([decisions.md](./decisions.md#contradiction-checks)). Its description
+ends with the last line `Conflicting entries: <entry id> <entry id>` (the
+two ids, one space between them, lexicographic order, nothing else on that
+line). The weekly routine that also filed these to-dos, comparing
+decisions within one Orbit category, was retired with the scribe
+([ORB-22833]); the tag keeps its name so open to-dos still match.
 
-Meeting extraction files the same to-do, with the same tags and last
-line, when a meeting decision contradicts a prior entry. The provider
-reads those to-dos alike. `office.decision-resolve` settles either kind
-in one call: a `reverses` entry for the losing decision, then the to-do
+`office.decision-resolve` settles one in a single call: a `reverses` entry for the losing decision, then the to-do
 closed ([decisions.md](./decisions.md#meeting-decisions), [ORB-21340]).
 
 The provider reports a conflict that is still unresolved. It reads open
@@ -498,7 +494,7 @@ change makes stale in the same change.
 | P1 (built) | [ORB-21216] | The decision ledger ([ORB-21114]) | Entry schema additions (option `id`/`consequence`, `orbit`, `same_as`, `confirms`), their validation and refusals, `same_as` matching in `office.capture`, and reading them through `office.source-show`. |
 | P2 (built) | [ORB-21217] | P1; Orbit's `include_closed` read | `office.decision-ingest` and the disabled `office-decision-ingest` routine: request mapping, idempotence, dedupe, and the feedback entries (model, confirm, veto, re-answer). |
 | P3 (built) | [ORB-21218] | P1; Orbit [ORB-21093] for conformance | `office.decision-precedents`: the contract input and output, candidates, relevance and recency, single-option records, reversed and pulled-in entries, omissions, citations, and the `half_life_days` setting. |
-| P4 (built) | [ORB-21219] | P3 | Contradictions: the routine's category comparison and machine-readable line, and the provider's conflict reporting. |
+| P4 (built) | [ORB-21219] | P3 | Contradictions: the routine's category comparison and machine-readable line (the routine retired by [ORB-22833]), and the provider's conflict reporting. |
 | P5 (built, removed) | [ORB-21220] | Orbit [ORB-21096]'s readout surface | The Agreement view, since removed with the scribe ([ORB-21749]). |
 
 ## Task References
@@ -517,5 +513,6 @@ change makes stale in the same change.
 - [ORB-21114] — built the decision ledger store.
 - [ORB-21749] — removed the scribe from orbit-office.
 - [ORB-21340] — built meeting-fed decisions and contradiction resolution; done, merged as `59e36d4`.
+- [ORB-22833] — retired the weekly contradiction routine with the rest of the scribe.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
