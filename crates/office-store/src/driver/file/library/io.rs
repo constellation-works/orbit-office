@@ -5,8 +5,8 @@ use std::path::Path;
 use office_common::fs::atomic::{write_atomic, write_atomic_new};
 use office_common::fs::permissions::create_private_dirs;
 
-use crate::contracts::DocumentRecord;
 use crate::error::{Error, Result};
+use office_core::domain::knowledge::DocumentRecord;
 
 use super::LibraryFs;
 use super::collection::refuse_symlink;

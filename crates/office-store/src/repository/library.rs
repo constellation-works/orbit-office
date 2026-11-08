@@ -16,12 +16,13 @@ use office_core::domain::source::{
 };
 use office_core::ports::{SourceOutcome, SourceView};
 
-use office_core::domain::knowledge::{DocumentKind, LibraryLayer};
+use office_core::domain::knowledge::{
+    Backlink, DocumentKind, DocumentRecord, LibraryLayer, Revision, SearchFilter, SearchHit,
+};
 use office_core::domain::source::LibraryText;
 use office_core::domain::template::{KnowledgePage, TemplateFile, assess_templates};
 use office_core::ports::{InitOutcome, LibraryHealth};
 
-use crate::contracts::{Backlink, DocumentRecord, Revision, SearchFilter, SearchHit};
 use crate::driver::convert;
 use crate::driver::file::library::LAYOUT_DIRS;
 use crate::driver::file::{library::LibraryFs, lock::WriterLock};

@@ -19,9 +19,9 @@ use office_core::ports::{DecisionOutcome, SourceView};
 
 use super::LibraryStore;
 use super::pending::{PendingWrite, WriteKind};
-use crate::contracts::DocumentRecord;
 use crate::driver::file::lock::WriterLock;
 use crate::{Error, Result};
+use office_core::domain::knowledge::DocumentRecord;
 
 impl LibraryStore {
     /// Provider-only tolerant scan; other ledger readers remain strict.

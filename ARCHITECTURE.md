@@ -25,8 +25,8 @@ backend only through Orbit's tools) and `gateway/` (two small Python plugins, se
 | Test support | `office-testkit` | Fake ports, a Library fixture builder, envelope helpers. **Dev-dependency only**: no crate may list it under `[dependencies]`. | `office-common`, `office-core`, `office-store` |
 
 `office-store` now uses its allowed `office-core` edge for the Library port and shared
-records; `office-core` uses `office-common` for the shared sensitivity enum. Store record
-exports remain compatible re-exports.
+records; `office-core` uses `office-common` for the shared sensitivity enum. Library
+record shapes live in `office-core::domain::knowledge` and the store uses them directly.
 
 Document uploads cross the existing `Library::capture_source` port. The store's
 `driver/convert/` reads HTML through `html5ever` and Office ZIP/XML parts through
@@ -81,7 +81,6 @@ Checked by grep over non-test sources:
 - `office-core` (every module): no `std::fs`, `std::net`, `std::process`, `tempfile` or `rustix`, and no environment or path discovery (`std::env::`, `home_dir`, `current_dir`).
 - `office-tools`: the same bans. A tool reaches files, models and Orbit only through ports.
 - `office-models`: no `std::process` except `src/media.rs`, the one `ffmpeg` audio-splitting subprocess, run under the bounded supervisor in `office-common` (STD-03 R11–R15).
-- `office-store/src/contracts.rs`: no `std::fs`, `std::net` or `std::process` (record shapes only).
 - `office/src/app.rs` imports no `cli` or `output`; `office/src/output/` imports no `app` or `cli`.
 - Only `office/src/output/` touches stdout, stderr, TTY state or the color/format variables (`scripts/check-terminal-guard.sh`).
 

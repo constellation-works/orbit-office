@@ -11,12 +11,12 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
-use office_common::fs::permissions::set_owner_only;
-use office_core::domain::knowledge::LibraryLayer;
-
-use crate::contracts::{Backlink, DocumentKind, DocumentRecord, LinkKind, SearchFilter, SearchHit};
 use crate::driver::sqlite::migration;
 use crate::error::{Error, Result};
+use office_common::fs::permissions::set_owner_only;
+use office_core::domain::knowledge::{
+    Backlink, DocumentKind, DocumentRecord, LibraryLayer, LinkKind, SearchFilter, SearchHit,
+};
 
 /// SQLite index handle: one writer connection behind a mutex.
 #[derive(Clone)]

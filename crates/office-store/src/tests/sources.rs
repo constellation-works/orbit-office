@@ -350,7 +350,10 @@ fn legacy_and_kind_layout_sources_are_found_by_id() {
         assert_eq!(read.path, relative);
         assert!(read.body.contains(token), "{}", read.body);
         let hits = store
-            .search(token, &crate::SearchFilter::default())
+            .search(
+                token,
+                &office_core::domain::knowledge::SearchFilter::default(),
+            )
             .expect("search");
         assert_eq!(
             hits.iter().map(|hit| hit.id.as_str()).collect::<Vec<_>>(),
