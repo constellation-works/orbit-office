@@ -52,14 +52,6 @@ export function panelBody(...children: Node[]): HTMLElement {
   return body;
 }
 
-/** Bodies side by side, split by hairlines; they stack on a phone. */
-export function panelColumns(...bodies: HTMLElement[]): HTMLElement {
-  const cols = document.createElement("div");
-  cols.className = "panel-cols";
-  cols.append(...bodies);
-  return cols;
-}
-
 /** Panels in a wrapping grid. */
 export function panelGrid(...panels: HTMLElement[]): HTMLElement {
   const grid = document.createElement("div");
@@ -81,15 +73,6 @@ export function dot(tone: DotTone = "neutral"): HTMLElement {
   element.setAttribute("aria-hidden", "true");
   if (tone !== "neutral") element.dataset.tone = tone;
   return element;
-}
-
-/** A dot and a short heading, as over each digest column. */
-export function dotHeading(text: string, tone: DotTone, level: "h2" | "h3" = "h3"): HTMLElement {
-  const heading = document.createElement(level);
-  heading.className = "dot-heading";
-  if (tone === "attention") heading.dataset.tone = tone;
-  heading.append(dot(tone), document.createTextNode(text));
-  return heading;
 }
 
 /** Mono meta text, or a mono link when `href` is given. */
