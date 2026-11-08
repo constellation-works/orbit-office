@@ -82,6 +82,12 @@ and is sent nowhere else. Settings › Private route stores it that way; by hand
 enter the record `{"origin":"https://<host>[:<port>]","token":"<token>"}` at the
 prompt. A bare token is never sent.
 
+The hosted key is bound the same way: enter the record
+`{"origin":"https://<host>[:<port>]","key":"<key>"}` at the `meta_api_key`
+prompt, with the origin of the configured hosted endpoint (`https://api.meta.ai`
+while `models.endpoint` is unset). A bare key is never sent; saving the key
+again for the current origin is how an existing bare key is bound.
+
 Enabling is the operator's consent to the plugin's filesystem and network
 access; agents do not run `orbit plugin add`/`enable`.
 

@@ -8,10 +8,13 @@
 //! the Library sets it).
 //! The token is only `set` or `unset` under `secrets`, and
 //! `open_weights_token_binding` says whether it was saved for the configured
-//! endpoint's origin (never the token or that origin).
+//! endpoint's origin (never the token or that origin). Likewise
+//! `hosted_key_binding` says whether the hosted key was saved for the
+//! configured hosted endpoint's origin, and `hosted_key_bound_origin`
+//! reports that bound origin (never the key).
 //! Reading creates no Library state.
 
-use office_core::domain::endpoint::{Capability, TokenBinding};
+use office_core::domain::endpoint::{BoundHostedKey, Capability, HostedKeyBinding, TokenBinding};
 use office_core::domain::settings::{BriefSettings, OpenWeights, Settings};
 use office_core::domain::sharing::SharedSettings;
 use office_core::tool::{ExecutionKind, McpScope, ToolSpec};
@@ -114,10 +117,20 @@ pub(crate) fn run(call: &Call<'_>) -> Result<Value> {
         "careful": &models.careful,
         "transcribe": models.transcribe_model(),
     });
+    // The hosted key's binding, mirroring the private token's: the bound
+    // origin is reported (it is not secret), the key never is. Reading
+    // status never binds an unbound key; only saving it again does.
+    let hosted_stored = office_core::protocol::secret(call.context, "meta_api_key");
+    let hosted_binding = HostedKeyBinding::of(hosted_stored, Some(models.hosted_endpoint()));
+    let hosted_bound_origin = hosted_stored
+        .and_then(BoundHostedKey::parse)
+        .map(|bound| bound.origin().to_string());
     Ok(json!({
         "version": VERSION,
         "secrets": secrets,
         "open_weights_token_binding": binding.as_str(),
+        "hosted_key_binding": hosted_binding.as_str(),
+        "hosted_key_bound_origin": hosted_bound_origin,
         "library": {
             "initialized": health.initialized,
             "documents": health.documents_total,
