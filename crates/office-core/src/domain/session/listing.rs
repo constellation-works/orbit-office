@@ -11,7 +11,7 @@ use super::{
     thread_handoffs, thread_key, time_key,
 };
 use crate::Result;
-use crate::ports::LibraryText;
+use crate::domain::source::LibraryText;
 
 /// Cap for the `threads` section: at most this many current threads.
 pub const THREADS_LIMIT: usize = 200;

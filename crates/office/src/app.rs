@@ -1,15 +1,12 @@
 //! Compose services from the call context and dispatch one request.
 
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::SystemTime;
 
-use office_core::domain::knowledge::{Backlink, DocumentRecord, Revision, SearchFilter, SearchHit};
 use office_core::domain::selection::{PutRequest, PutResult, Selection as SelectionRecord};
-use office_core::domain::settings::Settings;
 use office_core::ports::{
-    Clock, InitOutcome, Library, LibraryHealth, LibraryText, Models, Orbit, Ports, Routed,
-    Selections,
+    Clock, InitOutcome, LibraryHealth, Models, Orbit, Ports, Routed, Selections,
 };
 use office_core::ports::{SharedRepository, UnavailableShared};
 use office_core::protocol::{self, Context};
@@ -37,7 +34,7 @@ struct ContextModels<'a> {
 
 impl ContextModels<'_> {
     fn planned_client(&self, expected: &str) -> office_core::Result<office_models::RoutedClient> {
-        let settings = self.library.settings()?;
+        let settings = self.library.store()?.settings()?;
         if office_core::domain::source::video::settings_digest(&settings)? != expected {
             return Err(office_core::domain::source::video::refusal(
                 "plan_changed",
@@ -47,7 +44,7 @@ impl ContextModels<'_> {
         self.client_with_settings(settings)
     }
     fn client(&self) -> office_core::Result<office_models::RoutedClient> {
-        self.client_with_settings(self.library.settings()?)
+        self.client_with_settings(self.library.store()?.settings()?)
     }
     fn client_with_settings(
         &self,
@@ -296,9 +293,10 @@ fn context_library_dir(context: &Context) -> Option<String> {
         .map(str::to_string)
 }
 
-/// The real Library adapter for one call. Construction does no I/O: the
+/// The real Library opener for one call. Construction does no I/O: the
 /// store is opened lazily by operations that need it, and health checks
 /// that find no Library create nothing (so `office.status` writes nothing).
+/// [`office_store::LazyLibrary`] turns this opener into the Library port.
 struct RealLibrary {
     bootstrap_read_only: bool,
     workspace: Option<PathBuf>,
@@ -361,179 +359,8 @@ impl RealLibrary {
     }
 }
 
-impl Library for RealLibrary {
-    fn set_shareable(&self, id: &str, shareable: bool) -> office_core::Result<DocumentRecord> {
-        Ok(self.store()?.set_shareable(id, shareable)?)
-    }
-    fn source_media(
-        &self,
-        id: &str,
-        selection: &office_core::domain::source::access::MediaSelection,
-    ) -> office_core::Result<office_core::domain::source::access::SourceMedia> {
-        <LibraryStore as Library>::source_media(&self.store()?, id, selection)
-    }
-    fn set_source_sensitivity(
-        &self,
-        id: &str,
-        sensitivity: &str,
-    ) -> office_core::Result<office_core::ports::SensitivityOutcome> {
-        <LibraryStore as Library>::set_source_sensitivity(&self.store()?, id, sensitivity)
-    }
-    fn write_reviewed_page(
-        &self,
-        relative: &Path,
-        text: &str,
-        expected: Option<&str>,
-    ) -> office_core::Result<DocumentRecord> {
-        Ok(self
-            .store()?
-            .write_reviewed_page(relative, text, expected)?)
-    }
-    fn write_proposal(&self, relative: &Path, text: &str) -> office_core::Result<()> {
-        Ok(self.store()?.write_proposal(relative, text)?)
-    }
-    fn move_proposal(&self, to: &Path, text: &str, from: &[String]) -> office_core::Result<()> {
-        Ok(self.store()?.move_proposal(to, text, from)?)
-    }
-    fn proposal_pages(&self) -> office_core::Result<Vec<office_core::ports::LibraryText>> {
-        Ok(self.store()?.proposal_pages()?)
-    }
-
-    fn read_media(
-        &self,
-        id: &str,
-    ) -> office_core::Result<office_core::domain::source::video::VideoSource> {
-        <LibraryStore as Library>::read_media(&self.store()?, id)
-    }
-    fn source_sidecar(&self, id: &str, name: &str) -> office_core::Result<Option<String>> {
-        <LibraryStore as Library>::source_sidecar(&self.store()?, id, name)
-    }
-    fn write_source_processing(
-        &self,
-        id: &str,
-        revision: &str,
-        body: Option<&str>,
-        derived: &office_core::ports::DerivedBy,
-        files: &[(String, Vec<u8>)],
-    ) -> office_core::Result<office_core::ports::SourceView> {
-        <LibraryStore as Library>::write_source_processing(
-            &self.store()?,
-            id,
-            revision,
-            body,
-            derived,
-            files,
-        )
-    }
-
-    fn bootstrap_snapshot(&self) -> office_core::Result<office_core::domain::bootstrap::Snapshot> {
-        <LibraryStore as Library>::bootstrap_snapshot(&self.store()?)
-    }
-    fn mutate_batch(
-        &self,
-        revision: &str,
-        mutation: office_core::domain::bootstrap::Mutation,
-    ) -> office_core::Result<office_core::domain::bootstrap::Batch> {
-        <LibraryStore as Library>::mutate_batch(&self.store()?, revision, mutation)
-    }
-    fn read_video(
-        &self,
-        id: &str,
-    ) -> office_core::Result<office_core::domain::source::video::VideoSource> {
-        <LibraryStore as Library>::read_video(&self.store()?, id)
-    }
-    fn mutate_video(
-        &self,
-        id: &str,
-        revision: &str,
-        mutation: office_core::domain::source::video::VideoMutation,
-    ) -> office_core::Result<office_core::domain::source::video::VideoState> {
-        <LibraryStore as Library>::mutate_video(&self.store()?, id, revision, mutation)
-    }
-
-    fn promote_artifact(
-        &self,
-        artifact: &office_core::domain::artifact::Artifact,
-        files: &[office_core::domain::artifact::ArtifactFile],
-    ) -> office_core::Result<office_core::domain::artifact::Artifact> {
-        Ok(self.store()?.promote_artifact(artifact, files)?)
-    }
-    fn artifact_documents(&self) -> office_core::Result<Vec<LibraryText>> {
-        Ok(self.store()?.artifact_documents()?)
-    }
-    fn read_artifact_file(&self, relative: &Path) -> office_core::Result<Vec<u8>> {
-        Ok(self.store()?.read_artifact_file(relative)?)
-    }
-
-    fn read_document(&self, relative: &Path) -> office_core::Result<DocumentRecord> {
-        Ok(LibraryStore::read_document(&self.store()?, relative)?)
-    }
-    fn write_document(&self, relative: &Path, text: &str) -> office_core::Result<DocumentRecord> {
-        Ok(LibraryStore::write_document(
-            &self.store()?,
-            relative,
-            text,
-        )?)
-    }
-    fn get(&self, id: &str) -> office_core::Result<Option<DocumentRecord>> {
-        Ok(LibraryStore::get(&self.store()?, id)?)
-    }
-    fn backlinks(&self, id: &str) -> office_core::Result<Vec<Backlink>> {
-        Ok(LibraryStore::backlinks(&self.store()?, id)?)
-    }
-    fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>> {
-        Ok(LibraryStore::knowledge_pages(&self.store()?)?)
-    }
-    fn scribe_files(&self) -> office_core::Result<Vec<LibraryText>> {
-        Ok(LibraryStore::scribe_files(&self.store()?)?)
-    }
-    fn decision_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
-        Ok(LibraryStore::decision_ledger_files(&self.store()?)?)
-    }
-    fn decision_precedent_ledgers(&self) -> office_core::Result<Vec<LibraryText>> {
-        Library::decision_precedent_ledgers(&self.store()?)
-    }
-    fn decision_precedent_scores(
-        &self,
-        query: &str,
-        entries: &[(String, String)],
-    ) -> office_core::Result<std::collections::BTreeMap<String, f64>> {
-        Library::decision_precedent_scores(&self.store()?, query, entries)
-    }
-    fn write_decision_ledgers(
-        &self,
-        files: &[office_core::domain::source::decisions::PlannedFile],
-    ) -> office_core::Result<()> {
-        LibraryStore::write_decision_ledgers(&self.store()?, files)
-    }
-    fn source_documents(&self) -> office_core::Result<Vec<LibraryText>> {
-        Ok(LibraryStore::source_documents(&self.store()?)?)
-    }
-    fn templates(&self) -> office_core::Result<Vec<LibraryText>> {
-        Ok(LibraryStore::templates(&self.store()?)?)
-    }
-    fn search(&self, query: &str, filter: &SearchFilter) -> office_core::Result<Vec<SearchHit>> {
-        Ok(LibraryStore::search(&self.store()?, query, filter)?)
-    }
-    fn history(&self, relative: &Path) -> office_core::Result<Vec<Revision>> {
-        Ok(LibraryStore::history(&self.store()?, relative)?)
-    }
-    fn read_text(&self, relative: &Path) -> office_core::Result<String> {
-        Ok(LibraryStore::read_text(&self.store()?, relative)?)
-    }
-    fn head_commit(&self) -> office_core::Result<Option<String>> {
-        Ok(LibraryStore::head_commit(&self.store()?)?)
-    }
-    fn evidence_files(&self, relative: &Path) -> office_core::Result<Vec<(String, Vec<u8>)>> {
-        Ok(LibraryStore::evidence_files(&self.store()?, relative)?)
-    }
-    fn stage_attachment(&self, name: &str, text: &str) -> office_core::Result<String> {
-        <LibraryStore as Library>::stage_attachment(&self.store()?, name, text)
-    }
-    fn remove_staged(&self, staged: &str) -> office_core::Result<()> {
-        <LibraryStore as Library>::remove_staged(&self.store()?, staged)
-    }
-    fn is_initialized(&self) -> office_core::Result<bool> {
+impl RealLibrary {
+    fn library_is_initialized(&self) -> office_core::Result<bool> {
         if self.library.is_none() {
             return Err(office_core::Error::LibraryUnavailable);
         }
@@ -543,58 +370,21 @@ impl Library for RealLibrary {
         }
         Ok(LibraryStore::is_initialized(&self.store()?)?)
     }
-    fn settings(&self) -> office_core::Result<Settings> {
-        Ok(LibraryStore::settings(&self.store()?)?)
+
+    fn library_health(&self) -> office_core::Result<LibraryHealth> {
+        // No Library in context stays uninitialized. A configured root
+        // outside the grant is the typed refusal, including when the
+        // escaped tree is absent, so status does not report it as healthy.
+        if self.library.is_some() {
+            self.ensure_grant()?;
+        }
+        if !self.looks_initialized() {
+            return Ok(LibraryHealth::uninitialized());
+        }
+        Ok(LibraryStore::health(&self.store()?)?)
     }
-    fn set_setting(&self, key: &str, value: Value) -> office_core::Result<()> {
-        Ok(LibraryStore::set_setting(&self.store()?, key, value)?)
-    }
-    fn record_route_check(
-        &self,
-        endpoint: &str,
-        model: &str,
-        capabilities: &[office_core::domain::endpoint::Capability],
-        verified_at: &str,
-    ) -> office_core::Result<()> {
-        Ok(LibraryStore::record_route_check(
-            &self.store()?,
-            endpoint,
-            model,
-            capabilities,
-            verified_at,
-        )?)
-    }
-    fn capture_source(
-        &self,
-        request: &office_core::ports::CaptureSourceRequest,
-    ) -> office_core::Result<office_core::ports::SourceOutcome> {
-        LibraryStore::capture_source(&self.store()?, request)
-    }
-    fn append_decision(
-        &self,
-        decision: &office_core::domain::source::decisions::Decision,
-        captured_at: &str,
-    ) -> office_core::Result<office_core::ports::DecisionOutcome> {
-        <LibraryStore as Library>::append_decision(&self.store()?, decision, captured_at)
-    }
-    fn session_transcript(
-        &self,
-        path: &str,
-        session_id: &str,
-    ) -> office_core::Result<office_core::domain::source::conversation::Session> {
-        office_core::ports::Library::session_transcript(&self.store()?, path, session_id)
-    }
-    fn capture_session(
-        &self,
-        request: &office_core::domain::source::conversation::Request,
-        captured_at: &str,
-    ) -> office_core::Result<office_core::ports::SourceOutcome> {
-        office_core::ports::Library::capture_session(&self.store()?, request, captured_at)
-    }
-    fn read_source(&self, id: &str) -> office_core::Result<office_core::ports::SourceView> {
-        LibraryStore::read_source(&self.store()?, id)
-    }
-    fn initialize(&self, library_dir: Option<&str>) -> office_core::Result<InitOutcome> {
+
+    fn library_initialize(&self, library_dir: Option<&str>) -> office_core::Result<InitOutcome> {
         let (Some(workspace), Some(library), Some(state)) =
             (&self.workspace, &self.library, &self.state)
         else {
@@ -606,22 +396,6 @@ impl Library for RealLibrary {
             library_dir,
             workspace,
         )?)
-    }
-    fn reindex(&self) -> office_core::Result<u32> {
-        let store = self.store()?;
-        <LibraryStore as Library>::reindex(&store)
-    }
-    fn health(&self) -> office_core::Result<LibraryHealth> {
-        // No Library in context stays uninitialized. A configured root
-        // outside the grant is the typed refusal, including when the
-        // escaped tree is absent, so status does not report it as healthy.
-        if self.library.is_some() {
-            self.ensure_grant()?;
-        }
-        if !self.looks_initialized() {
-            return Ok(LibraryHealth::uninitialized());
-        }
-        Ok(LibraryStore::health(&self.store()?)?)
     }
 }
 
@@ -639,9 +413,28 @@ fn ports(context: &Context, bootstrap_read_only: bool) -> Ports<'_> {
     };
     let mut library = RealLibrary::from_context(context);
     library.bootstrap_read_only = bootstrap_read_only;
+    let library = std::sync::Arc::new(library);
+    let opened = {
+        let library = std::sync::Arc::clone(&library);
+        move || library.store()
+    };
+    let checked_initialized = {
+        let library = std::sync::Arc::clone(&library);
+        move || library.library_is_initialized()
+    };
+    let checked_health = {
+        let library = std::sync::Arc::clone(&library);
+        move || library.library_health()
+    };
+    let initialize = move |library_dir: Option<&str>| library.library_initialize(library_dir);
     Ports {
         scripts: Box::new(ContextScripts { context }),
-        library: Box::new(library),
+        library: Box::new(office_store::LazyLibrary::new(
+            opened,
+            checked_initialized,
+            checked_health,
+            initialize,
+        )),
         models: Box::new(ContextModels {
             context,
             library: RealLibrary::from_context(context),

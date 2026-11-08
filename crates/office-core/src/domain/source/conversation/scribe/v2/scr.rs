@@ -8,7 +8,7 @@ use serde_json::{Map, Value, json};
 
 use super::super::{SCR_DIR, is_scr_path, refusal};
 use crate::Result;
-use crate::ports::LibraryText;
+use crate::domain::source::LibraryText;
 
 /// Rewritten section headings, in file order.
 pub const SECTION_HEADINGS: [&str; 4] = ["Summary", "Goals", "Outcome and Blockers", "Next"];

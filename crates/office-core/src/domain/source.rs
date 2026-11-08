@@ -16,8 +16,130 @@ pub mod video;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use office_common::Sensitivity;
+use serde::Serialize;
 
+use crate::domain::endpoint::ModelRoute;
 use crate::{Error, Result};
+
+/// One Markdown file read from either layer, by its virtual Library path.
+/// A `shared/` prefix addresses the read-only clone under plugin state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LibraryText {
+    /// Library-relative path, forward slashes.
+    pub path: String,
+    /// The file's Markdown. `None` when it could not be read (a symlink or
+    /// an unreadable template), so a caller can name it rather than skip it.
+    pub markdown: Option<String>,
+}
+
+/// How a model result was produced: the `derived_by` fields a caller records.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DerivedBy {
+    /// `hosted` or `private:<kind>`.
+    pub route: ModelRoute,
+    /// The model named in the request.
+    pub model: String,
+}
+
+/// One conversation entry to append (specs/sessions.md).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConversationEntry {
+    /// A decision-log kind, including correction.
+    pub kind: String,
+    /// Entry text, or a canonical correction JSON payload.
+    pub text: String,
+    /// Explicit user attribution (a caller claim, not authority).
+    pub by: Option<String>,
+    /// `scope: global` on a handoff (specs/sessions.md#scopes); `None` is
+    /// the project thread. Stored as the `(global …)` marker leading the text.
+    pub global: Option<crate::domain::session::GlobalScope>,
+}
+
+impl ConversationEntry {
+    /// Format one physical append-only line, preserving attributed user text.
+    pub fn format(&self, at: &str) -> Result<String> {
+        use crate::domain::session::looks_global;
+        use crate::domain::source::{conversation::corrections, format_conversation_entry};
+        if let Some(scope) = &self.global {
+            if self.kind != "handoff" || self.by.is_some() {
+                return Err(crate::Error::InvalidArgument(
+                    "scope: global applies only to handoff entries without by".into(),
+                ));
+            }
+            let text = self.text.trim();
+            if text.is_empty() || looks_global(text) {
+                return Err(crate::Error::InvalidArgument(
+                    "a global handoff needs nonempty text without its own (global) marker".into(),
+                ));
+            }
+            if let Some(until) = scope.until.as_deref() {
+                let until_at = crate::domain::metrics::timestamp(until);
+                let now = crate::domain::metrics::timestamp(at);
+                if until_at.is_none()
+                    || until.contains(char::is_whitespace)
+                    || until.contains(')')
+                    || until_at <= now
+                {
+                    return Err(crate::Error::InvalidArgument(
+                        "handoff until must be an RFC 3339 time after the capture time".into(),
+                    ));
+                }
+            }
+            return format_conversation_entry(at, "handoff", &format!("{} {text}", scope.marker()));
+        }
+        if self.kind == "handoff" && looks_global(self.text.trim()) {
+            return Err(crate::Error::InvalidArgument(
+                "a handoff becomes global only through scope: global, never through its text"
+                    .into(),
+            ));
+        }
+        match self.by.as_deref() {
+            Some(by) => {
+                corrections::validate_user_text(&self.kind, &self.text, by)?;
+                let text = serde_json::to_string(&self.text).map_err(|_| {
+                    crate::Error::InvalidArgument("cannot encode user entry".into())
+                })?;
+                Ok(format!("[{at}] {} (by: user): {text}", self.kind))
+            }
+            None => format_conversation_entry(at, &self.kind, &self.text),
+        }
+    }
+}
+
+/// Everything `office.capture` asks the Library to do in one call.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CaptureSourceRequest {
+    /// The kind.
+    pub kind: Option<String>,
+    /// The title.
+    pub title: Option<String>,
+    /// The text.
+    pub text: Option<String>,
+    /// The upload path.
+    pub upload_path: Option<String>,
+    /// The transcript path.
+    pub transcript_path: Option<String>,
+    /// The append to.
+    pub append_to: Option<String>,
+    /// The entries.
+    pub entries: Vec<ConversationEntry>,
+    /// The captured at.
+    pub captured_at: String,
+    /// The captured by.
+    pub captured_by: Option<String>,
+    /// The origin.
+    pub origin: Option<String>,
+    /// The occurred at.
+    pub occurred_at: Option<String>,
+    /// The participants.
+    pub participants: Vec<String>,
+    /// Calendar identity copied by event-backed capture.
+    pub event: Option<SourceEvent>,
+    /// Source tags, such as `bootstrap:orientation`.
+    pub tags: Vec<String>,
+    /// The sensitivity.
+    pub sensitivity: Option<String>,
+}
 
 /// Seconds from an `hh:mm:ss` stamp, in the form `clock_time` writes and
 /// the knowledge citation validator accepts.
@@ -893,7 +1015,7 @@ pub fn processing_file_name(name: &str) -> bool {
 pub fn processing_markdown(
     markdown: &str,
     body: Option<&str>,
-    derived: &crate::ports::DerivedBy,
+    derived: &DerivedBy,
 ) -> Result<(String, Option<String>)> {
     let (header, _) = crate::domain::knowledge::frontmatter::split(markdown)?;
     let mut fields = crate::domain::knowledge::frontmatter::parse(header)?;

@@ -10,15 +10,16 @@ mod scripts;
 mod selection;
 mod shared;
 
+pub use crate::domain::source::{CaptureSourceRequest, ConversationEntry, DerivedBy, LibraryText};
 pub use calendar::{Calendar, UnavailableCalendar};
 pub use clock::Clock;
 pub use library::{
-    CaptureSourceRequest, ConversationEntry, DecisionOutcome, InitOutcome, Library, LibraryHealth,
-    LibraryText, SensitivityOutcome, SourceOutcome, SourceView, not_initialized_error,
+    DecisionOutcome, InitOutcome, Library, LibraryHealth, SensitivityOutcome, SourceOutcome,
+    SourceView, not_initialized_error,
 };
 pub use models::{
-    DerivedBy, ExtractRequest, ImageReading, ImageRequest, ModelTier, Models, RouteCheck,
-    RouteProbe, Routed, TranscribeRequest, Transcript, TranscriptChunk, TranscriptSegment,
+    ExtractRequest, ImageReading, ImageRequest, ModelTier, Models, RouteCheck, RouteProbe, Routed,
+    TranscribeRequest, Transcript, TranscriptChunk, TranscriptSegment,
 };
 pub use office_common::Sensitivity;
 pub use orbit::Orbit;

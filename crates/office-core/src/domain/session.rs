@@ -15,7 +15,7 @@ use super::knowledge::{Page, frontmatter};
 use super::metrics::{metadata, timestamp};
 use super::source::is_conversation_kind;
 use super::template::Template;
-use crate::ports::LibraryText;
+use crate::domain::source::LibraryText;
 use crate::{Error, Result};
 
 /// A quoted, anchorable decision-log entry. Kinds use the capture vocabulary,

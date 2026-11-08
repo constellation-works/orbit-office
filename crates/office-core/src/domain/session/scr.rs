@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 
 use super::{Item, cited_assignment, cites, invalid, project_key, time_key};
 use crate::Result;
+use crate::domain::source::LibraryText;
 use crate::domain::source::conversation::scribe::v2::{self, Scr};
-use crate::ports::LibraryText;
 
 /// One v2 SCR keyed by its `updated` instant, for newest-first selection.
 pub struct ScrHandoff {

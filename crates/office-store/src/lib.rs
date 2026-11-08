@@ -32,7 +32,7 @@ pub use contracts::{DocumentKind, DocumentRecord, Revision, SearchFilter, Search
 pub use driver::script::ScriptStore;
 pub use error::{Error, Result};
 pub use pr::GhPullRequests;
-pub use repository::LibraryStore;
+pub use repository::{LazyLibrary, LibraryStore};
 pub use selection::SelectionStore;
 
 mod selection;
