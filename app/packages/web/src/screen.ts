@@ -4,7 +4,7 @@
  */
 import type { ScreenId, Status } from "@orbit-office/contracts";
 
-/** One screen. A planned screen is left out of the navigation. */
+/** A planned screen is left out of the navigation. */
 export interface Screen {
   id: ScreenId;
   /** Plain-words title shown in the navigation. */
