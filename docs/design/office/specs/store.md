@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: office-store — Library persistence structured after orbit-store: contracts, fs machinery, file and SQLite drivers, repository facade"
-last_validated: 2026-10-27
+last_validated: 2026-11-08
 ---
 
 # Spec: office-store
@@ -87,7 +87,7 @@ attachment staging, readiness, settings and single-key `set_setting` updates.
 `orbit.task.artifact.put`; `remove_staged` deletes only such a file and its
 emptied directories. The staging tree is outside the indexed layout, and
 document commits use `--only`, so a staged file is never indexed or committed
-([decision](../4_decisions.md#office-attach-stages-its-copies-inside-the-library)).
+([decision](../4_decisions.md#officeattach-stages-its-copies-inside-the-library)).
 `LibraryStore`
 implements it; `office-testkit::fakes::FakeLibrary` implements the same operations
 in memory. The store's existing record exports are re-exports of

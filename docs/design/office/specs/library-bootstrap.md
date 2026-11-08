@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: Library bootstrap — a new role's onboarding material becomes a curated Library in four phases: cheap digest per source, careful consolidation per topic, batch cost preview, setup progress, page rules with mechanical checks, and runbooks the agent performs as drafts"
-last_validated: 2026-10-27
+last_validated: 2026-11-08
 ---
 
 # Spec: Library bootstrap
