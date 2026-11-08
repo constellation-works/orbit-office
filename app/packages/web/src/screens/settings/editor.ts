@@ -1,8 +1,6 @@
 import type { ConnectionInput, ConnectionWrite, SettingsConnection } from "@orbit-office/contracts";
 
-function text<K extends keyof HTMLElementTagNameMap>(tag: K, content: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag); node.textContent = content; return node;
-}
+import { element } from "../../ui/index.js";
 
 /** Microsoft's endpoints, offered for a new device-code connection; every field stays editable. */
 const MICROSOFT = {
@@ -27,10 +25,10 @@ export function splitFeedAddress(baseUrl: string, secret: string): { base_url: s
 export function connectionEditor(existing: SettingsConnection | undefined, save: (value: ConnectionWrite) => Promise<boolean>, cancel: () => void): HTMLFormElement {
   const form = document.createElement("form"); form.className = "settings-form";
   form.setAttribute("aria-label", existing ? "Edit connection" : "Add connection");
-  form.append(text("h3", existing ? `Edit ${existing.name}` : "Add a connection"));
+  form.append(element("h3", existing ? `Edit ${existing.name}` : "Add a connection"));
   const fields = document.createElement("div"); fields.className = "settings-fields";
   function field(label: string, name: string, value: string, type = "text"): HTMLInputElement {
-    const wrap = text("label", label); wrap.className = "settings-field";
+    const wrap = element("label", label); wrap.className = "settings-field";
     const input = document.createElement("input"); input.name = name; input.type = type; input.value = value;
     input.required = true; wrap.append(input); fields.append(wrap); return input;
   }
@@ -41,7 +39,7 @@ export function connectionEditor(existing: SettingsConnection | undefined, save:
   name.pattern = "[a-z][a-z0-9-]{0,47}"; name.maxLength = 48; name.readOnly = existing !== undefined;
   name.title = "Start with a lowercase letter; use lowercase letters, digits and hyphens.";
   const url = field("Base URL", "base_url", existing?.base_url ?? "", "url"); url.placeholder = "https://api.example.com/v2/";
-  const authWrap = text("label", "Authentication"); authWrap.className = "settings-field";
+  const authWrap = element("label", "Authentication"); authWrap.className = "settings-field";
   const auth = document.createElement("select"); auth.name = "scheme";
   auth.setAttribute("aria-label", "Authentication");
   for (const [value, label] of [
@@ -49,7 +47,7 @@ export function connectionEditor(existing: SettingsConnection | undefined, save:
     ["secret_path", "Secret address (calendar feed)"], ["oauth2_device", "Sign in with a code (OAuth device code)"],
     ["none", "No authentication"],
   ]) {
-    const option = text("option", label ?? ""); option.value = value ?? ""; auth.append(option);
+    const option = element("option", label ?? ""); option.value = value ?? ""; auth.append(option);
   }
   auth.value = existing?.auth.scheme ?? "bearer"; authWrap.append(auth); fields.append(authWrap);
   const username = field("Username", "username", existing?.auth.username ?? "");
@@ -64,7 +62,7 @@ export function connectionEditor(existing: SettingsConnection | undefined, save:
   scopes.title = "Separate scopes with spaces.";
   const secret = field("Secret", "secret", "", "password"); secret.required = false; secret.autocomplete = "new-password";
   secret.setAttribute("aria-describedby", "settings-secret-hint");
-  const hint = text("span", ""); hint.id = "settings-secret-hint";
+  const hint = element("span", ""); hint.id = "settings-secret-hint";
   hint.className = "settings-hint"; secret.parentElement?.append(hint);
   const isSet = existing?.slot_state === "set";
   function authFields(): void {
@@ -93,9 +91,9 @@ export function connectionEditor(existing: SettingsConnection | undefined, save:
     writes.hidden = feed;
   }
   function methods(label: string, options: string[], selected: string[]): [HTMLFieldSetElement, () => string[]] {
-    const group = document.createElement("fieldset"); group.append(text("legend", label));
+    const group = document.createElement("fieldset"); group.append(element("legend", label));
     const inputs = options.map((method) => {
-      const wrap = text("label", method); const input = document.createElement("input"); input.type = "checkbox";
+      const wrap = element("label", method); const input = document.createElement("input"); input.type = "checkbox";
       input.value = method; input.checked = selected.includes(method); wrap.prepend(input); group.append(wrap); return input;
     });
     fields.append(group); return [group, () => inputs.filter((input) => input.checked).map((input) => input.value)];
@@ -109,8 +107,8 @@ export function connectionEditor(existing: SettingsConnection | undefined, save:
   const bytes = field("Maximum response (bytes)", "max_response_bytes", String(existing?.max_response_bytes ?? 1048576), "number");
   bytes.min = "1"; bytes.max = "16777216"; bytes.step = "1";
   const actions = document.createElement("div"); actions.className = "settings-actions";
-  const submit = text("button", "Save connection"); submit.type = "submit";
-  const back = text("button", "Cancel"); back.type = "button"; back.addEventListener("click", () => { secret.value = ""; cancel(); });
+  const submit = element("button", "Save connection"); submit.type = "submit";
+  const back = element("button", "Cancel"); back.type = "button"; back.addEventListener("click", () => { secret.value = ""; cancel(); });
   actions.append(submit, back); form.append(fields, actions);
   let busy = false;
   form.addEventListener("submit", (event) => {

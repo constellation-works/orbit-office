@@ -1,21 +1,20 @@
 /** The local event editor; identity and provenance are assigned by Office. */
 import type { CalendarMeeting, LocalCalendarChange } from "@orbit-office/contracts";
 
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, content = ""): HTMLElementTagNameMap[K] {
-  const result = document.createElement(tag); result.textContent = content; return result;
-}
+import { element } from "../../ui/index.js";
+
 function localTime(value: string): string {
   const at = new Date(value);
   return `${at.getFullYear()}-${String(at.getMonth()+1).padStart(2,"0")}-${String(at.getDate()).padStart(2,"0")}T${String(at.getHours()).padStart(2,"0")}:${String(at.getMinutes()).padStart(2,"0")}`;
 }
 export function eventEditor(meeting: CalendarMeeting | null, day: Date, write: (change: LocalCalendarChange) => Promise<unknown>, done: () => Promise<void>, close: () => void): HTMLElement {
-  const panel = node("section"); panel.className = "calendar-panel";
+  const panel = element("section"); panel.className = "calendar-panel";
   const heading = meeting === null ? "New local event" : "Edit local event";
   panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", heading);
-  const form = node("form"); form.className = "calendar-capture";
+  const form = element("form"); form.className = "calendar-capture";
   const field = (label: string, value: string, type = "text"): HTMLInputElement => {
-    const wrapper = node("label", label); wrapper.className = "calendar-field";
-    const input = node("input"); input.type = type; input.value = value;
+    const wrapper = element("label", label); wrapper.className = "calendar-field";
+    const input = element("input"); input.type = type; input.value = value;
     wrapper.append(input); form.append(wrapper); return input;
   };
   const defaultStart = new Date(day); defaultStart.setHours(9,0,0,0);
@@ -26,16 +25,16 @@ export function eventEditor(meeting: CalendarMeeting | null, day: Date, write: (
   const allDay = field("All day", "", "checkbox"); allDay.checked = meeting?.all_day ?? false;
   const location = field("Location", meeting?.location ?? ""); location.maxLength = 1024;
   const attendees = field("Attendees (one name per line)", "");
-  const names = node("textarea"); names.value = meeting?.attendees.map(a => a.name).join("\n") ?? "";
+  const names = element("textarea"); names.value = meeting?.attendees.map(a => a.name).join("\n") ?? "";
   attendees.replaceWith(names);
-  const agendaLabel = node("label", "Agenda"); agendaLabel.className = "calendar-field";
-  const agenda = node("textarea"); agenda.value = meeting?.agenda ?? ""; agenda.maxLength = 8192;
+  const agendaLabel = element("label", "Agenda"); agendaLabel.className = "calendar-field";
+  const agenda = element("textarea"); agenda.value = meeting?.agenda ?? ""; agenda.maxLength = 8192;
   agendaLabel.append(agenda); form.append(agendaLabel);
   const privateEvent = field("Private", "", "checkbox"); privateEvent.checked = meeting?.private ?? false;
-  const feedback = node("p"); feedback.setAttribute("role", "status");
-  const save = node("button", "Save event"); save.type = "submit";
-  const cancel = node("button", "Cancel"); cancel.type = "button"; cancel.addEventListener("click", close);
-  form.append(node("p", "Times use this computer’s time zone. All-day dates use an exclusive end date."), save, cancel, feedback);
+  const feedback = element("p"); feedback.setAttribute("role", "status");
+  const save = element("button", "Save event"); save.type = "submit";
+  const cancel = element("button", "Cancel"); cancel.type = "button"; cancel.addEventListener("click", close);
+  form.append(element("p", "Times use this computer’s time zone. All-day dates use an exclusive end date."), save, cancel, feedback);
   form.addEventListener("submit", event => {
     event.preventDefault();
     const controls = [...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>("input, textarea, button")];
@@ -48,5 +47,5 @@ export function eventEditor(meeting: CalendarMeeting | null, day: Date, write: (
       .then(done).catch(() => { feedback.textContent = "The event could not be saved. Check the fields and try again."; })
       .finally(() => { for (const control of controls) control.disabled = false; });
   });
-  panel.append(node("h2", heading), form); return panel;
+  panel.append(element("h2", heading), form); return panel;
 }

@@ -12,17 +12,15 @@ import type {
 import { dismissSharedSkipped, getJson, getLastSharedSync, uploadSource } from "../../api/client.js";
 import { sourceHref } from "../../api/source-location.js";
 import type { Screen } from "../../screen.js";
-import { errorState, monoMeta, renderMarkdown } from "../../ui/index.js";
+import { element, errorState, monoMeta, renderMarkdown } from "../../ui/index.js";
 import { dueWords, isOverdue } from "../../ui/when.js";
 import { ApprovalControls, serverApprovals, type ApprovalApi } from "./approvals.js";
 import { readDigest, serverDigest, SINCE_HEADING, sinceContent, type DigestApi, type DigestState } from "./digest.js";
 import { nextMeetingCard, todaysMeetings, upcoming } from "./next-meeting.js";
-import { dot, glyph, listHead, listSection, meta, quiet, rowList, text, type Glyph } from "./rows.js";
+import { dot, glyph, listHead, listSection, meta, quiet, rowList, type Glyph } from "./rows.js";
 
 function paragraph(value: string): HTMLParagraphElement {
-  const element = document.createElement("p");
-  element.textContent = value;
-  return element;
+  return element("p", value);
 }
 
 function background(item: TodayItem): HTMLElement {
@@ -64,7 +62,7 @@ function expandableRow(parts: RowParts, expanded: Expanded): HTMLLIElement {
   title.type = "button";
   title.className = "today-row-title";
   title.dataset.focus = parts.focus;
-  title.append(typeof parts.glyph === "string" ? glyph(parts.glyph) : parts.glyph, text("span", parts.title));
+  title.append(typeof parts.glyph === "string" ? glyph(parts.glyph) : parts.glyph, element("span", parts.title));
   line.append(title);
   if (parts.meta) line.append(parts.meta);
   const inline: HTMLElement[] = [];
@@ -220,7 +218,7 @@ function workingRows(snapshot: Today, elsewhere: readonly AgentWorkTask[], expan
     row.className = "today-side-row";
     row.dataset.key = task.id;
     row.title = `${task.workspace} · ${task.id}`;
-    row.append(dot("working"), text("span", task.title), monoMeta(task.crew ?? task.workspace));
+    row.append(dot("working"), element("span", task.title), monoMeta(task.crew ?? task.workspace));
     return row;
   });
   const count = office.length + others.length;
@@ -285,7 +283,7 @@ function side(title: string, id: string): { section: HTMLElement; head: HTMLElem
 function addSource(view: HTMLElement): HTMLElement {
   const actions = document.createElement("div");
   actions.className = "today-bar-actions";
-  const status = text("span", "", "today-upload");
+  const status = element("span", "", "today-upload");
   status.setAttribute("aria-live", "polite");
   status.hidden = true;
   const input = document.createElement("input");
@@ -376,7 +374,7 @@ export function createTodayScreen({
       const needsCount = needsHead.querySelector<HTMLElement>(".today-count")!;
       needsCount.hidden = true;
       // Outcomes of the user's own actions outlive the row they came from.
-      const outcome = text("p", "", "today-outcome");
+      const outcome = element("p", "", "today-outcome");
       outcome.setAttribute("aria-live", "polite");
       outcome.hidden = true;
       const needsBody = document.createElement("div");
@@ -400,8 +398,8 @@ export function createTodayScreen({
       doneToggle.className = "today-list-head";
       doneToggle.dataset.focus = "done-today";
       doneToggle.setAttribute("aria-controls", "today-done-rows");
-      const doneCount = text("span", "", "today-count");
-      doneToggle.append(glyph("chevron", "today-chevron"), Object.assign(text("span", "Done today"), { id: "today-done-label" }), doneCount);
+      const doneCount = element("span", "", "today-count");
+      doneToggle.append(glyph("chevron", "today-chevron"), Object.assign(element("span", "Done today"), { id: "today-done-label" }), doneCount);
       doneHead.append(doneToggle);
       const doneBody = document.createElement("div");
       doneBody.id = "today-done-rows";
@@ -425,7 +423,7 @@ export function createTodayScreen({
       next.body.append(paragraph("Reading your calendar…"));
       const working = side("Agents working", "today-working-heading");
       working.section.classList.add("today-working");
-      const workingCount = text("span", "", "today-count");
+      const workingCount = element("span", "", "today-count");
       workingCount.hidden = true;
       working.head.append(workingCount);
       working.body.append(paragraph("Gathering agent work…"));

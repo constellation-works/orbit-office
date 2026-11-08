@@ -1,3 +1,4 @@
+export { button, element } from "./dom.js";
 export { card, type CardKicker } from "./card.js";
 export { pill, type Tone } from "./pill.js";
 export { tile, tileRow } from "./tile.js";

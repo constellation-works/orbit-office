@@ -7,14 +7,7 @@
 import type { AgentTodos, ModelsView, PrivateRouteStatus } from "@orbit-office/contracts";
 
 import { getAgentTodos, getModels, getPrivateRoute, saveAgentWorkspace } from "../../api/client.js";
-import { panel, panelBody, panelGrid, pill, type Tone } from "../../ui/index.js";
-
-function text<K extends keyof HTMLElementTagNameMap>(tag: K, content: string, className?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  element.textContent = content;
-  if (className !== undefined) element.className = className;
-  return element;
-}
+import { element, panel, panelBody, panelGrid, pill, type Tone } from "../../ui/index.js";
 
 const TONES: Record<ModelsView["jobs"][number]["check"]["state"], Tone> = { passed: "done", attention: "attention", off: "neutral" };
 
@@ -22,11 +15,11 @@ function modelsTable(view: ModelsView): HTMLElement {
   const passed = view.jobs.filter((job) => job.check.state === "passed").length;
   const at = new Date(view.checked_at);
   const time = Number.isFinite(at.getTime()) ? ` · ${at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : "";
-  const element = panel("Models", {
+  const panelEl = panel("Models", {
     id: "settings-models-heading",
     meta: `${passed} of ${view.jobs.length} checks passed${time}`,
   });
-  const intro = text("p", "What each job calls, and where it runs. Checked when this page opens.", "settings-models-intro");
+  const intro = element("p", "What each job calls, and where it runs. Checked when this page opens.", "settings-models-intro");
   const table = document.createElement("div");
   table.className = "settings-models";
   table.setAttribute("role", "table");
@@ -35,7 +28,7 @@ function modelsTable(view: ModelsView): HTMLElement {
   head.className = "settings-models-row settings-models-head";
   head.setAttribute("role", "row");
   for (const label of ["Job", "Model", "Where it runs", "Check"]) {
-    const cell = text("span", label);
+    const cell = element("span", label);
     cell.setAttribute("role", "columnheader");
     head.append(cell);
   }
@@ -44,7 +37,7 @@ function modelsTable(view: ModelsView): HTMLElement {
     const line = document.createElement("div");
     line.className = "settings-models-row";
     line.setAttribute("role", "row");
-    const cells = [text("span", job.job), text("span", job.model, "settings-models-model"), text("span", job.where, "settings-models-where")];
+    const cells = [element("span", job.job), element("span", job.model, "settings-models-model"), element("span", job.where, "settings-models-where")];
     const check = document.createElement("span");
     check.append(pill(job.check.label, TONES[job.check.state]));
     for (const cell of [...cells, check]) {
@@ -53,51 +46,51 @@ function modelsTable(view: ModelsView): HTMLElement {
     }
     table.append(line);
   }
-  element.append(panelBody(intro, table));
-  return element;
+  panelEl.append(panelBody(intro, table));
+  return panelEl;
 }
 
 function privateSummary(route: PrivateRouteStatus | null, open: () => void): HTMLElement {
-  const element = panel("Private route", { id: "settings-private-summary" });
-  const body = panelBody(text("p", "Sources marked private never leave your endpoint. Built with Muse Spark Open."));
+  const panelEl = panel("Private route", { id: "settings-private-summary" });
+  const body = panelBody(element("p", "Sources marked private never leave your endpoint. Built with Muse Spark Open."));
   const block = route?.route ?? null;
-  if (route === null) body.append(text("p", "Couldn’t read the private route.", "settings-meta"));
-  else if (block === null) body.append(text("p", "Not set up. Private sources can’t be processed until it is.", "settings-meta"));
+  if (route === null) body.append(element("p", "Couldn’t read the private route.", "settings-meta"));
+  else if (block === null) body.append(element("p", "Not set up. Private sources can’t be processed until it is.", "settings-meta"));
   else {
-    body.append(text("p", `${block.label} · ${block.model}`, "settings-meta settings-url"));
-    body.append(text("p", block.verified_at === null ? "Not checked yet." : `Last checked ${new Date(block.verified_at).toLocaleString()}.`, "settings-meta"));
+    body.append(element("p", `${block.label} · ${block.model}`, "settings-meta settings-url"));
+    body.append(element("p", block.verified_at === null ? "Not checked yet." : `Last checked ${new Date(block.verified_at).toLocaleString()}.`, "settings-meta"));
   }
-  const button = text("button", block === null ? "Set up the private route" : "Edit the private route");
+  const button = element("button", block === null ? "Set up the private route" : "Edit the private route");
   button.type = "button";
   button.addEventListener("click", open);
   body.append(button);
-  element.append(body);
-  return element;
+  panelEl.append(body);
+  return panelEl;
 }
 
 function targetPanel(agents: AgentTodos | null, alive: () => boolean): HTMLElement {
-  const element = panel("Where agent to-dos go", { id: "settings-target-heading" });
-  const body = panelBody(text("p", "Engineering to-dos from meetings become Orbit tasks in this workspace, for its crews to ship. With none, every to-do stays yours."));
+  const panelEl = panel("Where agent to-dos go", { id: "settings-target-heading" });
+  const body = panelBody(element("p", "Engineering to-dos from meetings become Orbit tasks in this workspace, for its crews to ship. With none, every to-do stays yours."));
   if (agents === null) {
-    body.append(text("p", "Couldn’t read the target workspace.", "settings-meta"));
-    element.append(body);
-    return element;
+    body.append(element("p", "Couldn’t read the target workspace.", "settings-meta"));
+    panelEl.append(body);
+    return panelEl;
   }
   const label = document.createElement("label");
   label.className = "settings-field";
-  label.append(text("span", "Target workspace"));
+  label.append(element("span", "Target workspace"));
   const select = document.createElement("select");
   for (const workspace of [...new Set([...(agents.target_workspace === null ? [] : [agents.target_workspace]), ...agents.followed])]) {
-    const option = text("option", workspace);
+    const option = element("option", workspace);
     option.value = workspace;
     select.append(option);
   }
-  const none = text("option", "None: keep every to-do as mine");
+  const none = element("option", "None: keep every to-do as mine");
   none.value = "";
   select.append(none);
   select.value = agents.target_workspace ?? "";
   label.append(select);
-  const status = text("p", agents.followed.length === 0 && agents.target_workspace === null
+  const status = element("p", agents.followed.length === 0 && agents.target_workspace === null
     ? "Only workspaces you follow (brief.task_workspaces) are offered here." : "", "settings-meta");
   status.setAttribute("role", "status");
   let saved = agents.target_workspace ?? "";
@@ -114,8 +107,8 @@ function targetPanel(agents: AgentTodos | null, alive: () => boolean): HTMLEleme
     }).finally(() => { select.disabled = false; });
   });
   body.append(label, status);
-  element.append(body);
-  return element;
+  panelEl.append(body);
+  return panelEl;
 }
 
 /** Draw the Models section. `openPrivate` switches to the Private route tab. */

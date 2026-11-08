@@ -1,7 +1,7 @@
 /** Private route: where private material goes, in plain words. */
 import type { PrivateRouteCheckLine, PrivateRouteStatus, PrivateRouteWrite, PrivateTokenBinding, RouteCapability } from "@orbit-office/contracts";
 import { ApiError, getPrivateRoute, savePrivateRoute } from "../../api/client.js";
-import { MUSE_SPARK_OPEN_ATTRIBUTION } from "../../ui/index.js";
+import { MUSE_SPARK_OPEN_ATTRIBUTION, element } from "../../ui/index.js";
 
 /** The sentence the private-route section always shows. */
 export const PRIVATE_ROUTE_WORDING =
@@ -83,18 +83,18 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
   const fields = document.createElement("div");
   fields.className = "settings-fields";
 
-  const kindWrap = text("label", "Endpoint kind");
+  const kindWrap = element("label", "Endpoint kind");
   kindWrap.className = "settings-field";
   const kind = document.createElement("select");
   kind.name = "kind";
   kind.required = true;
   kind.setAttribute("aria-label", "Endpoint kind");
-  const placeholder = text("option", "Choose where it runs");
+  const placeholder = element("option", "Choose where it runs");
   placeholder.value = "";
   placeholder.disabled = true;
   kind.append(placeholder);
   for (const value of Object.keys(KIND_LABELS) as PrivateRouteWrite["kind"][]) {
-    const option = text("option", KIND_LABELS[value]);
+    const option = element("option", KIND_LABELS[value]);
     option.value = value;
     kind.append(option);
   }
@@ -117,11 +117,11 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
   token.setAttribute("aria-label", "Endpoint token");
   let binding: PrivateTokenBinding = mount.data.token_binding;
   let boundOrigin = binding === "this_endpoint" && route !== null ? endpointOrigin(route.endpoint) : undefined;
-  const hint = text("span", "");
+  const hint = element("span", "");
   hint.className = "settings-hint";
   hint.setAttribute("aria-live", "polite");
   token.parentElement?.append(hint);
-  const clearWrap = text("label", "");
+  const clearWrap = element("label", "");
   clearWrap.className = "settings-check";
   const clear = document.createElement("input");
   clear.type = "checkbox";
@@ -148,9 +148,9 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
     showToken();
   }
 
-  const destination = text("p", "");
+  const destination = element("p", "");
   destination.className = "settings-destination";
-  const preview = text("p", "");
+  const preview = element("p", "");
   preview.className = "settings-preview";
   function describe(): void {
     const selected = kind.value;
@@ -168,10 +168,10 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
 
   const notes = document.createElement("ul");
   notes.className = "capability-notes";
-  const attribution = text("p", MUSE_SPARK_OPEN_ATTRIBUTION);
+  const attribution = element("p", MUSE_SPARK_OPEN_ATTRIBUTION);
   attribution.className = "settings-attribution";
   function showNotes(sentences: readonly string[]): void {
-    notes.replaceChildren(...sentences.map((sentence) => text("li", sentence)));
+    notes.replaceChildren(...sentences.map((sentence) => element("li", sentence)));
   }
   function showAttribution(configured: boolean): void {
     attribution.hidden = !configured;
@@ -185,7 +185,7 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
     showAttribution(true);
   }
 
-  const feedback = text("p", route === null
+  const feedback = element("p", route === null
     ? "Nothing private is configured yet. Private material is refused until you save an endpoint."
     : "");
   feedback.className = "settings-feedback";
@@ -193,20 +193,20 @@ export function mountPrivateRoute(content: HTMLElement, mount: PrivateRouteMount
 
   const actions = document.createElement("div");
   actions.className = "settings-actions";
-  const submit = text("button", "Save private route");
+  const submit = element("button", "Save private route");
   submit.type = "submit";
   actions.append(submit);
 
-  const honest = text("p", PRIVATE_ROUTE_WORDING);
+  const honest = element("p", PRIVATE_ROUTE_WORDING);
   honest.className = "settings-honest";
   form.append(fields, destination, preview, honest, notes, attribution, feedback, actions);
 
   const heading = document.createElement("div");
   heading.className = "settings-heading";
-  heading.append(text("h2", "Private route"));
+  heading.append(element("h2", "Private route"));
   content.replaceChildren(
     heading,
-    text("p", "Choose the one endpoint private material is sent to."),
+    element("p", "Choose the one endpoint private material is sent to."),
     form,
   );
 
@@ -280,14 +280,8 @@ function saveMessage(error: unknown): string {
   return "Could not confirm the save. Refresh the private route before trying again.";
 }
 
-function text<K extends keyof HTMLElementTagNameMap>(tag: K, content: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.textContent = content;
-  return node;
-}
-
 function field(fields: HTMLElement, label: string, name: string, value: string, type = "text"): HTMLInputElement {
-  const wrap = text("label", label);
+  const wrap = element("label", label);
   wrap.className = "settings-field";
   if (name === "endpoint" || name === "model" || name === "label") wrap.classList.add("settings-wide");
   const input = document.createElement("input");

@@ -12,17 +12,11 @@ import { ApiError, capturePaste, getSource, getSourceCitation, markSourcePrivate
 import { sourceHref } from "../../api/source-location.js";
 import { anchorTarget, clock, droppedFiles, parseTurn, seconds, sourceLength, sourceMarks, supportedFile, turnMarks, type Mark } from "./model.js";
 import { styles } from "./style.js";
-import { panel, panelBody, pill, sharedLabel, shareSwitch, type Tone } from "../../ui/index.js";
+import { button, element, panel, panelBody, pill, sharedLabel, shareSwitch, type Tone } from "../../ui/index.js";
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ""): HTMLElementTagNameMap[K] => {
-  const node = document.createElement(tag); node.textContent = text; return node;
-};
-const button = (label: string, action: () => void): HTMLButtonElement => {
-  const node = el("button", label); node.type = "button"; node.addEventListener("click", action); return node;
-};
 function privateBox(): { label: HTMLLabelElement; input: HTMLInputElement } {
-  const input = el("input"); input.type = "checkbox";
-  const label = el("label"); label.append(input, document.createTextNode("Private — use only your chosen endpoint")); return { label, input };
+  const input = element("input"); input.type = "checkbox";
+  const label = element("label"); label.append(input, document.createTextNode("Private — use only your chosen endpoint")); return { label, input };
 }
 const phaseNames = { docs: "Documents", kt: "Knowledge transfer", team: "Team", process: "Processes" };
 function message(error: unknown): string {
@@ -36,47 +30,47 @@ async function render(root: HTMLElement): Promise<void> {
   const shown = root.querySelector<HTMLElement>(":scope > .source-page");
   const reuse = shown ? drawn.get(shown) : undefined;
   if (selected && reuse && reuse.id === selected && SAME_SOURCE.test(window.location.hash)) { reuse.apply(); return; }
-  const page = el("section"); page.className = "source-page";
-  const header = el("header"); header.className = "source-head";
-  const heading = el("h1", "Source");
-  const meta = el("p", selected ? "" : "Keep the original beside the words, with every citation in place."); meta.className = "intro";
-  if (selected) { const back = el("a", "Library · Sources"); back.href = "#library"; back.className = "source-back"; header.append(back); }
+  const page = element("section"); page.className = "source-page";
+  const header = element("header"); header.className = "source-head";
+  const heading = element("h1", "Source");
+  const meta = element("p", selected ? "" : "Keep the original beside the words, with every citation in place."); meta.className = "intro";
+  if (selected) { const back = element("a", "Library · Sources"); back.href = "#library"; back.className = "source-back"; header.append(back); }
   header.append(heading, meta);
-  page.append(el("style", styles), header); root.replaceChildren(page);
+  page.append(element("style", styles), header); root.replaceChildren(page);
   const alive = (): boolean => page.isConnected;
-  const capture = el("section"); capture.className = "source-drop";
-  capture.append(el("h2", "Add a source"), el("p", "Drop a file or folder here, choose files, or paste text below."));
+  const capture = element("section"); capture.className = "source-drop";
+  capture.append(element("h2", "Add a source"), element("p", "Drop a file or folder here, choose files, or paste text below."));
   const privacy = privateBox(); capture.append(privacy.label);
-  const phase = el("select"); phase.setAttribute("aria-label", "Folder phase");
-  for (const [key, title] of Object.entries(phaseNames)) { const option = el("option", title); option.value = key; phase.append(option); }
-  const phaseLabel = el("label", "Organize folders as "); phaseLabel.append(phase); capture.append(phaseLabel);
-  const files = el("input"); files.type = "file"; files.multiple = true; files.setAttribute("aria-label", "Choose files");
-  const folder = el("input"); folder.type = "file"; folder.multiple = true; folder.setAttribute("webkitdirectory", ""); folder.setAttribute("aria-label", "Choose a folder");
-  const actions = el("div"); actions.className = "source-actions"; const fileLabel = el("label", "Files"); fileLabel.append(files); const folderLabel = el("label", "Folder"); folderLabel.append(folder); actions.append(fileLabel, folderLabel); capture.append(actions);
-  const paste = el("form"); paste.className = "source-paste";
-  const title = el("input"); title.required = true; title.placeholder = "Source title"; title.setAttribute("aria-label", "Source title");
-  const text = el("textarea"); text.required = true; text.placeholder = "Paste an email, notes, or a conversation"; text.setAttribute("aria-label", "Pasted text");
-  const save = el("button", "Save pasted text"); save.type = "submit"; paste.append(title, text, save); capture.append(paste);
-  const note = el("p"); note.className = "source-message"; note.setAttribute("role", "status"); capture.append(note);
-  const result = el("div"); result.className = "source-result";
+  const phase = element("select"); phase.setAttribute("aria-label", "Folder phase");
+  for (const [key, title] of Object.entries(phaseNames)) { const option = element("option", title); option.value = key; phase.append(option); }
+  const phaseLabel = element("label", "Organize folders as "); phaseLabel.append(phase); capture.append(phaseLabel);
+  const files = element("input"); files.type = "file"; files.multiple = true; files.setAttribute("aria-label", "Choose files");
+  const folder = element("input"); folder.type = "file"; folder.multiple = true; folder.setAttribute("webkitdirectory", ""); folder.setAttribute("aria-label", "Choose a folder");
+  const actions = element("div"); actions.className = "source-actions"; const fileLabel = element("label", "Files"); fileLabel.append(files); const folderLabel = element("label", "Folder"); folderLabel.append(folder); actions.append(fileLabel, folderLabel); capture.append(actions);
+  const paste = element("form"); paste.className = "source-paste";
+  const title = element("input"); title.required = true; title.placeholder = "Source title"; title.setAttribute("aria-label", "Source title");
+  const text = element("textarea"); text.required = true; text.placeholder = "Paste an email, notes, or a conversation"; text.setAttribute("aria-label", "Pasted text");
+  const save = element("button", "Save pasted text"); save.type = "submit"; paste.append(title, text, save); capture.append(paste);
+  const note = element("p"); note.className = "source-message"; note.setAttribute("role", "status"); capture.append(note);
+  const result = element("div"); result.className = "source-result";
   // A selected source comes first; capturing another folds away below it.
-  if (selected) { const disclosure = el("details"); disclosure.className = "source-more"; disclosure.append(el("summary", "Add another source"), capture); page.append(result, disclosure); } else page.append(capture, result);
+  if (selected) { const disclosure = element("details"); disclosure.className = "source-more"; disclosure.append(element("summary", "Add another source"), capture); page.append(result, disclosure); } else page.append(capture, result);
   let busy = false;
   function locked(value: boolean): void { busy = value; for (const node of capture.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement | HTMLTextAreaElement>("input,button,select,textarea")) node.disabled = value; }
   function open(source: CapturedSource): void { window.location.assign(sourceHref(source.id)); }
   async function plan(target: { id: string } | { phase: BootstrapPhase }, privateSource: boolean): Promise<void> {
-    result.replaceChildren(el("p", "Preparing a preview. No model processing has started."));
+    result.replaceChildren(element("p", "Preparing a preview. No model processing has started."));
     try { const preview = await sourcePlan({ ...target, private: privateSource }); if (alive()) drawPlan(preview, target); }
-    catch (error) { if (alive()) result.replaceChildren(el("p", message(error))); }
+    catch (error) { if (alive()) result.replaceChildren(element("p", message(error))); }
   }
   function drawPlan(preview: SourcePlan, target: { id: string } | { phase: BootstrapPhase }): void {
-    const panel = el("section"); panel.className = "source-plan"; panel.setAttribute("aria-label", "Processing preview");
-    panel.append(el("h2", preview.phase ? `${phaseNames[preview.phase]} preview` : "Video preview"));
-    panel.append(el("p", `${preview.sources} ${preview.sources === 1 ? "source" : "sources"} · ${Math.ceil(preview.minutes)} minutes · ${preview.frames} frames · ${preview.calls} model calls`));
-    panel.append(el("p", preview.estimate === null ? "Rates unset" : `Estimated cost: ${preview.estimate.amount.toFixed(2)} ${preview.estimate.currency}`));
+    const panel = element("section"); panel.className = "source-plan"; panel.setAttribute("aria-label", "Processing preview");
+    panel.append(element("h2", preview.phase ? `${phaseNames[preview.phase]} preview` : "Video preview"));
+    panel.append(element("p", `${preview.sources} ${preview.sources === 1 ? "source" : "sources"} · ${Math.ceil(preview.minutes)} minutes · ${preview.frames} frames · ${preview.calls} model calls`));
+    panel.append(element("p", preview.estimate === null ? "Rates unset" : `Estimated cost: ${preview.estimate.amount.toFixed(2)} ${preview.estimate.currency}`));
     const privateControl = privateBox(); privateControl.input.checked = preview.private; privateControl.input.disabled = preview.private; panel.append(privateControl.label);
-    panel.append(el("p", "Private means not sent to the hosted model API, sent only to the endpoint you chose."));
-    const status = el("p"); status.setAttribute("role", "status");
+    panel.append(element("p", "Private means not sent to the hosted model API, sent only to the endpoint you chose."));
+    const status = element("p"); status.setAttribute("role", "status");
     const process = button("Process", () => {
       process.disabled = true; privateControl.input.disabled = true; locked(true);
       void sourcePlan({ ...target, private: preview.private, confirm: true, digest: preview.digest }).then(() => {
@@ -108,7 +102,7 @@ async function render(root: HTMLElement): Promise<void> {
       else if (captured.length === 1 && captured[0]) {
         if (captured[0].kind === "video") await plan({ id: captured[0].id }, privacy.input.checked); else open(captured[0]);
       } else {
-        for (const source of captured) { const link = el("a", source.title); link.href = sourceHref(source.id); const p = el("p"); p.append(link); result.append(p); }
+        for (const source of captured) { const link = element("a", source.title); link.href = sourceHref(source.id); const p = element("p"); p.append(link); result.append(p); }
       }
     } catch (error) { if (alive()) note.textContent = `${captured.length} saved. ${message(error)}`; }
     finally { if (alive()) { locked(false); files.value = ""; folder.value = ""; } }
@@ -128,9 +122,9 @@ async function render(root: HTMLElement): Promise<void> {
     void capturePaste({ title: title.value.trim(), text: text.value, private: privacy.input.checked }).then(source => { if (alive()) open(source); }).catch(error => { if (alive()) { note.textContent = message(error); locked(false); } });
   });
   if (!selected) return;
-  result.append(el("p", "Loading source."));
+  result.append(element("p", "Loading source."));
   try { const source = await getSource(selected); if (alive()) { heading.textContent = source.title; meta.textContent = metaLine(source); drawn.set(page, { id: source.id, apply: drawSource(source, result) }); } }
-  catch (error) { if (alive()) result.replaceChildren(el("p", message(error))); }
+  catch (error) { if (alive()) result.replaceChildren(element("p", message(error))); }
 }
 
 const KINDS: Record<string, string> = { meeting: "Meeting", video: "Video", audio: "Recording", image: "Image", doc: "Document", conversation: "Conversation" };
@@ -154,29 +148,29 @@ function box(title: string): { section: HTMLElement; body: HTMLElement } {
 }
 
 function drawSource(source: SourceView, root: HTMLElement): () => void {
-  const section = el("section"); section.className = "source-view"; root.replaceChildren(section);
-  const notice = el("div"); notice.className = "source-notice"; section.append(notice);
+  const section = element("section"); section.className = "source-view"; root.replaceChildren(section);
+  const notice = element("div"); notice.className = "source-notice"; section.append(notice);
   const marks = sourceMarks(source);
 
   // The player: the original, with a timeline of the chapters and gotchas.
-  const player = el("div"); player.className = "source-player source-original";
+  const player = element("div"); player.className = "source-player source-original";
   const mime = source.media_type ?? ""; let media: HTMLMediaElement | undefined;
   if (mime.startsWith("video/") || mime.startsWith("audio/")) {
-    media = mime.startsWith("video/") ? el("video") : el("audio"); media.controls = true; media.preload = "metadata";
+    media = mime.startsWith("video/") ? element("video") : element("audio"); media.controls = true; media.preload = "metadata";
     media.src = `/api/sources/media?id=${encodeURIComponent(source.id)}`; player.append(media);
-    media.addEventListener("error", () => { player.append(el("p", "The original cannot be played here. It may have expired or exceed the current 512 KiB media limit.")); }, { once: true });
+    media.addEventListener("error", () => { player.append(element("p", "The original cannot be played here. It may have expired or exceed the current 512 KiB media limit.")); }, { once: true });
   } else if (mime.startsWith("image/")) {
-    const image = el("img"); image.alt = source.title; image.src = `/api/sources/media?id=${encodeURIComponent(source.id)}`;
-    image.addEventListener("error", () => { image.replaceWith(el("p", "The original image is unavailable or exceeds the current media limit.")); }); player.append(image);
-  } else player.append(el("p", "The captured text is shown below. No playable original is available."));
+    const image = element("img"); image.alt = source.title; image.src = `/api/sources/media?id=${encodeURIComponent(source.id)}`;
+    image.addEventListener("error", () => { image.replaceWith(element("p", "The original image is unavailable or exceeds the current media limit.")); }); player.append(image);
+  } else player.append(element("p", "The captured text is shown below. No playable original is available."));
   let length = sourceLength(source);
   if (length > 0 || media) {
-    const timeline = el("div"); timeline.className = "source-timeline";
-    const readout = el("span", `00:00:00 / ${clock(length)}`); readout.className = "mono-meta source-readout";
-    const track = el("div"); track.className = "source-track"; track.setAttribute("role", "group"); track.setAttribute("aria-label", "Timeline");
-    const rail = el("div"); rail.className = "source-rail"; const fill = el("div"); fill.className = "source-fill"; track.append(rail, fill);
+    const timeline = element("div"); timeline.className = "source-timeline";
+    const readout = element("span", `00:00:00 / ${clock(length)}`); readout.className = "mono-meta source-readout";
+    const track = element("div"); track.className = "source-track"; track.setAttribute("role", "group"); track.setAttribute("aria-label", "Timeline");
+    const rail = element("div"); rail.className = "source-rail"; const fill = element("div"); fill.className = "source-fill"; track.append(rail, fill);
     const markNodes = marks.map(mark => {
-      const node = el("a"); node.className = "source-mark"; node.dataset.kind = mark.kind;
+      const node = element("a"); node.className = "source-mark"; node.dataset.kind = mark.kind;
       node.href = sourceHref(source.id, mark.anchor); node.title = `${clock(mark.time)} · ${mark.label}`; node.setAttribute("aria-label", node.title);
       track.append(node); return { node, mark };
     });
@@ -196,17 +190,17 @@ function drawSource(source: SourceView, root: HTMLElement): () => void {
   }
   section.append(player);
 
-  const columns = el("div"); columns.className = "source-columns";
-  const main = el("div"); main.className = "source-main";
-  const aside = el("aside"); aside.className = "source-aside"; aside.setAttribute("aria-label", "About this source");
+  const columns = element("div"); columns.className = "source-columns";
+  const main = element("div"); main.className = "source-main";
+  const aside = element("aside"); aside.className = "source-aside"; aside.setAttribute("aria-label", "About this source");
   columns.append(main, aside); section.append(columns);
 
   // Transcript: one row per line, a stamped line as a speaker turn tagged with its marks.
   const lineList = source.text.split("\n");
   const timed = lineList.some(line => parseTurn(line) !== null);
   const transcript = box(timed ? "Transcript" : "Text");
-  const tray = el("div"); tray.className = "source-tray";
-  const count = el("span", "Shared with agent: unavailable"); count.className = "pill"; count.setAttribute("role", "status");
+  const tray = element("div"); tray.className = "source-tray";
+  const count = element("span", "Shared with agent: unavailable"); count.className = "pill"; count.setAttribute("role", "status");
   let generation = 0;
   async function refresh(): Promise<void> {
     const current = ++generation;
@@ -216,25 +210,25 @@ function drawSource(source: SourceView, root: HTMLElement): () => void {
   const clear = button("Clear", () => { clear.disabled = true; void clearSelections().then(refresh).catch(() => { count.textContent = "Shared with agent: unavailable"; }).finally(() => { clear.disabled = false; }); });
   tray.append(count, clear); transcript.section.querySelector(".panel-head")?.append(tray); void refresh();
   const timer = window.setInterval(() => { if (!section.isConnected) window.clearInterval(timer); else void refresh(); }, 5000);
-  if (source.content_withheld) transcript.body.append(el("p", "This source is private, so its text is withheld here. It is only processed on your chosen private endpoint."));
-  const lines = el("div"); lines.className = "source-text"; lines.setAttribute("aria-label", "Source text");
+  if (source.content_withheld) transcript.body.append(element("p", "This source is private, so its text is withheld here. It is only processed on your chosen private endpoint."));
+  const lines = element("div"); lines.className = "source-text"; lines.setAttribute("aria-label", "Source text");
   const tagged = turnMarks(lineList, marks);
   const lineNodes = lineList.map((line, index) => {
-    const node = el("div"); node.className = "source-line"; node.id = `L${index + 1}`;
+    const node = element("div"); node.className = "source-line"; node.id = `L${index + 1}`;
     const turn = parseTurn(line);
     if (turn) {
       node.classList.add("source-turn");
-      const link = el("a", turn.stamp); link.className = "source-stamp"; link.href = sourceHref(source.id, `#t=${turn.stamp}`); link.setAttribute("aria-label", `Open ${turn.stamp}`);
-      const body = el("div"); body.className = "source-turn-body";
-      if (turn.who) { const who = el("span", turn.who); who.className = "source-who"; body.append(who); }
-      const said = el("span", turn.text); said.className = "source-said"; body.append(said);
+      const link = element("a", turn.stamp); link.className = "source-stamp"; link.href = sourceHref(source.id, `#t=${turn.stamp}`); link.setAttribute("aria-label", `Open ${turn.stamp}`);
+      const body = element("div"); body.className = "source-turn-body";
+      if (turn.who) { const who = element("span", turn.who); who.className = "source-who"; body.append(who); }
+      const said = element("span", turn.text); said.className = "source-said"; body.append(said);
       const tags = tagged.get(index) ?? [];
-      if (tags.length) { const row = el("span"); row.className = "source-tags"; for (const mark of tags) row.append(pill(mark.tag, MARK_TONES[mark.kind])); body.append(row); }
+      if (tags.length) { const row = element("span"); row.className = "source-tags"; for (const mark of tags) row.append(pill(mark.tag, MARK_TONES[mark.kind])); body.append(row); }
       node.append(link, body);
     } else if (line.trim() === "") node.classList.add("source-blank");
     else {
-      const link = el("a", String(index + 1)); link.className = "source-stamp source-lineno"; link.href = sourceHref(source.id, `#L${index + 1}`); link.setAttribute("aria-label", `Open line ${index + 1}`);
-      const said = el("span", line); said.className = "source-said"; node.append(link, said);
+      const link = element("a", String(index + 1)); link.className = "source-stamp source-lineno"; link.href = sourceHref(source.id, `#L${index + 1}`); link.setAttribute("aria-label", `Open line ${index + 1}`);
+      const said = element("span", line); said.className = "source-said"; node.append(link, said);
     }
     lines.append(node); return node;
   });
@@ -259,26 +253,26 @@ function drawSource(source: SourceView, root: HTMLElement): () => void {
   const chapters = box("Chapters");
   for (let index = 0; index < source.chapters.length; index++) {
     const chapter = source.chapters[index]; if (!chapter) continue;
-    const item = el("div"); item.className = "source-chapter"; const content = el("div");
-    const link = el("a", `${clock(chapter.start)} · ${chapter.title}`); link.href = sourceHref(source.id, `#chapter=${chapter.number}`); content.append(link);
-    if (chapter.label === "tangent") { const fold = el("details"); const summary = el("summary", `Aside: ${chapter.title}`); fold.append(summary, content); item.append(fold); }
+    const item = element("div"); item.className = "source-chapter"; const content = element("div");
+    const link = element("a", `${clock(chapter.start)} · ${chapter.title}`); link.href = sourceHref(source.id, `#chapter=${chapter.number}`); content.append(link);
+    if (chapter.label === "tangent") { const fold = element("details"); const summary = element("summary", `Aside: ${chapter.title}`); fold.append(summary, content); item.append(fold); }
     else item.append(content);
     const end = source.chapters[index + 1]?.start ?? Infinity;
     for (const gotcha of source.gotchas) {
-      if (gotcha.cites.some(cite => { const time = seconds(/#(?:t|frame)=(.+)$/.exec(cite)?.[1] ?? ""); return time !== null && time >= chapter.start && time < end; })) { const warning = el("p", `Gotcha: ${gotcha.text}`); warning.className = "source-gotcha"; item.append(warning); shownGotchas.add(gotcha); }
+      if (gotcha.cites.some(cite => { const time = seconds(/#(?:t|frame)=(.+)$/.exec(cite)?.[1] ?? ""); return time !== null && time >= chapter.start && time < end; })) { const warning = element("p", `Gotcha: ${gotcha.text}`); warning.className = "source-gotcha"; item.append(warning); shownGotchas.add(gotcha); }
     }
     chapterNodes.set(chapter.number, item); chapters.body.append(item);
   }
-  for (const gotcha of source.gotchas) if (!shownGotchas.has(gotcha)) { const warning = el("p", `Gotcha: ${gotcha.text}`); warning.className = "source-gotcha"; chapters.body.append(warning); }
+  for (const gotcha of source.gotchas) if (!shownGotchas.has(gotcha)) { const warning = element("p", `Gotcha: ${gotcha.text}`); warning.className = "source-gotcha"; chapters.body.append(warning); }
   if (source.chapters.length || source.gotchas.length) main.append(chapters.section);
   const frameNodes: HTMLElement[] = [];
   if (source.frames.length) {
-    const frames = box("Keyframes"); const strip = el("div"); strip.className = "source-frames";
+    const frames = box("Keyframes"); const strip = element("div"); strip.className = "source-frames";
     for (const frame of source.frames) {
-      const item = el("figure"); item.className = "source-frame";
-      const link = el("a"); link.href = sourceHref(source.id, frame.anchor);
-      const image = el("img"); image.alt = frame.text; image.loading = "lazy"; image.src = `/api/sources/media?${new URLSearchParams({ id: source.id, frame: frame.file })}`;
-      link.append(image, el("span", clock(frame.time))); item.append(link, el("figcaption", frame.text)); strip.append(item); frameNodes.push(item);
+      const item = element("figure"); item.className = "source-frame";
+      const link = element("a"); link.href = sourceHref(source.id, frame.anchor);
+      const image = element("img"); image.alt = frame.text; image.loading = "lazy"; image.src = `/api/sources/media?${new URLSearchParams({ id: source.id, frame: frame.file })}`;
+      link.append(image, element("span", clock(frame.time))); item.append(link, element("figcaption", frame.text)); strip.append(item); frameNodes.push(item);
     }
     frames.body.append(strip); main.append(frames.section);
   }
@@ -305,7 +299,7 @@ function drawSource(source: SourceView, root: HTMLElement): () => void {
         const seek = (): void => { if (current.isConnected) current.currentTime = time; };
         if (current.readyState >= 1) seek(); else current.addEventListener("loadedmetadata", seek, { once: true });
       }
-    } else if (/^#(?:t=|L|frame=|chapter=)/.test(window.location.hash)) notice.append(el("p", "This citation does not match a span in the current source."));
+    } else if (/^#(?:t=|L|frame=|chapter=)/.test(window.location.hash)) notice.append(element("p", "This citation does not match a span in the current source."));
   };
   applyAnchor();
   const onHash = (): void => { if (!section.isConnected) window.removeEventListener("hashchange", onHash); else if (SAME_SOURCE.test(window.location.hash)) applyAnchor(); };
@@ -324,22 +318,22 @@ const CITER_KINDS: Record<string, string> = { task: "Agent task", page: "Library
 /** Cited by: the pages, tasks and sources that cite this one; a page or task opens its text here. */
 function citedBy(source: SourceView, section: HTMLElement): HTMLElement {
   const cited = box("Cited by");
-  if (!source.cited_by.length) cited.body.append(el("p", "No linked pages or tasks yet."));
-  if (!source.task_citers_available) cited.body.append(el("p", "Task links are unavailable at the moment."));
-  if (source.cited_by_truncated) cited.body.append(el("p", "More tasks cite this source than are shown here."));
-  const detail = el("div"); detail.className = "source-citation";
+  if (!source.cited_by.length) cited.body.append(element("p", "No linked pages or tasks yet."));
+  if (!source.task_citers_available) cited.body.append(element("p", "Task links are unavailable at the moment."));
+  if (source.cited_by_truncated) cited.body.append(element("p", "More tasks cite this source than are shown here."));
+  const detail = element("div"); detail.className = "source-citation";
   let citationGeneration = 0;
   function citationDetail(citation: SourceView["cited_by"][number]): void {
     const generation = ++citationGeneration;
-    detail.replaceChildren(el("p", "Loading linked work."));
-    void getSourceCitation(citation.id, citation.kind).then(data => { if (section.isConnected && generation === citationGeneration) { const text = el("p", data.text); text.className = "source-citation-text"; detail.replaceChildren(el("h3", data.title), text); } }).catch(error => { if (section.isConnected && generation === citationGeneration) detail.replaceChildren(el("p", message(error))); });
+    detail.replaceChildren(element("p", "Loading linked work."));
+    void getSourceCitation(citation.id, citation.kind).then(data => { if (section.isConnected && generation === citationGeneration) { const text = element("p", data.text); text.className = "source-citation-text"; detail.replaceChildren(element("h3", data.title), text); } }).catch(error => { if (section.isConnected && generation === citationGeneration) detail.replaceChildren(element("p", message(error))); });
   }
   if (source.cited_by.length) {
-    const list = el("ul"); list.className = "rows source-citers";
+    const list = element("ul"); list.className = "rows source-citers";
     for (const citation of source.cited_by) {
-      const item = el("li"); item.className = "source-citer";
-      const kind = el("span", CITER_KINDS[citation.kind] ?? citation.kind); kind.className = "source-citer-kind";
-      const link = el("a", citation.title); link.href = citation.kind === "source" ? sourceHref(citation.id) : `?source=${encodeURIComponent(source.id)}&citation=${encodeURIComponent(citation.id)}#source`;
+      const item = element("li"); item.className = "source-citer";
+      const kind = element("span", CITER_KINDS[citation.kind] ?? citation.kind); kind.className = "source-citer-kind";
+      const link = element("a", citation.title); link.href = citation.kind === "source" ? sourceHref(citation.id) : `?source=${encodeURIComponent(source.id)}&citation=${encodeURIComponent(citation.id)}#source`;
       if (citation.kind !== "source") link.addEventListener("click", event => {
         event.preventDefault(); window.history.replaceState(null, "", link.href); citationDetail(citation);
       });
@@ -357,20 +351,20 @@ function citedBy(source: SourceView, section: HTMLElement): HTMLElement {
 /** Where it ran: the recorded model routes, the sensitivity, Mark private and team sharing. */
 function whereItRan(source: SourceView, section: HTMLElement): HTMLElement {
   const where = box("Where it ran");
-  const routes = el("div"); routes.className = "source-routes";
+  const routes = element("div"); routes.className = "source-routes";
   for (const label of source.route_labels) routes.append(pill(label, label.startsWith("Private") ? "private" : "neutral"));
-  if (source.route_labels.length) where.body.append(routes); else where.body.append(el("p", "No model processing recorded."));
-  const sharedLine = el("p"); sharedLine.className = "source-sharing"; const sharing = el("div");
+  if (source.route_labels.length) where.body.append(routes); else where.body.append(element("p", "No model processing recorded."));
+  const sharedLine = element("p"); sharedLine.className = "source-sharing"; const sharing = element("div");
   // Marking a source private also stops sharing it, so both redraw from `source`.
   const drawSharing = (): void => {
     const label = sharedLabel(source.shared_by, source.shareable); sharedLine.replaceChildren(...(label ? [label] : []));
     if (source.shared_by === null) sharing.replaceChildren(shareSwitch({ id: source.id, noun: "this source", shareable: source.shareable, private: source.sensitivity === "private", onChange: (next) => { source.shareable = next; drawSharing(); } }));
   };
   drawSharing();
-  if (source.sensitivity === "private") where.body.append(el("p", "Marked private. Every future call stays on your chosen endpoint."));
+  if (source.sensitivity === "private") where.body.append(element("p", "Marked private. Every future call stays on your chosen endpoint."));
   else {
-    const note = el("p", "Normal sensitivity. Mark the source private to keep every future call on your chosen endpoint.");
-    const status = el("p"); const mark = button("Mark private", () => {
+    const note = element("p", "Normal sensitivity. Mark the source private to keep every future call on your chosen endpoint.");
+    const status = element("p"); const mark = button("Mark private", () => {
       mark.disabled = true;
       void markSourcePrivate(source.id).then(() => { if (section.isConnected) { source.sensitivity = "private"; source.shareable = false; mark.textContent = "Marked private"; note.textContent = "Marked private."; status.textContent = "Future processing uses only your chosen endpoint."; drawSharing(); } }).catch(error => { if (section.isConnected) { status.textContent = message(error); mark.disabled = false; } });
     }); where.body.append(note, mark, status);

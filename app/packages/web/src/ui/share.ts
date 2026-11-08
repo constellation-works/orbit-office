@@ -9,6 +9,7 @@
 import type { ShareDocument, SharedSync, ShareRequest, ShareResult } from "@orbit-office/contracts";
 
 import { ApiError, shareDocument } from "../api/client.js";
+import { button, element } from "./dom.js";
 import { pill } from "./pill.js";
 
 /** A finished sync in counts of documents: "Shared 4, received 12, 1 needs you". */
@@ -91,18 +92,8 @@ export interface ShareSwitchOptions {
   share?: (input: ShareRequest) => Promise<ShareResult>;
 }
 
-function button(label: string, primary = false): HTMLButtonElement {
-  const element = document.createElement("button");
-  element.type = "button";
-  element.textContent = label;
-  if (primary) element.dataset.primary = "true";
-  return element;
-}
-
 function paragraph(text: string): HTMLParagraphElement {
-  const element = document.createElement("p");
-  element.textContent = text;
-  return element;
+  return element("p", text);
 }
 
 /** A refusal in plain words; never a code, an id or a path. */
@@ -202,7 +193,8 @@ export function shareSwitch(options: ShareSwitchOptions): HTMLElement {
       item.textContent = cited.title;
       list.append(item);
     }
-    const also = button("Share these too", true);
+    const also = button("Share these too");
+    also.dataset.primary = "true";
     const cancel = button("Not now");
     const actions = document.createElement("div");
     actions.className = "share-actions";
@@ -221,7 +213,8 @@ export function shareSwitch(options: ShareSwitchOptions): HTMLElement {
 
   function confirmStop(): void {
     panel.dataset.tone = "attention";
-    const stop = button("Stop sharing", true);
+    const stop = button("Stop sharing");
+    stop.dataset.primary = "true";
     const keep = button("Keep sharing");
     const actions = document.createElement("div");
     actions.className = "share-actions";

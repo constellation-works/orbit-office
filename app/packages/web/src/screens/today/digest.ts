@@ -8,8 +8,8 @@ import type { SourceDigest, TodayDigest } from "@orbit-office/contracts";
 
 import { getTodayDigest } from "../../api/client.js";
 import { sourceHref } from "../../api/source-location.js";
-import { monoMeta } from "../../ui/index.js";
-import { cite, cites, glyph, listHead, meta, quiet, rowList, text, type Glyph } from "./rows.js";
+import { element, monoMeta } from "../../ui/index.js";
+import { cite, cites, glyph, listHead, meta, quiet, rowList, type Glyph } from "./rows.js";
 
 export interface DigestApi {
   digest(): Promise<TodayDigest>;
@@ -62,14 +62,14 @@ function shippedLine(item: SourceDigest["shipped"][number]): HTMLLIElement {
   if (item.merge !== null) refs.append(external(`merged ${item.merge.commit.slice(0, 7)}`, item.merge.url));
   const where = [item.task, item.workspace].filter((part): part is string => part !== null && part !== "").join(" · ");
   if (where !== "") refs.append(cite(where));
-  return line("shipped", text("span", item.title, "today-row-text"), meta(item.merge !== null ? "Merged" : "Done"), refs);
+  return line("shipped", element("span", item.title, "today-row-text"), meta(item.merge !== null ? "Merged" : "Done"), refs);
 }
 
 const NEED_LABELS = { to_do: "Yours", contradiction: "Contradiction", decision: "Decision" } as const;
 const NEED_GLYPHS = { to_do: "todo", contradiction: "contradiction", decision: "approval" } as const;
 
 function needLine(item: SourceDigest["needs_you"][number]): HTMLLIElement {
-  return line(NEED_GLYPHS[item.kind], text("span", item.text, "today-row-text"), meta(NEED_LABELS[item.kind], true), cites(item.cites));
+  return line(NEED_GLYPHS[item.kind], element("span", item.text, "today-row-text"), meta(NEED_LABELS[item.kind], true), cites(item.cites));
 }
 
 const EMPTY: Record<Exclude<TodayDigest["state"], "ready">, string> = {
@@ -91,7 +91,7 @@ export function sinceContent(state: DigestState): HTMLElement[] {
   const title = digest?.source === null || digest?.source === undefined ? "Since your last meeting" : `Since ${digest.source.title}`;
   const needs = ready?.needs_you ?? [];
   const items = ready === null ? [] : [
-    ...ready.decided.map((item) => line("decided", text("span", item.text, "today-row-text"), cites(item.cites))),
+    ...ready.decided.map((item) => line("decided", element("span", item.text, "today-row-text"), cites(item.cites))),
     ...ready.shipped.map(shippedLine),
     ...needs.map(needLine),
   ];

@@ -5,7 +5,7 @@
  */
 import type { Screen } from "../../screen.js";
 import { ApiError, getJson, postJson } from "../../api/client.js";
-import { requestRailRefresh, screenHead } from "../../ui/index.js";
+import { element, requestRailRefresh, screenHead } from "../../ui/index.js";
 import { eventDriven, firesInNextHour, nextFire, scheduleWords } from "../../ui/schedule.js";
 import { styles } from "./style.js";
 
@@ -22,13 +22,6 @@ interface Routine {
   last_fire?: LastFire | null;
 }
 interface Listing { routines: Routine[]; hidden_count: number; routines_unavailable: boolean }
-
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, text: string, className?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.textContent = text;
-  if (className !== undefined) node.className = className;
-  return node;
-}
 
 function skipWords(reason: string): string {
   if (reason.includes("switched off in this workspace")) return "Its plugin is switched off in this workspace.";

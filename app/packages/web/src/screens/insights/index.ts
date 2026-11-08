@@ -1,7 +1,7 @@
 /** Weekly automation and the work it has made possible. */
 import { getJson } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
-import { emptyState, errorState, panel, panelBody, pill, row, rows, screenHead, tile, tileRow } from "../../ui/index.js";
+import { element, emptyState, errorState, panel, panelBody, pill, row, rows, screenHead, tile, tileRow } from "../../ui/index.js";
 
 interface Share { ratio: number | null }
 interface Metrics {
@@ -15,9 +15,6 @@ interface Metrics {
 }
 interface Insights { totals: Metrics; weeks: { since: string; metrics: Metrics }[]; simulated_until?: string }
 
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, text: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag); node.textContent = text; return node;
-}
 function percent(value: number | null): string { return value === null ? "Not enough data" : `${Math.round(value * 100)}%`; }
 
 const STYLE = `
