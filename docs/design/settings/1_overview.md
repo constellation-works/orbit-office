@@ -3,7 +3,8 @@ title: settings — Overview
 owner: daniel
 last_updated: 2026-11-08
 status: Draft
-stage: building
+stage: shipped
+next: "—"
 feature: settings
 doc_role: overview
 type: design
@@ -19,7 +20,7 @@ related_artifacts: [ORB-18798]
 The Settings screens cover connections and API calls ([ORB-18798], done).
 They follow the gateway's shipped wire contract; connection metadata and
 secret storage are separate operations, and secrets never appear in tool
-input. The decisions and their rationale are in
+input. Navigation reachability was fixed in [ORB-18905] (done). The decisions and their rationale are in
 [4_decisions.md](./4_decisions.md).
 
 ## 1. Motivation
@@ -37,9 +38,11 @@ exposing secrets to the tool surface.
 | Concern | File | Task |
 |---|---|---|
 | Connections and API calls views | [4_decisions.md](./4_decisions.md) | [ORB-18798] done |
+| Settings screen reachable from navigation | [4_decisions.md](./4_decisions.md) | [ORB-18905] done |
 
 ## Task References
 
 - [ORB-18798] — built the Settings Connections and API calls views.
+- [ORB-18905] — fixed the built Settings screen being unreachable from navigation.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

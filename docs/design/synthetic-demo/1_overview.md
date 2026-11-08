@@ -3,7 +3,8 @@ title: synthetic-demo — Overview
 owner: daniel
 last_updated: 2026-11-08
 status: Draft
-stage: building
+stage: shipped
+next: "—"
 feature: synthetic-demo
 doc_role: overview
 type: design
