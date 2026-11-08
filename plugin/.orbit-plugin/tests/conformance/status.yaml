@@ -15,6 +15,8 @@ tests:
           open_weights_token: unset
           baseten_token: unset
         open_weights_token_binding: unset
+        hosted_key_binding: unset
+        hosted_key_bound_origin: null
         library:
           initialized: true
           documents: 3

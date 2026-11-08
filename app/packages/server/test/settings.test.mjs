@@ -14,6 +14,7 @@ import {
 } from "../dist/features/settings/agent-cli.js";
 import { createHandler } from "../dist/http/router.js";
 import { createSettingsFeature } from "../dist/features/settings/index.js";
+import { writeHostedKey } from "../dist/features/settings/secret.js";
 import { checkLoopbackRequest } from "../dist/http/guard.js";
 import { OrbitExitError, OrbitTimeoutError } from "../dist/orbit/client.js";
 import { installFakeOrbit } from "./fake-orbit.mjs";
@@ -752,6 +753,23 @@ test("a token typed for a new origin is bound to that origin in one secret write
   assert.equal(JSON.parse((await server.call("/api/settings/private-route")).body).token_binding, "this_endpoint");
   const argvText = await readFile(join(server.fake.state, "invocations.log"), "utf8");
   assert.ok(!argvText.includes("company-a-token") && !argvText.includes("provider-b-token"));
+});
+
+test("writeHostedKey binds the hosted key to its origin in one secret write on stdin", { timeout: 15000 }, async (t) => {
+  const home = await fixtureHome(t, {});
+  const command = join(home, "fake-orbit");
+  await writeFile(command, "#!/bin/sh\nprintf '%s' \"$*\" > \"$FAKE_ORBIT_ARGS\"\ncat > \"$FAKE_ORBIT_STDIN\"\n", { mode: 0o755 });
+  const argsFile = join(home, "args");
+  const stdinFile = join(home, "stdin");
+  await writeHostedKey("https://api.example-llm.com", "hosted-fixture-key", {
+    command,
+    env: { ...process.env, FAKE_ORBIT_ARGS: argsFile, FAKE_ORBIT_STDIN: stdinFile },
+  });
+  assert.equal(await readFile(argsFile, "utf8"), "plugin secret set office meta_api_key");
+  // One record: the key bound to the origin it was saved for.
+  assert.deepEqual(JSON.parse(await readFile(stdinFile, "utf8")), { origin: "https://api.example-llm.com", key: "hosted-fixture-key" });
+  await assert.rejects(writeHostedKey("", "hosted-fixture-key", { command }), { message: "secret_not_saved" });
+  await assert.rejects(writeHostedKey("https://api.example-llm.com", "", { command }), { message: "secret_not_saved" });
 });
 
 test("clear_token removes the saved token for an endpoint that takes none", { timeout: 15000 }, async (t) => {

@@ -368,6 +368,64 @@ fn status_says_whether_the_token_was_saved_for_the_configured_origin() {
     }
 }
 
+/// Status for the default (Meta) hosted endpoint, with the stored
+/// `meta_api_key` record `stored`.
+fn status_with_hosted_key(stored: &str) -> Value {
+    let input = Map::new();
+    let mut context = Map::new();
+    context.insert("secrets".to_string(), json!({ "meta_api_key": stored }));
+    run(&Call {
+        ports: &office_testkit::fakes::PortsBuilder::default().build(),
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds")
+}
+
+#[test]
+fn status_reports_the_hosted_key_bound_origin_and_never_the_key() {
+    let stored = json!({"origin": "https://a.example", "key": "do-not-echo-this"}).to_string();
+
+    // The default hosted endpoint is Meta's, not the bound origin.
+    let moved = status_with_hosted_key(&stored);
+    assert_eq!(moved["hosted_key_binding"], json!("other_endpoint"));
+    assert_eq!(moved["hosted_key_bound_origin"], json!("https://a.example"));
+    assert_eq!(moved["secrets"]["meta_api_key"], json!("set"));
+    assert!(!moved.to_string().contains("do-not-echo-this"));
+
+    let bare = status_with_hosted_key("do-not-echo-this");
+    assert_eq!(bare["hosted_key_binding"], json!("unbound"));
+    assert_eq!(bare["hosted_key_bound_origin"], json!(null));
+    assert!(!bare.to_string().contains("do-not-echo-this"));
+}
+
+#[test]
+fn status_reports_a_hosted_key_saved_for_the_configured_origin() {
+    // The configured hosted endpoint in the fake Library is the default.
+    let stored = json!({"origin": "https://api.meta.ai", "key": "do-not-echo-this"}).to_string();
+    let output = status_with_hosted_key(&stored);
+    assert_eq!(output["hosted_key_binding"], json!("this_endpoint"));
+    assert_eq!(
+        output["hosted_key_bound_origin"],
+        json!("https://api.meta.ai")
+    );
+    assert!(!output.to_string().contains("do-not-echo-this"));
+}
+
+#[test]
+fn status_reports_an_unset_hosted_key_binding() {
+    let input = Map::new();
+    let context = Map::new();
+    let output = run(&Call {
+        ports: &office_testkit::fakes::PortsBuilder::default().build(),
+        input: &input,
+        context: &context,
+    })
+    .expect("status succeeds");
+    assert_eq!(output["hosted_key_binding"], json!("unset"));
+    assert_eq!(output["hosted_key_bound_origin"], json!(null));
+}
+
 /// Health says the Library is initialized, but reading settings is refused.
 struct BrokenSettings;
 

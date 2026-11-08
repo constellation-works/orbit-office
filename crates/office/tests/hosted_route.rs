@@ -186,10 +186,13 @@ fn normal_material_goes_to_the_hosted_endpoint_and_model_configured_in_settings(
         assert_eq!(response["ok"], true, "{key}: {response}");
     }
 
+    // The key as a save for this endpoint stores it: bound to its origin.
+    let origin = base.trim_end_matches("/v1").to_string();
+    let stored = json!({"origin": origin, "key": "fixture-hosted-key"}).to_string();
     let extracted = env.tool(
         "office.extract",
         json!({"id": "src-doc", "profile": "digest"}),
-        json!({"meta_api_key": "fixture-hosted-key"}),
+        json!({"meta_api_key": stored}),
     );
     assert_eq!(extracted["ok"], true, "{extracted}");
     assert!(!extracted.to_string().contains("fixture-hosted-key"));
@@ -201,6 +204,40 @@ fn normal_material_goes_to_the_hosted_endpoint_and_model_configured_in_settings(
     assert_eq!(authorization.as_deref(), Some("Bearer fixture-hosted-key"));
     let body: Value = serde_json::from_str(body).unwrap();
     assert_eq!(body["model"], "acme-chat-large");
+}
+
+#[test]
+fn a_hosted_key_saved_for_another_origin_is_refused_through_the_binary_and_nothing_is_sent() {
+    let env = Env::new();
+    env.source();
+    let (base, received) = fake_endpoint(&digest_reply());
+    let response = env.set("models.endpoint", json!(base));
+    assert_eq!(response["ok"], true, "{response}");
+
+    // The key was saved for a different origin than the configured one.
+    let stored =
+        json!({"origin": "https://other.example", "key": "fixture-hosted-key"}).to_string();
+    let extracted = env.tool(
+        "office.extract",
+        json!({"id": "src-doc", "profile": "digest"}),
+        json!({"meta_api_key": stored}),
+    );
+    assert_eq!(extracted["ok"], false, "{extracted}");
+    assert_eq!(extracted["error"]["code"], "hosted_key_other_endpoint");
+    assert!(!extracted.to_string().contains("fixture-hosted-key"));
+    assert!(
+        received.lock().unwrap().is_empty(),
+        "no request may carry the key to another origin"
+    );
+
+    let status = env.tool("office.status", json!({}), json!({"meta_api_key": stored}));
+    assert_eq!(status["ok"], true, "{status}");
+    assert_eq!(status["output"]["hosted_key_binding"], "other_endpoint");
+    assert_eq!(
+        status["output"]["hosted_key_bound_origin"],
+        "https://other.example"
+    );
+    assert!(!status.to_string().contains("fixture-hosted-key"));
 }
 
 #[test]

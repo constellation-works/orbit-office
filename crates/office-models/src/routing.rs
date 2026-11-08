@@ -9,7 +9,7 @@
 
 use office_common::Sensitivity;
 use office_core::Error;
-use office_core::domain::endpoint::{BoundToken, Capability, ModelRoute};
+use office_core::domain::endpoint::{BoundHostedKey, BoundToken, Capability, ModelRoute};
 use office_core::ports::{DerivedBy, ModelTier};
 
 use crate::http::Destination;
@@ -68,11 +68,22 @@ pub(crate) fn route(
 ) -> Result<ResolvedCall, Error> {
     match sensitivity {
         Sensitivity::Normal => {
-            let api_key = config.hosted_api_key.clone().ok_or_else(|| Error::Model {
+            let stored = config.hosted_api_key.clone().ok_or_else(|| Error::Model {
                 code: "model_unavailable",
                 message: "the hosted model API key (meta_api_key) is not configured".to_string(),
                 retryable: false,
             })?;
+            // The key goes only to the origin it was saved for. A bound
+            // key on another origin, and a key stored without a binding,
+            // are both refused here, before any request is built: the
+            // header is never attached to another endpoint.
+            let api_key = BoundHostedKey::parse(&stored)
+                .and_then(|bound| bound.key_for(&config.hosted_base_url).map(str::to_string))
+                .ok_or_else(|| Error::Model {
+                    code: "hosted_key_other_endpoint",
+                    message: "the hosted model API key (meta_api_key) was not saved for the configured hosted endpoint's origin; save it again for this endpoint".to_string(),
+                    retryable: false,
+                })?;
             Ok(ResolvedCall {
                 base_url: config.hosted_base_url.trim_end_matches('/').to_string(),
                 api_key: Some(api_key),

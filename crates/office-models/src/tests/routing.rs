@@ -7,8 +7,8 @@ use office_core::ports::{ExtractRequest, ImageRequest, Models, TranscribeRequest
 use serde_json::json;
 
 use super::{
-    FIXTURE_TOKEN, FakeServer, PRIVATE_MODEL, bound_token, chat_reply, client, client_as_stored,
-    hosted_config, open_weights, open_weights_with,
+    FIXTURE_TOKEN, FakeServer, PRIVATE_MODEL, bound_hosted_key, bound_token, chat_reply, client,
+    client_as_stored, hosted_config, open_weights, open_weights_with,
 };
 
 fn extract(sensitivity: Sensitivity) -> ExtractRequest {
@@ -444,6 +444,68 @@ fn a_hosted_endpoint_from_settings_receives_its_configured_models_in_chat_shapes
     let audio: serde_json::Value = serde_json::from_str(&requests[1].body).unwrap();
     assert_eq!(audio["model"], "acme-whisper");
     assert!(requests[1].body.contains("input_audio"));
+}
+
+#[test]
+fn a_hosted_key_saved_for_one_origin_is_refused_on_another_and_nothing_is_sent() {
+    let origin_a = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
+    let origin_b = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
+    let mut config = hosted_config(&origin_b.base_url);
+    // The key was saved for A; the configured endpoint now points at B.
+    config.hosted_api_key = Some(bound_hosted_key(&origin_a.base_url, "hosted-a-secret"));
+    let models = client_as_stored(config);
+
+    let error = models
+        .extract(&extract(Sensitivity::Normal))
+        .expect_err("a key bound to another origin is refused");
+    assert_eq!(error.code(), "hosted_key_other_endpoint");
+    assert!(!error.retryable());
+    assert!(!error.to_string().contains("hosted-a-secret"));
+    assert!(
+        origin_b.requests().is_empty(),
+        "no request may carry the key to another origin"
+    );
+    assert!(origin_a.requests().is_empty());
+}
+
+#[test]
+fn a_hosted_key_saved_for_an_origin_is_still_sent_there_after_unrelated_settings_changes() {
+    use office_core::domain::settings::Settings;
+    let hosted = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
+    let settings = Settings::default()
+        .with_setting("models.endpoint", json!(hosted.base_url))
+        .and_then(|s| s.with_setting("models.careful", json!("other-careful-model")))
+        .and_then(|s| s.with_setting("models.standard", json!("other-standard-model")))
+        .expect("unrelated hosted settings are accepted");
+    let stored = bound_hosted_key(&hosted.base_url, "hosted-a-secret");
+    let config = crate::ModelConfig::with_models(Some(stored), None, &settings.models);
+    let models = client_as_stored(config);
+
+    let routed = models
+        .extract(&extract(Sensitivity::Normal))
+        .expect("extract");
+    assert_eq!(routed.derived_by.route.to_string(), "hosted");
+    let requests = hosted.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].authorization,
+        Some(format!("Bearer {}", "hosted-a-secret"))
+    );
+}
+
+#[test]
+fn a_hosted_key_stored_without_an_origin_is_never_sent() {
+    let hosted = FakeServer::start(200, chat_reply(r#"{"ok":true}"#));
+    let mut config = hosted_config(&hosted.base_url);
+    config.hosted_api_key = Some("bare-hosted-secret".into());
+    let models = client_as_stored(config);
+
+    let error = models
+        .extract(&extract(Sensitivity::Normal))
+        .expect_err("an unbound hosted key is refused, not silently bound on read");
+    assert_eq!(error.code(), "hosted_key_other_endpoint");
+    assert!(!error.to_string().contains("bare-hosted-secret"));
+    assert!(hosted.requests().is_empty());
 }
 
 #[test]

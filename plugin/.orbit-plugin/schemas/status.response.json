@@ -20,6 +20,15 @@
       "enum": ["unset", "this_endpoint", "other_endpoint", "unbound"],
       "description": "Where the stored open_weights_token may be sent. this_endpoint: it was saved for the configured endpoint's origin (scheme, host and port), so private calls there send it. other_endpoint: it was saved for another origin, or no endpoint is configured; nothing sends it. unbound: stored without an origin (for example a bare token), never sent. unset: no token. Never the token or its origin."
     },
+    "hosted_key_binding": {
+      "type": "string",
+      "enum": ["unset", "this_endpoint", "other_endpoint", "unbound"],
+      "description": "Where the stored meta_api_key may be sent. this_endpoint: it was saved for the configured hosted endpoint's origin (scheme, host and port), so hosted calls there send it. other_endpoint: it was saved for another origin; hosted calls are refused with hosted_key_other_endpoint and nothing is sent. unbound: stored without an origin (for example a bare key), never sent. unset: no key. Never the key."
+    },
+    "hosted_key_bound_origin": {
+      "type": ["string", "null"],
+      "description": "The origin (scheme, host and port) the stored meta_api_key was saved for, or null when no bound key is stored (unset or unbound). Never the key."
+    },
     "library": {
       "type": "object",
       "description": "Library and index health. Counts come from the index; an uninitialized Library reports zero counts.",
@@ -153,7 +162,7 @@
       "additionalProperties": false
     }
   },
-  "required": ["version", "secrets", "open_weights_token_binding", "library", "hosted", "open_weights", "shared", "brief", "meetings", "precedents"],
+  "required": ["version", "secrets", "open_weights_token_binding", "hosted_key_binding", "hosted_key_bound_origin", "library", "hosted", "open_weights", "shared", "brief", "meetings", "precedents"],
   "additionalProperties": false,
   "$defs": {
     "presence": { "type": "string", "enum": ["set", "unset"] }

@@ -263,9 +263,13 @@ pub fn asr_reply(transcript: &str, turns: serde_json::Value) -> String {
         .to_string()
 }
 
-/// Client config pointing the hosted endpoint at `hosted_base`.
+/// Client config pointing the hosted endpoint at `hosted_base`, with the
+/// hosted key stored as Settings saves it: bound to that origin.
 pub fn hosted_config(hosted_base: &str) -> ModelConfig {
-    let mut config = ModelConfig::new(Some("test-meta-key".into()), Some(FIXTURE_TOKEN.into()));
+    let mut config = ModelConfig::new(
+        Some(bound_hosted_key(hosted_base, "test-meta-key")),
+        Some(FIXTURE_TOKEN.into()),
+    );
     config.hosted_base_url = hosted_base.to_string();
     config
 }
@@ -304,6 +308,12 @@ pub fn bound_token(endpoint: &str, token: &str) -> String {
     json!({"origin": origin(endpoint), "token": token}).to_string()
 }
 
+/// The stored `meta_api_key` record Settings writes: `key` bound to the
+/// origin of `endpoint`.
+pub fn bound_hosted_key(endpoint: &str, key: &str) -> String {
+    json!({"origin": origin(endpoint), "key": key}).to_string()
+}
+
 /// Build the routed client for `config`, as Settings would have stored the
 /// fixture token: a bare [`FIXTURE_TOKEN`] becomes the record bound to the
 /// configured private endpoint's origin. Any other stored value is used
@@ -313,6 +323,16 @@ pub fn client(mut config: ModelConfig) -> RoutedClient {
         && config.open_weights_token.as_deref() == Some(FIXTURE_TOKEN)
     {
         config.open_weights_token = Some(bound_token(&block.endpoint, FIXTURE_TOKEN));
+    }
+    // A bare hosted key in a fixture is what a save for the configured
+    // endpoint stores: the bound record for that origin. A record already
+    // stored is used exactly as given.
+    if let Some(stored) = &config.hosted_api_key
+        && office_core::domain::endpoint::BoundHostedKey::parse(stored).is_none()
+        && !stored.is_empty()
+    {
+        let key = stored.clone();
+        config.hosted_api_key = Some(bound_hosted_key(&config.hosted_base_url, &key));
     }
     RoutedClient::new(config)
 }

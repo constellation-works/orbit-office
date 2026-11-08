@@ -35,6 +35,26 @@ export function removeOpenWeightsToken(options: SecretOptions = {}): Promise<voi
   return runSecret("rm", "office", "open_weights_token", undefined, "secret_cleanup_failed", options);
 }
 
+/**
+ * The hosted model key, bound to the endpoint origin it is saved for:
+ * one secret write of the record `{"origin","key"}`, so the key and its
+ * binding change together or not at all. The office binary sends the key
+ * only to an endpoint on that origin and otherwise refuses with
+ * `hosted_key_other_endpoint`. Saving is the migration for a key stored
+ * bare (for example by the installer): it is bound to the current origin
+ * here, on save/confirm, never silently on read. The name is fixed; the
+ * record travels on stdin only.
+ */
+export function writeHostedKey(origin: string, value: string, options: SecretOptions = {}): Promise<void> {
+  if (value.length === 0 || origin.length === 0) return Promise.reject(new SecretError("secret_not_saved"));
+  return runSecret("set", "office", "meta_api_key", JSON.stringify({ origin, key: value }), "secret_not_saved", options);
+}
+
+/** Forget the hosted model key, so no endpoint is sent one. */
+export function removeHostedKey(options: SecretOptions = {}): Promise<void> {
+  return runSecret("rm", "office", "meta_api_key", undefined, "secret_cleanup_failed", options);
+}
+
 export async function writeSecret(
   verb: "set" | "rm", slot: string, value: string | undefined, options: SecretOptions = {},
 ): Promise<void> {

@@ -53,6 +53,35 @@ working unchanged:
 
 The endpoint's key is the `meta_api_key` plugin secret, whatever provider the
 endpoint names; the secret keeps its name so existing installs keep working.
+
+The key is bound to the endpoint **origin** (scheme, host and port) it was
+saved for, and is sent to no other origin:
+
+- **Stored as one record.** The secret's value is the JSON record
+  `{"origin": "https://api.meta.ai", "key": "<key>"}`, written with one
+  `orbit plugin secret set office meta_api_key` call on stdin (the app's
+  `writeHostedKey`). The key and its origin change together or not at all.
+  The binding lives with the credential, not in Library config:
+  `office.config-set` cannot write a secret, so changing `models.endpoint`
+  (from Settings or directly) cannot move a key to a new origin.
+- **Checked on every call.** Each hosted call reads the endpoint and the
+  record once and sends the key as `Authorization: Bearer` only when the
+  endpoint's origin equals the bound origin; otherwise the call is refused
+  with `hosted_key_other_endpoint` before any request is made. Another path
+  on the same origin counts as unchanged, so unrelated `models` changes
+  (models, tiers) keep sending the key to its origin.
+- **Unbound values are never sent.** A value that is not that record (for
+  example a bare key stored by the installer or typed into
+  `orbit plugin secret set`) is not tied to an origin, so no call sends it
+  and hosted calls refuse with `hosted_key_other_endpoint`. Such a key is
+  migrated by saving it again for the current origin (in Settings, or by
+  storing the record yourself); reading it — `office.status` included —
+  never binds it silently.
+- **Status.** `office.status` reports the key as `set` or `unset` under
+  `secrets`, `hosted_key_binding` as `this_endpoint`, `other_endpoint`,
+  `unbound` or `unset`, and `hosted_key_bound_origin` as the bound origin
+  or null; never the key.
+
 On Meta's Model API (host `api.meta.ai`) transcription uses its one-shot
 `POST /v1/asr/transcribe`; any other endpoint receives audio as a Chat
 Completions `input_audio` part, the private route's shape. `office.status`

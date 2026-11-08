@@ -126,8 +126,13 @@ pub const DEFAULT_HOSTED_BASE_URL: &str = office_core::domain::endpoint::DEFAULT
 /// settings. No credential is ever logged or put in an error.
 #[derive(Clone, Debug, Default)]
 pub struct ModelConfig {
-    /// The hosted endpoint's API key (the `meta_api_key` secret, whatever
-    /// provider `models.endpoint` names). Required for `normal` material.
+    /// The stored `meta_api_key` record, exactly as Orbit delivered it:
+    /// the hosted endpoint's API key bound to the origin it was saved
+    /// for ([`office_core::domain::endpoint::BoundHostedKey`]), whatever
+    /// provider `models.endpoint` names. Required for `normal` material.
+    /// Routing sends the key only to that origin and refuses
+    /// (`hosted_key_other_endpoint`) on any other; any other stored value
+    /// is never sent.
     pub hosted_api_key: Option<String>,
     /// The stored `open_weights_token` record, exactly as Orbit delivered
     /// it: the private endpoint's token bound to the origin it was saved

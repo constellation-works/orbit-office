@@ -403,6 +403,117 @@ pub enum TokenBinding {
     Unbound,
 }
 
+/// The hosted route's stored credential (`meta_api_key`): the key and
+/// the endpoint origin it was saved for, as one JSON record
+/// `{"origin": "https://host[:port]", "key": "<key>"}` written in one
+/// secret call (specs/models-and-privacy.md, "The hosted route").
+///
+/// The key is only ever paired with an endpoint whose origin (scheme,
+/// host and port) equals the bound one. Library config cannot forge the
+/// binding: `office.config-set` never writes a secret. A stored value
+/// that is not such a record (for example a bare key set outside
+/// Settings) is not bound to any origin and is never sent; it is bound
+/// to the current origin only when it is saved again, never on read.
+#[derive(Clone, PartialEq, Eq)]
+pub struct BoundHostedKey {
+    origin: String,
+    key: String,
+}
+
+impl BoundHostedKey {
+    /// Parse the stored record. Anything else, including a bare key, an
+    /// empty key, an extra key or an origin that is not an HTTP(S) URL,
+    /// is `None`: no binding, so nothing to send.
+    #[must_use]
+    pub fn parse(stored: &str) -> Option<Self> {
+        let serde_json::Value::Object(record) = serde_json::from_str(stored).ok()? else {
+            return None;
+        };
+        if record.len() != 2 {
+            return None;
+        }
+        let origin = record.get("origin")?.as_str()?;
+        let key = record.get("key")?.as_str()?;
+        if key.is_empty() || origin_of(origin).is_none() {
+            return None;
+        }
+        Some(Self {
+            origin: origin.to_string(),
+            key: key.to_string(),
+        })
+    }
+
+    /// The origin the key was saved for, exactly as stored. This is not
+    /// secret: `office.status` reports it so the binding can be checked.
+    #[must_use]
+    pub fn origin(&self) -> &str {
+        &self.origin
+    }
+
+    /// The key, only when `endpoint` opens a socket to the bound origin.
+    #[must_use]
+    pub fn key_for(&self, endpoint: &str) -> Option<&str> {
+        let bound = origin_of(&self.origin)?;
+        (origin_of(endpoint)? == bound).then_some(self.key.as_str())
+    }
+}
+
+impl fmt::Debug for BoundHostedKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The key never reaches a log or an error, even through Debug.
+        f.debug_struct("BoundHostedKey")
+            .field("origin", &self.origin)
+            .finish_non_exhaustive()
+    }
+}
+
+/// How the stored hosted key relates to the configured hosted endpoint,
+/// as `office.status` reports it (`hosted_key_binding`). The bound
+/// origin itself is reported separately (`hosted_key_bound_origin`);
+/// never the key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostedKeyBinding {
+    /// No key is stored.
+    Unset,
+    /// Saved for the configured endpoint's origin: calls there send it.
+    ThisEndpoint,
+    /// Saved for another origin: calls are refused until the endpoint
+    /// is back on that origin or the key is saved again for this one.
+    OtherEndpoint,
+    /// Stored without an endpoint binding (for example a bare key):
+    /// never sent.
+    Unbound,
+}
+
+impl HostedKeyBinding {
+    /// Classify the stored value against the configured endpoint, if any.
+    #[must_use]
+    pub fn of(stored: Option<&str>, endpoint: Option<&str>) -> Self {
+        let Some(stored) = stored.filter(|value| !value.is_empty()) else {
+            return Self::Unset;
+        };
+        let Some(bound) = BoundHostedKey::parse(stored) else {
+            return Self::Unbound;
+        };
+        match endpoint.and_then(|endpoint| bound.key_for(endpoint)) {
+            Some(_) => Self::ThisEndpoint,
+            None => Self::OtherEndpoint,
+        }
+    }
+
+    /// The status spelling: `unset`, `this_endpoint`, `other_endpoint` or
+    /// `unbound`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unset => "unset",
+            Self::ThisEndpoint => "this_endpoint",
+            Self::OtherEndpoint => "other_endpoint",
+            Self::Unbound => "unbound",
+        }
+    }
+}
+
 impl TokenBinding {
     /// Classify the stored value against the configured endpoint, if any.
     #[must_use]
