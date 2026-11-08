@@ -2,7 +2,7 @@
 import type { ConnectionWrite, SettingsApiCalls, SettingsConnection } from "@orbit-office/contracts";
 import { ApiError, getApiCalls, getConnections, getPrivateRoute, getSettings, getSharedLibrary, putConnection } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
-import { PRIVATE_ROUTE_EVENT, card, emptyState, errorState, pill } from "../../ui/index.js";
+import { PRIVATE_ROUTE_EVENT, button, card, element, emptyState, errorState, pill } from "../../ui/index.js";
 import { connectionEditor } from "./editor.js";
 import { mountPrivateRoute } from "./private.js";
 import { mountSharedLibrary } from "./shared.js";
@@ -11,12 +11,6 @@ import { mountCalendar } from "./calendar.js";
 import { mountModels } from "./models.js";
 import { style } from "./style.js";
 
-function text<K extends keyof HTMLElementTagNameMap>(tag: K, content: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag); node.textContent = content; return node;
-}
-function button(label: string, action: () => void): HTMLButtonElement {
-  const node = text("button", label); node.type = "button"; node.addEventListener("click", action); return node;
-}
 function config(item: SettingsConnection): ConnectionWrite {
   const { slot_state: _state, auth_state: _signedIn, ...input } = item; return input;
 }
@@ -66,10 +60,10 @@ function linkedSection(): Section | undefined {
 
 async function render(root: HTMLElement): Promise<void> {
   const view = document.createElement("div"); view.className = "settings";
-  const css = text("style", style);
+  const css = element("style", style);
   const tabs = document.createElement("div"); tabs.className = "settings-tabs"; tabs.setAttribute("aria-label", "Settings sections");
   const content = document.createElement("section");
-  const cli = text("p", "Checking agent CLI connection…"); cli.className = "settings-cli settings-meta";
+  const cli = element("p", "Checking agent CLI connection…"); cli.className = "settings-cli settings-meta";
   let generation = 0;
   let busy = false;
   const alive = (): boolean => root.contains(view) && view.isConnected;
@@ -88,8 +82,8 @@ async function render(root: HTMLElement): Promise<void> {
     callsTab.disabled = disabled;
   }
   tabs.append(modelsTab, privateTab, connectionsTab, calendarTab, sharedTab, callsTab);
-  const intro = text("p", "Models, privacy, connections and the shared Library."); intro.className = "intro";
-  view.append(text("h1", "Settings"), intro, tabs, content, cli);
+  const intro = element("p", "Models, privacy, connections and the shared Library."); intro.className = "intro";
+  view.append(element("h1", "Settings"), intro, tabs, content, cli);
   root.replaceChildren(css, view);
 
   function select(section: Section): number {
@@ -100,7 +94,7 @@ async function render(root: HTMLElement): Promise<void> {
     privateTab.setAttribute("aria-pressed", String(section === "Private route"));
     sharedTab.setAttribute("aria-pressed", String(section === "Shared library"));
     callsTab.setAttribute("aria-pressed", String(section === "API calls"));
-    content.setAttribute("aria-label", section); content.replaceChildren(text("p", "Loading…")); return generation;
+    content.setAttribute("aria-label", section); content.replaceChildren(element("p", "Loading…")); return generation;
   }
   function current(token: number): boolean { return alive() && token === generation; }
   function failed(title: string, retry: () => void): void {
@@ -125,7 +119,7 @@ async function render(root: HTMLElement): Promise<void> {
       const data = await getConnections(); if (!current(token)) return;
       const header = document.createElement("div"); header.className = "settings-heading";
       const editor = document.createElement("div");
-      const feedback = text("p", message); feedback.className = "settings-feedback"; feedback.setAttribute("role", "status");
+      const feedback = element("p", message); feedback.className = "settings-feedback"; feedback.setAttribute("role", "status");
       function signIn(item: SettingsConnection): void {
         if (busy) return;
         feedback.textContent = "";
@@ -161,14 +155,14 @@ async function render(root: HTMLElement): Promise<void> {
           for (const control of list.querySelectorAll<HTMLButtonElement>("button")) control.disabled = false;
         }
       }
-      header.append(text("h2", "Connections"), button("Add connection", () => edit()));
+      header.append(element("h2", "Connections"), button("Add connection", () => edit()));
       const list = document.createElement("div"); list.className = "card-grid";
       for (const item of data.connections) {
         const detail = document.createElement("div"); detail.className = "card-content";
-        const url = text("p", item.base_url); url.className = "settings-url";
-        const secretState = text("p", credentialState(item));
+        const url = element("p", item.base_url); url.className = "settings-url";
+        const secretState = element("p", credentialState(item));
         if (item.auth_state === "expired") secretState.className = "settings-attention";
-        detail.append(url, text("p", `${item.methods.join(", ") || "No reads"} · ${item.drafts.length ? `${item.drafts.join(", ")} with approval` : "No writes"}`), secretState);
+        detail.append(url, element("p", `${item.methods.join(", ") || "No reads"} · ${item.drafts.length ? `${item.drafts.join(", ")} with approval` : "No writes"}`), secretState);
         const actions = document.createElement("div"); actions.className = "settings-actions";
         const sign = signInLabel(item);
         if (sign !== undefined) actions.append(button(sign, () => signIn(item)));
@@ -177,8 +171,8 @@ async function render(root: HTMLElement): Promise<void> {
         const node = card(item.name, detail); node.prepend(pill(item.disabled ? "Disabled" : "Enabled")); list.append(node);
       }
       if (!data.connections.length) list.append(emptyState("No connections yet", "Add an API connection to give your agents access."));
-      content.replaceChildren(header, text("p", "Choose which APIs agents can read and which writes need your approval."), feedback, editor, list);
-      const slots = text("p", `${data.free_slots} secret slots available.`); slots.className = "settings-meta"; content.append(slots);
+      content.replaceChildren(header, element("p", "Choose which APIs agents can read and which writes need your approval."), feedback, editor, list);
+      const slots = element("p", `${data.free_slots} secret slots available.`); slots.className = "settings-meta"; content.append(slots);
     } catch { if (current(token)) failed("Connections are unavailable", () => { void showConnections(); }); }
   }
 
@@ -226,8 +220,8 @@ async function render(root: HTMLElement): Promise<void> {
     try {
       const data = await getApiCalls(); if (!current(token)) return;
       const header = document.createElement("div"); header.className = "settings-heading";
-      header.append(text("h2", "API calls"), button("Refresh", () => { void showCalls(); }));
-      content.replaceChildren(header, text("p", "Recent gateway requests, newest first. Response bodies are not recorded."), auditList(data));
+      header.append(element("h2", "API calls"), button("Refresh", () => { void showCalls(); }));
+      content.replaceChildren(header, element("p", "Recent gateway requests, newest first. Response bodies are not recorded."), auditList(data));
     } catch { if (current(token)) failed("API calls are unavailable", () => { void showCalls(); }); }
   }
   const status = getSettings().then((data) => { if (alive()) cli.textContent = `${data.agentCli.cli}: ${data.agentCli.connected ? "connected" : "not connected"}`; })
@@ -246,19 +240,19 @@ export function auditList(data: SettingsApiCalls): HTMLElement {
   for (const row of [...data.records].sort((a, b) => Date.parse(b.time) - Date.parse(a.time))) {
     const item = document.createElement("li"); item.className = "api-call";
     const header = document.createElement("header");
-    const time = text("time", new Date(row.time).toLocaleString()); time.dateTime = row.time;
-    header.append(text("strong", row.connection ?? "Gateway"), time);
-    item.append(header, text("h3", `${row.method ?? "Request"} ${row.path ?? ""}`));
+    const time = element("time", new Date(row.time).toLocaleString()); time.dateTime = row.time;
+    header.append(element("strong", row.connection ?? "Gateway"), time);
+    item.append(header, element("h3", `${row.method ?? "Request"} ${row.path ?? ""}`));
     const outcome = row.outcome === "ok" ? "Completed" : row.outcome === "outcome_unknown" ? "Outcome unknown" : "Request failed or refused";
-    const result = text("p", `${outcome} · ${row.status === null ? "No HTTP response" : `HTTP ${row.status}`} · ${row.duration_ms} ms · ${row.bytes.toLocaleString()} bytes`);
+    const result = element("p", `${outcome} · ${row.status === null ? "No HTTP response" : `HTTP ${row.status}`} · ${row.duration_ms} ms · ${row.bytes.toLocaleString()} bytes`);
     result.className = "settings-meta"; item.append(result);
     const caller = [row.caller.agent, row.caller.model].filter(Boolean).join(" · ");
-    if (caller) item.append(text("p", `Called by ${caller}`));
+    if (caller) item.append(element("p", `Called by ${caller}`));
     list.append(item);
   }
   section.append(data.records.length ? list : emptyState("No API calls yet", "Requests made through the gateway will appear here."));
-  if (data.skipped) section.append(text("p", `${data.skipped} unreadable audit entries were omitted.`));
-  section.append(text("p", "Showing up to 100 recent calls.")); return section;
+  if (data.skipped) section.append(element("p", `${data.skipped} unreadable audit entries were omitted.`));
+  section.append(element("p", "Showing up to 100 recent calls.")); return section;
 }
 
 export const screen: Screen = { id: "settings", title: "Settings", status: "built", render };

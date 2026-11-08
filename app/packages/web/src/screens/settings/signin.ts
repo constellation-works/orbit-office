@@ -1,13 +1,8 @@
 /** The device-code sign-in for an oauth2_device connection: the code, where to enter it, then the result. */
 import type { SignInStarted } from "@orbit-office/contracts";
 import { ApiError, pollSignIn, startSignIn } from "../../api/client.js";
+import { button, element } from "../../ui/index.js";
 
-function text<K extends keyof HTMLElementTagNameMap>(tag: K, content: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag); node.textContent = content; return node;
-}
-function button(label: string, action: () => void): HTMLButtonElement {
-  const node = text("button", label); node.type = "button"; node.addEventListener("click", action); return node;
-}
 
 export interface SignInHooks {
   /** False once the Connections section is gone or re-rendered. */
@@ -32,9 +27,9 @@ export function signInPanel(name: string, hooks: SignInHooks): HTMLElement {
   const panel = document.createElement("section"); panel.className = "settings-form settings-signin";
   panel.setAttribute("aria-label", `Sign in to ${name}`);
   const body = document.createElement("div");
-  const status = text("p", "Starting the sign-in…"); status.className = "settings-feedback"; status.setAttribute("role", "status");
+  const status = element("p", "Starting the sign-in…"); status.className = "settings-feedback"; status.setAttribute("role", "status");
   const actions = document.createElement("div"); actions.className = "settings-actions";
-  panel.append(text("h3", `Sign in to ${name}`), body, status, actions);
+  panel.append(element("h3", `Sign in to ${name}`), body, status, actions);
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let interval = 5;
@@ -43,13 +38,13 @@ export function signInPanel(name: string, hooks: SignInHooks): HTMLElement {
   function cancelButton(): HTMLButtonElement { return button("Cancel", () => { stop(); hooks.close(); }); }
 
   function show(started: SignInStarted): void {
-    const where = text("p", "Open ");
-    const link = text("a", started.verification_uri); link.href = started.verification_uri;
+    const where = element("p", "Open ");
+    const link = element("a", started.verification_uri); link.href = started.verification_uri;
     link.target = "_blank"; link.rel = "noopener noreferrer"; link.className = "settings-url";
     where.append(link, " and enter this code:");
-    const code = text("p", started.user_code); code.className = "settings-code"; code.setAttribute("aria-label", "Sign-in code");
+    const code = element("p", started.user_code); code.className = "settings-code"; code.setAttribute("aria-label", "Sign-in code");
     const minutes = Math.max(1, Math.round(started.expires_in / 60));
-    const expiry = text("p", `The code works for ${minutes} minute${minutes === 1 ? "" : "s"}. This page updates once you approve.`);
+    const expiry = element("p", `The code works for ${minutes} minute${minutes === 1 ? "" : "s"}. This page updates once you approve.`);
     expiry.className = "settings-meta";
     body.replaceChildren(where, code, expiry);
     status.setAttribute("role", "status"); status.textContent = "Waiting for you to approve the sign-in…";

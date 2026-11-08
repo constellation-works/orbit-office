@@ -4,7 +4,7 @@
  * and its actions inline. Styles are the `.today-*` rules in static/style.css.
  */
 import { sourceHref } from "../../api/source-location.js";
-import { monoMeta } from "../../ui/index.js";
+import { element, monoMeta } from "../../ui/index.js";
 
 /** What a row's icon says: a need's kind, a group of pages, or a digest line. */
 export type Glyph =
@@ -54,22 +54,14 @@ export function glyph(name: Glyph, className = "today-kind"): HTMLElement | SVGS
 
 /** A state dot leading a row: green for finished, cyan for an agent on it. */
 export function dot(tone: "done" | "working"): HTMLElement {
-  const element = document.createElement("span");
-  element.className = "today-dot";
-  element.dataset.tone = tone;
-  return element;
-}
-
-export function text(tag: "p" | "span" | "div", value: string, className?: string): HTMLElement {
-  const element = document.createElement(tag);
-  element.textContent = value;
-  if (className !== undefined) element.className = className;
-  return element;
+  const node = element("span", "", "today-dot");
+  node.dataset.tone = tone;
+  return node;
 }
 
 /** One quiet line where a list has nothing to show. */
 export function quiet(value: string): HTMLElement {
-  return text("p", value, "today-empty");
+  return element("p", value, "today-empty");
 }
 
 /** A list's header bar: its h2 (named by `id`) and a count. */
@@ -80,7 +72,7 @@ export function listHead(title: string, id: string, count: number | null): HTMLE
   heading.id = id;
   heading.textContent = title;
   head.append(heading);
-  if (count !== null) head.append(text("span", String(count), "today-count"));
+  if (count !== null) head.append(element("span", String(count), "today-count"));
   return head;
 }
 
@@ -100,9 +92,9 @@ export function rowList(): HTMLUListElement {
 
 /** A short meta beside a row's title; amber when it needs attention. */
 export function meta(value: string, attention = false): HTMLElement {
-  const element = text("span", value, "today-meta");
-  if (attention) element.dataset.tone = "attention";
-  return element;
+  const node = element("span", value, "today-meta");
+  if (attention) node.dataset.tone = "attention";
+  return node;
 }
 
 /** A citation such as `src-…#t=00:02:14` as a chip linking to that span; a task id as a plain chip. */

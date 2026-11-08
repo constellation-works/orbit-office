@@ -12,7 +12,7 @@ import type { CalendarMeeting, CalendarRoutine, CalendarTask, CalendarView } fro
 
 import { ApiError, getCalendar, scheduleTodo, syncCalendar, changeLocalCalendar } from "../../api/client.js";
 import type { Screen } from "../../screen.js";
-import { errorState, requestRailRefresh } from "../../ui/index.js";
+import { button, element, errorState, requestRailRefresh } from "../../ui/index.js";
 import { pickerStyles } from "../../ui/when.js";
 import {
   addDays, clock, dayRuns, hourRange, meetingState, onDay, placeDay, routineTitle, sameDay, stateWords,
@@ -22,19 +22,6 @@ import { eventEditor } from "./editor.js";
 import { meetingPanel } from "./panel.js";
 import { styles } from "./style.js";
 import { taskPanel } from "./task.js";
-
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = "", className?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.textContent = text;
-  if (className !== undefined) node.className = className;
-  return node;
-}
-function button(label: string, onClick: () => void): HTMLButtonElement {
-  const node = element("button", label);
-  node.type = "button";
-  node.addEventListener("click", onClick);
-  return node;
-}
 
 /** One meeting block: title, time and every state in words. */
 function block(meeting: CalendarMeeting, now: Date, lead: number, open: (meeting: CalendarMeeting) => void): HTMLButtonElement {

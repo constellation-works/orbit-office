@@ -144,6 +144,7 @@ const SHELL = [
   "/ui/share.js",
   "/ui/panel.js",
   "/ui/markdown.js",
+  "/ui/dom.js",
   "/screens/calendar/index.js",
   "/screens/calendar/editor.js",
   "/screens/calendar/model.js",

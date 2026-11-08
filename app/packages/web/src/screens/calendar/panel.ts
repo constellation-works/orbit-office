@@ -7,21 +7,8 @@ import type { CalendarMeeting } from "@orbit-office/contracts";
 
 import { ApiError, captureMeetingFile, captureMeetingNotes, getMeetingOutcome, getSourceCitation } from "../../api/client.js";
 import { sourceHref } from "../../api/source-location.js";
-import { pill, renderMarkdown } from "../../ui/index.js";
+import { button, element, pill, renderMarkdown } from "../../ui/index.js";
 import { clock, meetingState, prepTime, stateWords } from "./model.js";
-
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = "", className?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.textContent = text;
-  if (className !== undefined) node.className = className;
-  return node;
-}
-function button(label: string, onClick: () => void, className = "calendar-link"): HTMLButtonElement {
-  const node = element("button", label, className);
-  node.type = "button";
-  node.addEventListener("click", onClick);
-  return node;
-}
 
 const RESPONSES: Record<string, string> = {
   accepted: "Accepted", tentative: "Maybe", tentativelyaccepted: "Maybe", declined: "Declined",
@@ -47,7 +34,7 @@ function personLink(page: { id: string; title: string }, label: string): HTMLEle
     void getSourceCitation(page.id, "domain").then(found => {
       detail.textContent = found.text; detail.dataset.loaded = "true";
     }).catch(() => { detail.textContent = "Their page could not be opened. Find it in the Library."; });
-  });
+  }, "calendar-link");
   open.setAttribute("aria-expanded", "false");
   wrap.append(open, detail);
   return wrap;

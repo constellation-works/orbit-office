@@ -7,22 +7,9 @@
  */
 import type { CalendarTask } from "@orbit-office/contracts";
 
-import { pill, type Tone } from "../../ui/index.js";
+import { button, element, pill, type Tone } from "../../ui/index.js";
 import { schedulePicker } from "../../ui/when.js";
 import { clock, isDue, startedLate, taskState, taskWords } from "./model.js";
-
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = "", className?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.textContent = text;
-  if (className !== undefined) node.className = className;
-  return node;
-}
-function button(label: string, onClick: () => void, className: string): HTMLButtonElement {
-  const node = element("button", label, className);
-  node.type = "button";
-  node.addEventListener("click", onClick);
-  return node;
-}
 
 export interface TaskPanelContext {
   now: Date;

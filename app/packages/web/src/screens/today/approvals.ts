@@ -27,7 +27,7 @@ import {
   sendBack,
   sendDraft,
 } from "../../api/client.js";
-import { skippedReason } from "../../ui/index.js";
+import { button, element, skippedReason } from "../../ui/index.js";
 
 /** The server calls the controls make. Tests pass their own. */
 export interface ApprovalApi {
@@ -93,20 +93,6 @@ function problem(error: unknown, action: string): string {
   return `${action} Please try again.`;
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className !== undefined) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function button(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-  const node = element("button", primary ? "primary-action" : "secondary-action", label);
-  node.type = "button";
-  node.addEventListener("click", onClick);
-  return node;
-}
-
 /**
  * Card state that must survive the screen's redraws: what is loading or
  * running, and the last message per card. Details are fetched once per item.
@@ -161,7 +147,7 @@ export class ApprovalControls {
   }
 
   private message(key: string): HTMLElement {
-    const box = element("p", "approval-message");
+    const box = element("p", "", "approval-message");
     box.setAttribute("aria-live", "polite");
     const message = this.messages.get(key);
     if (message !== undefined) {
@@ -175,7 +161,7 @@ export class ApprovalControls {
   }
 
   private actions(key: string, ...buttons: HTMLButtonElement[]): HTMLElement {
-    const row = element("div", "approval-actions");
+    const row = element("div", "", "approval-actions");
     row.dataset.slot = "approval-actions";
     row.dataset.key = key;
     for (const item of buttons) item.disabled = this.busy.has(key);
@@ -185,33 +171,33 @@ export class ApprovalControls {
 
   /** Fill `target` from the item's detail once it arrives. */
   private fill(key: string, target: HTMLElement, draw: (detail: ApprovalDetail) => Node[]): HTMLElement {
-    target.append(element("p", "approval-loading", "Loading the details…"));
+    target.append(element("p", "Loading the details…", "approval-loading"));
     void this.detail(key).then(
       (detail) => { target.replaceChildren(...draw(detail)); },
-      () => { target.replaceChildren(element("p", "approval-loading", "The details couldn’t be loaded. We’ll try again shortly.")); },
+      () => { target.replaceChildren(element("p", "The details couldn’t be loaded. We’ll try again shortly.", "approval-loading")); },
     );
     return target;
   }
 
   private files(key: string, intro: string): HTMLElement {
-    return this.fill(key, element("div", "approval-detail"), (detail) => {
+    return this.fill(key, element("div", "", "approval-detail"), (detail) => {
       if (detail.kind !== "approval" && detail.kind !== "script_output") return [];
-      if (detail.files.length === 0) return [element("p", undefined, "No files are attached.")];
-      const list = element("ul", "approval-files");
-      list.append(...detail.files.map((name) => element("li", undefined, name)));
-      return [element("p", undefined, intro), list];
+      if (detail.files.length === 0) return [element("p", "No files are attached.")];
+      const list = element("ul", "", "approval-files");
+      list.append(...detail.files.map((name) => element("li", name)));
+      return [element("p", intro), list];
     });
   }
 
   private preview(key: string, label: string): HTMLElement {
-    const details = element("details", "approval-preview");
+    const details = element("details", "", "approval-preview");
     details.dataset.key = `${key}-preview`;
-    const summary = element("summary", undefined, label);
+    const summary = element("summary", label);
     summary.dataset.focus = `${key}-preview`;
     const body = this.fill(key, element("div"), (detail) => {
       if (detail.kind !== "proposal") return [];
-      const text = element("pre", "approval-text", detail.preview);
-      return detail.shareable ? [element("p", "approval-shared", "Will be shared with the team"), text] : [text];
+      const text = element("pre", detail.preview, "approval-text");
+      return detail.shareable ? [element("p", "Will be shared with the team", "approval-shared"), text] : [text];
     });
     details.append(summary, body);
     return details;
@@ -220,7 +206,7 @@ export class ApprovalControls {
   /** Approve, or send back with a comment, a reviewed agent to-do. */
   reviewed(item: TodayNeed): HTMLElement[] {
     const key = item.key;
-    const approve = button("Approve", true, () => { void this.run([key], async () => {
+    const approve = button("Approve", () => { void this.run([key], async () => {
       try {
         const result = await this.api.approve(key);
         this.announce("done", result.closed
@@ -229,23 +215,23 @@ export class ApprovalControls {
       } catch (error) {
         this.fail(key, problem(error, "Couldn’t add this to your Library, so it is still waiting for your review."));
       }
-    }); });
+    }); }, "primary-action");
     const parts: HTMLElement[] = [this.files(key, "Output to review:")];
     if (!this.sendingBack.has(key)) {
-      const back = button("Send back", false, () => { this.sendingBack.add(key); this.redraw(); });
+      const back = button("Send back", () => { this.sendingBack.add(key); this.redraw(); }, "secondary-action");
       parts.push(this.actions(key, approve, back));
     } else {
-      const form = element("form", "approval-send-back");
-      const label = element("label", undefined, "What should change?");
+      const form = element("form", "", "approval-send-back");
+      const label = element("label", "What should change?");
       const field = element("textarea");
       field.name = "comment";
       field.required = true;
       field.rows = 3;
       field.dataset.focus = `${key}-comment`;
       label.append(field);
-      const submit = button("Send back", true, () => {});
+      const submit = button("Send back", () => {}, "primary-action");
       submit.type = "submit";
-      const cancel = button("Cancel", false, () => { this.sendingBack.delete(key); this.redraw(); });
+      const cancel = button("Cancel", () => { this.sendingBack.delete(key); this.redraw(); }, "secondary-action");
       form.append(label, this.actions(key, submit, cancel));
       form.addEventListener("submit", (event) => {
         event.preventDefault();
@@ -268,20 +254,20 @@ export class ApprovalControls {
   }
 
   private dismissButton(item: TodayNeed, label: string, done: string): HTMLButtonElement {
-    return button(label, false, () => { void this.run([item.key], async () => {
+    return button(label, () => { void this.run([item.key], async () => {
       try {
         await this.api.dismiss(item.key);
         this.announce("done", done);
       } catch (error) {
         this.fail(item.key, problem(error, "Couldn’t dismiss this."));
       }
-    }); });
+    }); }, "secondary-action");
   }
 
   /** Files a script produced: keep them in the Library, or dismiss them. */
   scriptOutput(item: TodayNeed): HTMLElement[] {
     const key = item.key;
-    const approve = button("Approve", true, () => { void this.run([key], async () => {
+    const approve = button("Approve", () => { void this.run([key], async () => {
       try {
         const result = await this.api.approve(key);
         this.announce("done", result.closed
@@ -290,7 +276,7 @@ export class ApprovalControls {
       } catch (error) {
         this.fail(key, problem(error, "Couldn’t add these files to your Library, so they are still waiting for you."));
       }
-    }); });
+    }); }, "primary-action");
     return [
       this.files(key, "Files the script made:"),
       this.actions(key, approve, this.dismissButton(item, "Dismiss", `Dismissed the files from “${item.title}”.`)),
@@ -301,20 +287,20 @@ export class ApprovalControls {
   /** A request to another system: shown in full, sent once only when approved. */
   gatewayDraft(item: TodayNeed): HTMLElement[] {
     const key = item.key;
-    const request = this.fill(key, element("div", "approval-detail"), (detail) => {
+    const request = this.fill(key, element("div", "", "approval-detail"), (detail) => {
       if (detail.kind !== "gateway_draft") return [];
-      const target = element("p", "approval-request");
-      const method = element("strong", undefined, detail.method);
+      const target = element("p", "", "approval-request");
+      const method = element("strong", detail.method);
       target.append(method, ` ${detail.url}`);
       const parts: Node[] = [];
-      if (detail.connection !== "") parts.push(element("p", undefined, `Through your “${detail.connection}” connection:`));
+      if (detail.connection !== "") parts.push(element("p", `Through your “${detail.connection}” connection:`));
       parts.push(target);
       parts.push(detail.body === null
-        ? element("p", undefined, "No body is sent with this request.")
-        : element("pre", "approval-text", detail.body));
+        ? element("p", "No body is sent with this request.")
+        : element("pre", detail.body, "approval-text"));
       return parts;
     });
-    const approve = button("Approve and send", true, () => { void this.run([key], async () => {
+    const approve = button("Approve and send", () => { void this.run([key], async () => {
       let detail: ApprovalDetail;
       try {
         detail = await this.detail(key);
@@ -338,7 +324,7 @@ export class ApprovalControls {
         const stale = error instanceof ApiError && error.reason === "draft_changed";
         this.fail(key, problem(error, "Couldn’t send this request."), stale);
       }
-    }); });
+    }); }, "primary-action");
     return [
       request,
       this.actions(key, approve, this.dismissButton(item, "Dismiss", `Dismissed “${item.title}”. Nothing was sent.`)),
@@ -349,7 +335,7 @@ export class ApprovalControls {
   /** One proposal on its own card. */
   proposal(item: TodayNeed): HTMLElement[] {
     const key = item.key;
-    const accept = button("Accept", true, () => { void this.run([key], async () => {
+    const accept = button("Accept", () => { void this.run([key], async () => {
       try {
         const detail = await this.detail(key);
         if (detail.kind !== "proposal") return;
@@ -359,7 +345,7 @@ export class ApprovalControls {
         const stale = error instanceof ApiError && error.reason === "proposal_payload_changed";
         this.fail(key, problem(error, "Couldn’t accept this suggestion."), stale);
       }
-    }); });
+    }); }, "primary-action");
     return [
       this.preview(key, "Review the change"),
       this.actions(key, accept, this.dismissButton(item, "Dismiss", `Dismissed “${item.title}”.`)),
@@ -373,7 +359,7 @@ export class ApprovalControls {
    */
   proposalGroup(groupKey: string, items: readonly TodayNeed[]): HTMLElement[] {
     const keys = items.map((item) => item.key);
-    const acceptAll = button("Accept all", true, () => { void this.run([groupKey, ...keys], async () => {
+    const acceptAll = button("Accept all", () => { void this.run([groupKey, ...keys], async () => {
       const ready: AcceptRequest[] = [];
       const refused: string[] = [];
       for (const item of items) {
@@ -409,14 +395,14 @@ export class ApprovalControls {
       const names = refused.map((title) => `“${title}”`).join(", ");
       const why = notPermitted ? ` ${NOT_PERMITTED}` : "";
       this.fail(groupKey, `Accepted ${accepted} of ${items.length} pages. ${names} couldn’t be accepted and ${refused.length === 1 ? "is" : "are"} still here to review.${why}`);
-    }); });
-    const pages = element("ul", "approval-pages");
+    }); }, "primary-action");
+    const pages = element("ul", "", "approval-pages");
     pages.setAttribute("aria-label", "Pages");
     for (const item of items) {
-      const page = element("li", "approval-page");
+      const page = element("li", "", "approval-page");
       page.dataset.key = item.key;
-      const title = element("h4", undefined, item.title);
-      const accept = button("Accept", false, () => { void this.run([item.key], async () => {
+      const title = element("h4", item.title);
+      const accept = button("Accept", () => { void this.run([item.key], async () => {
         try {
           const detail = await this.detail(item.key);
           if (detail.kind !== "proposal") return;
@@ -426,7 +412,7 @@ export class ApprovalControls {
           const stale = error instanceof ApiError && error.reason === "proposal_payload_changed";
           this.fail(item.key, problem(error, `Couldn’t accept “${item.title}”.`), stale);
         }
-      }); });
+      }); }, "secondary-action");
       page.append(
         title,
         this.preview(item.key, "Review this page"),
@@ -448,16 +434,16 @@ export class ApprovalControls {
   sharedGroup(items: readonly TodayNeed[], skipped: readonly SharedSkipped[], dismissSkipped: () => Promise<void>): HTMLElement[] {
     const incoming = items.filter((item) => item.shared !== "conflict");
     const conflicts = items.filter((item) => item.shared === "conflict");
-    const parts: HTMLElement[] = [element("p", undefined, [
+    const parts: HTMLElement[] = [element("p", [
       incoming.length > 0 ? `${incoming.length} ${incoming.length === 1 ? "update" : "updates"} from colleagues` : "",
       conflicts.length > 0 ? `${conflicts.length} ${conflicts.length === 1 ? "page" : "pages"} changed here and in the shared library` : "",
       skipped.length > 0 ? `${skipped.length} ${skipped.length === 1 ? "document" : "documents"} left out of the last sync` : "",
     ].filter(Boolean).join(", ") + ".")];
     if (incoming.length > 0) {
-      const list = element("ul", "approval-pages");
+      const list = element("ul", "", "approval-pages");
       list.setAttribute("aria-label", "Updates from colleagues");
       for (const item of incoming) {
-        const accept = button("Accept", true, () => { void this.run([item.key], async () => {
+        const accept = button("Accept", () => { void this.run([item.key], async () => {
           try {
             const detail = await this.detail(item.key);
             if (detail.kind !== "proposal") return;
@@ -467,25 +453,25 @@ export class ApprovalControls {
             const stale = error instanceof ApiError && error.reason === "proposal_payload_changed";
             this.fail(item.key, problem(error, `Couldn’t accept the update to “${item.title}”.`), stale);
           }
-        }); });
-        const page = element("li", "approval-page");
+        }); }, "primary-action");
+        const page = element("li", "", "approval-page");
         page.dataset.key = item.key;
         page.append(
-          element("h4", undefined, item.title),
+          element("h4", item.title),
           this.preview(item.key, "Review the update"),
           this.actions(item.key, accept, this.dismissButton(item, "Dismiss", `Dismissed the update to “${item.title}”.`)),
           this.message(item.key),
         );
         list.append(page);
       }
-      parts.push(element("h4", "approval-shared-heading", "Updates from colleagues"), list);
+      parts.push(element("h4", "Updates from colleagues", "approval-shared-heading"), list);
     }
     if (conflicts.length > 0) {
-      const list = element("ul", "approval-pages");
+      const list = element("ul", "", "approval-pages");
       list.setAttribute("aria-label", "Changed on both sides");
       for (const item of conflicts) {
         const settle = (choice: ConflictChoice, label: string, done: string): HTMLButtonElement =>
-          button(label, choice === "theirs", () => { void this.run([item.key], async () => {
+          button(label, () => { void this.run([item.key], async () => {
             try {
               const detail = await this.detail(item.key);
               if (detail.kind !== "proposal") return;
@@ -495,12 +481,12 @@ export class ApprovalControls {
               const stale = error instanceof ApiError && error.reason === "proposal_payload_changed";
               this.fail(item.key, problem(error, `Couldn’t settle “${item.title}”.`), stale);
             }
-          }); });
-        const page = element("li", "approval-page");
+          }); }, (choice === "theirs" ? "primary-action" : "secondary-action"));
+        const page = element("li", "", "approval-page");
         page.dataset.key = item.key;
         page.append(
-          element("h4", undefined, item.title),
-          element("p", undefined, "You and a colleague both changed this page. Keep one version; the other stays in the shared library’s history."),
+          element("h4", item.title),
+          element("p", "You and a colleague both changed this page. Keep one version; the other stays in the shared library’s history."),
           this.preview(item.key, "Compare their version"),
           this.actions(item.key,
             settle("theirs", "Use theirs", `Used the shared version of “${item.title}”.`),
@@ -509,25 +495,25 @@ export class ApprovalControls {
         );
         list.append(page);
       }
-      parts.push(element("h4", "approval-shared-heading", "Changed on both sides"), list);
+      parts.push(element("h4", "Changed on both sides", "approval-shared-heading"), list);
     }
     if (skipped.length > 0) {
       const key = "shared-library-skipped";
-      const list = element("ul", "approval-skipped");
+      const list = element("ul", "", "approval-skipped");
       list.setAttribute("aria-label", "Left out of the last sync");
       for (const entry of skipped) {
         const row = element("li");
-        row.append(element("strong", undefined, entry.name), ` ${entry.phase === "push" ? "wasn’t shared" : "wasn’t received"}. ${skippedReason(entry.reason)}`);
+        row.append(element("strong", entry.name), ` ${entry.phase === "push" ? "wasn’t shared" : "wasn’t received"}. ${skippedReason(entry.reason)}`);
         list.append(row);
       }
-      const done = button("Got it", false, () => { void this.run([key], async () => {
+      const done = button("Got it", () => { void this.run([key], async () => {
         try {
           await dismissSkipped();
         } catch (error) {
           this.fail(key, problem(error, "Couldn’t clear this list."));
         }
-      }); });
-      parts.push(element("h4", "approval-shared-heading", "Left out of the last sync"), list, this.actions(key, done), this.message(key));
+      }); }, "secondary-action");
+      parts.push(element("h4", "Left out of the last sync", "approval-shared-heading"), list, this.actions(key, done), this.message(key));
     }
     return parts;
   }

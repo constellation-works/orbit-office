@@ -6,7 +6,7 @@
  */
 import type { SharedLibraryBlock, SharedLibraryStatus, SharedRoutineState, SharedSyncOutcome } from "@orbit-office/contracts";
 import { ApiError, enableSharedSync, saveSharedLibrary, syncSharedLibrary } from "../../api/client.js";
-import { syncCounts, syncFailure } from "../../ui/index.js";
+import { element, syncCounts, syncFailure } from "../../ui/index.js";
 
 export interface SharedLibraryMount {
   data: SharedLibraryStatus;
@@ -73,7 +73,7 @@ export function mountSharedLibrary(content: HTMLElement, mount: SharedLibraryMou
   hint(member, "Lowercase letters, digits and hyphens. Colleagues see it on what you share.");
   const inputs: Record<Field, HTMLInputElement> = { remote, branch, member };
 
-  const feedback = text("p", configured === null
+  const feedback = element("p", configured === null
     ? "No shared library is connected. Nothing leaves this computer until you connect one and share a document."
     : "");
   feedback.className = "settings-feedback";
@@ -82,7 +82,7 @@ export function mountSharedLibrary(content: HTMLElement, mount: SharedLibraryMou
   offer.className = "settings-actions settings-offer";
   const actions = document.createElement("div");
   actions.className = "settings-actions";
-  const submit = text("button", "Save shared library");
+  const submit = element("button", "Save shared library");
   submit.type = "submit";
   actions.append(submit);
   form.append(fields, feedback, offer, actions);
@@ -90,17 +90,17 @@ export function mountSharedLibrary(content: HTMLElement, mount: SharedLibraryMou
   const sync = document.createElement("section");
   sync.className = "settings-form settings-sync";
   sync.setAttribute("aria-label", "Sync");
-  const syncStatus = text("p", "");
+  const syncStatus = element("p", "");
   syncStatus.className = "settings-sync-status";
   syncStatus.setAttribute("role", "status");
-  const syncNow = text("button", "Sync now");
+  const syncNow = element("button", "Sync now");
   syncNow.type = "button";
-  const syncHint = text("p", "");
+  const syncHint = element("p", "");
   syncHint.className = "settings-hint";
   const syncActions = document.createElement("div");
   syncActions.className = "settings-actions";
   syncActions.append(syncNow);
-  sync.append(text("h3", "Sync"), syncStatus, syncActions, syncHint);
+  sync.append(element("h3", "Sync"), syncStatus, syncActions, syncHint);
 
   function drawSync(): void {
     syncNow.disabled = configured === null || mount.busy();
@@ -113,10 +113,10 @@ export function mountSharedLibrary(content: HTMLElement, mount: SharedLibraryMou
 
   const heading = document.createElement("div");
   heading.className = "settings-heading";
-  heading.append(text("h2", "Shared library"));
+  heading.append(element("h2", "Shared library"));
   content.replaceChildren(
     heading,
-    text("p", "Connect one git repository your team shares. Only documents you switch to Share are sent."),
+    element("p", "Connect one git repository your team shares. Only documents you switch to Share are sent."),
     form,
     sync,
   );
@@ -130,14 +130,14 @@ export function mountSharedLibrary(content: HTMLElement, mount: SharedLibraryMou
 
   function offerRoutine(state: SharedRoutineState): void {
     offer.replaceChildren();
-    if (state === "on") { offer.append(text("p", "Hourly sync is on.")); return; }
+    if (state === "on") { offer.append(element("p", "Hourly sync is on.")); return; }
     if (state === "unavailable") {
-      offer.append(text("p", "Hourly sync can't be turned on from here. Use Sync now, or check Routines."));
+      offer.append(element("p", "Hourly sync can't be turned on from here. Use Sync now, or check Routines."));
       return;
     }
-    const turnOn = text("button", "Turn on hourly sync");
+    const turnOn = element("button", "Turn on hourly sync");
     turnOn.type = "button";
-    offer.append(text("p", "Sync with the team every hour?"), turnOn);
+    offer.append(element("p", "Sync with the team every hour?"), turnOn);
     turnOn.addEventListener("click", () => {
       if (mount.busy()) return;
       setBusy(true);
@@ -147,7 +147,7 @@ export function mountSharedLibrary(content: HTMLElement, mount: SharedLibraryMou
           if (mount.alive()) offerRoutine("on");
         } catch {
           if (!mount.alive()) return;
-          offer.replaceChildren(text("p", "Hourly sync couldn't be turned on. Try again, or turn it on in Routines."), turnOn);
+          offer.replaceChildren(element("p", "Hourly sync couldn't be turned on. Try again, or turn it on in Routines."), turnOn);
         } finally {
           setBusy(false);
         }
@@ -208,14 +208,8 @@ export function mountSharedLibrary(content: HTMLElement, mount: SharedLibraryMou
   });
 }
 
-function text<K extends keyof HTMLElementTagNameMap>(tag: K, content: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.textContent = content;
-  return node;
-}
-
 function field(fields: HTMLElement, label: string, name: Field, value: string, wide = false): HTMLInputElement {
-  const wrap = text("label", label);
+  const wrap = element("label", label);
   wrap.className = "settings-field";
   if (wide) wrap.classList.add("settings-wide");
   const input = document.createElement("input");
@@ -230,7 +224,7 @@ function field(fields: HTMLElement, label: string, name: Field, value: string, w
 }
 
 function hint(input: HTMLInputElement, words: string): void {
-  const node = text("span", words);
+  const node = element("span", words);
   node.className = "settings-hint";
   input.parentElement?.append(node);
 }
