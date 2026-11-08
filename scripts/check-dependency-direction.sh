@@ -132,10 +132,6 @@ TOOLS=crates/office-tools/src
 MODELS=crates/office-models/src
 CLI=crates/office/src
 
-# office-store contracts are I/O-free record shapes (R5); the drivers own
-# all filesystem and SQLite access.
-ban "$STORE/contracts.rs" 'std::(fs|net|process)' "office-store contracts are record shapes: I/O belongs in driver/"
-
 # Core is the pure domain (R5): every core module is I/O-free.
 for path in "$CORE"/*; do
   name=$(basename "$path")

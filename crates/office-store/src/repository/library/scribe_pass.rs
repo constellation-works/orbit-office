@@ -13,8 +13,8 @@ use office_core::ports::LibraryText;
 
 use super::LibraryStore;
 use super::pending::PendingWrite;
-use crate::contracts::DocumentRecord;
 use crate::{Error, Result};
+use office_core::domain::knowledge::DocumentRecord;
 
 /// Where an earlier build's scribe pass wrote preference pages.
 const PREFERENCE_DIR: &str = "knowledge/domain";

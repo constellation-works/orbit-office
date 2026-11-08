@@ -1,7 +1,7 @@
 //! The SQLite driver: open/migrate, rebuild, upsert, search, get.
 
-use crate::contracts::{DocumentKind, DocumentRecord, LinkKind, SearchFilter};
 use crate::driver::sqlite::connection::IndexStore;
+use office_core::domain::knowledge::{DocumentKind, DocumentRecord, LinkKind, SearchFilter};
 
 fn document(id: &str, title: &str, body: &str) -> DocumentRecord {
     DocumentRecord {

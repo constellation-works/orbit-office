@@ -10,7 +10,6 @@
 //! Shared mechanisms (fs, SQLite defaults, common types) live in
 //! `office-common`, this workspace's `orbit-common` counterpart.
 //!
-//! - [`contracts`] re-exports the pure core Library record shapes.
 //! - [`repository::LibraryStore`] is the one surface callers use: it owns
 //!   a Library root (plain Markdown files, the source of truth) and an
 //!   index database under plugin state (rebuildable at any time).
@@ -22,13 +21,11 @@
 // Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
-pub mod contracts;
 mod driver;
 mod error;
 pub mod pr;
 mod repository;
 
-pub use contracts::{DocumentKind, DocumentRecord, Revision, SearchFilter, SearchHit};
 pub use driver::script::ScriptStore;
 pub use error::{Error, Result};
 pub use pr::GhPullRequests;

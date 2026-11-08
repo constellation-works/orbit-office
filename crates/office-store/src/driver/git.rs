@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::contracts::Revision;
 use crate::{Error, Result};
 use office_common::process;
+use office_core::domain::knowledge::Revision;
 
 pub(crate) struct Git {
     root: PathBuf,

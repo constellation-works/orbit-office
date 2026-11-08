@@ -2,8 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::contracts::DocumentRecord;
 use crate::error::{Error, Result};
+use office_core::domain::knowledge::DocumentRecord;
 
 use super::LibraryFs;
 use super::collection::{collect_optional_layer, refuse_symlink};

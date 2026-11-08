@@ -7,7 +7,8 @@ mod support;
 
 use support::*;
 
-use office_store::{LibraryStore, SearchFilter};
+use office_core::domain::knowledge::SearchFilter;
+use office_store::LibraryStore;
 use std::path::Path;
 
 #[test]

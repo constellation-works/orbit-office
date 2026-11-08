@@ -1,6 +1,6 @@
 ---
 type: design
-summary: "Spec: office-store — Library persistence structured after orbit-store: contracts, fs machinery, file and SQLite drivers, repository facade"
+summary: "Spec: office-store — Library persistence structured after orbit-store: fs machinery, file and SQLite drivers, repository facade"
 last_validated: 2026-11-08
 ---
 
@@ -16,7 +16,7 @@ and machinery are reused, the code is this project's.
 
 | orbit-store | office-store | Owns |
 |---|---|---|
-| `contracts/` | `src/contracts.rs` | Compatible re-exports of core record shapes: `DocumentRecord`, `DocumentKind`, `SearchFilter`, `SearchHit`, `Revision`, `Backlink`, `LinkKind` |
+| — | `office_core::domain::knowledge` | Library record shapes used directly: `DocumentRecord`, `DocumentKind`, `SearchFilter`, `SearchHit`, `Revision`, `Backlink`, `LinkKind` |
 | `fs/` (path_safety, lock, yaml) | `office-common::fs` (`path_safety`, `atomic`, `hash`) | Single-safe-component id validation, atomic owner-only writes (temp + fsync + publication + dir fsync; rename for replacement, hard link for exclusive creation), SHA-256 pinning/dedupe. Shared machinery lives in the foundation crate, as orbit's does in `orbit-common`. |
 | `driver/file/` | `src/driver/file/library.rs` | The Library as plain Markdown: layout, frontmatter parsing, full scan for reindex |
 | `driver/sqlite/` (connection, migration registry) | `src/driver/sqlite/` (`connection.rs`, `migration.rs`) | One writer connection behind a mutex; owner-only database file; the same pragmas on every connection (WAL, `busy_timeout` 5000, `foreign_keys=ON`, `synchronous=NORMAL`); ordered migrations with `user_version`, refusing a newer schema |
@@ -90,8 +90,8 @@ document commits use `--only`, so a staged file is never indexed or committed
 ([decision](../4_decisions.md#officeattach-stages-its-copies-inside-the-library)).
 `LibraryStore`
 implements it; `office-testkit::fakes::FakeLibrary` implements the same operations
-in memory. The store's existing record exports are re-exports of
-`office_core::domain::knowledge`, so callers keep the same types. The shared
+in memory. The store uses the record shapes in
+`office_core::domain::knowledge` directly, so callers keep the same types. The shared
 frontmatter parser is pure and is also used by the fake.
 
 `open` creates layout/index state, but never runs `git init` or writes settings.

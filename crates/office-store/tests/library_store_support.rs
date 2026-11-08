@@ -3,7 +3,8 @@
 //! standalone as its own test target with no tests.
 #![allow(clippy::expect_used, clippy::unwrap_used, dead_code)]
 
-use office_store::{DocumentKind, LibraryStore, SearchFilter, SearchHit};
+use office_core::domain::knowledge::{DocumentKind, SearchFilter, SearchHit};
+use office_store::LibraryStore;
 use std::path::Path;
 
 pub(crate) const MEETING: &str = "\

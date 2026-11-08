@@ -7,7 +7,8 @@ mod support;
 
 use support::*;
 
-use office_store::{DocumentKind, Error, LibraryStore, SearchFilter};
+use office_core::domain::knowledge::{DocumentKind, SearchFilter};
+use office_store::{Error, LibraryStore};
 use std::path::Path;
 
 #[test]
