@@ -9,7 +9,7 @@ use super::decisions::{DecidedBy, Decision, Ledger, parse_entry_id};
 use super::sha256_hex;
 use crate::Result;
 use crate::domain::knowledge::frontmatter;
-use crate::ports::LibraryText;
+use crate::domain::source::LibraryText;
 use chrono::{DateTime, FixedOffset};
 pub use contract::Request;
 use contract::{CONTRACT, RESPONSE_BYTES};

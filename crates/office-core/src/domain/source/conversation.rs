@@ -1280,7 +1280,10 @@ pub struct Cursor {
 
 /// The cursor of the conversation source recording `session_id`, if any.
 /// Several sources with one session id refuse, as capture does.
-pub fn cursor(sources: &[crate::ports::LibraryText], session_id: &str) -> Result<Option<Cursor>> {
+pub fn cursor(
+    sources: &[crate::domain::source::LibraryText],
+    session_id: &str,
+) -> Result<Option<Cursor>> {
     let mut found = None;
     for file in sources {
         let Some(markdown) = file.markdown.as_deref() else {
@@ -1309,7 +1312,7 @@ pub fn cursor(sources: &[crate::ports::LibraryText], session_id: &str) -> Result
 }
 
 /// The user's own scribe rules page among `pages`, if it exists.
-pub fn find_rules(pages: &[crate::ports::LibraryText]) -> Result<Option<Rules>> {
+pub fn find_rules(pages: &[crate::domain::source::LibraryText]) -> Result<Option<Rules>> {
     pages
         .iter()
         .find(|file| file.path == RULES_PAGE_PATH)

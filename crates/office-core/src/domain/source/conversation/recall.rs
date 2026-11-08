@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use super::{Session, invalid, scrub};
+use crate::domain::source::LibraryText;
 use crate::domain::source::{parse_source_meta, source_body};
 use crate::domain::{knowledge::frontmatter::flow_value, metrics::metadata, session};
-use crate::ports::LibraryText;
 use crate::{Error, Result};
 
 /// A provider resume target. Values are data, never executed by Office.

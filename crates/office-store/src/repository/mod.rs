@@ -4,4 +4,4 @@
 
 mod library;
 
-pub use library::LibraryStore;
+pub use library::{LazyLibrary, LibraryStore};

@@ -75,7 +75,7 @@ impl Library for FakeLibrary {
         id: &str,
         revision: &str,
         body: Option<&str>,
-        derived: &office_core::ports::DerivedBy,
+        derived: &office_core::domain::source::DerivedBy,
         files: &[(String, Vec<u8>)],
     ) -> Result<SourceView> {
         FakeLibrary::write_source_processing(self, id, revision, body, derived, files)

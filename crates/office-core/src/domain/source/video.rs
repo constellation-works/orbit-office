@@ -3,7 +3,7 @@
 use super::{parse_source_meta, sha256_hex, source_body};
 use crate::domain::endpoint::Capability;
 use crate::domain::settings::Settings;
-use crate::ports::DerivedBy;
+use crate::domain::source::DerivedBy;
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

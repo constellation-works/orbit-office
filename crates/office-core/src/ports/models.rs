@@ -11,20 +11,11 @@
 //! from the call context by the composition root.
 
 use office_common::Sensitivity;
-use serde::Serialize;
 use serde_json::Value;
 
 use crate::Result;
-use crate::domain::endpoint::{Capability, ModelRoute};
-
-/// How a model result was produced: the `derived_by` fields a caller records.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct DerivedBy {
-    /// `hosted` or `private:<kind>`.
-    pub route: ModelRoute,
-    /// The model named in the request.
-    pub model: String,
-}
+use crate::domain::endpoint::Capability;
+use crate::domain::source::DerivedBy;
 
 /// A model result with the route that produced it.
 #[derive(Clone, Debug, PartialEq)]

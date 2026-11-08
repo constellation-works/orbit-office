@@ -11,13 +11,13 @@ use office_core::domain::knowledge::{
 };
 use office_core::domain::settings::Settings;
 use office_core::domain::source::{
-    RenderSource, SourceKind, is_video_extension, media_type_for_extension, normalize_text,
-    render_source, sha256_hex, source_id_base, unique_source_id, vtt_to_body,
+    CaptureSourceRequest, LibraryText, RenderSource, SourceKind, is_video_extension,
+    media_type_for_extension, normalize_text, render_source, sha256_hex, source_id_base,
+    unique_source_id, vtt_to_body,
 };
 use office_core::domain::template::BUNDLED;
 use office_core::ports::{
-    CaptureSourceRequest, InitOutcome, Library, LibraryHealth, LibraryText, SourceOutcome,
-    SourceView, not_initialized_error,
+    InitOutcome, Library, LibraryHealth, SourceOutcome, SourceView, not_initialized_error,
 };
 use office_core::{Error, Result};
 use std::path::PathBuf;

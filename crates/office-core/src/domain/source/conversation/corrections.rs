@@ -33,7 +33,7 @@ impl Choice {
 
 /// Corrections use the existing-source append path; creation cannot bypass
 /// anchor checks. Shared by the production adapter and its test double.
-pub fn validate_capture(request: &crate::ports::CaptureSourceRequest) -> Result<()> {
+pub fn validate_capture(request: &crate::domain::source::CaptureSourceRequest) -> Result<()> {
     if request.append_to.is_none() && request.entries.iter().any(|e| e.kind == "correction") {
         return Err(Error::InvalidArgument(
             "correction entries require append_to".into(),
@@ -136,7 +136,7 @@ pub fn validate_user_text(kind: &str, text: &str, by: &str) -> Result<()> {
 }
 
 /// Parse an object at the capture boundary. Aliases retain the capture contract.
-pub fn capture_entry(value: &Value) -> Result<crate::ports::ConversationEntry> {
+pub fn capture_entry(value: &Value) -> Result<crate::domain::source::ConversationEntry> {
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Input {
@@ -204,7 +204,7 @@ pub fn capture_entry(value: &Value) -> Result<crate::ports::ConversationEntry> {
             ));
         }
     };
-    Ok(crate::ports::ConversationEntry {
+    Ok(crate::domain::source::ConversationEntry {
         kind: input.kind,
         text,
         by: input.by,

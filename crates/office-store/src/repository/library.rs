@@ -7,16 +7,18 @@ use office_common::Sensitivity;
 use office_common::fs::{atomic::write_atomic, hash::sha256_file};
 use office_core::domain::artifact::{Artifact, ArtifactFile};
 use office_core::domain::settings::Settings;
+use office_core::domain::source::CaptureSourceRequest;
 use office_core::domain::source::{
     RenderSource, SourceKind, is_video_extension, media_type_for_extension, normalize_text,
     parse_source_meta, render_source, sha256_hex, source_body, source_id_base, unique_source_id,
     vtt_to_body,
 };
-use office_core::ports::{CaptureSourceRequest, SourceOutcome, SourceView};
+use office_core::ports::{SourceOutcome, SourceView};
 
 use office_core::domain::knowledge::{DocumentKind, LibraryLayer};
+use office_core::domain::source::LibraryText;
 use office_core::domain::template::{KnowledgePage, TemplateFile, assess_templates};
-use office_core::ports::{InitOutcome, LibraryHealth, LibraryText};
+use office_core::ports::{InitOutcome, LibraryHealth};
 
 use crate::contracts::{Backlink, DocumentRecord, Revision, SearchFilter, SearchHit};
 use crate::driver::convert;
@@ -3236,5 +3238,113 @@ impl office_core::ports::Library for LibraryStore {
     }
     fn health(&self) -> office_core::Result<LibraryHealth> {
         Ok(Self::health(self)?)
+    }
+}
+
+type StoreOpener = dyn Fn() -> office_core::Result<LibraryStore> + Send + Sync;
+type BoolProbe = dyn Fn() -> office_core::Result<bool> + Send + Sync;
+type HealthProbe = dyn Fn() -> office_core::Result<LibraryHealth> + Send + Sync;
+type Initializer = dyn Fn(Option<&str>) -> office_core::Result<InitOutcome> + Send + Sync;
+
+/// A [`Library`](office_core::ports::Library) that opens its store lazily
+/// on every call. The composition root supplies the opener and the three
+/// operations that must not open a store blindly (`is_initialized`,
+/// `health`, `initialize`); every other operation delegates to the opened
+/// store, so a new `Library` method needs no composition-root edit.
+pub struct LazyLibrary {
+    open: Box<StoreOpener>,
+    is_initialized: Box<BoolProbe>,
+    health: Box<HealthProbe>,
+    initialize: Box<Initializer>,
+}
+
+impl LazyLibrary {
+    /// Build a lazy Library from its opener and pre-open operations.
+    pub fn new(
+        open: impl Fn() -> office_core::Result<LibraryStore> + Send + Sync + 'static,
+        is_initialized: impl Fn() -> office_core::Result<bool> + Send + Sync + 'static,
+        health: impl Fn() -> office_core::Result<LibraryHealth> + Send + Sync + 'static,
+        initialize: impl Fn(Option<&str>) -> office_core::Result<InitOutcome> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            open: Box::new(open),
+            is_initialized: Box::new(is_initialized),
+            health: Box::new(health),
+            initialize: Box::new(initialize),
+        }
+    }
+
+    fn opened(&self) -> office_core::Result<LibraryStore> {
+        (self.open)()
+    }
+}
+
+macro_rules! lazy_delegate {
+    ($(fn $name:ident(&self $(, $arg:ident: $ty:ty)*) -> $ret:ty;)*) => {$(
+        fn $name(&self $(, $arg: $ty)*) -> $ret {
+            <LibraryStore as office_core::ports::Library>::$name(&self.opened()?, $($arg),*)
+        }
+    )*};
+}
+
+impl office_core::ports::Library for LazyLibrary {
+    lazy_delegate! {
+        fn set_shareable(&self, id: &str, shareable: bool) -> office_core::Result<DocumentRecord>;
+        fn write_proposal(&self, relative: &Path, text: &str) -> office_core::Result<()>;
+        fn move_proposal(&self, to: &Path, text: &str, from: &[String]) -> office_core::Result<()>;
+        fn proposal_pages(&self) -> office_core::Result<Vec<LibraryText>>;
+        fn write_reviewed_page(&self, relative: &Path, text: &str, expected: Option<&str>) -> office_core::Result<DocumentRecord>;
+        fn read_media(&self, id: &str) -> office_core::Result<office_core::domain::source::video::VideoSource>;
+        fn source_sidecar(&self, id: &str, name: &str) -> office_core::Result<Option<String>>;
+        fn write_source_processing(&self, id: &str, revision: &str, body: Option<&str>, derived: &office_core::domain::source::DerivedBy, files: &[(String, Vec<u8>)]) -> office_core::Result<SourceView>;
+        fn bootstrap_snapshot(&self) -> office_core::Result<office_core::domain::bootstrap::Snapshot>;
+        fn mutate_batch(&self, revision: &str, mutation: office_core::domain::bootstrap::Mutation) -> office_core::Result<office_core::domain::bootstrap::Batch>;
+        fn read_video(&self, id: &str) -> office_core::Result<office_core::domain::source::video::VideoSource>;
+        fn mutate_video(&self, id: &str, revision: &str, mutation: office_core::domain::source::video::VideoMutation) -> office_core::Result<office_core::domain::source::video::VideoState>;
+        fn promote_artifact(&self, artifact: &Artifact, files: &[ArtifactFile]) -> office_core::Result<Artifact>;
+        fn artifact_documents(&self) -> office_core::Result<Vec<LibraryText>>;
+        fn read_artifact_file(&self, relative: &Path) -> office_core::Result<Vec<u8>>;
+        fn evidence_files(&self, relative: &Path) -> office_core::Result<Vec<(String, Vec<u8>)>>;
+        fn read_document(&self, relative: &Path) -> office_core::Result<DocumentRecord>;
+        fn write_document(&self, relative: &Path, text: &str) -> office_core::Result<DocumentRecord>;
+        fn get(&self, id: &str) -> office_core::Result<Option<DocumentRecord>>;
+        fn backlinks(&self, id: &str) -> office_core::Result<Vec<Backlink>>;
+        fn knowledge_pages(&self) -> office_core::Result<Vec<LibraryText>>;
+        fn source_documents(&self) -> office_core::Result<Vec<LibraryText>>;
+        fn templates(&self) -> office_core::Result<Vec<LibraryText>>;
+        fn search(&self, query: &str, filter: &SearchFilter) -> office_core::Result<Vec<SearchHit>>;
+        fn history(&self, relative: &Path) -> office_core::Result<Vec<Revision>>;
+        fn read_text(&self, relative: &Path) -> office_core::Result<String>;
+        fn head_commit(&self) -> office_core::Result<Option<String>>;
+        fn stage_attachment(&self, name: &str, text: &str) -> office_core::Result<String>;
+        fn remove_staged(&self, staged: &str) -> office_core::Result<()>;
+        fn settings(&self) -> office_core::Result<Settings>;
+        fn set_setting(&self, key: &str, value: serde_json::Value) -> office_core::Result<()>;
+        fn record_route_check(&self, endpoint: &str, model: &str, capabilities: &[office_core::domain::endpoint::Capability], verified_at: &str) -> office_core::Result<()>;
+        fn capture_source(&self, request: &CaptureSourceRequest) -> office_core::Result<SourceOutcome>;
+        fn session_transcript(&self, path: &str, session_id: &str) -> office_core::Result<office_core::domain::source::conversation::Session>;
+        fn append_decision(&self, decision: &office_core::domain::source::decisions::Decision, captured_at: &str) -> office_core::Result<office_core::ports::DecisionOutcome>;
+        fn capture_session(&self, request: &office_core::domain::source::conversation::Request, captured_at: &str) -> office_core::Result<SourceOutcome>;
+        fn read_source(&self, id: &str) -> office_core::Result<SourceView>;
+        fn source_media(&self, id: &str, selection: &office_core::domain::source::access::MediaSelection) -> office_core::Result<office_core::domain::source::access::SourceMedia>;
+        fn set_source_sensitivity(&self, id: &str, sensitivity: &str) -> office_core::Result<office_core::ports::SensitivityOutcome>;
+        fn reindex(&self) -> office_core::Result<u32>;
+        fn scribe_files(&self) -> office_core::Result<Vec<LibraryText>>;
+        fn decision_ledgers(&self) -> office_core::Result<Vec<LibraryText>>;
+        fn decision_precedent_ledgers(&self) -> office_core::Result<Vec<LibraryText>>;
+        fn decision_precedent_scores(&self, query: &str, entries: &[(String, String)]) -> office_core::Result<std::collections::BTreeMap<String, f64>>;
+        fn write_decision_ledgers(&self, files: &[office_core::domain::source::decisions::PlannedFile]) -> office_core::Result<()>;
+    }
+
+    fn is_initialized(&self) -> office_core::Result<bool> {
+        (self.is_initialized)()
+    }
+
+    fn health(&self) -> office_core::Result<LibraryHealth> {
+        (self.health)()
+    }
+
+    fn initialize(&self, library_dir: Option<&str>) -> office_core::Result<InitOutcome> {
+        (self.initialize)(library_dir)
     }
 }
