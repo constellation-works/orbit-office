@@ -14,6 +14,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use office_common::fs::atomic::write_atomic;
+use office_common::fs::permissions::create_private_dirs;
 use office_common::process;
 use office_core::Result;
 use office_core::domain::sharing::SharedSettings;
@@ -97,19 +98,6 @@ fn unreachable(settings: &SharedSettings) -> office_core::Error {
     .into()
 }
 
-fn private_dir(path: &Path) -> Result<()> {
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
-        .create(path)
-        .map_err(|_| storage("create plugin state"))
-}
-
 fn refuse_symlink_at(path: &Path) -> Result<()> {
     match std::fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => Err(storage("resolve plugin state")),
@@ -180,10 +168,10 @@ impl SharedStore {
 
     fn ensure_dir(&self) -> Result<PathBuf> {
         refuse_symlinks(&self.state, &self.state)?;
-        private_dir(&self.state)?;
+        create_private_dirs(&self.state).map_err(|_| storage("create plugin state"))?;
         let dir = self.dir();
         refuse_symlinks(&self.state, &dir)?;
-        private_dir(&dir)?;
+        create_private_dirs(&dir).map_err(|_| storage("create plugin state"))?;
         Ok(dir)
     }
 
@@ -218,7 +206,7 @@ impl SharedStore {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(_) => return Err(storage("open clone")),
         }
-        private_dir(&repo)?;
+        create_private_dirs(&repo).map_err(|_| storage("create plugin state"))?;
         self.checked("create clone", &["init", "--quiet"])?;
         Ok(())
     }
@@ -275,7 +263,7 @@ impl SharedStore {
         let staging = self.repo().join(".git/office-staging");
         refuse_symlinks(&self.state, &staging)?;
         let _ = std::fs::remove_dir_all(&staging);
-        private_dir(&staging)?;
+        create_private_dirs(&staging).map_err(|_| storage("create plugin state"))?;
         let mut blobs = Vec::new();
         for chunk in writes.chunks(BATCH) {
             let mut names = Vec::new();

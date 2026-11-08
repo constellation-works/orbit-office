@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use office_common::Sensitivity;
+use office_common::fs::permissions::{create_private_dir, create_private_dirs};
 use office_common::fs::{atomic::write_atomic, hash::sha256_file};
 use office_core::domain::artifact::{Artifact, ArtifactFile};
 use office_core::domain::settings::Settings;
@@ -205,17 +206,12 @@ impl LibraryStore {
         let resolved_state = resolve_existing_ancestor(&normalize_path(&absolute_state))?;
         let mut bootstrapped_office = false;
         if resolved_state.starts_with(&office) {
-            LibraryFs::create_private_dirs(&candidate)?;
-            let mut builder = std::fs::DirBuilder::new();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                builder.mode(0o700);
-            }
-            match builder.create(&office) {
+            create_private_dirs(&candidate)?;
+            match create_private_dir(&office) {
                 Ok(()) => bootstrapped_office = true,
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(e) => return Err(Error::io("create Library directory", &office, e)),
+                Err(office_common::Error::Io { source, .. })
+                    if source.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e.into()),
             }
         }
         // Bootstrap only the lock directory; Library and index writes wait
@@ -234,7 +230,7 @@ impl LibraryStore {
                 value: candidate.display().to_string(),
             });
         }
-        LibraryFs::create_private_dirs(&candidate)?;
+        create_private_dirs(&candidate)?;
         let resolved = candidate
             .canonicalize()
             .map_err(|e| Error::io("resolve Library", &candidate, e))?;
@@ -1529,7 +1525,7 @@ impl LibraryStore {
                     self.files.validate_relative_path(&relative)?;
                     let path = self.library_root().join(&relative);
                     if let Some(parent) = path.parent() {
-                        LibraryFs::create_private_dirs(parent)?;
+                        create_private_dirs(parent)?;
                     }
                     if file.path.starts_with('v') && file.path.ends_with(".md") {
                         self.files.write_original(&relative, &file.bytes)?;
@@ -2450,7 +2446,7 @@ impl LibraryStore {
             .join(format!("{}-{}", std::process::id(), time.as_nanos()))
             .join(name);
         if let Some(parent) = path.parent() {
-            LibraryFs::create_private_dirs(parent)?;
+            create_private_dirs(parent)?;
         }
         write_atomic(&path, text.as_bytes())?;
         Ok(path)
@@ -2470,7 +2466,7 @@ impl LibraryStore {
                 }
                 Ok(_) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    LibraryFs::create_private_dirs(&physical)?;
+                    create_private_dirs(&physical)?;
                 }
                 Err(e) => return Err(Error::io("inspect staging directory", &physical, e)),
             }

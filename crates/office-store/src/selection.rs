@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use office_common::Sensitivity;
+use office_common::fs::permissions::set_owner_only;
 use office_core::domain::selection::{PutRequest, PutResult, Selection, Tray, TrayRow, View};
 use rusqlite::{Connection, OpenFlags, TransactionBehavior, params};
 
@@ -224,15 +225,4 @@ fn from_unix(secs: i64) -> Option<SystemTime> {
     u64::try_from(secs)
         .ok()
         .map(|secs| UNIX_EPOCH + std::time::Duration::from_secs(secs))
-}
-
-fn set_owner_only(path: &Path, is_dir: bool) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = if is_dir { 0o700 } else { 0o600 };
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
-    }
-    #[cfg(not(unix))]
-    let _ = (path, is_dir);
 }

@@ -7,6 +7,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant, SystemTime};
 
+use office_common::fs::permissions::{create_private_dirs, ensure_owner_only};
 use office_common::fs::{atomic::write_atomic, hash::sha256_hex};
 use office_core::Result;
 use office_core::domain::script::{
@@ -115,13 +116,18 @@ impl ScriptRunner for ScriptStore {
             return Ok(());
         }
         let parent = checked_path(&self.state, Path::new("uv-cache/prepared"))?;
-        private_dir(&parent)?;
+        refuse_directory_symlink(&parent)?;
+        create_private_dirs(&parent).map_err(|_| adapter("create private directory"))?;
         let temp = tempfile::Builder::new()
             .prefix("prepare-")
             .tempdir_in(&parent)
             .map_err(|_| adapter("create preparation"))?;
-        private_dir(&temp.path().join("home"))?;
-        private_dir(&temp.path().join("tmp"))?;
+        refuse_directory_symlink(&temp.path().join("home"))?;
+        create_private_dirs(&temp.path().join("home"))
+            .map_err(|_| adapter("create private directory"))?;
+        refuse_directory_symlink(&temp.path().join("tmp"))?;
+        create_private_dirs(&temp.path().join("tmp"))
+            .map_err(|_| adapter("create private directory"))?;
         write_atomic(&temp.path().join("script.py"), &bytes)
             .map_err(|_| adapter("snapshot approved script"))?;
         for verb in ["lock", "sync"] {
@@ -190,7 +196,9 @@ impl ScriptRunner for ScriptStore {
             1_048_576,
         )?;
         self.prune()?;
-        private_dir(&self.state.join("runs"))?;
+        refuse_directory_symlink(&self.state.join("runs"))?;
+        create_private_dirs(&self.state.join("runs"))
+            .map_err(|_| adapter("create private directory"))?;
         // Always an exclusively allocated suffix: repeated/overlapping routine ids never collide.
         let prefix = execution
             .run_id
@@ -204,7 +212,9 @@ impl ScriptRunner for ScriptStore {
             .map_err(|_| adapter("create run"))?;
         let dir = temp.keep(); // retained on every exit for seven days
         for name in ["in", "out", "tmp", "home"] {
-            private_dir(&dir.join(name))?;
+            refuse_directory_symlink(&dir.join(name))?;
+            create_private_dirs(&dir.join(name))
+                .map_err(|_| adapter("create private directory"))?;
         }
         write_atomic(&dir.join("script.py"), &script)
             .map_err(|_| adapter("write script snapshot"))?;
@@ -213,10 +223,13 @@ impl ScriptRunner for ScriptStore {
         for (source, relative) in inputs {
             let destination = dir.join("in").join(relative);
             if let Some(parent) = destination.parent() {
-                private_dir(parent)?;
+                refuse_directory_symlink(parent)?;
+                create_private_dirs(parent).map_err(|_| adapter("create private directory"))?;
             }
             if source.is_dir() {
-                private_dir(&destination)?;
+                refuse_directory_symlink(&destination)?;
+                create_private_dirs(&destination)
+                    .map_err(|_| adapter("create private directory"))?;
                 continue;
             }
             let bytes = fs::read(&source).map_err(|_| adapter("read Library input"))?;
@@ -302,7 +315,8 @@ impl ScriptRunner for ScriptStore {
             if let Ok(relative) = self.staging.strip_prefix(&self.library) {
                 checked_path(&self.library, relative)?;
             }
-            private_dir(&self.staging)?;
+            refuse_directory_symlink(&self.staging)?;
+            create_private_dirs(&self.staging).map_err(|_| adapter("create private directory"))?;
             // Stage under the physical path: the Library port accepts a staged
             // file only under its canonical root, and an aliased ancestor
             // (macOS `/var` -> `/private/var`) would otherwise fail that check.
@@ -317,7 +331,8 @@ impl ScriptRunner for ScriptStore {
                 let bytes = read_bounded(&dir.join("out").join(name), bounds.output_file_bytes)?;
                 let path = stage.join(name);
                 if let Some(parent) = path.parent() {
-                    private_dir(parent)?;
+                    refuse_directory_symlink(parent)?;
+                    create_private_dirs(parent).map_err(|_| adapter("create private directory"))?;
                 }
                 write_atomic(&path, &bytes).map_err(|_| adapter("stage output file"))?;
                 attached.push(ScriptFile {
@@ -500,23 +515,13 @@ fn checked_path(root: &Path, relative: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn private_dir(path: &Path) -> Result<()> {
+fn refuse_directory_symlink(path: &Path) -> Result<()> {
     if fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
         return Err(adapter("refuse directory symlink"));
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(path)
-            .map_err(|_| adapter("create private directory"))?;
-    }
-    #[cfg(not(unix))]
-    fs::create_dir_all(path).map_err(|_| adapter("create private directory"))?;
     Ok(())
 }
+
 fn readonly(path: &Path) -> Result<()> {
     let meta = fs::symlink_metadata(path).map_err(|_| adapter("inspect input copy"))?;
     if meta.is_dir() {
@@ -538,12 +543,7 @@ fn readonly(path: &Path) -> Result<()> {
 fn make_writable(path: &Path) -> Result<()> {
     let meta = fs::symlink_metadata(path).map_err(|_| adapter("inspect owned run"))?;
     if meta.is_dir() && !meta.file_type().is_symlink() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-                .map_err(|_| adapter("unlock owned run"))?;
-        }
+        ensure_owner_only(path, true).map_err(|_| adapter("unlock owned run"))?;
         for entry in fs::read_dir(path).map_err(|_| adapter("list owned run"))? {
             make_writable(&entry.map_err(|_| adapter("read owned entry"))?.path())?;
         }

@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use office_common::fs::atomic::write_atomic_new;
+use office_common::fs::permissions::create_private_dirs;
 
 use crate::error::{Error, Result};
 
@@ -62,10 +63,10 @@ impl LibraryFs {
             kind: "artifact",
             value: directory.display().to_string(),
         })?;
-        Self::create_private_dirs(parent)?;
+        create_private_dirs(parent)?;
         let staging = parent.join(format!(".office-pending-artifact-{token}"));
         refuse_symlink(&staging)?;
-        Self::create_private_dirs(&staging)?;
+        create_private_dirs(&staging)?;
         for (name, bytes) in &expected {
             let path = staging.join(name);
             // Names were validated by the domain. Validate every existing
@@ -82,7 +83,7 @@ impl LibraryFs {
                 refuse_symlink(&physical)?;
             }
             if let Some(parent) = path.parent() {
-                Self::create_private_dirs(parent)?;
+                create_private_dirs(parent)?;
             }
             match write_atomic_new(&path, bytes) {
                 Ok(()) => {}
@@ -239,7 +240,7 @@ impl LibraryFs {
                         }
                     }
                     if let Some(parent) = destination.parent() {
-                        Self::create_private_dirs(parent)?;
+                        create_private_dirs(parent)?;
                     }
                     std::fs::rename(&id_dir, &destination)
                         .map_err(|error| Error::io("move legacy source", &destination, error))?;

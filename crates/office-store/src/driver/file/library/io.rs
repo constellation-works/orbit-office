@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use office_common::fs::atomic::{write_atomic, write_atomic_new};
+use office_common::fs::permissions::create_private_dirs;
 
 use crate::contracts::DocumentRecord;
 use crate::error::{Error, Result};
@@ -53,7 +54,7 @@ impl LibraryFs {
         self.validate_relative_path(relative)?;
         let path = self.root.join(relative);
         if let Some(parent) = path.parent() {
-            Self::create_private_dirs(parent)?;
+            create_private_dirs(parent)?;
         }
         match write_atomic_new(&path, bytes) {
             Ok(()) => {}
@@ -182,7 +183,7 @@ impl LibraryFs {
         self.validate_document_path(relative)?;
         let path = self.root.join(relative);
         if let Some(parent) = path.parent() {
-            Self::create_private_dirs(parent)?;
+            create_private_dirs(parent)?;
         }
         Ok(write_atomic(&path, text.as_bytes())?)
     }
@@ -196,7 +197,7 @@ impl LibraryFs {
         self.validate_proposal_path(relative)?;
         let path = self.root.join(relative);
         if let Some(parent) = path.parent() {
-            Self::create_private_dirs(parent)?;
+            create_private_dirs(parent)?;
         }
         Ok(write_atomic(&path, text.as_bytes())?)
     }
@@ -212,7 +213,7 @@ impl LibraryFs {
         self.validate_scribe_path(relative)?;
         let path = self.root.join(relative);
         if let Some(parent) = path.parent() {
-            Self::create_private_dirs(parent)?;
+            create_private_dirs(parent)?;
         }
         Ok(write_atomic(&path, text.as_bytes())?)
     }
