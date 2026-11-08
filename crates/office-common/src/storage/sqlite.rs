@@ -1,8 +1,8 @@
 //! Shared SQLite connection defaults for every office SQLite store.
 //!
-//! Historically each store would hand-roll its own pragma setup and the
-//! copies drift (missing `foreign_keys` here, missing `busy_timeout`
-//! there). [`apply_default_pragmas`] is the single source of truth: call
+//! Separate pragma setups drift (missing `foreign_keys` here, missing
+//! `busy_timeout` there). [`apply_default_pragmas`] is the single source
+//! of truth: call
 //! it on every freshly opened connection, then layer any store-specific
 //! overrides on top. (After orbit-common's `storage::sqlite`.)
 
