@@ -115,9 +115,6 @@ use serde_json::Value;
 
 /// Default hosted model for the standard tier (Muse Spark).
 pub const DEFAULT_HOSTED_MODEL: &str = office_core::domain::settings::DEFAULT_STANDARD_MODEL;
-/// Default hosted base URL: Meta's Model API, used while `models.endpoint`
-/// is unset.
-pub const DEFAULT_HOSTED_BASE_URL: &str = office_core::domain::endpoint::DEFAULT_HOSTED_ENDPOINT;
 
 /// Endpoints, credentials and limits for [`RoutedClient`].
 ///
