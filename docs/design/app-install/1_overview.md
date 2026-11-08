@@ -3,7 +3,8 @@ title: app-install — Overview
 owner: daniel
 last_updated: 2026-11-08
 status: Draft
-stage: building
+stage: shipped
+next: "—"
 feature: app-install
 doc_role: overview
 type: design
@@ -19,7 +20,7 @@ related_artifacts: [ORB-21110]
 Installing or upgrading the plugin must leave the web app running the new
 build: the installer rebuilds and restarts it ([ORB-21110], done; the stale-app
 report [ORB-21077] is done). Publication replaces only generated directories
-and retains rollback material; the decisions and their rationale are in
+and retains rollback material ([ORB-18965], done); the decisions and their rationale are in
 [4_decisions.md](./4_decisions.md).
 
 ## 1. Motivation
@@ -37,10 +38,12 @@ a stale build that does not match the installed tools.
 | Concern | File | Task |
 |---|---|---|
 | Installer rebuilds and restarts the web app | [4_decisions.md](./4_decisions.md) | [ORB-21110] done |
+| Standalone install provisions the app | [4_decisions.md](./4_decisions.md) | [ORB-18965] done |
 
 ## Task References
 
 - [ORB-21077] — reported installs leaving the web app stale.
 - [ORB-21110] — built the installer upgrade path that rebuilds and restarts the web app.
+- [ORB-18965] — fixed standalone installs never provisioning the app.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
