@@ -24,7 +24,7 @@ mod status;
 #[path = "library/capture.rs"]
 mod capture;
 
-#[path = "library/knowledge.rs"]
+#[path = "library/knowledge/mod.rs"]
 mod knowledge;
 
 #[path = "library/context.rs"]
