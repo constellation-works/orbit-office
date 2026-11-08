@@ -39,7 +39,7 @@ mod decision_ingest;
 #[path = "library/decision_precedents.rs"]
 mod decision_precedents;
 
-#[path = "library/bootstrap.rs"]
+#[path = "library/bootstrap/mod.rs"]
 mod bootstrap;
 
 #[path = "document_capture/mod.rs"]
