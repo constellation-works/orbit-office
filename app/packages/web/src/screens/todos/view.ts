@@ -131,9 +131,10 @@ export function agentTodosFromPayload(payload: unknown): AgentTodos | null {
 export function drawTodoScreen(root: HTMLElement, model: TodoList, options: TodoDrawOptions = {}): void {
   const style = document.createElement("style");
   style.textContent = STYLE + pickerStyles;
+  const now = options.now ?? new Date();
   const schedule: ScheduleActions | undefined = options.onSchedule === undefined || options.onEdit === undefined
     ? undefined
-    : { onSchedule: options.onSchedule, onEdit: options.onEdit, editing: options.editing ?? null, now: options.now ?? new Date() };
+    : { onSchedule: options.onSchedule, onEdit: options.onEdit, editing: options.editing ?? null, now };
 
   const page = document.createElement("section");
   page.className = "todos";
@@ -154,8 +155,8 @@ export function drawTodoScreen(root: HTMLElement, model: TodoList, options: Todo
   columns.className = "todos-columns";
   const meeting = options.agentTodos?.todos ?? [];
   columns.append(
-    column("you", "You", "Close these when you are finished.", model.you, options.onClose, schedule),
-    column("agents", "Agents", "Orbit tasks agents carry. Merged work shows its PR.", model.agents, options.onClose, schedule, meeting),
+    column("you", "You", "Close these when you are finished.", model.you, options.onClose, schedule, [], now),
+    column("agents", "Agents", "Orbit tasks agents carry. Merged work shows its PR.", model.agents, options.onClose, schedule, meeting, now),
   );
   if (options.agentTodos === null) {
     const note = document.createElement("p");
@@ -313,6 +314,7 @@ function column(
   onClose: ((id: string) => void) | undefined,
   schedule: ScheduleActions | undefined,
   meeting: readonly AgentTodo[] = [],
+  now: Date = new Date(),
 ): HTMLElement {
   const section = document.createElement("section");
   section.className = `todos-column todos-column--${kind}`;
@@ -332,7 +334,7 @@ function column(
     section.append(empty);
     return section;
   }
-  for (const item of items) section.append(todoCard(item, onClose, schedule, kind === "you"));
+  for (const item of items) section.append(todoCard(item, onClose, schedule, kind === "you", now));
   return section;
 }
 
@@ -341,11 +343,12 @@ function todoCard(
   onClose: ((id: string) => void) | undefined,
   schedule: ScheduleActions | undefined,
   due: boolean,
+  now: Date,
 ): HTMLElement {
   const content = document.createElement("div");
   content.className = "card-content";
   content.append(sourceBlock(item.source), knowledgeBlock(item.knowledge));
-  const when = due ? dueBlock(item, schedule) : scheduleBlock(item, schedule);
+  const when = due ? dueBlock(item, schedule, now) : scheduleBlock(item, schedule, now);
   if (when !== null) content.append(when);
   const action = item.closable && onClose !== undefined ? closeButton(item.id, onClose) : undefined;
   return action === undefined ? card(item.title, content) : card(item.title, content, action);
@@ -396,8 +399,8 @@ function knowledgeBlock(knowledge: readonly string[]): HTMLElement {
  * **Clear schedule**) while nothing has started the to-do. The open picker
  * takes the actions' place.
  */
-function scheduleBlock(item: TodoItem, schedule: ScheduleActions | undefined): HTMLElement | null {
-  const now = schedule?.now ?? new Date();
+function scheduleBlock(item: TodoItem, schedule: ScheduleActions | undefined, now: Date): HTMLElement | null {
+  const at = schedule?.now ?? now;
   const canSchedule = schedule !== undefined && item.schedulable;
   if (item.scheduled === null && !canSchedule) return null;
   const block = document.createElement("section");
@@ -406,14 +409,14 @@ function scheduleBlock(item: TodoItem, schedule: ScheduleActions | undefined): H
   if (item.scheduled !== null) {
     const words = document.createElement("p");
     words.className = "todos-when";
-    words.textContent = scheduledWords(item.scheduled, now);
+    words.textContent = scheduledWords(item.scheduled, at);
     block.append(words);
   }
   if (!canSchedule) return block;
   if (schedule.editing === item.id) {
     block.append(schedulePicker({
       initial: item.scheduled,
-      now,
+      now: at,
       save: (instant) => schedule.onSchedule(item.id, instant),
       cancel: () => schedule.onEdit(null),
       failed: () => "The time could not be saved. Try again in a moment.",
@@ -439,8 +442,8 @@ function scheduleBlock(item: TodoItem, schedule: ScheduleActions | undefined): H
  * **Set due date…** (or **Change due date…** and **Clear due date**), all
  * writing `not_before`. The open picker takes the actions' place.
  */
-function dueBlock(item: TodoItem, schedule: ScheduleActions | undefined): HTMLElement | null {
-  const now = schedule?.now ?? new Date();
+function dueBlock(item: TodoItem, schedule: ScheduleActions | undefined, now: Date): HTMLElement | null {
+  const at = schedule?.now ?? now;
   const canSchedule = schedule !== undefined && item.schedulable;
   if (item.scheduled === null && !canSchedule) return null;
   const block = document.createElement("section");
@@ -449,15 +452,15 @@ function dueBlock(item: TodoItem, schedule: ScheduleActions | undefined): HTMLEl
   if (item.scheduled !== null) {
     const words = document.createElement("p");
     words.className = "todos-when";
-    words.textContent = dueWords(item.scheduled, now);
+    words.textContent = dueWords(item.scheduled, at);
     block.append(words);
-    if (isOverdue(item.scheduled, now)) block.append(pill("Overdue", "attention"));
+    if (isOverdue(item.scheduled, at)) block.append(pill("Overdue", "attention"));
   }
   if (!canSchedule) return block;
   if (schedule.editing === item.id) {
     block.append(schedulePicker({
       initial: item.scheduled,
-      now,
+      now: at,
       label: "Due date",
       save: (instant) => schedule.onSchedule(item.id, instant),
       cancel: () => schedule.onEdit(null),
