@@ -400,7 +400,6 @@ function knowledgeBlock(knowledge: readonly string[]): HTMLElement {
  * takes the actions' place.
  */
 function scheduleBlock(item: TodoItem, schedule: ScheduleActions | undefined, now: Date): HTMLElement | null {
-  const at = schedule?.now ?? now;
   const canSchedule = schedule !== undefined && item.schedulable;
   if (item.scheduled === null && !canSchedule) return null;
   const block = document.createElement("section");
@@ -409,14 +408,14 @@ function scheduleBlock(item: TodoItem, schedule: ScheduleActions | undefined, no
   if (item.scheduled !== null) {
     const words = document.createElement("p");
     words.className = "todos-when";
-    words.textContent = scheduledWords(item.scheduled, at);
+    words.textContent = scheduledWords(item.scheduled, now);
     block.append(words);
   }
   if (!canSchedule) return block;
   if (schedule.editing === item.id) {
     block.append(schedulePicker({
       initial: item.scheduled,
-      now: at,
+      now,
       save: (instant) => schedule.onSchedule(item.id, instant),
       cancel: () => schedule.onEdit(null),
       failed: () => "The time could not be saved. Try again in a moment.",
@@ -443,7 +442,6 @@ function scheduleBlock(item: TodoItem, schedule: ScheduleActions | undefined, no
  * writing `not_before`. The open picker takes the actions' place.
  */
 function dueBlock(item: TodoItem, schedule: ScheduleActions | undefined, now: Date): HTMLElement | null {
-  const at = schedule?.now ?? now;
   const canSchedule = schedule !== undefined && item.schedulable;
   if (item.scheduled === null && !canSchedule) return null;
   const block = document.createElement("section");
@@ -452,15 +450,15 @@ function dueBlock(item: TodoItem, schedule: ScheduleActions | undefined, now: Da
   if (item.scheduled !== null) {
     const words = document.createElement("p");
     words.className = "todos-when";
-    words.textContent = dueWords(item.scheduled, at);
+    words.textContent = dueWords(item.scheduled, now);
     block.append(words);
-    if (isOverdue(item.scheduled, at)) block.append(pill("Overdue", "attention"));
+    if (isOverdue(item.scheduled, now)) block.append(pill("Overdue", "attention"));
   }
   if (!canSchedule) return block;
   if (schedule.editing === item.id) {
     block.append(schedulePicker({
       initial: item.scheduled,
-      now: at,
+      now,
       label: "Due date",
       save: (instant) => schedule.onSchedule(item.id, instant),
       cancel: () => schedule.onEdit(null),

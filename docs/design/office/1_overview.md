@@ -1,10 +1,11 @@
 ---
 title: office — Overview
 owner: daniel
-last_updated: 2026-11-03
+last_updated: 2026-11-08
 last_validated: 2026-11-03
 status: Draft
 stage: building
+next: "Agent activity without the gateway plugin [ORB-21451]"
 feature: office
 doc_role: overview
 type: design
@@ -17,12 +18,7 @@ related_artifacts: [ORB-16585]
 
 # office — Overview
 
-**Next:** Record the contradiction resolve and voiceover, then close out [ORB-21404].
-
-The meeting-to-PR demo is coordinated in [ORB-21334]. Its on-call record
-[ORB-21404] confirms the end-to-end run; recording and close-out remain.
-
-The feature remains **building**: the demo build has landed, but the
+The feature remains **building**: committed scope has landed, but the
 gateway-independent agent activity is still queued ([ORB-21451]),
 and app approval wiring is parked ([ORB-20363]). These open slices do not
 change the design's **Draft** status; whole-design owner approval remains
@@ -187,12 +183,9 @@ core.
 - [ORB-19735] — built the Agent work screen and `GET /api/agents`.
 - [ORB-19741] — registered the Agent work screen: route, rail item and count.
 - [ORB-20246] — added local calendar events and source choices so the Calendar screen works with no external calendar.
-- [ORB-21334] — coordinates the synthetic meeting-to-PR demo and submission run-through.
 - [ORB-21345] — rebuilt the web app screens from the approved mocks.
 - [ORB-21452] — deduplicated Today digest needs by task id across repeated workspace listings.
 - [ORB-21641] — removed the Agent work screen; Today and To-dos show agent work.
-- [ORB-21404] — tracks the completed demo run and the remaining recording and close-out work.
-- [ORB-21749] — removed the scribe; it moved to `constellation-works/scribe`.
 - [ORB-21451] — removes the agent activity's unconditional gateway dependency; approved in backlog.
 - [ORB-20363] — holds scoped app approval wiring; parked as someday.
 
