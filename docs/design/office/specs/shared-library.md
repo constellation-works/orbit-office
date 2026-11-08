@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: shared library — a `shareable` field on Library documents, one team git repository, and `office.library-sync`, which pushes the shareable documents and pulls colleagues' work into a read-only shared layer, so a new joiner inherits the team's knowledge"
-last_validated: 2026-10-28
+last_validated: 2026-11-08
 last_updated: 2026-11-02
 ---
 

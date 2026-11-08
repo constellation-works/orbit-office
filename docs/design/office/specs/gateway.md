@@ -1,7 +1,7 @@
 ---
 type: design
 summary: "Spec: gateway plugins — audited, redacted API requests through named connections, and read-only cloud CLI calls, instead of raw curl and cloud CLIs"
-last_validated: 2026-10-27
+last_validated: 2026-11-08
 ---
 
 # Spec: Gateway plugins
