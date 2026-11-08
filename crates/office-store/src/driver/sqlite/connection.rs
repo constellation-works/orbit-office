@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
+use office_common::fs::permissions::set_owner_only;
 use office_core::domain::knowledge::LibraryLayer;
 
 use crate::contracts::{Backlink, DocumentKind, DocumentRecord, LinkKind, SearchFilter, SearchHit};
@@ -344,19 +345,6 @@ fn query_column(conn: &Connection, sql: &str, id: &str, path: &Path) -> Result<V
 fn apply_default_pragmas(conn: &Connection, path: &Path) -> Result<()> {
     office_common::storage::sqlite::apply_default_pragmas(conn)
         .map_err(|e| Error::sqlite(path, "apply default pragmas", e))
-}
-
-/// Owner-only permissions (`0700` directories, `0600` files), best effort
-/// on non-Unix hosts.
-fn set_owner_only(path: &Path, is_dir: bool) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = if is_dir { 0o700 } else { 0o600 };
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
-    }
-    #[cfg(not(unix))]
-    let _ = (path, is_dir);
 }
 
 fn index_id(document: &DocumentRecord) -> String {

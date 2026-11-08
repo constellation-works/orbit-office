@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use office_common::fs::atomic::write_atomic;
+use office_common::fs::permissions::create_private_dirs;
 use office_core::domain::template::BUNDLED;
 
 use crate::error::{Error, Result};
@@ -37,7 +38,7 @@ impl LibraryFs {
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Self::create_private_dirs(&dir)?;
+                create_private_dirs(&dir)?;
                 created.push(".office/templates".to_string());
             }
             Err(error) => return Err(Error::io("inspect template directory", &dir, error)),

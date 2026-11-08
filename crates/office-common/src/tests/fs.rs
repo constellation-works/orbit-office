@@ -6,6 +6,9 @@ use crate::Error;
 use crate::fs::atomic::{temp_path, write_atomic, write_atomic_new, write_atomic_with_counter};
 use crate::fs::hash::{sha256_file, sha256_hex};
 use crate::fs::path_safety::{normalize_path, validate_path_stem};
+use crate::fs::permissions::{
+    create_private_dir, create_private_dirs, ensure_owner_only, set_owner_only,
+};
 
 #[test]
 fn path_stems_accept_slugs_and_refuse_traversal() {
@@ -192,6 +195,73 @@ fn atomic_write_leaves_owner_only_permissions() {
     write_atomic(&path, b"payload").expect("write");
     let mode = std::fs::metadata(&path).expect("stat").permissions().mode() & 0o777;
     assert_eq!(mode, 0o600, "final mode must be owner-only, got {mode:o}");
+}
+
+#[cfg(unix)]
+fn mode_of(path: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).expect("stat").permissions().mode() & 0o777
+}
+
+#[test]
+fn create_private_dirs_creates_missing_parents_idempotently() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let nested = dir.path().join("a/b/c");
+    create_private_dirs(&nested).expect("create nested");
+    create_private_dirs(&nested).expect("existing dirs stay ok");
+    assert!(nested.is_dir());
+    #[cfg(unix)]
+    {
+        assert_eq!(mode_of(&nested), 0o700);
+        assert_eq!(mode_of(&dir.path().join("a")), 0o700);
+    }
+}
+
+#[test]
+fn create_private_dir_creates_only_the_leaf() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let leaf = dir.path().join("leaf");
+    create_private_dir(&leaf).expect("create leaf");
+    assert!(leaf.is_dir());
+    #[cfg(unix)]
+    assert_eq!(mode_of(&leaf), 0o700);
+    let err = create_private_dir(&leaf).expect_err("existing leaf is refused");
+    assert!(matches!(err, Error::Io { source, .. }
+        if source.kind() == std::io::ErrorKind::AlreadyExists));
+    let deep = dir.path().join("missing/leaf");
+    assert!(create_private_dir(&deep).is_err(), "no parent creation");
+    assert!(!deep.exists());
+}
+
+#[test]
+#[cfg(unix)]
+fn owner_only_helpers_tighten_dirs_and_files() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let sub = dir.path().join("sub");
+    std::fs::create_dir(&sub).expect("make dir");
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).expect("widen dir");
+    let file = dir.path().join("file.txt");
+    std::fs::write(&file, b"x").expect("write file");
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).expect("widen file");
+
+    set_owner_only(&sub, true);
+    set_owner_only(&file, false);
+    assert_eq!(mode_of(&sub), 0o700);
+    assert_eq!(mode_of(&file), 0o600);
+
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).expect("widen again");
+    ensure_owner_only(&sub, true).expect("strict chmod");
+    assert_eq!(mode_of(&sub), 0o700);
+    // Best-effort form never fails the caller for a missing path; the
+    // strict form surfaces it as the common io error.
+    set_owner_only(&dir.path().join("absent"), true);
+    assert_eq!(
+        ensure_owner_only(&dir.path().join("absent"), true)
+            .expect_err("missing path")
+            .code(),
+        "io_error"
+    );
 }
 
 #[test]

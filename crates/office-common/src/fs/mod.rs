@@ -4,3 +4,4 @@
 pub mod atomic;
 pub mod hash;
 pub mod path_safety;
+pub mod permissions;

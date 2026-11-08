@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use office_common::fs::atomic::write_atomic;
 use office_common::fs::path_safety::validate_path_stem;
+use office_common::fs::permissions::create_private_dirs;
 
 use crate::error::{Error, Result};
 
@@ -29,23 +30,9 @@ impl LibraryFs {
                 path.push(component);
                 refuse_symlink(&path)?;
             }
-            Self::create_private_dirs(&path)?;
+            create_private_dirs(&path)?;
         }
         Ok(())
-    }
-
-    /// Create only missing directories with owner-only permissions.
-    pub(crate) fn create_private_dirs(path: &Path) -> Result<()> {
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        builder
-            .create(path)
-            .map_err(|e| Error::io("create Library directory", path, e))
     }
 
     /// Read the fixed root ignore file, refusing a symlink before use.

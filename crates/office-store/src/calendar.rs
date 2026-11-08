@@ -1,5 +1,6 @@
 //! Atomic private calendar state; construction and reads never create files.
 use crate::driver::file::lock::WriterLock;
+use office_common::fs::permissions::{create_private_dir, create_private_dirs, ensure_owner_only};
 use office_common::fs::{atomic::write_atomic, hash::sha256_hex};
 use office_core::{
     Result,
@@ -53,34 +54,17 @@ impl CalendarStore {
         if create {
             // Refuse symlink components before writing in either state root.
             safe_components(&state)?;
-            let mut builder = fs::DirBuilder::new();
-            builder.recursive(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                builder.mode(0o700);
-            }
-            builder.create(&state).map_err(|_| CalendarError::Storage)?;
+            create_private_dirs(&state).map_err(|_| CalendarError::Storage)?;
         }
         safe_components(&dir)?;
         if create {
-            let mut builder = fs::DirBuilder::new();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                builder.mode(0o700);
-            }
-            match builder.create(&dir) {
+            match create_private_dir(&dir) {
                 Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(office_common::Error::Io { source, .. })
+                    if source.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(_) => return Err(CalendarError::Storage.into()),
             }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))
-                    .map_err(|_| CalendarError::Storage)?;
-            }
+            ensure_owner_only(&dir, true).map_err(|_| CalendarError::Storage)?;
         }
         Ok(dir)
     }
