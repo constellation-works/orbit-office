@@ -21,6 +21,18 @@ impl Git {
     }
 
     fn run(&self, args: &[&str]) -> Result<(bool, String)> {
+        self.run_inner(None, args, &[])
+    }
+
+    /// The one supervised `git` command builder. `index` selects the
+    /// temporary scaffold index; `extra_env` pairs (the scaffold commit
+    /// author identity) apply after the base environment, as before.
+    fn run_inner(
+        &self,
+        index: Option<&Path>,
+        args: &[&str],
+        extra_env: &[(&str, &str)],
+    ) -> Result<(bool, String)> {
         let mut command = Command::new("git");
         command
             .current_dir(&self.root)
@@ -31,7 +43,11 @@ impl Git {
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("LC_ALL", "C")
-            .env("GIT_LITERAL_PATHSPECS", "1")
+            .env("GIT_LITERAL_PATHSPECS", "1");
+        if let Some(index) = index {
+            command.env("GIT_INDEX_FILE", index);
+        }
+        command
             .args([
                 "--no-pager",
                 "-c",
@@ -46,6 +62,9 @@ impl Git {
                 "gc.auto=0",
             ])
             .args(args);
+        for (key, value) in extra_env {
+            command.env(key, value);
+        }
         let (status, text) = process::run(&mut command, &self.root)?;
         Ok((status.success(), text))
     }
@@ -257,37 +276,7 @@ impl Git {
         args: &[&str],
         extra_env: &[(&str, &str)],
     ) -> Result<(bool, String)> {
-        let mut command = Command::new("git");
-        command
-            .current_dir(&self.root)
-            .env_clear()
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .env("HOME", &self.state)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env("LC_ALL", "C")
-            .env("GIT_LITERAL_PATHSPECS", "1")
-            .env("GIT_INDEX_FILE", index)
-            .args([
-                "--no-pager",
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-c",
-                "core.fsmonitor=false",
-                "-c",
-                "commit.gpgSign=false",
-                "-c",
-                "maintenance.auto=false",
-                "-c",
-                "gc.auto=0",
-            ])
-            .args(args);
-        for (key, value) in extra_env {
-            command.env(key, value);
-        }
-        let (status, text) = process::run(&mut command, &self.root)?;
-        Ok((status.success(), text))
+        self.run_inner(Some(index), args, extra_env)
     }
 
     fn checked_with_index(
