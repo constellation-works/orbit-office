@@ -50,11 +50,6 @@ export function writeHostedKey(origin: string, value: string, options: SecretOpt
   return runSecret("set", "office", "meta_api_key", JSON.stringify({ origin, key: value }), "secret_not_saved", options);
 }
 
-/** Forget the hosted model key, so no endpoint is sent one. */
-export function removeHostedKey(options: SecretOptions = {}): Promise<void> {
-  return runSecret("rm", "office", "meta_api_key", undefined, "secret_cleanup_failed", options);
-}
-
 export async function writeSecret(
   verb: "set" | "rm", slot: string, value: string | undefined, options: SecretOptions = {},
 ): Promise<void> {
