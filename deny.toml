@@ -5,7 +5,14 @@
 # A yanked crate can change under the locked graph without anyone editing code.
 yanked = "deny"
 ignore = [
-    # { id = "RUSTSEC-YYYY-NNNN", reason = "<why it does not apply>. Re-review YYYY-MM-DD." },
+    # chrono is unmaintained and every version is affected, so there is no
+    # patched release to move to. Only office-core depends on it directly
+    # (calendar and time handling). Remove this entry when office-core moves
+    # to a maintained crate.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained with no safe upgrade; it is a direct dependency of office-core only, which is a maintenance notice, not a known exploit. Re-review 2027-02-22." },
+    # chrono-tz is unmaintained with no safe upgrade. Only office-core depends
+    # on it directly (time-zone rules), and it leaves the tree with chrono.
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz is unmaintained with no safe upgrade; it is a direct dependency of office-core only, which is a maintenance notice, not a known exploit. Re-review 2027-02-22." },
 ]
 
 [licenses]
