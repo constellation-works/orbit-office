@@ -195,8 +195,9 @@ Sources, pages and artifacts are `normal` or `private`.
   source, page or artifact, `office.source-show`, `office.search`,
   `office.knowledge-show` and `office.artifact-show` return metadata
   only (id, title, path, sensitivity, anchors) with
-  `content_withheld: true` — no body, span, summary or snippet. Cite it
-  by id and anchor, and work on its content only through tools that
+  `content_withheld: true` — no body, span, summary or snippet.
+
+  Cite it by id and anchor, and work on its content only through tools that
   route to the user's private endpoint. Never ask the user to paste
   private text to work around the withholding.
 
