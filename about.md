@@ -5,7 +5,7 @@ summary: Local-first office work on Orbit — an office plugin and web app that 
 status: active
 stack: Rust + TypeScript
 gate: direct
-standards: STD-01,STD-02,STD-03,STD-04,STD-05
+standards: STD-01,STD-02,STD-03,STD-04,STD-05,STD-11
 agents: "—"
 ---
 

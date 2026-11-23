@@ -188,11 +188,11 @@ standards-check:
 		sh docs/standards/check.sh; \
 	elif [ "$(STANDARDS_STRICT)" = "1" ]; then \
 		echo "error: standards not vendored yet (no docs/standards/check.sh)." >&2; \
-		echo "       from the constellation root: operations/scripts/sync-standards.sh --adopt STD-01,STD-02,STD-03,STD-04,STD-05 <this repo>" >&2; \
+		echo "       from the constellation root: operations/scripts/sync-standards.sh --adopt STD-01,STD-02,STD-03,STD-04,STD-05,STD-11 <this repo>" >&2; \
 		exit 1; \
 	else \
 		echo "warning: standards not vendored yet (no docs/standards/check.sh); skipping." >&2; \
-		echo "         from the constellation root: operations/scripts/sync-standards.sh --adopt STD-01,STD-02,STD-03,STD-04,STD-05 <this repo>" >&2; \
+		echo "         from the constellation root: operations/scripts/sync-standards.sh --adopt STD-01,STD-02,STD-03,STD-04,STD-05,STD-11 <this repo>" >&2; \
 	fi
 
 # Pre-handoff gate for agents: no compile, and every parity check CI runs

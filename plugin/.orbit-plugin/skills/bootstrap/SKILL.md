@@ -37,7 +37,9 @@ and move on.
    the phase's counts, model calls and cost estimate (or the counts with
    rates unset) before anything runs, and the user confirms it there with
    Process. `office.batch-plan` is not exposed to you: never preview or
-   confirm a batch yourself. If the plan moved, the app shows the new
+   confirm a batch yourself.
+
+   If the plan moved, the app shows the new
    preview. No step makes more calls than the confirmed
    plan allows, and careful calls past the estimate need a second,
    smaller confirmation.
