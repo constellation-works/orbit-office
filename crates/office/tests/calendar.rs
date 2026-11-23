@@ -228,14 +228,43 @@ fn real_library_prep_capture_and_summary_are_joined_by_event_key() {
 fn local_events_persist_across_processes_and_external_sync_never_overwrites_them() {
     let env = Env::new();
     assert_eq!(env.tool("office.init", json!({}))["ok"], true);
-    let event = json!({"title":"Local planning", "start":"2026-10-30T14:00:00Z", "end":"2026-10-30T15:00:00Z", "attendees":["Jane Park"]});
+
+    // Derive fixture dates from the sync window, so the test follows the
+    // executable's clock without reading the host clock itself.
+    assert_eq!(
+        env.tool(
+            "office.config-set",
+            json!({"key":"calendar.window_days_ahead","value":27})
+        )["ok"],
+        true
+    );
+    let file = env.root.path().join("calendar.ics");
+    std::fs::write(&file, "BEGIN:VCALENDAR\nEND:VCALENDAR\n").unwrap();
+    let initial_sync = env.tool("office.calendar-sync", json!({"ics_file":"calendar.ics"}));
+    assert_eq!(initial_sync["ok"], true, "{initial_sync}");
+    let window = initial_sync["output"]["window"].clone();
+    let range = json!({"from":window["from"],"until":window["until"]});
+    let after = |time: &str, seconds: u64| {
+        let timestamp = office_core::domain::calendar::parse_time(time)
+            .unwrap()
+            .timestamp();
+        let timestamp = u64::try_from(timestamp).unwrap();
+        office_core::domain::source::format_rfc3339_utc(
+            std::time::UNIX_EPOCH
+                + std::time::Duration::from_secs(timestamp)
+                + std::time::Duration::from_secs(seconds),
+        )
+    };
+    let compact = |time: &str| time.replace("+00:00", "Z").replace(['-', ':'], "");
+    let local_start = after(window["from"].as_str().unwrap(), 2 * 60 * 60);
+    let local_end = after(&local_start, 60 * 60);
+    let event = json!({"title":"Local planning", "start":local_start, "end":local_end, "attendees":["Jane Park"]});
     let created = env.tool(
         "office.calendar-sync",
         json!({"local":{"action":"create","event":event}}),
     );
     assert_eq!(created["ok"], true, "{created}");
     let key = created["output"]["key"].as_str().unwrap();
-    let range = json!({"from":"2026-10-26T00:00:00Z","until":"2026-11-02T00:00:00Z"});
     let listed = env.tool("office.calendar-list", range.clone());
     assert_eq!(listed["output"]["events"][0]["key"], key);
     assert_eq!(listed["output"]["events"][0]["local"], true);
@@ -243,8 +272,14 @@ fn local_events_persist_across_processes_and_external_sync_never_overwrites_them
         listed["output"]["sources"],
         json!({"local":true,"external":true})
     );
-    let file = env.root.path().join("calendar.ics");
-    std::fs::write(file, "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:external\nDTSTART:20261030T100000Z\nDTEND:20261030T110000Z\nSUMMARY:External meeting\nEND:VEVENT\nEND:VCALENDAR").unwrap();
+    let external_start = after(window["from"].as_str().unwrap(), 4 * 60 * 60);
+    let external_end = after(&external_start, 60 * 60);
+    let external = format!(
+        "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:external\nDTSTART:{}\nDTEND:{}\nSUMMARY:External meeting\nEND:VEVENT\nEND:VCALENDAR\n",
+        compact(&external_start),
+        compact(&external_end)
+    );
+    std::fs::write(file, external).unwrap();
     assert_eq!(
         env.tool("office.calendar-sync", json!({"ics_file":"calendar.ics"}))["ok"],
         true
@@ -272,7 +307,9 @@ fn local_events_persist_across_processes_and_external_sync_never_overwrites_them
             count
         );
     }
-    let edited = json!({"title":"Moved planning", "start":"2026-10-30T16:00:00Z", "end":"2026-10-30T17:00:00Z"});
+    let edited_start = after(&local_start, 60 * 60);
+    let edited_end = after(&edited_start, 60 * 60);
+    let edited = json!({"title":"Moved planning", "start":edited_start, "end":edited_end});
     assert_eq!(
         env.tool(
             "office.calendar-sync",
