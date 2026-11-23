@@ -11,7 +11,7 @@
       "id": "orchestrator-2",
       "kind": "should-not-load",
       "prompt": "The user asks an agent to run `aws ec2 describe-instances` to list their servers.",
-      "expected": "Does not load `office-orchestrator`; loads `cloud-cli` and calls `cloudcli.run`."
+      "expected": "Does not load `office-orchestrator`; loads `cloudcli-cloud-cli` and calls `cloudcli.run`."
     },
     {
       "id": "orchestrator-3",

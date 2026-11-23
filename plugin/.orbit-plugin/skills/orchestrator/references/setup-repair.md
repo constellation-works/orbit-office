@@ -67,7 +67,7 @@ user's workspace.
 | `converter_unavailable` on a PDF | `pdftotext` (poppler) not installed | User installs poppler, then captures again |
 | `python_too_old` from gateway | Gateway enabled with an old Python | Re-run the install, then `orbit plugin enable gateway` |
 | `unknown_connection` / `secret_unset` / `auth_expired` | Connection missing, unset or signed out | Settings › Connections |
-| `secret_unset` from `cloudcli.run` | Read-only cloud identity not set | The `cloud-cli` skill's setup steps |
+| `secret_unset` from `cloudcli.run` | Read-only cloud identity not set | The `cloudcli-cloud-cli` skill's setup steps |
 | No `office.*` or `orbit.*` tools in your session | Orbit MCP entry missing for this agent CLI | `orbit-office status`; if `Agent CLI` is not registered, `install.sh` (with `--agent` as needed) |
 
 If something fails that is not in this table, run `orbit-office status`, quote the exact

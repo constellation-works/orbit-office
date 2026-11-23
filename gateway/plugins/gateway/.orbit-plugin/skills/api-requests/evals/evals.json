@@ -1,17 +1,17 @@
 {
-  "skill": "api-requests",
+  "skill": "gateway-api-requests",
   "cases": [
     {
       "id": "api-requests-1",
       "kind": "should-load",
       "prompt": "A task asks for the user's ten most recent CRM deals through a connected API.",
-      "expected": "Loads `api-requests`; checks `gateway.connection-list`, then calls `gateway.http-get` with the connection name and a `path` under its `base_url`."
+      "expected": "Loads `gateway-api-requests`; checks `gateway.connection-list`, then calls `gateway.http-get` with the connection name and a `path` under its `base_url`."
     },
     {
       "id": "api-requests-2",
       "kind": "should-not-load",
       "prompt": "A task asks for the user's GCP Compute instances.",
-      "expected": "Does not load `api-requests`; loads `cloud-cli`."
+      "expected": "Does not load `gateway-api-requests`; loads `cloudcli-cloud-cli`."
     },
     {
       "id": "api-requests-3",

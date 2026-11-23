@@ -1,6 +1,6 @@
 ---
 name: office-library-conventions
-description: Sets the conventions for working from cited Library evidence — reading a task's attached context, preparing templated knowledge proposals as task artifacts, producing runbook drafts, packaging outputs with an artifact manifest, and making API calls and scratch files safely. Use in any agent run that cites sources, proposes a Library page or attaches outputs to a task. Not for the orchestrator's session routine (use office-orchestrator) or for a raw API request (use api-requests).
+description: Sets the conventions for working from cited Library evidence — reading a task's attached context, preparing templated knowledge proposals as task artifacts, producing runbook drafts, packaging outputs with an artifact manifest, and making API calls and scratch files safely. Use in any agent run that cites sources, proposes a Library page or attaches outputs to a task. Not for the orchestrator's session routine (use office-orchestrator) or for a raw API request (use gateway-api-requests).
 ---
 
 # Library conventions
