@@ -112,7 +112,7 @@ rule even where no deny rule exists. Never ask the user to paste a key.
 - Implementing agents can use `gateway.*` but are refused `cloudcli.run`. If an agent to-do
   needs a cloud read, do it yourself or ask the user.
 - A `cloudcli` `command_not_allowed` refusal is final. Don't look for another way in.
-- Full procedures: the `api-requests` and `cloud-cli` skills.
+- Full procedures: the `gateway-api-requests` and `cloudcli-cloud-cli` skills.
 
 ## Reading results
 

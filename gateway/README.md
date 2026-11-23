@@ -16,10 +16,10 @@ at run time.
   the cloudcli plugin only `cloud`.
 - `plugins/gateway/.orbit-plugin/` — the `gateway` plugin: `plugin.yaml`,
   `bin/backend.py` (version check, then dispatch), `schemas/`, the
-  `api-requests` skill and `tests/conformance/` goldens. Exports carry the
+  `gateway-api-requests` skill and `tests/conformance/` goldens. Exports carry the
   package in `lib/`.
 - `plugins/cloudcli/.orbit-plugin/` — the `cloudcli` plugin, the same shape,
-  with the `cloud-cli` skill.
+  with the `cloudcli-cloud-cli` skill.
 - `tests/` — unittest, standard library only, through the real backend
   against loopback servers and stub `aws`/`gcloud` executables.
 - `scripts/` — `export.py` (used by `make export` and the tests) and
@@ -71,7 +71,7 @@ or URL parameter values are refused, and output is forced to JSON.
 
 Read-only is enforced by the credentials: the user creates an AWS IAM user
 with `ReadOnlyAccess` and a Google Cloud service account with `roles/viewer`
-(the `cloud-cli` skill says how) and stores `aws_access_key_id`,
+(the `cloudcli-cloud-cli` skill says how) and stores `aws_access_key_id`,
 `aws_secret_access_key` and `gcp_service_account_json` as the plugin's
 secrets. Each call writes them to `0600` files in a fresh `0700` directory
 under `{{plugin_state}}/calls/`, points `AWS_SHARED_CREDENTIALS_FILE` and

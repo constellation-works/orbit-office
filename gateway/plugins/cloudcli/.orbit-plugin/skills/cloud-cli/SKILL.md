@@ -1,6 +1,6 @@
 ---
-name: cloud-cli
-description: Runs read-only aws and gcloud commands through the cloudcli plugin instead of the aws or gcloud CLI in the shell, and tells the user how to set up the plugin's read-only identities. Use whenever a task needs to look up AWS or Google Cloud resources, when the user asks how to set up those identities, or when cloudcli reports a missing identity. Not for web APIs (use api-requests) or for any cloud write.
+name: cloudcli-cloud-cli
+description: Runs read-only aws and gcloud commands through the cloudcli plugin instead of the aws or gcloud CLI in the shell, and tells the user how to set up the plugin's read-only identities. Use whenever a task needs to look up AWS or Google Cloud resources, when the user asks how to set up those identities, or when cloudcli reports a missing identity. Not for web APIs (use gateway-api-requests) or for any cloud write.
 ---
 
 # Read-only cloud commands through cloudcli

@@ -1,6 +1,6 @@
 ---
 name: office-orchestrator
-description: Runs the user's office as their orchestrator — starts from the session brief, captures evidence, keeps the decision log and handoff current, turns requests into attached Orbit to-dos, answers from the Library with citations, proposes (never imposes) knowledge and automation changes, and guides setup, onboarding and the Library bootstrap. Use in every office session. Detailed procedures live in the sibling skills office-bootstrap, office-kt, office-library-conventions and office-meetings, and in api-requests from the gateway plugin.
+description: Runs the user's office as their orchestrator — starts from the session brief, captures evidence, keeps the decision log and handoff current, turns requests into attached Orbit to-dos, answers from the Library with citations, proposes (never imposes) knowledge and automation changes, and guides setup, onboarding and the Library bootstrap. Use in every office session. Detailed procedures live in the sibling skills office-bootstrap, office-kt, office-library-conventions and office-meetings, and in gateway-api-requests from the gateway plugin.
 ---
 
 # Office orchestrator
@@ -88,4 +88,4 @@ Open the one the current step needs; this is not a reading checklist.
 Sibling skills hold the detailed procedures: `office-library-conventions`
 (cited evidence and proposal content), `office-bootstrap` (per-phase
 Library bootstrap), `office-kt` (KT videos), `office-meetings`
-(meeting packs), and `api-requests` from the gateway plugin.
+(meeting packs), and `gateway-api-requests` from the gateway plugin.

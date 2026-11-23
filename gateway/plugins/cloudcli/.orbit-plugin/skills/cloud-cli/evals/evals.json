@@ -1,17 +1,17 @@
 {
-  "skill": "cloud-cli",
+  "skill": "cloudcli-cloud-cli",
   "cases": [
     {
       "id": "cloud-cli-1",
       "kind": "should-load",
       "prompt": "A task asks which EC2 instances run in `eu-west-1`.",
-      "expected": "Loads `cloud-cli`; calls `cloudcli.run` with `program: aws`, args `ec2 describe-instances` and `region: eu-west-1`, not the `aws` CLI in the shell."
+      "expected": "Loads `cloudcli-cloud-cli`; calls `cloudcli.run` with `program: aws`, args `ec2 describe-instances` and `region: eu-west-1`, not the `aws` CLI in the shell."
     },
     {
       "id": "cloud-cli-2",
       "kind": "should-not-load",
       "prompt": "A task asks for the open deals from the user's CRM, which is a connected web API.",
-      "expected": "Does not load `cloud-cli`; loads `api-requests` and calls `gateway.http-get`."
+      "expected": "Does not load `cloudcli-cloud-cli`; loads `gateway-api-requests` and calls `gateway.http-get`."
     },
     {
       "id": "cloud-cli-3",

@@ -1,6 +1,6 @@
 ---
-name: api-requests
-description: Makes API requests through the user's gateway connections instead of curl, wget or an HTTP client in the shell, drafting writes for the user's approval. Use whenever a task needs data from a web API the user has connected, or proposes a change to one. Not for aws or gcloud commands (use cloud-cli).
+name: gateway-api-requests
+description: Makes API requests through the user's gateway connections instead of curl, wget or an HTTP client in the shell, drafting writes for the user's approval. Use whenever a task needs data from a web API the user has connected, or proposes a change to one. Not for aws or gcloud commands (use cloudcli-cloud-cli).
 ---
 
 # API requests through the gateway

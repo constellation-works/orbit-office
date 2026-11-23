@@ -138,7 +138,7 @@ The agent never sees or sets a secret. Tell the user what to run in their own te
 | `meta_api_key` (office) | Hosted Muse Spark, Muse Wonder and Muse Voice Transcribe calls | `orbit plugin secret set office meta_api_key` |
 | `open_weights_token` (office) | The private route's endpoint, only if it needs a token; sent only to the endpoint origin it was saved for | Settings › Private route in the app, or `orbit plugin secret set office open_weights_token` with the record `{"origin":"https://<host>","token":"<token>"}` (a bare token is never sent) |
 | `conn_01` … `conn_16` (gateway) | API connections | Settings › Connections in the app; never by hand |
-| `aws_access_key_id`, `aws_secret_access_key`, `gcp_service_account_json` (cloudcli) | Read-only cloud queries | See the `cloud-cli` skill's setup section |
+| `aws_access_key_id`, `aws_secret_access_key`, `gcp_service_account_json` (cloudcli) | Read-only cloud queries | See the `cloudcli-cloud-cli` skill's setup section |
 
 `orbit plugin secret set` reads the value from stdin. Values never go in config, the Library
 or argv. Tools report presence only (`set`/`unset`); check with `office.status` or
