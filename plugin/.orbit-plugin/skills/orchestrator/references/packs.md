@@ -2,6 +2,14 @@
 
 What the KT video, meeting and calendar packs do, who does each step, and which skill holds the detail.
 
+Contents:
+
+- [What is built and what is not](#what-is-built-and-what-is-not)
+- [KT videos](#kt-videos)
+- [Meetings](#meetings)
+- [Calendar](#calendar)
+- [Scheduled to-dos](#scheduled-to-dos)
+
 A pack is data: routine and auto-task definitions, runbooks and a skill.
 Routines run fixed tool steps with no agent. You capture, explain, answer and
 route. You never start paid processing outside a plan the user confirmed.
@@ -15,10 +23,10 @@ filing and attaching to-dos see [tasks.md](tasks.md). For citations see
 
 | Pack | State | Detailed skill |
 |---|---|---|
-| KT videos | built (the hero pack) | `office-kt` |
-| Meetings | built | `office-meetings` |
+| KT videos | built (the hero pack) | `kt` |
+| Meetings | built | `meetings` |
 | Calendar (sync, prep, capture after) | built, read-only | this file |
-| Library bootstrap (uses the KT steps for videos) | built | `office-bootstrap` |
+| Library bootstrap (uses the KT steps for videos) | built | `bootstrap` |
 | Receipts | **not built**. The `receipt` source kind and the `receipts` value in Library `packs` exist, but no routine, tool or skill processes receipts | none |
 | Bills | **not built** (pitch slide only) | none |
 | Email triage, groceries, lectures, photo organizer, diary | **not built** (pitch slide only) | none |
@@ -30,7 +38,7 @@ transcripts, email sync and recording unrecorded calls are not built either.
 
 ## KT videos
 
-Load `office-kt` before explaining a processed video or answering from it.
+Load `kt` before explaining a processed video or answering from it.
 
 **What the user does.** Drops the video (`mp4`, `webm`, `mov` or `m4a`,
 optionally with a `.vtt`) into the app. The app shows a cost preview:
@@ -41,9 +49,12 @@ mark it private, then presses **Process**.
 new office workspace; the user can pause it on the Routines screen. For each
 confirmed plan whose extraction has not run, it calls, in order:
 `office.transcribe`, `office.frames`, `office.extract` (`profile: kt`), then
-`office.consolidate` (`batch_id: kt`). Consolidation files one knowledge
-proposal per page, merged with what other sources say. Extraction files one
-`owner:you` to-do per question, tagged `kt-question` and `source:<id>`.
+`office.consolidate` (`batch_id: kt`).
+
+- Consolidation files one knowledge proposal per page, merged with what other
+  sources say.
+- Extraction files one `owner:you` to-do per question, tagged `kt-question`
+  and `source:<id>`.
 
 **What you do.**
 
@@ -68,11 +79,11 @@ uncertain call uses up its slot. The estimate never invents a price: with
 
 In a new role, KT videos are phase 2 of the Library bootstrap. The
 `office-bootstrap` routine runs the same steps for confirmed batches. Follow
-`office-bootstrap` there.
+the `bootstrap` skill there.
 
 ## Meetings
 
-Load `office-meetings` for the full procedure.
+Load `meetings` for the full procedure.
 
 **Bring the meeting in** with `office.capture`, `kind: meeting`:
 
@@ -127,7 +138,7 @@ to-dos without those. So after a summary:
    or reply in either list stays a draft for the user to send.
 
 Decisions go in the summary with citations. If the user confirms one in
-conversation, log it as a `decision` entry ([sessions.md](sessions.md)).
+conversation, log it as a `decision` entry ([sessions-log.md](sessions-log.md)).
 Page changes from a meeting go through a proposal, never a direct write.
 
 ## Calendar
@@ -148,13 +159,15 @@ under Routines; the sync and prep routines are disabled on seed.
   keeps the last good imported snapshot. Local events are stored separately.
   With the external source disabled, empty sync is a no-op with no gateway read.
 - `office-meeting-prep` (every 15 minutes) calls `office.meeting-prep`, also
-  hidden. For confirmed or tentative meetings starting within the lead time
-  (default 120 minutes), with at least one other attendee and no brief yet,
-  it writes a cited brief: context, people, open items and suggested
-  questions. At most 5 per run by default. All-day and cancelled events are
-  skipped. A private input needs the private route, or that brief is skipped
-  (`private_endpoint_unconfigured`). The brief is a Library report in series
-  `meeting-prep`, one per event key.
+  hidden.
+  - For confirmed or tentative meetings starting within the lead time
+    (default 120 minutes), with at least one other attendee and no brief yet,
+    it writes a cited brief: context, people, open items and suggested
+    questions. At most 5 per run by default.
+  - All-day and cancelled events are skipped.
+  - A private input needs the private route, or that brief is skipped
+    (`private_endpoint_unconfigured`).
+  - The brief is a Library report in series `meeting-prep`, one per event key.
 - `office-meeting-inbox` summarizes what the user captures after the meeting.
 
 **What you do.** Answer "what's on tomorrow?" with `office.calendar-list`.

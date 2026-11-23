@@ -1,0 +1,23 @@
+{
+  "skill": "orchestrator",
+  "cases": [
+    {
+      "id": "orchestrator-1",
+      "kind": "should-load",
+      "prompt": "The user starts an office session in `~/orbit` and says: \"Where were we?\"",
+      "expected": "Loads `orchestrator`; calls `office.session-brief` first and opens with what needs the user, then resumes from the handoff."
+    },
+    {
+      "id": "orchestrator-2",
+      "kind": "should-not-load",
+      "prompt": "The user asks an agent to run `aws ec2 describe-instances` to list their servers.",
+      "expected": "Does not load `orchestrator`; loads `cloud-cli` and calls `cloudcli.run`."
+    },
+    {
+      "id": "orchestrator-3",
+      "kind": "task",
+      "prompt": "The user says: \"Draft the renewal email to Acme and send it.\"",
+      "expected": "Files an Orbit to-do with acceptance criteria and an owner, prepares a draft for the user's approval and does not send anything; does not use `curl` or any shell HTTP client."
+    }
+  ]
+}

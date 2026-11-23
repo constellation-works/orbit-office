@@ -1,6 +1,17 @@
-# Setup: install, check and repair the office
+# Setup: install the office
 
-Use this to help the user install Orbit Office, check that it works, and fix a broken setup.
+Use this to help the user install Orbit Office, register it with their agent CLI, start the app service, or remove it.
+
+Contents:
+
+- [Your part and the user's part](#your-part-and-the-users-part)
+- [What the installer does](#what-the-installer-does)
+- [orbit-office and office are different programs](#orbit-office-and-office-are-different-programs)
+- [orbit-office init path --yes](#orbit-office-init-path---yes)
+- [Secrets](#secrets)
+- [Agent CLI registration](#agent-cli-registration)
+- [The app service](#the-app-service)
+- [Removing the office](#removing-the-office)
 
 ## Your part and the user's part
 
@@ -60,12 +71,17 @@ Copied from `install.sh --help`:
 | `--uninstall` | Remove the service, MCP entry, added deny rules, plugins and tools; keeps the workspace and Library |
 | `--purge` | Like `--uninstall`, and also removes the workspace when this installer owns it; otherwise refuses |
 
-Useful environment variables: `ORBIT_OFFICE_HOME` (same as `--home`), `ORBIT_OFFICE_DATA_DIR`
-(per-user data folder), `ORBIT_OFFICE_PLUGIN_BUNDLE` (unpacked office, gateway and optional
-cloudcli exports), `ORBIT_OFFICE_APP_BUNDLE` (unpacked app bundle, needed when there is no
-adjacent `app/` tree), `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`. `ORBIT_OFFICE_META_API_KEY` and
-`ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN` supply secrets instead of the prompt; never suggest putting
-a real key in a command line you can see.
+Useful environment variables:
+
+- `ORBIT_OFFICE_HOME` (same as `--home`), `ORBIT_OFFICE_DATA_DIR` (per-user
+  data folder).
+- `ORBIT_OFFICE_PLUGIN_BUNDLE` (unpacked office, gateway and optional cloudcli
+  exports), `ORBIT_OFFICE_APP_BUNDLE` (unpacked app bundle, needed when there
+  is no adjacent `app/` tree).
+- `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`.
+- `ORBIT_OFFICE_META_API_KEY` and `ORBIT_OFFICE_OPEN_WEIGHTS_TOKEN` supply
+  secrets instead of the prompt; never suggest putting a real key in a command
+  line you can see.
 
 Until a release with a prebuilt export exists, install from a clone (`--from-source` builds
 office) or with a prepared `ORBIT_OFFICE_PLUGIN_BUNDLE`. A piped install needs both bundles.
@@ -148,16 +164,17 @@ installer's own `--agent` default is `claude`.
   so the summary says so. `orbit-office status` also recognises a hand-written entry in
   that file. Muse Code also loads Claude Code and Codex personal skills unless that is off.
 
-The office skills themselves come from the Orbit plugin, not from a copy:
-enabling the plugin links each skill as `office-<name>` into the agent's
-skills directory (`~/.claude/skills` or `$CLAUDE_CONFIG_DIR/skills` for
-Claude Code, `~/.codex/skills` for Codex, `~/.agents/skills` for Muse
-Code), so each skill appears once and tracks the installed plugin. The
-installer copies a skill only as a fallback when no Orbit plugin path
-provides it, and then under the same `office-` name, refreshing a stale
-recorded copy instead of leaving it. On re-run it removes a bare-named
-copy an earlier installer recorded when that copy is unchanged, and keeps
-a user-modified one with a warning.
+The office skills themselves come from the Orbit plugin, not from a copy.
+
+- Enabling the plugin links each skill as `office-<name>` into the agent's
+  skills directory (`~/.claude/skills` or `$CLAUDE_CONFIG_DIR/skills` for
+  Claude Code, `~/.codex/skills` for Codex, `~/.agents/skills` for Muse
+  Code), so each skill appears once and tracks the installed plugin.
+- The installer copies a skill only as a fallback when no Orbit plugin path
+  provides it, and then under the same `office-` name, refreshing a stale
+  recorded copy instead of leaving it.
+- On re-run it removes a bare-named copy an earlier installer recorded when
+  that copy is unchanged, and keeps a user-modified one with a warning.
 
 The deny rules are an accident guard. Respect them even where they don't apply: use the
 gateway, never a shell HTTP client or cloud CLI.
@@ -182,53 +199,6 @@ One login service per user, bound to one workspace at a time:
 `orbit-office open [path]` starts a stopped service and opens the browser. It refuses if no
 service is installed, or if the service is bound to a different workspace. A second workspace
 made with `orbit-office init` does not move the service; `install.sh --home <path>` rebinds it.
-
-## Health check: `orbit-office status`
-
-Run it when the user reports a problem, after an install, or when a tool fails in a way that
-suggests setup is broken. Exit 0 is healthy, 1 means something needed is missing, 2 is a usage
-error. With `--json` it prints one object with `ok` and a `problems` list of
-`{check, problem, fix}`.
-
-| Line | Healthy reading | If not |
-|---|---|---|
-| `Workspace:` | `<path> — registered` | Not registered: user runs `orbit-office init <path>` |
-| `Plugins:` | `office enabled; gateway enabled` | Not enabled: `orbit-office init <path>` |
-| `Library:` | `initialized (<n> documents)` | Not initialized: `orbit-office init <path>` |
-| `Meta API key:` | `set` | `unset`: `orbit plugin secret set office meta_api_key` |
-| `Private route:` | `configured (...)` or `not configured (optional)` | Not a failure. To add one: Settings › Private route |
-| `App service:` | `running at http://localhost:<port>/` | `not installed`: `install.sh`. `stopped`: `orbit-office open <path>` |
-| `App service log:` | a path (macOS) or the journalctl command (Linux) | Read only to diagnose a start failure; ask the user to look |
-| `Agent CLI:` | `registered` | Missing: `install.sh` (with `--agent` for Codex or Muse Code) |
-
-Report the problems and their fixes in plain words. Don't run the fixes. The JSON form also
-reports `app_service.workspace`, the workspace the service is bound to; compare it with the
-user's workspace.
-
-## Troubleshooting
-
-| Symptom | Cause | Fix the user runs |
-|---|---|---|
-| `orbit-office open` says the service serves another workspace | One service, bound to one workspace | `install.sh --home <path>` |
-| `app service is not installed` | Install never reached the app step | `install.sh` |
-| App service stopped, or the browser shows nothing | Login service not running | `orbit-office open <path>`; if it won't start, check the service log |
-| `app: no local app tree and no app bundle` | Standalone install without the app | Run from a clone, or set `ORBIT_OFFICE_APP_BUNDLE` |
-| `plugin export unavailable` | No prebuilt export yet | Run from a clone, or set `ORBIT_OFFICE_PLUGIN_BUNDLE` |
-| `building the office plugin needs cargo` | `--from-source` without Rust | Install Rust from rustup.rs, or use a bundle |
-| `Node.js 24+ is required` | Node missing or old | Install Node 24+, re-run `install.sh` |
-| Node resolves under `fnm_multishells` | Per-shell shim would vanish | Install a stable Node 24+ and put its bin first on `PATH`, re-run |
-| `refusing to adopt non-empty folder` | Folder is not an office workspace | Move it aside, or pass `--home DIR` |
-| `plugin enable declined` | Consent refused | `orbit-office init --yes <path>` once the user agrees |
-| Meta API key `unset`; model calls fail | Secret skipped at install | `orbit plugin secret set office meta_api_key` |
-| `private_endpoint_unconfigured` / `_unverified` / `private_media_unsupported` | Private source with no, or an unchecked, or a too-limited endpoint | Settings › Private route: configure and check the endpoint |
-| `converter_unavailable` on a PDF | `pdftotext` (poppler) not installed | User installs poppler, then captures again |
-| `python_too_old` from gateway | Gateway enabled with an old Python | Re-run the install, then `orbit plugin enable gateway` |
-| `unknown_connection` / `secret_unset` / `auth_expired` | Connection missing, unset or signed out | Settings › Connections |
-| `secret_unset` from `cloudcli.run` | Read-only cloud identity not set | The `cloud-cli` skill's setup steps |
-| No `office.*` or `orbit.*` tools in your session | Orbit MCP entry missing for this agent CLI | `orbit-office status`; if `Agent CLI` is not registered, `install.sh` (with `--agent` as needed) |
-
-If something fails that is not in this table, run `orbit-office status`, quote the exact
-error, and suggest re-running `install.sh` (it repairs). Don't guess at file edits.
 
 ## Removing the office
 

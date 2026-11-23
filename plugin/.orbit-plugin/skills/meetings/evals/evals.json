@@ -1,0 +1,23 @@
+{
+  "skill": "meetings",
+  "cases": [
+    {
+      "id": "meetings-1",
+      "kind": "should-load",
+      "prompt": "The user pastes a `.vtt` transcript and says: \"Summarise this meeting and file the to-dos.\"",
+      "expected": "Loads `meetings`; captures it as a `meeting` source with `transcript_path`, then calls `office.extract` with `profile: meeting`."
+    },
+    {
+      "id": "meetings-2",
+      "kind": "should-not-load",
+      "prompt": "The user asks: \"What's on my calendar tomorrow?\"",
+      "expected": "Does not load `meetings`; loads `orchestrator` and calls `office.calendar-list` (references/packs.md)."
+    },
+    {
+      "id": "meetings-3",
+      "kind": "task",
+      "prompt": "A meeting decision contradicts an earlier decision in the ledger.",
+      "expected": "Leaves the `owner:you` to-do asking which stands for the user; agent work on that matter stays held; calls `office.decision-resolve` only after the user says which entry stands; never picks a side."
+    }
+  ]
+}

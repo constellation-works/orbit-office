@@ -1,9 +1,13 @@
 ---
-name: office-library-conventions
-description: Use cited Library evidence, prepare templated knowledge proposals, and package agent outputs as task artifacts without writing the Library or submitting drafts.
+name: library-conventions
+description: Sets the conventions for working from cited Library evidence — reading a task's attached context, preparing templated knowledge proposals as task artifacts, producing runbook drafts, packaging outputs with an artifact manifest, and making API calls and scratch files safely. Use in any agent run that cites sources, proposes a Library page or attaches outputs to a task. Not for the orchestrator's session routine (use orchestrator) or for a raw API request (use api-requests).
 ---
 
 # Library conventions
+
+How an agent works from cited Library evidence: read the task's context, prepare
+knowledge proposals and runbook drafts as task artifacts, and package outputs
+for review. The Library itself changes only through proposals the user accepts.
 
 ## Evidence and references
 
@@ -28,23 +32,29 @@ input or resolution. Mark missing evidence and unresolved conflicts openly.
 
 Knowledge is derived and approved. Prepare a proposed page as a task
 artifact for user review; never write a page into `library/` yourself.
-Read the current template supplied in context; if it is missing, request
-it rather than inventing a skeleton. Put its name in the page's
-`template` field, choose an id matching its pattern (or fixed id for a
-one-per-Library template), and match its `type`. Start from its sections.
-Every `required` section must be a `##` heading with meaningful, cited
-content, not an empty heading or the template's prompt text. Add `aliases`
-for names the sources actually use. Pages without a template may be
-free-form only when the task permits it; bootstrap proposals require one.
+
+1. Read the current template supplied in context; if it is missing, request
+   it rather than inventing a skeleton.
+2. Put its name in the page's `template` field, choose an id matching its
+   pattern (or the fixed id for a one-per-Library template), and match its
+   `type`.
+3. Start from its sections. Every `required` section must be a `##` heading
+   with meaningful, cited content, not an empty heading or the template's
+   prompt text.
+4. Add `aliases` for names the sources actually use.
+5. Pages without a template may be free-form only when the task permits it;
+   bootstrap proposals require one.
 
 Pointers belong in `refs`: `path`, `url`, `contact`, `account` or `artifact`.
-Locations live with the page's subject; the systems page holds shared
-locations. An account such as `jira:<project>` is a pointer, never a credential.
-**Email addresses and phone numbers go only in `contact` refs, never in
-the page body.** No secrets, or personal data beyond work contacts. Model
-views and task attachments retain a contact's label and withhold its value;
-do not recover it from host files. Drafts name people; the app fills their
-addresses on the user's machine.
+
+- Locations live with the page's subject; the systems page holds shared
+  locations.
+- An account such as `jira:<project>` is a pointer, never a credential.
+- **Email addresses and phone numbers go only in `contact` refs, never in
+  the page body.** No secrets, or personal data beyond work contacts.
+- Model views and task attachments retain a contact's label and withhold its
+  value; do not recover it from host files.
+- Drafts name people; the app fills their addresses on the user's machine.
 
 Apply these page rules to every candidate:
 
@@ -75,16 +85,18 @@ Apply these page rules to every candidate:
 ## Runbooks produce drafts
 
 An agent to-do is tagged `owner:agent` and `no-diff-expected`, and its
-runbook is attached before it becomes dispatchable. Check
-`performable: agent` and the `submission` metadata. Follow all permitted
-steps up to submission, collecting the required fields, justification
-and form link, each citing the runbook and evidence. For
-`submission.via: draft` (the default), output a `draft` task artifact.
-For `via: gateway`, create a `gateway.http-draft` using its named
-`connection`; record the returned draft/task reference in the output.
-Stop before submitting, sending, purchasing or approving. A runbook's
-submission step is not permission to carry it out. Missing inputs or a
-runbook marked `performable: you` need the user, not a guessed answer.
+runbook is attached before it becomes dispatchable.
+
+1. Check `performable: agent` and the `submission` metadata.
+2. Follow all permitted steps up to submission, collecting the required
+   fields, justification and form link, each citing the runbook and evidence.
+3. For `submission.via: draft` (the default), output a `draft` task artifact.
+   For `via: gateway`, create a `gateway.http-draft` using its named
+   `connection`; record the returned draft/task reference in the output.
+4. Stop before submitting, sending, purchasing or approving. A runbook's
+   submission step is not permission to carry it out.
+5. Missing inputs or a runbook marked `performable: you` need the user, not a
+   guessed answer.
 
 ## Package outputs for review
 
@@ -103,14 +115,16 @@ manifest itself or `artifact.md`. For example:
 {"kind":"draft","title":"Access request","files":["draft.md"],"series":"access-requests","cites":["<source-id>#L1","<runbook-id>"],"runbook":"<runbook-id>","sensitivity":"normal"}
 ```
 
-Preserve the task's series and private sensitivity. Do not attach secrets
-or withheld contact values. Artifacts are versioned outputs, promoted only
-after approval; never edit an approved artifact in place. Record which
-criteria passed, failed or were not run in the task's execution summary.
-Leave review and approval to the workflow and user. In claimed execution,
-return scratch files as `task_artifacts` and the required
-`execution_summary` for the owner to persist instead of calling unavailable
-owner write tools.
+- Preserve the task's series and private sensitivity.
+- Do not attach secrets or withheld contact values.
+- Artifacts are versioned outputs, promoted only after approval; never edit an
+  approved artifact in place.
+- Record which criteria passed, failed or were not run in the task's
+  execution summary.
+- Leave review and approval to the workflow and user.
+- In claimed execution, return scratch files as `task_artifacts` and the
+  required `execution_summary` for the owner to persist instead of calling
+  unavailable owner write tools.
 
 ## APIs, runtime and scratch
 
@@ -127,11 +141,14 @@ dependencies through **`uv run --script <script.py>`** when permitted.
 Do not install packages globally or replace a denied `uv` call with an
 untracked dependency install; request the permitted runtime or report the gap.
 
-Implementing agents use **`$ORBIT_SCRATCH_DIR`**, the run's `.orbit/tmp/`,
-for scripts and intermediate files, never `/tmp` or tracked output paths.
-The orchestrator uses **`.orbit/tmp/session-<yyyymmdd>/`** and prunes only
-its own `session-*` folders older than **7 days**, after checking ownership
-and age and following the host cleanup policy. Do not remove anything else
-or anything whose ownership is uncertain. **Nothing is written under
-`library/` by an agent.** Scratch disappears with the run: keepers must
-become task artifacts, and reach the Library only through user-approved promotion.
+Scratch:
+
+- Implementing agents use **`$ORBIT_SCRATCH_DIR`**, the run's `.orbit/tmp/`,
+  for scripts and intermediate files, never `/tmp` or tracked output paths.
+- The orchestrator uses **`.orbit/tmp/session-<yyyymmdd>/`** and prunes only
+  its own `session-*` folders older than **7 days**, after checking ownership
+  and age and following the host cleanup policy. Do not remove anything else
+  or anything whose ownership is uncertain.
+- **Nothing is written under `library/` by an agent.**
+- Scratch disappears with the run: keepers must become task artifacts, and
+  reach the Library only through user-approved promotion.

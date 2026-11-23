@@ -31,7 +31,7 @@ office workspace preset supplies configuration and automation defaults
 │                                                                        │
 │  Web app (new)                      Your agent CLI = the orchestrator  │
 │  Today · To-dos · Routines          Muse Code (or Claude Code, Codex)  │
-│  Library · Insights · Review        + office-orchestrator skill (new)  │
+│  Library · Insights · Review        + orchestrator skill (new)         │
 │        │ local app server                 │                            │
 │        │ orbit tool run (as the user)     │ Orbit MCP (agent authority)│
 │        └──────────────┬───────────────────┘                            │
@@ -71,7 +71,7 @@ office workspace preset supplies configuration and automation defaults
   (`${XDG_CONFIG_HOME:-~/.config}/muse/settings.json`), written by the
   install script with `--agent muse` because `orbit mcp init` has no Muse
   target ([install spec](./specs/install.md), [decision](./4_decisions.md#the-installer-registers-muse-code-with---agent-muse)).
-  The plugin's `office-orchestrator` skill tells it how to run the
+  The plugin's `orchestrator` skill tells it how to run the
   operation. What this project builds for the orchestrator is the skill,
   the tool surface and its guardrails:
   [specs/orchestrator.md](./specs/orchestrator.md).

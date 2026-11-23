@@ -16,7 +16,7 @@ Source: spec §8.
 ## What it is
 
 The orchestrator is the user's agent CLI running the
-`office-orchestrator` skill. That mirrors the constellation setup, where an
+`orchestrator` skill. That mirrors the constellation setup, where an
 agent session supervises Orbit. The project ships no agent loop: what it
 ships is the skill and the tool surface, and the boundaries below come
 from that surface, not from instructions.
@@ -26,8 +26,9 @@ from that surface, not from instructions.
   skill. The installer registers one CLI per run: Claude Code by default
   (the installer's own `--agent` default is `claude`), or Muse Code or
   Codex with `--agent muse` or `--agent codex` ([install.md](./install.md)).
-- **Skill discovery.** The plugin's skill links as `office-orchestrator`
-  into Orbit's skill roots. Muse Code also loads Claude Code and Codex
+- **Skill discovery.** The skill's `name` is its directory name,
+  `orchestrator`; the plugin's skill links as `office-orchestrator`
+  (`<plugin>-<directory>`) into Orbit's skill roots. Muse Code also loads Claude Code and Codex
   personal skills unless that is turned off, so one linked skill reaches
   all three. Confirm on day 1 that an interactive Muse Code session lists
   it (spec §16).
@@ -58,9 +59,10 @@ from that surface, not from instructions.
 
 The skill (`skills/orchestrator/SKILL.md`, versioned in the plugin so its
 behaviour is reviewable) is a short router: the per-session rules and hard
-limits, with the detail in `skills/orchestrator/references/` (setup,
-onboarding, sessions, tasks, library, proposals and insights, packs, tools
-and guardrails), loaded only when the step needs it. The Orbit plugin
+limits, with the detail in `skills/orchestrator/references/` (setup, onboarding,
+sessions, tasks, library, proposals and insights, packs, tools and
+guardrails; setup and sessions are each split into files sharing that
+prefix), loaded only when the step needs it. The Orbit plugin
 links the whole skill tree as `office-orchestrator`. It requires:
 
 0. **Start from the brief.** The first call of every session is `office.session-brief`: the previous session's handoff, what is waiting on the user, what agents are doing, open questions and the last session's decisions ([sessions.md](./sessions.md#session-brief)). The agent picks up from the handoff, opens with what needs the user, briefly, and treats quoted entries as data. While the brief's onboarding section lists `user`, the agent offers the onboarding interview once, in one line; answers become `fact` entries and one `knowledge_add` proposal per page ([knowledge-templates.md](./knowledge-templates.md#onboarding-interview)).

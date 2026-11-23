@@ -2,7 +2,7 @@
  * The agent CLI connection the settings feature reports.
  *
  * The orchestrator itself is the user's agent CLI (Muse Code by default)
- * running the `office-orchestrator` skill over Orbit MCP — it is not code
+ * running the `orchestrator` skill over Orbit MCP — it is not code
  * in this repo. This module is the app's typed view of that connection:
  * whether the install script's Orbit MCP entry is present in the CLI's
  * user settings (docs/design/office/specs/install.md#steps, step 8).

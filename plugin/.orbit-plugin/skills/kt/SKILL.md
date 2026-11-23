@@ -1,21 +1,28 @@
 ---
-name: office-kt
-description: Explain a processed KT video and answer questions about it from its transcript, frame readings and chapters, citing timestamps; never re-process without a new confirmed plan.
+name: kt
+description: Explains a processed KT video and answers questions about it from its transcript, frame readings and chapters, citing timestamps, and refuses to re-process it without a new confirmed plan. Use when the user asks what a KT video says, shows or leaves open, or asks to re-run one. Not for the Library bootstrap that ingests many videos (use bootstrap) or for meeting recordings (use meetings).
 ---
 
 # KT videos
 
 KT videos are processed by the `office-kt-inbox` routine, not by an agent.
-Every 15 minutes (seeded disabled) the routine lists confirmed, unprocessed
-plans with `office.video-plan` in list mode and, for each plan, runs
-deterministic `plugin.tool_call` steps in order: `office.transcribe`,
-`office.frames`, then `office.extract` with `profile: kt`. The knowledge
-candidates that extraction writes as the source's digest go through
-`office.consolidate` (`batch_id: kt`), which files one proposal per page;
-the routine files no proposal itself. Each question extraction finds becomes
-one `owner:you` to-do tagged `kt-question` and `source:<source-id>`, naming
-the person to ask and citing the moment. No step calls an outward-facing
-action, and no step makes more model calls than the confirmed plan counted.
+Explain a processed video, answer questions about it, and never re-run its
+processing yourself.
+
+What the routine does, every 15 minutes (seeded disabled):
+
+- It lists confirmed, unprocessed plans with `office.video-plan` in list mode.
+- For each plan it runs deterministic `plugin.tool_call` steps in order:
+  `office.transcribe`, `office.frames`, then `office.extract` with
+  `profile: kt`.
+- The knowledge candidates that extraction writes as the source's digest go
+  through `office.consolidate` (`batch_id: kt`), which files one proposal per
+  page; the routine files no proposal itself.
+- Each question extraction finds becomes one `owner:you` to-do tagged
+  `kt-question` and `source:<source-id>`, naming the person to ask and citing
+  the moment.
+- No step calls an outward-facing action, and no step makes more model calls
+  than the confirmed plan counted.
 
 ## Explain a processed video
 
@@ -45,12 +52,14 @@ so; do not fill the gap from general knowledge without labelling it as such.
 
 ## Never re-process without a new confirmed plan
 
-Processing is spent only against a plan the user saw and confirmed. Do not
-call `office.transcribe`, `office.frames`, `office.extract` or
-`office.consolidate` yourself to re-run, retry or top up a video, and do not
-work around a `plan_exceeded`, `plan_changed` or `plan_unconfirmed` refusal.
-Tell the user what a new preview would cover, and let the app show the new
-plan through `office.video-plan` for confirmation; the routine then picks
-the newly confirmed plan up on its next tick. A video whose extraction has
-already run is not listed again, so a routine tick alone never re-processes
-it.
+Processing is spent only against a plan the user saw and confirmed.
+
+- Do not call `office.transcribe`, `office.frames`, `office.extract` or
+  `office.consolidate` yourself to re-run, retry or top up a video.
+- Do not work around a `plan_exceeded`, `plan_changed` or `plan_unconfirmed`
+  refusal.
+- Tell the user what a new preview would cover, and let the app show the new
+  plan through `office.video-plan` for confirmation; the routine then picks
+  the newly confirmed plan up on its next tick.
+- A video whose extraction has already run is not listed again, so a routine
+  tick alone never re-processes it.

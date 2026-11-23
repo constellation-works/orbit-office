@@ -1,6 +1,6 @@
 ---
-name: office-meetings
-description: The meeting pack — import a .vtt transcript or pasted notes, or transcribe a recording, then summarise it and split decisions into your to-dos and agents' to-dos, with citations.
+name: meetings
+description: Processes a meeting — imports a .vtt transcript or pasted notes, or transcribes a recording, then saves a cited summary, files the to-dos split between the user and agents, and records the decisions and contradictions. Use when the user shares or asks about a meeting, its summary, its decisions or its to-dos. Not for KT videos (use kt) or for the calendar and meeting-prep routines (use orchestrator, references/packs.md).
 ---
 
 # Meetings
@@ -17,7 +17,6 @@ Capture it as a `meeting` source with `office.capture`. When capturing from a
 calendar event, pass its `event_key`: the event supplies title, occurred_at,
 participants, sensitivity, and the stored event key/series. Unknown keys are
 refused; multiple captures may share an event.
-
 
 - **Imported `.vtt`:** pass the recording with `transcript_path` pointing at
   the `.vtt` file (or capture the transcript itself). Speaker names and cue
@@ -51,48 +50,60 @@ How the to-dos split depends on the Library setting
   suggested; that suggestion survives only as a hint in the structured
   result.
 - **Set:** each to-do also says whether it is code work, its task type and
-  acceptance criteria taken from what the meeting said. A to-do the meeting
-  assigned to an agent that changes code, with acceptance criteria, is
-  filed in that workspace as an ordinary code-change task: `owner:agent`,
-  type `feature`, `bug` or `chore`, `source:<id>` and the cited
-  `<source-id>#t=hh:mm:ss` turns in its description. Crews there ship it as
-  a PR; it is never `office-agent-todo` work. Everything else, yours or not
-  code, stays `owner:you` as before. A to-do on a contested matter is held
-  back: it is filed `owner:you` with a `contested` tag instead.
+  acceptance criteria taken from what the meeting said.
+  - A to-do the meeting assigned to an agent that changes code, with
+    acceptance criteria, is filed in that workspace as an ordinary
+    code-change task: `owner:agent`, type `feature`, `bug` or `chore`,
+    `source:<id>` and the cited `<source-id>#t=hh:mm:ss` turns in its
+    description. Crews there ship it as a PR; it is never
+    `office-agent-todo` work.
+  - Everything else, yours or not code, stays `owner:you` as before.
+  - A to-do on a contested matter is held back: it is filed `owner:you` with
+    a `contested` tag instead.
 
 Each to-do gets its own outcome under `filing.items`: `filed` with its task,
 or `refused`, `outcome_unknown` or `failed` with a code. One failure does not
 stop the rest. While any item is unfiled, `summary.md` waits and the response
 names the next call, `office.extract {id, profile: meeting, reconcile: true}`.
-That call reuses the saved extraction and filing record: it does not
-transcribe, extract or feed the ledger again. It adopts any item whose task
-already exists (same title and `source:<id>` tag), files the rest, and saves
-the summary once everything is filed.
+That call:
+
+- reuses the saved extraction and filing record, and does not transcribe,
+  extract or feed the ledger again;
+- adopts any item whose task already exists (same title and `source:<id>`
+  tag), and files the rest;
+- saves the summary once everything is filed.
 
 ## Decisions and contradictions
 
 Extraction also appends each cited decision to the decision ledger
 (`decisions-global`, cited at its `#t=` turn; a private meeting feeds
-nothing). It then checks the new decisions against earlier ones. When a
-meeting decision contradicts an earlier decision, an `owner:you` to-do
-asking which stands shows under Needs you, citing both. Agent work on that
-matter is held until the user answers. When the user says which stands,
-call `office.decision-resolve` with that to-do's `task` and the standing
-entry id as `stands`. It records the answer in the ledger, closes the
-to-do, files the held agent work if its decision stood, and rejects it
-otherwise. Never pick a side yourself.
+nothing). It then checks the new decisions against earlier ones.
+
+When a meeting decision contradicts an earlier decision:
+
+1. An `owner:you` to-do asking which stands shows under Needs you, citing
+   both. Agent work on that matter is held until the user answers.
+2. When the user says which stands, call `office.decision-resolve` with that
+   to-do's `task` and the standing entry id as `stands`. It records the answer
+   in the ledger, closes the to-do, files the held agent work if its decision
+   stood, and rejects it otherwise.
+3. Never pick a side yourself.
 
 A non-code `owner:you` to-do becomes `owner:agent` only later, when the
 orchestrator promotes it: a permitted tool path or attached runbook can
 produce the result, and promotion adds acceptance criteria,
-`no-diff-expected` and attached context with `office.attach`. Outward-facing drafts wait
-for the user's approval; never send, submit or approve anything yourself.
+`no-diff-expected` and attached context with `office.attach`. Outward-facing
+drafts wait for the user's approval; never send, submit or approve anything
+yourself.
 
-Read the result back with `office.source-show` (use `document: summary` and
-`#L<n>` to select summary lines), and answer questions about
-the meeting with `office.search` and `office.source-show`, citing every
-claim at its anchor (`<source-id>#t=hh:mm:ss` for a transcript turn,
-`<source-id>#L<n>` for pasted notes). If the source cannot support an
-answer, say so. Library pages change only through an approved proposal;
-prepare cited proposed content with the library-conventions skill instead
-of writing a page directly.
+## Read the result back and answer questions
+
+- Read the result back with `office.source-show` (use `document: summary` and
+  `#L<n>` to select summary lines).
+- Answer questions about the meeting with `office.search` and
+  `office.source-show`, citing every claim at its anchor
+  (`<source-id>#t=hh:mm:ss` for a transcript turn, `<source-id>#L<n>` for
+  pasted notes). If the source cannot support an answer, say so.
+- Library pages change only through an approved proposal; prepare cited
+  proposed content with the `library-conventions` skill instead of writing a
+  page directly.

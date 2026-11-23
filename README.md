@@ -66,8 +66,8 @@ Orbit plugin secret. Then it creates the `~/orbit` workspace and Library, regist
 agent CLI and opens the app at `http://localhost:4317`. Details:
 [install.md](docs/design/office/specs/install.md).
 
-Open your agent in `~/orbit` and talk to it: the `office-orchestrator` skill runs the
-office. To send agent to-dos to a repository, set `meetings.agent_workspace` to that
+Open your agent in `~/orbit` and talk to it: the `orchestrator` skill (linked as
+`office-orchestrator`) runs the office. To send agent to-dos to a repository, set `meetings.agent_workspace` to that
 Orbit workspace.
 
 ## Models at runtime

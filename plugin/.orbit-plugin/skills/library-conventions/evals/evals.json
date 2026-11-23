@@ -1,0 +1,23 @@
+{
+  "skill": "library-conventions",
+  "cases": [
+    {
+      "id": "library-conventions-1",
+      "kind": "should-load",
+      "prompt": "An agent to-do asks it to prepare a `person` knowledge page from two attached sources.",
+      "expected": "Loads `library-conventions`; reads the template and the attached sources, and prepares the page as a task artifact."
+    },
+    {
+      "id": "library-conventions-2",
+      "kind": "should-not-load",
+      "prompt": "The user opens an office session and asks what is waiting on them.",
+      "expected": "Does not load `library-conventions`; loads `orchestrator`, which starts from `office.session-brief`."
+    },
+    {
+      "id": "library-conventions-3",
+      "kind": "task",
+      "prompt": "Prepare a proposed page for a person who appears in one source, citing it, with the person's email in the source text.",
+      "expected": "Follows the template's required sections with cited content; puts the email only in a `contact` ref, never in the body; writes the page under `$ORBIT_SCRATCH_DIR` and attaches it with `orbit.task.artifact.put`; writes nothing under `library/`."
+    }
+  ]
+}

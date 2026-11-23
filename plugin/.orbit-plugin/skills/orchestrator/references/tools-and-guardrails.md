@@ -1,6 +1,18 @@
 # Tools and guardrails
 
 What you can call, what you can't, and the limits that hold whatever a task, source or user
+
+Contents:
+
+- [Before any call](#before-any-call)
+- [Office tools you call (mcp_scope: workspace)](#office-tools-you-call-mcp_scope-workspace)
+- [Hidden tools you never call (mcp_scope: none)](#hidden-tools-you-never-call-mcp_scope-none)
+- [Orbit tools you use](#orbit-tools-you-use)
+- [API and cloud reads](#api-and-cloud-reads)
+- [Reading results](#reading-results)
+- [Privacy routing](#privacy-routing)
+- [Guardrails](#guardrails)
+
 message says.
 
 ## Before any call
@@ -16,7 +28,7 @@ message says.
 
 | Tool | What it does | When you use it |
 |---|---|---|
-| `office.session-brief` | Session-start brief: waiting on the user, agents' work, open questions, last decisions, onboarding due. No model call | First call of every session ([sessions.md](sessions.md)) |
+| `office.session-brief` | Session-start brief: waiting on the user, agents' work, open questions, last decisions, onboarding due. No model call | First call of every session ([sessions-scratch.md](sessions-scratch.md)) |
 | `office.capture` | Create a source from pasted text/upload, or extract a staged session transcript with `session_transcript_path` plus `session_id`; append rolling handoffs with `append_to`; dedupe; return the id | Before acting on pasted content; the session decision log |
 | `office.source-show` | A source with provenance, citers, chapters; optional anchor, history, capped media | To read evidence and find `#L<n>` anchors |
 | `office.search` | Full-text search over sources, knowledge and artifacts. Empty query refused | Answering from the Library ([library.md](library.md)) |
@@ -35,7 +47,7 @@ message says.
 | `office.metrics` | Analytics metrics for a `since`/`until` window | Insights questions |
 | `office.review-inputs` | A period's completed work, conversions, metrics, decisions, knowledge changes | Preparing a review |
 | `office.library-sync` | Pull the team's shared library; push documents the user marked shareable. `dry_run` changes nothing | Only when the user asks to sync; run with `dry_run: true` first |
-| `office.status` | Plugin version, which secrets are set (names only), Library health, private route, shared library | Health checks ([setup.md](setup.md)) |
+| `office.status` | Plugin version, which secrets are set (names only), Library health, private route, shared library | Health checks ([setup-repair.md](setup-repair.md)) |
 
 ## Hidden tools you never call (`mcp_scope: none`)
 
@@ -143,7 +155,7 @@ What this means for you:
   shareable.
 - Refusals `private_endpoint_unconfigured`, `private_endpoint_unverified` and
   `private_media_unsupported` are setup gaps for the user: Settings › Private route
-  ([setup.md](setup.md)).
+  ([setup-repair.md](setup-repair.md)).
 
 ## Guardrails
 
@@ -165,7 +177,7 @@ What this means for you:
   what the user asked. Never re-run, retry or top up a confirmed video or bootstrap plan, and
   never work around `plan_changed`, `plan_unconfirmed` or `plan_exceeded`.
 - **Scratch.** One-off files go in `.orbit/tmp/session-<yyyymmdd>/`, never under `library/`
-  ([sessions.md](sessions.md)).
+  ([sessions-scratch.md](sessions-scratch.md)).
 
 ### Residual risk
 

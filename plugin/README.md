@@ -18,7 +18,7 @@ Building one means uncommenting its block and adding its schemas and golden
 - `.orbit-plugin/bin/office` — exec launcher; it execs the Rust backend
   beside it as `bin/office-bin` and builds nothing at call time.
 - `.orbit-plugin/schemas/` — request/response JSON Schemas per tool, plus `config.json`.
-- `.orbit-plugin/skills/` — `orchestrator`, `library-conventions`, `meetings`.
+- `.orbit-plugin/skills/` — `orchestrator`, `library-conventions`, `meetings`, `kt`, `bootstrap`.
 - `.orbit-plugin/definitions/` — the registered `office-agent-todo` activity
   and planned routines and auto-tasks. Definitions land with the tools they
   call; routines and auto-tasks are seeded disabled.

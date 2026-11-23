@@ -43,7 +43,7 @@ stdout, exit code) is excluded.
 | **Library** | The three layers together — sources, knowledge, artifacts — as its own git repo inside the user's workspace (ignored by the workspace repo), with a rebuildable SQLite index in plugin state. |
 | **Proposal** | An Orbit task in `proposed`, tagged `proposal:<kind>`, whose acceptance applies a change and whose dismissal is remembered for 30 days. See [specs/proposals.md](../specs/proposals.md). |
 | **Signal** | A mechanical condition computed by `office.signals-scan` (repetition, friction recurrence, staleness, gap) that produces a proposal candidate. `unused automation` is a planned signal and does not fire yet. |
-| **Orchestrator** | The user's own agent CLI (Muse Code by default) running the `office-orchestrator` skill over Orbit MCP. Not code in this repo. See [specs/orchestrator.md](../specs/orchestrator.md). |
+| **Orchestrator** | The user's own agent CLI (Muse Code by default) running the `orchestrator` skill over Orbit MCP. Not code in this repo. See [specs/orchestrator.md](../specs/orchestrator.md). |
 | **Implementing agent** | An Orbit crew run carrying out an `owner:agent` to-do; its output is a task artifact until approved. |
 | **Dispatch pass** | The app server's 30-second loop submitting `owner:agent` backlog tasks by id. The workspace never runs an auto drain. |
 | **Needs you** | The app's queue of proposals, approvals and `owner:you` to-dos — everything waiting on the user. |
