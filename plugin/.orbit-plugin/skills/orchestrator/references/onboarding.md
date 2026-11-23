@@ -2,9 +2,18 @@
 
 How to set up a new user or a new role: the onboarding interview first, then the Library bootstrap, then the habits that make the Library grow.
 
+Contents:
+
+- [When to onboard](#when-to-onboard)
+- [The interview](#the-interview)
+  - [Record every answer](#record-every-answer)
+- [Turn answers into proposals](#turn-answers-into-proposals)
+- [Library bootstrap (new role)](#library-bootstrap-new-role)
+- [The first week](#the-first-week)
+
 ## When to onboard
 
-Read the `onboarding` section of `office.session-brief` (see [sessions.md](sessions.md)).
+Read the `onboarding` section of `office.session-brief` (see [sessions-brief.md](sessions-brief.md)).
 
 - The section lists each one-per-Library template that has no page yet:
   `user`, `standing-directions`, `systems`, `glossary`, `goals`, `rhythm`.
@@ -51,7 +60,7 @@ Jargon and acronyms that come up go to the glossary (`dom-glossary`, one
   entry, also verbatim. `dom-standing-directions` cites those.
 - A pasted document (an org chart, a project brief) is captured first as its
   own source with `office.capture`. Cite it; do not paste it into the log.
-- See [sessions.md](sessions.md) for the entry format and `append_to`.
+- See [sessions-log.md](sessions-log.md) for the entry format and `append_to`.
 
 ```json
 {"append_to":"<source-id>","entries":[{"kind":"fact","text":"I lead procurement analytics on the EMEA team."},{"kind":"direction","text":"Always draft client emails, never send."}]}

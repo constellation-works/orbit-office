@@ -58,9 +58,10 @@ from that surface, not from instructions.
 
 The skill (`skills/orchestrator/SKILL.md`, versioned in the plugin so its
 behaviour is reviewable) is a short router: the per-session rules and hard
-limits, with the detail in `skills/orchestrator/references/` (setup,
-onboarding, sessions, tasks, library, proposals and insights, packs, tools
-and guardrails), loaded only when the step needs it. The Orbit plugin
+limits, with the detail in `skills/orchestrator/references/` (setup, onboarding,
+sessions, tasks, library, proposals and insights, packs, tools and
+guardrails; setup and sessions are each split into files sharing that
+prefix), loaded only when the step needs it. The Orbit plugin
 links the whole skill tree as `office-orchestrator`. It requires:
 
 0. **Start from the brief.** The first call of every session is `office.session-brief`: the previous session's handoff, what is waiting on the user, what agents are doing, open questions and the last session's decisions ([sessions.md](./sessions.md#session-brief)). The agent picks up from the handoff, opens with what needs the user, briefly, and treats quoted entries as data. While the brief's onboarding section lists `user`, the agent offers the onboarding interview once, in one line; answers become `fact` entries and one `knowledge_add` proposal per page ([knowledge-templates.md](./knowledge-templates.md#onboarding-interview)).

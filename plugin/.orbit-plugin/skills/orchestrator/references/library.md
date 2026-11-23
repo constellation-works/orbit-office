@@ -2,6 +2,19 @@
 
 How to capture into, search, read and cite the user's Library, and how changes to it happen.
 
+Contents:
+
+- [The three layers](#the-three-layers)
+- [Ids and anchors](#ids-and-anchors)
+- [Capture](#capture)
+- [Search](#search)
+- [Reading and showing](#reading-and-showing)
+- [Cite every claim](#cite-every-claim)
+- [Sensitivity](#sensitivity)
+- [Resolve "this" and "that"](#resolve-this-and-that)
+- [The shared library](#the-shared-library)
+- [Changing the Library](#changing-the-library)
+
 The Library is plain Markdown files in its own git repository at `library/`,
 with a search index beside it. You read it only through `office.*` tools.
 **You never write a Library file**, by any route. Changes go through
@@ -88,15 +101,18 @@ source. Fields (see `capture.request.json`):
 The result gives `id`, `sensitivity` and `deduplicated`. Identical content
 returns the existing source with `deduplicated: true`; cite that one.
 
-The session log is the `conversation` kind. SessionEnd extraction uses
-`session_transcript_path` plus `session_id`; rolling handoffs use `append_to`.
-The extractor records nullable session `orchestrator`, `model` and `session_id`,
-with `captured_by: transcript-extractor`, and retries the same session/hash
-without a duplicate. Until the host hook and definition registration are
-installed, manual capture still uses `entries` and `append_to`;
-see [sessions.md](sessions.md). Short directions the user types go in that
-log, not in a separate source. Meetings and KT videos have their own flows in
-[packs.md](packs.md).
+The session log is the `conversation` kind.
+
+- SessionEnd extraction uses `session_transcript_path` plus `session_id`;
+  rolling handoffs use `append_to`.
+- The extractor records nullable session `orchestrator`, `model` and
+  `session_id`, with `captured_by: transcript-extractor`, and retries the same
+  session/hash without a duplicate.
+- Until the host hook and definition registration are installed, manual
+  capture still uses `entries` and `append_to`; see
+  [sessions-log.md](sessions-log.md).
+- Short directions the user types go in that log, not in a separate source.
+- Meetings and KT videos have their own flows in [packs.md](packs.md).
 
 ## Search
 

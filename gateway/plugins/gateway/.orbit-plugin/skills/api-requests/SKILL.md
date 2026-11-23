@@ -1,6 +1,6 @@
 ---
 name: api-requests
-description: Make API requests through the user's gateway connections instead of curl, wget or an HTTP client in the shell. Use whenever a task needs data from a web API the user has connected.
+description: Makes API requests through the user's gateway connections instead of curl, wget or an HTTP client in the shell, drafting writes for the user's approval. Use whenever a task needs data from a web API the user has connected, or proposes a change to one. Not for aws or gcloud commands (use cloud-cli).
 ---
 
 # API requests through the gateway
@@ -27,9 +27,10 @@ other tool in your shell, and never ask the user to paste an API key. Use:
   `path` is relative to the connection's `base_url`; a full URL, another host
   or a `..` that climbs out is refused. A connection whose auth scheme is
   `secret_path` (a calendar feed, say) names exactly one resource: leave
-  `path` out. Its address is its secret, so the URL reads `<secret_path>`. You may set only the `Accept`,
-  `Accept-Language`, `If-None-Match`, `If-Modified-Since` and `Range`
-  headers; the gateway adds the authentication itself.
+  `path` out. Its address is its secret, so the URL reads `<secret_path>`.
+  You may set only the `Accept`, `Accept-Language`, `If-None-Match`,
+  `If-Modified-Since` and `Range` headers; the gateway adds the
+  authentication itself.
 - `gateway.http-draft` — a write (`POST`, `PUT`, `PATCH` or `DELETE`, if the
   connection lists it in `drafts`) for the user to approve. Nothing is sent
   when you call it:
@@ -49,13 +50,15 @@ other tool in your shell, and never ask the user to paste an API key. Use:
 ## What comes back
 
 The status, the content type, a fixed set of headers and the body: JSON
-parsed, text as text, anything else as its size and SHA-256 only. A body
-longer than the connection's limit is cut, with `truncated: true`.
-`truncated: true` means those bytes are not the whole reply. A sent draft
-whose server closed before the body it declared uses the same flag, and an
-empty cut-off is `kind: none` with `truncated: true`, not a complete empty
-reply. Anything that looks like a credential reads `[secret]`; that is the
-gateway working, not a fault in the API.
+parsed, text as text, anything else as its size and SHA-256 only.
+
+- A body longer than the connection's limit is cut, with `truncated: true`.
+  `truncated: true` means those bytes are not the whole reply.
+- A sent draft whose server closed before the body it declared uses the same
+  flag, and an empty cut-off is `kind: none` with `truncated: true`, not a
+  complete empty reply.
+- Anything that looks like a credential reads `[secret]`; that is the gateway
+  working, not a fault in the API.
 
 A redirect to another host is returned, not followed (`redirect.reason:
 other_origin`). Do not fetch that location yourself; tell the user.
