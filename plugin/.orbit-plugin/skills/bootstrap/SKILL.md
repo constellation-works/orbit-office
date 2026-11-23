@@ -1,6 +1,6 @@
 ---
 name: office-bootstrap
-description: Lead a new role's Library bootstrap phase by phase — ask for each phase's material, preview the batch, walk the proposals by subject, and report the gaps.
+description: Leads a new role's Library bootstrap phase by phase — asks for each phase's material, sends the user to the batch preview, lets the confirmed routine run, walks the resulting proposals by subject and reports the computed gaps. Use after the onboarding interview, when the user is ready to load docs, KT videos, team material or processes into the Library. Not for the interview itself (use office-orchestrator, references/onboarding.md) or for explaining one processed KT video (use office-kt).
 ---
 
 # Library bootstrap

@@ -2,6 +2,20 @@
 
 How to find, file and talk about proposals, record snags, and report the numbers honestly.
 
+Contents:
+
+- [When to scan](#when-to-scan)
+- [The signals](#the-signals)
+- [Shipped routines and auto-tasks](#shipped-routines-and-auto-tasks)
+- [Proposal kinds](#proposal-kinds)
+- [Evidence and filing](#evidence-and-filing)
+- [Mention at most two per turn](#mention-at-most-two-per-turn)
+- [Dismissal memory](#dismissal-memory)
+- [Acceptance belongs to the user](#acceptance-belongs-to-the-user)
+- [Recording snags (frictions)](#recording-snags-frictions)
+- [Insights: office.metrics](#insights-officemetrics)
+- [Reviews](#reviews)
+
 Nothing becomes standing automation, and no knowledge page changes, until the
 user accepts a proposal in the app. You find candidates and file them. You
 never accept, enable or write. For the tool list and guardrails see
@@ -160,7 +174,7 @@ Record a friction with `orbit.friction.add` when something went wrong or
 slowed the work: a missing input that kept coming back, a refused tool, a
 runbook step that did not match reality, a correction the user had to make.
 Do not record routine questions or the user's preferences; those are `fact`
-or `direction` log entries ([sessions.md](sessions.md)).
+or `direction` log entries ([sessions-log.md](sessions-log.md)).
 
 - Give a one-line `title` that names the surface and the failure, and a
   `body` saying what happened. Pass `model` and the `workspace` selector;

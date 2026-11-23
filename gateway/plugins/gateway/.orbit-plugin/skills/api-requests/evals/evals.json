@@ -1,0 +1,23 @@
+{
+  "skill": "api-requests",
+  "cases": [
+    {
+      "id": "api-requests-1",
+      "kind": "should-load",
+      "prompt": "A task asks for the user's ten most recent CRM deals through a connected API.",
+      "expected": "Loads `api-requests`; checks `gateway.connection-list`, then calls `gateway.http-get` with the connection name and a `path` under its `base_url`."
+    },
+    {
+      "id": "api-requests-2",
+      "kind": "should-not-load",
+      "prompt": "A task asks for the user's GCP Compute instances.",
+      "expected": "Does not load `api-requests`; loads `cloud-cli`."
+    },
+    {
+      "id": "api-requests-3",
+      "kind": "task",
+      "prompt": "A task asks to set a CRM deal's stage to won.",
+      "expected": "Calls `gateway.http-draft` with method `PATCH`; sends nothing; tells the user what was drafted and the task id the result names; does not use `curl` and puts no credential in the body."
+    }
+  ]
+}

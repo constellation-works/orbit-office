@@ -1,0 +1,23 @@
+{
+  "skill": "office-bootstrap",
+  "cases": [
+    {
+      "id": "bootstrap-1",
+      "kind": "should-load",
+      "prompt": "The user finished the onboarding interview and says: \"Let's load our team docs and process pages into the Library.\"",
+      "expected": "Loads `office-bootstrap`; asks for the `docs` phase material first, then continues through `kt`, `team` and `process` in order."
+    },
+    {
+      "id": "bootstrap-2",
+      "kind": "should-not-load",
+      "prompt": "The user asks: \"What does the KT video I uploaded yesterday say about the deploy gotchas?\"",
+      "expected": "Does not load `office-bootstrap`; loads `office-kt`, which explains a processed video from its transcript with `#t=` citations."
+    },
+    {
+      "id": "bootstrap-3",
+      "kind": "task",
+      "prompt": "The user drops three design docs for the `docs` phase.",
+      "expected": "Captures each as its own source with `office.capture` tagged `bootstrap:docs`; sends the user to the Source screen's batch preview to confirm; does not call `office.batch-plan`, `office.digest`, `office.extract` or `office.consolidate`; after consolidation walks the proposals by subject and never accepts one; reports gaps from `office.bootstrap-status`."
+    }
+  ]
+}

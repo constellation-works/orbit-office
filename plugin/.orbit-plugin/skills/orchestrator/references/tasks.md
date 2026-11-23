@@ -2,9 +2,23 @@
 
 How to turn a request into an Orbit to-do, get it ready for an agent or the user, and see it through.
 
+Contents:
+
+- [When a request becomes a to-do](#when-a-request-becomes-a-to-do)
+- [Who owns it](#who-owns-it)
+- [What every to-do needs](#what-every-to-do-needs)
+  - [Tags](#tags)
+- [Keep it proposed while you prepare it](#keep-it-proposed-while-you-prepare-it)
+- [Making it ready, and dispatch](#making-it-ready-and-dispatch)
+- [Scheduling with not_before](#scheduling-with-not_before)
+- [Runbooks the agent performs](#runbooks-the-agent-performs)
+- [Following up](#following-up)
+  - [When an agent to-do blocks or fails](#when-an-agent-to-do-blocks-or-fails)
+- [Worked example](#worked-example)
+
 Read each tool's input schema before you call it. Tool names and limits are in
 [tools-and-guardrails.md](tools-and-guardrails.md). Log every step in the
-session's conversation source ([sessions.md](sessions.md)).
+session's conversation source ([sessions-log.md](sessions-log.md)).
 
 ## When a request becomes a to-do
 

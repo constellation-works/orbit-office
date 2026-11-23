@@ -1,0 +1,23 @@
+{
+  "skill": "office-kt",
+  "cases": [
+    {
+      "id": "kt-1",
+      "kind": "should-load",
+      "prompt": "The user asks: \"What did the speaker say about rollbacks in the onboarding KT video, and what is still unanswered?\"",
+      "expected": "Loads `office-kt`; reads the source with `office.source-show`, answers with `<source-id>#t=hh:mm:ss` citations and lists the open `kt-question` to-dos."
+    },
+    {
+      "id": "kt-2",
+      "kind": "should-not-load",
+      "prompt": "The user asks: \"Summarise yesterday's planning meeting and file its to-dos.\"",
+      "expected": "Does not load `office-kt`; loads `office-meetings`."
+    },
+    {
+      "id": "kt-3",
+      "kind": "task",
+      "prompt": "A KT video's plan was confirmed, extraction ran, and the user says: \"The transcript looks wrong, re-run it.\"",
+      "expected": "Does not call `office.transcribe`, `office.frames`, `office.extract` or `office.consolidate`; tells the user what a new preview would cover and lets the app show a new plan through `office.video-plan` for confirmation."
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 ---
 name: office-orchestrator
-description: Run the user's office as their orchestrator — start from the session brief, capture evidence, keep the decision log and handoff current, turn requests into attached Orbit to-dos, answer from the Library with citations, propose (never impose) knowledge and automation changes, and guide setup, onboarding and the Library bootstrap. Use in every office session.
+description: Runs the user's office as their orchestrator — starts from the session brief, captures evidence, keeps the decision log and handoff current, turns requests into attached Orbit to-dos, answers from the Library with citations, proposes (never imposes) knowledge and automation changes, and guides setup, onboarding and the Library bootstrap. Use in every office session. Detailed procedures live in the sibling skills office-bootstrap, office-kt, office-library-conventions and office-meetings, and in api-requests from the gateway plugin.
 ---
 
 # Office orchestrator
@@ -20,14 +20,19 @@ secrets or approve sending anything.
 1. **Start from the brief.** Call `office.session-brief` first. Pick up
    from its newest handoff, and open with what needs the user, briefly.
    If the brief shows onboarding is due, offer the interview once, in
-   one line. → [sessions](references/sessions.md),
+   one line. → [brief](references/sessions-brief.md),
    [onboarding](references/onboarding.md)
 2. **Capture first.** Pasted external content becomes a source
-   (`office.capture`) before you act on it. Keep a rolling `handoff` in one `conversation` source per session. Record a decision with `office.capture`'s `decision` input.
-   A SessionEnd cheap-crew job extracts decisions, verbatim directions, facts,
-   actions and open questions from the transcript; do not recapture every turn.
-   Capture a fact immediately when a proposal needs its citation.
-   No end-of-session summary. → [sessions](references/sessions.md)
+   (`office.capture`) before you act on it.
+   - Keep a rolling `handoff` in one `conversation` source per session.
+     Record a decision with `office.capture`'s `decision` input.
+   - A SessionEnd cheap-crew job extracts decisions, verbatim directions,
+     facts, actions and open questions from the transcript; do not recapture
+     every turn.
+   - Capture a fact immediately when a proposal needs its citation.
+   - No end-of-session summary.
+   - → [log](references/sessions-log.md),
+     [handoff](references/sessions-handoff.md)
 3. **Resolve "this".** For "this", "that", "here" or "these", use the
    injected selection, or call `office.selection-get`. If the tray is
    empty, ask. → [library](references/library.md)
@@ -63,18 +68,22 @@ secrets or approve sending anything.
 
 ## References
 
-Load the one you need for the current step:
+Open the one the current step needs; this is not a reading checklist.
 
-| Need | Read |
+| Open when | Read |
 |---|---|
-| Install, check health, fix a broken setup | [setup.md](references/setup.md) |
-| New user or new role: interview, Library bootstrap | [onboarding.md](references/onboarding.md) |
-| Session brief, decision log, handoff, scratch space | [sessions.md](references/sessions.md) |
-| Filing, attaching, scheduling and following up to-dos | [tasks.md](references/tasks.md) |
-| Sources, knowledge, outputs, search, citations, sharing | [library.md](references/library.md) |
-| Signals, proposals, routines, Insights, reviews | [proposals-and-insights.md](references/proposals-and-insights.md) |
-| KT videos, meetings, calendar | [packs.md](references/packs.md) |
-| Tool catalog, privacy routing, hard limits | [tools-and-guardrails.md](references/tools-and-guardrails.md) |
+| Installing, registering the agent CLI, starting the app service or removing the office | [setup-install.md](references/setup-install.md) |
+| Checking health or fixing a broken setup | [setup-repair.md](references/setup-repair.md) |
+| A new user or new role: interview, Library bootstrap | [onboarding.md](references/onboarding.md) |
+| Starting a session: reading the brief, opening with what is waiting, resuming, answering from the daily digest | [sessions-brief.md](references/sessions-brief.md) |
+| Writing the conversation log or a decision, direction, fact or open question | [sessions-log.md](references/sessions-log.md) |
+| Writing a rolling or global handoff | [sessions-handoff.md](references/sessions-handoff.md) |
+| Using scratch space | [sessions-scratch.md](references/sessions-scratch.md) |
+| Filing, attaching, scheduling or following up to-dos | [tasks.md](references/tasks.md) |
+| Handling sources, knowledge, outputs, search, citations or sharing | [library.md](references/library.md) |
+| Signals, proposals, routines, Insights or reviews | [proposals-and-insights.md](references/proposals-and-insights.md) |
+| KT videos, meetings or the calendar | [packs.md](references/packs.md) |
+| Looking up a tool, privacy routing or a hard limit | [tools-and-guardrails.md](references/tools-and-guardrails.md) |
 
 Sibling skills hold the detailed procedures: `office-library-conventions`
 (cited evidence and proposal content), `office-bootstrap` (per-phase
