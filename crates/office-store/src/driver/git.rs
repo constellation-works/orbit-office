@@ -2,10 +2,14 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use crate::{Error, Result};
-use office_common::process;
+use office_common::process::{self, Cap};
 use office_core::domain::knowledge::Revision;
+
+const GIT_DEADLINE: Duration = Duration::from_secs(30);
+const GIT_OUTPUT_CAP: usize = 512 * 1024;
 
 pub(crate) struct Git {
     root: PathBuf,
@@ -34,10 +38,9 @@ impl Git {
         extra_env: &[(&str, &str)],
     ) -> Result<(bool, String)> {
         let mut command = Command::new("git");
+        process::env::allow(&mut command, &["PATH"]);
         command
             .current_dir(&self.root)
-            .env_clear()
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("HOME", &self.state)
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -65,7 +68,13 @@ impl Git {
         for (key, value) in extra_env {
             command.env(key, value);
         }
-        let (status, text) = process::run(&mut command, &self.root)?;
+        let (status, text) = process::run(
+            command,
+            &self.root,
+            GIT_DEADLINE,
+            Cap::kill(GIT_OUTPUT_CAP),
+            Cap::kill(GIT_OUTPUT_CAP),
+        )?;
         Ok((status.success(), text))
     }
 
@@ -86,18 +95,23 @@ impl Git {
     /// typed refusal (`git_missing`), distinct from a git failure.
     pub(crate) fn ensure_available(cwd: &Path) -> Result<()> {
         let mut command = Command::new("git");
+        process::env::allow(&mut command, &["PATH"]);
         command
             .current_dir(cwd)
-            .env_clear()
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_TERMINAL_PROMPT", "0")
             .args(["--version"]);
-        match process::run(&mut command, cwd) {
+        match process::run(
+            command,
+            cwd,
+            GIT_DEADLINE,
+            Cap::kill(GIT_OUTPUT_CAP),
+            Cap::kill(GIT_OUTPUT_CAP),
+        ) {
             Ok((status, _)) if status.success() => Ok(()),
             Ok(_) => Err(Error::GitMissing),
-            Err(office_common::Error::Io { source, .. })
+            Err(office_common::Error::ProcessSpawn { source, .. })
                 if source.kind() == std::io::ErrorKind::NotFound =>
             {
                 Err(Error::GitMissing)

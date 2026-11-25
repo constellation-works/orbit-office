@@ -43,6 +43,7 @@ pub(crate) fn write(root: &Path, relative: &str, text: &str) {
 
 pub(crate) fn git(root: &Path, args: &[&str]) -> String {
     let mut command = std::process::Command::new("git");
+    office_common::process::env::allow(&mut command, &["PATH"]);
     command
         .args([
             "-c",
@@ -52,8 +53,6 @@ pub(crate) fn git(root: &Path, args: &[&str]) -> String {
         ])
         .args(args)
         .current_dir(root)
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("HOME", root)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -61,7 +60,14 @@ pub(crate) fn git(root: &Path, args: &[&str]) -> String {
         .env("GIT_AUTHOR_EMAIL", "fixture@example.test")
         .env("GIT_COMMITTER_NAME", "Fixture")
         .env("GIT_COMMITTER_EMAIL", "fixture@example.test");
-    let (status, output) = office_common::process::run(&mut command, root).expect("git fixture");
+    let (status, output) = office_common::process::run(
+        command,
+        root,
+        std::time::Duration::from_secs(30),
+        office_common::process::Cap::kill(512 * 1024),
+        office_common::process::Cap::kill(512 * 1024),
+    )
+    .expect("git fixture");
     assert!(status.success(), "git fixture {args:?} exited {status}");
     output
 }

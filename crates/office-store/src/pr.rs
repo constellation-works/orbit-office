@@ -10,13 +10,16 @@
 use std::process::Command;
 use std::time::Duration;
 
+use office_common::process::{self, Cap};
 use office_core::ports::{PrError, PrState, PrView, PullRequests, parse_pr_id};
 use serde_json::Value;
 
 /// Deadline for one `gh` reading.
 const GH_DEADLINE: Duration = Duration::from_secs(15);
 /// stdout bound for the small JSON reply.
-const GH_OUTPUT_LIMIT: u64 = 64 * 1024;
+const GH_OUTPUT_LIMIT: usize = 64 * 1024;
+/// stderr bound for diagnostics.
+const GH_STDERR_LIMIT: usize = 512 * 1024;
 /// Variables forwarded to `gh` so it can locate its configuration and
 /// token; everything else is cleared.
 const GH_ENVIRONMENT: [&str; 5] = ["PATH", "HOME", "XDG_CONFIG_HOME", "GH_TOKEN", "GH_HOST"];
@@ -75,24 +78,19 @@ impl PullRequests for GhPullRequests {
         parse_pr_id(id)?;
         let scratch = tempfile::tempdir().map_err(|_| PrError::Failed)?;
         let mut command = Command::new("gh");
+        process::env::allow(&mut command, &GH_ENVIRONMENT);
         command
             .args(["pr", "view", id, "--json", "state,mergedAt,mergeCommit"])
             .current_dir(scratch.path())
-            .env_clear()
             .env("GH_PROMPT_DISABLED", "1");
-        for name in GH_ENVIRONMENT {
-            if let Some(value) = std::env::var_os(name) {
-                command.env(name, value);
-            }
-        }
         if std::env::var_os("HOME").is_none() {
             command.env("HOME", scratch.path());
         }
-        let output = office_common::process::run_captured_with_deadline(
-            &mut command,
-            scratch.path(),
+        let output = process::run_captured(
+            command,
             GH_DEADLINE,
-            GH_OUTPUT_LIMIT,
+            Cap::kill(GH_OUTPUT_LIMIT),
+            Cap::kill(GH_STDERR_LIMIT),
         )
         .map_err(|source| {
             if let office_common::Error::ProcessSpawn { source: ref io, .. } = source

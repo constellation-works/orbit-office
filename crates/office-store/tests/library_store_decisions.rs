@@ -48,6 +48,7 @@ fn upload_failed_decision_leaves_no_original_and_retry_succeeds() {
         )
         .unwrap();
         let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        office_common::process::env::allow(&mut command, &[]);
         command
             .args([
                 "--exact",
@@ -55,11 +56,17 @@ fn upload_failed_decision_leaves_no_original_and_retry_succeeds() {
                 "--nocapture",
             ])
             .current_dir(dir.path())
-            .env_clear()
             .env("PATH", path)
             .env("HOME", dir.path())
             .env("OFFICE_TEST_UPLOAD_DECISION_ROOT", dir.path());
-        let (status, output) = office_common::process::run(&mut command, dir.path()).unwrap();
+        let (status, output) = office_common::process::run(
+            command,
+            dir.path(),
+            std::time::Duration::from_secs(30),
+            office_common::process::Cap::kill(512 * 1024),
+            office_common::process::Cap::kill(512 * 1024),
+        )
+        .unwrap();
         assert!(
             status.success(),
             "decision fixture exited {status}: {output}"

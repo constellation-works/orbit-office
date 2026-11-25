@@ -15,7 +15,7 @@ backend only through Orbit's tools) and `gateway/` (two small Python plugins, se
 
 | Tier | Crate | Owns | May depend on (internal) |
 |------|-------|------|--------------------------|
-| 0. Foundation | `office-common` | The common error, fs mechanisms (path safety, atomic writes, SHA-256), SQLite connection defaults (`sqlite` feature), bounded subprocess supervision shared by adapters and fixtures, small shared types. | — |
+| 0. Foundation | `office-common` | The common error, fs mechanisms (path safety, atomic writes, SHA-256), SQLite connection defaults (`sqlite` feature), thin subprocess adapter (`office-common::process`) delegating exclusively to `cw-supervise`, small shared types. | — |
 | 1. Domain | `office-core` | **Pure.** The exec envelope (`protocol`), tool contract types (`tool`), declared secret names, the domain model and its rules (`domain/`, including Library records and validated settings), the bundled knowledge templates (`templates/*.md`, compiled in with `include_str!`), and the port traits the application calls (`ports/`, one file each). No I/O. | `office-common` |
 | 2. Adapters | `office-store` | Implements the Library port: Markdown files (the source of truth), the rebuildable SQLite index, the Library's own git repository and its writer lock. Also owns plugin state, including the calendar snapshot in `calendar/events.json`, the selection tray in `selections.sqlite` and the shared library clone and sync state under `shared/` (the only code that runs git against the team remote, with an allowlisted environment; specs/shared-library.md), and implements the selections and script-runner ports: run directories under `plugin_state/runs/` and the supervised `uv` child (specs/scripts.md). Structured after `orbit-store`. | `office-common`, `office-core` |
 | 2. Adapters | `office-models` | Implements the model ports: the configured hosted OpenAI-compatible endpoint (`models.endpoint`, by default Meta's Model API with Muse Spark and Muse Voice Transcribe), the private route (an open-weights model on the one endpoint the user chose), privacy routing, the private-endpoint check and local JSON Schema validation of extraction replies. The only crate that may speak HTTP. | `office-common`, `office-core` |
@@ -73,14 +73,22 @@ Checked by `scripts/check-dependency-direction.sh` from the manifests.
 |-------|------------------------|
 | every library crate | surface crates: `clap`, `tracing-subscriber` and terminal crates |
 | every crate except `office-models` and `office` | HTTP clients: `ureq`, `reqwest`, `hyper`, `isahc`, `attohttpc`, `curl` |
+| every crate except `office-common` | subprocess supervisor: `cw-supervise` |
+| every crate | raw POSIX / syscall crates: `rustix`, `libc` (encapsulated inside `cw-supervise`) |
 
 ## Module rules
 
 Checked by grep over non-test sources:
 
-- `office-core` (every module): no `std::fs`, `std::net`, `std::process`, `tempfile` or `rustix`, and no environment or path discovery (`std::env::`, `home_dir`, `current_dir`).
+- `office-core` (every module): no `std::fs`, `std::net`, `std::process`, `tempfile`, `rustix`, `cw_supervise` or `office_common::process`, and no environment or path discovery (`std::env::`, `home_dir`, `current_dir`).
 - `office-tools`: the same bans. A tool reaches files, models and Orbit only through ports.
-- `office-models`: no `std::process` except `src/media.rs`, the one `ffmpeg` audio-splitting subprocess, run under the bounded supervisor in `office-common` (STD-03 R11–R15).
+- Subprocess supervision lives exclusively in the external `cw-supervise` crate, wrapped by `office-common::process` (`crates/office-common/src/process.rs`), which is the only place in the workspace that invokes `cw_supervise::Run`. No non-test source file in any crate may declare `extern "C"`, signal constants (`SIGKILL`/`SIGTERM`), `rustix::`, `std::os::unix::process` / `CommandExt`, process-group calls (`process_group`/`setsid`/`waitid`), or direct child spawning (`std::process::Child`, `Stdio`, `.spawn(`, `.output(`, `.status(`).
+- Which crates may name `std::process` (building `Command` values for `office-common::process`, reading `std::process::id()`, or returning `ExitCode`):
+  - `office-common`: `src/process.rs` (`Command`/`ExitStatus` for `cw_supervise::Run`) and `src/fs/atomic.rs` (`std::process::id()`).
+  - `office-models`: confined to `src/media.rs` (`ffmpeg`/`ffprobe`, supervised via `office-common::process`, STD-03 R11–R15).
+  - `office-orbit`: confined to `src/callbacks.rs` (`orbit` CLI callbacks, supervised via `office-common::process`).
+  - `office-store`: `driver/git.rs`, `driver/convert/pdf.rs`, `driver/script/mod.rs`, `pr.rs` and `shared.rs` build `Command` values passed to `office-common::process`; `driver/git.rs`, `driver/file/lock.rs`, `calendar.rs` and `repository/library.rs` read `std::process::id()`.
+  - `office` (binary): `std::process::ExitCode` only (`src/main.rs`, `src/output/mod.rs`); no `std::process::Command`.
 - `office/src/app.rs` imports no `cli` or `output`; `office/src/output/` imports no `app` or `cli`.
 - Only `office/src/output/` touches stdout, stderr, TTY state or the color/format variables (`scripts/check-terminal-guard.sh`).
 
@@ -240,8 +248,9 @@ process.
   (configurable), queues calls FIFO, times out every call, and shares one in-flight poll
   between browser tabs. Its dispatch pass is single-flight.
 - Orbit callbacks in the exec backend are synchronous and bounded to 30 seconds and
-  512 KiB per output stream by `office-common::process`. The inherited callback descriptor
-  stays open across the CLI child; Orbit owns authentication and live grant checks.
+  512 KiB per output stream (6 MiB + 64 KiB stdout for artifact and gateway HTTP reads)
+  with `Cap::kill` via `office-common::process` (`cw-supervise`). The inherited callback
+  descriptor stays open across the CLI child; Orbit owns authentication and live grant checks.
 
 Calendar normalization uses external `chrono` (with clock/default features disabled),
 `chrono-tz` and `url` in the pure core. They add no internal crate edge or HTTP client.

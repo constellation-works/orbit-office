@@ -17,6 +17,7 @@ path = "src/lib.rs"
 sqlite = ["dep:rusqlite"]
 
 [dependencies]
+cw-supervise = { workspace = true }
 rusqlite = { workspace = true, optional = true }
 serde = { workspace = true }
 sha2 = { workspace = true }

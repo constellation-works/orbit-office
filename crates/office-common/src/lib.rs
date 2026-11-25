@@ -20,7 +20,7 @@ pub mod process;
 mod sensitivity;
 pub mod storage;
 
-pub use error::{Error, Result};
+pub use error::{Error, ProcessCapture, Result};
 pub use sensitivity::Sensitivity;
 
 #[cfg(test)]

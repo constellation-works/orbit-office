@@ -28,9 +28,11 @@ use office_core::ports::{
 };
 
 /// Largest object read from the shared repository.
-const OBJECT_LIMIT: u64 = 16 * 1_048_576;
+const OBJECT_LIMIT: usize = 16 * 1_048_576;
 /// Largest tree listing or sync state accepted.
-const LISTING_LIMIT: u64 = 32 * 1_048_576;
+const LISTING_LIMIT: usize = 32 * 1_048_576;
+/// Per-call stderr bound for shared git operations.
+const STDERR_LIMIT: usize = 512 * 1024;
 /// Paths per `hash-object` or `update-index` invocation.
 const BATCH: usize = 200;
 /// The local ref the fetched branch is kept under.
@@ -63,10 +65,15 @@ pub fn git_environment(lookup: impl Fn(&str) -> Option<OsString>) -> Vec<(String
 #[must_use]
 pub fn git_command(root: &Path, environment: &[(String, OsString)], args: &[&str]) -> Command {
     let mut command = Command::new("git");
-    command.current_dir(root).env_clear();
-    for (name, value) in environment {
-        command.env(name, value);
-    }
+    process::env::Allow::names(GIT_ENVIRONMENT).apply_from(
+        &mut command,
+        environment
+            .iter()
+            .map(|(name, value)| (OsString::from(name), value.clone())),
+    );
+    command
+        .current_dir(root)
+        .env(GIT_TERMINAL_PROMPT.0, GIT_TERMINAL_PROMPT.1);
     command.arg("--no-pager");
     for setting in GIT_OVERRIDES {
         command.args(["-c", setting]);
@@ -175,14 +182,14 @@ impl SharedStore {
         Ok(dir)
     }
 
-    fn git(&self, args: &[&str], limit: u64) -> Result<process::CapturedOutput> {
+    fn git(&self, args: &[&str], limit: usize) -> Result<process::CapturedOutput> {
         let root = self.repo();
-        let mut command = git_command(&root, &self.environment, args);
-        process::run_captured_with_deadline(
-            &mut command,
-            &root,
+        let command = git_command(&root, &self.environment, args);
+        process::run_captured(
+            command,
             Duration::from_secs(GIT_DEADLINE_SECONDS),
-            limit,
+            process::Cap::kill(limit),
+            process::Cap::kill(STDERR_LIMIT),
         )
         .map_err(|_| storage("git command"))
     }
@@ -336,10 +343,11 @@ impl SharedRepository for SharedStore {
             return Err(storage("read sync state"));
         }
         let mut bytes = Vec::new();
-        file.take(LISTING_LIMIT + 1)
+        let limit = u64::try_from(LISTING_LIMIT).unwrap_or(u64::MAX);
+        file.take(limit + 1)
             .read_to_end(&mut bytes)
             .map_err(|_| storage("read sync state"))?;
-        if u64::try_from(bytes.len()).map_or(true, |len| len > LISTING_LIMIT) {
+        if bytes.len() > LISTING_LIMIT {
             return Err(storage("read sync state"));
         }
         serde_json::from_slice(&bytes)

@@ -58,6 +58,9 @@ tempfile = "3"
 tracing = "0.1"
 # Blocking HTTP client for office-models only (ARCHITECTURE.md crate policies).
 ureq = { version = "3", default-features = false, features = ["rustls", "gzip", "json"] }
+# Bounded subprocess supervisor (process group, deadline, sweep, capped output).
+# Confined to office-common (ARCHITECTURE.md). Pinned until published.
+cw-supervise = { git = "https://github.com/constellation-works/satellites", rev = "e5c43597ad5f43f431c62bd472ec63c096dd66dc" }
 
 [profile.release]
 strip = true

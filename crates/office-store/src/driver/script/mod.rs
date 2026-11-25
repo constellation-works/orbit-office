@@ -9,6 +9,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use office_common::fs::permissions::{create_private_dirs, ensure_owner_only};
 use office_common::fs::{atomic::write_atomic, hash::sha256_hex};
+use office_common::process::{self, Cap};
 use office_core::Result;
 use office_core::domain::script::{
     ScriptBounds, ScriptError, ScriptExecution, ScriptFile, ScriptPreparation, ScriptResult,
@@ -19,6 +20,9 @@ use serde_json::json;
 // Must track install.sh's PYTHON_VERSION; PATH includes the install's python3.
 const PYTHON: &str = "3.12";
 const WEEK: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const SCRIPT_ENV_NAMES: [&str; 3] = ["PATH", "LANG", "TZ"];
+const PREPARE_DEADLINE: Duration = Duration::from_secs(300);
+const PREPARE_LOG_CAP: usize = 1_048_576;
 
 /// Filesystem and process adapter; constructing it performs no I/O.
 pub struct ScriptStore {
@@ -56,13 +60,10 @@ impl ScriptStore {
 
     fn command(&self, cwd: &Path) -> Command {
         let mut command = Command::new("uv");
-        command.env_clear().current_dir(cwd);
-        for (key, value) in &self.environment {
-            if ["PATH", "LANG", "TZ"].iter().any(|allowed| key == allowed) {
-                command.env(key, value);
-            }
-        }
+        process::env::Allow::names(SCRIPT_ENV_NAMES)
+            .apply_from(&mut command, self.environment.iter().cloned());
         command
+            .current_dir(cwd)
             .env("HOME", cwd.join("home"))
             .env("TMPDIR", cwd.join("tmp"))
             .env("UV_CACHE_DIR", self.state.join("uv-cache"))
@@ -143,13 +144,8 @@ impl ScriptRunner for ScriptStore {
             if verb == "sync" {
                 command.arg("--locked");
             }
-            let output = office_common::process::run_logged(
-                &mut command,
-                temp.path(),
-                Duration::from_secs(300),
-                1_048_576,
-            )
-            .map_err(|_| adapter("prepare dependencies"))?;
+            let output = process::run_logged(command, PREPARE_DEADLINE, Cap::kill(PREPARE_LOG_CAP))
+                .map_err(|_| adapter("prepare dependencies"))?;
             if output.timed_out || output.truncated || !output.status.is_some_and(|s| s.success()) {
                 return Err(ScriptError::Prepare {
                     exit_code: output.status.and_then(|s| s.code()),
@@ -252,11 +248,10 @@ impl ScriptRunner for ScriptStore {
                 "script.py",
             ])
             .args(&execution.request.args);
-        let capture = office_common::process::run_logged(
-            &mut command,
-            &dir,
+        let capture = process::run_logged(
+            command,
             Duration::from_secs(bounds.timeout_seconds),
-            usize::try_from(bounds.log_bytes).map_err(|_| adapter("convert log bound"))?,
+            Cap::kill(usize::try_from(bounds.log_bytes).map_err(|_| adapter("convert log bound"))?),
         )
         .map_err(|_| adapter("execute uv"))?;
         write_atomic(&dir.join("run.log"), &capture.bytes)

@@ -176,16 +176,18 @@ event commits; path history shows the commits that actually changed the file.
 Changing a document's id at the same path replaces its old index row; using an
 id already indexed at a different path is refused before the write decision.
 
-Git commands and test git fixtures share `office_common::process::run`. They use argument vectors, an empty stdin, a clean environment, disabled
-hooks/fsmonitor/signing/auto-maintenance, a 30-second deadline and concurrent
-stdout/stderr drains capped at 512 KiB per stream (1 MiB total). Linux/macOS supervision uses an owned
-process group and `waitid(WNOWAIT)` to observe exit without releasing the PID;
-it sweeps the group before reaping. Timeout/error cleanup sends TERM, waits up to
-200 ms, then KILLs and reaps. Pipe completion waits are bounded. Git diagnostics
-are not embedded in errors because they can contain document text or credentials.
-The small POSIX FFI boundary has documented Linux/macOS ABI assumptions and
-safety comments; there is no new external dependency. CI validates both supported
-platforms; this task's local execution can validate only its host platform.
+Git commands and test git fixtures share `office_common::process::run`, which delegates
+to `cw-supervise` (`cw_supervise::Run`). They use argument vectors, an empty stdin, a
+cleared allowlisted environment (`cw_supervise::env::allow`), disabled
+hooks/fsmonitor/signing/auto-maintenance, an explicit 30-second deadline and explicit
+`Cap::kill(512 KiB)` per-stream stdout/stderr caps. On Linux and macOS, `cw-supervise`
+isolates each child in its own process group, sends `SIGTERM` with a 1-second default
+grace followed by `SIGKILL` on timeout, sweeps the group before reaping on every exit
+path, and bounds pipe completion waits (`rustix` is encapsulated inside `cw-supervise`;
+orbit-office declares no raw POSIX FFI). Timeout and output-limit errors keep their
+existing codes and carry captured output in a redacted typed field so raw git output
+never leaks into `Display`, `Debug` or tool errors. CI validates both supported
+platforms.
 
 ### Immutable artifact bundles
 
