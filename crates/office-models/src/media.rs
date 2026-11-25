@@ -13,9 +13,15 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
+use office_common::process::{self, Cap};
 use office_core::Error;
 
+/// Deadline for one `ffmpeg` / `ffprobe` invocation.
+const MEDIA_DEADLINE: Duration = Duration::from_secs(30);
+/// Default per-stream cap (512 KiB) for media subprocess output.
+const MEDIA_OUTPUT_CAP: usize = 512 * 1024;
 /// Recordings longer than this many seconds are split before transcription.
 pub const DEFAULT_SPLIT_THRESHOLD_SECONDS: u64 = 600;
 
@@ -115,10 +121,7 @@ impl AudioSplitter {
         {
             let output = output_dir.join(format!("segment-{index:03}.{extension}"));
             let mut command = Command::new(&self.ffmpeg_path);
-            command.env_clear();
-            if let Some(path) = std::env::var_os("PATH") {
-                command.env("PATH", path);
-            }
+            process::env::allow(&mut command, &["PATH"]);
             command.env("HOME", output_dir).env("TMPDIR", output_dir);
             command
                 .arg("-y")
@@ -131,14 +134,18 @@ impl AudioSplitter {
                 .arg("-c")
                 .arg("copy")
                 .arg(&output);
-            let (status, _) =
-                office_common::process::run(&mut command, output_dir).map_err(|error| {
-                    Error::Model {
-                        code: "media_split_failed",
-                        message: format!("ffmpeg split failed: {}", error.code()),
-                        retryable: false,
-                    }
-                })?;
+            let (status, _) = process::run(
+                command,
+                output_dir,
+                MEDIA_DEADLINE,
+                Cap::kill(MEDIA_OUTPUT_CAP),
+                Cap::kill(MEDIA_OUTPUT_CAP),
+            )
+            .map_err(|error| Error::Model {
+                code: "media_split_failed",
+                message: format!("ffmpeg split failed: {}", error.code()),
+                retryable: false,
+            })?;
             if !status.success() {
                 return Err(Error::Model {
                     code: "media_split_failed",
@@ -221,21 +228,22 @@ impl VideoProcessor {
         program: &Path,
         args: &[String],
         dir: &Path,
-        limit: u64,
+        limit: usize,
     ) -> office_core::Result<Vec<u8>> {
         let mut command = Command::new(program);
-        command.env_clear();
-        if let Some(path) = std::env::var_os("PATH") {
-            command.env("PATH", path);
-        }
+        process::env::allow(&mut command, &["PATH"]);
         command
             .current_dir(dir)
             .env("HOME", dir)
             .env("TMPDIR", dir)
             .args(args);
-        let output =
-            office_common::process::run_captured_with_stdout_limit(&mut command, dir, limit)
-                .map_err(|error| video_error(&format!("media process failed: {}", error.code())))?;
+        let output = process::run_captured(
+            command,
+            MEDIA_DEADLINE,
+            Cap::kill(limit),
+            Cap::kill(MEDIA_OUTPUT_CAP),
+        )
+        .map_err(|error| video_error(&format!("media process failed: {}", error.code())))?;
         if !output.status.success() {
             return Err(video_error("media process exited unsuccessfully"));
         }

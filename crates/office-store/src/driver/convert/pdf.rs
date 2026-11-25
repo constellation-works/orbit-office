@@ -2,8 +2,14 @@
 
 use std::io::Write;
 use std::process::Command;
+use std::time::Duration;
+
+use office_common::process::{self, Cap};
 
 use crate::{Error, Result};
+
+const PDF_DEADLINE: Duration = Duration::from_secs(30);
+const PDF_OUTPUT_CAP: usize = 512 * 1024;
 
 pub(super) fn convert(bytes: &[u8]) -> Result<String> {
     let scratch = tempfile::tempdir()
@@ -14,31 +20,35 @@ pub(super) fn convert(bytes: &[u8]) -> Result<String> {
         .write_all(bytes)
         .map_err(|e| Error::io("write pinned PDF", input.path(), e))?;
     let mut command = Command::new("pdftotext");
+    process::env::allow(&mut command, &["PATH"]);
     command
         .args(["-layout", "-enc", "UTF-8"])
         .arg(input.path())
         .arg("-")
         .current_dir(scratch.path())
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("HOME", scratch.path())
         .env("TMPDIR", scratch.path())
         .env("LC_ALL", "C");
-    let output =
-        office_common::process::run_captured(&mut command, scratch.path()).map_err(|source| {
-            if let office_common::Error::ProcessSpawn { source: ref io, .. } = source
-                && io.kind() == std::io::ErrorKind::NotFound
-            {
-                Error::ConverterUnavailable {
-                    program: "pdftotext",
-                }
-            } else {
-                Error::ConversionProcess {
-                    program: "pdftotext",
-                    source,
-                }
+    let output = process::run_captured(
+        command,
+        PDF_DEADLINE,
+        Cap::kill(PDF_OUTPUT_CAP),
+        Cap::kill(PDF_OUTPUT_CAP),
+    )
+    .map_err(|source| {
+        if let office_common::Error::ProcessSpawn { source: ref io, .. } = source
+            && io.kind() == std::io::ErrorKind::NotFound
+        {
+            Error::ConverterUnavailable {
+                program: "pdftotext",
             }
-        })?;
+        } else {
+            Error::ConversionProcess {
+                program: "pdftotext",
+                source,
+            }
+        }
+    })?;
     if !output.status.success() {
         return Err(Error::ConversionFailed {
             program: "pdftotext",

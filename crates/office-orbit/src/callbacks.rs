@@ -3,11 +3,17 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command;
+use std::time::Duration;
 
+use office_common::process::{self, Cap};
 use office_core::ports::Orbit;
 use serde_json::{Map, Value};
 
 use crate::{Error, Result};
+
+const CALLBACK_DEADLINE: Duration = Duration::from_secs(30);
+const DEFAULT_OUTPUT_CAP: usize = 512 * 1024;
+const LARGE_REPLY_CAP: usize = 6 * 1_048_576 + 65_536;
 
 /// Office's complete callback allowlist; no namespace or wildcard expansion.
 pub const ORBIT_TOOLS: [&str; 15] = [
@@ -103,10 +109,10 @@ impl OrbitCallbacks {
             return Err(Error::ToolNotAllowed);
         }
         let mut command = Command::new(&self.program);
+        process::env::Allow::names(CALLBACK_ENV_NAMES)
+            .apply_from(&mut command, self.environment.iter().cloned());
         command
             .current_dir(&self.cwd)
-            .env_clear()
-            .envs(self.environment.iter().cloned())
             // Even without a descriptor, identify this as a callback attempt.
             // Orbit must refuse it rather than treat it as an ordinary user CLI.
             .env("ORBIT_PLUGIN_CALLBACK", "descriptor-required")
@@ -114,15 +120,17 @@ impl OrbitCallbacks {
             .arg(Value::Object(input.clone()).to_string());
         // One artifact is bounded to 1 MiB by Orbit. JSON can expand each
         // control byte to six characters; base64 fits well below that bound.
-        let captured = if tool == "orbit.task.artifact.get" || tool == "gateway.http-get" {
-            office_common::process::run_captured_with_stdout_limit(
-                &mut command,
-                &self.cwd,
-                6 * 1_048_576 + 65_536,
-            )
+        let stdout_cap = if tool == "orbit.task.artifact.get" || tool == "gateway.http-get" {
+            Cap::kill(LARGE_REPLY_CAP)
         } else {
-            office_common::process::run_captured(&mut command, &self.cwd)
+            Cap::kill(DEFAULT_OUTPUT_CAP)
         };
+        let captured = process::run_captured(
+            command,
+            CALLBACK_DEADLINE,
+            stdout_cap,
+            Cap::kill(DEFAULT_OUTPUT_CAP),
+        );
         let output = captured.map_err(|error| process_failure(tool, error))?;
         if !output.status.success() {
             // The CLI emits {"error": "diagnostic", "code": "…"} as the last

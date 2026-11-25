@@ -110,10 +110,16 @@ pub enum Error {
     },
     /// The child exceeded its wall-clock budget.
     #[error("git exceeded its 30-second deadline")]
-    ProcessTimeout,
+    ProcessTimeout {
+        /// Output captured before the child was stopped; omitted from Display/Debug.
+        capture: office_common::ProcessCapture,
+    },
     /// The child exceeded the captured-output budget.
     #[error("git exceeded its 512 KiB per-stream output limit")]
-    ProcessOutputLimit,
+    ProcessOutputLimit {
+        /// Output captured before the child was stopped; omitted from Display/Debug.
+        capture: office_common::ProcessCapture,
+    },
     /// Supervision is not available on this platform.
     #[error("Library git supervision requires Linux or macOS")]
     ProcessUnsupported,
@@ -189,8 +195,8 @@ impl Error {
             Self::ConverterUnavailable { .. } => "converter_unavailable",
             Self::ConversionFailed { .. } => "conversion_failed",
             Self::ConversionProcess { source, .. } => match source {
-                office_common::Error::ProcessTimeout => "conversion_timeout",
-                office_common::Error::ProcessOutputLimit => "conversion_output_limit",
+                office_common::Error::ProcessTimeout { .. } => "conversion_timeout",
+                office_common::Error::ProcessOutputLimit { .. } => "conversion_output_limit",
                 office_common::Error::ProcessSpawn { .. }
                 | office_common::Error::ProcessUnsupported
                 | office_common::Error::UnsafePath { .. }
@@ -207,8 +213,8 @@ impl Error {
             Self::PendingWrite { .. } => "library_write_pending",
             Self::Journal { .. } => "library_journal_invalid",
             Self::Git { .. } => "library_git_error",
-            Self::ProcessTimeout => "library_git_timeout",
-            Self::ProcessOutputLimit => "library_git_output_limit",
+            Self::ProcessTimeout { .. } => "library_git_timeout",
+            Self::ProcessOutputLimit { .. } => "library_git_output_limit",
             Self::ProcessUnsupported => "library_git_unsupported",
             Self::UnsafePath { .. } => "unsafe_path",
             Self::Io { .. } => "io_error",
@@ -262,9 +268,16 @@ impl Error {
 impl From<office_common::Error> for Error {
     fn from(error: office_common::Error) -> Self {
         match error {
-            office_common::Error::ProcessTimeout => Self::ProcessTimeout,
-            office_common::Error::ProcessOutputLimit => Self::ProcessOutputLimit,
+            office_common::Error::ProcessTimeout { capture } => Self::ProcessTimeout { capture },
+            office_common::Error::ProcessOutputLimit { capture } => {
+                Self::ProcessOutputLimit { capture }
+            }
             office_common::Error::ProcessUnsupported => Self::ProcessUnsupported,
+            office_common::Error::ProcessSpawn { program, source } => Self::Io {
+                action: "start subprocess",
+                path: program,
+                source,
+            },
             office_common::Error::UnsafePath { kind, value } => Self::UnsafePath { kind, value },
             office_common::Error::Io {
                 action,
@@ -305,8 +318,8 @@ impl From<Error> for office_core::Error {
             | Error::PendingWrite { .. }
             | Error::Journal { .. }
             | Error::Git { .. }
-            | Error::ProcessTimeout
-            | Error::ProcessOutputLimit
+            | Error::ProcessTimeout { .. }
+            | Error::ProcessOutputLimit { .. }
             | Error::ProcessUnsupported
             | Error::UnsafePath { .. }
             | Error::Io { .. }

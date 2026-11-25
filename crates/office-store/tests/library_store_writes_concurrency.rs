@@ -240,15 +240,21 @@ fn reads_succeed_during_a_journaled_write() {
         .expect("isolated PATH");
         let mut command =
             std::process::Command::new(std::env::current_exe().expect("test fixture"));
+        office_common::process::env::allow(&mut command, &[]);
         command
             .args(["--exact", "reads_succeed_during_a_journaled_write"])
             .current_dir(dir.path())
-            .env_clear()
             .env("PATH", path)
             .env("HOME", dir.path())
             .env("OFFICE_TEST_LIVE_WRITE_ROOT", dir.path());
-        let (status, output) =
-            office_common::process::run(&mut command, dir.path()).expect("isolated fixture");
+        let (status, output) = office_common::process::run(
+            command,
+            dir.path(),
+            std::time::Duration::from_secs(30),
+            office_common::process::Cap::kill(512 * 1024),
+            office_common::process::Cap::kill(512 * 1024),
+        )
+        .expect("isolated fixture");
         assert!(
             status.success(),
             "live-write fixture exited {status}: {output}"

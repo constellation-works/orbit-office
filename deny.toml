@@ -45,3 +45,6 @@ wildcards = "allow"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# Pinned satellites workspace dependency (cw-supervise) until crates are published
+# (constellation docs/design/cw-supervise/1_scope.md). Re-review 2027-02-24.
+allow-git = ["https://github.com/constellation-works/satellites"]

@@ -24,6 +24,12 @@ err() { echo "dependency-direction: $*" >&2; fail=1; }
 SURFACE="clap tracing-subscriber anstream anstyle termcolor terminal_size crossterm owo-colors colored"
 # HTTP clients: only office-models (and the composing binary) may speak HTTP.
 HTTP="ureq reqwest hyper hyper-util isahc attohttpc curl"
+# Subprocess supervisor: confined to office-common, which exposes the thin
+# workspace adapter around cw-supervise (ARCHITECTURE.md).
+SUPERVISE="cw-supervise"
+# Raw POSIX / syscall crates: encapsulated inside cw-supervise, never direct
+# dependencies of workspace crates (ARCHITECTURE.md).
+SYSCALLS="rustix libc"
 
 # policy <crate>  -> sets ALLOWED (internal deps) and BANNED (external deps).
 # No crate lists office-testkit: it is a dev-dependency only, and
@@ -32,44 +38,44 @@ policy() {
   case "$1" in
     office-common)
       ALLOWED=""
-      BANNED="$SURFACE $HTTP"
+      BANNED="$SURFACE $HTTP $SYSCALLS"
       ;;
     office-core)
       # Calendar uses chrono without a clock, chrono-tz and url: pure parsing, no I/O edge.
       ALLOWED="office-common"
-      BANNED="$SURFACE $HTTP"
+      BANNED="$SURFACE $HTTP $SUPERVISE $SYSCALLS"
       ;;
     office-store)
       # LibraryStore implements the core Library port; records/settings use this edge.
       # ZIP/XML/HTML document parsers add no internal edge; PDF uses common supervision.
       ALLOWED="office-common office-core"
-      BANNED="$SURFACE $HTTP"
+      BANNED="$SURFACE $HTTP $SUPERVISE $SYSCALLS"
       ;;
     office-orbit)
       # Core owns the Orbit port; common supervises the descriptor-authenticated CLI.
       ALLOWED="office-common office-core"
-      BANNED="$SURFACE $HTTP"
+      BANNED="$SURFACE $HTTP $SUPERVISE $SYSCALLS"
       ;;
     office-models)
       # The external jsonschema validator adds no internal edge. Its HTTP/file
       # retrieval features are disabled in the workspace manifest (ARCHITECTURE.md).
       ALLOWED="office-common office-core"
-      BANNED="$SURFACE"
+      BANNED="$SURFACE $SUPERVISE $SYSCALLS"
       ;;
     office-tools)
       # The application reaches adapters only through office-core ports.
       ALLOWED="office-common office-core"
-      BANNED="$SURFACE $HTTP"
+      BANNED="$SURFACE $HTTP $SUPERVISE $SYSCALLS"
       ;;
     office-testkit)
       # Fake port implementations depend on office-core; consumers use them only in tests.
       ALLOWED="office-common office-core office-store"
-      BANNED="$SURFACE $HTTP"
+      BANNED="$SURFACE $HTTP $SUPERVISE $SYSCALLS"
       ;;
     office)
       # Composition wires office-orbit to the host callback context.
       ALLOWED="office-common office-core office-store office-models office-orbit office-tools"
-      BANNED=""
+      BANNED="$SUPERVISE $SYSCALLS"
       ;;
     *) return 1 ;;
   esac
@@ -126,26 +132,39 @@ ban() {
   fi
 }
 
+COMMON=crates/office-common/src
 CORE=crates/office-core/src
 STORE=crates/office-store/src
+ORBIT=crates/office-orbit/src
 TOOLS=crates/office-tools/src
 MODELS=crates/office-models/src
+TESTKIT=crates/office-testkit/src
 CLI=crates/office/src
 
 # Core is the pure domain (R5): every core module is I/O-free.
 for path in "$CORE"/*; do
   name=$(basename "$path")
   case "$name" in tests) continue ;; esac
-  ban "$path" 'std::(fs|net|process)|tempfile::|rustix::' "core/$name is pure domain: file, network and process access belong in an adapter crate"
+  ban "$path" 'std::(fs|net|process)|tempfile::|rustix::|cw_supervise::|office_common::process' "core/$name is pure domain: file, network and process access belong in an adapter crate"
 done
 # The domain receives resolved inputs in the call context (R3).
 ban "$CORE"          'std::env::|home_dir|current_dir'           "the core crate must not read the environment or discover paths"
 # The application reaches files, models and Orbit only through ports.
-ban "$TOOLS"         'std::(fs|net|process)|tempfile::|rustix::' "office-tools is the application: use an office-core port, not direct I/O"
+ban "$TOOLS"         'std::(fs|net|process)|tempfile::|rustix::|cw_supervise::|office_common::process' "office-tools is the application: use an office-core port, not direct I/O"
 ban "$TOOLS"         'std::env::|home_dir|current_dir'           "office-tools must not read the environment or discover paths"
+# Subprocess supervision is exclusively through cw-supervise wrapped by
+# office-common::process (ARCHITECTURE.md). No workspace source file may
+# declare raw syscalls, signal constants, process-group handling, or spawn
+# a child process directly.
+ban crates           'extern[[:space:]]+"C"'                     "no workspace source file may declare C FFI / syscalls; use cw-supervise via office-common::process"
+ban crates           'std::os::unix::process|CommandExt|process_group|setsid|waitid|SIGKILL|SIGTERM|rustix::' "process-group handling and signals belong exclusively in cw-supervise"
+ban crates           'std::process::Child|\bStdio\b|\.spawn\('   "children may only be spawned through cw_supervise::Run in office-common::process"
+for dir in "$COMMON" "$STORE" "$MODELS" "$ORBIT" "$CLI" "$TESTKIT"; do
+  ban "$dir"         '\.output\(|\.status\('                     "children may only be spawned through cw_supervise::Run in office-common::process"
+done
 # Model calls are HTTP only; the one subprocess exception is media.rs
-# (ffmpeg audio splitting, STD-03 supervised), so std::process anywhere
-# else in office-models fails here.
+# (ffmpeg/ffprobe, supervised via office-common::process / cw-supervise), so
+# std::process anywhere else in office-models fails here.
 MODELS_PROCESS_HITS=$(grep -rnHE --include='*.rs' --exclude-dir=tests 'std::process' "$MODELS" 2>/dev/null \
   | grep -v "^$MODELS/media.rs:" \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)
@@ -153,6 +172,24 @@ if [[ -n "$MODELS_PROCESS_HITS" ]]; then
   echo "$MODELS_PROCESS_HITS" >&2
   err "office-models speaks HTTP only: std::process is confined to media.rs (ffmpeg)"
 fi
+# Orbit callbacks are confined to callbacks.rs.
+ORBIT_PROCESS_HITS=$(grep -rnHE --include='*.rs' --exclude-dir=tests 'std::process' "$ORBIT" 2>/dev/null \
+  | grep -v "^$ORBIT/callbacks.rs:" \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)
+if [[ -n "$ORBIT_PROCESS_HITS" ]]; then
+  echo "$ORBIT_PROCESS_HITS" >&2
+  err "office-orbit: std::process is confined to callbacks.rs"
+fi
+# In office-common, Command / ExitStatus live only in process.rs (fs/atomic.rs uses std::process::id()).
+COMMON_CMD_HITS=$(grep -rnHE --include='*.rs' --exclude-dir=tests 'std::process::(Command|ExitStatus)|cw_supervise::Run' "$COMMON" 2>/dev/null \
+  | grep -v "^$COMMON/process.rs:" \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)
+if [[ -n "$COMMON_CMD_HITS" ]]; then
+  echo "$COMMON_CMD_HITS" >&2
+  err "office-common: std::process::Command and cw_supervise::Run are confined to process.rs"
+fi
+# The composing binary only uses std::process::ExitCode; never builds Commands.
+ban "$CLI"           'std::process::Command'                     "office binary must not construct or spawn subprocesses directly"
 # Composition does not know about parsing or rendering (R2).
 ban "$CLI/app.rs"    'crate::(cli|output)'                       "app.rs (composition) must not import surface modules"
 # Rendering is derived from payloads only; it never reaches back up (R1).

@@ -258,6 +258,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cw-supervise"
+version = "0.1.0"
+source = "git+https://github.com/constellation-works/satellites?rev=e5c43597ad5f43f431c62bd472ec63c096dd66dc#e5c43597ad5f43f431c62bd472ec63c096dd66dc"
+dependencies = [
+ "rustix",
+ "thiserror",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -900,6 +909,7 @@ dependencies = [
 name = "office-common"
 version = "0.1.0"
 dependencies = [
+ "cw-supervise",
  "rusqlite",
  "serde",
  "sha2",
