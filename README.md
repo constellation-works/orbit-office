@@ -7,6 +7,11 @@
 
 <h3 align="center">Meetings in. Pull requests by morning.</h3>
 
+> [!WARNING]
+> **Work in progress — not ready for use.** Orbit Office is under active development.
+> Features, file formats and configuration change without notice, and nothing here is
+> supported yet. Don't run it on real meetings or repositories you care about.
+
 <p align="center">
   <a href="https://github.com/constellation-works/orbit-office/actions/workflows/ci.yml"><img src="https://github.com/constellation-works/orbit-office/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" /></a>
